@@ -20,8 +20,6 @@ from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent.parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "src"))
-
 _DEFAULT_TEST_FILE = _SCRIPT_DIR / "test-rubiks-cube.menai"
 _MENAI_MODULES_DIR = _REPO_ROOT / "menai_modules"
 

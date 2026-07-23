@@ -135,7 +135,7 @@ jobs:
           print('C VM OK')
 
       - name: Run Menai tests
-        run: python -m pytest tests/menai/ -x -q
+        run: python -m pytest tests/ -x -q
 
       - name: Stage binary for release
         run: cp "src/menai/vm/${{ steps.ext.outputs.filename }}" "${{ matrix.label }}.bin"

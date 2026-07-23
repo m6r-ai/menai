@@ -22,8 +22,6 @@ import traceback
 from io import StringIO
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
-
 from menai import Menai
 from menai.menai_compiler import MenaiCompiler
 from menai.vm.menai_vm import MenaiVM

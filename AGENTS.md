@@ -1,30 +1,30 @@
-# AGENTS.md - Menai Source Directory
+# AGENTS.md - Menai
 
 ## Purpose
 
 This document exists to convey design intent, non-obvious invariants, and architectural
-decisions that cannot be read directly from the code.  It is a guide for AI agents
+decisions that cannot be read directly from the code. It is a guide for AI agents
 working on this codebase.
 
 ### What this document is NOT
 
-This document does NOT describe what the code currently does in detail.  It does not
+This document does NOT describe what the code currently does in detail. It does not
 reproduce pipeline diagrams, file-by-file role tables, pass-order lists, or any other
-information that is already expressed clearly in the source.  That kind of content becomes
+information that is already expressed clearly in the source. That kind of content becomes
 a maintenance liability: it drifts out of date as the code evolves and then actively
 misleads the next reader.
 
-If you update the code, DO NOT add derived technical descriptions here.  If you feel
+If you update the code, DO NOT add derived technical descriptions here. If you feel
 the urge to document how something works, put that documentation in the source file itself
-(module docstring, class docstring, inline comment) where it will be read alongside the
-code it describes and is more likely to be kept correct.
+(module docstring, class docstring, inline comment) where it will be read alongside
+the code it describes and is more likely to be kept correct.
 
 This document should only grow when there is a genuine design decision, constraint, or
 non-obvious invariant to record that cannot be expressed in the code itself.
 
 ## Where to start
 
-- Pipeline: read `menai_compiler.py` — it is the authoritative, always-current
+- Pipeline: read `src/menai/menai_compiler.py` — it is the authoritative, always-current
   description of the compilation pipeline and pass order.
 - Language semantics: use the AI tool description (available via the `help` tool).
   Do not rely on README.md for semantics. Do NOT assume that because it looks a bit like
@@ -34,28 +34,47 @@ non-obvious invariant to record that cannot be expressed in the code itself.
 
 ## APIs
 
-Many of the internal APIs are non-obvious.  DO NOT attempt to guess what they might be.
+Many of the internal APIs are non-obvious. DO NOT attempt to guess what they might be.
 If you need to use an API read the source code to understand it first.
+
+## Top-level structure
+
+```text
+menai/
+├── src/
+│   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
+│   ├── menai_benchmark/        # performance benchmarking tool
+│   ├── menai_checker/          # parenthesis balance checker
+│   ├── menai_disassembler/     # bytecode disassembler
+│   ├── menai_pretty_print/     # code formatter
+│   ├── menai_profiler/         # profiling tool
+│   └── menai_test_runner/      # test runner for *_test.menai files
+├── tests/
+│   └── menai/                  # compiler core tests
+├── menai_modules/              # standard library (.menai files)
+├── setup.py                    # C VM build
+└── pyproject.toml              # Python package configuration
+```
 
 ## Architectural invariants
 
-These are constraints that must hold across the whole compiler.  They are recorded here
+These are constraints that must hold across the whole compiler. They are recorded here
 because they span multiple files and are easy to violate accidentally.
 
 ### The IR tree is immutable — passes return new trees
 
-No IR optimisation pass may mutate its input tree in place.  Each pass receives an IR tree
-and returns a new one, along with a boolean indicating whether anything changed.  The
+No IR optimisation pass may mutate its input tree in place. Each pass receives an IR tree
+and returns a new one, along with a boolean indicating whether anything changed. The
 pass manager uses that flag to drive the fixed-point loop.
 
-The reason: immutability makes passes composable and makes bugs easier to isolate.  A pass
+The reason: immutability makes passes composable and makes bugs easier to isolate. A pass
 that mutates its input can corrupt the tree in ways that only manifest later in an
 unrelated pass.
 
 ### Menai is pure — dead code elimination is always safe
 
 Because Menai has no side effects, any expression whose result is never used can be
-discarded unconditionally.  Optimisation passes may rely on this without checking for
+discarded unconditionally. Optimisation passes may rely on this without checking for
 side effects.
 
 ### `letrec` reaching the IR builder is always a genuine mutually-recursive group
@@ -64,11 +83,11 @@ The desugarer guarantees that by the time `letrec` reaches the IR builder, every
 `letrec` is a single strongly-connected component of mutually-recursive bindings.
 Non-recursive bindings are hoisted to `let` forms.
 
-However, not every binding in a `letrec` group is necessarily a lambda.  A
+However, not every binding in a `letrec` group is necessarily a lambda. A
 non-lambda binding (e.g. `(letrec ((x (list (lambda () x)))) x)`) can appear in a
 `letrec` group when its RHS contains a nested lambda that closes over the binding
 name — the dependency analyzer sees a cycle and correctly keeps it in `letrec`.
-The IR builder and both codegens handle this.  The CFG builder handles it via a
+The IR builder and both codegens handle this. The CFG builder handles it via a
 dedicated Phase 2b / Phase 3b in `_build_letrec`: non-lambda binding values are
 evaluated after all sibling lambda closures exist (so nested lambdas can capture
 them), and any nested lambdas with sibling captures are patched afterward.
@@ -80,11 +99,11 @@ IR passes downstream of the IR builder may not assume all `letrec` bindings are 
 There are two categories of builtin that must not be confused:
 
 - Opcode-backed builtins have an entry in `BUILTIN_OPCODE_ARITIES` in
-  `menai_builtin_registry.py`.  The registry asserts that every entry in this table has a
-  corresponding opcode in `BUILTIN_OPCODE_MAP`.  Adding a name here without an opcode
+  `menai_builtin_registry.py`. The registry asserts that every entry in this table has a
+  corresponding opcode in `BUILTIN_OPCODE_MAP`. Adding a name here without an opcode
   will cause an assertion failure at startup.
 - Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
-  as Menai lambdas in `_PRELUDE_SOURCE` in `menai.py`.  They MUST NOT be added to
+  as Menai lambdas in `_PRELUDE_SOURCE` in `menai.py`. They MUST NOT be added to
   `BUILTIN_OPCODE_ARITIES`.
 
 ## Design decisions
@@ -93,8 +112,8 @@ These are decisions that might otherwise look like oversights or invite "improve
 
 ### No `cond` form
 
-Deliberate omission.  `match` covers all multi-branch conditional use cases and is more
-expressive.  Do not add `cond`.
+Deliberate omission. `match` covers all multi-branch conditional use cases and is more
+expressive. Do not add `cond`.
 
 ### Symbols are not strings
 
@@ -103,30 +122,24 @@ expressive.  Do not add `cond`.
 
 ### Proper lists only
 
-There are no cons cells and no improper lists.  On the Python side, `MenaiList`
-(defined in `menai_value.py`) stores its elements in a Python tuple.  The C VM has
+There are no cons cells and no improper lists. On the Python side, `MenaiList`
+(defined in `menai_value.py`) stores its elements in a Python tuple. The C VM has
 its own internal list representation (see `vm/menai_vm_list.c`), which is an
-implementation detail of that layer.  `cons` requires its second argument to be a
-list.  This is intentional: improper lists add complexity for minimal benefit in a
+implementation detail of that layer. `cons` requires its second argument to be a
+list. This is intentional: improper lists add complexity for minimal benefit in a
 language without pattern-matched list destructuring at the cons-cell level.
 
 ### Strict numeric typing
 
-There is no implicit coercion between `integer`, `float`, and `complex`.  All arithmetic
-operators are type-specific (e.g. `integer+`, `float*`).  This is intentional.
-
-## Tools
-
-You can find tools related to Menai in tools/menai.
+There is no implicit coercion between `integer`, `float`, and `complex`. All arithmetic
+operators are type-specific (e.g. `integer+`, `float*`). This is intentional.
 
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and
-loaded at runtime.  `vm/menai_vm.py` is a thin Python wrapper that exposes the C
-VM's `execute` and `cancel` functions to the rest of the codebase.  Pre-built
-binaries for all supported platforms are published via GitHub Releases (use
-`python fetch-menai-vm.py` to download, or `python setup.py build_ext --inplace`
-to build locally).
+loaded at runtime. `vm/menai_vm.py` is a thin Python wrapper that exposes the C
+VM's `execute` and `cancel` functions to the rest of the codebase. Pre-built
+binaries for all supported platforms are published via GitHub Releases.
 
 The C VM currently makes use of some Python runtime library functionality, but with the
 exception of the bridge layer between C and Python, the C code should be systematically
@@ -134,7 +147,7 @@ updated so Python functions and data structures are removed.
 
 ### C formatting
 
-Do NOT use lines of characters in comments.  E.g. never use something like:
+Do NOT use lines of characters in comments. E.g. never use something like:
 
 ```c
 /* --------------------------------
@@ -157,7 +170,7 @@ For multi-line comments the open and close go on their own lines:
  */
 ```
 
-Do NOT use excess whitespace to line up things on adjacent lines.  E.g. never do:
+Do NOT use excess whitespace to line up things on adjacent lines. E.g. never do:
 
 ```c
 int x_with_long_name = 0;
@@ -171,7 +184,7 @@ int x_with_long_name = 0;
 int y = 1;
 ```
 
-Do NOT put code on the same line after an opening brace.  E.g. never do:
+Do NOT put code on the same line after an opening brace. E.g. never do:
 
 ```c
 if (foo) { something(); }

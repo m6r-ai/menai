@@ -1,13 +1,13 @@
-# Menai (AI Functional Programming Language)
+# Menai
 
-Menai is a pure functional programming language with Lisp-like S-expression syntax, designed
-primarily for use as an AI tool. It is homoiconic, strictly typed, and has no side effects,
-making it safe for AI tool integration.
+Menai is a pure functional programming language with Lisp-like S-expression syntax,
+designed primarily for use as an AI tool. It is homoiconic, strictly typed, and has
+no side effects, making it safe for AI tool integration.
 
 > **Language reference**: Menai is designed to be used by AIs. The authoritative language
-> reference is the AI tool description, which any AI assistant in this system can access
-> directly. If you are a human user and want to know how a language feature works, just ask
-> the AI.
+> reference is the AI tool description, which any AI assistant in a system that embeds Menai
+> can access directly. If you are a human user and want to know how a language feature works,
+> just ask the AI.
 
 ## Features
 
@@ -78,6 +78,7 @@ cross-module optimizations.
 - Lists are backed by Python tuples
 - Alists use a tuple of pairs with a hash-backed dict for O(1) lookup
 - Tail calls are detected during compilation and optimized in the VM
+- A C VM is available for performance (compiled from `src/menai/vm/*.c`)
 
 ## Python API
 
@@ -147,10 +148,45 @@ Modules are `.menai` files containing a single expression that evaluates to a va
 
 ## Development tools
 
-The `tools/` directory contains utilities for working with Menai:
+Menai includes several command-line tools for working with Menai source files:
 
-- `menai_benchmark/` – performance benchmarking
-- `menai_bytecode_analyzer/` – bytecode inspection
-- `menai_checker/` – static analysis
-- `menai_disassembler/` – bytecode disassembly
-- `menai_pretty_print/` – code formatting
+- `menai-benchmark` – performance benchmarking (`src/menai_benchmark/`)
+- `menai-check` – parenthesis balance checker (`src/menai_checker/`)
+- `menai-disassemble` – bytecode disassembly (`src/menai_disassembler/`)
+- `menai-pretty-print` – code formatting (`src/menai_pretty_print/`)
+- `menai-profile` – profiling (`src/menai_profiler/`)
+- `menai-test` – test runner for `*_test.menai` files (`src/menai_test_runner/`)
+
+## Getting started
+
+### Installation
+
+```bash
+pip install -e ".[dev]"
+```
+
+### Building the C VM
+
+The C VM is optional but recommended for performance.
+
+**Option A — Download a pre-built binary (recommended):**
+
+Pre-built binaries are available via GitHub Releases for all supported platforms.
+
+**Option B — Build from source:**
+
+```bash
+python setup.py build_ext --inplace
+```
+
+Requires a C compiler (gcc, clang, or MSVC).
+
+### Running tests
+
+```bash
+python -m pytest tests/
+```
+
+## License
+
+Apache License, Version 2.0. See [LICENSE.txt](LICENSE.txt).

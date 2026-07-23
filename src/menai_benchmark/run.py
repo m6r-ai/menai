@@ -6,15 +6,13 @@ import importlib
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "src"))
-sys.path.insert(0, str(_REPO_ROOT))
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _BENCHMARK_DIR = Path(__file__).resolve().parent
 
-from menai import Menai  # noqa: E402  pylint: disable=wrong-import-position
+from menai import Menai
 
-from tools.menai.benchmark import (  # noqa: E402  pylint: disable=wrong-import-position
+from menai_benchmark import (
     BenchmarkReporter,
     BenchmarkRunner,
     BenchmarkSuite,
@@ -38,7 +36,7 @@ def discover_suites() -> list[tuple[Path, type[BenchmarkSuite]]]:
     found: list[tuple[Path, type[BenchmarkSuite]]] = []
 
     for suite_dir in sorted(d for d in _SUITES_DIR.iterdir() if d.is_dir() and (d / "suite.py").exists()):
-        module_name = f"tools.menai.benchmark.suites.{suite_dir.name}.suite"
+        module_name = f"menai_benchmark.suites.{suite_dir.name}.suite"
 
         try:
             module = importlib.import_module(module_name)

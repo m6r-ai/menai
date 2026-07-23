@@ -25,9 +25,6 @@ from io import StringIO
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_REPO_ROOT = _SCRIPT_DIR.parent.parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "src"))
-
 from menai import Menai
 
 

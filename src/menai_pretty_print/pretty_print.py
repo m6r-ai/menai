@@ -6,9 +6,6 @@ import argparse
 from pathlib import Path
 import traceback
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
-
 from menai.menai_pretty_printer import MenaiPrettyPrinter, FormatOptions
 
 

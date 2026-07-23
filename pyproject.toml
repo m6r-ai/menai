@@ -1,0 +1,105 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "menai"
+version = "1.0.0"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "pylint",
+    "pytest",
+    "pytest-cov",
+    "setuptools",
+]
+
+[project.scripts]
+menai-benchmark = "menai_benchmark.run:main"
+menai-check = "menai_checker.check:main"
+menai-disassemble = "menai_disassembler.disassemble:main"
+menai-pretty-print = "menai_pretty_print.pretty_print:main"
+menai-profile = "menai_profiler.profile:main"
+menai-test = "menai_test_runner.test_run:main"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/menai",
+    "src/menai_benchmark",
+    "src/menai_checker",
+    "src/menai_disassembler",
+    "src/menai_pretty_print",
+    "src/menai_profiler",
+    "src/menai_test_runner",
+]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "src/menai/vm/menai_vm_c*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "raise ImportError",
+    "except ImportError:"
+]
+
+[tool.mypy]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+
+[tool.pylint]
+disable = [
+    "broad-exception-caught",
+    "duplicate-code",
+    "missing-module-docstring",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-lines",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-positional-arguments",
+    "too-many-public-methods",
+    "too-many-return-statements",
+    "too-many-statements"
+]
+
+enable = [
+    "protected-access"
+]
+
+max-line-length = 132
+max-args = 8
+max-attributes = 12
+
+[tool.pylint.basic]
+no-docstring-rgx = "^__.*__$"
+
+[tool.pylint.typecheck]
+ignored-modules = ["menai.vm.menai_vm_c"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --cov=src --cov-report=html"
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning"
+]

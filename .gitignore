@@ -1,0 +1,29 @@
+# Ignore temp files
+*~
+*.swp
+
+# Ignore build files
+/dist
+/build
+
+# Ignore python cache files
+**/__pycache__
+
+# Ignore code coverage reports
+.coverage
+/htmlcov
+/.pytest_cache
+/.mypy_cache
+
+# Ignore virtual environment
+/venv
+
+# Ignore Mac system files
+.DS_Store
+
+# Ignore binary builds
+*.so
+*.pyd
+
+# Ignore pre-built C VM binaries (fetched via CI)
+*.bin

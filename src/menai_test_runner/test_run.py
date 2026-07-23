@@ -7,12 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-# Resolve src/ relative to this file so the runner works from any working directory
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "src"))
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-from menai import Menai, MenaiError  # noqa: E402  pylint: disable=wrong-import-position
-from menai.menai_value import MenaiDict, MenaiFunction, MenaiList, MenaiString  # noqa: E402  pylint: disable=wrong-import-position
+from menai import Menai, MenaiError
+from menai.menai_value import MenaiDict, MenaiFunction, MenaiList, MenaiString
 
 
 # Directory containing menai_test.menai — always prepended to the module path
