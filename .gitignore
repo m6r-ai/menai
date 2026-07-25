@@ -18,6 +18,9 @@
 # Ignore virtual environment
 /venv
 
+# Ignore humbug mindspace files
+/.humbug
+
 # Ignore Mac system files
 .DS_Store
 

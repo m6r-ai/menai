@@ -29,6 +29,8 @@ non-obvious invariant to record that cannot be expressed in the code itself.
 - Language semantics: use the AI tool description (available via the `help` tool).
   Do not rely on README.md for semantics. Do NOT assume that because it looks a bit like
   Scheme or Lisp that it's actually the same.
+- Language manual: `docs/` contains the human-readable language reference. It is
+  AI-maintained and kept in sync with the tool description.
 - Individual passes: each source file has a module-level docstring that describes
   what that pass does, its invariants, and its position in the pipeline.
 
@@ -37,23 +39,89 @@ non-obvious invariant to record that cannot be expressed in the code itself.
 Many of the internal APIs are non-obvious. DO NOT attempt to guess what they might be.
 If you need to use an API read the source code to understand it first.
 
+## Tool use
+
+- If you want to use the terminal you will require user authorization every time you send keystrokes.  If you load files into
+  an editor tab, however, you don't.  If you just want to do a simple search of a file then consider using the editor
+  tabs.  They can get pretty cluttered though so if you don't need the tab again then close it.
+- If you open a terminal it will automatically be in the root of the mindspace directory.  Don't change directory unless
+  you want to be somewhere else.
+- Terminals will not open with a python virtual environment by default.  The venv is at `venv/` in the mindspace root.
+- If you send a command to a terminal, don't forget the newline or carriage return required (Unix, or Windows specific).
+- Do not pipe pytest output through `grep` or other filtering tools.  pytest interleaves progress dots on stderr with
+  summary lines on stdout, so filtering mangles the output and hides the pass/fail counts.  Run pytest with no flags
+  and pipe through `tail` only if the output is too long to read in full:
+  ```bash
+  python -m pytest tests/menai/ 2>&1 | tail -10
+  ```
+
+## Code quality
+
+- Before considering any code change complete, run the full suite of static analysis tools:
+  ```bash
+  source venv/bin/activate && python -m tools.code_checker
+  ```
+  All checks must pass cleanly before the work is done.
+
+## Code generation
+
+- Do not write lengthy file-level docstrings.  These go stale very fast as the code evolves.
+- Do not add comments marking blocks of functionality within files.  Functions, classes, etc., have docstrings so we have
+  everything we need anyway and these sorts of delimeter comments simply add clutter to the code.
+- If you are writing tests, the tests must reflect the correct and desired behaviour.  NEVER write or patch a test to
+  mask broken implementation logic.  If the logic is wrong then a test must fail.
+- Test docstrings must describe the expected correct behaviour only.  They must not reference previously broken
+  behaviour, historical bugs, or implementation details of past fixes.  A test is a specification, not a changelog.
+- Do not write block comments using lines of dashes.  E.g. never do this:
+  ```python
+  # -----------------------------------------------------------
+  # This is a block level comment because I like wasting tokens
+  # -----------------------------------------------------------
+  ```
+  Functions/methods have doc strings and we don't need comments about grouping of things because they go stale.
+- We use modern Python, so never use `Optional`, always use `type | None`.
+- Never use `Union[X, Y]`; always use the modern `X | Y` syntax.
+- Never import legacy typing aliases.  Use builtins (`dict`, `list`, `set`, `tuple`, `type`,
+  `frozenset`) or `collections.abc` (`Callable`, `Awaitable`, `AsyncGenerator`, `Generator`,
+  `Iterator`, `Sequence`, `Coroutine`) instead of `typing.Dict`, `typing.List`, etc.
+- Do not use `@property`.  Simple getter methods (e.g. `def foo(self) -> T:`) are used instead.
+- Do not pad-align `=` signs in consecutive assignment statements.  Each assignment should have a single space before
+  the `=`, regardless of surrounding assignments.
+- Put a blank line after any code block.  If the code dedents then there should be a blank line before it.
+- Multi-line docstrings must have the opening `"""` and closing `"""` on their own lines, with no other text.
+- These and other style rules are enforced by the style checker pylint plugin (`tools/style_checker/`), which runs
+  automatically as part of `python -m tools.code_checker`.
+
+## YAGNI (You Aren't Gonna Need It)
+
+This project strongly follows the YAGNI principle.  If there is no clear reason for a feature, method, or helper to exist,
+it should not be added.
+
+- Every method, function, class, and module must be used somewhere in the codebase.  If code cannot be reached at
+  runtime in this project or its supporting tools, remove it.
+- Do not add speculative helper functions, convenience methods, or abstraction layers that are not called by real
+  code.  "It might be useful someday" is not a valid reason.
+- When restructuring or refactoring, remove any code that is no longer called rather than leaving it in place.
+
 ## Top-level structure
 
 ```text
 menai/
+├── docs/                       # language manual (human + AI readable)
+├── menai_modules/              # standard library (.menai files)
+├── pyproject.toml              # Python package configuration
+├── setup.py                    # C VM build
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   ├── menai_benchmark/        # performance benchmarking tool
 │   ├── menai_checker/          # parenthesis balance checker
 │   ├── menai_disassembler/     # bytecode disassembler
+│   ├── menai_pipeline_runner/  # JSON-defined pipeline runner (tool + Menai steps)
 │   ├── menai_pretty_print/     # code formatter
 │   ├── menai_profiler/         # profiling tool
 │   └── menai_test_runner/      # test runner for *_test.menai files
-├── tests/
-│   └── menai/                  # compiler core tests
-├── menai_modules/              # standard library (.menai files)
-├── setup.py                    # C VM build
-└── pyproject.toml              # Python package configuration
+└── tests/
+    └── menai/                  # compiler core tests
 ```
 
 ## Architectural invariants

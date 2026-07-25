@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "menai"
-version = "1.0.0"
+version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = []
 
@@ -24,6 +24,7 @@ menai-disassemble = "menai_disassembler.disassemble:main"
 menai-pretty-print = "menai_pretty_print.pretty_print:main"
 menai-profile = "menai_profiler.profile:main"
 menai-test = "menai_test_runner.test_run:main"
+menai-pipeline = "menai_pipeline_runner.run:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [
@@ -31,6 +32,7 @@ packages = [
     "src/menai_benchmark",
     "src/menai_checker",
     "src/menai_disassembler",
+    "src/menai_pipeline_runner",
     "src/menai_pretty_print",
     "src/menai_profiler",
     "src/menai_test_runner",
@@ -85,8 +87,16 @@ max-line-length = 132
 max-args = 8
 max-attributes = 12
 
+output-format = "colorized"
+
 [tool.pylint.basic]
 no-docstring-rgx = "^__.*__$"
+
+[tool.pylint.main]
+load-plugins = "tools.style_checker.style_checker"
+
+[tool.pylint.master]
+init-hook = "import sys, os; sys.path.insert(0, os.getcwd())"
 
 [tool.pylint.typecheck]
 ignored-modules = ["menai.vm.menai_vm_c"]
