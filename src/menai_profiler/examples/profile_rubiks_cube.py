@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Profile test-rubiks-cube.menai
+"""
+Profile test-rubiks-cube.menai
 
 This script profiles the execution of the Rubik's cube test to identify
 performance bottlenecks in the Menai compiler and VM.
@@ -18,12 +19,12 @@ import sys
 from io import StringIO
 from pathlib import Path
 
+from menai import Menai
+
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent.parent.parent
 _DEFAULT_TEST_FILE = _SCRIPT_DIR / "test-rubiks-cube.menai"
 _MENAI_MODULES_DIR = _REPO_ROOT / "menai_modules"
-
-from menai import Menai
 
 
 def profile_rubiks_cube(
@@ -59,14 +60,16 @@ def profile_rubiks_cube(
 
     print("\nRunning test with profiler enabled...")
     profiler.enable()
-    
+
     try:
         result = menai.evaluate(test_expression)
-        print(f"\n✓ Test completed successfully")
+        print("\n✓ Test completed successfully")
         print(f"Result: {result}")
+
     except Exception as e:
         print(f"\n✗ Test failed with error: {e}")
         raise
+
     finally:
         profiler.disable()
 
@@ -86,21 +89,21 @@ def profile_rubiks_cube(
     print("\n" + "=" * 100)
     print("KEY FUNCTION CALLERS")
     print("=" * 100)
-    
+
     s_callers = StringIO()
     stats_callers = pstats.Stats(profiler, stream=s_callers)
-    
+
     # Look for specific Menai functions
     key_patterns = [
         'compile',
-        'execute', 
+        'execute',
         'evaluate',
         '_lex',
         '_parse',
         'semantic',
         'desugar',
     ]
-    
+
     for pattern in key_patterns:
         print(f"\nCallers of functions matching '{pattern}':")
         stats_callers.print_callers(pattern)
@@ -116,16 +119,16 @@ def profile_rubiks_cube(
     print("\n" + "=" * 100)
     print("SUMMARY")
     print("=" * 100)
-    
+
     # Get total time
     stats_obj = pstats.Stats(profiler)
     stats_obj.calc_callees()
-    
-    print(f"\nTo analyze further:")
-    print(f"  1. Save profile data: python profile_rubiks_cube.py --output rubiks.prof")
-    print(f"  2. View interactively: python -m pstats rubiks.prof")
-    print(f"  3. In pstats shell, try: sort cumulative, stats 20, callers <function_name>")
-    print(f"  4. Use snakeviz for visualization: pip install snakeviz && snakeviz rubiks.prof")
+
+    print("\nTo analyze further:")
+    print("  1. Save profile data: python profile_rubiks_cube.py --output rubiks.prof")
+    print("  2. View interactively: python -m pstats rubiks.prof")
+    print("  3. In pstats shell, try: sort cumulative, stats 20, callers <function_name>")
+    print("  4. Use snakeviz for visualization: pip install snakeviz && snakeviz rubiks.prof")
 
 
 def main() -> None:

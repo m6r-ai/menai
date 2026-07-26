@@ -20,16 +20,15 @@ Usage:
 import argparse
 import cProfile
 import pstats
-import sys
 import time
 from io import StringIO
 from pathlib import Path
 
+from menai import Menai
+
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent.parent.parent
 _MENAI_MODULES_DIR = _REPO_ROOT / "menai_modules"
-
-from menai import Menai
 
 
 # Puzzle suite
@@ -127,6 +126,7 @@ def board_to_menai(flat: list[int]) -> str:
     for r in range(9):
         cells = " ".join(str(flat[r * 9 + c]) for c in range(9))
         rows.append(f"(list {cells})")
+
     return "(list\n    " + "\n    ".join(rows) + ")"
 
 
@@ -161,6 +161,7 @@ def run_benchmarks(
             start = time.perf_counter()
             for _ in range(repeat):
                 result = menai.evaluate(expr)
+
             elapsed = time.perf_counter() - start
 
             ok = isinstance(result, list)
@@ -199,12 +200,15 @@ def run_profile(
     try:
         result = menai.evaluate(expr)
         if isinstance(result, list):
-            print(f"✓ Solved successfully")
+            print("✓ Solved successfully")
+
         else:
-            print(f"✗ No solution returned")
+            print("✗ No solution returned")
+
     except Exception as exc:
         print(f"✗ Failed with error: {exc}")
         raise
+
     finally:
         profiler.disable()
 
@@ -237,6 +241,7 @@ def run_profile(
 
 
 def main() -> None:
+    """Entry point for the sudoku solver profiling script."""
     parser = argparse.ArgumentParser(
         description="Profile the Menai sudoku solver",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -311,9 +316,11 @@ def main() -> None:
     if args.profile or args.output:
         if args.profile_difficulty:
             profile_puzzle = puzzle_by_difficulty(args.profile_difficulty)
+
         else:
             # Default: hardest puzzle that was actually benchmarked
             profile_puzzle = puzzles[-1]
+
         run_profile(args.output, args.top, args.sort, profile_puzzle)
 
 

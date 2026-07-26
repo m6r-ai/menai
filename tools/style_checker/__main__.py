@@ -24,7 +24,7 @@ def main() -> int:
             "pylint",
             "--load-plugins=tools.style_checker.style_checker",
             "--disable=all",
-            "--enable=m6r-no-property,m6r-no-optional,m6r-no-aligned-assigns,"
+            "--enable=m6r-no-property,m6r-no-optional,m6r-no-aligned-assigns,",
             "m6r-no-union,m6r-blank-before-dedent,m6r-multiline-docstring",
             "src",
         ],

@@ -4,18 +4,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 import time
-from typing import Any, Optional
+from typing import Any
 
 from menai import Menai, MenaiError
 from menai.menai_value import (
     MenaiBoolean, MenaiDict, MenaiFloat, MenaiInteger, MenaiList, MenaiNone,
-    MenaiString, MenaiValue
+    MenaiString, MenaiValue,
 )
 
-from menai_pipeline_runner.pipeline_step import MenaiStep, Pipeline, PipelineStep, ToolStep, resolve_step_expression
+from menai_pipeline_runner.pipeline_step import MenaiStep, Pipeline, ToolStep, resolve_step_expression
 from menai_pipeline_runner.pipeline_tools import (
     ClockTool, ConsoleTool, FilesystemTool,
-    PipelineAuthorizationDenied, PipelineToolError
+    PipelineAuthorizationDenied, PipelineToolError,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -24,7 +24,6 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 @dataclass
 class StepResult:
     """Result from executing a single pipeline step."""
-
     step_id: str
     success: bool
     value: str = ""
@@ -35,7 +34,6 @@ class StepResult:
 @dataclass
 class PipelineResult:
     """Result from executing a complete pipeline."""
-
     success: bool
     step_results: list[StepResult] = field(default_factory=list)
     error: str = ""
@@ -170,8 +168,10 @@ def _build_menai_expression(step: MenaiStep, step_outputs: dict[str, str]) -> st
         composite_key = f"{source_step_id}.{input_name}"
         if composite_key in step_outputs:
             value = step_outputs[composite_key]
+
         elif source_step_id in step_outputs:
             value = step_outputs[source_step_id]
+
         else:
             raise PipelineExecutionError(
                 f"Menai step '{step.step_id}': input '{input_name}' requires output "
@@ -188,7 +188,7 @@ def _build_menai_expression(step: MenaiStep, step_outputs: dict[str, str]) -> st
 def _execute_menai_step(
     step: MenaiStep,
     step_outputs: dict[str, str],
-    menai: Menai
+    menai: Menai,
 ) -> dict[str, str]:
     """
     Execute a Menai step and return a map of output key -> string value.
@@ -211,7 +211,7 @@ def _execute_menai_step(
     expression = _build_menai_expression(step, step_outputs)
 
     try:
-        result = menai._evaluate_raw(expression)
+        result = menai._evaluate_raw(expression)  # pylint: disable=protected-access
 
     except MenaiError as e:
         raise PipelineExecutionError(
@@ -274,10 +274,10 @@ def _get_tool(tool_name: str) -> Any:
 
 
 def _resolve_value_from(
-    value_from: Optional[str],
+    value_from: str | None,
     step_outputs: dict[str, str],
-    step_id: str
-) -> Optional[str]:
+    step_id: str,
+) -> str | None:
     """
     Resolve a value_from reference to a string value.
 
@@ -309,7 +309,7 @@ def _resolve_value_from(
 
 def _execute_tool_step(
     step: ToolStep,
-    step_outputs: dict[str, str]
+    step_outputs: dict[str, str],
 ) -> str:
     """
     Execute a tool step and return its string output.
@@ -348,8 +348,8 @@ def _execute_tool_step(
 
 def execute_pipeline(
     pipeline: Pipeline,
-    on_step_start: Optional[Callable[[str], None]] = None,
-    on_step_done: Optional[Callable[['StepResult'], None]] = None,
+    on_step_start: Callable[[str], None] | None = None,
+    on_step_done: Callable[['StepResult'], None] | None = None,
 ) -> PipelineResult:
     """
     Execute a pipeline, running each step in order.
@@ -377,6 +377,7 @@ def execute_pipeline(
     for step in pipeline.steps:
         if on_step_start is not None:
             on_step_start(step.step_id)
+
         step_start = time.monotonic()
         try:
             if isinstance(step, MenaiStep):
@@ -414,6 +415,7 @@ def execute_pipeline(
             ))
             if on_step_done is not None:
                 on_step_done(step_results[-1])
+
             return PipelineResult(
                 success=False,
                 step_results=step_results,
@@ -429,6 +431,7 @@ def execute_pipeline(
             ))
             if on_step_done is not None:
                 on_step_done(step_results[-1])
+
             return PipelineResult(
                 success=False,
                 step_results=step_results,

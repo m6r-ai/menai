@@ -24,8 +24,9 @@ import time
 from io import StringIO
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
 from menai import Menai
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
 
 
 DEFAULT_SIZES = [10, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
@@ -101,6 +102,7 @@ def run_benchmarks(sort_src: str, sizes: list[int], iterations: int) -> list[tup
             status = "✓" if all_ok else "✗ WRONG ORDER"
             print(f"{size:>8}  {mean_t:>10.4f}  {min_t:>10.4f}  {items_per_sec:>12.1f}  {status}")
             results.append((size, mean_t, min_t, all_ok))
+
         else:
             results.append((size, 0.0, 0.0, False))
 
@@ -131,10 +133,13 @@ def run_profile(
         for _ in range(iterations):
             values = random.sample(range(size * 10), size)
             menai.evaluate(make_sort_expression(sort_src, values))
+
         print(f"✓ Sorted {size} elements × {iterations} iterations successfully")
+
     except Exception as e:
         print(f"✗ Failed: {e}")
         raise
+
     finally:
         profiler.disable()
 
@@ -156,6 +161,7 @@ def run_profile(
 
 
 def main() -> None:
+    """Entry point for the list sort profiling script."""
     parser = argparse.ArgumentParser(
         description="Profile Menai sort-list performance",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -218,9 +224,10 @@ def main() -> None:
     if args.sizes:
         try:
             sizes = [int(s.strip()) for s in args.sizes.split(',')]
-        except ValueError:
+
+        except ValueError as exc:
             print(f"Error: --sizes must be comma-separated integers, got: {args.sizes}")
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
 
     sort_src = load_sort_source()
 

@@ -6,10 +6,6 @@ import importlib
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
-_BENCHMARK_DIR = Path(__file__).resolve().parent
-
 from menai import Menai
 
 from menai_benchmark import (
@@ -17,6 +13,10 @@ from menai_benchmark import (
     BenchmarkRunner,
     BenchmarkSuite,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+_BENCHMARK_DIR = Path(__file__).resolve().parent
 
 _SUITES_DIR = _BENCHMARK_DIR / "suites"
 _MENAI_MODULES_DIR = _REPO_ROOT / "menai_modules"

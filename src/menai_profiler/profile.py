@@ -24,7 +24,6 @@ from pathlib import Path
 
 from menai import Menai
 from menai.menai_compiler import MenaiCompiler
-from menai.vm.menai_vm import MenaiVM
 
 
 def build_module_path(source_path: Path) -> list[str]:
@@ -41,6 +40,7 @@ def build_module_path(source_path: Path) -> list[str]:
     for d in [file_dir, cwd]:
         if d not in module_path:
             module_path.append(d)
+
     return module_path
 
 
@@ -95,7 +95,7 @@ def run_profile(
     # Build a fresh Menai instance with the correct module path.
     # The Menai constructor compiles and caches the prelude, so compilation
     # cost is separated from the user program's execution cost.
-    print(f"Initialising Menai (compiling prelude)...", file=sys.stderr)
+    print("Initialising Menai (compiling prelude)...", file=sys.stderr)
     menai = Menai(module_path=module_path)
 
     print(f"Compiling: {source_path}", file=sys.stderr)
@@ -108,7 +108,7 @@ def run_profile(
         traceback.print_exc(file=sys.stderr)
         return 1
 
-    print(f"Running with profiler enabled...", file=sys.stderr)
+    print("Running with profiler enabled...", file=sys.stderr)
     print("=" * 100)
 
     profiler = cProfile.Profile()
@@ -117,7 +117,7 @@ def run_profile(
     result = None
     exec_error = None
     try:
-        result = menai.vm.execute(code, menai._prelude)
+        result = menai.vm.execute(code, menai._prelude)  # pylint: disable=protected-access
 
     except Exception as exc:
         exec_error = exc
@@ -130,7 +130,7 @@ def run_profile(
         traceback.print_exc(file=sys.stderr)
         return 1
 
-    print(f"\n✓ Execution completed successfully")
+    print("\n✓ Execution completed successfully")
     print(f"Result: {result.describe() if result is not None else '<none>'}")
 
     print("\n" + "=" * 100)

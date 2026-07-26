@@ -10,9 +10,10 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 import zoneinfo
 
 
@@ -105,7 +106,7 @@ class FilesystemTool:
             max_mb = self.MAX_FILE_SIZE_BYTES / (1024 * 1024)
             raise PipelineToolError(f"File too large: {mb:.1f}MB (max: {max_mb:.1f}MB)")
 
-    def _format_time(self, dt: datetime, format_type: Optional[str]) -> str:
+    def _format_time(self, dt: datetime, format_type: str | None) -> str:
         """Format a datetime as ISO or Unix timestamp string."""
         if format_type == "timestamp":
             return str(int(dt.timestamp()))
@@ -113,6 +114,7 @@ class FilesystemTool:
         return dt.isoformat()[:26] + "Z" if dt.tzinfo == timezone.utc else dt.isoformat()
 
     def _read_file(self, arguments: dict[str, Any]) -> str:
+        """Read and return the contents of a file."""
         path = self._resolve_path("path", arguments)
 
         if not path.exists():
@@ -136,6 +138,7 @@ class FilesystemTool:
             raise PipelineToolError(f"Failed to read file: {e}") from e
 
     def _read_file_lines(self, arguments: dict[str, Any]) -> str:
+        """Read a file and return a JSON object mapping line numbers to content."""
         path = self._resolve_path("path", arguments)
 
         if not path.exists():
@@ -158,8 +161,8 @@ class FilesystemTool:
         except OSError as e:
             raise PipelineToolError(f"Failed to read file: {e}") from e
 
-        start_line: Optional[int] = arguments.get("start_line")
-        end_line: Optional[int] = arguments.get("end_line")
+        start_line: int | None = arguments.get("start_line")
+        end_line: int | None = arguments.get("end_line")
 
         lines = content.splitlines() if content else [""]
         total = len(lines)
@@ -189,6 +192,7 @@ class FilesystemTool:
         return json.dumps({"range": range_value, "lines": line_dict}, indent=2)
 
     def _write_file(self, arguments: dict[str, Any]) -> str:
+        """Write content to a file, with authorization and atomic replacement."""
         path = self._resolve_path("path", arguments)
 
         content = arguments.get("content")
@@ -235,6 +239,7 @@ class FilesystemTool:
         return f"File written successfully: {path} ({content_size:,} bytes)"
 
     def _append_to_file(self, arguments: dict[str, Any]) -> str:
+        """Append content to an existing file, with authorization."""
         path = self._resolve_path("path", arguments)
 
         if not path.exists():
@@ -263,6 +268,7 @@ class FilesystemTool:
         return f"Content appended successfully: {path} (+{content_size:,} bytes)"
 
     def _delete_file(self, arguments: dict[str, Any]) -> str:
+        """Delete a file, with authorization."""
         path = self._resolve_path("path", arguments)
 
         if not path.exists():
@@ -283,6 +289,7 @@ class FilesystemTool:
         return f"File deleted successfully: {path}"
 
     def _copy_file(self, arguments: dict[str, Any]) -> str:
+        """Copy a file to a destination path, with authorization."""
         src = self._resolve_path("path", arguments)
         dst_str = arguments.get("destination")
         if not isinstance(dst_str, str) or not dst_str:
@@ -300,6 +307,7 @@ class FilesystemTool:
 
         if dst.exists():
             desc = f"Copy '{src}' to '{dst}' (overwrites existing file)"
+
         else:
             desc = f"Copy '{src}' to '{dst}'"
 
@@ -316,6 +324,7 @@ class FilesystemTool:
         return f"File copied successfully: {src} -> {dst}"
 
     def _list_directory(self, arguments: dict[str, Any]) -> str:
+        """List the contents of a directory as a JSON object."""
         path = self._resolve_path("path", arguments)
 
         if not path.exists():
@@ -352,6 +361,7 @@ class FilesystemTool:
         return json.dumps(result, indent=2)
 
     def _create_directory(self, arguments: dict[str, Any]) -> str:
+        """Create a directory, with authorization."""
         path = self._resolve_path("path", arguments)
         create_parents = arguments.get("create_parents", True)
 
@@ -373,6 +383,7 @@ class FilesystemTool:
         return f"Directory created successfully: {path}"
 
     def _remove_directory(self, arguments: dict[str, Any]) -> str:
+        """Remove an empty directory, with authorization."""
         path = self._resolve_path("path", arguments)
 
         if not path.exists():
@@ -399,6 +410,7 @@ class FilesystemTool:
         return f"Directory removed successfully: {path}"
 
     def _move(self, arguments: dict[str, Any]) -> str:
+        """Move or rename a file or directory, with authorization."""
         src = self._resolve_path("path", arguments)
         dst_str = arguments.get("destination")
         if not isinstance(dst_str, str) or not dst_str:
@@ -422,6 +434,7 @@ class FilesystemTool:
         return f"Moved successfully: {src} -> {dst}"
 
     def _get_info(self, arguments: dict[str, Any]) -> str:
+        """Return file or directory metadata as a JSON object."""
         path = self._resolve_path("path", arguments)
         format_type = arguments.get("format")
 
@@ -452,6 +465,7 @@ class FilesystemTool:
                         "files": sum(1 for i in items if i.is_file()),
                         "directories": sum(1 for i in items if i.is_dir())
                     }
+
                 except PermissionError:
                     items_info = {"error": "Permission denied"}
 
@@ -512,7 +526,7 @@ class ClockTool:
 
         return handler(arguments)
 
-    def _get_current_time(self, timezone_str: Optional[str]) -> datetime:
+    def _get_current_time(self, timezone_str: str | None) -> datetime:
         """Get current time in the specified timezone."""
         try:
             if timezone_str is None or timezone_str.upper() == "UTC":
@@ -523,14 +537,14 @@ class ClockTool:
         except Exception as e:
             raise PipelineToolError(f"Invalid timezone '{timezone_str}': {e}") from e
 
-    def _format_time(self, dt: datetime, format_type: Optional[str]) -> str:
+    def _format_time(self, dt: datetime, format_type: str | None) -> str:
         """Format a datetime as ISO or Unix timestamp string."""
         if format_type == "timestamp":
             return str(int(dt.timestamp()))
 
         return dt.isoformat()[:26] + "Z" if dt.tzinfo == timezone.utc else dt.isoformat()
 
-    def _parse_alarm_time(self, time_str: str, timezone_str: Optional[str]) -> datetime:
+    def _parse_alarm_time(self, time_str: str, timezone_str: str | None) -> datetime:
         """Parse alarm time from ISO or Unix timestamp string."""
         time_str = time_str.strip()
 
@@ -560,14 +574,14 @@ class ClockTool:
         )
 
     def _get_time(self, arguments: dict[str, Any]) -> str:
+        """Return the current time in the requested format and timezone."""
         fmt = arguments.get("format", "iso")
         tz = arguments.get("timezone")
         now = self._get_current_time(tz)
         return self._format_time(now, fmt)
 
     def _sleep(self, arguments: dict[str, Any]) -> str:
-        import time as time_module
-
+        """Sleep for a duration and return the current time."""
         duration = arguments.get("duration")
         if duration is None:
             raise PipelineToolError("'duration' is required for sleep operation")
@@ -578,14 +592,13 @@ class ClockTool:
         if duration < 0:
             raise PipelineToolError("'duration' cannot be negative")
 
-        time_module.sleep(duration)
+        time.sleep(duration)
         fmt = arguments.get("format", "iso")
         tz = arguments.get("timezone")
         return self._format_time(self._get_current_time(tz), fmt)
 
     def _alarm(self, arguments: dict[str, Any]) -> str:
-        import time as time_module
-
+        """Sleep until a target time and return the current time."""
         time_str = arguments.get("time")
         if not isinstance(time_str, str):
             raise PipelineToolError("'time' must be a string")
@@ -598,7 +611,7 @@ class ClockTool:
         delay = (target - now).total_seconds()
 
         if delay > 0:
-            time_module.sleep(delay)
+            time.sleep(delay)
 
         return self._format_time(self._get_current_time(tz), fmt)
 
@@ -636,6 +649,7 @@ class ConsoleTool:
         return handler(arguments)
 
     def _write_stdout(self, arguments: dict[str, Any]) -> str:
+        """Write content to stdout."""
         content = arguments.get("content")
         if not isinstance(content, str):
             raise PipelineToolError("'content' must be a string")
@@ -644,6 +658,7 @@ class ConsoleTool:
         return "Written to stdout"
 
     def _write_stderr(self, arguments: dict[str, Any]) -> str:
+        """Write content to stderr."""
         content = arguments.get("content")
         if not isinstance(content, str):
             raise PipelineToolError("'content' must be a string")

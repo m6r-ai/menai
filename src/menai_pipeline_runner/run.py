@@ -9,7 +9,6 @@ from pathlib import Path
 import pstats
 import sys
 import time
-from typing import Optional
 
 from menai_pipeline_runner.pipeline_engine import PipelineResult, StepResult, execute_pipeline
 from menai_pipeline_runner.pipeline_optimizer import optimize_pipeline
@@ -17,10 +16,10 @@ from menai_pipeline_runner.pipeline_parser import PipelineParseError, load_pipel
 from menai_pipeline_runner.pipeline_step import MenaiStep, Pipeline, ToolStep
 
 
-_ANSI_CYAN  = "\033[36m"
+_ANSI_CYAN = "\033[36m"
 _ANSI_GREEN = "\033[32m"
-_ANSI_RED   = "\033[31m"
-_ANSI_GREY  = "\033[90m"
+_ANSI_RED = "\033[31m"
+_ANSI_GREY = "\033[90m"
 _ANSI_RESET = "\033[0m"
 
 
@@ -66,7 +65,7 @@ def _make_step_callbacks(
         s.step_id for s in pipeline.steps
         if isinstance(s, ToolStep) and s.tool == "console"
     }
-    pending: list[Optional[StepResult]] = [None]
+    pending: list[StepResult | None] = [None]
 
     def _flush_pending() -> None:
         prev = pending[0]
@@ -86,15 +85,19 @@ def _make_step_callbacks(
             error_text = f"{_ANSI_RED}{prev.error}{_ANSI_RESET}" if color else prev.error
             print(error_text)
             print(separator)
+
         elif verbosity >= 2 and prev.value:
             if prev.step_id in console_step_ids:
                 print(separator)
+
             truncated = prev.value
             if len(truncated) > 120:
                 truncated = truncated[:117] + "..."
+
             value_text = f"{_ANSI_GREEN}{truncated}{_ANSI_RESET}" if color else truncated
             print(value_text)
             print(separator)
+
         elif prev.step_id in console_step_ids:
             print(separator)
 
@@ -161,8 +164,8 @@ def _run_with_profile(
     pipeline: Pipeline,
     sort_key: str,
     lines: int,
-    on_step_start: Optional[Callable[[str], None]],
-    on_step_done: Optional[Callable[[StepResult], None]],
+    on_step_start: Callable[[str], None] | None,
+    on_step_done: Callable[[StepResult], None] | None,
 ) -> tuple[PipelineResult, str]:
     """
     Execute a pipeline under cProfile and return (result, profile_stats_string).
@@ -358,6 +361,7 @@ Examples:
         if args.verbosity >= 1:
             print()
             print(f"Pipeline completed successfully in {_format_elapsed(elapsed)}")
+
         return 0
 
     print(f"Pipeline failed: {result.error}", file=sys.stderr)

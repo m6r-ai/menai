@@ -36,18 +36,22 @@ _ANSI_RESET = "\033[0m"
 
 
 def _cyan(text: str, color: bool) -> str:
+    """Wrap text in cyan ANSI codes if color is enabled."""
     return f"{_ANSI_CYAN}{text}{_ANSI_RESET}" if color else text
 
 
 def _yellow(text: str, color: bool) -> str:
+    """Wrap text in yellow ANSI codes if color is enabled."""
     return f"{_ANSI_YELLOW}{text}{_ANSI_RESET}" if color else text
 
 
 def _grey(text: str, color: bool) -> str:
+    """Wrap text in grey ANSI codes if color is enabled."""
     return f"{_ANSI_GREY}{text}{_ANSI_RESET}" if color else text
 
 
 def _green(text: str, color: bool) -> str:
+    """Wrap text in green ANSI codes if color is enabled."""
     return f"{_ANSI_GREEN}{text}{_ANSI_RESET}" if color else text
 
 
@@ -79,6 +83,7 @@ def clean_name(name: str) -> str:
     """Strip the '(N param[s])' suffix the bytecode builder appends to closure names."""
     if '(' in name:
         return name[:name.index('(')].strip()
+
     return name
 
 

@@ -5,18 +5,12 @@ import argparse
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 from menai import Menai, MenaiError
 from menai.menai_value import MenaiDict, MenaiFunction, MenaiList, MenaiString
 
-
-# Directory containing menai_test.menai — always prepended to the module path
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _RUNNER_DIR = str(Path(__file__).resolve().parent)
-
-# Standard module library directory
 _MENAI_MODULES_DIR = str(_REPO_ROOT / "menai_modules")
 
 
@@ -25,7 +19,7 @@ class TestResult:
     """Outcome of a single leaf test."""
     path: list[str]
     passed: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -34,11 +28,12 @@ class RunStats:
     passed: int = 0
     failed: int = 0
 
-    @property
     def total(self) -> int:
+        """Return the total number of tests run."""
         return self.passed + self.failed
 
     def add(self, other: "RunStats") -> None:
+        """Accumulate counts from another RunStats into this one."""
         self.passed += other.passed
         self.failed += other.failed
 
@@ -47,11 +42,11 @@ class RunStats:
 class NodeTree:
     """Parsed representation of a test node-list."""
     name: str
-    thunk_path: Optional[list[str]] = None   # set for leaves
-    children: list["NodeTree"] = field(default_factory=list)  # set for branches
+    thunk_path: list[str] | None = None
+    children: list["NodeTree"] = field(default_factory=list)
 
-    @property
     def is_leaf(self) -> bool:
+        """Return True if this node is a leaf (has a thunk path)."""
         return self.thunk_path is not None
 
 
@@ -90,9 +85,11 @@ def _parse_node_list(value: MenaiList, path: list[str]) -> list[NodeTree]:
 
         if isinstance(thing_val, MenaiFunction):
             nodes.append(NodeTree(name=name, thunk_path=node_path))
+
         elif isinstance(thing_val, MenaiList):
             children = _parse_node_list(thing_val, node_path)
             nodes.append(NodeTree(name=name, children=children))
+
         else:
             raise ValueError(
                 f"Node '{name}': second element must be a function (leaf) "
@@ -110,7 +107,7 @@ def _load_test_module(menai: Menai, module_name: str) -> list[NodeTree]:
         MenaiError: If the module fails to evaluate.
         ValueError: If the module structure is invalid.
     """
-    result = menai._evaluate_raw(f'(import "{module_name}")')
+    result = menai._evaluate_raw(f'(import "{module_name}")')  # pylint: disable=protected-access
 
     if not isinstance(result, MenaiDict):
         raise ValueError(f"Test module must export a dict, got: {result.type_name()}")
@@ -156,8 +153,9 @@ def _run_leaf(
 
     menai = _make_menai(test_file_dir)
     try:
-        menai._evaluate_raw(expression)
+        menai._evaluate_raw(expression)  # pylint: disable=protected-access
         return TestResult(path=path, passed=True)
+
     except MenaiError as exc:
         return TestResult(path=path, passed=False, error=str(exc))
 
@@ -166,24 +164,25 @@ def _run_tree(
     nodes: list[NodeTree],
     module_name: str,
     test_file_dir: str,
-    name_filter: Optional[str],
+    name_filter: str | None,
     results: list[TestResult],
 ) -> None:
     """Recursively walk the node tree, executing all matching leaves."""
     for node in nodes:
-        if node.is_leaf:
+        if node.is_leaf():
             assert node.thunk_path is not None
             if name_filter and name_filter.lower() not in " > ".join(node.thunk_path).lower():
                 continue
+
             result = _run_leaf(module_name, test_file_dir, node.thunk_path)
             results.append(result)
+
         else:
             _run_tree(node.children, module_name, test_file_dir, name_filter, results)
 
 
 def _print_results(
     results: list[TestResult],
-    module_name: str,
     verbose: bool,
 ) -> RunStats:
     """Print per-test results and return summary stats."""
@@ -195,6 +194,7 @@ def _print_results(
             stats.passed += 1
             if verbose:
                 print(f"  ✓  {path_str}")
+
         else:
             stats.failed += 1
             print(f"  ✗  {path_str}")
@@ -208,7 +208,7 @@ def _print_results(
 
 def _run_file(
     test_file: Path,
-    name_filter: Optional[str],
+    name_filter: str | None,
     verbose: bool,
 ) -> RunStats:
     """Discover, execute, and report all tests in a single test file."""
@@ -220,6 +220,7 @@ def _run_file(
     menai = _make_menai(test_file_dir)
     try:
         nodes = _load_test_module(menai, module_name)
+
     except (MenaiError, ValueError) as exc:
         print(f"  ERROR loading module: {exc}")
         return RunStats(failed=1)
@@ -231,9 +232,9 @@ def _run_file(
         print("  (no tests matched)")
         return RunStats()
 
-    stats = _print_results(results, module_name, verbose)
+    stats = _print_results(results, verbose)
     status = "passed" if stats.failed == 0 else "FAILED"
-    print(f"  {stats.passed}/{stats.total} {status}")
+    print(f"  {stats.passed}/{stats.total()} {status}")
     return stats
 
 
@@ -249,10 +250,13 @@ def _discover_test_files(paths: list[Path]) -> list[Path]:
         if path.is_file():
             if path.name.endswith("_test.menai"):
                 found.append(path)
+
         elif path.is_dir():
             found.extend(sorted(path.rglob("*_test.menai")))
+
         else:
             print(f"Warning: path not found: {path}", file=sys.stderr)
+
     return sorted(set(found))
 
 
@@ -302,9 +306,10 @@ Examples:
         total_stats.add(stats)
 
     print(f"\n{'='*60}")
-    print(f"Total: {total_stats.passed}/{total_stats.total} passed", end="")
+    print(f"Total: {total_stats.passed}/{total_stats.total()} passed", end="")
     if total_stats.failed:
         print(f", {total_stats.failed} FAILED")
+
     else:
         print()
 

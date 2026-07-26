@@ -2,28 +2,26 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
 class ToolStep:
     """A step that invokes a tool directly."""
-
     step_id: str
     tool: str
     operation: str
     arguments: dict[str, Any] = field(default_factory=dict)
-    value_from: Optional[str] = None
+    value_from: str | None = None
 
 
 @dataclass
 class MenaiStep:
     """A step that evaluates a Menai expression."""
-
     step_id: str
     inputs: dict[str, str]
     expression: str
-    module: Optional[str]
+    module: str | None
     outputs: dict[str, str]
 
 
@@ -33,7 +31,6 @@ PipelineStep = ToolStep | MenaiStep
 @dataclass
 class Pipeline:
     """A parsed and validated pipeline ready for execution."""
-
     steps: list[PipelineStep] = field(default_factory=list)
     directory: Path = field(default_factory=Path)
 
