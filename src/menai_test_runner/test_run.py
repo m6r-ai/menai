@@ -107,7 +107,7 @@ def _load_test_module(menai: Menai, module_name: str) -> list[NodeTree]:
         MenaiError: If the module fails to evaluate.
         ValueError: If the module structure is invalid.
     """
-    result = menai._evaluate_raw(f'(import "{module_name}")')  # pylint: disable=protected-access
+    result = menai.evaluate_raw(f'(import "{module_name}")')
 
     if not isinstance(result, MenaiDict):
         raise ValueError(f"Test module must export a dict, got: {result.type_name()}")
@@ -153,7 +153,7 @@ def _run_leaf(
 
     menai = _make_menai(test_file_dir)
     try:
-        menai._evaluate_raw(expression)  # pylint: disable=protected-access
+        menai.evaluate_raw(expression)
         return TestResult(path=path, passed=True)
 
     except MenaiError as exc:

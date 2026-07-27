@@ -117,7 +117,7 @@ def run_profile(
     result = None
     exec_error = None
     try:
-        result = menai.vm.execute(code, menai._prelude)  # pylint: disable=protected-access
+        result = menai.execute_raw(code)
 
     except Exception as exc:
         exec_error = exc

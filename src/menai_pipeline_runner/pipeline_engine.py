@@ -211,7 +211,7 @@ def _execute_menai_step(
     expression = _build_menai_expression(step, step_outputs)
 
     try:
-        result = menai._evaluate_raw(expression)  # pylint: disable=protected-access
+        result = menai.evaluate_raw(expression)
 
     except MenaiError as e:
         raise PipelineExecutionError(

@@ -1435,9 +1435,9 @@ class Menai:
         """
         return self.vm.execute(code, self._prelude)
 
-    def _evaluate_raw(self, expression: str) -> 'MenaiValue':
+    def evaluate_raw(self, expression: str) -> 'MenaiValue':
         """
-        Evaluate an Menai expression without error handling.
+        Compile and evaluate a Menai expression, returning the raw MenaiValue.
 
         Args:
             expression: Menai expression string to evaluate
@@ -1467,7 +1467,7 @@ class Menai:
             MenaiParseError: If parsing fails (with detailed context and suggestions)
             MenaiEvalError: If evaluation fails (with detailed context and suggestions)
         """
-        result = self._evaluate_raw(expression)
+        result = self.evaluate_raw(expression)
         return result.to_python()
 
     def evaluate_and_format(self, expression: str) -> str:
@@ -1485,7 +1485,7 @@ class Menai:
             MenaiParseError: If parsing fails (with detailed context and suggestions)
             MenaiEvalError: If evaluation fails (with detailed context and suggestions)
         """
-        result = self._evaluate_raw(expression)
+        result = self.evaluate_raw(expression)
         return result.describe()
 
     def evaluate_raw_with_bindings(
