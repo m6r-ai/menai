@@ -52,7 +52,7 @@ If you need to use an API read the source code to understand it first.
   summary lines on stdout, so filtering mangles the output and hides the pass/fail counts.  Run pytest with no flags
   and pipe through `tail` only if the output is too long to read in full:
   ```bash
-  python -m pytest tests/menai/ 2>&1 | tail -10
+  python -m pytest tests/src/menai/ 2>&1 | tail -10
   ```
 
 ## Code quality
@@ -121,7 +121,10 @@ menai/
 │   ├── menai_profiler/         # profiling tool
 │   └── menai_test_runner/      # test runner for *_test.menai files
 └── tests/
-    └── menai/                  # compiler core tests
+    ├── src/
+    │   └── menai/              # compiler core tests
+    └── tools/
+        └── style_checker/      # style checker tests
 ```
 
 ## Architectural invariants
