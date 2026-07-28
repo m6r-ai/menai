@@ -646,21 +646,21 @@ fit in the specified width. Raise error if not enough bytes from offset.
 
 ---
 
-## Struct-type operations
+## Structtype operations
 
-Struct-type values are produced by `(struct (field1 field2 ...))` as the RHS of a
+Structtype values are produced by `(struct (field1 field2 ...))` as the RHS of a
 `let`, `let*`, or `letrec` binding. The binding name becomes the type name.
 
 ```menai
 (let ((point (struct (x y))))
-  point)                       ; <struct-type point (x y)>
+  point)                       ; <structtype point (x y)>
 ```
 
 ### Predicates and equality
 
 | Function | Description |
 |----------|-------------|
-| `(structtype? x)` | `→ #t` if x is a struct-type value |
+| `(structtype? x)` | `→ #t` if x is a structtype value |
 | `(structtype=? a b)` | `→ #t` if a and b are the same struct type (same tag) |
 | `(structtype!=? a b)` | Negation |
 
@@ -688,7 +688,7 @@ Struct-type values are hashable and can be used as set members or dict keys.
 
 ## Struct operations
 
-Struct instances are created by calling a struct-type value with positional field
+Struct instances are created by calling a structtype value with positional field
 values:
 
 ```menai
@@ -744,7 +744,7 @@ values:
 
 | Function | Description |
 |----------|-------------|
-| `(struct-type instance)` | Returns the struct-type value for a given instance |
+| `(struct-type instance)` | Returns the structtype value for a given instance |
 
 ```menai
 (let ((point (struct (x y))))

@@ -372,7 +372,7 @@ class Opcode(IntEnum):
     ASSERT_FUNCTION = _op(540, 1)       # Check r_src0 — assert r_src0 is function
     ASSERT_BYTES = _op(541, 1)          # Check r_src0 — assert r_src0 is bytes
     ASSERT_STRUCT = _op(542, 1)         # Check r_src0 — assert r_src0 is struct
-    ASSERT_STRUCT_TYPE = _op(543, 1)    # Check r_src0 — assert r_src0 is struct-type
+    ASSERT_STRUCTTYPE = _op(543, 1)     # Check r_src0 — assert r_src0 is structtype
 
 # Maps builtin function name → (opcode, arity) for all fixed-arity builtins.
 #
@@ -834,7 +834,7 @@ class Instruction:
                       Opcode.ASSERT_SYMBOL, Opcode.ASSERT_LIST,
                       Opcode.ASSERT_DICT, Opcode.ASSERT_SET,
                       Opcode.ASSERT_FUNCTION, Opcode.ASSERT_BYTES,
-                      Opcode.ASSERT_STRUCT, Opcode.ASSERT_STRUCT_TYPE):
+                      Opcode.ASSERT_STRUCT, Opcode.ASSERT_STRUCTTYPE):
             return f"{name} {rn(self.src0)}"
 
         n = self.arg_count()

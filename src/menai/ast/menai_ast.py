@@ -385,7 +385,7 @@ class MenaiASTStruct(MenaiASTNode):
         return MenaiStructType(self.name, self.tag, self.field_names)
 
     def type_name(self) -> str:
-        return "struct-type"
+        return "struct"
 
     def describe(self) -> str:
         fields = " ".join(self.field_names)

@@ -468,7 +468,7 @@ _menai_mul_overflow(long a, long b, long *r) {
 #define OP_ASSERT_FUNCTION 540
 #define OP_ASSERT_BYTES 541
 #define OP_ASSERT_STRUCT 542
-#define OP_ASSERT_STRUCT_TYPE 543
+#define OP_ASSERT_STRUCTTYPE 543
 
 /*
  * Singleton values fetched from menai_vm_bridge at init time.
@@ -7184,7 +7184,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         DEFINE_ASSERT_OP(FUNCTION, IS_MENAI_FUNCTION(v))
         DEFINE_ASSERT_OP(BYTES, IS_MENAI_BYTES(v))
         DEFINE_ASSERT_OP(STRUCT, IS_MENAI_STRUCT(v))
-        DEFINE_ASSERT_OP(STRUCT_TYPE, IS_MENAI_STRUCTTYPE(v))
+        DEFINE_ASSERT_OP(STRUCTTYPE, IS_MENAI_STRUCTTYPE(v))
 
         #undef DEFINE_ASSERT_OP
 

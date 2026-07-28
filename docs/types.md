@@ -242,7 +242,7 @@ The display format `#{...}` is for display only — construction always uses
 `(set ...)`.
 
 Valid element types (hashable): `string`, `integer`, `float`, `complex`, `boolean`,
-`symbol`, `bytes`, `struct-type`, `struct` (if all fields are hashable scalars).
+`symbol`, `bytes`, `structtype`, `struct` (if all fields are hashable scalars).
 Lists, dicts, functions, and `#none` are not hashable and cannot be set members.
 
 Type predicate:
@@ -276,23 +276,23 @@ Type predicate:
 See [Builtins — bytes operations](builtins.md#bytes-operations) for the full list of
 bytes functions, including multi-byte integer read/write and LEB128 encoding.
 
-## struct-type
+## structtype
 
-A struct-type is a type descriptor produced by `(struct (field1 field2 ...))`. It is
+A structtype is a type descriptor produced by `(struct (field1 field2 ...))`. It is
 not a struct instance — it is the blueprint that describes a struct type. A
-struct-type value is callable: calling it with field values creates a struct
+structtype value is callable: calling it with field values creates a struct
 instance of that type.
 
 ```menai
 (let ((point (struct (x y))))
-  point)                       ; <struct-type point (x y)>
+  point)                       ; <structtype point (x y)>
   (structtype? point)          ; #t
   (structtype-name point)      ; "point"
   (structtype-fields point)    ; (x y)
 ```
 
-A struct-type value is distinct from a struct instance. `struct?` returns `#f` for a
-struct-type value and `#t` for an instance:
+A structtype value is distinct from a struct instance. `struct?` returns `#f` for a
+structtype value and `#t` for an instance:
 
 ```menai
 (let ((point (struct (x y))))
@@ -302,13 +302,13 @@ struct-type value and `#t` for an instance:
 
 Struct-type values are hashable and can be used as set members or dict keys.
 
-See [Builtins — struct-type operations](builtins.md#struct-type-operations) for
+See [Builtins — structtype operations](builtins.md#structtype-operations) for
 introspection functions.
 
 ## struct
 
-A struct is an instance of a struct-type. Instances are created by calling the
-struct-type value with positional field values. Structs are nominal — two struct
+A struct is an instance of a structtype. Instances are created by calling the
+structtype value with positional field values. Structs are nominal — two struct
 types with the same fields are distinct types:
 
 ```menai
@@ -321,7 +321,7 @@ Type predicate:
 
 ```menai
 (struct? (point 1 2))  → #t
-(struct? point)       → #f   ; struct-type value, not an instance
+(struct? point)        → #f   ; structtype value, not an instance
 ```
 
 Structs are hashable (usable as set members or dict keys) if all their fields are

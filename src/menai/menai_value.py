@@ -588,7 +588,7 @@ class MenaiStructType(MenaiValue):
 
     def describe(self) -> str:
         fields = " ".join(self.field_names)
-        return f"<struct-type {self.name} ({fields})>"
+        return f"<structtype {self.name} ({fields})>"
 
 
 class MenaiStruct(MenaiValue):
