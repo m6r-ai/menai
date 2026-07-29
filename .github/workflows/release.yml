@@ -191,7 +191,7 @@ jobs:
       - name: Download wheel artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: wheel-*-${{ matrix.python }}
+          pattern: wheel-*-py${{ matrix.python }}
           merge-multiple: true
           path: wheelhouse
 
