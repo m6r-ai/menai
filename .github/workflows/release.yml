@@ -207,7 +207,7 @@ jobs:
       - name: Run tests
         run: |
           pip install pytest pytest-cov pylint
-          python -m pytest tests/ -x -q
+          python -m pytest tests/ -x -q --override-ini "pythonpath="
 
   publish:
     name: Publish to PyPI
