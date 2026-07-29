@@ -51,7 +51,7 @@ test:
 	$(PYTHON) -m pytest tests/
 
 #
-# Remove the compiled .so files (reverts to pure-Python fallback).
+# Remove the compiled .so files.
 #
 .PHONY: clean
 

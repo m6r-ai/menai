@@ -48,22 +48,20 @@ self-contained — no prior knowledge of Scheme or Lisp is assumed.
 ### Installation
 
 ```bash
-pip install -e ".[dev]"
+pip install menai
 ```
 
-### Building the C VM
+The C VM is compiled into the wheels, so `pip install menai` includes it
+automatically — no separate build or download step is needed. Wheels are
+published for Linux, macOS, and Windows on x86_64 and ARM64, across Python
+3.10–3.14.
 
-The C VM is optional but recommended for performance. Menai falls back to a
-pure Python implementation if the C VM is not available.
+### Development
 
-**Option A — Download a pre-built binary (recommended):**
-
-Pre-built binaries are available via [GitHub Releases](https://github.com/m6r/menai/releases)
-for Linux, macOS, and Windows on x86_64 and ARM64, across Python 3.10–3.14.
-
-**Option B — Build from source:**
+For local development, install in editable mode and build the C VM from source:
 
 ```bash
+pip install -e ".[dev]"
 make build
 ```
 
@@ -89,8 +87,7 @@ Evaluates to `"Hello, World"`.
 
 Menai is compiled through an optimizing pipeline (lexing → AST → semantic analysis →
 module resolution → desugaring → constant folding → IR → IR optimisation → CFG →
-CFG optimisation → VCode → bytecode) and executed by a register-based C VM. A pure
-Python fallback exists but the C VM is the primary execution engine.
+CFG optimisation → VCode → bytecode) and executed by a register-based C VM.
 
 The pipeline is authoritative in `src/menai/menai_compiler.py` — it is always current
 and should be read directly rather than reproduced in documentation.
@@ -106,7 +103,7 @@ menai/
 ├── docs/                       # language manual
 ├── menai_modules/              # standard library (.menai files)
 ├── pyproject.toml              # Python package configuration
-├── setup.py                    # C VM build
+├── setup.py                    # C VM extension build (platform-specific flags)
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   ├── menai_benchmark/        # performance benchmarking tool

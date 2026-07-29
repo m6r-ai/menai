@@ -109,8 +109,9 @@ it should not be added.
 menai/
 ├── docs/                       # language manual (human + AI readable)
 ├── menai_modules/              # standard library (.menai files)
-├── pyproject.toml              # Python package configuration
-├── setup.py                    # C VM build
+├── pyproject.toml              # Python package configuration (setuptools backend)
+├── setup.py                    # C VM extension build (platform-specific compile flags)
+├── .github/workflows/          # CI (build+test on push) and release (cibuildwheel on tag)
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   ├── menai_benchmark/        # performance benchmarking tool
@@ -209,8 +210,9 @@ operators are type-specific (e.g. `integer+`, `float*`). This is intentional.
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and
 loaded at runtime. `vm/menai_vm.py` is a thin Python wrapper that exposes the C
-VM's `execute` and `cancel` functions to the rest of the codebase. Pre-built
-binaries for all supported platforms are published via GitHub Releases.
+VM's `execute` and `cancel` functions to the rest of the codebase. The C extension
+is compiled into platform-specific wheels via cibuildwheel and published to PyPI
+on version tags (see `.github/workflows/release.yml`).
 
 The C VM currently makes use of some Python runtime library functionality, but with the
 exception of the bridge layer between C and Python, the C code should be systematically

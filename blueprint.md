@@ -58,11 +58,9 @@ This is a stronger guarantee than sandboxing because there is no sandbox to esca
 ### Performance matters
 
 Menai is compiled through an optimizing pipeline (AST → IR → CFG → VCode → bytecode)
-and executed by a register-based C VM. The Python implementation serves as a fallback
-and reference, but the C VM is the primary execution engine. Optimisation passes
-(constant folding, dead binding elimination, branch constant propagation, phi chain
-collapsing, peephole optimisation) are an integral part of the design, not an
-afterthought.
+and executed by a register-based C VM.  Optimisation passes (constant folding, dead
+binding elimination, branch constant propagation, phi chain collapsing, peephole
+optimisation) are an integral part of the design, not an afterthought.
 
 ## Architecture
 
@@ -70,13 +68,13 @@ Menai uses an optimizing compiler pipeline feeding into a bytecode VM. The pipel
 is authoritative in `src/menai/menai_compiler.py` — it is always current and should
 be read directly rather than reproduced in documentation.
 
-The C VM (`menai_vm_c`) is compiled from C source and loaded at runtime. Pre-built
-binaries for all supported platforms are published via GitHub Releases. A pure Python
-fallback exists but the C VM is recommended for performance.
+The C VM (`menai_vm_c`) is compiled from C source and bundled inside platform-specific
+wheels built with cibuildwheel. Wheels for all supported platforms (5 Python versions ×
+5 OS/arch combos) are published to PyPI on version tags. `pip install menai` selects the
+correct wheel automatically — no runtime binary download is needed.
 
-The C VM currently makes use of some Python runtime library functionality. The
-long-term direction is to remove Python dependencies from the C code entirely,
-leaving only the bridge layer between C and Python.
+The C VM currently only uses Python runtime library functionality within the bridge layer
+between C and Python.
 
 ## Multi-binding future
 

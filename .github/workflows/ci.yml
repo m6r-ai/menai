@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & test (${{ matrix.os }} Python ${{ matrix.python }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - runner: ubuntu-latest
+            python: "3.14"
+            os: linux-x86_64
+          - runner: ubuntu-latest
+            python: "3.13"
+            os: linux-x86_64
+          - runner: ubuntu-latest
+            python: "3.12"
+            os: linux-x86_64
+          - runner: ubuntu-latest
+            python: "3.11"
+            os: linux-x86_64
+          - runner: ubuntu-latest
+            python: "3.10"
+            os: linux-x86_64
+          # Linux ARM64
+          - runner: ubuntu-24.04-arm
+            python: "3.14"
+            os: linux-arm64
+          - runner: ubuntu-24.04-arm
+            python: "3.13"
+            os: linux-arm64
+          - runner: ubuntu-24.04-arm
+            python: "3.12"
+            os: linux-arm64
+          - runner: ubuntu-24.04-arm
+            python: "3.11"
+            os: linux-arm64
+          - runner: ubuntu-24.04-arm
+            python: "3.10"
+            os: linux-arm64
+          # macOS ARM64 (Apple Silicon)
+          - runner: macos-latest
+            python: "3.14"
+            os: macos-arm64
+          - runner: macos-latest
+            python: "3.13"
+            os: macos-arm64
+          - runner: macos-latest
+            python: "3.12"
+            os: macos-arm64
+          - runner: macos-latest
+            python: "3.11"
+            os: macos-arm64
+          - runner: macos-latest
+            python: "3.10"
+            os: macos-arm64
+          # macOS x86_64 (Intel)
+          - runner: macos-15-intel
+            python: "3.14"
+            os: macos-x86_64
+          - runner: macos-15-intel
+            python: "3.13"
+            os: macos-x86_64
+          - runner: macos-15-intel
+            python: "3.12"
+            os: macos-x86_64
+          - runner: macos-15-intel
+            python: "3.11"
+            os: macos-x86_64
+          - runner: macos-15-intel
+            python: "3.10"
+            os: macos-x86_64
+          # Windows x86_64
+          - runner: windows-latest
+            python: "3.14"
+            os: windows-x86_64
+          - runner: windows-latest
+            python: "3.13"
+            os: windows-x86_64
+          - runner: windows-latest
+            python: "3.12"
+            os: windows-x86_64
+          - runner: windows-latest
+            python: "3.11"
+            os: windows-x86_64
+          - runner: windows-latest
+            python: "3.10"
+            os: windows-x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install build dependencies
+        run: python -m pip install setuptools pytest pytest-cov pylint
+
+      - name: Build C extension
+        run: python setup.py build_ext --inplace
+
+      - name: Verify import
+        shell: python
+        run: |
+          import sys
+          sys.path.insert(0, 'src')
+          from menai.vm.menai_vm_c import execute
+          print('C VM OK')
+
+      - name: Run tests
+        run: python -m pytest tests/ -x -q

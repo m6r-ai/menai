@@ -6,6 +6,9 @@
 /dist
 /build
 
+# Ignore setuptools egg-info
+*.egg-info
+
 # Ignore python cache files
 **/__pycache__
 
@@ -30,3 +33,6 @@
 
 # Ignore pre-built C VM binaries (fetched via CI)
 *.bin
+
+# Ignore cibuildwheel output
+/wheelhouse
