@@ -4,7 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "menai"
-version = "0.1.0"
+version = "0.1.1"
+description = "The Menai programming language"
+readme = "README.md"
+license = {file = "LICENSE.txt"}
 requires-python = ">=3.10"
 dependencies = []
 
@@ -25,6 +28,11 @@ menai-pretty-print = "menai_pretty_print.pretty_print:main"
 menai-profile = "menai_profiler.profile:main"
 menai-test = "menai_test_runner.test_run:main"
 menai-pipeline = "menai_pipeline_runner.run:main"
+
+[project.urls]
+Homepage = "https://github.com/m6r-ai/menai"
+"Bug Tracker" = "https://github.com/m6r-ai/menai/issues"
+Repository = "https://github.com/m6r-ai/menai.git"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
