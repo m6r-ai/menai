@@ -136,7 +136,7 @@ jobs:
       - name: Build wheel
         env:
           CIBW_BUILD: ${{ matrix.cp-tag }}-*
-          CIBW_ARCHS: all
+          CIBW_ARCHS: auto64
           CIBW_SKIP: "*-musllinux*"
         run: python -m cibuildwheel --output-dir wheelhouse
 

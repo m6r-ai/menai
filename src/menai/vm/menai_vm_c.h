@@ -226,8 +226,8 @@ menai_xrelease(MenaiValue *val)
     }
 }
 
-typedef ssize_t hash_t;
-typedef size_t uhash_t;
+typedef int64_t hash_t;
+typedef uint64_t uhash_t;
 
 /*
  * menai_hash_double — hash a C double without any Python API calls.
