@@ -1,26 +1,41 @@
 # Menai
 
 Menai is a pure functional programming language with Lisp-like S-expression syntax.
-It is homoiconic, strictly typed, and has no side effects — no I/O, no mutation,
-no access to the filesystem, network, or any external state.
+It is homoiconic, strictly typed, and side-effect free.  It has no I/O, no mutation,
+no access to the filesystem, network, or any other external state.
 
-## A language designed for AI
+While Menai doesn't support I/O operations, it is designed to be embedded into other
+software that does.  It started as part of the [Humbug](https://github.com/m6r-ai/humbug)
+AI project which uses Menai to perform file and data processing, sorting operations, apply
+mathematical reasoning, etc., but does so within its AI tool framework that does the I/O
+operations and handles permissioning.
 
-Menai was born inside [Humbug](https://github.com/m6r/humbug), an operating system
-for human-AI collaboration. The problem was straightforward: AI agents needed to
-perform computation — sorting, filtering, transforming data, parsing, mathematical
-reasoning — but giving an AI the ability to execute arbitrary Python or shell commands
-is dangerous. An AI that can run arbitrary code can delete files, exfiltrate data,
-or cause other harm, which means every execution needs human approval.
+The separation of concerns means we never have to worry about non-deterministic or stateful
+behaviour within Menai itself, leaving the stateful activities residing elsewhere.
 
-Menai takes a different approach. By being pure and side-effect free, it requires no
-sandboxing and no user approval to execute. There are no dangerous parts to escape
-from because the language cannot touch anything outside itself. This lets AI agents
-build and run complex algorithmic tools freely and safely, without interrupting a
-human collaborator for approval on every execution.
+This repo contains a number of tools and examples that demonstrate this approach, including
+a simple [pipeline runner](src/menai_pipeline_runner/README.md) that can chain I/O operations
+implemented in Python with deterministic operations implemented in Menai.
 
-Menai has since been extracted from Humbug into its own repository. It has zero
-dependencies on Humbug and is consumed as an external dependency.
+As a pure functional language, Menai lends itself to being highly optimized.  The current
+implementation compiles to a virtual machine bytecode but future versions will target highly
+optimized native code.  The language design has also lent itself to very fast compilation, with
+Menai code compiled on demand.
+
+## Designed with AI
+
+One of the more unusual features of Menai is that it was designed with AI, and with an assumption
+that AI would be heavily used in both implementing the language and in using it.
+
+As such a key question has always been "what would you, as an AI, want in a language, as opposed
+to what would a human want?"  This means Menai prefers precision over convenience, and explicit
+clarity over brevity that might make anything unclear.
+
+An example of where this has had an impact are that there is no implicit type coercion.  If you have
+an integer and want to use it in a floating point operation you must explicitly convert it.
+Similarly, there are no overloaded operators, so where other languages might have an `+` operator,
+Menai has explcit `integer+`, `float+`, and `complex+` operators.  It turns out AIs can generate
+very robust code this way.
 
 ## Key characteristics
 
@@ -32,16 +47,51 @@ dependencies on Humbug and is consumed as an external dependency.
 - **Tail call optimised** — recursive functions don't overflow the stack
 - **Pattern matching** — declarative branching with destructuring
 - **Module system** — write and import `.menai` files
+- **Atoms** - atoms for integers (arbitrary precision), floating point numbers, complex
+  floating point numbers, strings, booleans
 - **Bytes type** — with multi-byte integer read/write (little/big-endian, LEB128)
 - **Structs** — nominal typed records with functional updates
+- **Containers** - lists, dictionaries, sets
+- **Compiled** - code is compiled with an optimizing compiler to a virtual machine bytecode
+
+## An example
+
+Here's an example that finds the occurrence of words in a string and then returns the 3 most
+frequent words, sorted by frequency!
+
+```menai
+(letrec
+  ((count-words
+    (lambda (words)
+      (fold-list
+        (lambda (acc word)
+          (dict-set acc word
+            (integer+ 1 (dict-get acc word 0))))
+        (dict) words)))
+
+   (top-words
+    (lambda (text n)
+      (let* ((words (string->list (string-downcase text) " "))
+             (counts (count-words words))
+             (pairs (sort-list
+                       (lambda (a b) (integer>? (list-ref a 1) (list-ref b 1)))
+                       (map-list (lambda (key)
+                                   (list key (dict-get counts key)))
+                                 (dict-keys counts)))))
+        (list-slice pairs 0 n)))))
+
+  (top-words "the quick brown fox jumps over the lazy dog the fox runs" 3))
+```
+
+This returns `(("the" 3) ("fox" 2) ("quick" 1))`.  This is a dictionary output with the word as a key and the
+number of occurences as the value.
 
 ## Language manual
 
 The full language manual is in [`docs/`](docs/). Start with
 [`docs/index.md`](docs/index.md) for a table of contents and introduction.
 
-The manual is written for both human and AI readers. It is precise, concrete, and
-self-contained — no prior knowledge of Scheme or Lisp is assumed.
+The manual is written for both human and AI readers.
 
 ## Getting started
 
