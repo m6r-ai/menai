@@ -1797,6 +1797,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int pc = f->bytecode->param_count;
             int is_var = f->bytecode->is_variadic;
             MenaiInteger *n_io = (MenaiInteger *)n_obj;
+
             long n;
             if (!n_io->is_big) {
                 n = n_io->small;
@@ -1823,6 +1824,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(regs, base + dest, a->small == b->small);
                 break;
@@ -1860,6 +1862,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(regs, base + dest, a->small != b->small);
                 break;
@@ -1897,6 +1900,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(regs, base + dest, a->small < b->small);
                 break;
@@ -1934,6 +1938,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(regs, base + dest, a->small > b->small);
                 break;
@@ -1971,6 +1976,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(regs, base + dest, a->small <= b->small);
                 break;
@@ -2008,6 +2014,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(regs, base + dest, a->small >= b->small);
                 break;
@@ -2043,6 +2050,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_INTEGER_ABS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+
             if (!a->is_big) {
                 long sv = a->small;
                 long rv = sv < 0 ? -sv : sv;
@@ -2101,6 +2109,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_INTEGER_NEG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+
             if (!a->is_big) {
                 long sv = a->small;
                 /* LONG_MIN negation overflows — promote to bigint. */
@@ -2189,6 +2198,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (!a->is_big && !b->is_big) {
                 long la = a->small;
                 long lb = b->small;
@@ -2244,6 +2254,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (!a->is_big && !b->is_big) {
                 long la = a->small;
                 long lb = b->small;
@@ -2299,6 +2310,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             if (!a->is_big && !b->is_big) {
                 long la = a->small;
                 long lb = b->small;
@@ -2351,20 +2363,19 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_DIV: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            int b_is_zero = (!ib->is_big && ib->small == 0) || (ib->is_big && ib->big.sign == 0);
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            int b_is_zero = (!b->is_big && b->small == 0) || (b->is_big && b->big.sign == 0);
             if (b_is_zero) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
                 goto error;
             }
 
-            if (!ia->is_big && !ib->is_big) {
-                long la = ia->small;
-                long lb = ib->small;
+            if (!a->is_big && !b->is_big) {
+                long la = a->small;
+                long lb = b->small;
 
                 /* Floor division: round toward negative infinity. */
                 long lq = la / lb;
@@ -2382,21 +2393,23 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 break;
             }
 
-            MenaiBigInt av, bv, res;
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&bv);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &bv);
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(b, &bv);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_floordiv(&av, &bv, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2417,20 +2430,19 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_MOD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            int b_is_zero = (!ib->is_big && ib->small == 0) || (ib->is_big && ib->big.sign == 0);
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            int b_is_zero = (!b->is_big && b->small == 0) || (b->is_big && b->big.sign == 0);
             if (b_is_zero) {
                 vm_err = MENAI_ERR_MODULO_BY_ZERO;
                 goto error;
             }
 
-            if (!ia->is_big && !ib->is_big) {
-                long la = ia->small;
-                long lb = ib->small;
+            if (!a->is_big && !b->is_big) {
+                long la = a->small;
+                long lb = b->small;
 
                 /* Floor modulo: result takes sign of divisor. */
                 long lr = la % lb;
@@ -2447,21 +2459,23 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 break;
             }
 
-            MenaiBigInt av, bv, res;
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&bv);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &bv);
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(b, &bv);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_mod(&av, &bv, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2482,32 +2496,32 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_EXPN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            int b_is_neg = (!ib->is_big && ib->small < 0) || (ib->is_big && ib->big.sign == -1);
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            int b_is_neg = (!b->is_big && b->small < 0) || (b->is_big && b->big.sign == -1);
             if (b_is_neg) {
                 vm_err = MENAI_ERR_NEGATIVE_EXPONENT;
                 goto error;
             }
 
-            MenaiBigInt av, bv, res;
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&bv);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &bv);
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(b, &bv);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_pow(&av, &bv, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2528,26 +2542,27 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_BIT_OR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            MenaiBigInt av, bv, res;
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&bv);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &bv);
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(b, &bv);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_or(&av, &bv, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2568,26 +2583,27 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_BIT_AND: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            MenaiBigInt av, bv, res;
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&bv);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &bv);
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(b, &bv);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_and(&av, &bv, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2608,26 +2624,27 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_BIT_XOR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            MenaiBigInt av, bv, res;
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&bv);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &bv);
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(b, &bv);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_xor(&av, &bv, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2648,21 +2665,20 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_BIT_SHIFT_LEFT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             long shift;
-            if (!ib->is_big) {
-                shift = ib->small;
+            if (!b->is_big) {
+                shift = b->small;
             } else {
-                if (!menai_bigint_fits_long(&ib->big)) {
+                if (!menai_bigint_fits_long(&b->big)) {
                     vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
                     goto error;
                 }
 
-                vm_err = menai_bigint_to_long(&ib->big, &shift);
+                vm_err = menai_bigint_to_long(&b->big, &shift);
                 if (vm_err < 0) {
                     goto error;
                 }
@@ -2673,14 +2689,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiBigInt av, res;
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_shift_left(&av, (ssize_t)shift, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2699,21 +2716,20 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_BIT_SHIFT_RIGHT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             long shift;
-            if (!ib->is_big) {
-                shift = ib->small;
+            if (!b->is_big) {
+                shift = b->small;
             } else {
-                if (!menai_bigint_fits_long(&ib->big)) {
+                if (!menai_bigint_fits_long(&b->big)) {
                     vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
                     goto error;
                 }
 
-                vm_err = menai_bigint_to_long(&ib->big, &shift);
+                vm_err = menai_bigint_to_long(&b->big, &shift);
                 if (vm_err < 0) {
                     goto error;
                 }
@@ -2724,14 +2740,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiBigInt av, res;
+            MenaiBigInt av;
             menai_bigint_init(&av);
-            menai_bigint_init(&res);
-            vm_err = menai_integer_to_menai_bigint(ia, &av);
+            vm_err = menai_integer_to_menai_bigint(a, &av);
             if (vm_err < 0) {
                 goto error;
             }
 
+            MenaiBigInt res;
+            menai_bigint_init(&res);
             vm_err = menai_bigint_shift_right(&av, (ssize_t)shift, &res);
             if (vm_err < 0) {
                 menai_bigint_free(&av);
@@ -2750,37 +2767,37 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_MIN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            if (MENAI_LIKELY(!ia->is_big && !ib->is_big)) {
-                menai_reg_set_borrow(regs, base + dest, ia->small <= ib->small ? a : b);
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
+                menai_reg_set_borrow(regs, base + dest, a->small <= b->small ? (MenaiValue *)a : (MenaiValue *)b);
                 break;
             }
 
-            const MenaiBigInt *ma = ia->is_big ? &ia->big : NULL;
-            const MenaiBigInt *mb = ib->is_big ? &ib->big : NULL;
-            MenaiBigInt tmp_a, tmp_b;
-            menai_bigint_init(&tmp_a);
-            menai_bigint_init(&tmp_b);
+            const MenaiBigInt *ma = a->is_big ? &a->big : NULL;
+            const MenaiBigInt *mb = b->is_big ? &b->big : NULL;
 
-            vm_err = menai_integer_to_menai_bigint(ia, &tmp_a);
+            MenaiBigInt tmp_a;
+            menai_bigint_init(&tmp_a);
+            vm_err = menai_integer_to_menai_bigint(a, &tmp_a);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &tmp_b);
+            MenaiBigInt tmp_b;
+            menai_bigint_init(&tmp_b);
+            vm_err = menai_integer_to_menai_bigint(b, &tmp_b);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_free(&tmp_a);
                 goto error;
             }
 
-            const MenaiBigInt *pa = ia->is_big ? ma : &tmp_a;
-            const MenaiBigInt *pb = ib->is_big ? mb : &tmp_b;
+            const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
+            const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
             bool_store(regs, base + dest, menai_bigint_ge(pa, pb));
-            menai_reg_set_borrow(regs, base + dest, menai_bigint_le(pa, pb) ? a : b);
+            menai_reg_set_borrow(regs, base + dest, menai_bigint_le(pa, pb) ? (MenaiValue *)a : (MenaiValue *)b);
 
             menai_bigint_free(&tmp_a);
             menai_bigint_free(&tmp_b);
@@ -2789,37 +2806,37 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_MAX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
-            if (MENAI_LIKELY(!ia->is_big && !ib->is_big)) {
-                menai_reg_set_borrow(regs, base + dest, ia->small >= ib->small ? a : b);
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
+                menai_reg_set_borrow(regs, base + dest, a->small >= b->small ? (MenaiValue *)a : (MenaiValue *)b);
                 break;
             }
 
-            const MenaiBigInt *ma = ia->is_big ? &ia->big : NULL;
-            const MenaiBigInt *mb = ib->is_big ? &ib->big : NULL;
-            MenaiBigInt tmp_a, tmp_b;
-            menai_bigint_init(&tmp_a);
-            menai_bigint_init(&tmp_b);
+            const MenaiBigInt *ma = a->is_big ? &a->big : NULL;
+            const MenaiBigInt *mb = b->is_big ? &b->big : NULL;
 
-            vm_err = menai_integer_to_menai_bigint(ia, &tmp_a);
+            MenaiBigInt tmp_a;
+            menai_bigint_init(&tmp_a);
+            vm_err = menai_integer_to_menai_bigint(a, &tmp_a);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
-            vm_err = menai_integer_to_menai_bigint(ib, &tmp_b);
+            MenaiBigInt tmp_b;
+            menai_bigint_init(&tmp_b);
+            vm_err = menai_integer_to_menai_bigint(b, &tmp_b);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_free(&tmp_a);
                 goto error;
             }
 
-            const MenaiBigInt *pa = ia->is_big ? ma : &tmp_a;
-            const MenaiBigInt *pb = ib->is_big ? mb : &tmp_b;
+            const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
+            const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
             bool_store(regs, base + dest, menai_bigint_ge(pa, pb));
-            menai_reg_set_borrow(regs, base + dest, menai_bigint_ge(pa, pb) ? a : b);
+            menai_reg_set_borrow(regs, base + dest, menai_bigint_ge(pa, pb) ? (MenaiValue *)a : (MenaiValue *)b);
 
             menai_bigint_free(&tmp_a);
             menai_bigint_free(&tmp_b);
@@ -2828,13 +2845,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_TO_FLOAT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiInteger *ia = (MenaiInteger *)a;
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+
             double d;
-            if (!ia->is_big) {
-                d = (double)ia->small;
+            if (!a->is_big) {
+                d = (double)a->small;
             } else {
-                vm_err = menai_bigint_to_double(&ia->big, &d);
+                vm_err = menai_bigint_to_double(&a->big, &d);
                 if (vm_err < 0) {
                     goto error;
                 }
@@ -2851,25 +2868,25 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_TO_COMPLEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            double re, im;
-            if (!ia->is_big) {
-                re = (double)ia->small;
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
+            double re;
+            if (!a->is_big) {
+                re = (double)a->small;
             } else {
-                vm_err = menai_bigint_to_double(&ia->big, &re);
+                vm_err = menai_bigint_to_double(&a->big, &re);
                 if (vm_err < 0) {
                     goto error;
                 }
             }
 
-            MenaiInteger *ib = (MenaiInteger *)b;
-            if (!ib->is_big) {
-                im = (double)ib->small;
+            double im;
+            if (!b->is_big) {
+                im = (double)b->small;
             } else {
-                vm_err = menai_bigint_to_double(&ib->big, &im);
+                vm_err = menai_bigint_to_double(&b->big, &im);
                 if (vm_err < 0) {
                     goto error;
                 }
@@ -2886,16 +2903,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiInteger *ia = (MenaiInteger *)a;
-            MenaiInteger *ib = (MenaiInteger *)b;
+            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+
             long radix;
-            if (!ib->is_big) {
-                radix = ib->small;
+            if (!b->is_big) {
+                radix = b->small;
             } else {
-                vm_err = menai_bigint_to_long(&ib->big, &radix);
+                vm_err = menai_bigint_to_long(&b->big, &radix);
                 if (vm_err < 0) {
                     goto error;
                 }
@@ -2908,7 +2924,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
             MenaiBigInt tmp;
             menai_bigint_init(&tmp);
-            vm_err = menai_integer_to_menai_bigint(ia, &tmp);
+            vm_err = menai_integer_to_menai_bigint(a, &tmp);
             if (vm_err < 0) {
                 goto error;
             }
@@ -2926,13 +2942,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_INTEGER_CODEPOINT_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiInteger *ia = (MenaiInteger *)a;
+            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+
             long cp;
-            if (!ia->is_big) {
-                cp = ia->small;
+            if (!a->is_big) {
+                cp = a->small;
             } else {
-                vm_err = menai_bigint_to_long(&ia->big, &cp);
+                vm_err = menai_bigint_to_long(&a->big, &cp);
                 if (vm_err < 0) {
                     goto error;
                 }
@@ -2960,62 +2976,62 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, ((MenaiFloat *)a)->value == ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            bool_store(regs, base + dest, a->value == b->value);
             break;
         }
 
         case OP_FLOAT_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, ((MenaiFloat *)a)->value != ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            bool_store(regs, base + dest, a->value != b->value);
             break;
         }
 
         case OP_FLOAT_LT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, ((MenaiFloat *)a)->value < ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            bool_store(regs, base + dest, a->value < b->value);
             break;
         }
 
         case OP_FLOAT_GT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, ((MenaiFloat *)a)->value > ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            bool_store(regs, base + dest, a->value > b->value);
             break;
         }
 
         case OP_FLOAT_LTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, ((MenaiFloat *)a)->value <= ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            bool_store(regs, base + dest, a->value <= b->value);
             break;
         }
 
         case OP_FLOAT_GTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, ((MenaiFloat *)a)->value >= ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            bool_store(regs, base + dest, a->value >= b->value);
             break;
         }
 
         case OP_FLOAT_NEG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(-((MenaiFloat *)a)->value);
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(-a->value);
             if (_r == NULL) {
                 goto error;
             }
@@ -3026,26 +3042,23 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_ABS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            double v = ((MenaiFloat *)a)->value;
-            {
-                MenaiValue *_r = double_to_menai_float(fabs(v));
-                if (_r == NULL) {
-                    goto error;
-                }
-
-                menai_reg_set_own(regs, base + dest, _r);
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(fabs(a->value));
+            if (_r == NULL) {
+                goto error;
             }
+
+            menai_reg_set_own(regs, base + dest, _r);
 
             break;
         }
 
         case OP_FLOAT_ADD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiValue *_r = double_to_menai_float(((MenaiFloat *)a)->value + ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiValue *_r = double_to_menai_float(a->value + b->value);
             if (_r == NULL) {
                 goto error;
             }
@@ -3056,10 +3069,10 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_SUB: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiValue *_r = double_to_menai_float(((MenaiFloat *)a)->value - ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiValue *_r = double_to_menai_float(a->value - b->value);
             if (_r == NULL) {
                 goto error;
             }
@@ -3070,10 +3083,10 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_MUL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiValue *_r = double_to_menai_float(((MenaiFloat *)a)->value * ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiValue *_r = double_to_menai_float(a->value * b->value);
             if (_r == NULL) {
                 goto error;
             }
@@ -3084,16 +3097,16 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_DIV: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            double bv = ((MenaiFloat *)b)->value;
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            double bv = b->value;
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
                 goto error;
             }
 
-            MenaiValue *_r = double_to_menai_float(((MenaiFloat *)a)->value / bv);
+            MenaiValue *_r = double_to_menai_float(a->value / bv);
             if (_r == NULL) {
                 goto error;
             }
@@ -3104,16 +3117,16 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_FLOOR_DIV: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            double bv = ((MenaiFloat *)b)->value;
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            double bv = b->value;
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
                 goto error;
             }
 
-            MenaiValue *_r = double_to_menai_float(floor(((MenaiFloat *)a)->value / bv));
+            MenaiValue *_r = double_to_menai_float(floor(a->value / bv));
             if (_r == NULL) {
                 goto error;
             }
@@ -3124,16 +3137,16 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_MOD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            double bv = ((MenaiFloat *)b)->value;
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            double bv = b->value;
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_MODULO_BY_ZERO;
                 goto error;
             }
 
-            MenaiValue *_r = double_to_menai_float(fmod(((MenaiFloat *)a)->value, bv));
+            MenaiValue *_r = double_to_menai_float(fmod(a->value, bv));
             if (_r == NULL) {
                 goto error;
             }
@@ -3144,8 +3157,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_EXP: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(exp(((MenaiFloat *)a)->value));
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(exp(a->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3156,10 +3169,10 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_EXPN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiValue *_r = double_to_menai_float(pow(((MenaiFloat *)a)->value, ((MenaiFloat *)b)->value));
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiValue *_r = double_to_menai_float(pow(a->value, b->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3170,8 +3183,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_LOG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            double v = ((MenaiFloat *)a)->value;
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
@@ -3188,8 +3201,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_LOG10: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            double v = ((MenaiFloat *)a)->value;
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
@@ -3206,8 +3219,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_LOG2: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            double v = ((MenaiFloat *)a)->value;
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
@@ -3224,10 +3237,11 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_LOGN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            double av = ((MenaiFloat *)a)->value, bv = ((MenaiFloat *)b)->value;
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            double av = a->value;
+            double bv = b->value;
             if (bv <= 0.0 || bv == 1.0) {
                 vm_err = MENAI_ERR_INVALID_LOG_BASE;
                 goto error;
@@ -3249,8 +3263,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_SIN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(sin(((MenaiFloat *)a)->value));
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(sin(a->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3261,8 +3275,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_COS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(cos(((MenaiFloat *)a)->value));
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(cos(a->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3273,8 +3287,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_TAN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(tan(((MenaiFloat *)a)->value));
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(tan(a->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3285,8 +3299,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_SQRT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            double v = ((MenaiFloat *)a)->value;
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
@@ -3303,8 +3317,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_FLOOR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(floor(((MenaiFloat *)a)->value));
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(floor(a->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3315,8 +3329,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_CEIL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(ceil(((MenaiFloat *)a)->value));
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(ceil(a->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3327,8 +3341,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_ROUND: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *_r = double_to_menai_float(round(((MenaiFloat *)a)->value));
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *_r = double_to_menai_float(round(a->value));
             if (_r == NULL) {
                 goto error;
             }
@@ -3339,11 +3353,11 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_MIN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            double av = ((MenaiFloat *)a)->value;
-            double bv = ((MenaiFloat *)b)->value;
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            double av = a->value;
+            double bv = b->value;
             MenaiValue *_r = double_to_menai_float(av <= bv ? av : bv);
             if (_r == NULL) {
                 goto error;
@@ -3355,11 +3369,11 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_MAX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            double av = ((MenaiFloat *)a)->value;
-            double bv = ((MenaiFloat *)b)->value;
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            double av = a->value;
+            double bv = b->value;
             MenaiValue *_r = double_to_menai_float(av >= bv ? av : bv);
             if (_r == NULL) {
                 goto error;
@@ -3371,11 +3385,11 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_TO_INTEGER: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            double v = ((MenaiFloat *)a)->value;
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+
             MenaiBigInt res;
             menai_bigint_init(&res);
-            vm_err = menai_bigint_from_double(trunc(v), &res);
+            vm_err = menai_bigint_from_double(trunc(a->value), &res);
             if (vm_err < 0) {
                 goto error;
             }
@@ -3391,10 +3405,10 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_TO_COMPLEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiValue *r = doubles_to_menai_complex(((MenaiFloat *)a)->value, ((MenaiFloat *)b)->value);
+            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiValue *r = doubles_to_menai_complex(a->value, b->value);
             if (r == NULL) {
                 goto error;
             }
@@ -3405,8 +3419,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_FLOAT_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *r = menai_format_float(((MenaiFloat *)a)->value);
+            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiValue *r = menai_format_float(a->value);
             if (r == NULL) {
                 goto error;
             }
