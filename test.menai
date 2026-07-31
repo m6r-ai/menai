@@ -1,0 +1,21 @@
+(letrec
+  ((count-words
+    (lambda (words)
+      (fold-list
+        (lambda (acc word)
+          (dict-set acc word
+            (integer+ 1 (dict-get acc word 0))))
+        (dict) words)))
+
+   (top-words
+    (lambda (text n)
+      (let* ((words (string->list (string-downcase text) " "))
+             (counts (count-words words))
+             (pairs (sort-list
+                       (lambda (a b) (integer>? (list-ref a 1) (list-ref b 1)))
+                       (map-list (lambda (key)
+                                   (list key (dict-get counts key)))
+                                 (dict-keys counts)))))
+        (list-slice pairs 0 n)))))
+
+  (top-words "the quick brown fox jumps over the lazy dog the fox runs" 3))
