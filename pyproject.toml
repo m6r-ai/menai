@@ -7,7 +7,7 @@ name = "menai"
 version = "0.1.1"
 description = "The Menai programming language"
 readme = "README.md"
-license = {file = "LICENSE.txt"}
+license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = []
 
