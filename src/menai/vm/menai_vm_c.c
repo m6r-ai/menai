@@ -1432,13 +1432,14 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
             if (IS_MENAI_STRUCTTYPE(raw)) {
                 /* Struct constructor call */
-                int n_fields = ((MenaiStructType *)raw)->nfields;
+                MenaiStructType *sraw = (MenaiStructType *)raw;
+                int n_fields = sraw->nfields;
                 if (arity != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
                     goto error;
                 }
 
-                MenaiValue *instance = menai_struct_alloc(raw, &regs[callee_base], n_fields);
+                MenaiValue *instance = menai_struct_alloc(sraw, &regs[callee_base], n_fields);
                 if (instance == NULL) {
                     goto error;
                 }
@@ -1486,14 +1487,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (IS_MENAI_STRUCTTYPE(raw)) {
-                int n_fields = ((MenaiStructType *)raw)->nfields;
+                MenaiStructType *sraw = (MenaiStructType *)raw;
+                int n_fields = sraw->nfields;
                 if (n_args != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
                     menai_release(raw);
                     goto error;
                 }
 
-                MenaiValue *instance = menai_struct_alloc(raw, &regs[base + local_count], n_fields);
+                MenaiValue *instance = menai_struct_alloc(sraw, &regs[base + local_count], n_fields);
                 if (instance == NULL) {
                     menai_release(raw);
                     goto error;
@@ -1570,13 +1572,14 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (IS_MENAI_STRUCTTYPE(raw_func)) {
-                int n_fields = ((MenaiStructType *)raw_func)->nfields;
+                MenaiStructType *sraw_func = (MenaiStructType *)raw_func;
+                int n_fields = sraw_func->nfields;
                 if (arity != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
                     goto error;
                 }
 
-                MenaiValue *instance = menai_struct_alloc(raw_func, elements, n_fields);
+                MenaiValue *instance = menai_struct_alloc(sraw_func, elements, n_fields);
                 if (instance == NULL) {
                     goto error;
                 }
@@ -1639,7 +1642,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (IS_MENAI_STRUCTTYPE(raw_func)) {
-                int n_fields = ((MenaiStructType *)raw_func)->nfields;
+                MenaiStructType *sraw_func = (MenaiStructType *)raw_func;
+                int n_fields = sraw_func->nfields;
                 if (arity != (int)n_fields) {
                     menai_release(raw_func);
                     menai_release(raw_args);
@@ -1647,7 +1651,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                     goto error;
                 }
 
-                MenaiValue *retval = menai_struct_alloc(raw_func, elements, n_fields);
+                MenaiValue *retval = menai_struct_alloc(sraw_func, elements, n_fields);
                 if (retval == NULL) {
                     menai_release(raw_args);
                     menai_release(raw_func);
@@ -6800,9 +6804,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
              * src1 = field count. Fields are in slots src0+1..src0+n_fields.
              */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *struct_type = regs[base + src0];
-            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            int n_fields = src1;
+            MenaiStructType *struct_type = (MenaiStructType *)regs[base + src0];
+            int n_fields = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *instance = menai_struct_alloc(struct_type, &regs[base + src0 + 1], n_fields);
             if (instance == NULL) {
                 goto error;
@@ -6832,18 +6835,18 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRUCT_GET: {
             /* src1 holds a MenaiSymbol field name */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *val = regs[base + src0];
+            MenaiStruct *sval = (MenaiStruct *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
-            MenaiValue *stype = ((MenaiStruct *)val)->struct_type;
+            MenaiStructType *stype = sval->struct_type;
             MenaiValue *field_name = field_sym->name;
-            int fi = menai_struct_field_index((MenaiStructType *)stype, field_name);
+            int fi = menai_struct_field_index(stype, field_name);
             if (fi < 0) {
                 vm_err = MENAI_ERR_STRUCT_FIELD_NOT_FOUND;
                 goto error;
             }
 
-            MenaiValue *fv = ((MenaiStruct *)val)->items[fi];
+            MenaiValue *fv = sval->items[fi];
             menai_reg_set_borrow(regs, base + dest, fv);
             break;
         }
@@ -6879,10 +6882,10 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRUCT_SET: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *val = regs[base + src0];
+            MenaiStruct *sval = (MenaiStruct *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
-            MenaiValue *stype = ((MenaiStruct *)val)->struct_type;
+            MenaiStructType *stype = sval->struct_type;
             MenaiValue *field_name = field_sym->name;
             int fi = menai_struct_field_index((MenaiStructType *)stype, field_name);
             if (fi < 0) {
@@ -6890,7 +6893,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            ssize_t nf = ((MenaiStruct *)val)->nfields;
+            ssize_t nf = sval->nfields;
             MenaiValue **tmp = (MenaiValue **)malloc(nf * sizeof(MenaiValue *));
             if (!tmp) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -6900,7 +6903,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *new_val = regs[base + src2];
             for (ssize_t i = 0; i < nf; i++) {
-                tmp[i] = (i == fi) ? new_val : ((MenaiStruct *)val)->items[i];
+                tmp[i] = (i == fi) ? new_val : sval->items[i];
             }
 
             MenaiValue *r = menai_struct_alloc(stype, tmp, nf);
@@ -6915,10 +6918,10 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRUCT_SET_REF: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *val = regs[base + src0];
+            MenaiStruct *sval = (MenaiStruct *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *fidx = regs[base + src1];
-            MenaiInteger *fi_io = (MenaiInteger *)fidx;
+            MenaiInteger *fi_io = (MenaiInteger *)regs[base + src1];
+
             long fi_l;
             if (!fi_io->is_big) {
                 fi_l = fi_io->small;
@@ -6930,13 +6933,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             ssize_t fi = (ssize_t)fi_l;
-            ssize_t nf = ((MenaiStruct *)val)->nfields;
+            ssize_t nf = sval->nfields;
             if (fi < 0 || fi >= nf) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
 
-            MenaiValue *stype = ((MenaiStruct *)val)->struct_type;
+            MenaiStructType *stype = sval->struct_type;
             MenaiValue **tmp = (MenaiValue **)malloc(nf * sizeof(MenaiValue *));
             if (!tmp) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -6946,7 +6949,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *new_val = regs[base + src2];
             for (ssize_t i = 0; i < nf; i++) {
-                tmp[i] = (i == fi) ? new_val : ((MenaiStruct *)val)->items[i];
+                tmp[i] = (i == fi) ? new_val : sval->items[i];
             }
 
             MenaiValue *r = menai_struct_alloc(stype, tmp, nf);
@@ -6961,16 +6964,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRUCT_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiStruct *a = (MenaiStruct *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiStruct *sa = (MenaiStruct *)a;
-            MenaiStruct *sb = (MenaiStruct *)b;
-            int eq = (((MenaiStructType *)sa->struct_type)->tag ==
-                      ((MenaiStructType *)sb->struct_type)->tag);
-            ssize_t nf = sa->nfields;
+            MenaiStruct *b = (MenaiStruct *)regs[base + src1];
+            int eq = (a->struct_type->tag == b->struct_type->tag);
+            ssize_t nf = a->nfields;
             for (ssize_t i = 0; eq && i < nf; i++) {
-                eq = menai_value_equal(sa->items[i], sb->items[i]);
+                eq = menai_value_equal(a->items[i], b->items[i]);
             }
 
             bool_store(regs, base + dest, eq);
@@ -6979,17 +6979,14 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRUCT_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiStruct *a = (MenaiStruct *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiStruct *sa = (MenaiStruct *)a;
-            MenaiStruct *sb = (MenaiStruct *)b;
-            int neq = (((MenaiStructType *)sa->struct_type)->tag !=
-                       ((MenaiStructType *)sb->struct_type)->tag);
+            MenaiStruct *b = (MenaiStruct *)regs[base + src1];
+            int neq = (a->struct_type->tag != b->struct_type->tag);
             if (!neq) {
-                ssize_t nf = sa->nfields;
+                ssize_t nf = a->nfields;
                 for (ssize_t i = 0; i < nf; i++) {
-                    int eq = menai_value_equal(sa->items[i], sb->items[i]);
+                    int eq = menai_value_equal(a->items[i], b->items[i]);
                     if (!eq) {
                         neq = 1;
                         break;
@@ -7003,22 +7000,21 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRUCT_TYPE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *val = regs[base + src0];
-            menai_reg_set_borrow(regs, base + dest, ((MenaiStruct *)val)->struct_type);
+            MenaiStruct *val = (MenaiStruct *)regs[base + src0];
+            menai_reg_set_borrow(regs, base + dest, (MenaiValue *)val->struct_type);
             break;
         }
 
         case OP_STRUCTTYPE_NAME: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *val = regs[base + src0];
-            menai_reg_set_borrow(regs, base + dest, ((MenaiStructType *)val)->name);
+            MenaiStructType *val = (MenaiStructType *)regs[base + src0];
+            menai_reg_set_borrow(regs, base + dest, val->name);
             break;
         }
 
         case OP_STRUCTTYPE_FIELDS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *val = regs[base + src0];
-            MenaiStructType *st = (MenaiStructType *)val;
+            MenaiStructType *st = (MenaiStructType *)regs[base + src0];
             int n = st->nfields;
             MenaiValue *r = menai_list_alloc(n);
             if (!r) {
@@ -7053,23 +7049,19 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRUCTTYPE_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiStructType *a = (MenaiStructType *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *b = regs[base + src1];
-            int tag_a = ((MenaiStructType *)a)->tag;
-            int tag_b = ((MenaiStructType *)b)->tag;
-            bool_store(regs, base + dest, tag_a == tag_b);
+            MenaiStructType *b = (MenaiStructType *)regs[base + src1];
+            bool_store(regs, base + dest, a->tag == b->tag);
             break;
         }
 
         case OP_STRUCTTYPE_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiStructType *a = (MenaiStructType *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            MenaiValue *b = regs[base + src1];
-            int tag_a = ((MenaiStructType *)a)->tag;
-            int tag_b = ((MenaiStructType *)b)->tag;
-            bool_store(regs, base + dest, tag_a != tag_b);
+            MenaiStructType *b = (MenaiStructType *)regs[base + src1];
+            bool_store(regs, base + dest, a->tag != b->tag);
             break;
         }
 
@@ -7213,8 +7205,7 @@ menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, M
         }
     }
 
-    MenaiValue **regs = menai_regs_alloc(
-        (size_t)(MAX_FRAME_DEPTH + 1) * max_locals, Menai_NONE);
+    MenaiValue **regs = menai_regs_alloc((size_t)(MAX_FRAME_DEPTH + 1) * max_locals, Menai_NONE);
     if (regs == NULL) {
         if (out_error) {
             out_error->code = MENAI_ERR_NOMEM;

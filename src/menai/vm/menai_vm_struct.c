@@ -60,7 +60,7 @@ menai_struct_type_new(MenaiValue *name, int tag, MenaiValue **field_names, ssize
 }
 
 MenaiValue *
-menai_struct_alloc(MenaiValue *struct_type, MenaiValue **field_values, ssize_t nfields)
+menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStruct) + (size_t)nfields * sizeof(MenaiValue *);
     MenaiStruct *self = (MenaiStruct *)menai_alloc(sz);
@@ -71,7 +71,7 @@ menai_struct_alloc(MenaiValue *struct_type, MenaiValue **field_values, ssize_t n
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_STRUCT;
     self->nfields = (int)nfields;
-    menai_retain(struct_type);
+    menai_retain((MenaiValue *)struct_type);
     self->struct_type = struct_type;
 
     for (ssize_t i = 0; i < nfields; i++) {

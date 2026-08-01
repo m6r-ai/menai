@@ -188,7 +188,6 @@ struct MenaiValue_s {
     MenaiValue_HEAD
 };
 
-const char *menai_short_type_name(MenaiType t);
 void menai_value_dealloc(MenaiValue *v);
 
 /*
@@ -771,18 +770,18 @@ typedef struct {
 
 typedef struct {
     MenaiValue_HEAD
-    MenaiValue *name;            /* owned MenaiString * — struct type name */
-    int tag;                     /* unique integer tag */
-    int nfields;                 /* number of fields */
-    MenaiHashTable field_ht;     /* name -> index hash table; keys are borrowed from fields[] */
-    MenaiFieldEntry fields[];    /* inline field-index table, nfields entries */
+    MenaiValue *name;                   /* owned MenaiString * — struct type name */
+    int tag;                            /* unique integer tag */
+    int nfields;                        /* number of fields */
+    MenaiHashTable field_ht;            /* name -> index hash table; keys are borrowed from fields[] */
+    MenaiFieldEntry fields[];           /* inline field-index table, nfields entries */
 } MenaiStructType;
 
 typedef struct {
     MenaiValue_HEAD
-    int nfields;                 /* number of fields */
-    MenaiValue *struct_type;     /* owned reference to MenaiStructType */
-    MenaiValue *items[1];        /* inline field values, nfields entries */
+    int nfields;                        /* number of fields */
+    MenaiStructType *struct_type;       /* owned reference to MenaiStructType */
+    MenaiValue *items[1];               /* inline field values, nfields entries */
 } MenaiStruct;
 
 /*
@@ -797,7 +796,7 @@ menai_struct_field_index(MenaiStructType *st, MenaiValue *name)
     return (int)menai_ht_lookup(&st->field_ht, name, h);
 }
 
-MenaiValue *menai_struct_alloc(MenaiValue *struct_type, MenaiValue **field_values, ssize_t nfields);
+MenaiValue *menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
 MenaiValue *menai_struct_type_new(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields);
 
 static inline void
@@ -818,7 +817,7 @@ static inline void
 menai_struct_dealloc(MenaiValue *self)
 {
     MenaiStruct *s = (MenaiStruct *)self;
-    menai_xrelease(s->struct_type);
+    menai_xrelease((MenaiValue *)s->struct_type);
     int n = s->nfields;
     for (int i = 0; i < n; i++) {
         menai_xrelease(s->items[i]);
@@ -838,7 +837,6 @@ typedef struct {
 
 MenaiValue *menai_dict_new_empty(void);
 MenaiValue *menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
-MenaiValue *menai_dict_new_empty(void);
 
 /*
  * _dict_free_arrays — release n owned references in keys and values, then

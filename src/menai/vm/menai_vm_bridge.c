@@ -904,7 +904,7 @@ slow_value_to_menai_value(PyObject *src)
             return NULL;
         }
 
-        MenaiValue *fast_st = slow_value_to_menai_value(st);
+        MenaiStructType *fast_st = (MenaiStructType *)slow_value_to_menai_value(st);
         Py_DECREF(st);
         if (!fast_st) {
             Py_DECREF(fields);
@@ -915,7 +915,7 @@ slow_value_to_menai_value(PyObject *src)
         MenaiValue **fast_arr = n > 0
             ? (MenaiValue **)malloc(n * sizeof(MenaiValue *)) : NULL;
         if (n > 0 && !fast_arr) {
-            menai_release(fast_st);
+            menai_release((MenaiValue *)fast_st);
             Py_DECREF(fields);
             PyErr_NoMemory();
             return NULL;
@@ -929,7 +929,7 @@ slow_value_to_menai_value(PyObject *src)
                 }
 
                 free(fast_arr);
-                menai_release(fast_st);
+                menai_release((MenaiValue *)fast_st);
                 Py_DECREF(fields);
                 return NULL;
             }
@@ -948,7 +948,7 @@ slow_value_to_menai_value(PyObject *src)
         }
 
         free(fast_arr);
-        menai_release(fast_st);
+        menai_release((MenaiValue *)fast_st);
         return r;
     }
 
@@ -1240,7 +1240,7 @@ menai_value_to_slow_value(MenaiValue *val)
 
     if (t == MENAITYPE_STRUCT) {
         MenaiStruct *s = (MenaiStruct *)val;
-        PyObject *slow_st = menai_value_to_slow_value(s->struct_type);
+        PyObject *slow_st = menai_value_to_slow_value((MenaiValue *)s->struct_type);
         if (!slow_st) {
             return NULL;
         }
