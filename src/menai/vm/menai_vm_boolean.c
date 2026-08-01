@@ -26,7 +26,7 @@ menai_boolean_false(void)
 }
 
 void
-menai_vm_boolean_init(void)
+menai_init_boolean(void)
 {
     _true_storage.ob_refcnt = 1;
     _true_storage.ob_type = MENAITYPE_BOOLEAN;

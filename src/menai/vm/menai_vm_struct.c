@@ -1,11 +1,5 @@
 /*
- * menai_vm_struct.c — MenaiStructType and MenaiStruct type implementations.
- *
- * MenaiStructType: field names are stored in an inline C array of
- * (MenaiString name, index) pairs.  A MenaiHashTable built at construction
- * time provides O(1) name-to-index lookup; its slots hold borrowed references
- * into fields[].  All string fields are native MenaiString * values
- * managed with menai_retain/menai_release.
+ * menai_vm_struct.c — MenaiStruct type implementations.
  *
  * MenaiStruct: field values are stored in an inline C array (nfields entries),
  * eliminating the Python tuple previously heap-allocated on every struct
@@ -14,50 +8,6 @@
 #include <stdlib.h>
 
 #include "menai_vm_c.h"
-
-/*
- * menai_struct_type_new — native constructor for MenaiStructType.
- * name must be a MenaiString * (borrowed).  tag is a C int.
- * field_names must be an array of MenaiString * values (borrowed).
- * Returns a new reference, or NULL on error.
- */
-MenaiValue *
-menai_struct_type_new(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields)
-{
-    size_t sz = sizeof(MenaiStructType) + (size_t)nfields * sizeof(MenaiFieldEntry);
-    MenaiStructType *self = (MenaiStructType *)menai_alloc(sz);
-    if (!self) {
-        return NULL;
-    }
-
-    self->ob_refcnt = 1;
-    self->ob_type = MENAITYPE_STRUCTTYPE;
-    menai_retain(name);
-    self->field_ht.slots = NULL;
-    self->field_ht.slot_count = 0;
-    self->field_ht.used = 0;
-    self->name = name;
-    self->tag = tag;
-    self->nfields = (int)nfields;
-
-    for (ssize_t i = 0; i < nfields; i++) {
-        menai_retain(field_names[i]);
-        self->fields[i].name = field_names[i];
-        self->fields[i].index = (int)i;
-    }
-
-    if (menai_ht_init(&self->field_ht, nfields) < 0) {
-        menai_struct_type_dealloc((MenaiValue *)self);
-        return NULL;
-    }
-
-    for (ssize_t i = 0; i < nfields; i++) {
-        hash_t h = menai_string_hash(self->fields[i].name);
-        menai_ht_insert(&self->field_ht, self->fields[i].name, h, i);
-    }
-
-    return (MenaiValue *)self;
-}
 
 MenaiValue *
 menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields)

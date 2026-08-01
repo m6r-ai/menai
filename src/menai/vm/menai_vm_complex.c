@@ -5,8 +5,8 @@
 
 #include "menai_vm_c.h"
 
-MenaiValue *
-menai_complex_alloc(double real, double imag)
+MenaiComplex *
+menai_alloc_complex(double real, double imag)
 {
     MenaiComplex *self = (MenaiComplex *)menai_alloc(sizeof(MenaiComplex));
     if (!self) {
@@ -18,5 +18,5 @@ menai_complex_alloc(double real, double imag)
     self->real = real;
     self->imag = imag;
 
-    return (MenaiValue *)self;
+    return self;
 }

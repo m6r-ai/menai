@@ -35,7 +35,7 @@ MenaiValue *Menai_TRUE = NULL;
 MenaiValue *Menai_FALSE = NULL;
 MenaiValue *Menai_EMPTY_LIST = NULL;
 MenaiValue *Menai_EMPTY_DICT = NULL;
-MenaiValue *Menai_EMPTY_SET = NULL;
+MenaiSet *Menai_EMPTY_SET = NULL;
 
 /*
  * Conversion helpers — Python boundary only.
@@ -610,7 +610,7 @@ slow_value_to_menai_value(PyObject *src)
             return NULL;
         }
 
-        return menai_float_alloc(d);
+        return (MenaiValue *)menai_alloc_float(d);
     }
 
     if (t == Slow_ComplexType) {
@@ -622,7 +622,7 @@ slow_value_to_menai_value(PyObject *src)
         double real = PyComplex_RealAsDouble(v);
         double imag = PyComplex_ImagAsDouble(v);
         Py_DECREF(v);
-        return menai_complex_alloc(real, imag);
+        return (MenaiValue *)menai_alloc_complex(real, imag);
     }
 
     if (t == Slow_StringType) {
@@ -778,15 +778,15 @@ slow_value_to_menai_value(PyObject *src)
         }
 
         Py_ssize_t n = PyTuple_GET_SIZE(elems);
-        MenaiValue *s = menai_set_alloc(n);
+        MenaiSet *s = menai_alloc_set(n);
         if (!s) {
             Py_DECREF(elems);
             PyErr_NoMemory();
             return NULL;
         }
 
-        MenaiValue **elements = ((MenaiSet *)s)->elements;
-        hash_t *hashes = ((MenaiSet *)s)->hashes;
+        MenaiValue **elements = s->elements;
+        hash_t *hashes = s->hashes;
         for (Py_ssize_t i = 0; i < n; i++) {
             MenaiValue *fe = slow_value_to_menai_value(PyTuple_GET_ITEM(elems, i));
             if (!fe) {
@@ -794,7 +794,7 @@ slow_value_to_menai_value(PyObject *src)
                     menai_release(elements[j]);
                 }
 
-                menai_release(s);
+                menai_release((MenaiValue *)s);
                 Py_DECREF(elems);
                 return NULL;
             }
@@ -806,7 +806,7 @@ slow_value_to_menai_value(PyObject *src)
                     menai_release(elements[j]);
                 }
 
-                menai_release(s);
+                menai_release((MenaiValue *)s);
                 Py_DECREF(elems);
                 return NULL;
             }
@@ -816,13 +816,13 @@ slow_value_to_menai_value(PyObject *src)
         }
 
         Py_DECREF(elems);
-        ((MenaiSet *)s)->length = n;
-        if (menai_ht_build(&((MenaiSet *)s)->ht, elements, hashes, n) < 0) {
-            menai_release(s);
+        s->length = n;
+        if (menai_ht_build(&s->ht, elements, hashes, n) < 0) {
+            menai_release((MenaiValue *)s);
             return NULL;
         }
 
-        return s;
+        return (MenaiValue *)s;
     }
 
     if (t == Slow_StructTypeType) {
@@ -876,6 +876,7 @@ slow_value_to_menai_value(PyObject *src)
                     for (ssize_t j = 0; j < i; j++) {
                         menai_release(field_names_arr[j]);
                     }
+
                     free(field_names_arr);
                     menai_release(name_str);
                     Py_DECREF(fn_tup);
@@ -885,14 +886,15 @@ slow_value_to_menai_value(PyObject *src)
             }
         }
 
-        MenaiValue *result = menai_struct_type_new(name_str, tag_val, field_names_arr, nfields);
+        MenaiStructType *result = menai_alloc_structtype(name_str, tag_val, field_names_arr, nfields);
         menai_release(name_str);
         for (ssize_t i = 0; i < nfields; i++) {
             menai_release(field_names_arr[i]);
         }
+
         free(field_names_arr);
         Py_DECREF(fn_tup);
-        return result;
+        return (MenaiValue *)result;
     }
 
     if (t == Slow_StructType) {
@@ -1753,9 +1755,9 @@ menai_vm_bridge_init(void)
 
     _py_code_object_type = (PyTypeObject *)co_type;
 
-    menai_vm_none_init();
-    menai_vm_boolean_init();
-    if (menai_vm_integer_init() < 0) {
+    menai_init_none();
+    menai_init_boolean();
+    if (menai_init_integer() < 0) {
         return 0;
     }
     return 1;
@@ -1860,7 +1862,7 @@ menai_vm_shim_init(void)
     Menai_FALSE = menai_boolean_false();
     Menai_EMPTY_LIST = menai_list_new_empty();
     Menai_EMPTY_DICT = menai_dict_new_empty();
-    Menai_EMPTY_SET = menai_set_new_empty();
+    Menai_EMPTY_SET = menai_alloc_empty_set();
 
     PyObject *err_mod = PyImport_ImportModule("menai.vm.menai_vm_errors");
     if (err_mod == NULL) {

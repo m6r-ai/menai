@@ -5,8 +5,8 @@
 
 #include "menai_vm_c.h"
 
-MenaiValue *
-menai_float_alloc(double value)
+MenaiFloat *
+menai_alloc_float(double value)
 {
     MenaiFloat *self = (MenaiFloat *)menai_alloc(sizeof(MenaiFloat));
     if (self == NULL) {
@@ -16,5 +16,5 @@ menai_float_alloc(double value)
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_FLOAT;
     self->value = value;
-    return (MenaiValue *)self;
+    return self;
 }

@@ -18,7 +18,7 @@ menai_none_singleton(void)
 }
 
 void
-menai_vm_none_init(void)
+menai_init_none(void)
 {
     _none_storage.ob_refcnt = 1;
     _none_storage.ob_type = MENAITYPE_NONE;

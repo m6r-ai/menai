@@ -91,7 +91,7 @@ menai_integer_from_bigint(MenaiBigInt src)
 }
 
 int
-menai_vm_integer_init(void)
+menai_init_integer(void)
 {
     for (long v = MENAI_INT_CACHE_MIN; v <= MENAI_INT_CACHE_MAX; v++) {
         MenaiInteger *obj = (MenaiInteger *)menai_alloc(sizeof(MenaiInteger));

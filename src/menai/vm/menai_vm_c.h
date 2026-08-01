@@ -188,7 +188,7 @@ struct MenaiValue_s {
     MenaiValue_HEAD
 };
 
-void menai_value_dealloc(MenaiValue *v);
+void menai_value_free(MenaiValue *v);
 
 /*
  * menai_retain — claim an interest in val.
@@ -210,7 +210,7 @@ menai_release(MenaiValue *val)
 {
     assert(val->ob_type != 0);
     if (--val->ob_refcnt == 0) {
-        menai_value_dealloc(val);
+        menai_value_free(val);
     }
 }
 
@@ -473,10 +473,10 @@ typedef struct {
 } MenaiNone;
 
 MenaiValue *menai_none_singleton(void);
-void menai_vm_none_init(void);
+void menai_init_none(void);
 
 static inline void
-menai_none_dealloc(MenaiValue *self)
+menai_none_free(MenaiNone *self)
 {
     /*
      * The singleton is never freed — its refcount should never reach zero.
@@ -491,10 +491,10 @@ typedef struct {
 
 MenaiValue *menai_boolean_true(void);
 MenaiValue *menai_boolean_false(void);
-void menai_vm_boolean_init(void);
+void menai_init_boolean(void);
 
 static inline void
-menai_boolean_dealloc(MenaiValue *self)
+menai_boolean_free(MenaiBoolean *self)
 {
     /*
      * Singletons are never freed.
@@ -507,10 +507,10 @@ typedef struct {
     double value;
 } MenaiFloat;
 
-MenaiValue *menai_float_alloc(double value);
+MenaiFloat *menai_alloc_float(double value);
 
 static inline void
-menai_float_dealloc(MenaiValue *self)
+menai_float_free(MenaiFloat *self)
 {
     menai_free(self);
 }
@@ -521,10 +521,10 @@ typedef struct {
     double imag;
 } MenaiComplex;
 
-MenaiValue *menai_complex_alloc(double real, double imag);
+MenaiComplex *menai_alloc_complex(double real, double imag);
 
 static inline void
-menai_complex_dealloc(MenaiValue *self)
+menai_complex_free(MenaiComplex *self)
 {
     menai_free(self);
 }
@@ -541,13 +541,12 @@ typedef struct {
 MenaiValue *menai_function_alloc(MenaiCodeObject *co, MenaiValue *none_val);
 
 static inline void
-menai_function_dealloc(MenaiValue *self)
+menai_function_free(MenaiFunction *self)
 {
-    MenaiFunction *f = (MenaiFunction *)self;
-    menai_code_object_release(f->bytecode);
-    ssize_t ncap = f->ncap;
+    menai_code_object_release(self->bytecode);
+    ssize_t ncap = self->ncap;
     for (ssize_t i = 0; i < ncap; i++) {
-        menai_xrelease(f->captures[i]);
+        menai_xrelease(self->captures[i]);
     }
 
     menai_free(self);
@@ -599,7 +598,7 @@ int menai_string_has_suffix(MenaiValue *s, MenaiValue *suffix);
 MenaiValue *menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to);
 
 static inline void
-menai_string_dealloc(MenaiValue *self)
+menai_string_free(MenaiString *self)
 {
     menai_free(self);
 }
@@ -655,18 +654,17 @@ int menai_bytes_compare(MenaiValue *a, MenaiValue *b);
 hash_t menai_bytes_hash(MenaiValue *b);
 
 static inline void
-menai_bytes_dealloc(MenaiValue *self)
+menai_bytes_free(MenaiBytes *self)
 {
-    MenaiBytes *b = (MenaiBytes *)self;
-    if (b->owner != NULL) {
+    if (self->owner != NULL) {
         /* View — release the backing owner; do not touch the data array. */
-        menai_release(b->owner);
-        menai_free(b);
+        menai_release(self->owner);
+        menai_free(self);
         return;
     }
 
     /* Owner — the data array is inline, freed with the struct. */
-    menai_free(b);
+    menai_free(self);
 }
 
 typedef struct {
@@ -677,9 +675,9 @@ typedef struct {
 MenaiValue *menai_symbol_alloc(MenaiValue *name);
 
 static inline void
-menai_symbol_dealloc(MenaiValue *self)
+menai_symbol_free(MenaiSymbol *self)
 {
-    menai_xrelease(((MenaiSymbol *)self)->name);
+    menai_xrelease(self->name);
     menai_free(self);
 }
 
@@ -736,24 +734,23 @@ menai_integer_small(MenaiValue *o)
     return ((MenaiInteger *)o)->small;
 }
 
-int menai_vm_integer_init(void);
+int menai_init_integer(void);
 
 static inline void
-menai_integer_dealloc(MenaiValue *self)
+menai_integer_free(MenaiInteger *self)
 {
-    MenaiInteger *obj = (MenaiInteger *)self;
-    if (!obj->is_big) {
-        long v = obj->small;
+    if (!self->is_big) {
+        long v = self->small;
         if (v >= MENAI_INT_CACHE_MIN && v <= MENAI_INT_CACHE_MAX) {
             /*
              * Cached singleton — must never be freed.  Restore refcount so
              * the object remains live.
              */
-            obj->ob_refcnt = 1;
+            self->ob_refcnt = 1;
             return;
         }
     } else {
-        menai_bigint_free(&obj->big);
+        menai_bigint_free(&self->big);
     }
 
     menai_free(self);
@@ -797,30 +794,28 @@ menai_struct_field_index(MenaiStructType *st, MenaiValue *name)
 }
 
 MenaiValue *menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
-MenaiValue *menai_struct_type_new(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields);
+MenaiStructType *menai_alloc_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields);
 
 static inline void
-menai_struct_type_dealloc(MenaiValue *self)
+menai_free_structtype(MenaiStructType *self)
 {
-    MenaiStructType *s = (MenaiStructType *)self;
-    menai_ht_free(&s->field_ht);
-    menai_xrelease(s->name);
-    int n = s->nfields;
+    menai_ht_free(&self->field_ht);
+    menai_xrelease(self->name);
+    int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_xrelease(s->fields[i].name);
+        menai_xrelease(self->fields[i].name);
     }
 
     menai_free(self);
 }
 
 static inline void
-menai_struct_dealloc(MenaiValue *self)
+menai_free_struct(MenaiStruct *self)
 {
-    MenaiStruct *s = (MenaiStruct *)self;
-    menai_xrelease((MenaiValue *)s->struct_type);
-    int n = s->nfields;
+    menai_xrelease((MenaiValue *)self->struct_type);
+    int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_xrelease(s->items[i]);
+        menai_xrelease(self->items[i]);
     }
 
     menai_free(self);
@@ -865,11 +860,10 @@ _dict_free_arrays(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_
 }
 
 static inline void
-menai_dict_dealloc(MenaiValue *self)
+menai_dict_free(MenaiDict *self)
 {
-    MenaiDict *d = (MenaiDict *)self;
-    _dict_free_arrays(d->keys, d->values, d->hashes, d->length);
-    menai_ht_free(&d->ht);
+    _dict_free_arrays(self->keys, self->values, self->hashes, self->length);
+    menai_ht_free(&self->ht);
     menai_free(self);
 }
 
@@ -892,43 +886,30 @@ MenaiValue *menai_list_new_empty(void);
 MenaiValue *menai_list_rest(MenaiValue *lst);
 MenaiValue *menai_list_slice(MenaiValue *lst, ssize_t start, ssize_t end);
 
-static inline MenaiValue *
-menai_list_get(MenaiList *list, ssize_t i)
-{
-    return list->elements[i];
-}
-
 static inline MenaiValue **
 menai_list_elements(MenaiValue *list_obj)
 {
     return ((MenaiList *)list_obj)->elements;
 }
 
-static inline ssize_t
-menai_list_length(MenaiValue *list_obj)
-{
-    return ((MenaiList *)list_obj)->length;
-}
-
 static inline void
-menai_list_dealloc(MenaiValue *self)
+menai_list_free(MenaiList *self)
 {
-    MenaiList *lst = (MenaiList *)self;
-    if (lst->owner != NULL) {
+    if (self->owner != NULL) {
         /* View — release the backing list; do not touch the element array. */
-        menai_release(lst->owner);
-        menai_free(lst);
+        menai_release(self->owner);
+        menai_free(self);
         return;
     }
 
     /* Owner — release all elements then free the combined block. */
-    ssize_t n = lst->length;
-    MenaiValue **arr = lst->elements;
+    ssize_t n = self->length;
+    MenaiValue **arr = self->elements;
     for (ssize_t i = 0; i < n; i++) {
         menai_release(*arr++);
     }
 
-    menai_free(lst);
+    menai_free(self);
 }
 
 typedef struct {
@@ -940,19 +921,18 @@ typedef struct {
     MenaiValue *inline_data[]; /* FAM: elements[0..cap-1] then hashes[0..cap-1] */
 } MenaiSet;
 
-MenaiValue *menai_set_alloc(ssize_t cap);
-MenaiValue *menai_set_new_empty(void);
+MenaiSet *menai_alloc_set(ssize_t cap);
+MenaiSet *menai_alloc_empty_set(void);
 
 static inline void
-menai_set_dealloc(MenaiValue *self)
+menai_set_free(MenaiSet *self)
 {
-    MenaiSet *s = (MenaiSet *)self;
-    ssize_t n = s->length;
+    ssize_t n = self->length;
     for (ssize_t i = 0; i < n; i++) {
-        menai_release(s->elements[i]);
+        menai_release(self->elements[i]);
     }
 
-    menai_ht_free(&s->ht);
+    menai_ht_free(&self->ht);
     menai_free(self);
 }
 
