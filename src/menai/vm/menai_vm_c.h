@@ -129,6 +129,8 @@ typedef uint16_t MenaiType;
 #define MENAI_ERR_UNIMPLEMENTED_OPCODE -59
 #define MENAI_ERR_USER_ERROR -60
 
+typedef struct MenaiString MenaiString;
+
 /*
  * MenaiVMError — structured error record produced by the VM.
  *
@@ -444,7 +446,7 @@ int menai_bigint_to_long_long(const MenaiBigInt *a, long long *out);
 int menai_bigint_to_double(const MenaiBigInt *a, double *out);
 int menai_bigint_fits_unsigned_long_long(const MenaiBigInt *a);
 int menai_bigint_to_unsigned_long_long(const MenaiBigInt *a, unsigned long long *out);
-MenaiValue *menai_bigint_to_menai_string(const MenaiBigInt *a, int base);
+MenaiString *menai_bigint_to_menai_string(const MenaiBigInt *a, int base);
 hash_t menai_bigint_hash(const MenaiBigInt *a);
 int menai_bigint_add(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
 int menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
@@ -552,12 +554,12 @@ menai_function_free(MenaiFunction *self)
     menai_free(self);
 }
 
-typedef struct {
+struct MenaiString {
     MenaiValue_HEAD
     ssize_t length;             /* codepoint count */
     hash_t hash;                /* cached hash; -1 = not yet computed */
     uint32_t data[];            /* UTF-32 codepoints, flexible array */
-} MenaiString;
+};
 
 static inline ssize_t
 menai_string_length(MenaiValue *s)
@@ -578,20 +580,19 @@ menai_string_get(MenaiValue *s, ssize_t i)
 }
 
 MenaiValue *menai_string_from_utf8(const char *utf8, ssize_t nbytes);
-MenaiValue *menai_string_from_codepoints(const uint32_t *cp, ssize_t len);
-MenaiValue *menai_string_from_codepoint(uint32_t cp);
+MenaiString *menai_string_from_codepoints(const uint32_t *cp, ssize_t len);
+MenaiString *menai_string_from_codepoint(uint32_t cp);
 char *menai_string_to_utf8(MenaiValue *s, ssize_t *out_nbytes);
 int menai_string_compare(MenaiValue *a, MenaiValue *b);
 int menai_string_equal(MenaiValue *a, MenaiValue *b);
 hash_t menai_string_hash(MenaiValue *s);
 MenaiValue *menai_string_concat(MenaiValue *a, MenaiValue *b);
-MenaiValue *menai_string_ref(MenaiValue *s, ssize_t i);
-MenaiValue *menai_string_slice(MenaiValue *s, ssize_t start, ssize_t end);
+MenaiString *menai_string_slice(MenaiString *s, ssize_t start, ssize_t end);
 MenaiValue *menai_string_upcase(MenaiValue *s);
 MenaiValue *menai_string_downcase(MenaiValue *s);
-MenaiValue *menai_string_trim(MenaiValue *s);
-MenaiValue *menai_string_trim_left(MenaiValue *s);
-MenaiValue *menai_string_trim_right(MenaiValue *s);
+MenaiString *menai_string_trim(MenaiString *s);
+MenaiString *menai_string_trim_left(MenaiString *s);
+MenaiString *menai_string_trim_right(MenaiString *s);
 ssize_t menai_string_find(MenaiValue *haystack, MenaiValue *needle);
 int menai_string_has_prefix(MenaiValue *s, MenaiValue *prefix);
 int menai_string_has_suffix(MenaiValue *s, MenaiValue *suffix);

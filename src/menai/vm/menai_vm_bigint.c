@@ -927,7 +927,7 @@ menai_bigint_to_double(const MenaiBigInt *a, double *out)
  * writes directly into the MenaiString's uint32_t data array — no intermediate
  * char buffer or UTF-8 decode step is needed.
  */
-MenaiValue *
+MenaiString *
 menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
 {
     if (base != 2 && base != 8 && base != 10 && base != 16) {
@@ -1013,7 +1013,7 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
         buf[j] = c;
     }
 
-    MenaiValue *result = menai_string_from_codepoints(buf, pos);
+    MenaiString *result = menai_string_from_codepoints(buf, pos);
     free(buf);
     return result;
 }

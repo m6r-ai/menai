@@ -1159,7 +1159,7 @@ menai_string_from_utf8(const char *utf8, ssize_t nbytes)
     return (MenaiValue *)obj;
 }
 
-MenaiValue *
+MenaiString *
 menai_string_from_codepoints(const uint32_t *cp, ssize_t len)
 {
     MenaiString *obj = _menai_string_alloc(len);
@@ -1171,10 +1171,10 @@ menai_string_from_codepoints(const uint32_t *cp, ssize_t len)
         memcpy(obj->data, cp, (size_t)len * sizeof(uint32_t));
     }
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
-MenaiValue *
+MenaiString *
 menai_string_from_codepoint(uint32_t cp)
 {
     MenaiString *obj = _menai_string_alloc(1);
@@ -1184,7 +1184,7 @@ menai_string_from_codepoint(uint32_t cp)
 
     obj->data[0] = cp;
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 char *
@@ -1296,16 +1296,10 @@ menai_string_concat(MenaiValue *a, MenaiValue *b)
     return (MenaiValue *)obj;
 }
 
-MenaiValue *
-menai_string_ref(MenaiValue *s, ssize_t i)
+MenaiString *
+menai_string_slice(MenaiString *s, ssize_t start, ssize_t end)
 {
-    return menai_string_from_codepoint(((MenaiString *)s)->data[i]);
-}
-
-MenaiValue *
-menai_string_slice(MenaiValue *s, ssize_t start, ssize_t end)
-{
-    return menai_string_from_codepoints(((MenaiString *)s)->data + start, end - start);
+    return menai_string_from_codepoints(s->data + start, end - start);
 }
 
 MenaiValue *
@@ -1365,47 +1359,44 @@ menai_string_downcase(MenaiValue *s)
     return (MenaiValue *)obj;
 }
 
-MenaiValue *
-menai_string_trim_left(MenaiValue *s)
+MenaiString *
+menai_string_trim_left(MenaiString *s)
 {
-    MenaiString *ms = (MenaiString *)s;
-    ssize_t len = ms->length;
+    ssize_t len = s->length;
     ssize_t start = 0;
-    while (start < len && unicode_is_whitespace(ms->data[start])) {
+    while (start < len && unicode_is_whitespace(s->data[start])) {
         start++;
     }
 
-    return menai_string_from_codepoints(ms->data + start, len - start);
+    return menai_string_from_codepoints(s->data + start, len - start);
 }
 
-MenaiValue *
-menai_string_trim_right(MenaiValue *s)
+MenaiString *
+menai_string_trim_right(MenaiString *s)
 {
-    MenaiString *ms = (MenaiString *)s;
-    ssize_t end = ms->length;
-    while (end > 0 && unicode_is_whitespace(ms->data[end - 1])) {
+    ssize_t end = s->length;
+    while (end > 0 && unicode_is_whitespace(s->data[end - 1])) {
         end--;
     }
 
-    return menai_string_from_codepoints(ms->data, end);
+    return menai_string_from_codepoints(s->data, end);
 }
 
-MenaiValue *
-menai_string_trim(MenaiValue *s)
+MenaiString *
+menai_string_trim(MenaiString *s)
 {
-    MenaiString *ms = (MenaiString *)s;
-    ssize_t len = ms->length;
+    ssize_t len = s->length;
     ssize_t start = 0;
     ssize_t end = len;
-    while (start < end && unicode_is_whitespace(ms->data[start])) {
+    while (start < end && unicode_is_whitespace(s->data[start])) {
         start++;
     }
 
-    while (end > start && unicode_is_whitespace(ms->data[end - 1])) {
+    while (end > start && unicode_is_whitespace(s->data[end - 1])) {
         end--;
     }
 
-    return menai_string_from_codepoints(ms->data + start, end - start);
+    return menai_string_from_codepoints(s->data + start, end - start);
 }
 
 ssize_t
