@@ -12,13 +12,13 @@
 #include "menai_vm_c.h"
 
 /*
- * menai_alloc_structtype — native constructor for MenaiStructType.
+ * alloc_menai_structtype — native constructor for MenaiStructType.
  * name must be a MenaiString * (borrowed).  tag is a C int.
  * field_names must be an array of MenaiString * values (borrowed).
  * Returns a new reference, or NULL on error.
  */
 MenaiStructType *
-menai_alloc_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields)
+alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStructType) + (size_t)nfields * sizeof(MenaiFieldEntry);
     MenaiStructType *self = (MenaiStructType *)menai_alloc(sz);

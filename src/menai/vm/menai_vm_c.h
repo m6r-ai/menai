@@ -507,7 +507,7 @@ typedef struct {
     double value;
 } MenaiFloat;
 
-MenaiFloat *menai_alloc_float(double value);
+MenaiFloat *alloc_menai_float(double value);
 
 static inline void
 menai_float_free(MenaiFloat *self)
@@ -521,7 +521,7 @@ typedef struct {
     double imag;
 } MenaiComplex;
 
-MenaiComplex *menai_alloc_complex(double real, double imag);
+MenaiComplex *alloc_menai_complex(double real, double imag);
 
 static inline void
 menai_complex_free(MenaiComplex *self)
@@ -538,7 +538,7 @@ typedef struct {
     MenaiValue *captures[1];       /* flexible array member (C99 [1] for MSVC compat) */
 } MenaiFunction;
 
-MenaiValue *menai_function_alloc(MenaiCodeObject *co, MenaiValue *none_val);
+MenaiFunction *alloc_menai_function(MenaiCodeObject *co, MenaiValue *none_val);
 
 static inline void
 menai_function_free(MenaiFunction *self)
@@ -603,70 +603,6 @@ menai_string_free(MenaiString *self)
     menai_free(self);
 }
 
-/*
- * MenaiBytes — immutable sequence of bytes (octets, 0–255).
- *
- * Owners store data inline via a flexible array member.  Slice views allocate
- * only the header (sizeof(MenaiBytes)), point data into the owner's inline
- * buffer at an offset, and retain the owner — exactly the same structural
- * sharing pattern as MenaiList.  Views never form chains: all views point
- * directly at the root owner.
- */
-typedef struct {
-    MenaiValue_HEAD
-    ssize_t length;             /* logical byte count */
-    hash_t hash;                /* cached hash; -1 = not yet computed */
-    MenaiValue *owner;          /* non-NULL when this is a slice view */
-    uint8_t *data;              /* points to inline_data for owners, into owner for views */
-    uint8_t inline_data[];      /* FAM — storage for owning bytes */
-} MenaiBytes;
-
-static inline ssize_t
-menai_bytes_length(MenaiValue *b)
-{
-    return ((MenaiBytes *)b)->length;
-}
-
-static inline const uint8_t *
-menai_bytes_data(MenaiValue *b)
-{
-    return ((MenaiBytes *)b)->data;
-}
-
-static inline uint8_t
-menai_bytes_get(MenaiValue *b, ssize_t i)
-{
-    return ((MenaiBytes *)b)->data[i];
-}
-
-MenaiValue *menai_bytes_alloc(ssize_t n);
-MenaiValue *menai_bytes_new_empty(void);
-MenaiValue *menai_bytes_from_raw(const uint8_t *src, ssize_t n);
-MenaiValue *menai_bytes_slice(MenaiValue *b, ssize_t start, ssize_t end);
-MenaiValue *menai_bytes_concat(MenaiValue *a, MenaiValue *b);
-MenaiValue *menai_bytes_ref(MenaiValue *b, ssize_t i);
-MenaiValue *menai_bytes_append_u8(MenaiValue *b, uint8_t value);
-MenaiValue *menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int le);
-MenaiValue *menai_bytes_write_multi(MenaiValue *b, ssize_t offset,
-                                    unsigned long long value, int width, int le);
-int menai_bytes_equal(MenaiValue *a, MenaiValue *b);
-int menai_bytes_compare(MenaiValue *a, MenaiValue *b);
-hash_t menai_bytes_hash(MenaiValue *b);
-
-static inline void
-menai_bytes_free(MenaiBytes *self)
-{
-    if (self->owner != NULL) {
-        /* View — release the backing owner; do not touch the data array. */
-        menai_release(self->owner);
-        menai_free(self);
-        return;
-    }
-
-    /* Owner — the data array is inline, freed with the struct. */
-    menai_free(self);
-}
-
 typedef struct {
     MenaiValue_HEAD
     MenaiValue *name;    /* owned MenaiString * */
@@ -710,9 +646,15 @@ typedef struct {
 #define MENAI_INT_CACHE_MAX 256
 #define MENAI_INT_CACHE_SIZE (MENAI_INT_CACHE_MAX - MENAI_INT_CACHE_MIN + 1)
 
-MenaiValue *menai_integer_from_long(long n);
-MenaiValue *menai_integer_from_long_long(long long n);
-MenaiValue *menai_integer_from_bigint(MenaiBigInt src);
+MenaiInteger *menai_integer_from_long(long n);
+MenaiInteger *menai_integer_from_long_long(long long n);
+MenaiInteger *menai_integer_from_bigint(MenaiBigInt src);
+
+static inline MenaiInteger *
+menai_integer_from_ssize_t(ssize_t n)
+{
+    return menai_integer_from_long((long)n);
+}
 
 /*
  * menai_integer_bigint — return a pointer to the MenaiBigInt for a big integer.
@@ -757,6 +699,69 @@ menai_integer_free(MenaiInteger *self)
 }
 
 /*
+ * MenaiBytes — immutable sequence of bytes (octets, 0–255).
+ *
+ * Owners store data inline via a flexible array member.  Slice views allocate
+ * only the header (sizeof(MenaiBytes)), point data into the owner's inline
+ * buffer at an offset, and retain the owner — exactly the same structural
+ * sharing pattern as MenaiList.  Views never form chains: all views point
+ * directly at the root owner.
+ */
+typedef struct {
+    MenaiValue_HEAD
+    ssize_t length;             /* logical byte count */
+    hash_t hash;                /* cached hash; -1 = not yet computed */
+    MenaiValue *owner;          /* non-NULL when this is a slice view */
+    uint8_t *data;              /* points to inline_data for owners, into owner for views */
+    uint8_t inline_data[];      /* FAM — storage for owning bytes */
+} MenaiBytes;
+
+static inline ssize_t
+menai_bytes_length(MenaiValue *b)
+{
+    return ((MenaiBytes *)b)->length;
+}
+
+static inline const uint8_t *
+menai_bytes_data(MenaiValue *b)
+{
+    return ((MenaiBytes *)b)->data;
+}
+
+static inline uint8_t
+menai_bytes_get(MenaiValue *b, ssize_t i)
+{
+    return ((MenaiBytes *)b)->data[i];
+}
+
+MenaiBytes *alloc_menai_bytes(ssize_t n);
+MenaiBytes *alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n);
+MenaiBytes *alloc_menai_bytes_from_slice(MenaiValue *b, ssize_t start, ssize_t end);
+MenaiValue *menai_bytes_concat(MenaiValue *a, MenaiValue *b);
+MenaiInteger *menai_bytes_ref(MenaiValue *b, ssize_t i);
+MenaiValue *menai_bytes_append_u8(MenaiValue *b, uint8_t value);
+MenaiValue *menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int le);
+MenaiValue *menai_bytes_write_multi(MenaiValue *b, ssize_t offset,
+                                    unsigned long long value, int width, int le);
+int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
+int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
+hash_t menai_bytes_hash(MenaiValue *b);
+
+static inline void
+menai_bytes_free(MenaiBytes *self)
+{
+    if (self->owner != NULL) {
+        /* View — release the backing owner; do not touch the data array. */
+        menai_release(self->owner);
+        menai_free(self);
+        return;
+    }
+
+    /* Owner — the data array is inline, freed with the struct. */
+    menai_free(self);
+}
+
+/*
  * One entry in the MenaiStructType field-index table.
  * name is an owned MenaiString *; index is the 0-based field position.
  */
@@ -794,7 +799,7 @@ menai_struct_field_index(MenaiStructType *st, MenaiValue *name)
 }
 
 MenaiValue *menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
-MenaiStructType *menai_alloc_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields);
+MenaiStructType *alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields);
 
 static inline void
 menai_free_structtype(MenaiStructType *self)
@@ -921,8 +926,8 @@ typedef struct {
     MenaiValue *inline_data[]; /* FAM: elements[0..cap-1] then hashes[0..cap-1] */
 } MenaiSet;
 
-MenaiSet *menai_alloc_set(ssize_t cap);
-MenaiSet *menai_alloc_empty_set(void);
+MenaiSet *alloc_menai_set(ssize_t cap);
+MenaiSet *alloc_empty_menai_set(void);
 
 static inline void
 menai_set_free(MenaiSet *self)

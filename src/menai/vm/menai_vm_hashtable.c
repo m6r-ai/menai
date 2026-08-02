@@ -142,7 +142,7 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
         return menai_string_equal(a, b);
 
     case MENAITYPE_BYTES:
-        return menai_bytes_equal(a, b);
+        return menai_bytes_equal((MenaiBytes *)a, (MenaiBytes *)b);
 
     case MENAITYPE_SYMBOL:
         return menai_string_equal(((MenaiSymbol *)a)->name, ((MenaiSymbol *)b)->name);

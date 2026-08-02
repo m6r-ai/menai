@@ -9,14 +9,14 @@
 
 #include "menai_vm_c.h"
 
-static MenaiValue *_integer_cache[MENAI_INT_CACHE_SIZE];
+static MenaiInteger *_integer_cache[MENAI_INT_CACHE_SIZE];
 
-MenaiValue *
+MenaiInteger *
 menai_integer_from_long(long n)
 {
     if (n >= MENAI_INT_CACHE_MIN && n <= MENAI_INT_CACHE_MAX) {
-        MenaiValue *cached = _integer_cache[n - MENAI_INT_CACHE_MIN];
-        menai_retain(cached);
+        MenaiInteger *cached = _integer_cache[n - MENAI_INT_CACHE_MIN];
+        menai_retain((MenaiValue *)cached);
         return cached;
     }
 
@@ -31,16 +31,16 @@ menai_integer_from_long(long n)
     r->small = n;
     menai_bigint_init(&r->big);
 
-    return (MenaiValue *)r;
+    return r;
 }
 
-MenaiValue *
+MenaiInteger *
 menai_integer_from_long_long(long long n)
 {
     if (n >= (long long)MENAI_INT_CACHE_MIN &&
             n <= (long long)MENAI_INT_CACHE_MAX) {
-        MenaiValue *cached = _integer_cache[(int)n - MENAI_INT_CACHE_MIN];
-        menai_retain(cached);
+        MenaiInteger *cached = _integer_cache[(int)n - MENAI_INT_CACHE_MIN];
+        menai_retain((MenaiValue *)cached);
         return cached;
     }
 
@@ -57,7 +57,7 @@ menai_integer_from_long_long(long long n)
     return menai_integer_from_bigint(big);
 }
 
-MenaiValue *
+MenaiInteger *
 menai_integer_from_bigint(MenaiBigInt src)
 {
     /*
@@ -87,7 +87,7 @@ menai_integer_from_bigint(MenaiBigInt src)
     r->small = 0;
     r->big = src; /* transfer ownership */
 
-    return (MenaiValue *)r;
+    return r;
 }
 
 int
@@ -105,7 +105,7 @@ menai_init_integer(void)
         obj->small = v;
         menai_bigint_init(&obj->big);
 
-        _integer_cache[v - MENAI_INT_CACHE_MIN] = (MenaiValue *)obj;
+        _integer_cache[v - MENAI_INT_CACHE_MIN] = obj;
     }
 
     return 0;

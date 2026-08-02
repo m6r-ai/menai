@@ -14,12 +14,12 @@
 #include "menai_vm_c.h"
 
 /*
- * _menai_bytes_alloc — allocate an owning MenaiBytes with room for n bytes.
+ * alloc_menai_bytes — allocate an owning MenaiBytes with room for n bytes.
  * length is set to n; hash is set to -1; data is uninitialised.
  * Returns a new reference, or NULL on allocation failure.
  */
-static MenaiBytes *
-_menai_bytes_alloc(ssize_t n)
+MenaiBytes *
+alloc_menai_bytes(ssize_t n)
 {
     size_t sz = sizeof(MenaiBytes) + (size_t)n;
     MenaiBytes *obj = (MenaiBytes *)menai_alloc(sz);
@@ -37,27 +37,10 @@ _menai_bytes_alloc(ssize_t n)
     return obj;
 }
 
-MenaiValue *
-menai_bytes_alloc(ssize_t n)
+MenaiBytes *
+alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n)
 {
-    MenaiBytes *obj = _menai_bytes_alloc(n);
-    if (!obj) {
-        return NULL;
-    }
-
-    return (MenaiValue *)obj;
-}
-
-MenaiValue *
-menai_bytes_new_empty(void)
-{
-    return menai_bytes_alloc(0);
-}
-
-MenaiValue *
-menai_bytes_from_raw(const uint8_t *src, ssize_t n)
-{
-    MenaiBytes *obj = _menai_bytes_alloc(n);
+    MenaiBytes *obj = alloc_menai_bytes(n);
     if (!obj) {
         return NULL;
     }
@@ -66,11 +49,11 @@ menai_bytes_from_raw(const uint8_t *src, ssize_t n)
         memcpy(obj->inline_data, src, (size_t)n);
     }
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
-MenaiValue *
-menai_bytes_slice(MenaiValue *b_val, ssize_t start, ssize_t end)
+MenaiBytes *
+alloc_menai_bytes_from_slice(MenaiValue *b_val, ssize_t start, ssize_t end)
 {
     MenaiBytes *b = (MenaiBytes *)b_val;
 
@@ -93,7 +76,7 @@ menai_bytes_slice(MenaiValue *b_val, ssize_t start, ssize_t end)
     view->length = end - start;
     view->hash = -1;
 
-    return (MenaiValue *)view;
+    return view;
 }
 
 MenaiValue *
@@ -103,7 +86,7 @@ menai_bytes_concat(MenaiValue *a, MenaiValue *b)
     MenaiBytes *mb = (MenaiBytes *)b;
     ssize_t la = ma->length;
     ssize_t lb = mb->length;
-    MenaiBytes *obj = _menai_bytes_alloc(la + lb);
+    MenaiBytes *obj = alloc_menai_bytes(la + lb);
     if (!obj) {
         return NULL;
     }
@@ -119,7 +102,7 @@ menai_bytes_concat(MenaiValue *a, MenaiValue *b)
     return (MenaiValue *)obj;
 }
 
-MenaiValue *
+MenaiInteger *
 menai_bytes_ref(MenaiValue *b, ssize_t i)
 {
     return menai_integer_from_long((long)((MenaiBytes *)b)->data[i]);
@@ -130,7 +113,7 @@ menai_bytes_append_u8(MenaiValue *b, uint8_t value)
 {
     MenaiBytes *mb = (MenaiBytes *)b;
     ssize_t len = mb->length;
-    MenaiBytes *obj = _menai_bytes_alloc(len + 1);
+    MenaiBytes *obj = alloc_menai_bytes(len + 1);
     if (!obj) {
         return NULL;
     }
@@ -153,7 +136,7 @@ menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int
 {
     MenaiBytes *mb = (MenaiBytes *)b;
     ssize_t len = mb->length;
-    MenaiBytes *obj = _menai_bytes_alloc(len + width);
+    MenaiBytes *obj = alloc_menai_bytes(len + width);
     if (!obj) {
         return NULL;
     }
@@ -186,7 +169,7 @@ menai_bytes_write_multi(MenaiValue *b, ssize_t offset,
 {
     MenaiBytes *mb = (MenaiBytes *)b;
     ssize_t len = mb->length;
-    MenaiBytes *obj = _menai_bytes_alloc(len);
+    MenaiBytes *obj = alloc_menai_bytes(len);
     if (!obj) {
         return NULL;
     }
@@ -210,26 +193,23 @@ menai_bytes_write_multi(MenaiValue *b, ssize_t offset,
 }
 
 int
-menai_bytes_equal(MenaiValue *a, MenaiValue *b)
+menai_bytes_equal(MenaiBytes *a, MenaiBytes *b)
 {
-    MenaiBytes *ma = (MenaiBytes *)a;
-    MenaiBytes *mb = (MenaiBytes *)b;
-    ssize_t la = ma->length;
-    if (la != mb->length) {
+    ssize_t la = a->length;
+    if (la != b->length) {
         return 0;
     }
 
-    return memcmp(ma->data, mb->data, (size_t)la) == 0;
+    return memcmp(a->data, b->data, (size_t)la) == 0;
 }
 
 int
-menai_bytes_compare(MenaiValue *a, MenaiValue *b)
+menai_bytes_compare(MenaiBytes *a, MenaiBytes *b)
 {
-    MenaiBytes *ma = (MenaiBytes *)a;
-    MenaiBytes *mb = (MenaiBytes *)b;
-    ssize_t la = ma->length, lb = mb->length;
+    ssize_t la = a->length;
+    ssize_t lb = b->length;
     ssize_t min_len = la < lb ? la : lb;
-    int cmp = memcmp(ma->data, mb->data, (size_t)min_len);
+    int cmp = memcmp(a->data, b->data, (size_t)min_len);
     if (cmp != 0) {
         return cmp < 0 ? -1 : 1;
     }
