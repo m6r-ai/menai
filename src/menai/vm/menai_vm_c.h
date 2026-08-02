@@ -533,36 +533,6 @@ void menai_code_object_release(MenaiCodeObject *co);
 int menai_code_object_max_locals(const MenaiCodeObject *co);
 
 /*
- * menai_reg_set_own — store an owned reference into a register slot.
- *
- * val is an already-owned reference (e.g. freshly allocated, or returned from
- * a constructor).  The old slot value is released.  The slot must not be NULL.
- */
-static inline void
-menai_reg_set_own(MenaiValue **regs, int slot, MenaiValue *val)
-{
-    MenaiValue *old = regs[slot];
-    regs[slot] = val;
-    menai_release(old);
-}
-
-/*
- * menai_reg_set_borrow — store a borrowed reference into a register slot.
- *
- * val is a borrowed reference (e.g. read from another register, a constant
- * table, or a container element).  A retain is taken on val, then the old
- * slot value is released.  The slot must not be NULL.
- */
-static inline void
-menai_reg_set_borrow(MenaiValue **regs, int slot, MenaiValue *val)
-{
-    MenaiValue *old = regs[slot];
-    menai_retain(val);
-    regs[slot] = val;
-    menai_release(old);
-}
-
-/*
  * menai_reg_init — write an owned reference into a slot that is known to hold
  * Menai_NONE (i.e. freshly allocated or reset to the default).
  *
