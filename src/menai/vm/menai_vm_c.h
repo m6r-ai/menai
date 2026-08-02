@@ -532,24 +532,6 @@ void menai_code_object_release(MenaiCodeObject *co);
  */
 int menai_code_object_max_locals(const MenaiCodeObject *co);
 
-/*
- * menai_reg_init — write an owned reference into a slot that is known to hold
- * Menai_NONE (i.e. freshly allocated or reset to the default).
- *
- * Used when populating a callee's register window with arguments or captures
- * before a call.  The old slot value (Menai_NONE) is released.
- */
-static inline void
-menai_reg_init(MenaiValue **regs, int slot, MenaiValue *val)
-{
-    MenaiValue *old = regs[slot];
-    regs[slot] = val;
-    menai_release(old);
-}
-
-MenaiValue **menai_regs_alloc(size_t n, MenaiValue *none_val);
-void menai_regs_free(MenaiValue **regs, size_t n);
-
 /* Initialise a MenaiBigInt to zero. Must be called before first use as output. */
 #define menai_bigint_init(x) (memset((x), 0, sizeof(MenaiBigInt)))
 

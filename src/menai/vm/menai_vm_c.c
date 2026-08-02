@@ -7226,7 +7226,8 @@ menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, M
         }
     }
 
-    MenaiValue **regs = menai_regs_alloc((size_t)(MAX_FRAME_DEPTH + 1) * max_locals, Menai_NONE);
+    size_t num_regs = (size_t)(MAX_FRAME_DEPTH + 1) * max_locals;
+    MenaiValue **regs = (MenaiValue **)malloc(num_regs * sizeof(MenaiValue *));
     if (regs == NULL) {
         if (out_error) {
             out_error->code = MENAI_ERR_NOMEM;
@@ -7235,9 +7236,18 @@ menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, M
         return NULL;
     }
 
+    for (size_t i = 0; i < num_regs; i++) {
+        menai_retain(Menai_NONE);
+        regs[i] = Menai_NONE;
+    }
+
     MenaiValue *result = execute_loop(code, &globals, regs, max_locals, out_error, cancel_flag);
 
-    menai_regs_free(regs, (size_t)(MAX_FRAME_DEPTH + 1) * max_locals);
+    for (size_t i = 0; i < num_regs; i++) {
+        menai_release(regs[i]);
+    }
+
+    free(regs);
     globals_free(&globals);
 
     return result;
