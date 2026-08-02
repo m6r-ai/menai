@@ -1502,8 +1502,7 @@ bridge_globals_get(PyObject *globals_key)
                 i++;
             }
 
-            int rc = globals_build_from_arrays(&_cached_globals_gt,
-                                                names, values, (ssize_t)n);
+            int rc = globals_build_from_arrays(&_cached_globals_gt, names, values, (ssize_t)n);
             for (Py_ssize_t j = 0; j < n; j++) {
                 menai_release(values[j]);
             }
