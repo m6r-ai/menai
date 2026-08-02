@@ -4,7 +4,7 @@
  * Stores text as a UTF-32 codepoint array in a single allocation immediately
  * following the object header.  All string operations work directly on
  * uint32_t arrays.  Python string conversion is handled in the bridge layer
- * (menai_vm_bridge.c) via menai_string_from_utf8 / menai_string_to_utf8.
+ * (menai_vm_bridge.c) via alloc_menai_string_from_utf8 / alloc_utf8_from_menai_string.
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -992,7 +992,7 @@ static inline const MenaiUpcaseExpansion *unicode_upcase_expansion(uint32_t cp)
  * Returns a new reference, or NULL on allocation failure.
  */
 static MenaiString *
-_menai_string_alloc(ssize_t len)
+menai_string_alloc(ssize_t len)
 {
     size_t sz = sizeof(MenaiString) + (size_t)len * sizeof(uint32_t);
     MenaiString *obj = (MenaiString *)menai_alloc(sz);
@@ -1138,8 +1138,8 @@ _utf8_encode(const uint32_t *data, ssize_t len, ssize_t *out_nbytes)
     return buf;
 }
 
-MenaiValue *
-menai_string_from_utf8(const char *utf8, ssize_t nbytes)
+MenaiString *
+alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes)
 {
     ssize_t len;
     uint32_t *buf = _utf8_decode(utf8, nbytes, &len);
@@ -1147,7 +1147,7 @@ menai_string_from_utf8(const char *utf8, ssize_t nbytes)
         return NULL;
     }
 
-    MenaiString *obj = _menai_string_alloc(len);
+    MenaiString *obj = menai_string_alloc(len);
     if (!obj) {
         free(buf);
         return NULL;
@@ -1156,13 +1156,13 @@ menai_string_from_utf8(const char *utf8, ssize_t nbytes)
     memcpy(obj->data, buf, (size_t)len * sizeof(uint32_t));
     free(buf);
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 MenaiString *
-menai_string_from_codepoints(const uint32_t *cp, ssize_t len)
+alloc_menai_string_from_codepoints(const uint32_t *cp, ssize_t len)
 {
-    MenaiString *obj = _menai_string_alloc(len);
+    MenaiString *obj = menai_string_alloc(len);
     if (!obj) {
         return NULL;
     }
@@ -1175,9 +1175,9 @@ menai_string_from_codepoints(const uint32_t *cp, ssize_t len)
 }
 
 MenaiString *
-menai_string_from_codepoint(uint32_t cp)
+alloc_menai_string_from_codepoint(uint32_t cp)
 {
-    MenaiString *obj = _menai_string_alloc(1);
+    MenaiString *obj = menai_string_alloc(1);
     if (!obj) {
         return NULL;
     }
@@ -1188,7 +1188,7 @@ menai_string_from_codepoint(uint32_t cp)
 }
 
 char *
-menai_string_to_utf8(MenaiValue *s, ssize_t *out_nbytes)
+alloc_utf8_from_menai_string(MenaiValue *s, ssize_t *out_nbytes)
 {
     MenaiString *ms = (MenaiString *)s;
     ssize_t nbytes;
@@ -1280,7 +1280,7 @@ menai_string_concat(MenaiValue *a, MenaiValue *b)
     MenaiString *mb = (MenaiString *)b;
     ssize_t la = ma->length;
     ssize_t lb = mb->length;
-    MenaiString *obj = _menai_string_alloc(la + lb);
+    MenaiString *obj = menai_string_alloc(la + lb);
     if (!obj) {
         return NULL;
     }
@@ -1299,7 +1299,7 @@ menai_string_concat(MenaiValue *a, MenaiValue *b)
 MenaiString *
 menai_string_slice(MenaiString *s, ssize_t start, ssize_t end)
 {
-    return menai_string_from_codepoints(s->data + start, end - start);
+    return alloc_menai_string_from_codepoints(s->data + start, end - start);
 }
 
 MenaiValue *
@@ -1321,7 +1321,7 @@ menai_string_upcase(MenaiValue *s)
         }
     }
 
-    MenaiString *obj = _menai_string_alloc(out_len);
+    MenaiString *obj = menai_string_alloc(out_len);
     if (!obj) {
         return NULL;
     }
@@ -1347,7 +1347,7 @@ menai_string_downcase(MenaiValue *s)
 {
     MenaiString *ms = (MenaiString *)s;
     ssize_t len = ms->length;
-    MenaiString *obj = _menai_string_alloc(len);
+    MenaiString *obj = menai_string_alloc(len);
     if (!obj) {
         return NULL;
     }
@@ -1360,7 +1360,7 @@ menai_string_downcase(MenaiValue *s)
 }
 
 MenaiString *
-menai_string_trim_left(MenaiString *s)
+alloc_menai_string_from_trim_left(MenaiString *s)
 {
     ssize_t len = s->length;
     ssize_t start = 0;
@@ -1368,22 +1368,22 @@ menai_string_trim_left(MenaiString *s)
         start++;
     }
 
-    return menai_string_from_codepoints(s->data + start, len - start);
+    return alloc_menai_string_from_codepoints(s->data + start, len - start);
 }
 
 MenaiString *
-menai_string_trim_right(MenaiString *s)
+alloc_menai_string_from_trim_right(MenaiString *s)
 {
     ssize_t end = s->length;
     while (end > 0 && unicode_is_whitespace(s->data[end - 1])) {
         end--;
     }
 
-    return menai_string_from_codepoints(s->data, end);
+    return alloc_menai_string_from_codepoints(s->data, end);
 }
 
 MenaiString *
-menai_string_trim(MenaiString *s)
+alloc_menai_string_from_trim(MenaiString *s)
 {
     ssize_t len = s->length;
     ssize_t start = 0;
@@ -1396,7 +1396,7 @@ menai_string_trim(MenaiString *s)
         end--;
     }
 
-    return menai_string_from_codepoints(s->data + start, end - start);
+    return alloc_menai_string_from_codepoints(s->data + start, end - start);
 }
 
 ssize_t
@@ -1424,33 +1424,6 @@ menai_string_find(MenaiValue *haystack, MenaiValue *needle)
     return -1;
 }
 
-int
-menai_string_has_prefix(MenaiValue *s, MenaiValue *prefix)
-{
-    MenaiString *ms = (MenaiString *)s;
-    MenaiString *mp = (MenaiString *)prefix;
-    ssize_t plen = mp->length;
-    if (plen > ms->length) {
-        return 0;
-    }
-
-    return memcmp(ms->data, mp->data, (size_t)plen * sizeof(uint32_t)) == 0;
-}
-
-int
-menai_string_has_suffix(MenaiValue *s, MenaiValue *suffix)
-{
-    MenaiString *ms = (MenaiString *)s;
-    MenaiString *msu = (MenaiString *)suffix;
-    ssize_t slen = ms->length;
-    ssize_t sulen = msu->length;
-    if (sulen > slen) {
-        return 0;
-    }
-
-    return memcmp(ms->data + (slen - sulen), msu->data, (size_t)sulen * sizeof(uint32_t)) == 0;
-}
-
 MenaiValue *
 menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
 {
@@ -1467,7 +1440,7 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
          * last.  "hello".replace("", "X") -> "XhXeXlXlXoX"
          */
         ssize_t out_len = slen + (slen + 1) * tolen;
-        MenaiString *obj = _menai_string_alloc(out_len);
+        MenaiString *obj = menai_string_alloc(out_len);
         if (!obj) {
             return NULL;
         }
@@ -1509,7 +1482,7 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
     }
 
     ssize_t out_len = slen + count * (tolen - frlen);
-    MenaiString *obj = _menai_string_alloc(out_len);
+    MenaiString *obj = menai_string_alloc(out_len);
     if (!obj) {
         return NULL;
     }

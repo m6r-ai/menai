@@ -16,8 +16,8 @@
 
 #include "menai_vm_c.h"
 
-MenaiValue *
-menai_list_alloc(ssize_t n)
+MenaiList *
+alloc_menai_list(ssize_t n)
 {
     MenaiList *obj = (MenaiList *)menai_alloc(sizeof(MenaiList) + (size_t)n * sizeof(MenaiValue *));
     if (!obj) {
@@ -30,7 +30,7 @@ menai_list_alloc(ssize_t n)
     obj->length = n;
     obj->owner = NULL;
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 MenaiValue *

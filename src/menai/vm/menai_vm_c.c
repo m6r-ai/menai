@@ -897,7 +897,7 @@ globals_build(GlobalsTable *gt, const GlobalsTable *globals_gt)
  * globals_build_from_dict — build a GlobalsTable from a native MenaiDict.
  *
  * Fills the entries array only (no hash slots).  Names are strdup'd from
- * the MenaiString keys via menai_string_to_utf8.  Sets owns_names = 1.
+ * the MenaiString keys via alloc_utf8_from_menai_string.  Sets owns_names = 1.
  * Returns 0 on success, MENAI_ERR_* on error.
  */
 int
@@ -925,7 +925,7 @@ globals_build_from_dict(GlobalsTable *gt, MenaiValue *dict_val)
                 return MENAI_ERR_TYPE;
             }
 
-            char *name_copy = menai_string_to_utf8(k, NULL);
+            char *name_copy = alloc_utf8_from_menai_string(k, NULL);
             if (name_copy == NULL) {
                 globals_free(gt);
                 return MENAI_ERR_NOMEM;
@@ -1084,7 +1084,7 @@ globals_merge_extra_native(GlobalsTable *gt, MenaiValue *extra_dict_val)
             return MENAI_ERR_TYPE;
         }
 
-        char *name_copy = menai_string_to_utf8(k, NULL);
+        char *name_copy = alloc_utf8_from_menai_string(k, NULL);
         if (name_copy == NULL) {
             return MENAI_ERR_NOMEM;
         }
@@ -1160,17 +1160,18 @@ call_setup(Frame *new_frame, MenaiValue *func_obj, MenaiValue **regs, int callee
 
         /* Pack excess args into a MenaiList for the rest parameter. */
         int rest_count = arity - min_arity;
-        MenaiValue *rest_list = menai_list_alloc(rest_count);
+        MenaiList *rest_list = alloc_menai_list(rest_count);
         if (!rest_list) {
             return MENAI_ERR_NOMEM;
         }
 
         for (int k = 0; k < rest_count; k++) {
-            menai_list_elements(rest_list)[k] = regs[callee_base + min_arity + k];
-            menai_retain(menai_list_elements(rest_list)[k]);
+            MenaiValue *elem = regs[callee_base + min_arity + k];
+            menai_retain(elem);
+            rest_list->elements[k] = elem;
         }
 
-        menai_reg_set_own(regs, callee_base + min_arity, rest_list);
+        menai_reg_set_own(regs, callee_base + min_arity, (MenaiValue *)rest_list);
     } else if (MENAI_UNLIKELY(arity != param_count)) {
         return MENAI_ERR_ARITY_MISMATCH;
     }
@@ -1352,7 +1353,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_RAISE_ERROR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiValue *msg = regs[base + src0];
-            char *cstr = menai_string_to_utf8(msg, NULL);
+            char *cstr = alloc_utf8_from_menai_string(msg, NULL);
             if (cstr == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -2946,7 +2947,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiString *r = menai_string_from_codepoint((uint32_t)cp);
+            MenaiString *r = alloc_menai_string_from_codepoint((uint32_t)cp);
             if (r == NULL) {
                 goto error;
             }
@@ -3407,12 +3408,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_FLOAT_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiFloat *a = (MenaiFloat *)regs[base + src0];
-            MenaiValue *r = menai_format_float(a->value);
+            MenaiString *r = menai_format_float(a->value);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -3740,12 +3741,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_COMPLEX_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiComplex *a = (MenaiComplex *)regs[base + src0];
-            MenaiValue *r = menai_format_complex(a->real, a->imag);
+            MenaiString *r = menai_format_complex(a->real, a->imag);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -3848,7 +3849,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRING_TRIM: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiString *a = (MenaiString *)regs[base + src0];
-            MenaiString *r = menai_string_trim(a);
+            MenaiString *r = alloc_menai_string_from_trim(a);
             if (r == NULL) {
                 goto error;
             }
@@ -3860,7 +3861,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRING_TRIM_LEFT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiString *a = (MenaiString *)regs[base + src0];
-            MenaiString *r = menai_string_trim_left(a);
+            MenaiString *r = alloc_menai_string_from_trim_left(a);
             if (r == NULL) {
                 goto error;
             }
@@ -3872,7 +3873,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRING_TRIM_RIGHT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiString *a = (MenaiString *)regs[base + src0];
-            MenaiString *r = menai_string_trim_right(a);
+            MenaiString *r = alloc_menai_string_from_trim_right(a);
             if (r == NULL) {
                 goto error;
             }
@@ -3897,19 +3898,38 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRING_PREFIX_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *s = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, menai_string_has_prefix(a, b));
+            MenaiString *p = (MenaiString *)regs[base + src1];
+            ssize_t plen = p->length;
+
+            bool r = true;
+            if (plen > s->length) {
+                r = false;
+            } else {
+                r = (memcmp(s->data, p->data, (size_t)plen * sizeof(uint32_t)) == 0);
+            }
+
+            bool_store(regs, base + dest, r);
             break;
         }
 
         case OP_STRING_SUFFIX_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *s = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(regs, base + dest, menai_string_has_suffix(a, b));
+            MenaiString *su = (MenaiString *)regs[base + src1];
+            ssize_t slen = s->length;
+            ssize_t sulen = su->length;
+
+            bool r = true;
+            if (sulen > slen) {
+                r = false;
+            } else {
+                r = (memcmp(s->data + (slen - sulen), su->data, (size_t)sulen * sizeof(uint32_t)) == 0);
+            }
+
+            bool_store(regs, base + dest, r);
             break;
         }
 
@@ -3936,7 +3956,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiString *r = menai_string_from_codepoint(a->data[idx]);
+            MenaiString *r = alloc_menai_string_from_codepoint(a->data[idx]);
             if (r == NULL) {
                 goto error;
             }
@@ -4051,14 +4071,14 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRING_TO_INTEGER_CODEPOINT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            ssize_t slen = menai_string_length(a);
+            MenaiString *a = (MenaiString *)regs[base + src0];
+            ssize_t slen = a->length;
             if (slen != 1) {
                 vm_err = MENAI_ERR_NOT_SINGLE_CHAR_STRING;
                 goto error;
             }
 
-            MenaiInteger *r = alloc_menai_integer_from_long((long)menai_string_get(a, 0));
+            MenaiInteger *r = alloc_menai_integer_from_long((long)a->data[0]);
             if (r == NULL) {
                 goto error;
             }
@@ -4089,7 +4109,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiString *trimmed = menai_string_trim(a);
+            MenaiString *trimmed = alloc_menai_string_from_trim(a);
             if (trimmed == NULL) {
                 goto error;
             }
@@ -4114,9 +4134,9 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRING_TO_NUMBER: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
-            ssize_t slen = menai_string_length(a);
-            const uint32_t *sdata = menai_string_data(a);
+            MenaiString *a = (MenaiString *)regs[base + src0];
+            ssize_t slen = a->length;
+            const uint32_t *sdata = a->data;
 
             /*
              * Copy codepoints to a stack-allocated ASCII buffer.
@@ -4198,31 +4218,31 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRING_TO_LIST: {
             /* src0=string, src1=delimiter string */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            ssize_t alen = menai_string_length(a);
-            ssize_t blen = menai_string_length(b);
-            const uint32_t *adata = menai_string_data(a);
-            const uint32_t *bdata = menai_string_data(b);
-            MenaiValue *r;
+            MenaiString *b = (MenaiString *)regs[base + src1];
+            ssize_t alen = a->length;
+            ssize_t blen = b->length;
+            const uint32_t *adata = a->data;
+            const uint32_t *bdata = b->data;
+            MenaiList *r;
             if (blen == 0) {
                 /* Split into individual codepoints */
-                MenaiValue *r_stl = menai_list_alloc(alen);
+                MenaiList *r_stl = alloc_menai_list(alen);
                 if (!r_stl) {
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
 
-                MenaiValue **stl_arr = menai_list_elements(r_stl);
+                MenaiValue **stl_arr = r_stl->elements;
                 for (ssize_t i = 0; i < alen; i++) {
-                    stl_arr[i] = (MenaiValue *)menai_string_from_codepoint(adata[i]);
+                    stl_arr[i] = (MenaiValue *)alloc_menai_string_from_codepoint(adata[i]);
                     if (!stl_arr[i]) {
                         for (ssize_t k = 0; k < i; k++) {
                             menai_release(stl_arr[k]);
                         }
 
-                        menai_release(r_stl);
+                        menai_release((MenaiValue *)r_stl);
                         goto error;
                     }
                 }
@@ -4241,25 +4261,25 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 }
 
                 ssize_t nparts = count + 1;
-                MenaiValue *r_parts = menai_list_alloc(nparts);
+                MenaiList *r_parts = alloc_menai_list(nparts);
                 if (!r_parts) {
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
 
-                MenaiValue **parts2 = menai_list_elements(r_parts);
+                MenaiValue **parts2 = r_parts->elements;
                 ssize_t seg_start = 0, pi2 = 0;
                 for (ssize_t i = 0; i <= alen; ) {
                     int match = (i <= alen - blen) &&
                         (memcmp(adata + i, bdata, (size_t)blen * sizeof(uint32_t)) == 0);
                     if (match || i == alen) {
-                        parts2[pi2] = (MenaiValue *)menai_string_from_codepoints(adata + seg_start, i - seg_start);
+                        parts2[pi2] = (MenaiValue *)alloc_menai_string_from_codepoints(adata + seg_start, i - seg_start);
                         if (!parts2[pi2]) {
                             for (ssize_t k = 0; k < pi2; k++) {
                                 menai_release(parts2[k]);
                             }
 
-                            menai_release(r_parts);
+                            menai_release((MenaiValue *)r_parts);
                             goto error;
                         }
 
@@ -4281,7 +4301,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -4453,9 +4473,9 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRING_TO_BYTES: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *s = regs[base + src0];
-            ssize_t slen = menai_string_length(s);
-            const uint32_t *cp = menai_string_data(s);
+            MenaiString *s = (MenaiString *)regs[base + src0];
+            ssize_t slen = s->length;
+            const uint32_t *cp = s->data;
 
             /* Encode UTF-32 codepoints to UTF-8 bytes */
             ssize_t nbytes = 0;
@@ -4564,7 +4584,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 }
             }
 
-            MenaiString *result = menai_string_from_codepoints(cp_buf, ncp);
+            MenaiString *result = alloc_menai_string_from_codepoints(cp_buf, ncp);
             free(cp_buf);
             if (result == NULL) {
                 goto error;
@@ -4578,12 +4598,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             ssize_t nbytes = b->length;
-            MenaiValue *result = menai_list_alloc(nbytes);
+            MenaiList *result = alloc_menai_list(nbytes);
             if (result == NULL) {
                 goto error;
             }
 
-            MenaiValue **arr = menai_list_elements(result);
+            MenaiValue **arr = result->elements;
             const uint8_t *data = b->data;
             for (ssize_t i = 0; i < nbytes; i++) {
                 arr[i] = (MenaiValue *)alloc_menai_integer_from_long((long)data[i]);
@@ -4592,12 +4612,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                         menai_release(arr[j]);
                     }
 
-                    menai_release(result);
+                    menai_release((MenaiValue *)result);
                     goto error;
                 }
             }
 
-            menai_reg_set_own(regs, base + dest, result);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)result);
             break;
         }
 
@@ -4623,7 +4643,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 cp_buf[i * 2 + 1] = hex_chars[data[i] & 0xF];
             }
 
-            MenaiString *result = menai_string_from_codepoints(cp_buf, nbytes * 2);
+            MenaiString *result = alloc_menai_string_from_codepoints(cp_buf, nbytes * 2);
             free(cp_buf);
             if (result == NULL) {
                 goto error;
@@ -4635,9 +4655,9 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRING_HEX_TO_BYTES: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *s = regs[base + src0];
-            ssize_t slen = menai_string_length(s);
-            const uint32_t *cp = menai_string_data(s);
+            MenaiString *s = (MenaiString *)regs[base + src0];
+            ssize_t slen = s->length;
+            const uint32_t *cp = s->data;
 
             if (slen % 2 != 0) {
                 vm_err = MENAI_ERR_HEX_EVEN_LENGTH;
@@ -4653,8 +4673,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             for (ssize_t i = 0; i < nbytes; i++) {
                 uint32_t hi = cp[i * 2];
                 uint32_t lo = cp[i * 2 + 1];
-                int hi_val = -1, lo_val = -1;
 
+                int hi_val = -1;
                 if (hi >= '0' && hi <= '9') {
                     hi_val = hi - '0';
                 } else if (hi >= 'a' && hi <= 'f') {
@@ -4663,6 +4683,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                     hi_val = hi - 'A' + 10;
                 }
 
+                int lo_val = -1;
                 if (lo >= '0' && lo <= '9') {
                     lo_val = lo - '0';
                 } else if (lo >= 'a' && lo <= 'f') {
@@ -5191,17 +5212,17 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiValue *lst = menai_list_alloc(2);
+            MenaiList *lst = alloc_menai_list(2);
             if (lst == NULL) {
                 menai_release((MenaiValue *)val_result);
                 menai_release((MenaiValue *)next_off);
                 goto error;
             }
 
-            MenaiValue **elems = menai_list_elements(lst);
+            MenaiValue **elems = lst->elements;
             elems[0] = (MenaiValue *)val_result;
             elems[1] = (MenaiValue *)next_off;
-            menai_reg_set_own(regs, base + dest, lst);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)lst);
             break;
         }
 
@@ -5295,17 +5316,17 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiValue *lst = menai_list_alloc(2);
+            MenaiList *lst = alloc_menai_list(2);
             if (lst == NULL) {
                 menai_release((MenaiValue *)val_result);
                 menai_release((MenaiValue *)next_off);
                 goto error;
             }
 
-            MenaiValue **elems = menai_list_elements(lst);
+            MenaiValue **elems = lst->elements;
             elems[0] = (MenaiValue *)val_result;
             elems[1] = (MenaiValue *)next_off;
-            menai_reg_set_own(regs, base + dest, lst);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)lst);
             break;
         }
 
@@ -5471,7 +5492,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiList *a = (MenaiList *)regs[base + src0];
             ssize_t n = a->length;
-            MenaiValue *r = menai_list_alloc(n + 1);
+            MenaiList *r = alloc_menai_list(n + 1);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -5479,7 +5500,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *item = regs[base + src1];
-            MenaiValue **pre_arr = menai_list_elements(r);
+            MenaiValue **pre_arr = r->elements;
             pre_arr[0] = item;
             menai_retain(item);
             for (ssize_t i = 0; i < n; i++) {
@@ -5487,7 +5508,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 menai_retain(pre_arr[i + 1]);
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5495,13 +5516,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiList *a = (MenaiList *)regs[base + src0];
             ssize_t n = a->length;
-            MenaiValue *r = menai_list_alloc(n + 1);
+            MenaiList *r = alloc_menai_list(n + 1);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **app_arr = menai_list_elements(r);
+            MenaiValue **app_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
                 app_arr[i] = a->elements[i];
                 menai_retain(app_arr[i]);
@@ -5511,7 +5532,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiValue *item = regs[base + src1];
             app_arr[n] = item;
             menai_retain(item);
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5519,19 +5540,19 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiList *a = (MenaiList *)regs[base + src0];
             ssize_t n = a->length;
-            MenaiValue *r = menai_list_alloc(n);
+            MenaiList *r = alloc_menai_list(n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **rev_arr = menai_list_elements(r);
+            MenaiValue **rev_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
                 rev_arr[i] = a->elements[n - 1 - i];
                 menai_retain(rev_arr[i]);
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5543,13 +5564,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             ssize_t na = a->length;
             ssize_t nb = b->length;
             ssize_t nc = na + nb;
-            MenaiValue *r = menai_list_alloc(nc);
+            MenaiList *r = alloc_menai_list(nc);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **cat_arr = menai_list_elements(r);
+            MenaiValue **cat_arr = r->elements;
             for (ssize_t i = 0; i < na; i++) {
                 cat_arr[i] = a->elements[i];
                 menai_retain(cat_arr[i]);
@@ -5560,7 +5581,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 menai_retain(cat_arr[na + i]);
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5681,7 +5702,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiList *a = (MenaiList *)regs[base + src0];
             ssize_t n = a->length;
 
-            MenaiValue *r = menai_list_alloc(n);
+            MenaiList *r = alloc_menai_list(n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -5689,7 +5710,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *item = regs[base + src1];
-            MenaiValue **rm_arr = menai_list_elements(r);
+            MenaiValue **rm_arr = r->elements;
             ssize_t j = 0;
             for (ssize_t i = 0; i < n; i++) {
                 MenaiValue *e = a->elements[i];
@@ -5701,7 +5722,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             ((MenaiList *)r)->length = j;
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5749,7 +5770,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 }
             }
 
-            MenaiString *r = menai_string_from_codepoints(lts_buf, total);
+            MenaiString *r = alloc_menai_string_from_codepoints(lts_buf, total);
             free(lts_buf);
             if (r == NULL) {
                 goto error;
@@ -5908,19 +5929,19 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiDict *a = (MenaiDict *)regs[base + src0];
             ssize_t n = a->length;
-            MenaiValue *r = menai_list_alloc(n);
+            MenaiList *r = alloc_menai_list(n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **dk_arr = menai_list_elements(r);
+            MenaiValue **dk_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
                 menai_retain(a->keys[i]);
                 dk_arr[i] = a->keys[i];
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5928,19 +5949,19 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiDict *a = (MenaiDict *)regs[base + src0];
             ssize_t n = a->length;
-            MenaiValue *r = menai_list_alloc(n);
+            MenaiList *r = alloc_menai_list(n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **dv_arr = menai_list_elements(r);
+            MenaiValue **dv_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
                 menai_retain(a->values[i]);
                 dv_arr[i] = a->values[i];
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -6565,19 +6586,19 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiSet *a = (MenaiSet *)regs[base + src0];
             ssize_t set_n = a->length;
-            MenaiValue *r = menai_list_alloc(set_n);
+            MenaiList *r = alloc_menai_list(set_n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **stl_arr = menai_list_elements(r);
+            MenaiValue **stl_arr = r->elements;
             for (ssize_t i = 0; i < set_n; i++) {
                 menai_retain(a->elements[i]);
                 stl_arr[i] = a->elements[i];
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -6630,13 +6651,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 n = (start - end - step - 1) / (-step);
             }
 
-            MenaiValue *r = menai_list_alloc(n);
+            MenaiList *r = alloc_menai_list(n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **rng_arr = menai_list_elements(r);
+            MenaiValue **rng_arr = r->elements;
             long val = start;
             for (ssize_t i = 0; i < n; i++) {
                 MenaiInteger *mi = alloc_menai_integer_from_long(val);
@@ -6645,7 +6666,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                         menai_release(rng_arr[k]);
                     }
 
-                    menai_release(r);
+                    menai_release((MenaiValue *)r);
                     goto error;
                 }
 
@@ -6653,7 +6674,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 val += step;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -6666,20 +6687,20 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
              */
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             int n = src1;
-            MenaiValue *r = menai_list_alloc(n);
+            MenaiList *r = alloc_menai_list(n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue **lst_arr = menai_list_elements(r);
+            MenaiValue **lst_arr = r->elements;
             for (int i = 0; i < n; i++) {
                 lst_arr[i] = regs[base + src0 + i];
                 menai_retain(lst_arr[i]);
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -6819,7 +6840,9 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
             MenaiStructType *stype = sval->struct_type;
             MenaiValue *field_name = field_sym->name;
-            int fi = menai_struct_field_index(stype, field_name);
+            hash_t h = menai_string_hash((MenaiValue *)field_name);
+            int fi = (int)menai_ht_lookup(&stype->field_ht, (MenaiValue *)field_name, h);
+
             if (fi < 0) {
                 vm_err = MENAI_ERR_STRUCT_FIELD_NOT_FOUND;
                 goto error;
@@ -6866,7 +6889,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
             MenaiStructType *stype = sval->struct_type;
             MenaiValue *field_name = field_sym->name;
-            int fi = menai_struct_field_index((MenaiStructType *)stype, field_name);
+            hash_t h = menai_string_hash((MenaiValue *)field_name);
+            int fi = (int)menai_ht_lookup(&stype->field_ht, (MenaiValue *)field_name, h);
             if (fi < 0) {
                 vm_err = MENAI_ERR_STRUCT_FIELD_NOT_FOUND;
                 goto error;
@@ -6995,13 +7019,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiStructType *st = (MenaiStructType *)regs[base + src0];
             int n = st->nfields;
-            MenaiValue *r = menai_list_alloc(n);
+            MenaiList *r = alloc_menai_list(n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiValue **sf_arr = menai_list_elements(r);
+            MenaiValue **sf_arr = r->elements;
             for (int i = 0; i < n; i++) {
                 MenaiValue *sym = menai_symbol_alloc(st->fields[i].name);
                 if (sym == NULL) {
@@ -7009,14 +7033,14 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                         menai_release(sf_arr[k]);
                     }
 
-                    menai_release(r);
+                    menai_release((MenaiValue *)r);
                     goto error;
                 }
 
                 sf_arr[i] = sym;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 

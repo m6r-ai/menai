@@ -29,8 +29,6 @@ typedef ptrdiff_t ssize_t;
 #define MENAI_UNLIKELY(x) (x)
 #endif
 
-typedef struct MenaiValue_s MenaiValue;
-
 /*
  * MenaiType — the type tag for a Menai value.  uint16_t is sufficient for
  * the current types and leaves room for future additions.  The values are
@@ -53,6 +51,248 @@ typedef uint16_t MenaiType;
 #define MENAITYPE_STRUCT 0x000c
 #define MENAITYPE_STRUCTTYPE 0x000d
 #define MENAITYPE_BYTES 0x000e
+
+typedef struct MenaiBigInt MenaiBigInt;
+typedef struct MenaiBoolean MenaiBoolean;
+typedef struct MenaiBytes MenaiBytes;
+typedef struct MenaiCodeObject MenaiCodeObject;
+typedef struct MenaiComplex MenaiComplex;
+typedef struct MenaiDict MenaiDict;
+typedef struct MenaiFloat MenaiFloat;
+typedef struct MenaiFunction MenaiFunction;
+typedef struct MenaiInteger MenaiInteger;
+typedef struct MenaiList MenaiList;
+typedef struct MenaiNone MenaiNone;
+typedef struct MenaiSet MenaiSet;
+typedef struct MenaiString MenaiString;
+typedef struct MenaiStruct MenaiStruct;
+typedef struct MenaiStructType MenaiStructType;
+typedef struct MenaiSymbol MenaiSymbol;
+typedef struct MenaiValue MenaiValue;
+
+typedef int64_t hash_t;
+typedef uint64_t uhash_t;
+
+typedef struct {
+    MenaiValue *key;     /* borrowed ref to MenaiValue *; NULL = empty slot */
+    hash_t hash;         /* cached hash of key */
+    ssize_t index;       /* index into the owning dict/set's element arrays */
+} MenaiHashSlot;
+
+/*
+ * MenaiHashTable — open-addressing hash table
+ *
+ * Maps MenaiValue *keys to ssize_t indices.  Used as the internal
+ * acceleration structure for MenaiDict (key -> entry index) and MenaiSet
+ * (element -> entry index, for membership testing).
+ *
+ * Invariants:
+ *   - slot_count is always a power of 2 (or 0 for an empty table).
+ *   - used <= slot_count * MENAI_HT_MAX_LOAD.
+ *   - A slot is empty when its key pointer is NULL.
+ *   - Deleted slots are not used (tables are immutable after construction).
+ */
+typedef struct {
+    MenaiHashSlot *slots;
+    ssize_t slot_count;  /* power of 2; 0 means uninitialised */
+    ssize_t used;
+} MenaiHashTable;
+
+struct MenaiCodeObject {
+    size_t ob_refcnt;
+
+    uint64_t *instrs;                    /* packed instruction words */
+    int code_len;                        /* number of instructions */
+
+    MenaiValue **constants;              /* fast constant pool */
+    ssize_t nconst;
+
+    const char **names;                  /* global name strings for OP_LOAD_NAME */
+    hash_t *name_hashes;                 /* precomputed FNV-1a hash of each name */
+    ssize_t nnames;
+
+    MenaiCodeObject **children;          /* child code objects, one per closure */
+    ssize_t nchildren;
+
+    int param_count;
+    int local_count;
+    int outgoing_arg_slots;
+    int is_variadic;
+    ssize_t ncap;                        /* number of free variables (capture slots) */
+
+    char **param_names;                  /* parameter name strings, parallel to param_count */
+    ssize_t nparam_names;                /* number of elements in param_names */
+
+    char *name;                          /* function name for error messages, or NULL */
+};
+
+/*
+ * Sign-magnitude arbitrary-precision integer.
+ */
+struct MenaiBigInt {
+    uint32_t *digits;  /* little-endian base-2^32 magnitude; NULL when zero */
+    ssize_t length;    /* number of valid digits; 0 when zero */
+    int sign;          /* -1, 0, or 1 */
+};
+
+/*
+ * One entry in the MenaiStructType field-index table.
+ * name is an owned MenaiString *; index is the 0-based field position.
+ */
+typedef struct {
+    MenaiValue *name;
+    int index;
+} MenaiFieldEntry;
+
+/*
+ * MenaiValue_HEAD — common prefix for every Menai value struct.
+ *
+ * ob_refcnt    — reference count.
+ * ob_type      — type tag (MenaiType, uint16_t).
+ * ob_alloc     — pool bucket number if this object was served from the
+ *                pool allocator, or -1 if it was allocated directly via malloc.
+ *                Written by menai_alloc; read by menai_free to determine how
+ *                to return the block.
+ */
+#define MenaiValue_HEAD              \
+    uint32_t ob_refcnt;              \
+    MenaiType ob_type;               \
+    int16_t ob_alloc_bucket;
+
+struct MenaiBoolean {
+    MenaiValue_HEAD
+    int value;                          /* 0 or 1 */
+};
+
+/*
+ * MenaiBytes — immutable sequence of bytes (octets, 0–255).
+ *
+ * Owners store data inline via a flexible array member.  Slice views allocate
+ * only the header (sizeof(MenaiBytes)), point data into the owner's inline
+ * buffer at an offset, and retain the owner — exactly the same structural
+ * sharing pattern as MenaiList.  Views never form chains: all views point
+ * directly at the root owner.
+ */
+struct MenaiBytes {
+    MenaiValue_HEAD
+    ssize_t length;                     /* logical byte count */
+    hash_t hash;                        /* cached hash; -1 = not yet computed */
+    MenaiValue *owner;                  /* non-NULL when this is a slice view */
+    uint8_t *data;                      /* points to inline_data for owners, into owner for views */
+    uint8_t inline_data[];              /* FAM — storage for owning bytes */
+};
+
+struct MenaiComplex {
+    MenaiValue_HEAD
+    double real;
+    double imag;
+};
+
+struct MenaiDict {
+    MenaiValue_HEAD
+    MenaiValue **keys;                  /* C array of owned MenaiValues */
+    MenaiValue **values;                /* C array of owned MenaiValues */
+    hash_t *hashes;                     /* C array of menai_value_hash(keys[i]) */
+    MenaiHashTable ht;                  /* pure-C hash table for O(1) key lookup */
+    ssize_t length;
+};
+
+struct MenaiFloat {
+    MenaiValue_HEAD
+    double value;
+};
+
+struct MenaiFunction {
+    MenaiValue_HEAD
+    ssize_t ncap;                       /* number of captured values */
+    MenaiCodeObject *bytecode;          /* retained — owns all frame metadata */
+
+    /* Inline capture array — ncap elements follow immediately. */
+    MenaiValue *captures[1];            /* flexible array member (C99 [1] for MSVC compat) */
+};
+
+/*
+ * Three-tier integer representation:
+ *
+ *   is_big == 0: value is stored inline as a C long in the small field.
+ *                For values in [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX]
+ *                the object is a pre-allocated singleton and must never
+ *                be freed.
+ *
+ *   is_big == 1: value is stored as a MenaiBigInt bignum in the big field.
+ *                The MenaiBigInt owns its digit array.
+ *
+ * The ob_type is always &MenaiInteger_Type.
+ */
+struct MenaiInteger {
+    MenaiValue_HEAD
+    int is_big;
+    long small;                         /* valid when is_big == 0 */
+    MenaiBigInt big;                    /* valid when is_big == 1 */
+};
+
+struct MenaiList {
+    MenaiValue_HEAD
+    MenaiValue **elements;              /* points to inline_elements for owners, into owner for views */
+    ssize_t length;                     /* number of live elements */
+
+    /*
+     * owner is non-NULL when this list is a slice view into another list's
+     * inline_elements array.  In that case elements points into owner's storage
+     * and must not be freed; only menai_release(owner) is needed on dealloc.
+     * owner always points to a list with owner == NULL (never a chain).
+     */
+    MenaiValue *owner;
+    MenaiValue *inline_elements[];      /* FAM — storage for owning lists */
+};
+
+struct MenaiNone {
+    MenaiValue_HEAD
+};
+
+struct MenaiSet {
+    MenaiValue_HEAD
+    MenaiValue **elements;              /* points into inline_data[0..length-1] */
+    hash_t *hashes;                     /* points into inline_data past the elements */
+    MenaiHashTable ht;                  /* pure-C hash table for O(1) membership; separate allocation */
+    ssize_t length;                     /* number of live elements */
+    MenaiValue *inline_data[];          /* FAM: elements[0..cap-1] then hashes[0..cap-1] */
+};
+
+struct MenaiString {
+    MenaiValue_HEAD
+    ssize_t length;                     /* codepoint count */
+    hash_t hash;                        /* cached hash; -1 = not yet computed */
+    uint32_t data[];                    /* UTF-32 codepoints, flexible array */
+};
+
+struct MenaiStruct {
+    MenaiValue_HEAD
+    int nfields;                        /* number of fields */
+    MenaiStructType *struct_type;       /* owned reference to MenaiStructType */
+    MenaiValue *items[1];               /* inline field values, nfields entries */
+};
+
+struct MenaiStructType {
+    MenaiValue_HEAD
+    MenaiValue *name;                   /* owned MenaiString * — struct type name */
+    int tag;                            /* unique integer tag */
+    int nfields;                        /* number of fields */
+    MenaiHashTable field_ht;            /* name -> index hash table; keys are borrowed from fields[] */
+    MenaiFieldEntry fields[];           /* inline field-index table, nfields entries */
+};
+
+struct MenaiSymbol {
+    MenaiValue_HEAD
+    MenaiValue *name;                   /* owned MenaiString * */
+};
+
+/*
+ * MenaiValue — the minimal struct that every MenaiValue pointer can be safely cast to
+ */
+struct MenaiValue {
+    MenaiValue_HEAD
+};
 
 /*
  * Menai VM error codes — returned as negative values by leaf modules
@@ -129,8 +369,6 @@ typedef uint16_t MenaiType;
 #define MENAI_ERR_UNIMPLEMENTED_OPCODE -59
 #define MENAI_ERR_USER_ERROR -60
 
-typedef struct MenaiString MenaiString;
-
 /*
  * MenaiVMError — structured error record produced by the VM.
  *
@@ -167,28 +405,6 @@ typedef struct {
 #define IS_MENAI_STRUCTTYPE(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_STRUCTTYPE)
 #define IS_MENAI_STRUCT(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_STRUCT)
 #define IS_MENAI_BYTES(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_BYTES)
-
-/*
- * MenaiValue_HEAD — common prefix for every Menai value struct.
- *
- * ob_refcnt    — reference count.
- * ob_type      — type tag (MenaiType, uint16_t).
- * ob_alloc     — pool bucket number if this object was served from the
- *                pool allocator, or -1 if it was allocated directly via malloc.
- *                Written by menai_alloc; read by menai_free to determine how
- *                to return the block.
- */
-#define MenaiValue_HEAD              \
-    uint32_t ob_refcnt;              \
-    MenaiType ob_type;               \
-    int16_t ob_alloc_bucket;
-
-/*
- * MenaiValue — the minimal struct that every MenaiValue pointer can be safely cast to
- */
-struct MenaiValue_s {
-    MenaiValue_HEAD
-};
 
 void menai_value_free(MenaiValue *v);
 
@@ -227,9 +443,6 @@ menai_xrelease(MenaiValue *val)
     }
 }
 
-typedef int64_t hash_t;
-typedef uint64_t uhash_t;
-
 /*
  * menai_hash_double — hash a C double without any Python API calls.
  *
@@ -267,7 +480,7 @@ menai_hash_double(double v)
  * menai_name_str_hash — FNV-1a hash of a UTF-8 C string.
  *
  * Used to precompute hashes for global name strings stored in
- * MenaiCodeObject::name_hashes, and to hash entries when building
+ * MenaiCodeObject name_hashes, and to hash entries when building
  * GlobalsTable slots.  Returns a value in [0, PY_SSIZE_T_MAX]; never -1.
  */
 static inline hash_t
@@ -287,33 +500,8 @@ menai_name_str_hash(const char *s)
 hash_t menai_value_hash(MenaiValue *val);
 int menai_value_equal(MenaiValue *a, MenaiValue *b);
 
-/*
- * MenaiHashTable — open-addressing hash table
- *
- * Maps MenaiValue *keys to ssize_t indices.  Used as the internal
- * acceleration structure for MenaiDict (key -> entry index) and MenaiSet
- * (element -> entry index, for membership testing).
- *
- * Invariants:
- *   - slot_count is always a power of 2 (or 0 for an empty table).
- *   - used <= slot_count * MENAI_HT_MAX_LOAD.
- *   - A slot is empty when its key pointer is NULL.
- *   - Deleted slots are not used (tables are immutable after construction).
- */
 #define MENAI_HT_MAX_LOAD_NUM 2   /* load factor numerator   */
 #define MENAI_HT_MAX_LOAD_DEN 3   /* load factor denominator */
-
-typedef struct {
-    MenaiValue *key;     /* borrowed ref to MenaiValue *; NULL = empty slot */
-    hash_t hash;         /* cached hash of key */
-    ssize_t index;       /* index into the owning dict/set's element arrays */
-} MenaiHashSlot;
-
-typedef struct {
-    MenaiHashSlot *slots;
-    ssize_t slot_count;  /* power of 2; 0 means uninitialised */
-    ssize_t used;
-} MenaiHashTable;
 
 int menai_ht_init(MenaiHashTable *ht, ssize_t n);
 void menai_ht_free(MenaiHashTable *ht);
@@ -323,34 +511,6 @@ int menai_ht_build(MenaiHashTable *ht, MenaiValue **keys, const hash_t *hashes, 
 
 void *menai_alloc(size_t size);
 void menai_free(void *ptr);
-
-typedef struct MenaiCodeObject_s {
-    size_t ob_refcnt;
-
-    uint64_t *instrs;                    /* packed instruction words */
-    int code_len;                        /* number of instructions */
-
-    MenaiValue **constants;              /* fast constant pool */
-    ssize_t nconst;
-
-    const char **names;                  /* global name strings for OP_LOAD_NAME */
-    hash_t *name_hashes;                 /* precomputed FNV-1a hash of each name */
-    ssize_t nnames;
-
-    struct MenaiCodeObject_s **children; /* child code objects, one per closure */
-    ssize_t nchildren;
-
-    int param_count;
-    int local_count;
-    int outgoing_arg_slots;
-    int is_variadic;
-    ssize_t ncap;                        /* number of free variables (capture slots) */
-
-    char **param_names;                  /* parameter name strings, parallel to param_count */
-    ssize_t nparam_names;                /* number of elements in param_names */
-
-    char *name;                          /* function name for error messages, or NULL */
-} MenaiCodeObject;
 
 /*
  * menai_code_object_retain — increment the reference count.
@@ -420,13 +580,6 @@ menai_reg_init(MenaiValue **regs, int slot, MenaiValue *val)
 MenaiValue **menai_regs_alloc(size_t n, MenaiValue *none_val);
 void menai_regs_free(MenaiValue **regs, size_t n);
 
-/* Sign-magnitude arbitrary-precision integer. */
-typedef struct {
-    uint32_t *digits;  /* little-endian base-2^32 magnitude; NULL when zero */
-    ssize_t length;    /* number of valid digits; 0 when zero */
-    int sign;          /* -1, 0, or 1 */
-} MenaiBigInt;
-
 /* Initialise a MenaiBigInt to zero. Must be called before first use as output. */
 #define menai_bigint_init(x) (memset((x), 0, sizeof(MenaiBigInt)))
 
@@ -470,10 +623,6 @@ int menai_bigint_gt(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_le(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 
-typedef struct {
-    MenaiValue_HEAD
-} MenaiNone;
-
 MenaiValue *menai_none_singleton(void);
 void menai_init_none(void);
 
@@ -485,11 +634,6 @@ menai_none_free(MenaiNone *self)
      */
     (void)self;
 }
-
-typedef struct {
-    MenaiValue_HEAD
-    int value;          /* 0 or 1 */
-} MenaiBoolean;
 
 MenaiValue *menai_boolean_true(void);
 MenaiValue *menai_boolean_false(void);
@@ -504,11 +648,6 @@ menai_boolean_free(MenaiBoolean *self)
     (void)self;
 }
 
-typedef struct {
-    MenaiValue_HEAD
-    double value;
-} MenaiFloat;
-
 MenaiFloat *alloc_menai_float(double value);
 
 static inline void
@@ -517,12 +656,6 @@ menai_float_free(MenaiFloat *self)
     menai_free(self);
 }
 
-typedef struct {
-    MenaiValue_HEAD
-    double real;
-    double imag;
-} MenaiComplex;
-
 MenaiComplex *alloc_menai_complex(double real, double imag);
 
 static inline void
@@ -530,15 +663,6 @@ menai_complex_free(MenaiComplex *self)
 {
     menai_free(self);
 }
-
-typedef struct {
-    MenaiValue_HEAD
-    ssize_t ncap;                  /* number of captured values */
-    MenaiCodeObject *bytecode;     /* retained — owns all frame metadata */
-
-    /* Inline capture array — ncap elements follow immediately. */
-    MenaiValue *captures[1];       /* flexible array member (C99 [1] for MSVC compat) */
-} MenaiFunction;
 
 MenaiFunction *alloc_menai_function(MenaiCodeObject *co, MenaiValue *none_val);
 
@@ -554,35 +678,10 @@ menai_function_free(MenaiFunction *self)
     menai_free(self);
 }
 
-struct MenaiString {
-    MenaiValue_HEAD
-    ssize_t length;             /* codepoint count */
-    hash_t hash;                /* cached hash; -1 = not yet computed */
-    uint32_t data[];            /* UTF-32 codepoints, flexible array */
-};
-
-static inline ssize_t
-menai_string_length(MenaiValue *s)
-{
-    return ((MenaiString *)s)->length;
-}
-
-static inline const uint32_t *
-menai_string_data(MenaiValue *s)
-{
-    return ((MenaiString *)s)->data;
-}
-
-static inline uint32_t
-menai_string_get(MenaiValue *s, ssize_t i)
-{
-    return ((MenaiString *)s)->data[i];
-}
-
-MenaiValue *menai_string_from_utf8(const char *utf8, ssize_t nbytes);
-MenaiString *menai_string_from_codepoints(const uint32_t *cp, ssize_t len);
-MenaiString *menai_string_from_codepoint(uint32_t cp);
-char *menai_string_to_utf8(MenaiValue *s, ssize_t *out_nbytes);
+MenaiString *alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes);
+MenaiString *alloc_menai_string_from_codepoints(const uint32_t *cp, ssize_t len);
+MenaiString *alloc_menai_string_from_codepoint(uint32_t cp);
+char *alloc_utf8_from_menai_string(MenaiValue *s, ssize_t *out_nbytes);
 int menai_string_compare(MenaiValue *a, MenaiValue *b);
 int menai_string_equal(MenaiValue *a, MenaiValue *b);
 hash_t menai_string_hash(MenaiValue *s);
@@ -590,12 +689,10 @@ MenaiValue *menai_string_concat(MenaiValue *a, MenaiValue *b);
 MenaiString *menai_string_slice(MenaiString *s, ssize_t start, ssize_t end);
 MenaiValue *menai_string_upcase(MenaiValue *s);
 MenaiValue *menai_string_downcase(MenaiValue *s);
-MenaiString *menai_string_trim(MenaiString *s);
-MenaiString *menai_string_trim_left(MenaiString *s);
-MenaiString *menai_string_trim_right(MenaiString *s);
+MenaiString *alloc_menai_string_from_trim(MenaiString *s);
+MenaiString *alloc_menai_string_from_trim_left(MenaiString *s);
+MenaiString *alloc_menai_string_from_trim_right(MenaiString *s);
 ssize_t menai_string_find(MenaiValue *haystack, MenaiValue *needle);
-int menai_string_has_prefix(MenaiValue *s, MenaiValue *prefix);
-int menai_string_has_suffix(MenaiValue *s, MenaiValue *suffix);
 MenaiValue *menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to);
 
 static inline void
@@ -603,11 +700,6 @@ menai_string_free(MenaiString *self)
 {
     menai_free(self);
 }
-
-typedef struct {
-    MenaiValue_HEAD
-    MenaiValue *name;    /* owned MenaiString * */
-} MenaiSymbol;
 
 MenaiValue *menai_symbol_alloc(MenaiValue *name);
 
@@ -617,26 +709,6 @@ menai_symbol_free(MenaiSymbol *self)
     menai_xrelease(self->name);
     menai_free(self);
 }
-
-/*
- * Three-tier integer representation:
- *
- *   is_big == 0: value is stored inline as a C long in the small field.
- *                For values in [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX]
- *                the object is a pre-allocated singleton and must never
- *                be freed.
- *
- *   is_big == 1: value is stored as a MenaiBigInt bignum in the big field.
- *                The MenaiBigInt owns its digit array.
- *
- * The ob_type is always &MenaiInteger_Type.
- */
-typedef struct {
-    MenaiValue_HEAD
-    int is_big;
-    long small;     /* valid when is_big == 0 */
-    MenaiBigInt big;   /* valid when is_big == 1 */
-} MenaiInteger;
 
 /*
  * Small integer cache — covers [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX].
@@ -699,24 +771,6 @@ menai_integer_free(MenaiInteger *self)
     menai_free(self);
 }
 
-/*
- * MenaiBytes — immutable sequence of bytes (octets, 0–255).
- *
- * Owners store data inline via a flexible array member.  Slice views allocate
- * only the header (sizeof(MenaiBytes)), point data into the owner's inline
- * buffer at an offset, and retain the owner — exactly the same structural
- * sharing pattern as MenaiList.  Views never form chains: all views point
- * directly at the root owner.
- */
-typedef struct {
-    MenaiValue_HEAD
-    ssize_t length;             /* logical byte count */
-    hash_t hash;                /* cached hash; -1 = not yet computed */
-    MenaiValue *owner;          /* non-NULL when this is a slice view */
-    uint8_t *data;              /* points to inline_data for owners, into owner for views */
-    uint8_t inline_data[];      /* FAM — storage for owning bytes */
-} MenaiBytes;
-
 MenaiBytes *alloc_menai_bytes(ssize_t n);
 MenaiBytes *alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n);
 MenaiBytes *alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end);
@@ -741,43 +795,6 @@ menai_bytes_free(MenaiBytes *self)
 
     /* Owner — the data array is inline, freed with the struct. */
     menai_free(self);
-}
-
-/*
- * One entry in the MenaiStructType field-index table.
- * name is an owned MenaiString *; index is the 0-based field position.
- */
-typedef struct {
-    MenaiValue *name;
-    int index;
-} MenaiFieldEntry;
-
-typedef struct {
-    MenaiValue_HEAD
-    MenaiValue *name;                   /* owned MenaiString * — struct type name */
-    int tag;                            /* unique integer tag */
-    int nfields;                        /* number of fields */
-    MenaiHashTable field_ht;            /* name -> index hash table; keys are borrowed from fields[] */
-    MenaiFieldEntry fields[];           /* inline field-index table, nfields entries */
-} MenaiStructType;
-
-typedef struct {
-    MenaiValue_HEAD
-    int nfields;                        /* number of fields */
-    MenaiStructType *struct_type;       /* owned reference to MenaiStructType */
-    MenaiValue *items[1];               /* inline field values, nfields entries */
-} MenaiStruct;
-
-/*
- * menai_struct_field_index — look up a field index by name in O(1).
- * name must be a MenaiString *.  Returns the 0-based index, or -1
- * if not found.
- */
-static inline int
-menai_struct_field_index(MenaiStructType *st, MenaiValue *name)
-{
-    hash_t h = menai_string_hash(name);
-    return (int)menai_ht_lookup(&st->field_ht, name, h);
 }
 
 MenaiValue *menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
@@ -807,15 +824,6 @@ menai_free_struct(MenaiStruct *self)
 
     menai_free(self);
 }
-
-typedef struct {
-    MenaiValue_HEAD
-    MenaiValue **keys;       /* C array of owned MenaiValue *s */
-    MenaiValue **values;     /* C array of owned MenaiValue *s */
-    hash_t *hashes;          /* C array of menai_value_hash(keys[i]) */
-    MenaiHashTable ht;       /* pure-C hash table for O(1) key lookup */
-    ssize_t length;
-} MenaiDict;
 
 MenaiValue *menai_dict_new_empty(void);
 MenaiValue *menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
@@ -854,21 +862,7 @@ menai_dict_free(MenaiDict *self)
     menai_free(self);
 }
 
-typedef struct {
-    MenaiValue_HEAD
-    MenaiValue **elements; /* points to inline_elements for owners, into owner for views */
-    ssize_t length;        /* number of live elements */
-    /*
-     * owner is non-NULL when this list is a slice view into another list's
-     * inline_elements array.  In that case elements points into owner's storage
-     * and must not be freed; only menai_release(owner) is needed on dealloc.
-     * owner always points to a list with owner == NULL (never a chain).
-     */
-    MenaiValue *owner;
-    MenaiValue *inline_elements[]; /* FAM — storage for owning lists */
-} MenaiList;
-
-MenaiValue *menai_list_alloc(ssize_t n);
+MenaiList *alloc_menai_list(ssize_t n);
 MenaiValue *menai_list_new_empty(void);
 MenaiValue *menai_list_rest(MenaiValue *lst);
 MenaiValue *menai_list_slice(MenaiValue *lst, ssize_t start, ssize_t end);
@@ -899,15 +893,6 @@ menai_list_free(MenaiList *self)
     menai_free(self);
 }
 
-typedef struct {
-    MenaiValue_HEAD
-    MenaiValue **elements;   /* points into inline_data[0..length-1] */
-    hash_t *hashes;          /* points into inline_data past the elements */
-    MenaiHashTable ht;       /* pure-C hash table for O(1) membership; separate allocation */
-    ssize_t length;          /* number of live elements */
-    MenaiValue *inline_data[]; /* FAM: elements[0..cap-1] then hashes[0..cap-1] */
-} MenaiSet;
-
 MenaiSet *alloc_menai_set(ssize_t cap);
 MenaiSet *alloc_empty_menai_set(void);
 
@@ -925,8 +910,8 @@ menai_set_free(MenaiSet *self)
 
 int menai_vm_bridge_init(void);
 
-MenaiValue *menai_format_float(double v);
-MenaiValue *menai_format_complex(double real, double imag);
+MenaiString *menai_format_float(double v);
+MenaiString *menai_format_complex(double real, double imag);
 
 /*
  * GlobalsTable — open-addressing hash table for O(1) name lookup.

@@ -73,7 +73,7 @@ format_component(double v, char *buf, size_t bufsz)
  *
  * Returns a new MenaiValue * (MenaiString), or NULL on allocation failure.
  */
-MenaiValue *
+MenaiString *
 menai_format_float(double v)
 {
     char buf[32];
@@ -88,7 +88,7 @@ menai_format_float(double v)
         shortest_double(v, buf, sizeof(buf));
     }
 
-    return menai_string_from_utf8(buf, (ssize_t)strlen(buf));
+    return alloc_menai_string_from_utf8(buf, (ssize_t)strlen(buf));
 }
 
 /*
@@ -97,7 +97,7 @@ menai_format_float(double v)
  *
  * Returns a new MenaiValue * (MenaiString), or NULL on allocation failure.
  */
-MenaiValue *
+MenaiString *
 menai_format_complex(double real, double imag)
 {
     char rbuf[32];
@@ -119,5 +119,5 @@ menai_format_complex(double real, double imag)
         snprintf(out, sizeof(out), "%sj", ibuf);
     }
 
-    return menai_string_from_utf8(out, (ssize_t)strlen(out));
+    return alloc_menai_string_from_utf8(out, (ssize_t)strlen(out));
 }

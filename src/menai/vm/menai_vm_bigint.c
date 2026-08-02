@@ -935,7 +935,7 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
     }
 
     if (a->length == 0) {
-        return menai_string_from_codepoint((uint32_t)'0');
+        return alloc_menai_string_from_codepoint((uint32_t)'0');
     }
 
     /* Work on a copy so we can do repeated division. */
@@ -1013,7 +1013,7 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
         buf[j] = c;
     }
 
-    MenaiString *result = menai_string_from_codepoints(buf, pos);
+    MenaiString *result = alloc_menai_string_from_codepoints(buf, pos);
     free(buf);
     return result;
 }
