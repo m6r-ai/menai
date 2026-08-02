@@ -639,21 +639,21 @@ typedef struct {
 
 /*
  * Small integer cache — covers [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX].
- * menai_integer_from_long() returns a retained reference, hitting the
+ * alloc_menai_integer_from_long() returns a retained reference, hitting the
  * cache for in-range values.
  */
 #define MENAI_INT_CACHE_MIN (-5)
 #define MENAI_INT_CACHE_MAX 256
 #define MENAI_INT_CACHE_SIZE (MENAI_INT_CACHE_MAX - MENAI_INT_CACHE_MIN + 1)
 
-MenaiInteger *menai_integer_from_long(long n);
-MenaiInteger *menai_integer_from_long_long(long long n);
-MenaiInteger *menai_integer_from_bigint(MenaiBigInt src);
+MenaiInteger *alloc_menai_integer_from_long(long n);
+MenaiInteger *alloc_menai_integer_from_long_long(long long n);
+MenaiInteger *alloc_menai_integer_from_bigint(MenaiBigInt src);
 
 static inline MenaiInteger *
-menai_integer_from_ssize_t(ssize_t n)
+alloc_menai_integer_from_ssize_t(ssize_t n)
 {
-    return menai_integer_from_long((long)n);
+    return alloc_menai_integer_from_long((long)n);
 }
 
 /*
@@ -716,32 +716,13 @@ typedef struct {
     uint8_t inline_data[];      /* FAM — storage for owning bytes */
 } MenaiBytes;
 
-static inline ssize_t
-menai_bytes_length(MenaiValue *b)
-{
-    return ((MenaiBytes *)b)->length;
-}
-
-static inline const uint8_t *
-menai_bytes_data(MenaiValue *b)
-{
-    return ((MenaiBytes *)b)->data;
-}
-
-static inline uint8_t
-menai_bytes_get(MenaiValue *b, ssize_t i)
-{
-    return ((MenaiBytes *)b)->data[i];
-}
-
 MenaiBytes *alloc_menai_bytes(ssize_t n);
 MenaiBytes *alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n);
-MenaiBytes *alloc_menai_bytes_from_slice(MenaiValue *b, ssize_t start, ssize_t end);
+MenaiBytes *alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end);
 MenaiValue *menai_bytes_concat(MenaiValue *a, MenaiValue *b);
-MenaiInteger *menai_bytes_ref(MenaiValue *b, ssize_t i);
 MenaiValue *menai_bytes_append_u8(MenaiValue *b, uint8_t value);
 MenaiValue *menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int le);
-MenaiValue *menai_bytes_write_multi(MenaiValue *b, ssize_t offset,
+MenaiBytes *menai_bytes_write_multi(MenaiBytes *b, ssize_t offset,
                                     unsigned long long value, int width, int le);
 int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
 int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);

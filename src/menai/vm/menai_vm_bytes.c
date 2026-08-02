@@ -53,15 +53,13 @@ alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n)
 }
 
 MenaiBytes *
-alloc_menai_bytes_from_slice(MenaiValue *b_val, ssize_t start, ssize_t end)
+alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
 {
-    MenaiBytes *b = (MenaiBytes *)b_val;
-
     /*
      * Resolve the owner: if b is itself a view, point at its owner so
      * all views are depth-1 from the root data owner.
      */
-    MenaiValue *owner = (b->owner != NULL) ? b->owner : b_val;
+    MenaiValue *owner = (b->owner != NULL) ? b->owner : (MenaiValue *)b;
 
     MenaiBytes *view = (MenaiBytes *)menai_alloc(sizeof(MenaiBytes));
     if (view == NULL) {
@@ -105,7 +103,7 @@ menai_bytes_concat(MenaiValue *a, MenaiValue *b)
 MenaiInteger *
 menai_bytes_ref(MenaiValue *b, ssize_t i)
 {
-    return menai_integer_from_long((long)((MenaiBytes *)b)->data[i]);
+    return alloc_menai_integer_from_long((long)((MenaiBytes *)b)->data[i]);
 }
 
 MenaiValue *
@@ -163,19 +161,17 @@ menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int
  * menai_bytes_write_multi — return a copy of b with N bytes at the given
  * offset replaced by the encoded value.  width must be 1–8.
  */
-MenaiValue *
-menai_bytes_write_multi(MenaiValue *b, ssize_t offset,
-                        unsigned long long value, int width, int le)
+MenaiBytes *
+menai_bytes_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le)
 {
-    MenaiBytes *mb = (MenaiBytes *)b;
-    ssize_t len = mb->length;
+    ssize_t len = b->length;
     MenaiBytes *obj = alloc_menai_bytes(len);
     if (!obj) {
         return NULL;
     }
 
     if (len > 0) {
-        memcpy(obj->inline_data, mb->data, (size_t)len);
+        memcpy(obj->inline_data, b->data, (size_t)len);
     }
 
     uint8_t *dest = obj->inline_data + offset;
@@ -189,7 +185,7 @@ menai_bytes_write_multi(MenaiValue *b, ssize_t offset,
         }
     }
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 int

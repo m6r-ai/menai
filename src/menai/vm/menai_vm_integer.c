@@ -12,7 +12,7 @@
 static MenaiInteger *_integer_cache[MENAI_INT_CACHE_SIZE];
 
 MenaiInteger *
-menai_integer_from_long(long n)
+alloc_menai_integer_from_long(long n)
 {
     if (n >= MENAI_INT_CACHE_MIN && n <= MENAI_INT_CACHE_MAX) {
         MenaiInteger *cached = _integer_cache[n - MENAI_INT_CACHE_MIN];
@@ -35,7 +35,7 @@ menai_integer_from_long(long n)
 }
 
 MenaiInteger *
-menai_integer_from_long_long(long long n)
+alloc_menai_integer_from_long_long(long long n)
 {
     if (n >= (long long)MENAI_INT_CACHE_MIN &&
             n <= (long long)MENAI_INT_CACHE_MAX) {
@@ -45,7 +45,7 @@ menai_integer_from_long_long(long long n)
     }
 
     if (n >= (long long)LONG_MIN && n <= (long long)LONG_MAX) {
-        return menai_integer_from_long((long)n);
+        return alloc_menai_integer_from_long((long)n);
     }
 
     MenaiBigInt big;
@@ -54,11 +54,11 @@ menai_integer_from_long_long(long long n)
         return NULL;
     }
 
-    return menai_integer_from_bigint(big);
+    return alloc_menai_integer_from_bigint(big);
 }
 
 MenaiInteger *
-menai_integer_from_bigint(MenaiBigInt src)
+alloc_menai_integer_from_bigint(MenaiBigInt src)
 {
     /*
      * If the value fits in a long, demote to small representation so the
@@ -72,7 +72,7 @@ menai_integer_from_bigint(MenaiBigInt src)
         }
 
         menai_bigint_free(&src);
-        return menai_integer_from_long(v);
+        return alloc_menai_integer_from_long(v);
     }
 
     MenaiInteger *r = (MenaiInteger *)menai_alloc(sizeof(MenaiInteger));

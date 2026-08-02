@@ -583,7 +583,7 @@ slow_value_to_menai_value(PyObject *src)
             }
 
             Py_DECREF(v);
-            return (MenaiValue *)menai_integer_from_long(lv);
+            return (MenaiValue *)alloc_menai_integer_from_long(lv);
         }
 
         /* Bignum — convert via MenaiBigInt */
@@ -595,7 +595,7 @@ slow_value_to_menai_value(PyObject *src)
         }
 
         Py_DECREF(v);
-        return (MenaiValue *)menai_integer_from_bigint(big);
+        return (MenaiValue *)alloc_menai_integer_from_bigint(big);
     }
 
     if (t == Slow_FloatType) {
