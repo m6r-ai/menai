@@ -729,26 +729,6 @@ alloc_menai_integer_from_ssize_t(ssize_t n)
     return alloc_menai_integer_from_long((long)n);
 }
 
-/*
- * menai_integer_bigint — return a pointer to the MenaiBigInt for a big integer.
- * The caller must ensure is_big == 1 before calling.
- */
-static inline const MenaiBigInt *
-menai_integer_bigint(MenaiValue *o)
-{
-    return &((MenaiInteger *)o)->big;
-}
-
-/*
- * menai_integer_small — return the small value for a non-big integer.
- * The caller must ensure is_big == 0 before calling.
- */
-static inline long
-menai_integer_small(MenaiValue *o)
-{
-    return ((MenaiInteger *)o)->small;
-}
-
 int menai_init_integer(void);
 
 static inline void
@@ -801,7 +781,7 @@ MenaiValue *menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_
 MenaiStructType *alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields);
 
 static inline void
-menai_free_structtype(MenaiStructType *self)
+menai_structtype_free(MenaiStructType *self)
 {
     menai_ht_free(&self->field_ht);
     menai_xrelease(self->name);
@@ -814,7 +794,7 @@ menai_free_structtype(MenaiStructType *self)
 }
 
 static inline void
-menai_free_struct(MenaiStruct *self)
+menai_struct_free(MenaiStruct *self)
 {
     menai_xrelease((MenaiValue *)self->struct_type);
     int n = self->nfields;
@@ -866,12 +846,6 @@ MenaiList *alloc_menai_list(ssize_t n);
 MenaiValue *menai_list_new_empty(void);
 MenaiValue *menai_list_rest(MenaiValue *lst);
 MenaiValue *menai_list_slice(MenaiValue *lst, ssize_t start, ssize_t end);
-
-static inline MenaiValue **
-menai_list_elements(MenaiValue *list_obj)
-{
-    return ((MenaiList *)list_obj)->elements;
-}
 
 static inline void
 menai_list_free(MenaiList *self)

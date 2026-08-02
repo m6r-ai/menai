@@ -43,7 +43,7 @@ alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssiz
     }
 
     if (menai_ht_init(&self->field_ht, nfields) < 0) {
-        menai_free_structtype(self);
+        menai_structtype_free(self);
         return NULL;
     }
 
