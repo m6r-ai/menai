@@ -140,7 +140,7 @@ struct MenaiBigInt {
  * name is an owned MenaiString *; index is the 0-based field position.
  */
 typedef struct {
-    MenaiValue *name;
+    MenaiString *name;
     int index;
 } MenaiFieldEntry;
 
@@ -275,7 +275,7 @@ struct MenaiStruct {
 
 struct MenaiStructType {
     MenaiValue_HEAD
-    MenaiValue *name;                   /* owned MenaiString * — struct type name */
+    MenaiString *name;                  /* owned MenaiString * — struct type name */
     int tag;                            /* unique integer tag */
     int nfields;                        /* number of fields */
     MenaiHashTable field_ht;            /* name -> index hash table; keys are borrowed from fields[] */
@@ -284,7 +284,7 @@ struct MenaiStructType {
 
 struct MenaiSymbol {
     MenaiValue_HEAD
-    MenaiValue *name;                   /* owned MenaiString * */
+    MenaiString *name;                  /* owned MenaiString * */
 };
 
 /*
@@ -681,10 +681,10 @@ menai_function_free(MenaiFunction *self)
 MenaiString *alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes);
 MenaiString *alloc_menai_string_from_codepoints(const uint32_t *cp, ssize_t len);
 MenaiString *alloc_menai_string_from_codepoint(uint32_t cp);
-char *alloc_utf8_from_menai_string(MenaiValue *s, ssize_t *out_nbytes);
-int menai_string_compare(MenaiValue *a, MenaiValue *b);
-int menai_string_equal(MenaiValue *a, MenaiValue *b);
-hash_t menai_string_hash(MenaiValue *s);
+char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
+int menai_string_compare(MenaiString *a, MenaiString *b);
+int menai_string_equal(MenaiString *a, MenaiString *b);
+hash_t menai_string_hash(MenaiString *s);
 MenaiValue *menai_string_concat(MenaiValue *a, MenaiValue *b);
 MenaiString *menai_string_slice(MenaiString *s, ssize_t start, ssize_t end);
 MenaiValue *menai_string_upcase(MenaiValue *s);
@@ -694,6 +694,8 @@ MenaiString *alloc_menai_string_from_trim_left(MenaiString *s);
 MenaiString *alloc_menai_string_from_trim_right(MenaiString *s);
 ssize_t menai_string_find(MenaiValue *haystack, MenaiValue *needle);
 MenaiValue *menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to);
+MenaiString *alloc_menai_string_from_float(double v);
+MenaiString *alloc_menai_string_from_complex(double real, double imag);
 
 static inline void
 menai_string_free(MenaiString *self)
@@ -701,12 +703,12 @@ menai_string_free(MenaiString *self)
     menai_free(self);
 }
 
-MenaiValue *menai_symbol_alloc(MenaiValue *name);
+MenaiSymbol *alloc_menai_symbol(MenaiString *name);
 
 static inline void
 menai_symbol_free(MenaiSymbol *self)
 {
-    menai_xrelease(self->name);
+    menai_xrelease((MenaiValue *)self->name);
     menai_free(self);
 }
 
@@ -778,16 +780,16 @@ menai_bytes_free(MenaiBytes *self)
 }
 
 MenaiValue *menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
-MenaiStructType *alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields);
+MenaiStructType *alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
 
 static inline void
 menai_structtype_free(MenaiStructType *self)
 {
     menai_ht_free(&self->field_ht);
-    menai_xrelease(self->name);
+    menai_xrelease((MenaiValue *)self->name);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_xrelease(self->fields[i].name);
+        menai_xrelease((MenaiValue *)self->fields[i].name);
     }
 
     menai_free(self);
@@ -883,9 +885,6 @@ menai_set_free(MenaiSet *self)
 }
 
 int menai_vm_bridge_init(void);
-
-MenaiString *alloc_menai_string_from_float(double v);
-MenaiString *alloc_menai_string_from_complex(double real, double imag);
 
 /*
  * GlobalsTable — open-addressing hash table for O(1) name lookup.

@@ -18,7 +18,7 @@
  * Returns a new reference, or NULL on error.
  */
 MenaiStructType *
-alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssize_t nfields)
+alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStructType) + (size_t)nfields * sizeof(MenaiFieldEntry);
     MenaiStructType *self = (MenaiStructType *)menai_alloc(sz);
@@ -28,7 +28,7 @@ alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssiz
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_STRUCTTYPE;
-    menai_retain(name);
+    menai_retain((MenaiValue *)name);
     self->field_ht.slots = NULL;
     self->field_ht.slot_count = 0;
     self->field_ht.used = 0;
@@ -37,7 +37,7 @@ alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssiz
     self->nfields = (int)nfields;
 
     for (ssize_t i = 0; i < nfields; i++) {
-        menai_retain(field_names[i]);
+        menai_retain((MenaiValue *)field_names[i]);
         self->fields[i].name = field_names[i];
         self->fields[i].index = (int)i;
     }
@@ -49,7 +49,7 @@ alloc_menai_structtype(MenaiValue *name, int tag, MenaiValue **field_names, ssiz
 
     for (ssize_t i = 0; i < nfields; i++) {
         hash_t h = menai_string_hash(self->fields[i].name);
-        menai_ht_insert(&self->field_ht, self->fields[i].name, h, i);
+        menai_ht_insert(&self->field_ht, (MenaiValue *)self->fields[i].name, h, i);
     }
 
     return self;

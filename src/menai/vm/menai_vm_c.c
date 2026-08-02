@@ -925,7 +925,7 @@ globals_build_from_dict(GlobalsTable *gt, MenaiValue *dict_val)
                 return MENAI_ERR_TYPE;
             }
 
-            char *name_copy = alloc_utf8_from_menai_string(k, NULL);
+            char *name_copy = alloc_utf8_from_menai_string((MenaiString *)k, NULL);
             if (name_copy == NULL) {
                 globals_free(gt);
                 return MENAI_ERR_NOMEM;
@@ -1084,7 +1084,7 @@ globals_merge_extra_native(GlobalsTable *gt, MenaiValue *extra_dict_val)
             return MENAI_ERR_TYPE;
         }
 
-        char *name_copy = alloc_utf8_from_menai_string(k, NULL);
+        char *name_copy = alloc_utf8_from_menai_string((MenaiString *)k, NULL);
         if (name_copy == NULL) {
             return MENAI_ERR_NOMEM;
         }
@@ -1352,7 +1352,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_RAISE_ERROR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *msg = regs[base + src0];
+            MenaiString *msg = (MenaiString *)regs[base + src0];
             char *cstr = alloc_utf8_from_menai_string(msg, NULL);
             if (cstr == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -1729,7 +1729,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_SYMBOL_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiSymbol *a = (MenaiSymbol *)regs[base + src0];
-            menai_reg_set_borrow(regs, base + dest, a->name);
+            menai_reg_set_borrow(regs, base + dest, (MenaiValue *)a->name);
             break;
         }
 
@@ -3758,54 +3758,54 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRING_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
+            MenaiString *b = (MenaiString *)regs[base + src1];
             bool_store(regs, base + dest, menai_string_equal(a, b));
             break;
         }
 
         case OP_STRING_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
+            MenaiString *b = (MenaiString *)regs[base + src1];
             bool_store(regs, base + dest, !menai_string_equal(a, b));
             break;
         }
 
         case OP_STRING_LT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
+            MenaiString *b = (MenaiString *)regs[base + src1];
             bool_store(regs, base + dest, menai_string_compare(a, b) < 0);
             break;
         }
 
         case OP_STRING_GT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
+            MenaiString *b = (MenaiString *)regs[base + src1];
             bool_store(regs, base + dest, menai_string_compare(a, b) > 0);
             break;
         }
 
         case OP_STRING_LTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
+            MenaiString *b = (MenaiString *)regs[base + src1];
             bool_store(regs, base + dest, menai_string_compare(a, b) <= 0);
             break;
         }
 
         case OP_STRING_GTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
+            MenaiString *b = (MenaiString *)regs[base + src1];
             bool_store(regs, base + dest, menai_string_compare(a, b) >= 0);
             break;
         }
@@ -6839,8 +6839,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
             MenaiStructType *stype = sval->struct_type;
-            MenaiValue *field_name = field_sym->name;
-            hash_t h = menai_string_hash((MenaiValue *)field_name);
+            MenaiString *field_name = field_sym->name;
+            hash_t h = menai_string_hash(field_name);
             int fi = (int)menai_ht_lookup(&stype->field_ht, (MenaiValue *)field_name, h);
 
             if (fi < 0) {
@@ -6888,8 +6888,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
             MenaiStructType *stype = sval->struct_type;
-            MenaiValue *field_name = field_sym->name;
-            hash_t h = menai_string_hash((MenaiValue *)field_name);
+            MenaiString *field_name = field_sym->name;
+            hash_t h = menai_string_hash(field_name);
             int fi = (int)menai_ht_lookup(&stype->field_ht, (MenaiValue *)field_name, h);
             if (fi < 0) {
                 vm_err = MENAI_ERR_STRUCT_FIELD_NOT_FOUND;
@@ -7011,7 +7011,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRUCTTYPE_NAME: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiStructType *val = (MenaiStructType *)regs[base + src0];
-            menai_reg_set_borrow(regs, base + dest, val->name);
+            menai_reg_set_borrow(regs, base + dest, (MenaiValue *)val->name);
             break;
         }
 
@@ -7027,7 +7027,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
             MenaiValue **sf_arr = r->elements;
             for (int i = 0; i < n; i++) {
-                MenaiValue *sym = menai_symbol_alloc(st->fields[i].name);
+                MenaiSymbol *sym = alloc_menai_symbol(st->fields[i].name);
                 if (sym == NULL) {
                     for (int k = 0; k < i; k++) {
                         menai_release(sf_arr[k]);
@@ -7037,7 +7037,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                     goto error;
                 }
 
-                sf_arr[i] = sym;
+                sf_arr[i] = (MenaiValue *)sym;
             }
 
             menai_reg_set_own(regs, base + dest, (MenaiValue *)r);

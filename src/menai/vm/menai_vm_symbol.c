@@ -8,8 +8,8 @@
 
 #include "menai_vm_c.h"
 
-MenaiValue *
-menai_symbol_alloc(MenaiValue *name)
+MenaiSymbol *
+alloc_menai_symbol(MenaiString *name)
 {
     MenaiSymbol *self = (MenaiSymbol *)menai_alloc(sizeof(MenaiSymbol));
     if (self == NULL) {
@@ -18,8 +18,8 @@ menai_symbol_alloc(MenaiValue *name)
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_SYMBOL;
-    menai_retain(name);
+    menai_retain((MenaiValue *)name);
     self->name = name;
 
-    return (MenaiValue *)self;
+    return self;
 }

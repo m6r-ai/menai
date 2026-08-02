@@ -1190,11 +1190,10 @@ alloc_menai_string_from_codepoint(uint32_t cp)
 }
 
 char *
-alloc_utf8_from_menai_string(MenaiValue *s, ssize_t *out_nbytes)
+alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes)
 {
-    MenaiString *ms = (MenaiString *)s;
     ssize_t nbytes;
-    char *utf8 = _utf8_encode(ms->data, ms->length, &nbytes);
+    char *utf8 = _utf8_encode(s->data, s->length, &nbytes);
     if (!utf8) {
         return NULL;
     }
@@ -1207,18 +1206,17 @@ alloc_utf8_from_menai_string(MenaiValue *s, ssize_t *out_nbytes)
 }
 
 int
-menai_string_compare(MenaiValue *a, MenaiValue *b)
+menai_string_compare(MenaiString *a, MenaiString *b)
 {
-    MenaiString *ma = (MenaiString *)a;
-    MenaiString *mb = (MenaiString *)b;
-    ssize_t la = ma->length, lb = mb->length;
+    ssize_t la = a->length;
+    ssize_t lb = b->length;
     ssize_t min_len = la < lb ? la : lb;
     for (ssize_t i = 0; i < min_len; i++) {
-        if (ma->data[i] < mb->data[i]) {
+        if (a->data[i] < b->data[i]) {
             return -1;
         }
 
-        if (ma->data[i] > mb->data[i]) {
+        if (a->data[i] > b->data[i]) {
             return 1;
         }
     }
@@ -1235,30 +1233,27 @@ menai_string_compare(MenaiValue *a, MenaiValue *b)
 }
 
 int
-menai_string_equal(MenaiValue *a, MenaiValue *b)
+menai_string_equal(MenaiString *a, MenaiString *b)
 {
-    MenaiString *ma = (MenaiString *)a;
-    MenaiString *mb = (MenaiString *)b;
-    ssize_t la = ma->length;
-    if (la != mb->length) {
+    ssize_t la = a->length;
+    if (la != b->length) {
         return 0;
     }
 
-    return memcmp(ma->data, mb->data, (size_t)la * sizeof(uint32_t)) == 0;
+    return memcmp(a->data, b->data, (size_t)la * sizeof(uint32_t)) == 0;
 }
 
 hash_t
-menai_string_hash(MenaiValue *s)
+menai_string_hash(MenaiString *s)
 {
-    MenaiString *ms = (MenaiString *)s;
-    if (ms->hash != -1) {
-        return ms->hash;
+    if (s->hash != -1) {
+        return s->hash;
     }
 
     /* FNV-1a over the codepoint bytes. */
-    ssize_t len = ms->length;
+    ssize_t len = s->length;
     uint64_t h = 14695981039346656037ULL;
-    const unsigned char *p = (const unsigned char *)ms->data;
+    const unsigned char *p = (const unsigned char *)s->data;
     ssize_t nbytes = len * (ssize_t)sizeof(uint32_t);
     for (ssize_t i = 0; i < nbytes; i++) {
         h ^= p[i];
@@ -1270,8 +1265,7 @@ menai_string_hash(MenaiValue *s)
         result = -2;
     }
 
-    ms->hash = result;
-
+    s->hash = result;
     return result;
 }
 
