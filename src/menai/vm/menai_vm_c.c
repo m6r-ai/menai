@@ -3408,7 +3408,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_FLOAT_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiFloat *a = (MenaiFloat *)regs[base + src0];
-            MenaiString *r = menai_format_float(a->value);
+            MenaiString *r = alloc_menai_string_from_float(a->value);
             if (r == NULL) {
                 goto error;
             }
@@ -3741,7 +3741,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_COMPLEX_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiComplex *a = (MenaiComplex *)regs[base + src0];
-            MenaiString *r = menai_format_complex(a->real, a->imag);
+            MenaiString *r = alloc_menai_string_from_complex(a->real, a->imag);
             if (r == NULL) {
                 goto error;
             }

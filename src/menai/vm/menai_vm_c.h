@@ -884,8 +884,8 @@ menai_set_free(MenaiSet *self)
 
 int menai_vm_bridge_init(void);
 
-MenaiString *menai_format_float(double v);
-MenaiString *menai_format_complex(double real, double imag);
+MenaiString *alloc_menai_string_from_float(double v);
+MenaiString *alloc_menai_string_from_complex(double real, double imag);
 
 /*
  * GlobalsTable — open-addressing hash table for O(1) name lookup.
