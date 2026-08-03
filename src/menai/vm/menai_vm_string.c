@@ -1385,15 +1385,12 @@ menai_string_find(MenaiString *haystack, MenaiString *needle)
     return -1;
 }
 
-MenaiValue *
-menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
+MenaiString *
+alloc_menai_string_from_replace(MenaiString *s, MenaiString *from, MenaiString *to)
 {
-    MenaiString *ms = (MenaiString *)s;
-    MenaiString *mfr = (MenaiString *)from;
-    MenaiString *mto = (MenaiString *)to;
-    ssize_t slen = ms->length;
-    ssize_t frlen = mfr->length;
-    ssize_t tolen = mto->length;
+    ssize_t slen = s->length;
+    ssize_t frlen = from->length;
+    ssize_t tolen = to->length;
 
     if (frlen == 0) {
         /*
@@ -1409,27 +1406,27 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
         ssize_t dst = 0;
         for (ssize_t i = 0; i <= slen; i++) {
             if (tolen > 0) {
-                memcpy(obj->data + dst, mto->data, (size_t)tolen * sizeof(uint32_t));
+                memcpy(obj->data + dst, to->data, (size_t)tolen * sizeof(uint32_t));
                 dst += tolen;
             }
 
             if (i < slen) {
-                obj->data[dst++] = ms->data[i];
+                obj->data[dst++] = s->data[i];
             }
         }
 
-        return (MenaiValue *)obj;
+        return obj;
     }
 
     if (slen == 0) {
-        menai_value_retain(s);
+        menai_value_retain((MenaiValue *)s);
         return s;
     }
 
     /* First pass: count occurrences to compute output length. */
     ssize_t count = 0;
     for (ssize_t i = 0; i <= slen - frlen; ) {
-        if (memcmp(ms->data + i, mfr->data, (size_t)frlen * sizeof(uint32_t)) == 0) {
+        if (memcmp(s->data + i, from->data, (size_t)frlen * sizeof(uint32_t)) == 0) {
             count++;
             i += frlen;
         } else {
@@ -1438,7 +1435,7 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
     }
 
     if (count == 0) {
-        menai_value_retain(s);
+        menai_value_retain((MenaiValue *)s);
         return s;
     }
 
@@ -1452,23 +1449,23 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
     ssize_t src = 0;
     ssize_t dst = 0;
     while (src <= slen - frlen) {
-        if (memcmp(ms->data + src, mfr->data, (size_t)frlen * sizeof(uint32_t)) == 0) {
+        if (memcmp(s->data + src, from->data, (size_t)frlen * sizeof(uint32_t)) == 0) {
             if (tolen > 0) {
-                memcpy(obj->data + dst, mto->data, (size_t)tolen * sizeof(uint32_t));
+                memcpy(obj->data + dst, to->data, (size_t)tolen * sizeof(uint32_t));
             }
 
             dst += tolen;
             src += frlen;
         } else {
-            obj->data[dst++] = ms->data[src++];
+            obj->data[dst++] = s->data[src++];
         }
     }
 
     while (src < slen) {
-        obj->data[dst++] = ms->data[src++];
+        obj->data[dst++] = s->data[src++];
     }
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 /*

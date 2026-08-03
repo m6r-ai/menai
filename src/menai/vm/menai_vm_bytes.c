@@ -45,9 +45,7 @@ alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n)
         return NULL;
     }
 
-    if (n > 0) {
-        memcpy(obj->inline_data, src, (size_t)n);
-    }
+    memcpy(obj->inline_data, src, (size_t)n);
 
     return obj;
 }
@@ -59,7 +57,7 @@ alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
      * Resolve the owner: if b is itself a view, point at its owner so
      * all views are depth-1 from the root data owner.
      */
-    MenaiValue *owner = (b->owner != NULL) ? b->owner : (MenaiValue *)b;
+    MenaiBytes *owner = (b->owner != NULL) ? b->owner : b;
 
     MenaiBytes *view = (MenaiBytes *)menai_alloc(sizeof(MenaiBytes));
     if (view == NULL) {
@@ -68,7 +66,7 @@ alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
 
     view->ob_refcnt = 1;
     view->ob_type = MENAITYPE_BYTES;
-    menai_value_retain(owner);
+    menai_value_retain((MenaiValue *)owner);
     view->owner = owner;
     view->data = b->data + start;
     view->length = end - start;
@@ -222,17 +220,16 @@ menai_bytes_compare(MenaiBytes *a, MenaiBytes *b)
 }
 
 hash_t
-menai_bytes_hash(MenaiValue *b)
+menai_bytes_hash(MenaiBytes *b)
 {
-    MenaiBytes *mb = (MenaiBytes *)b;
-    if (mb->hash != -1) {
-        return mb->hash;
+    if (b->hash != -1) {
+        return b->hash;
     }
 
     /* FNV-1a over the raw bytes. */
     uint64_t h = 14695981039346656037ULL;
-    const unsigned char *p = (const unsigned char *)mb->data;
-    ssize_t nbytes = mb->length;
+    const unsigned char *p = (const unsigned char *)b->data;
+    ssize_t nbytes = b->length;
     for (ssize_t i = 0; i < nbytes; i++) {
         h ^= p[i];
         h *= 1099511628211ULL;
@@ -243,7 +240,7 @@ menai_bytes_hash(MenaiValue *b)
         result = -2;
     }
 
-    mb->hash = result;
+    b->hash = result;
 
     return result;
 }

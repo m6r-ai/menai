@@ -916,9 +916,8 @@ globals_build(GlobalsTable *gt, const GlobalsTable *globals_gt)
  * Returns 0 on success, MENAI_ERR_* on error.
  */
 int
-globals_build_from_dict(GlobalsTable *gt, MenaiValue *dict_val)
+globals_build_from_dict(GlobalsTable *gt, MenaiDict *d)
 {
-    MenaiDict *d = (MenaiDict *)dict_val;
     ssize_t n = d->length;
 
     gt->slots = NULL;
@@ -4034,17 +4033,17 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         case OP_STRING_REPLACE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiString *a = (MenaiString *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
+            MenaiString *b = (MenaiString *)regs[base + src1];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *c = regs[base + src2];
-            MenaiValue *r = menai_string_replace(a, b, c);
+            MenaiString *c = (MenaiString *)regs[base + src2];
+            MenaiString *r = alloc_menai_string_from_replace(a, b, c);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5452,13 +5451,14 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiValue *r = menai_list_rest((MenaiValue *)a);
+            MenaiList *r = alloc_menai_list(0);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_list_rest(a, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -5702,12 +5702,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
                 goto error;
             }
 
-            MenaiValue *r = menai_list_slice((MenaiValue *)a, start, end);
+            MenaiList *r = alloc_menai_list(0);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, r);
+            menai_list_slice(a, start, end, r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 

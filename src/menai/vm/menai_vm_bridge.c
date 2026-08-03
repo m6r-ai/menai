@@ -1444,7 +1444,7 @@ bridge_globals_get(PyObject *globals_key)
             return NULL;
         }
 
-        if (globals_build_from_dict(&_cached_globals_gt, result) < 0) {
+        if (globals_build_from_dict(&_cached_globals_gt, (MenaiDict *)result) < 0) {
             menai_value_release(result);
             return NULL;
         }

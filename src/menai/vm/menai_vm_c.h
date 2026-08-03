@@ -177,7 +177,7 @@ struct MenaiBytes {
     MenaiValue_HEAD
     ssize_t length;                     /* logical byte count */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
-    MenaiValue *owner;                  /* non-NULL when this is a slice view */
+    MenaiBytes *owner;                  /* non-NULL when this is a slice view */
     uint8_t *data;                      /* points to inline_data for owners, into owner for views */
     uint8_t inline_data[];              /* FAM — storage for owning bytes */
 };
@@ -242,7 +242,7 @@ struct MenaiList {
      * and must not be freed; only menai_value_release(owner) is needed on dealloc.
      * owner always points to a list with owner == NULL (never a chain).
      */
-    MenaiValue *owner;
+    MenaiList *owner;
     MenaiValue *inline_elements[];      /* FAM — storage for owning lists */
 };
 
@@ -444,39 +444,6 @@ menai_value_xrelease(MenaiValue *val)
 }
 
 /*
- * menai_hash_double — hash a C double without any Python API calls.
- *
- * Reinterprets the IEEE 754 bit pattern as a uint64_t via memcpy (safe
- * under strict aliasing rules) then applies a finalisation mix so that
- * nearby values produce well-distributed hashes.  NaN is normalised to a
- * fixed bit pattern before mixing so all NaN values hash identically.
- * The result is mapped away from -1 (the CPython "error" sentinel).
- *
- * This is a Menai-internal hash — it does not need to match Python's
- * float hash, because Menai floats and integers are never equal and are
- * never mixed in the same dict or set.
- */
-static inline hash_t
-menai_hash_double(double v)
-{
-    uint64_t bits;
-    if (v != v) {
-        bits = 0x7FF8000000000000ULL;
-    } else {
-        memcpy(&bits, &v, sizeof(bits));
-    }
-
-    /* Finalisation mix from SplitMix64 */
-    bits ^= bits >> 30;
-    bits *= 0xbf58476d1ce4e5b9ULL;
-    bits ^= bits >> 27;
-    bits *= 0x94d049bb133111ebULL;
-    bits ^= bits >> 31;
-    hash_t h = (hash_t)(bits & (uint64_t)PTRDIFF_MAX);
-    return h == -1 ? -2 : h;
-}
-
-/*
  * menai_name_str_hash — FNV-1a hash of a UTF-8 C string.
  *
  * Used to precompute hashes for global name strings stored in
@@ -578,57 +545,15 @@ int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 MenaiValue *menai_none_singleton(void);
 void menai_init_none(void);
 
-static inline void
-menai_none_free(MenaiNone *self)
-{
-    /*
-     * The singleton is never freed — its refcount should never reach zero.
-     */
-    (void)self;
-}
-
 MenaiValue *menai_boolean_true(void);
 MenaiValue *menai_boolean_false(void);
 void menai_init_boolean(void);
 
-static inline void
-menai_boolean_free(MenaiBoolean *self)
-{
-    /*
-     * Singletons are never freed.
-     */
-    (void)self;
-}
-
 MenaiFloat *alloc_menai_float(double value);
-
-static inline void
-menai_float_free(MenaiFloat *self)
-{
-    menai_free(self);
-}
 
 MenaiComplex *alloc_menai_complex(double real, double imag);
 
-static inline void
-menai_complex_free(MenaiComplex *self)
-{
-    menai_free(self);
-}
-
 MenaiFunction *alloc_menai_function(MenaiCodeObject *co, MenaiValue *none_val);
-
-static inline void
-menai_function_free(MenaiFunction *self)
-{
-    menai_code_object_release(self->bytecode);
-    ssize_t ncap = self->ncap;
-    for (ssize_t i = 0; i < ncap; i++) {
-        menai_value_xrelease(self->captures[i]);
-    }
-
-    menai_free(self);
-}
 
 MenaiString *alloc_menai_string(ssize_t len);
 MenaiString *alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes);
@@ -636,7 +561,7 @@ char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
 int menai_string_compare(MenaiString *a, MenaiString *b);
 int menai_string_equal(MenaiString *a, MenaiString *b);
 hash_t menai_string_hash(MenaiString *s);
-void menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *);
+void menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *r);
 ssize_t menai_string_upcase_length(MenaiString *s);
 void menai_string_upcase(MenaiString *s, MenaiString *r);
 void menai_string_downcase(MenaiString *s, MenaiString *r);
@@ -644,24 +569,11 @@ MenaiString *alloc_menai_string_from_trim(MenaiString *s);
 MenaiString *alloc_menai_string_from_trim_left(MenaiString *s);
 MenaiString *alloc_menai_string_from_trim_right(MenaiString *s);
 ssize_t menai_string_find(MenaiString *haystack, MenaiString *needle);
-MenaiValue *menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to);
+MenaiString *alloc_menai_string_from_replace(MenaiString *s, MenaiString *from, MenaiString *to);
 MenaiString *alloc_menai_string_from_float(double v);
 MenaiString *alloc_menai_string_from_complex(double real, double imag);
 
-static inline void
-menai_string_free(MenaiString *self)
-{
-    menai_free(self);
-}
-
 MenaiSymbol *alloc_menai_symbol(MenaiString *name);
-
-static inline void
-menai_symbol_free(MenaiSymbol *self)
-{
-    menai_value_xrelease((MenaiValue *)self->name);
-    menai_free(self);
-}
 
 /*
  * Small integer cache — covers [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX].
@@ -684,146 +596,28 @@ alloc_menai_integer_from_ssize_t(ssize_t n)
 
 int menai_init_integer(void);
 
-static inline void
-menai_integer_free(MenaiInteger *self)
-{
-    if (!self->is_big) {
-        long v = self->small;
-        if (v >= MENAI_INT_CACHE_MIN && v <= MENAI_INT_CACHE_MAX) {
-            /*
-             * Cached singleton — must never be freed.  Restore refcount so
-             * the object remains live.
-             */
-            self->ob_refcnt = 1;
-            return;
-        }
-    } else {
-        menai_bigint_final(&self->big);
-    }
-
-    menai_free(self);
-}
-
 MenaiBytes *alloc_menai_bytes(ssize_t n);
 MenaiBytes *alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n);
 MenaiBytes *alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end);
 MenaiValue *menai_bytes_concat(MenaiValue *a, MenaiValue *b);
 MenaiValue *menai_bytes_append_u8(MenaiValue *b, uint8_t value);
 MenaiValue *menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int le);
-MenaiBytes *menai_bytes_write_multi(MenaiBytes *b, ssize_t offset,
-                                    unsigned long long value, int width, int le);
+MenaiBytes *menai_bytes_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
 int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
 int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
-hash_t menai_bytes_hash(MenaiValue *b);
-
-static inline void
-menai_bytes_free(MenaiBytes *self)
-{
-    if (self->owner != NULL) {
-        /* View — release the backing owner; do not touch the data array. */
-        menai_value_release(self->owner);
-        menai_free(self);
-        return;
-    }
-
-    /* Owner — the data array is inline, freed with the struct. */
-    menai_free(self);
-}
+hash_t menai_bytes_hash(MenaiBytes *b);
 
 MenaiStruct *alloc_menai_struct(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
 MenaiStructType *alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
 
-static inline void
-menai_structtype_free(MenaiStructType *self)
-{
-    menai_ht_free(&self->field_ht);
-    menai_value_xrelease((MenaiValue *)self->name);
-    int n = self->nfields;
-    for (int i = 0; i < n; i++) {
-        menai_value_xrelease((MenaiValue *)self->fields[i].name);
-    }
-
-    menai_free(self);
-}
-
-static inline void
-menai_struct_free(MenaiStruct *self)
-{
-    menai_value_xrelease((MenaiValue *)self->struct_type);
-    int n = self->nfields;
-    for (int i = 0; i < n; i++) {
-        menai_value_xrelease(self->items[i]);
-    }
-
-    menai_free(self);
-}
-
 MenaiDict *alloc_menai_dict(void);
 MenaiDict *alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
 
-static inline void
-menai_dict_free(MenaiDict *self)
-{
-    ssize_t n = self->length;
-
-    if (self->keys) {
-        for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(self->keys[i]);
-        }
-
-        free(self->keys);
-    }
-
-    if (self->values) {
-        for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(self->values[i]);
-        }
-
-        free(self->values);
-    }
-
-    free(self->hashes);
-    menai_ht_free(&self->ht);
-    menai_free(self);
-}
-
 MenaiList *alloc_menai_list(ssize_t n);
-MenaiValue *menai_list_rest(MenaiValue *lst);
-MenaiValue *menai_list_slice(MenaiValue *lst, ssize_t start, ssize_t end);
-
-static inline void
-menai_list_free(MenaiList *self)
-{
-    if (self->owner != NULL) {
-        /* View — release the backing list; do not touch the element array. */
-        menai_value_release(self->owner);
-        menai_free(self);
-        return;
-    }
-
-    /* Owner — release all elements then free the combined block. */
-    ssize_t n = self->length;
-    MenaiValue **arr = self->elements;
-    for (ssize_t i = 0; i < n; i++) {
-        menai_value_release(*arr++);
-    }
-
-    menai_free(self);
-}
+void menai_list_rest(MenaiList *lst, MenaiList *r);
+void menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r);
 
 MenaiSet *alloc_menai_set(ssize_t cap);
-
-static inline void
-menai_set_free(MenaiSet *self)
-{
-    ssize_t n = self->length;
-    for (ssize_t i = 0; i < n; i++) {
-        menai_value_release(self->elements[i]);
-    }
-
-    menai_ht_free(&self->ht);
-    menai_free(self);
-}
 
 int menai_vm_bridge_init(void);
 
@@ -857,9 +651,8 @@ typedef struct {
 } GlobalsTable;
 
 void globals_free(GlobalsTable *gt);
-int globals_build_from_dict(GlobalsTable *gt, MenaiValue *dict_val);
-int globals_build_from_arrays(GlobalsTable *gt, const char **names,
-                              MenaiValue **values, ssize_t n);
+int globals_build_from_dict(GlobalsTable *gt, MenaiDict *d);
+int globals_build_from_arrays(GlobalsTable *gt, const char **names, MenaiValue **values, ssize_t n);
 
 /*
  * menai_vm_execute_native — native VM entry point.

@@ -14,6 +14,39 @@
 
 #include "menai_vm_c.h"
 
+/*
+ * menai_hash_double — hash a C double without any Python API calls.
+ *
+ * Reinterprets the IEEE 754 bit pattern as a uint64_t via memcpy (safe
+ * under strict aliasing rules) then applies a finalisation mix so that
+ * nearby values produce well-distributed hashes.  NaN is normalised to a
+ * fixed bit pattern before mixing so all NaN values hash identically.
+ * The result is mapped away from -1 (the CPython "error" sentinel).
+ *
+ * This is a Menai-internal hash — it does not need to match Python's
+ * float hash, because Menai floats and integers are never equal and are
+ * never mixed in the same dict or set.
+ */
+static inline hash_t
+menai_hash_double(double v)
+{
+    uint64_t bits;
+    if (v != v) {
+        bits = 0x7FF8000000000000ULL;
+    } else {
+        memcpy(&bits, &v, sizeof(bits));
+    }
+
+    /* Finalisation mix from SplitMix64 */
+    bits ^= bits >> 30;
+    bits *= 0xbf58476d1ce4e5b9ULL;
+    bits ^= bits >> 27;
+    bits *= 0x94d049bb133111ebULL;
+    bits ^= bits >> 31;
+    hash_t h = (hash_t)(bits & (uint64_t)PTRDIFF_MAX);
+    return h == -1 ? -2 : h;
+}
+
 static inline uhash_t
 _hash_combine(uhash_t acc, hash_t h)
 {
@@ -65,7 +98,7 @@ menai_value_hash(MenaiValue *val)
         return menai_string_hash((MenaiString *)val);
 
     case MENAITYPE_BYTES:
-        return menai_bytes_hash(val);
+        return menai_bytes_hash((MenaiBytes *)val);
 
     case MENAITYPE_SYMBOL:
         return menai_string_hash(((MenaiSymbol *)val)->name);

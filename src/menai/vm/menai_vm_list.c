@@ -33,57 +33,30 @@ alloc_menai_list(ssize_t n)
     return obj;
 }
 
-MenaiValue *
-menai_list_rest(MenaiValue *lst_val)
+void
+menai_list_rest(MenaiList *lst, MenaiList *r)
 {
-    MenaiList *lst = (MenaiList *)lst_val;
-    if (lst->length == 0) {
-        return NULL;
-    }
-
     /*
      * Resolve the owner: if lst is itself a view, use its owner so we never
      * build a chain — all views point directly at the root array owner.
      */
-    MenaiValue *owner = (lst->owner != NULL) ? lst->owner : lst_val;
-
-    MenaiList *view = (MenaiList *)menai_alloc(sizeof(MenaiList));
-    if (view == NULL) {
-        return NULL;
-    }
-
-    view->ob_refcnt = 1;
-    view->ob_type = MENAITYPE_LIST;
-    menai_value_retain(owner);
-    view->owner = owner;
-    view->elements = lst->elements + 1;
-    view->length = lst->length - 1;
-
-    return (MenaiValue *)view;
+    MenaiList *owner = (lst->owner != NULL) ? lst->owner : lst;
+    menai_value_retain((MenaiValue *)owner);
+    r->owner = owner;
+    r->elements = lst->elements + 1;
+    r->length = lst->length - 1;
 }
 
-MenaiValue *
-menai_list_slice(MenaiValue *lst_val, ssize_t start, ssize_t end)
+void
+menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r)
 {
-    MenaiList *lst = (MenaiList *)lst_val;
-
     /*
      * Resolve the owner: if lst is itself a view, point at its owner so
      * all views are depth-1 from the root array owner.
      */
-    MenaiValue *owner = (lst->owner != NULL) ? lst->owner : lst_val;
-
-    MenaiList *view = (MenaiList *)menai_alloc(sizeof(MenaiList));
-    if (view == NULL) {
-        return NULL;
-    }
-
-    view->ob_refcnt = 1;
-    view->ob_type = MENAITYPE_LIST;
-    menai_value_retain(owner);
-    view->owner = owner;
-    view->elements = lst->elements + start;
-    view->length = end - start;
-
-    return (MenaiValue *)view;
+    MenaiList *owner = (lst->owner != NULL) ? lst->owner : lst;
+    menai_value_retain((MenaiValue *)owner);
+    r->owner = owner;
+    r->elements = lst->elements + start;
+    r->length = end - start;
 }

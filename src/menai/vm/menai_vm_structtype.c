@@ -43,7 +43,13 @@ alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ss
     }
 
     if (menai_ht_init(&self->field_ht, nfields) < 0) {
-        menai_structtype_free(self);
+        menai_value_xrelease((MenaiValue *)self->name);
+        int n = self->nfields;
+        for (int i = 0; i < n; i++) {
+            menai_value_xrelease((MenaiValue *)self->fields[i].name);
+        }
+
+        menai_free(self);
         return NULL;
     }
 
