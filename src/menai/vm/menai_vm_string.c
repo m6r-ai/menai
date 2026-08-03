@@ -1255,8 +1255,8 @@ menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *r)
     }
 }
 
-MenaiString *
-alloc_menai_string_from_upcase(MenaiString *s)
+ssize_t
+menai_string_upcase_length(MenaiString *s)
 {
     ssize_t len = s->length;
 
@@ -1273,41 +1273,33 @@ alloc_menai_string_from_upcase(MenaiString *s)
         }
     }
 
-    MenaiString *obj = menai_string_alloc(out_len);
-    if (!obj) {
-        return NULL;
-    }
+    return out_len;
+}
 
-    /* Second pass: fill. */
+void
+menai_string_upcase(MenaiString *s, MenaiString *r)
+{
+    ssize_t len = s->length;
     ssize_t k = 0;
     for (ssize_t i = 0; i < len; i++) {
         const MenaiUpcaseExpansion *exp = unicode_upcase_expansion(s->data[i]);
         if (exp) {
             for (int j = 0; j < 3 && exp->expansion[j]; j++) {
-                obj->data[k++] = exp->expansion[j];
+                r->data[k++] = exp->expansion[j];
             }
         } else {
-            obj->data[k++] = unicode_simple_upcase(s->data[i]);
+            r->data[k++] = unicode_simple_upcase(s->data[i]);
         }
     }
-
-    return obj;
 }
 
-MenaiString *
-alloc_menai_string_from_downcase(MenaiString *s)
+void
+menai_string_downcase(MenaiString *s, MenaiString *r)
 {
     ssize_t len = s->length;
-    MenaiString *obj = menai_string_alloc(len);
-    if (!obj) {
-        return NULL;
-    }
-
     for (ssize_t i = 0; i < len; i++) {
-        obj->data[i] = unicode_simple_downcase(s->data[i]);
+        r->data[i] = unicode_simple_downcase(s->data[i]);
     }
-
-    return obj;
 }
 
 MenaiString *

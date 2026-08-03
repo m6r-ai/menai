@@ -3822,11 +3822,13 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRING_UPCASE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiString *a = (MenaiString *)regs[base + src0];
-            MenaiString *r = alloc_menai_string_from_upcase(a);
+            ssize_t upcase_len = menai_string_upcase_length(a);
+            MenaiString *r = menai_string_alloc(upcase_len);
             if (r == NULL) {
                 goto error;
             }
 
+            menai_string_upcase(a, r);
             menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
@@ -3834,11 +3836,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
         case OP_STRING_DOWNCASE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiString *a = (MenaiString *)regs[base + src0];
-            MenaiString *r = alloc_menai_string_from_downcase(a);
+            MenaiString *r = menai_string_alloc(a->length);
             if (r == NULL) {
                 goto error;
             }
 
+            menai_string_downcase(a, r);
             menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
