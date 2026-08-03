@@ -630,7 +630,7 @@ menai_function_free(MenaiFunction *self)
     menai_free(self);
 }
 
-MenaiString *menai_string_alloc(ssize_t len);
+MenaiString *alloc_menai_string(ssize_t len);
 MenaiString *alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes);
 char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
 int menai_string_compare(MenaiString *a, MenaiString *b);
@@ -643,7 +643,7 @@ void menai_string_downcase(MenaiString *s, MenaiString *r);
 MenaiString *alloc_menai_string_from_trim(MenaiString *s);
 MenaiString *alloc_menai_string_from_trim_left(MenaiString *s);
 MenaiString *alloc_menai_string_from_trim_right(MenaiString *s);
-ssize_t menai_string_find(MenaiValue *haystack, MenaiValue *needle);
+ssize_t menai_string_find(MenaiString *haystack, MenaiString *needle);
 MenaiValue *menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to);
 MenaiString *alloc_menai_string_from_float(double v);
 MenaiString *alloc_menai_string_from_complex(double real, double imag);
@@ -730,7 +730,7 @@ menai_bytes_free(MenaiBytes *self)
     menai_free(self);
 }
 
-MenaiValue *menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
+MenaiStruct *alloc_menai_struct(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
 MenaiStructType *alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
 
 static inline void
@@ -758,8 +758,8 @@ menai_struct_free(MenaiStruct *self)
     menai_free(self);
 }
 
-MenaiValue *menai_dict_new_empty(void);
-MenaiValue *menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
+MenaiDict *alloc_menai_dict(void);
+MenaiDict *alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
 
 /*
  * _dict_free_arrays — release n owned references in keys and values, then
@@ -796,7 +796,6 @@ menai_dict_free(MenaiDict *self)
 }
 
 MenaiList *alloc_menai_list(ssize_t n);
-MenaiValue *menai_list_new_empty(void);
 MenaiValue *menai_list_rest(MenaiValue *lst);
 MenaiValue *menai_list_slice(MenaiValue *lst, ssize_t start, ssize_t end);
 
@@ -821,7 +820,6 @@ menai_list_free(MenaiList *self)
 }
 
 MenaiSet *alloc_menai_set(ssize_t cap);
-MenaiSet *alloc_empty_menai_set(void);
 
 static inline void
 menai_set_free(MenaiSet *self)
@@ -881,7 +879,7 @@ int globals_build_from_arrays(GlobalsTable *gt, const char **names,
  */
 MenaiValue *menai_vm_execute_native(MenaiCodeObject *code,
                                     const GlobalsTable *globals,
-                                    MenaiValue *extra_bindings,
+                                    MenaiDict *extra_bindings,
                                     MenaiVMError *out_error,
                                     int *cancel_flag);
 

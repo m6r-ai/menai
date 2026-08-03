@@ -34,23 +34,6 @@ alloc_menai_list(ssize_t n)
 }
 
 MenaiValue *
-menai_list_new_empty(void)
-{
-    MenaiList *obj = (MenaiList *)menai_alloc(sizeof(MenaiList));
-    if (!obj) {
-        return NULL;
-    }
-
-    obj->ob_refcnt = 1;
-    obj->ob_type = MENAITYPE_LIST;
-    obj->elements = obj->inline_elements;
-    obj->length = 0;
-    obj->owner = NULL;
-
-    return (MenaiValue *)obj;
-}
-
-MenaiValue *
 menai_list_rest(MenaiValue *lst_val)
 {
     MenaiList *lst = (MenaiList *)lst_val;

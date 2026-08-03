@@ -934,7 +934,7 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
     }
 
     if (a->length == 0) {
-        MenaiString *r = menai_string_alloc(1);
+        MenaiString *r = alloc_menai_string(1);
         if (r) {
             r->data[0] = (uint32_t)'0';
         }
@@ -1017,7 +1017,7 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
         buf[j] = c;
     }
 
-    MenaiString *result = menai_string_alloc(pos);
+    MenaiString *result = alloc_menai_string(pos);
     if (!result) {
         return NULL;
     }

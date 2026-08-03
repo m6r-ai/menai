@@ -15,8 +15,8 @@
 
 #include "menai_vm_c.h"
 
-MenaiValue *
-menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n)
+MenaiDict *
+alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n)
 {
     MenaiDict *obj = (MenaiDict *)menai_alloc(sizeof(MenaiDict));
     if (!obj) {
@@ -38,11 +38,11 @@ menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *has
     obj->hashes = hashes;
     obj->length = n;
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
-MenaiValue *
-menai_dict_new_empty(void)
+MenaiDict *
+alloc_menai_dict(void)
 {
     MenaiDict *obj = (MenaiDict *)menai_alloc(sizeof(MenaiDict));
     if (!obj) {
@@ -59,5 +59,5 @@ menai_dict_new_empty(void)
     obj->ht.used = 0;
     obj->length = 0;
 
-    return (MenaiValue *)obj;
+    return obj;
 }

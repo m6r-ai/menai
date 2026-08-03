@@ -26,8 +26,8 @@ static PyObject *_VMRuntimeError_type = NULL;
 MenaiValue *Menai_NONE = NULL;
 MenaiValue *Menai_TRUE = NULL;
 MenaiValue *Menai_FALSE = NULL;
-MenaiValue *Menai_EMPTY_LIST = NULL;
-MenaiValue *Menai_EMPTY_DICT = NULL;
+MenaiList *Menai_EMPTY_LIST = NULL;
+MenaiDict *Menai_EMPTY_DICT = NULL;
 MenaiSet *Menai_EMPTY_SET = NULL;
 
 /*
@@ -761,7 +761,7 @@ slow_value_to_menai_value(PyObject *src)
         }
 
         Py_DECREF(pairs);
-        return menai_dict_from_arrays_steal(keys, values, hashes, n);
+        return (MenaiValue *)alloc_menai_dict_from_arrays_steal(keys, values, hashes, n);
     }
 
     if (t == Slow_SetType) {
@@ -934,17 +934,17 @@ slow_value_to_menai_value(PyObject *src)
 
         Py_DECREF(fields);
         /*
-         * menai_struct_alloc retains fast_st and each element of fast_arr
+         * alloc_menai_struct retains fast_st and each element of fast_arr
          * internally, so we release our references afterward.
          */
-        MenaiValue *r = menai_struct_alloc(fast_st, fast_arr, n);
+        MenaiStruct *r = alloc_menai_struct(fast_st, fast_arr, n);
         for (Py_ssize_t i = 0; i < n; i++) {
             menai_value_release(fast_arr[i]);
         }
 
         free(fast_arr);
         menai_value_release((MenaiValue *)fast_st);
-        return r;
+        return (MenaiValue *)r;
     }
 
     if (t == Slow_FunctionType) {
@@ -1524,12 +1524,12 @@ bridge_globals_get(PyObject *globals_key)
  * to a native MenaiDict.  Keys are converted to MenaiString, values via
  * slow_value_to_menai_value.  Returns a new reference, or NULL on error.
  */
-static MenaiValue *
+static MenaiDict *
 menai_dict_from_pydict(PyObject *pydict)
 {
     Py_ssize_t n = PyDict_Size(pydict);
     if (n == 0) {
-        return menai_dict_new_empty();
+        return alloc_menai_dict();
     }
 
     MenaiValue **keys = (MenaiValue **)malloc((size_t)n * sizeof(MenaiValue *));
@@ -1568,7 +1568,7 @@ menai_dict_from_pydict(PyObject *pydict)
         i++;
     }
 
-    return menai_dict_from_arrays_steal(keys, values, hashes, (ssize_t)n);
+    return alloc_menai_dict_from_arrays_steal(keys, values, hashes, (ssize_t)n);
 
 fail:
     for (Py_ssize_t j = 0; j < i; j++) {
@@ -1626,7 +1626,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
         }
     }
 
-    MenaiValue *native_extra = NULL;
+    MenaiDict *native_extra = NULL;
     if (extra_bindings && extra_bindings != Py_None) {
         native_extra = menai_dict_from_pydict(extra_bindings);
         if (!native_extra) {
@@ -1649,7 +1649,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     Py_END_ALLOW_THREADS
 
     menai_code_object_release(native_code);
-    menai_value_xrelease(native_extra);
+    menai_value_xrelease((MenaiValue *)native_extra);
 
     if (result == NULL) {
         if (!PyErr_Occurred()) {
@@ -1852,9 +1852,9 @@ menai_vm_shim_init(void)
     Menai_NONE = menai_none_singleton();
     Menai_TRUE = menai_boolean_true();
     Menai_FALSE = menai_boolean_false();
-    Menai_EMPTY_LIST = menai_list_new_empty();
-    Menai_EMPTY_DICT = menai_dict_new_empty();
-    Menai_EMPTY_SET = alloc_empty_menai_set();
+    Menai_EMPTY_LIST = alloc_menai_list(0);
+    Menai_EMPTY_DICT = alloc_menai_dict();
+    Menai_EMPTY_SET = alloc_menai_set(0);
 
     PyObject *err_mod = PyImport_ImportModule("menai.vm.menai_vm_errors");
     if (err_mod == NULL) {

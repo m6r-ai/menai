@@ -9,8 +9,8 @@
 
 #include "menai_vm_c.h"
 
-MenaiValue *
-menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields)
+MenaiStruct *
+alloc_menai_struct(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStruct) + (size_t)nfields * sizeof(MenaiValue *);
     MenaiStruct *self = (MenaiStruct *)menai_alloc(sz);
@@ -29,5 +29,5 @@ menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssiz
         self->items[i] = field_values[i];
     }
 
-    return (MenaiValue *)self;
+    return self;
 }

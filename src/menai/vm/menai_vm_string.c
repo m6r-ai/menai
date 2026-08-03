@@ -994,7 +994,7 @@ static inline const MenaiUpcaseExpansion *unicode_upcase_expansion(uint32_t cp)
  * Returns a new reference, or NULL on allocation failure.
  */
 MenaiString *
-menai_string_alloc(ssize_t len)
+alloc_menai_string(ssize_t len)
 {
     size_t sz = sizeof(MenaiString) + (size_t)len * sizeof(uint32_t);
     MenaiString *obj = (MenaiString *)menai_alloc(sz);
@@ -1149,7 +1149,7 @@ alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes)
         return NULL;
     }
 
-    MenaiString *obj = menai_string_alloc(len);
+    MenaiString *obj = alloc_menai_string(len);
     if (!obj) {
         free(buf);
         return NULL;
@@ -1312,7 +1312,7 @@ alloc_menai_string_from_trim_left(MenaiString *s)
     }
 
     len -= start;
-    MenaiString *obj = menai_string_alloc(len);
+    MenaiString *obj = alloc_menai_string(len);
     if (!obj) {
         return NULL;
     }
@@ -1329,7 +1329,7 @@ alloc_menai_string_from_trim_right(MenaiString *s)
         end--;
     }
 
-    MenaiString *obj = menai_string_alloc(end);
+    MenaiString *obj = alloc_menai_string(end);
     if (!obj) {
         return NULL;
     }
@@ -1352,7 +1352,7 @@ alloc_menai_string_from_trim(MenaiString *s)
         end--;
     }
 
-    MenaiString *obj = menai_string_alloc(end - start);
+    MenaiString *obj = alloc_menai_string(end - start);
     if (!obj) {
         return NULL;
     }
@@ -1362,11 +1362,10 @@ alloc_menai_string_from_trim(MenaiString *s)
 }
 
 ssize_t
-menai_string_find(MenaiValue *haystack, MenaiValue *needle)
+menai_string_find(MenaiString *haystack, MenaiString *needle)
 {
-    MenaiString *mh = (MenaiString *)haystack;
-    MenaiString *mn = (MenaiString *)needle;
-    ssize_t hlen = mh->length, nlen = mn->length;
+    ssize_t hlen = haystack->length;
+    ssize_t nlen = needle->length;
 
     if (nlen == 0) {
         return 0;
@@ -1378,7 +1377,7 @@ menai_string_find(MenaiValue *haystack, MenaiValue *needle)
 
     ssize_t limit = hlen - nlen;
     for (ssize_t i = 0; i <= limit; i++) {
-        if (memcmp(mh->data + i, mn->data, (size_t)nlen * sizeof(uint32_t)) == 0) {
+        if (memcmp(haystack->data + i, needle->data, (size_t)nlen * sizeof(uint32_t)) == 0) {
             return i;
         }
     }
@@ -1402,7 +1401,7 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
          * last.  "hello".replace("", "X") -> "XhXeXlXlXoX"
          */
         ssize_t out_len = slen + (slen + 1) * tolen;
-        MenaiString *obj = menai_string_alloc(out_len);
+        MenaiString *obj = alloc_menai_string(out_len);
         if (!obj) {
             return NULL;
         }
@@ -1444,7 +1443,7 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
     }
 
     ssize_t out_len = slen + count * (tolen - frlen);
-    MenaiString *obj = menai_string_alloc(out_len);
+    MenaiString *obj = alloc_menai_string(out_len);
     if (!obj) {
         return NULL;
     }
