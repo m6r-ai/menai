@@ -20,17 +20,15 @@ alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_
 {
     MenaiDict *obj = (MenaiDict *)menai_alloc(sizeof(MenaiDict));
     if (!obj) {
-        _dict_free_arrays(keys, values, hashes, n);
-        return NULL;
+        goto err;
     }
 
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_DICT;
 
     if (menai_ht_build(&obj->ht, keys, hashes, n) < 0) {
-        _dict_free_arrays(keys, values, hashes, n);
         menai_free(obj);
-        return NULL;
+        goto err;
     }
 
     obj->keys = keys;
@@ -39,6 +37,26 @@ alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_
     obj->length = n;
 
     return obj;
+
+err:
+    if (keys) {
+        for (ssize_t i = 0; i < n; i++) {
+            menai_value_release(keys[i]);
+        }
+
+        free(keys);
+    }
+
+    if (values) {
+        for (ssize_t i = 0; i < n; i++) {
+            menai_value_release(values[i]);
+        }
+
+        free(values);
+    }
+
+    free(hashes);
+    return NULL;
 }
 
 MenaiDict *

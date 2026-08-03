@@ -761,36 +761,28 @@ menai_struct_free(MenaiStruct *self)
 MenaiDict *alloc_menai_dict(void);
 MenaiDict *alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
 
-/*
- * _dict_free_arrays — release n owned references in keys and values, then
- * free all three arrays.  NULL pointers are safely ignored.
- */
-static inline void
-_dict_free_arrays(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n)
-{
-    if (keys) {
-        for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(keys[i]);
-        }
-
-        free(keys);
-    }
-
-    if (values) {
-        for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(values[i]);
-        }
-
-        free(values);
-    }
-
-    free(hashes);
-}
-
 static inline void
 menai_dict_free(MenaiDict *self)
 {
-    _dict_free_arrays(self->keys, self->values, self->hashes, self->length);
+    ssize_t n = self->length;
+
+    if (self->keys) {
+        for (ssize_t i = 0; i < n; i++) {
+            menai_value_release(self->keys[i]);
+        }
+
+        free(self->keys);
+    }
+
+    if (self->values) {
+        for (ssize_t i = 0; i < n; i++) {
+            menai_value_release(self->values[i]);
+        }
+
+        free(self->values);
+    }
+
+    free(self->hashes);
     menai_ht_free(&self->ht);
     menai_free(self);
 }
