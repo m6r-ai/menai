@@ -499,8 +499,13 @@ void menai_code_object_release(MenaiCodeObject *co);
  */
 int menai_code_object_max_locals(const MenaiCodeObject *co);
 
-/* Initialise a MenaiBigInt to zero. Must be called before first use as output. */
-#define menai_bigint_init(x) (memset((x), 0, sizeof(MenaiBigInt)))
+static inline void
+menai_bigint_init(MenaiBigInt *a)
+{
+    a->digits = NULL;
+    a->length = 0;
+    a->sign = 0;
+}
 
 void menai_bigint_final(MenaiBigInt *a);
 void menai_bigint_normalize(MenaiBigInt *a);
