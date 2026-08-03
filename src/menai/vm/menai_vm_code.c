@@ -15,7 +15,7 @@ menai_code_object_release(MenaiCodeObject *co)
     }
 
     for (ssize_t i = 0; i < co->nconst; i++) {
-        menai_release(co->constants[i]);
+        menai_value_release(co->constants[i]);
     }
 
     free(co->constants);

@@ -68,7 +68,7 @@ alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
 
     view->ob_refcnt = 1;
     view->ob_type = MENAITYPE_BYTES;
-    menai_retain(owner);
+    menai_value_retain(owner);
     view->owner = owner;
     view->data = b->data + start;
     view->length = end - start;

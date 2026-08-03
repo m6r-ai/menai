@@ -239,7 +239,7 @@ struct MenaiList {
     /*
      * owner is non-NULL when this list is a slice view into another list's
      * inline_elements array.  In that case elements points into owner's storage
-     * and must not be freed; only menai_release(owner) is needed on dealloc.
+     * and must not be freed; only menai_value_release(owner) is needed on dealloc.
      * owner always points to a list with owner == NULL (never a chain).
      */
     MenaiValue *owner;
@@ -409,22 +409,22 @@ typedef struct {
 void menai_value_free(MenaiValue *v);
 
 /*
- * menai_retain — claim an interest in val.
+ * menai_value_retain — claim an interest in val.
  */
 static inline void
-menai_retain(MenaiValue *val)
+menai_value_retain(MenaiValue *val)
 {
     assert(val->ob_type != 0);
     val->ob_refcnt++;
 }
 
 /*
- * menai_release — relinquish an interest in val.
+ * menai_value_release — relinquish an interest in val.
  *
  * val must not be NULL.  When ob_refcnt reaches zero, we call the registered destructor.
  */
 static inline void
-menai_release(MenaiValue *val)
+menai_value_release(MenaiValue *val)
 {
     assert(val->ob_type != 0);
     if (--val->ob_refcnt == 0) {
@@ -433,13 +433,13 @@ menai_release(MenaiValue *val)
 }
 
 /*
- * menai_xrelease — relinquish an interest in val if val is non-NULL.
+ * menai_value_xrelease — relinquish an interest in val if val is non-NULL.
  */
 static inline void
-menai_xrelease(MenaiValue *val)
+menai_value_xrelease(MenaiValue *val)
 {
     if (val != NULL) {
-        menai_release(val);
+        menai_value_release(val);
     }
 }
 
@@ -535,7 +535,7 @@ int menai_code_object_max_locals(const MenaiCodeObject *co);
 /* Initialise a MenaiBigInt to zero. Must be called before first use as output. */
 #define menai_bigint_init(x) (memset((x), 0, sizeof(MenaiBigInt)))
 
-void menai_bigint_free(MenaiBigInt *a);
+void menai_bigint_final(MenaiBigInt *a);
 void menai_bigint_normalize(MenaiBigInt *a);
 int menai_bigint_copy(const MenaiBigInt *src, MenaiBigInt *dst);
 int menai_bigint_from_long(long v, MenaiBigInt *a);
@@ -624,7 +624,7 @@ menai_function_free(MenaiFunction *self)
     menai_code_object_release(self->bytecode);
     ssize_t ncap = self->ncap;
     for (ssize_t i = 0; i < ncap; i++) {
-        menai_xrelease(self->captures[i]);
+        menai_value_xrelease(self->captures[i]);
     }
 
     menai_free(self);
@@ -659,7 +659,7 @@ MenaiSymbol *alloc_menai_symbol(MenaiString *name);
 static inline void
 menai_symbol_free(MenaiSymbol *self)
 {
-    menai_xrelease((MenaiValue *)self->name);
+    menai_value_xrelease((MenaiValue *)self->name);
     menai_free(self);
 }
 
@@ -698,7 +698,7 @@ menai_integer_free(MenaiInteger *self)
             return;
         }
     } else {
-        menai_bigint_free(&self->big);
+        menai_bigint_final(&self->big);
     }
 
     menai_free(self);
@@ -721,7 +721,7 @@ menai_bytes_free(MenaiBytes *self)
 {
     if (self->owner != NULL) {
         /* View — release the backing owner; do not touch the data array. */
-        menai_release(self->owner);
+        menai_value_release(self->owner);
         menai_free(self);
         return;
     }
@@ -737,10 +737,10 @@ static inline void
 menai_structtype_free(MenaiStructType *self)
 {
     menai_ht_free(&self->field_ht);
-    menai_xrelease((MenaiValue *)self->name);
+    menai_value_xrelease((MenaiValue *)self->name);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_xrelease((MenaiValue *)self->fields[i].name);
+        menai_value_xrelease((MenaiValue *)self->fields[i].name);
     }
 
     menai_free(self);
@@ -749,10 +749,10 @@ menai_structtype_free(MenaiStructType *self)
 static inline void
 menai_struct_free(MenaiStruct *self)
 {
-    menai_xrelease((MenaiValue *)self->struct_type);
+    menai_value_xrelease((MenaiValue *)self->struct_type);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_xrelease(self->items[i]);
+        menai_value_xrelease(self->items[i]);
     }
 
     menai_free(self);
@@ -770,7 +770,7 @@ _dict_free_arrays(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_
 {
     if (keys) {
         for (ssize_t i = 0; i < n; i++) {
-            menai_release(keys[i]);
+            menai_value_release(keys[i]);
         }
 
         free(keys);
@@ -778,7 +778,7 @@ _dict_free_arrays(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_
 
     if (values) {
         for (ssize_t i = 0; i < n; i++) {
-            menai_release(values[i]);
+            menai_value_release(values[i]);
         }
 
         free(values);
@@ -805,7 +805,7 @@ menai_list_free(MenaiList *self)
 {
     if (self->owner != NULL) {
         /* View — release the backing list; do not touch the element array. */
-        menai_release(self->owner);
+        menai_value_release(self->owner);
         menai_free(self);
         return;
     }
@@ -814,7 +814,7 @@ menai_list_free(MenaiList *self)
     ssize_t n = self->length;
     MenaiValue **arr = self->elements;
     for (ssize_t i = 0; i < n; i++) {
-        menai_release(*arr++);
+        menai_value_release(*arr++);
     }
 
     menai_free(self);
@@ -828,7 +828,7 @@ menai_set_free(MenaiSet *self)
 {
     ssize_t n = self->length;
     for (ssize_t i = 0; i < n; i++) {
-        menai_release(self->elements[i]);
+        menai_value_release(self->elements[i]);
     }
 
     menai_ht_free(&self->ht);

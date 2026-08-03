@@ -71,7 +71,7 @@ menai_list_rest(MenaiValue *lst_val)
 
     view->ob_refcnt = 1;
     view->ob_type = MENAITYPE_LIST;
-    menai_retain(owner);
+    menai_value_retain(owner);
     view->owner = owner;
     view->elements = lst->elements + 1;
     view->length = lst->length - 1;
@@ -97,7 +97,7 @@ menai_list_slice(MenaiValue *lst_val, ssize_t start, ssize_t end)
 
     view->ob_refcnt = 1;
     view->ob_type = MENAITYPE_LIST;
-    menai_retain(owner);
+    menai_value_retain(owner);
     view->owner = owner;
     view->elements = lst->elements + start;
     view->length = end - start;

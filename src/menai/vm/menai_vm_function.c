@@ -27,7 +27,7 @@ alloc_menai_function(MenaiCodeObject *co, MenaiValue *none_val)
     self->bytecode = co;
 
     for (ssize_t i = 0; i < ncap; i++) {
-        menai_retain(none_val);
+        menai_value_retain(none_val);
         self->captures[i] = none_val;
     }
 

@@ -5,7 +5,7 @@
  * (MenaiString name, index) pairs.  A MenaiHashTable built at construction
  * time provides O(1) name-to-index lookup; its slots hold borrowed references
  * into fields[].  All string fields are native MenaiString * values
- * managed with menai_retain/menai_release.
+ * managed with menai_value_retain/menai_value_release.
  */
 #include <stdlib.h>
 
@@ -28,7 +28,7 @@ alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ss
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_STRUCTTYPE;
-    menai_retain((MenaiValue *)name);
+    menai_value_retain((MenaiValue *)name);
     self->field_ht.slots = NULL;
     self->field_ht.slot_count = 0;
     self->field_ht.used = 0;
@@ -37,7 +37,7 @@ alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ss
     self->nfields = (int)nfields;
 
     for (ssize_t i = 0; i < nfields; i++) {
-        menai_retain((MenaiValue *)field_names[i]);
+        menai_value_retain((MenaiValue *)field_names[i]);
         self->fields[i].name = field_names[i];
         self->fields[i].index = (int)i;
     }

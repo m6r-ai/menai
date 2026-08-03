@@ -21,11 +21,11 @@ menai_struct_alloc(MenaiStructType *struct_type, MenaiValue **field_values, ssiz
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_STRUCT;
     self->nfields = (int)nfields;
-    menai_retain((MenaiValue *)struct_type);
+    menai_value_retain((MenaiValue *)struct_type);
     self->struct_type = struct_type;
 
     for (ssize_t i = 0; i < nfields; i++) {
-        menai_retain(field_values[i]);
+        menai_value_retain(field_values[i]);
         self->items[i] = field_values[i];
     }
 

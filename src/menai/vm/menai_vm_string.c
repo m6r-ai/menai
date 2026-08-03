@@ -1447,7 +1447,7 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
     }
 
     if (slen == 0) {
-        menai_retain(s);
+        menai_value_retain(s);
         return s;
     }
 
@@ -1463,7 +1463,7 @@ menai_string_replace(MenaiValue *s, MenaiValue *from, MenaiValue *to)
     }
 
     if (count == 0) {
-        menai_retain(s);
+        menai_value_retain(s);
         return s;
     }
 

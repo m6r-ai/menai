@@ -90,7 +90,7 @@ _menai_bigint_add_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
         carry = sum >> 32;
     }
 
-    menai_bigint_free(result);
+    menai_bigint_final(result);
     result->digits = digits;
     result->length = out_len;
     result->sign = 1;
@@ -126,7 +126,7 @@ _menai_bigint_sub_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
         digits[i] = (uint32_t)diff;
     }
 
-    menai_bigint_free(result);
+    menai_bigint_final(result);
     result->digits = digits;
     result->length = out_len;
     result->sign = 1;
@@ -139,11 +139,10 @@ _menai_bigint_sub_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
  * and remainder digit in *remainder.  b must be non-zero.
  */
 static int
-_menai_bigint_divmod_1(
-    const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, uint32_t *remainder)
+_menai_bigint_divmod_1(const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, uint32_t *remainder)
 {
     if (a->length == 0) {
-        menai_bigint_free(quotient);
+        menai_bigint_final(quotient);
         *remainder = 0;
         return 0;
     }
@@ -160,7 +159,7 @@ _menai_bigint_divmod_1(
         rem = cur % b;
     }
 
-    menai_bigint_free(quotient);
+    menai_bigint_final(quotient);
     quotient->digits = qdigits;
     quotient->length = a->length;
     quotient->sign = 1;
@@ -358,7 +357,7 @@ _menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt
 
 /* Free the digit array and reset to zero. */
 void
-menai_bigint_free(MenaiBigInt *a)
+menai_bigint_final(MenaiBigInt *a)
 {
     if (a->digits != NULL) {
         free(a->digits);
@@ -374,7 +373,7 @@ int
 menai_bigint_copy(const MenaiBigInt *src, MenaiBigInt *dst)
 {
     if (src->length == 0) {
-        menai_bigint_free(dst);
+        menai_bigint_final(dst);
         return 0;
     }
 
@@ -384,7 +383,7 @@ menai_bigint_copy(const MenaiBigInt *src, MenaiBigInt *dst)
     }
 
     memcpy(digits, src->digits, (size_t)src->length * sizeof(uint32_t));
-    menai_bigint_free(dst);
+    menai_bigint_final(dst);
     dst->digits = digits;
     dst->length = src->length;
     dst->sign = src->sign;
@@ -395,7 +394,7 @@ menai_bigint_copy(const MenaiBigInt *src, MenaiBigInt *dst)
 int
 menai_bigint_from_long(long v, MenaiBigInt *a)
 {
-    menai_bigint_free(a);
+    menai_bigint_final(a);
     if (v == 0) {
         return 0;
     }
@@ -444,7 +443,7 @@ menai_bigint_from_long(long v, MenaiBigInt *a)
 int
 menai_bigint_from_long_long(long long v, MenaiBigInt *a)
 {
-    menai_bigint_free(a);
+    menai_bigint_final(a);
     if (v == 0) {
         return 0;
     }
@@ -488,7 +487,7 @@ menai_bigint_from_long_long(long long v, MenaiBigInt *a)
 int
 menai_bigint_from_unsigned_long_long(unsigned long long v, MenaiBigInt *a)
 {
-    menai_bigint_free(a);
+    menai_bigint_final(a);
     if (v == 0) {
         return 0;
     }
@@ -616,11 +615,11 @@ menai_bigint_from_string(const char *s, int base, MenaiBigInt *a)
         }
     }
 
-    menai_bigint_free(&base_int);
-    menai_bigint_free(&digit_int);
-    menai_bigint_free(&tmp);
+    menai_bigint_final(&base_int);
+    menai_bigint_final(&digit_int);
+    menai_bigint_final(&tmp);
 
-    menai_bigint_free(a);
+    menai_bigint_final(a);
     *a = acc;
     if (a->sign != 0) {
         a->sign = sign;
@@ -629,10 +628,10 @@ menai_bigint_from_string(const char *s, int base, MenaiBigInt *a)
     return 0;
 
 fail:
-    menai_bigint_free(&acc);
-    menai_bigint_free(&base_int);
-    menai_bigint_free(&digit_int);
-    menai_bigint_free(&tmp);
+    menai_bigint_final(&acc);
+    menai_bigint_final(&base_int);
+    menai_bigint_final(&digit_int);
+    menai_bigint_final(&tmp);
     return -1;
 }
 
@@ -711,7 +710,7 @@ menai_bigint_from_double(double v, MenaiBigInt *a)
         frac -= (double)limb;
     }
 
-    menai_bigint_free(a);
+    menai_bigint_final(a);
     a->digits = digits;
     a->length = nlimbs;
     a->sign = (v < 0.0) ? -1 : 1;
@@ -968,7 +967,7 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
 
     uint32_t *buf = (uint32_t *)malloc((size_t)max_chars * sizeof(uint32_t));
     if (buf == NULL) {
-        menai_bigint_free(&tmp);
+        menai_bigint_final(&tmp);
         return NULL;
     }
 
@@ -983,20 +982,20 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
     while (tmp.length > 0) {
         uint32_t rem;
         if (_menai_bigint_divmod_1(&tmp, (uint32_t)base, &quotient, &rem) < 0) {
-            menai_bigint_free(&tmp);
-            menai_bigint_free(&quotient);
+            menai_bigint_final(&tmp);
+            menai_bigint_final(&quotient);
             free(buf);
             return NULL;
         }
 
-        menai_bigint_free(&tmp);
+        menai_bigint_final(&tmp);
         tmp = quotient;
         menai_bigint_init(&quotient);
         buf[pos++] = hex_digits[rem & 0xF];
     }
 
-    menai_bigint_free(&tmp);
-    menai_bigint_free(&quotient);
+    menai_bigint_final(&tmp);
+    menai_bigint_final(&quotient);
 
     if (pos == 0) {
         buf[pos++] = (uint32_t)'0';
@@ -1081,7 +1080,7 @@ menai_bigint_add(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
     /* Different signs: subtract smaller magnitude from larger. */
     int cmp = _menai_bigint_cmp_mag(a, b);
     if (cmp == 0) {
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         return 0;
     }
 
@@ -1144,7 +1143,7 @@ menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
     /* Same sign: subtract smaller magnitude from larger. */
     int cmp = _menai_bigint_cmp_mag(a, b);
     if (cmp == 0) {
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         return 0;
     }
 
@@ -1173,7 +1172,7 @@ int
 menai_bigint_mul(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     if (a->sign == 0 || b->sign == 0) {
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         return 0;
     }
 
@@ -1202,7 +1201,7 @@ menai_bigint_mul(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
     }
 
     int res_sign = (a->sign == b->sign) ? 1 : -1;
-    menai_bigint_free(result);
+    menai_bigint_final(result);
     result->digits = digits;
     result->length = out_len;
     result->sign = res_sign;
@@ -1223,8 +1222,8 @@ menai_bigint_divmod(
     }
 
     if (a->sign == 0) {
-        menai_bigint_free(quotient);
-        menai_bigint_free(remainder);
+        menai_bigint_final(quotient);
+        menai_bigint_final(remainder);
         return 0;
     }
 
@@ -1244,7 +1243,7 @@ menai_bigint_divmod(
         if (rem_digit != 0) {
             ret = menai_bigint_from_long((long)rem_digit, &r);
             if (ret < 0) {
-                menai_bigint_free(&q);
+                menai_bigint_final(&q);
                 return -1;
             }
         }
@@ -1277,18 +1276,18 @@ menai_bigint_divmod(
         menai_bigint_init(&one);
         if (menai_bigint_from_long(1L, &one) < 0 ||
             menai_bigint_sub(&q, &one, &q) < 0) {
-            menai_bigint_free(&q);
-            menai_bigint_free(&r);
-            menai_bigint_free(&one);
+            menai_bigint_final(&q);
+            menai_bigint_final(&r);
+            menai_bigint_final(&one);
             return -1;
         }
 
-        menai_bigint_free(&one);
+        menai_bigint_final(&one);
 
         /* remainder += b (in-place) */
         if (menai_bigint_add(&r, b, &r) < 0) {
-            menai_bigint_free(&q);
-            menai_bigint_free(&r);
+            menai_bigint_final(&q);
+            menai_bigint_final(&r);
             return -1;
         }
     }
@@ -1309,8 +1308,8 @@ menai_bigint_floordiv(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
         return -1;
     }
 
-    menai_bigint_free(&r);
-    menai_bigint_free(result);
+    menai_bigint_final(&r);
+    menai_bigint_final(result);
     *result = q;
     return 0;
 }
@@ -1326,8 +1325,8 @@ menai_bigint_mod(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
         return -1;
     }
 
-    menai_bigint_free(&q);
-    menai_bigint_free(result);
+    menai_bigint_final(&q);
+    menai_bigint_final(result);
     *result = r;
     return 0;
 }
@@ -1379,7 +1378,7 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
     MenaiBigInt base;
     menai_bigint_init(&base);
     if (menai_bigint_copy(a, &base) < 0) {
-        menai_bigint_free(&res);
+        menai_bigint_final(&res);
         return -1;
     }
 
@@ -1387,8 +1386,8 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
     MenaiBigInt e;
     menai_bigint_init(&e);
     if (menai_bigint_copy(exp, &e) < 0) {
-        menai_bigint_free(&res);
-        menai_bigint_free(&base);
+        menai_bigint_final(&res);
+        menai_bigint_final(&base);
         return -1;
     }
 
@@ -1404,7 +1403,7 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
                 goto fail;
             }
 
-            menai_bigint_free(&res);
+            menai_bigint_final(&res);
             res = tmp;
             menai_bigint_init(&tmp);
         }
@@ -1414,7 +1413,7 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
             goto fail;
         }
 
-        menai_bigint_free(&e);
+        menai_bigint_final(&e);
         e = half;
         menai_bigint_init(&half);
 
@@ -1427,25 +1426,25 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
             goto fail;
         }
 
-        menai_bigint_free(&base);
+        menai_bigint_final(&base);
         base = tmp;
         menai_bigint_init(&tmp);
     }
 
-    menai_bigint_free(&base);
-    menai_bigint_free(&e);
-    menai_bigint_free(&tmp);
-    menai_bigint_free(&half);
-    menai_bigint_free(result);
+    menai_bigint_final(&base);
+    menai_bigint_final(&e);
+    menai_bigint_final(&tmp);
+    menai_bigint_final(&half);
+    menai_bigint_final(result);
     *result = res;
     return 0;
 
 fail:
-    menai_bigint_free(&res);
-    menai_bigint_free(&base);
-    menai_bigint_free(&e);
-    menai_bigint_free(&tmp);
-    menai_bigint_free(&half);
+    menai_bigint_final(&res);
+    menai_bigint_final(&base);
+    menai_bigint_final(&e);
+    menai_bigint_final(&tmp);
+    menai_bigint_final(&half);
     return -1;
 }
 
@@ -1499,7 +1498,7 @@ _to_twos_complement(const MenaiBigInt *a, ssize_t *len_out)
 static int
 _from_twos_complement(const uint32_t *buf, ssize_t len, MenaiBigInt *result)
 {
-    menai_bigint_free(result);
+    menai_bigint_final(result);
     if (len == 0) {
         return 0;
     }
@@ -1677,7 +1676,7 @@ menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result)
 {
     if (a->sign == 0) {
         /* ~0 = -1 */
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         return menai_bigint_from_long(-1L, result);
     }
 
@@ -1693,7 +1692,7 @@ menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result)
         }
 
         int ret = _menai_bigint_add_mag(a, &one, result);
-        menai_bigint_free(&one);
+        menai_bigint_final(&one);
         if (ret < 0) {
             return -1;
         }
@@ -1716,7 +1715,7 @@ menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result)
     }
 
     int ret = _menai_bigint_sub_mag(a, &one, result);
-    menai_bigint_free(&one);
+    menai_bigint_final(&one);
     if (ret < 0) {
         return -1;
     }
@@ -1743,7 +1742,7 @@ menai_bigint_shift_left(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result
             return -1;
         }
 
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         *result = tmp;
         return 0;
     }
@@ -1774,7 +1773,7 @@ menai_bigint_shift_left(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result
         digits[a->length + word_shift] = carry;
     }
 
-    menai_bigint_free(result);
+    menai_bigint_final(result);
     result->digits = digits;
     result->length = out_len;
     result->sign = a->sign;
@@ -1791,7 +1790,7 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
     }
 
     if (a->sign == 0) {
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         return 0;
     }
 
@@ -1802,7 +1801,7 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
             return -1;
         }
 
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         *result = tmp;
         return 0;
     }
@@ -1812,7 +1811,7 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
 
     /* If shifting away all digits, result is 0 (positive) or -1 (negative). */
     if (word_shift >= a->length) {
-        menai_bigint_free(result);
+        menai_bigint_final(result);
         if (a->sign == -1) {
             return menai_bigint_from_long(-1L, result);
         }
@@ -1863,7 +1862,7 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
         }
     }
 
-    menai_bigint_free(result);
+    menai_bigint_final(result);
     result->digits = digits;
     result->length = out_len;
     result->sign = a->sign;
@@ -1874,20 +1873,20 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
         MenaiBigInt one;
         menai_bigint_init(&one);
         if (menai_bigint_from_long(1L, &one) < 0) {
-            menai_bigint_free(result);
+            menai_bigint_final(result);
             return -1;
         }
 
         MenaiBigInt adj;
         menai_bigint_init(&adj);
         if (menai_bigint_sub(result, &one, &adj) < 0) {
-            menai_bigint_free(&one);
-            menai_bigint_free(result);
+            menai_bigint_final(&one);
+            menai_bigint_final(result);
             return -1;
         }
 
-        menai_bigint_free(&one);
-        menai_bigint_free(result);
+        menai_bigint_final(&one);
+        menai_bigint_final(result);
         *result = adj;
     }
 
