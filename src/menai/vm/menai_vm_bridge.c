@@ -23,9 +23,9 @@ static PyObject *_VMRuntimeError_type = NULL;
 /*
  * Singleton values fetched from menai_vm_bridge at init time.
  */
-MenaiValue *Menai_NONE = NULL;
-MenaiValue *Menai_TRUE = NULL;
-MenaiValue *Menai_FALSE = NULL;
+MenaiNone *Menai_NONE = NULL;
+MenaiBoolean *Menai_TRUE = NULL;
+MenaiBoolean *Menai_FALSE = NULL;
 MenaiList *Menai_EMPTY_LIST = NULL;
 MenaiDict *Menai_EMPTY_DICT = NULL;
 MenaiSet *Menai_EMPTY_SET = NULL;
@@ -533,9 +533,9 @@ slow_value_to_menai_value(PyObject *src)
     PyTypeObject *t = Py_TYPE(src);
 
     if (t == Slow_NoneType) {
-        MenaiValue *s = menai_none_singleton();
-        menai_value_retain(s);
-        return s;
+        MenaiNone *s = menai_none();
+        menai_value_retain((MenaiValue *)s);
+        return (MenaiValue *)s;
     }
 
     if (t == Slow_BooleanType) {
@@ -550,9 +550,9 @@ slow_value_to_menai_value(PyObject *src)
             return NULL;
         }
 
-        MenaiValue *r = b ? Menai_TRUE : Menai_FALSE;
-        menai_value_retain(r);
-        return r;
+        MenaiBoolean *r = b ? Menai_TRUE : Menai_FALSE;
+        menai_value_retain((MenaiValue *)r);
+        return (MenaiValue *)r;
     }
 
     if (t == Slow_IntegerType) {
@@ -963,7 +963,7 @@ slow_value_to_menai_value(PyObject *src)
             return NULL;
         }
 
-        MenaiFunction *r = alloc_menai_function(co, menai_none_singleton());
+        MenaiFunction *r = alloc_menai_function(co, menai_none());
         menai_code_object_release(co);
         if (!r) {
             Py_DECREF(cap);
@@ -1849,7 +1849,7 @@ menai_vm_shim_init(void)
         return -1;
     }
 
-    Menai_NONE = menai_none_singleton();
+    Menai_NONE = menai_none();
     Menai_TRUE = menai_boolean_true();
     Menai_FALSE = menai_boolean_false();
     Menai_EMPTY_LIST = alloc_menai_list(0);

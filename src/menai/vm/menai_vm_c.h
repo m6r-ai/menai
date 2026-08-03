@@ -406,6 +406,9 @@ typedef struct {
 #define IS_MENAI_STRUCT(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_STRUCT)
 #define IS_MENAI_BYTES(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_BYTES)
 
+void *menai_alloc(size_t size);
+void menai_free(void *ptr);
+
 void menai_value_free(MenaiValue *v);
 
 /*
@@ -476,9 +479,6 @@ ssize_t menai_ht_lookup(const MenaiHashTable *ht, MenaiValue *key, hash_t hash);
 void menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index);
 int menai_ht_build(MenaiHashTable *ht, MenaiValue **keys, const hash_t *hashes, ssize_t n);
 
-void *menai_alloc(size_t size);
-void menai_free(void *ptr);
-
 /*
  * menai_code_object_retain — increment the reference count.
  */
@@ -547,18 +547,18 @@ int menai_bigint_gt(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_le(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 
-MenaiValue *menai_none_singleton(void);
+MenaiNone *menai_none(void);
 void menai_init_none(void);
 
-MenaiValue *menai_boolean_true(void);
-MenaiValue *menai_boolean_false(void);
+MenaiBoolean *menai_boolean_true(void);
+MenaiBoolean *menai_boolean_false(void);
 void menai_init_boolean(void);
 
 MenaiFloat *alloc_menai_float(double value);
 
 MenaiComplex *alloc_menai_complex(double real, double imag);
 
-MenaiFunction *alloc_menai_function(MenaiCodeObject *co, MenaiValue *none_val);
+MenaiFunction *alloc_menai_function(MenaiCodeObject *co, MenaiNone *none_val);
 
 MenaiString *alloc_menai_string(ssize_t len);
 MenaiString *alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes);

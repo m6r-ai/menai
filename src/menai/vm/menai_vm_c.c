@@ -473,9 +473,9 @@ _menai_mul_overflow(long a, long b, long *r) {
 /*
  * Singleton values fetched from menai_vm_bridge at init time.
  */
-extern MenaiValue *Menai_NONE;
-extern MenaiValue *Menai_TRUE;
-extern MenaiValue *Menai_FALSE;
+extern MenaiNone *Menai_NONE;
+extern MenaiBoolean *Menai_TRUE;
+extern MenaiBoolean *Menai_FALSE;
 extern MenaiList *Menai_EMPTY_LIST;
 extern MenaiDict *Menai_EMPTY_DICT;
 extern MenaiSet *Menai_EMPTY_SET;
@@ -605,7 +605,7 @@ menai_reg_set_borrow(MenaiValue **regs, int slot, MenaiValue *val)
 
 static inline void bool_store(MenaiValue **regs, int slot, int cond)
 {
-    menai_reg_set_borrow(regs, slot, cond ? Menai_TRUE : Menai_FALSE);
+    menai_reg_set_borrow(regs, slot, cond ? (MenaiValue *)Menai_TRUE : (MenaiValue *)Menai_FALSE);
 }
 
 /*
@@ -1263,15 +1263,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
         switch (opcode) {
         case OP_LOAD_NONE:
-            menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+            menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
             break;
 
         case OP_LOAD_TRUE:
-            menai_reg_set_borrow(regs, base + dest, Menai_TRUE);
+            menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_TRUE);
             break;
 
         case OP_LOAD_FALSE:
-            menai_reg_set_borrow(regs, base + dest, Menai_FALSE);
+            menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_FALSE);
             break;
 
         case OP_LOAD_EMPTY_LIST:
@@ -4058,7 +4058,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (idx == -1) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(idx);
                 if (r == NULL) {
@@ -4121,7 +4121,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             int sti_ok = menai_bigint_from_codepoints(trimmed->data, trimmed->length, (int)radix, &sti_tmp);
             menai_value_release((MenaiValue *)trimmed);
             if (sti_ok < 0) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_bigint(sti_tmp);
                 if (r == NULL) {
@@ -4147,7 +4147,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
              */
             char stn_buf[64];
             if (slen >= (ssize_t)(sizeof(stn_buf))) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
                 break;
             }
 
@@ -4168,7 +4168,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             stn_buf[slen] = '\0';
 
             if (!stn_ascii_ok) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
                 break;
             }
 
@@ -4211,7 +4211,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
 
                 menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             } else {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
             }
 
             break;
@@ -4745,7 +4745,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (nlen > hlen) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
                 break;
             }
 
@@ -4761,7 +4761,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (found == -1) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(found);
                 if (r == NULL) {
@@ -4801,7 +4801,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (found == -1) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(found);
                 if (r == NULL) {
@@ -5633,7 +5633,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals,
             }
 
             if (found == -1) {
-                menai_reg_set_borrow(regs, base + dest, Menai_NONE);
+                menai_reg_set_borrow(regs, base + dest, (MenaiValue *)Menai_NONE);
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(found);
                 if (r == NULL) {
@@ -7236,8 +7236,8 @@ menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, M
     }
 
     for (size_t i = 0; i < num_regs; i++) {
-        menai_value_retain(Menai_NONE);
-        regs[i] = Menai_NONE;
+        menai_value_retain((MenaiValue *)Menai_NONE);
+        regs[i] = (MenaiValue *)Menai_NONE;
     }
 
     MenaiValue *result = execute_loop(code, &globals, regs, max_locals, out_error, cancel_flag);
