@@ -630,14 +630,13 @@ menai_function_free(MenaiFunction *self)
     menai_free(self);
 }
 
+MenaiString *menai_string_alloc(ssize_t len);
 MenaiString *alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes);
-MenaiString *alloc_menai_string_from_codepoints(const uint32_t *cp, ssize_t len);
-MenaiString *alloc_menai_string_from_codepoint(uint32_t cp);
 char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
 int menai_string_compare(MenaiString *a, MenaiString *b);
 int menai_string_equal(MenaiString *a, MenaiString *b);
 hash_t menai_string_hash(MenaiString *s);
-MenaiString *alloc_menai_string_from_concat(MenaiString *a, MenaiString *b);
+void menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *);
 MenaiString *alloc_menai_string_from_upcase(MenaiString *s);
 MenaiString *alloc_menai_string_from_downcase(MenaiString *s);
 MenaiString *alloc_menai_string_from_trim(MenaiString *s);
