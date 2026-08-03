@@ -488,9 +488,6 @@ menai_code_object_retain(MenaiCodeObject *co)
     co->ob_refcnt++;
 }
 
-/*
- * menai_code_object_release — decrement the reference count and free if zero.
- */
 void menai_code_object_release(MenaiCodeObject *co);
 
 /*
@@ -659,26 +656,12 @@ void globals_free(GlobalsTable *gt);
 int globals_build_from_dict(GlobalsTable *gt, MenaiDict *d);
 int globals_build_from_arrays(GlobalsTable *gt, const char **names, MenaiValue **values, ssize_t n);
 
-/*
- * menai_vm_execute_native — native VM entry point.
- *
- * Executes code with the given cached globals table and optional extra
- * bindings (a native MenaiDict, or NULL).  Returns a new reference to
- * the result, or NULL on error.  On error, *out_error is filled in
- * with the structured error record (out_error must not be NULL).
- */
 MenaiValue *menai_vm_execute_native(MenaiCodeObject *code,
                                     const GlobalsTable *globals,
                                     MenaiDict *extra_bindings,
                                     MenaiVMError *out_error,
                                     int *cancel_flag);
 
-/*
- * menai_vm_cancel_flag_* — per-instance cancellation flag lifecycle.
- *
- * Each MenaiVM instance allocates its own flag so that cancelling one
- * evaluation does not affect another.
- */
 int *menai_vm_cancel_flag_alloc(void);
 void menai_vm_cancel_flag_free(int *flag);
 void menai_vm_cancel_flag_set(int *flag);
