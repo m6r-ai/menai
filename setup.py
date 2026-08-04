@@ -34,6 +34,7 @@ extensions = [
             f"{_MENAI_VM_SRC}/menai_vm_dict.c",
             f"{_MENAI_VM_SRC}/menai_vm_float.c",
             f"{_MENAI_VM_SRC}/menai_vm_function.c",
+            f"{_MENAI_VM_SRC}/menai_vm_globals.c",
             f"{_MENAI_VM_SRC}/menai_vm_hashtable.c",
             f"{_MENAI_VM_SRC}/menai_vm_integer.c",
             f"{_MENAI_VM_SRC}/menai_vm_list.c",

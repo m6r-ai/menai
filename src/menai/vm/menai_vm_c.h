@@ -650,6 +650,7 @@ typedef struct {
 
 void globals_free(GlobalsTable *gt);
 int globals_build_from_dict(GlobalsTable *gt, MenaiDict *d);
+MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
 
 MenaiValue *menai_vm_execute_native(MenaiCodeObject *code,
                                     const GlobalsTable *globals,
