@@ -626,12 +626,9 @@ int menai_vm_bridge_init(void);
 /*
  * GlobalsTable — open-addressing hash table for O(1) name lookup.
  *
- * Built once before execution starts from the globals dict.
- * Never mutated during execution.  Values are owned references.
- *
- * The cached table (built by the bridge) stores only the entries array;
- * slot_count is 0 and slots is NULL.  The per-call table (built by
- * globals_build from the cached table) allocates the hash slots.
+ * Built once by the bridge and cached.  The cached table is a complete
+ * lookup table with hash slots.  It is never copied per-call — the
+ * execute loop reads from it directly.  Values and names are owned.
  */
 typedef struct {
     const char *name;
@@ -649,12 +646,10 @@ typedef struct {
     GlobalsEntry *entries;
     ssize_t slot_count;
     ssize_t count;
-    int owns_names;
 } GlobalsTable;
 
 void globals_free(GlobalsTable *gt);
 int globals_build_from_dict(GlobalsTable *gt, MenaiDict *d);
-int globals_build_from_arrays(GlobalsTable *gt, const char **names, MenaiValue **values, ssize_t n);
 
 MenaiValue *menai_vm_execute_native(MenaiCodeObject *code,
                                     const GlobalsTable *globals,

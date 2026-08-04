@@ -1391,6 +1391,8 @@ bridge_translate_error(const MenaiVMError *err)
     Py_DECREF(exc);
 }
 
+static MenaiDict *menai_dict_from_pydict(PyObject *pydict);
+
 /*
  * bridge_globals_get
  * — return a pointer to the cached GlobalsTable, building
@@ -1453,63 +1455,17 @@ bridge_globals_get(PyObject *globals_key)
     } else {
         /*
          * globals_key is a Python dict of slow MenaiValue objects.
-         * Convert each value and build the GlobalsTable from arrays.
+         * Convert to a native MenaiDict and build the GlobalsTable from it.
          */
-        Py_ssize_t n = PyDict_Size(globals_key);
-        if (n > 0) {
-            const char **names = (const char **)malloc(
-                (size_t)n * sizeof(const char *));
-            MenaiValue **values = (MenaiValue **)malloc(
-                (size_t)n * sizeof(MenaiValue *));
-            if (!names || !values) {
-                free(names);
-                free(values);
-                PyErr_NoMemory();
-                return NULL;
-            }
+        MenaiDict *native_dict = menai_dict_from_pydict(globals_key);
+        if (!native_dict) {
+            return NULL;
+        }
 
-            Py_ssize_t i = 0;
-            PyObject *key, *val;
-            Py_ssize_t pos = 0;
-            while (PyDict_Next(globals_key, &pos, &key, &val)) {
-                names[i] = PyUnicode_AsUTF8(key);
-                if (!names[i]) {
-                    for (Py_ssize_t j = 0; j < i; j++) {
-                        menai_value_release(values[j]);
-                    }
-                    free(names);
-                    free(values);
-                    return NULL;
-                }
-
-                values[i] = slow_value_to_menai_value(val);
-                if (!values[i]) {
-                    for (Py_ssize_t j = 0; j < i; j++) {
-                        menai_value_release(values[j]);
-                    }
-                    free(names);
-                    free(values);
-                    return NULL;
-                }
-
-                i++;
-            }
-
-            int rc = globals_build_from_arrays(&_cached_globals_gt, names, values, (ssize_t)n);
-            for (Py_ssize_t j = 0; j < n; j++) {
-                menai_value_release(values[j]);
-            }
-            free(names);
-            free(values);
-            if (rc < 0) {
-                return NULL;
-            }
-        } else {
-            _cached_globals_gt.slots = NULL;
-            _cached_globals_gt.entries = NULL;
-            _cached_globals_gt.slot_count = 0;
-            _cached_globals_gt.count = 0;
-            _cached_globals_gt.owns_names = 1;
+        int rc = globals_build_from_dict(&_cached_globals_gt, native_dict);
+        menai_value_release((MenaiValue *)native_dict);
+        if (rc < 0) {
+            return NULL;
         }
     }
 
