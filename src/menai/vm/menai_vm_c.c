@@ -502,15 +502,14 @@ menai_integer_to_menai_bigint(MenaiInteger *val, MenaiBigInt *out)
  * Caller must ensure val is a MenaiInteger.
  */
 static inline int
-menai_integer_to_long(MenaiValue *val, long *out)
+menai_integer_to_long(MenaiInteger *val, long *out)
 {
-    MenaiInteger *ib = (MenaiInteger *)val;
-    if (!ib->is_big) {
-        *out = ib->fixed;
+    if (!val->is_big) {
+        *out = val->fixed;
         return 0;
     }
 
-    if (menai_bigint_to_long(&ib->big, out) < 0) {
+    if (menai_bigint_to_long(&val->big, out) < 0) {
         return -1;
     }
 
@@ -523,15 +522,14 @@ menai_integer_to_long(MenaiValue *val, long *out)
  * Caller must ensure val is a MenaiInteger.
  */
 static inline int
-menai_integer_to_long_long(MenaiValue *val, long long *out)
+menai_integer_to_long_long(MenaiInteger *val, long long *out)
 {
-    MenaiInteger *ib = (MenaiInteger *)val;
-    if (!ib->is_big) {
-        *out = ib->fixed;
+    if (!val->is_big) {
+        *out = val->fixed;
         return 0;
     }
 
-    if (menai_bigint_to_long_long(&ib->big, out) < 0) {
+    if (menai_bigint_to_long_long(&val->big, out) < 0) {
         return -1;
     }
 
@@ -544,18 +542,18 @@ menai_integer_to_long_long(MenaiValue *val, long long *out)
  * Caller must ensure val is a MenaiInteger.
  */
 static inline int
-menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
+menai_integer_to_unsigned_long_long(MenaiInteger *val, unsigned long long *out)
 {
-    MenaiInteger *ib = (MenaiInteger *)val;
-    if (!ib->is_big) {
-        if (ib->fixed < 0) {
+    if (!val->is_big) {
+        if (val->fixed < 0) {
             return -1;
         }
-        *out = (unsigned long long)ib->fixed;
+
+        *out = (unsigned long long)val->fixed;
         return 0;
     }
 
-    return menai_bigint_to_unsigned_long_long(&ib->big, out);
+    return menai_bigint_to_unsigned_long_long(&val->big, out);
 }
 
 /*
@@ -564,7 +562,7 @@ menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
  * Caller must ensure val is a MenaiInteger.
  */
 static inline int
-menai_integer_to_ssize_t(MenaiValue *val, ssize_t *out)
+menai_integer_to_ssize_t(MenaiInteger *val, ssize_t *out)
 {
     long tmp;
     if (menai_integer_to_long(val, &tmp) < 0) {
@@ -4004,7 +4002,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *idx_val = regs[base + src1];
+            MenaiInteger *idx_val = (MenaiInteger *)regs[base + src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(idx_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4030,7 +4028,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *v = regs[base + src1];
+            MenaiInteger *v = (MenaiInteger *)regs[base + src1];
             long val;
             if (MENAI_UNLIKELY(menai_integer_to_long(v, &val) < 0)) {
                 vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE;
@@ -4069,7 +4067,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
                 }
 
                 long val;
-                if (MENAI_UNLIKELY(menai_integer_to_long(elem, &val) < 0)) {
+                if (MENAI_UNLIKELY(menai_integer_to_long((MenaiInteger *)elem, &val) < 0)) {
                     vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE;
                     menai_value_release((MenaiValue *)mb);
                     goto error;
@@ -4092,9 +4090,9 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *start_val = regs[base + src1];
+            MenaiInteger *start_val = (MenaiInteger *)regs[base + src1];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *end_val = regs[base + src2];
+            MenaiInteger *end_val = (MenaiInteger *)regs[base + src2];
             ssize_t blen = b->length;
 
             ssize_t start;
@@ -4427,7 +4425,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *byte_val = regs[base + src1];
+            MenaiInteger *byte_val = (MenaiInteger *)regs[base + src1];
 
             long target;
             if (MENAI_UNLIKELY(menai_integer_to_long(byte_val, &target) < 0)) {
@@ -4503,7 +4501,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *off_val = regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4529,7 +4527,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *off_val = regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4560,7 +4558,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
             MenaiBytes *b = (MenaiBytes *)regs[base + src0]; \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
-            MenaiValue *off_val = regs[base + src1]; \
+            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1]; \
             ssize_t offset; \
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
@@ -4666,7 +4664,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
             MenaiBytes *b = (MenaiBytes *)regs[base + src0]; \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
-            MenaiValue *v = regs[base + src1]; \
+            MenaiInteger *v = (MenaiInteger *)regs[base + src1]; \
             long long val; \
             if (is_signed) { \
                 if (MENAI_UNLIKELY(menai_integer_to_long_long(v, &val) < 0)) { \
@@ -4740,9 +4738,9 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
             MenaiBytes *b = (MenaiBytes *)regs[base + src0]; \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
-            MenaiValue *off_val = regs[base + src1]; \
+            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1]; \
             int src2 = (int)(word & FIELD_MASK); \
-            MenaiValue *v = regs[base + src2]; \
+            MenaiInteger *v = (MenaiInteger *)regs[base + src2]; \
             ssize_t offset; \
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
@@ -4820,7 +4818,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *off_val = regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4896,7 +4894,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *v = regs[base + src1];
+            MenaiInteger *v = (MenaiInteger *)regs[base + src1];
             unsigned long long uval;
             if (MENAI_UNLIKELY(menai_integer_to_unsigned_long_long(v, &uval) < 0)) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
@@ -4934,7 +4932,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *off_val = regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -5000,7 +4998,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *v = regs[base + src1];
+            MenaiInteger *v = (MenaiInteger *)regs[base + src1];
             long long val;
             if (MENAI_UNLIKELY(menai_integer_to_long_long(v, &val) < 0)) {
                 vm_err = MENAI_ERR_OVERFLOW;

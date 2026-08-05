@@ -10,10 +10,10 @@
 /*
  * MSVC fallback using compiler intrinsics.
  *
- * We deliberately avoid <windows.h> because it defines a 'small' macro
- * that collides with the MenaiInteger/MenaiBigInt 'small' struct field
- * used throughout this file.  The Interlocked* functions are compiler intrinsics,
- * so we only need their declarations.
+ * We deliberately avoid <windows.h> to keep the translation unit clean —
+ * it defines hundreds of macros that pollute the global namespace.  The
+ * Interlocked* functions are compiler intrinsics, so we only need their
+ * declarations.
  */
 long _InterlockedCompareExchange(long volatile *Destination, long Exchange, long Comparand);
 #pragma intrinsic(_InterlockedCompareExchange)
