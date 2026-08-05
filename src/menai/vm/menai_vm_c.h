@@ -227,7 +227,7 @@ struct MenaiFunction {
 struct MenaiInteger {
     MenaiValue_HEAD
     int is_big;
-    long small;                         /* valid when is_big == 0 */
+    long fixed;                         /* valid when is_big == 0 */
     MenaiBigInt big;                    /* valid when is_big == 1 */
 };
 

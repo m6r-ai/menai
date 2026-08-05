@@ -28,7 +28,7 @@ alloc_menai_integer_from_long(long n)
     r->ob_refcnt = 1;
     r->ob_type = MENAITYPE_INTEGER;
     r->is_big = 0;
-    r->small = n;
+    r->fixed = n;
     menai_bigint_init(&r->big);
 
     return r;
@@ -84,7 +84,7 @@ alloc_menai_integer_from_bigint(MenaiBigInt src)
     r->ob_refcnt = 1;
     r->ob_type = MENAITYPE_INTEGER;
     r->is_big = 1;
-    r->small = 0;
+    r->fixed = 0;
     r->big = src; /* transfer ownership */
 
     return r;
@@ -102,7 +102,7 @@ menai_init_integer(void)
         obj->ob_refcnt = 1;
         obj->ob_type = MENAITYPE_INTEGER;
         obj->is_big = 0;
-        obj->small = v;
+        obj->fixed = v;
         menai_bigint_init(&obj->big);
 
         _integer_cache[v - MENAI_INT_CACHE_MIN] = obj;

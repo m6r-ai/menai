@@ -83,7 +83,7 @@ static inline void
 menai_integer_free(MenaiInteger *self)
 {
     if (!self->is_big) {
-        long v = self->small;
+        long v = self->fixed;
         if (v >= MENAI_INT_CACHE_MIN && v <= MENAI_INT_CACHE_MAX) {
             /*
              * Cached singleton — must never be freed.  Restore refcount so

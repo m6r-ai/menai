@@ -996,7 +996,7 @@ menai_value_to_python_integer(MenaiValue *val)
 {
     MenaiInteger *obj = (MenaiInteger *)val;
     if (!obj->is_big) {
-        return PyLong_FromLong(obj->small);
+        return PyLong_FromLong(obj->fixed);
     }
 
     return menai_bigint_to_pylong(&obj->big);

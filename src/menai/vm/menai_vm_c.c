@@ -490,7 +490,7 @@ static inline int
 menai_integer_to_menai_bigint(MenaiInteger *val, MenaiBigInt *out)
 {
     if (!val->is_big) {
-        return menai_bigint_from_long(val->small, out);
+        return menai_bigint_from_long(val->fixed, out);
     }
 
     return menai_bigint_copy(&val->big, out);
@@ -506,7 +506,7 @@ menai_integer_to_long(MenaiValue *val, long *out)
 {
     MenaiInteger *ib = (MenaiInteger *)val;
     if (!ib->is_big) {
-        *out = ib->small;
+        *out = ib->fixed;
         return 0;
     }
 
@@ -527,7 +527,7 @@ menai_integer_to_long_long(MenaiValue *val, long long *out)
 {
     MenaiInteger *ib = (MenaiInteger *)val;
     if (!ib->is_big) {
-        *out = ib->small;
+        *out = ib->fixed;
         return 0;
     }
 
@@ -548,10 +548,10 @@ menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
 {
     MenaiInteger *ib = (MenaiInteger *)val;
     if (!ib->is_big) {
-        if (ib->small < 0) {
+        if (ib->fixed < 0) {
             return -1;
         }
-        *out = (unsigned long long)ib->small;
+        *out = (unsigned long long)ib->fixed;
         return 0;
     }
 
@@ -1433,7 +1433,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long n;
             if (!n_io->is_big) {
-                n = n_io->small;
+                n = n_io->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&n_io->big, &n);
                 if (vm_err < 0) {
@@ -1459,7 +1459,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(regs, base + dest, a->small == b->small);
+                bool_store(regs, base + dest, a->fixed == b->fixed);
                 break;
             }
 
@@ -1497,7 +1497,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(regs, base + dest, a->small != b->small);
+                bool_store(regs, base + dest, a->fixed != b->fixed);
                 break;
             }
 
@@ -1535,7 +1535,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(regs, base + dest, a->small < b->small);
+                bool_store(regs, base + dest, a->fixed < b->fixed);
                 break;
             }
 
@@ -1573,7 +1573,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(regs, base + dest, a->small > b->small);
+                bool_store(regs, base + dest, a->fixed > b->fixed);
                 break;
             }
 
@@ -1611,7 +1611,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(regs, base + dest, a->small <= b->small);
+                bool_store(regs, base + dest, a->fixed <= b->fixed);
                 break;
             }
 
@@ -1649,7 +1649,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(regs, base + dest, a->small >= b->small);
+                bool_store(regs, base + dest, a->fixed >= b->fixed);
                 break;
             }
 
@@ -1685,7 +1685,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
 
             if (!a->is_big) {
-                long sv = a->small;
+                long sv = a->fixed;
                 long rv = sv < 0 ? -sv : sv;
                 /* LONG_MIN has no positive counterpart — promote to bigint. */
                 if (sv == LONG_MIN) {
@@ -1744,7 +1744,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
 
             if (!a->is_big) {
-                long sv = a->small;
+                long sv = a->fixed;
                 /* LONG_MIN negation overflows — promote to bigint. */
                 if (sv == LONG_MIN) {
                     MenaiBigInt tmp;
@@ -1833,8 +1833,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (!a->is_big && !b->is_big) {
-                long la = a->small;
-                long lb = b->small;
+                long la = a->fixed;
+                long lb = b->fixed;
                 long lr;
                 if (!_menai_add_overflow(la, lb, &lr)) {
                     MenaiInteger *r = alloc_menai_integer_from_long(lr);
@@ -1889,8 +1889,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (!a->is_big && !b->is_big) {
-                long la = a->small;
-                long lb = b->small;
+                long la = a->fixed;
+                long lb = b->fixed;
                 long lr;
                 if (!_menai_sub_overflow(la, lb, &lr)) {
                     MenaiInteger *r = alloc_menai_integer_from_long(lr);
@@ -1945,8 +1945,8 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (!a->is_big && !b->is_big) {
-                long la = a->small;
-                long lb = b->small;
+                long la = a->fixed;
+                long lb = b->fixed;
                 long lr;
                 if (!_menai_mul_overflow(la, lb, &lr)) {
                     MenaiInteger *r = alloc_menai_integer_from_long(lr);
@@ -2000,15 +2000,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
-            int b_is_zero = (!b->is_big && b->small == 0) || (b->is_big && b->big.sign == 0);
+            int b_is_zero = (!b->is_big && b->fixed == 0) || (b->is_big && b->big.sign == 0);
             if (b_is_zero) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
                 goto error;
             }
 
             if (!a->is_big && !b->is_big) {
-                long la = a->small;
-                long lb = b->small;
+                long la = a->fixed;
+                long lb = b->fixed;
 
                 /* Floor division: round toward negative infinity. */
                 long lq = la / lb;
@@ -2067,15 +2067,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
-            int b_is_zero = (!b->is_big && b->small == 0) || (b->is_big && b->big.sign == 0);
+            int b_is_zero = (!b->is_big && b->fixed == 0) || (b->is_big && b->big.sign == 0);
             if (b_is_zero) {
                 vm_err = MENAI_ERR_MODULO_BY_ZERO;
                 goto error;
             }
 
             if (!a->is_big && !b->is_big) {
-                long la = a->small;
-                long lb = b->small;
+                long la = a->fixed;
+                long lb = b->fixed;
 
                 /* Floor modulo: result takes sign of divisor. */
                 long lr = la % lb;
@@ -2132,7 +2132,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
-            int b_is_neg = (!b->is_big && b->small < 0) || (b->is_big && b->big.sign == -1);
+            int b_is_neg = (!b->is_big && b->fixed < 0) || (b->is_big && b->big.sign == -1);
             if (b_is_neg) {
                 vm_err = MENAI_ERR_NEGATIVE_EXPONENT;
                 goto error;
@@ -2304,7 +2304,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long shift;
             if (!b->is_big) {
-                shift = b->small;
+                shift = b->fixed;
             } else {
                 if (!menai_bigint_fits_long(&b->big)) {
                     vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
@@ -2355,7 +2355,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long shift;
             if (!b->is_big) {
-                shift = b->small;
+                shift = b->fixed;
             } else {
                 if (!menai_bigint_fits_long(&b->big)) {
                     vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
@@ -2405,7 +2405,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                menai_reg_set_borrow(regs, base + dest, a->small <= b->small ? (MenaiValue *)a : (MenaiValue *)b);
+                menai_reg_set_borrow(regs, base + dest, a->fixed <= b->fixed ? (MenaiValue *)a : (MenaiValue *)b);
                 break;
             }
 
@@ -2443,7 +2443,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                menai_reg_set_borrow(regs, base + dest, a->small >= b->small ? (MenaiValue *)a : (MenaiValue *)b);
+                menai_reg_set_borrow(regs, base + dest, a->fixed >= b->fixed ? (MenaiValue *)a : (MenaiValue *)b);
                 break;
             }
 
@@ -2480,7 +2480,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             double d;
             if (!a->is_big) {
-                d = (double)a->small;
+                d = (double)a->fixed;
             } else {
                 vm_err = menai_bigint_to_double(&a->big, &d);
                 if (vm_err < 0) {
@@ -2505,7 +2505,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             double re;
             if (!a->is_big) {
-                re = (double)a->small;
+                re = (double)a->fixed;
             } else {
                 vm_err = menai_bigint_to_double(&a->big, &re);
                 if (vm_err < 0) {
@@ -2515,7 +2515,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             double im;
             if (!b->is_big) {
-                im = (double)b->small;
+                im = (double)b->fixed;
             } else {
                 vm_err = menai_bigint_to_double(&b->big, &im);
                 if (vm_err < 0) {
@@ -2540,7 +2540,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long radix;
             if (!b->is_big) {
-                radix = b->small;
+                radix = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &radix);
                 if (vm_err < 0) {
@@ -2577,7 +2577,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long cp;
             if (!a->is_big) {
-                cp = a->small;
+                cp = a->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&a->big, &cp);
                 if (vm_err < 0) {
@@ -3590,7 +3590,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long idx_l;
             if (!b->is_big) {
-                idx_l = b->small;
+                idx_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &idx_l);
                 if (vm_err < 0) {
@@ -3625,7 +3625,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long start_l;
             if (!b->is_big) {
-                start_l = b->small;
+                start_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &start_l);
                 if (vm_err < 0) {
@@ -3635,7 +3635,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long end_l;
             if (!c->is_big) {
-                end_l = c->small;
+                end_l = c->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&c->big, &end_l);
                 if (vm_err < 0) {
@@ -3748,7 +3748,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long radix;
             if (!b->is_big) {
-                radix = b->small;
+                radix = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &radix);
                 if (vm_err < 0) {
@@ -5133,7 +5133,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long idx_l;
             if (!b->is_big) {
-                idx_l = b->small;
+                idx_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &idx_l);
                 if (vm_err < 0) {
@@ -5306,7 +5306,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long start_l;
             if (!b->is_big) {
-                start_l = b->small;
+                start_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &start_l);
                 if (vm_err < 0) {
@@ -5316,7 +5316,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long end_l;
             if (!c->is_big) {
-                end_l = c->small;
+                end_l = c->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&c->big, &end_l);
                 if (vm_err < 0) {
@@ -6279,7 +6279,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *c = (MenaiInteger *)regs[base + src2];
             long start, end, step;
             if (!a->is_big) {
-                start = a->small;
+                start = a->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&a->big, &start);
                 if (vm_err < 0) {
@@ -6288,7 +6288,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             }
 
             if (!b->is_big) {
-                end = b->small;
+                end = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &end);
                 if (vm_err < 0) {
@@ -6297,7 +6297,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             }
 
             if (!c->is_big) {
-                step = c->small;
+                step = c->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&c->big, &step);
                 if (vm_err < 0) {
@@ -6529,7 +6529,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
             MenaiInteger *fi_io = (MenaiInteger *)fidx;
             long fi_l;
             if (!fi_io->is_big) {
-                fi_l = fi_io->small;
+                fi_l = fi_io->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&fi_io->big, &fi_l);
                 if (vm_err < 0) {
@@ -6594,7 +6594,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
             long fi_l;
             if (!fi_io->is_big) {
-                fi_l = fi_io->small;
+                fi_l = fi_io->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&fi_io->big, &fi_l);
                 if (vm_err < 0) {

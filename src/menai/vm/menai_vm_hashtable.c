@@ -75,7 +75,7 @@ menai_value_hash(MenaiValue *val)
     case MENAITYPE_INTEGER: {
         MenaiInteger *obj = (MenaiInteger *)val;
         if (!obj->is_big) {
-            hash_t h = (hash_t)obj->small;
+            hash_t h = (hash_t)obj->fixed;
             return h == -1 ? -2 : h;
         }
 
@@ -152,7 +152,7 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
         MenaiInteger *ia = (MenaiInteger *)a;
         MenaiInteger *ib = (MenaiInteger *)b;
         if (!ia->is_big && !ib->is_big) {
-            return ia->small == ib->small;
+            return ia->fixed == ib->fixed;
         }
 
         if (ia->is_big != ib->is_big) {
