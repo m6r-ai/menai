@@ -489,11 +489,6 @@ menai_code_object_retain(MenaiCodeObject *co)
 }
 
 void menai_code_object_release(MenaiCodeObject *co);
-
-/*
- * menai_code_object_max_locals — return the maximum (local_count +
- * outgoing_arg_slots) across the entire subtree rooted at co.
- */
 int menai_code_object_max_locals(const MenaiCodeObject *co);
 
 static inline void
@@ -601,10 +596,10 @@ int menai_init_integer(void);
 MenaiBytes *alloc_menai_bytes(ssize_t n);
 MenaiBytes *alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n);
 MenaiBytes *alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end);
-MenaiValue *menai_bytes_concat(MenaiValue *a, MenaiValue *b);
-MenaiValue *menai_bytes_append_u8(MenaiValue *b, uint8_t value);
-MenaiValue *menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int le);
-MenaiBytes *menai_bytes_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
+MenaiBytes *alloc_menai_bytes_from_concat(MenaiBytes *a, MenaiBytes *b);
+MenaiBytes *alloc_menai_bytes_from_append_u8(MenaiBytes *b, uint8_t value);
+MenaiBytes *alloc_menai_bytes_from_append_multi(MenaiBytes *b, unsigned long long value, int width, int le);
+MenaiBytes *alloc_menai_bytes_from_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
 int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
 int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
 hash_t menai_bytes_hash(MenaiBytes *b);

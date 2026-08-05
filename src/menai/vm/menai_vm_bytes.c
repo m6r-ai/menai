@@ -75,27 +75,25 @@ alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
     return view;
 }
 
-MenaiValue *
-menai_bytes_concat(MenaiValue *a, MenaiValue *b)
+MenaiBytes *
+alloc_menai_bytes_from_concat(MenaiBytes *a, MenaiBytes *b)
 {
-    MenaiBytes *ma = (MenaiBytes *)a;
-    MenaiBytes *mb = (MenaiBytes *)b;
-    ssize_t la = ma->length;
-    ssize_t lb = mb->length;
+    ssize_t la = a->length;
+    ssize_t lb = b->length;
     MenaiBytes *obj = alloc_menai_bytes(la + lb);
     if (!obj) {
         return NULL;
     }
 
     if (la > 0) {
-        memcpy(obj->inline_data, ma->data, (size_t)la);
+        memcpy(obj->inline_data, a->data, (size_t)la);
     }
 
     if (lb > 0) {
-        memcpy(obj->inline_data + la, mb->data, (size_t)lb);
+        memcpy(obj->inline_data + la, b->data, (size_t)lb);
     }
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 MenaiInteger *
@@ -104,41 +102,39 @@ menai_bytes_ref(MenaiValue *b, ssize_t i)
     return alloc_menai_integer_from_long((long)((MenaiBytes *)b)->data[i]);
 }
 
-MenaiValue *
-menai_bytes_append_u8(MenaiValue *b, uint8_t value)
+MenaiBytes *
+alloc_menai_bytes_from_append_u8(MenaiBytes *b, uint8_t value)
 {
-    MenaiBytes *mb = (MenaiBytes *)b;
-    ssize_t len = mb->length;
+    ssize_t len = b->length;
     MenaiBytes *obj = alloc_menai_bytes(len + 1);
     if (!obj) {
         return NULL;
     }
 
     if (len > 0) {
-        memcpy(obj->inline_data, mb->data, (size_t)len);
+        memcpy(obj->inline_data, b->data, (size_t)len);
     }
 
     obj->inline_data[len] = value;
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 /*
  * menai_bytes_append_multi — append N bytes encoded from an unsigned long
  * value in the specified endianness.  width must be 1–8.
  */
-MenaiValue *
-menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int le)
+MenaiBytes *
+alloc_menai_bytes_from_append_multi(MenaiBytes *b, unsigned long long value, int width, int le)
 {
-    MenaiBytes *mb = (MenaiBytes *)b;
-    ssize_t len = mb->length;
+    ssize_t len = b->length;
     MenaiBytes *obj = alloc_menai_bytes(len + width);
     if (!obj) {
         return NULL;
     }
 
     if (len > 0) {
-        memcpy(obj->inline_data, mb->data, (size_t)len);
+        memcpy(obj->inline_data, b->data, (size_t)len);
     }
 
     uint8_t *dest = obj->inline_data + len;
@@ -152,7 +148,7 @@ menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int
         }
     }
 
-    return (MenaiValue *)obj;
+    return obj;
 }
 
 /*
@@ -160,7 +156,7 @@ menai_bytes_append_multi(MenaiValue *b, unsigned long long value, int width, int
  * offset replaced by the encoded value.  width must be 1–8.
  */
 MenaiBytes *
-menai_bytes_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le)
+alloc_menai_bytes_from_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le)
 {
     ssize_t len = b->length;
     MenaiBytes *obj = alloc_menai_bytes(len);

@@ -4028,7 +4028,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
         case OP_BYTES_APPEND_U8: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *v = regs[base + src1];
             long val;
@@ -4042,12 +4042,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
                 goto error;
             }
 
-            MenaiValue *_r = menai_bytes_append_u8(b, (uint8_t)val);
-            if (_r == NULL) {
+            MenaiBytes *r = alloc_menai_bytes_from_append_u8(b, (uint8_t)val);
+            if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, _r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -4370,15 +4370,15 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 
         case OP_BYTES_CONCAT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            MenaiValue *_r = menai_bytes_concat(a, b);
-            if (_r == NULL) {
+            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
+            MenaiBytes *r = alloc_menai_bytes_from_concat(a, b);
+            if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(regs, base + dest, _r);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)r);
             break;
         }
 
@@ -4664,7 +4664,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
 #define BYTES_APPEND_MULTI(opcode_name, width, is_signed, le) \
         case opcode_name: { \
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
-            MenaiValue *b = regs[base + src0]; \
+            MenaiBytes *b = (MenaiBytes *)regs[base + src0]; \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
             MenaiValue *v = regs[base + src1]; \
             long long val; \
@@ -4682,12 +4682,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
                    } \
                 } \
                 unsigned long long uval = (unsigned long long)val; \
-                MenaiValue *_r = menai_bytes_append_multi(b, uval, (width), le); \
-                if (_r == NULL) { \
+                MenaiBytes *r = alloc_menai_bytes_from_append_multi(b, uval, (width), le); \
+                if (r == NULL) { \
                     goto error; \
                 } \
 \
-                menai_reg_set_own(regs, base + dest, _r); \
+                menai_reg_set_own(regs, base + dest, (MenaiValue *)r); \
             } else { \
                 unsigned long long uval_ull; \
                 if (menai_integer_to_unsigned_long_long(v, &uval_ull) < 0) { \
@@ -4700,12 +4700,12 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
                     goto error; \
                 } \
 \
-                MenaiValue *_r = menai_bytes_append_multi(b, uval_ull, (width), le); \
-                if (_r == NULL) { \
+                MenaiBytes *r = alloc_menai_bytes_from_append_multi(b, uval_ull, (width), le); \
+                if (r == NULL) { \
                     goto error; \
                 } \
 \
-                menai_reg_set_own(regs, base + dest, _r); \
+                menai_reg_set_own(regs, base + dest, (MenaiValue *)r); \
             } \
             break; \
         }
@@ -4783,7 +4783,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
                     goto error; \
                 } \
             } \
-            MenaiBytes *r = menai_bytes_write_multi(b, offset, uval_ull, (width), le); \
+            MenaiBytes *r = alloc_menai_bytes_from_write_multi(b, offset, uval_ull, (width), le); \
             if (r == NULL) { \
                 goto error; \
             } \
@@ -4894,7 +4894,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
          */
         case OP_BYTES_APPEND_ULEB128: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *v = regs[base + src1];
             unsigned long long uval;
@@ -4913,17 +4913,17 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
                 buf[i] |= 0x80;
             }
 
-            MenaiValue *result = b;
-            menai_value_retain(result);
+            MenaiBytes *result = b;
+            menai_value_retain((MenaiValue *)result);
             for (int i = 0; i < nbytes; i++) {
-                MenaiValue *next = menai_bytes_append_u8(result, buf[i]);
-                menai_value_release(result);
+                MenaiBytes *next = alloc_menai_bytes_from_append_u8(result, buf[i]);
+                menai_value_release((MenaiValue *)result);
                 if (next == NULL) {
                     goto error;
                 }
                 result = next;
             }
-            menai_reg_set_own(regs, base + dest, result);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)result);
             break;
         }
 
@@ -4998,7 +4998,7 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
          */
         case OP_BYTES_APPEND_SLEB128: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *v = regs[base + src1];
             long long val;
@@ -5020,17 +5020,17 @@ execute_loop(MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTa
                 buf[nbytes++] = byte;
             }
 
-            MenaiValue *result = b;
-            menai_value_retain(result);
+            MenaiBytes *result = b;
+            menai_value_retain((MenaiValue *)result);
             for (int i = 0; i < nbytes; i++) {
-                MenaiValue *next = menai_bytes_append_u8(result, buf[i]);
-                menai_value_release(result);
+                MenaiBytes *next = alloc_menai_bytes_from_append_u8(result, buf[i]);
+                menai_value_release((MenaiValue *)result);
                 if (next == NULL) {
                     goto error;
                 }
                 result = next;
             }
-            menai_reg_set_own(regs, base + dest, result);
+            menai_reg_set_own(regs, base + dest, (MenaiValue *)result);
             break;
         }
 
