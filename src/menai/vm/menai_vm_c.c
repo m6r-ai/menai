@@ -6830,11 +6830,11 @@ menai_vm_cancel_flag_set(int *flag)
  * menai_vm_execute_native — native VM entry point.
  *
  * Executes code with the given cached globals table and optional extra
- * bindings (a native MenaiDict, or NULL).  Returns a new reference to
- * the result, or NULL on error.  On error, *out_error is filled in.
+ * globals table (or NULL).  Returns a new reference to the result, or
+ * NULL on error.  On error, *out_error is filled in.
  */
 MenaiValue *
-menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, MenaiDict *extra_bindings, MenaiVMError *out_error, int *cancel_flag)
+menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, const GlobalsTable *extra_globals, MenaiVMError *out_error, int *cancel_flag)
 {
     if (out_error) {
         out_error->code = MENAI_OK;
@@ -6857,25 +6857,11 @@ menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, M
         }
     }
 
-    GlobalsTable extra_globals;
-    if (extra_bindings != NULL) {
-        int gerr = globals_build_from_dict(&extra_globals, extra_bindings);
-        if (gerr < 0) {
-            if (out_error) {
-                out_error->code = gerr;
-            }
-            return NULL;
-        }
-    }
-
     size_t num_regs = (size_t)(MAX_FRAME_DEPTH + 1) * max_locals;
     MenaiValue **regs = (MenaiValue **)malloc(num_regs * sizeof(MenaiValue *));
     if (regs == NULL) {
         if (out_error) {
             out_error->code = MENAI_ERR_NOMEM;
-        }
-        if (extra_bindings != NULL) {
-            globals_free(&extra_globals);
         }
         return NULL;
     }
@@ -6885,7 +6871,7 @@ menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, M
         regs[i] = (MenaiValue *)Menai_NONE;
     }
 
-    MenaiValue *result = execute_loop(code, globals_gt, extra_bindings != NULL ? &extra_globals : NULL,
+    MenaiValue *result = execute_loop(code, globals_gt, extra_globals,
                                       regs, max_locals, out_error, cancel_flag);
 
     for (size_t i = 0; i < num_regs; i++) {
@@ -6893,9 +6879,5 @@ menai_vm_execute_native(MenaiCodeObject *code, const GlobalsTable *globals_gt, M
     }
 
     free(regs);
-    if (extra_bindings != NULL) {
-        globals_free(&extra_globals);
-    }
-
     return result;
 }

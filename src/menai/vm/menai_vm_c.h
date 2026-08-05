@@ -654,7 +654,7 @@ MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
 
 MenaiValue *menai_vm_execute_native(MenaiCodeObject *code,
                                     const GlobalsTable *globals,
-                                    MenaiDict *extra_bindings,
+                                    const GlobalsTable *extra_globals,
                                     MenaiVMError *out_error,
                                     int *cancel_flag);
 

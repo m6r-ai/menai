@@ -1582,13 +1582,21 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
         }
     }
 
-    MenaiDict *native_extra = NULL;
+    GlobalsTable extra_globals;
+    int has_extra = 0;
     if (extra_bindings && extra_bindings != Py_None) {
-        native_extra = menai_dict_from_pydict(extra_bindings);
+        MenaiDict *native_extra = menai_dict_from_pydict(extra_bindings);
         if (!native_extra) {
             menai_code_object_release(native_code);
             return NULL;
         }
+        int gerr = globals_build_from_dict(&extra_globals, native_extra);
+        menai_value_release((MenaiValue *)native_extra);
+        if (gerr < 0) {
+            menai_code_object_release(native_code);
+            return NULL;
+        }
+        has_extra = 1;
     }
 
     MenaiVMError vm_err;
@@ -1601,11 +1609,13 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
      * cancellation) to run without contention.
      */
     Py_BEGIN_ALLOW_THREADS
-    result = menai_vm_execute_native(native_code, globals_gt, native_extra, &vm_err, cancel_flag);
+    result = menai_vm_execute_native(native_code, globals_gt, has_extra ? &extra_globals : NULL, &vm_err, cancel_flag);
     Py_END_ALLOW_THREADS
 
     menai_code_object_release(native_code);
-    menai_value_xrelease((MenaiValue *)native_extra);
+    if (has_extra) {
+        globals_free(&extra_globals);
+    }
 
     if (result == NULL) {
         if (!PyErr_Occurred()) {
