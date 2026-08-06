@@ -6,9 +6,9 @@
 #include "menai_vm_c.h"
 
 MenaiComplex *
-alloc_menai_complex(double real, double imag)
+alloc_menai_complex(MenaiVMState *vs, double real, double imag)
 {
-    MenaiComplex *self = (MenaiComplex *)menai_alloc(sizeof(MenaiComplex));
+    MenaiComplex *self = (MenaiComplex *)menai_alloc(vs, sizeof(MenaiComplex));
     if (!self) {
         return NULL;
     }

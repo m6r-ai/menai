@@ -5,6 +5,8 @@ import pytest
 from menai.bytecode.menai_bytecode import CodeObject, Instruction, Opcode
 from menai.menai_value import MenaiInteger, MenaiString, MenaiBoolean, Menai_NONE
 from menai.vm.menai_vm_c import execute as c_vm_execute
+from menai.vm.menai_vm_c import state_alloc as c_vm_state_alloc
+from menai.vm.menai_vm_c import state_free as c_vm_state_free
 from menai.vm.menai_vm_bytecode_validator import BytecodeValidator, ValidationError, ValidationErrorType
 
 
@@ -28,7 +30,11 @@ class TestMoveOpcode:
         pass  # C VM is stateless — no setup needed
 
     def _run(self, code):
-        result = c_vm_execute(code, {}, {})
+        state = c_vm_state_alloc()
+        try:
+            result = c_vm_execute(code, {}, {}, None, state)
+        finally:
+            c_vm_state_free(state)
         return result.describe()
 
     def test_move_integer(self):

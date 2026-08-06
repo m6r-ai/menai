@@ -11,11 +11,11 @@
 #include "menai_vm_c.h"
 
 MenaiFunction *
-alloc_menai_function(MenaiCodeObject *co, MenaiNone *none_val)
+alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co, MenaiNone *none_val)
 {
     ssize_t ncap = co->ncap;
     size_t sz = sizeof(MenaiFunction) + (size_t)ncap * sizeof(MenaiValue *);
-    MenaiFunction *self = (MenaiFunction *)menai_alloc(sz);
+    MenaiFunction *self = (MenaiFunction *)menai_alloc(vs, sz);
     if (!self) {
         return NULL;
     }

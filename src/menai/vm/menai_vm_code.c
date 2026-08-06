@@ -8,14 +8,14 @@
 #include "menai_vm_c.h"
 
 void
-menai_code_object_release(MenaiCodeObject *co)
+menai_code_object_release(MenaiVMState *vs, MenaiCodeObject *co)
 {
     if (--co->ob_refcnt > 0) {
         return;
     }
 
     for (ssize_t i = 0; i < co->nconst; i++) {
-        menai_value_release(co->constants[i]);
+        menai_value_release(vs, co->constants[i]);
     }
 
     free(co->constants);
@@ -34,7 +34,7 @@ menai_code_object_release(MenaiCodeObject *co)
     free(co->param_names);
 
     for (ssize_t i = 0; i < co->nchildren; i++) {
-        menai_code_object_release(co->children[i]);
+        menai_code_object_release(vs, co->children[i]);
     }
 
     free(co->children);
@@ -56,4 +56,3 @@ menai_code_object_max_locals(const MenaiCodeObject *co)
 
     return best;
 }
-

@@ -78,12 +78,12 @@ globals_alloc_slots(GlobalsTable *gt, ssize_t n)
  * globals_free — free a GlobalsTable and all its owned resources.
  */
 void
-globals_free(GlobalsTable *gt)
+globals_free(MenaiVMState *vs, GlobalsTable *gt)
 {
     for (ssize_t i = 0; i < gt->count; i++) {
         free((char *)gt->entries[i].name);
 
-        menai_value_xrelease(gt->entries[i].value);
+        menai_value_xrelease(vs, gt->entries[i].value);
     }
 
     free(gt->slots);
@@ -102,7 +102,7 @@ globals_free(GlobalsTable *gt)
  * Returns 0 on success, MENAI_ERR_* on error.
  */
 int
-globals_build_from_dict(GlobalsTable *gt, MenaiDict *d)
+globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d)
 {
     ssize_t n = d->length;
 
@@ -114,13 +114,13 @@ globals_build_from_dict(GlobalsTable *gt, MenaiDict *d)
     for (ssize_t i = 0; i < n; i++) {
         MenaiValue *k = d->keys[i];
         if (MENAI_UNLIKELY(!IS_MENAI_STRING(k))) {
-            globals_free(gt);
+            globals_free(vs, gt);
             return MENAI_ERR_TYPE;
         }
 
         char *name_copy = alloc_utf8_from_menai_string((MenaiString *)k, NULL);
         if (name_copy == NULL) {
-            globals_free(gt);
+            globals_free(vs, gt);
             return MENAI_ERR_NOMEM;
         }
 

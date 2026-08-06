@@ -7,10 +7,10 @@
 #include "menai_vm_c.h"
 
 MenaiSet *
-alloc_menai_set(ssize_t cap)
+alloc_menai_set(MenaiVMState *vs, ssize_t cap)
 {
     size_t sz = sizeof(MenaiSet) + (size_t)cap * (sizeof(MenaiValue *) + sizeof(hash_t));
-    MenaiSet *obj = (MenaiSet *)menai_alloc(sz);
+    MenaiSet *obj = (MenaiSet *)menai_alloc(vs, sz);
     if (!obj) {
         return NULL;
     }

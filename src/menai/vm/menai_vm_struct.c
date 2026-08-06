@@ -10,10 +10,10 @@
 #include "menai_vm_c.h"
 
 MenaiStruct *
-alloc_menai_struct(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields)
+alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStruct) + (size_t)nfields * sizeof(MenaiValue *);
-    MenaiStruct *self = (MenaiStruct *)menai_alloc(sz);
+    MenaiStruct *self = (MenaiStruct *)menai_alloc(vs, sz);
     if (!self) {
         return NULL;
     }

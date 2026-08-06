@@ -178,6 +178,25 @@ There are two categories of builtin that must not be confused:
   as Menai lambdas in `_PRELUDE_SOURCE` in `menai.py`. They MUST NOT be added to
   `BUILTIN_OPCODE_ARITIES`.
 
+### The C VM has no process-global mutable state
+
+All mutable VM state (pool allocator free-lists, singletons, globals cache) is
+owned by `MenaiVMState`, a per-instance struct allocated by the Python `MenaiVM`
+wrapper. A `MenaiVMState *` pointer is passed explicitly as the first argument
+to every C function that allocates, frees, or touches singletons. There are no
+file-level mutable statics in the C VM outside the bridge layer (which has only
+read-only Python type references fetched at module init).
+
+`menai_value_retain` is the one exception: it only increments `ob_refcnt` and
+does not need `MenaiVMState *`. Every other refcount or allocation function
+(`menai_value_release`, `menai_value_xrelease`, `menai_value_free`, `menai_alloc`,
+`menai_free`, all `alloc_menai_*` constructors, `menai_none`, `menai_boolean_true`,
+`menai_boolean_false`) takes `MenaiVMState *vs` as its first parameter.
+
+`MenaiCodeObject` retain/release does NOT take `MenaiVMState *` — C code objects
+are ephemeral (built and destroyed within a single `execute()` call) and never
+shared across VM instances or threads.
+
 ## Design decisions
 
 These are decisions that might otherwise look like oversights or invite "improvement".

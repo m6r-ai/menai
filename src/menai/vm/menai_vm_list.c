@@ -17,9 +17,9 @@
 #include "menai_vm_c.h"
 
 MenaiList *
-alloc_menai_list(ssize_t n)
+alloc_menai_list(MenaiVMState *vs, ssize_t n)
 {
-    MenaiList *obj = (MenaiList *)menai_alloc(sizeof(MenaiList) + (size_t)n * sizeof(MenaiValue *));
+    MenaiList *obj = (MenaiList *)menai_alloc(vs, sizeof(MenaiList) + (size_t)n * sizeof(MenaiValue *));
     if (!obj) {
         return NULL;
     }

@@ -406,10 +406,83 @@ typedef struct {
 #define IS_MENAI_STRUCT(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_STRUCT)
 #define IS_MENAI_BYTES(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_BYTES)
 
-void *menai_alloc(size_t size);
-void menai_free(void *ptr);
+/*
+ * Pool allocator constants.
+ */
+#define MENAI_POOL_LOG_MIN_SIZE 5
+#define MENAI_POOL_MIN_SIZE (1 << MENAI_POOL_LOG_MIN_SIZE)
+#define MENAI_POOL_MAX_SIZE 4096
+#define MENAI_POOL_NUM_BUCKETS 8
+#define MENAI_POOL_MAX_DEPTH 256
 
-void menai_value_free(MenaiValue *v);
+/*
+ * Small integer cache — covers [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX].
+ */
+#define MENAI_INT_CACHE_MIN (-5)
+#define MENAI_INT_CACHE_MAX 256
+#define MENAI_INT_CACHE_SIZE (MENAI_INT_CACHE_MAX - MENAI_INT_CACHE_MIN + 1)
+
+/*
+ * GlobalsTable — open-addressing hash table for O(1) name lookup.
+ *
+ * Built once by the bridge and cached.  The cached table is a complete
+ * lookup table with hash slots.  It is never copied per-call — the
+ * execute loop reads from it directly.  Values and names are owned.
+ */
+typedef struct {
+    const char *name;
+    hash_t hash;
+    MenaiValue *value;
+} GlobalsSlot;
+
+typedef struct {
+    const char *name;
+    MenaiValue *value;
+} GlobalsEntry;
+
+typedef struct {
+    GlobalsSlot *slots;
+    GlobalsEntry *entries;
+    ssize_t slot_count;
+    ssize_t count;
+} GlobalsTable;
+
+/*
+ * MenaiVMState — per-instance VM state.
+ *
+ * Owns all mutable state that must not be shared across VM instances:
+ * the pool allocator free-lists, singleton values, and the globals cache.
+ * Each MenaiVM Python object allocates one MenaiVMState and passes it
+ * explicitly to every function that needs it.
+ */
+typedef struct MenaiVMState {
+    /* Pool allocator — per-instance free lists */
+    void *_pool_heads[MENAI_POOL_NUM_BUCKETS];
+    int _pool_depths[MENAI_POOL_NUM_BUCKETS];
+
+    /* Singletons — per-instance */
+    MenaiNone none_storage;             /* inline, not heap */
+    MenaiBoolean true_storage;          /* inline */
+    MenaiBoolean false_storage;         /* inline */
+    MenaiInteger *integer_cache[MENAI_INT_CACHE_SIZE];  /* heap, from this pool */
+
+    MenaiList *empty_list;              /* heap, from this pool */
+    MenaiDict *empty_dict;              /* heap, from this pool */
+    MenaiSet *empty_set;                /* heap, from this pool */
+
+    /* Globals cache — per-instance */
+    void *_cached_globals_key;          /* opaque — bridge casts to PyObject * */
+    GlobalsTable  _cached_globals_gt;
+    int _cached_globals_gt_valid;
+} MenaiVMState;
+
+MenaiVMState *menai_vm_state_alloc(void);
+void menai_vm_state_free(MenaiVMState *vs);
+
+void *menai_alloc(MenaiVMState *vs, size_t size);
+void menai_free(MenaiVMState *vs, void *ptr);
+
+void menai_value_free(MenaiVMState *vs, MenaiValue *v);
 
 /*
  * menai_value_retain — claim an interest in val.
@@ -427,11 +500,11 @@ menai_value_retain(MenaiValue *val)
  * val must not be NULL.  When ob_refcnt reaches zero, we call the registered destructor.
  */
 static inline void
-menai_value_release(MenaiValue *val)
+menai_value_release(MenaiVMState *vs, MenaiValue *val)
 {
     assert(val->ob_type != 0);
     if (--val->ob_refcnt == 0) {
-        menai_value_free(val);
+        menai_value_free(vs, val);
     }
 }
 
@@ -439,10 +512,10 @@ menai_value_release(MenaiValue *val)
  * menai_value_xrelease — relinquish an interest in val if val is non-NULL.
  */
 static inline void
-menai_value_xrelease(MenaiValue *val)
+menai_value_xrelease(MenaiVMState *vs, MenaiValue *val)
 {
     if (val != NULL) {
-        menai_value_release(val);
+        menai_value_release(vs, val);
     }
 }
 
@@ -488,7 +561,7 @@ menai_code_object_retain(MenaiCodeObject *co)
     co->ob_refcnt++;
 }
 
-void menai_code_object_release(MenaiCodeObject *co);
+void menai_code_object_release(MenaiVMState *vs, MenaiCodeObject *co);
 int menai_code_object_max_locals(const MenaiCodeObject *co);
 
 static inline void
@@ -515,7 +588,7 @@ int menai_bigint_to_long_long(const MenaiBigInt *a, long long *out);
 int menai_bigint_to_double(const MenaiBigInt *a, double *out);
 int menai_bigint_fits_unsigned_long_long(const MenaiBigInt *a);
 int menai_bigint_to_unsigned_long_long(const MenaiBigInt *a, unsigned long long *out);
-MenaiString *menai_bigint_to_menai_string(const MenaiBigInt *a, int base);
+MenaiString *menai_bigint_to_menai_string(MenaiVMState *vs, const MenaiBigInt *a, int base);
 hash_t menai_bigint_hash(const MenaiBigInt *a);
 int menai_bigint_add(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
 int menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
@@ -539,21 +612,18 @@ int menai_bigint_gt(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_le(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 
-MenaiNone *menai_none(void);
-void menai_init_none(void);
+MenaiNone *menai_none(MenaiVMState *vs);
+MenaiBoolean *menai_boolean_true(MenaiVMState *vs);
+MenaiBoolean *menai_boolean_false(MenaiVMState *vs);
 
-MenaiBoolean *menai_boolean_true(void);
-MenaiBoolean *menai_boolean_false(void);
-void menai_init_boolean(void);
+MenaiFloat *alloc_menai_float(MenaiVMState *vs, double value);
 
-MenaiFloat *alloc_menai_float(double value);
+MenaiComplex *alloc_menai_complex(MenaiVMState *vs, double real, double imag);
 
-MenaiComplex *alloc_menai_complex(double real, double imag);
+MenaiFunction *alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co, MenaiNone *none_val);
 
-MenaiFunction *alloc_menai_function(MenaiCodeObject *co, MenaiNone *none_val);
-
-MenaiString *alloc_menai_string(ssize_t len);
-MenaiString *alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes);
+MenaiString *alloc_menai_string(MenaiVMState *vs, ssize_t len);
+MenaiString *alloc_menai_string_from_utf8(MenaiVMState *vs, const char *utf8, ssize_t nbytes);
 char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
 int menai_string_compare(MenaiString *a, MenaiString *b);
 int menai_string_equal(MenaiString *a, MenaiString *b);
@@ -562,92 +632,57 @@ void menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *r);
 ssize_t menai_string_upcase_length(MenaiString *s);
 void menai_string_upcase(MenaiString *s, MenaiString *r);
 void menai_string_downcase(MenaiString *s, MenaiString *r);
-MenaiString *alloc_menai_string_from_trim(MenaiString *s);
-MenaiString *alloc_menai_string_from_trim_left(MenaiString *s);
-MenaiString *alloc_menai_string_from_trim_right(MenaiString *s);
+MenaiString *alloc_menai_string_from_trim(MenaiVMState *vs, MenaiString *s);
+MenaiString *alloc_menai_string_from_trim_left(MenaiVMState *vs, MenaiString *s);
+MenaiString *alloc_menai_string_from_trim_right(MenaiVMState *vs, MenaiString *s);
 ssize_t menai_string_find(MenaiString *haystack, MenaiString *needle);
-MenaiString *alloc_menai_string_from_replace(MenaiString *s, MenaiString *from, MenaiString *to);
-MenaiString *alloc_menai_string_from_float(double v);
-MenaiString *alloc_menai_string_from_complex(double real, double imag);
+MenaiString *alloc_menai_string_from_replace(MenaiVMState *vs, MenaiString *s, MenaiString *from, MenaiString *to);
+MenaiString *alloc_menai_string_from_float(MenaiVMState *vs, double v);
+MenaiString *alloc_menai_string_from_complex(MenaiVMState *vs, double real, double imag);
 
-MenaiSymbol *alloc_menai_symbol(MenaiString *name);
+MenaiSymbol *alloc_menai_symbol(MenaiVMState *vs, MenaiString *name);
 
-/*
- * Small integer cache — covers [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX].
- * alloc_menai_integer_from_long() returns a retained reference, hitting the
- * cache for in-range values.
- */
-#define MENAI_INT_CACHE_MIN (-5)
-#define MENAI_INT_CACHE_MAX 256
-#define MENAI_INT_CACHE_SIZE (MENAI_INT_CACHE_MAX - MENAI_INT_CACHE_MIN + 1)
-
-MenaiInteger *alloc_menai_integer_from_long(long n);
-MenaiInteger *alloc_menai_integer_from_long_long(long long n);
-MenaiInteger *alloc_menai_integer_from_bigint(MenaiBigInt src);
+MenaiInteger *alloc_menai_integer_from_long(MenaiVMState *vs, long n);
+MenaiInteger *alloc_menai_integer_from_long_long(MenaiVMState *vs, long long n);
+MenaiInteger *alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src);
 
 static inline MenaiInteger *
-alloc_menai_integer_from_ssize_t(ssize_t n)
+alloc_menai_integer_from_ssize_t(MenaiVMState *vs, ssize_t n)
 {
-    return alloc_menai_integer_from_long((long)n);
+    return alloc_menai_integer_from_long(vs, (long)n);
 }
 
-int menai_init_integer(void);
-
-MenaiBytes *alloc_menai_bytes(ssize_t n);
-MenaiBytes *alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n);
-MenaiBytes *alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end);
-MenaiBytes *alloc_menai_bytes_from_concat(MenaiBytes *a, MenaiBytes *b);
-MenaiBytes *alloc_menai_bytes_from_append_u8(MenaiBytes *b, uint8_t value);
-MenaiBytes *alloc_menai_bytes_from_append_multi(MenaiBytes *b, unsigned long long value, int width, int le);
-MenaiBytes *alloc_menai_bytes_from_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
+MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
+MenaiBytes *alloc_menai_bytes_from_raw(MenaiVMState *vs, const uint8_t *src, ssize_t n);
+MenaiBytes *alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssize_t end);
+MenaiBytes *alloc_menai_bytes_from_concat(MenaiVMState *vs, MenaiBytes *a, MenaiBytes *b);
+MenaiBytes *alloc_menai_bytes_from_append_u8(MenaiVMState *vs, MenaiBytes *b, uint8_t value);
+MenaiBytes *alloc_menai_bytes_from_append_multi(MenaiVMState *vs, MenaiBytes *b, unsigned long long value, int width, int le);
+MenaiBytes *alloc_menai_bytes_from_write_multi(MenaiVMState *vs, MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
 int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
 int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
 hash_t menai_bytes_hash(MenaiBytes *b);
 
-MenaiStruct *alloc_menai_struct(MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
-MenaiStructType *alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
+MenaiStruct *alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
+MenaiStructType *alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
 
-MenaiDict *alloc_menai_dict(void);
-MenaiDict *alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
+MenaiDict *alloc_menai_dict(MenaiVMState *vs);
+MenaiDict *alloc_menai_dict_from_arrays_steal(MenaiVMState *vs, MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
 
-MenaiList *alloc_menai_list(ssize_t n);
+MenaiList *alloc_menai_list(MenaiVMState *vs, ssize_t n);
 void menai_list_rest(MenaiList *lst, MenaiList *r);
 void menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r);
 
-MenaiSet *alloc_menai_set(ssize_t cap);
+MenaiSet *alloc_menai_set(MenaiVMState *vs, ssize_t cap);
 
 int menai_vm_bridge_init(void);
 
-/*
- * GlobalsTable — open-addressing hash table for O(1) name lookup.
- *
- * Built once by the bridge and cached.  The cached table is a complete
- * lookup table with hash slots.  It is never copied per-call — the
- * execute loop reads from it directly.  Values and names are owned.
- */
-typedef struct {
-    const char *name;
-    hash_t hash;
-    MenaiValue *value;
-} GlobalsSlot;
-
-typedef struct {
-    const char *name;
-    MenaiValue *value;
-} GlobalsEntry;
-
-typedef struct {
-    GlobalsSlot *slots;
-    GlobalsEntry *entries;
-    ssize_t slot_count;
-    ssize_t count;
-} GlobalsTable;
-
-void globals_free(GlobalsTable *gt);
-int globals_build_from_dict(GlobalsTable *gt, MenaiDict *d);
+void globals_free(MenaiVMState *vs, GlobalsTable *gt);
+int globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d);
 MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
 
-MenaiValue *menai_vm_execute_native(MenaiCodeObject *code,
+MenaiValue *menai_vm_execute_native(MenaiVMState *vs,
+                                    MenaiCodeObject *code,
                                     const GlobalsTable *globals,
                                     const GlobalsTable *extra_globals,
                                     MenaiVMError *out_error,

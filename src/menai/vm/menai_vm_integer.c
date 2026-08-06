@@ -9,18 +9,16 @@
 
 #include "menai_vm_c.h"
 
-static MenaiInteger *_integer_cache[MENAI_INT_CACHE_SIZE];
-
 MenaiInteger *
-alloc_menai_integer_from_long(long n)
+alloc_menai_integer_from_long(MenaiVMState *vs, long n)
 {
     if (n >= MENAI_INT_CACHE_MIN && n <= MENAI_INT_CACHE_MAX) {
-        MenaiInteger *cached = _integer_cache[n - MENAI_INT_CACHE_MIN];
+        MenaiInteger *cached = vs->integer_cache[n - MENAI_INT_CACHE_MIN];
         menai_value_retain((MenaiValue *)cached);
         return cached;
     }
 
-    MenaiInteger *r = (MenaiInteger *)menai_alloc(sizeof(MenaiInteger));
+    MenaiInteger *r = (MenaiInteger *)menai_alloc(vs, sizeof(MenaiInteger));
     if (r == NULL) {
         return NULL;
     }
@@ -35,17 +33,17 @@ alloc_menai_integer_from_long(long n)
 }
 
 MenaiInteger *
-alloc_menai_integer_from_long_long(long long n)
+alloc_menai_integer_from_long_long(MenaiVMState *vs, long long n)
 {
     if (n >= (long long)MENAI_INT_CACHE_MIN &&
             n <= (long long)MENAI_INT_CACHE_MAX) {
-        MenaiInteger *cached = _integer_cache[(int)n - MENAI_INT_CACHE_MIN];
+        MenaiInteger *cached = vs->integer_cache[(int)n - MENAI_INT_CACHE_MIN];
         menai_value_retain((MenaiValue *)cached);
         return cached;
     }
 
     if (n >= (long long)LONG_MIN && n <= (long long)LONG_MAX) {
-        return alloc_menai_integer_from_long((long)n);
+        return alloc_menai_integer_from_long(vs, (long)n);
     }
 
     MenaiBigInt big;
@@ -54,11 +52,11 @@ alloc_menai_integer_from_long_long(long long n)
         return NULL;
     }
 
-    return alloc_menai_integer_from_bigint(big);
+    return alloc_menai_integer_from_bigint(vs, big);
 }
 
 MenaiInteger *
-alloc_menai_integer_from_bigint(MenaiBigInt src)
+alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src)
 {
     /*
      * If the value fits in a long, demote to small representation so the
@@ -72,10 +70,10 @@ alloc_menai_integer_from_bigint(MenaiBigInt src)
         }
 
         menai_bigint_final(&src);
-        return alloc_menai_integer_from_long(v);
+        return alloc_menai_integer_from_long(vs, v);
     }
 
-    MenaiInteger *r = (MenaiInteger *)menai_alloc(sizeof(MenaiInteger));
+    MenaiInteger *r = (MenaiInteger *)menai_alloc(vs, sizeof(MenaiInteger));
     if (r == NULL) {
         menai_bigint_final(&src);
         return NULL;
@@ -88,25 +86,4 @@ alloc_menai_integer_from_bigint(MenaiBigInt src)
     r->big = src; /* transfer ownership */
 
     return r;
-}
-
-int
-menai_init_integer(void)
-{
-    for (long v = MENAI_INT_CACHE_MIN; v <= MENAI_INT_CACHE_MAX; v++) {
-        MenaiInteger *obj = (MenaiInteger *)menai_alloc(sizeof(MenaiInteger));
-        if (obj == NULL) {
-            return -1;
-        }
-
-        obj->ob_refcnt = 1;
-        obj->ob_type = MENAITYPE_INTEGER;
-        obj->is_big = 0;
-        obj->fixed = v;
-        menai_bigint_init(&obj->big);
-
-        _integer_cache[v - MENAI_INT_CACHE_MIN] = obj;
-    }
-
-    return 0;
 }

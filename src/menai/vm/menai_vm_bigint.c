@@ -927,14 +927,14 @@ menai_bigint_to_double(const MenaiBigInt *a, double *out)
  * char buffer or UTF-8 decode step is needed.
  */
 MenaiString *
-menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
+menai_bigint_to_menai_string(MenaiVMState *vs, const MenaiBigInt *a, int base)
 {
     if (base != 2 && base != 8 && base != 10 && base != 16) {
         return NULL;
     }
 
     if (a->length == 0) {
-        MenaiString *r = alloc_menai_string(1);
+        MenaiString *r = alloc_menai_string(vs, 1);
         if (r) {
             r->data[0] = (uint32_t)'0';
         }
@@ -1017,7 +1017,7 @@ menai_bigint_to_menai_string(const MenaiBigInt *a, int base)
         buf[j] = c;
     }
 
-    MenaiString *result = alloc_menai_string(pos);
+    MenaiString *result = alloc_menai_string(vs, pos);
     if (!result) {
         return NULL;
     }

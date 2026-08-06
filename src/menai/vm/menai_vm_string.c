@@ -994,10 +994,10 @@ static inline const MenaiUpcaseExpansion *unicode_upcase_expansion(uint32_t cp)
  * Returns a new reference, or NULL on allocation failure.
  */
 MenaiString *
-alloc_menai_string(ssize_t len)
+alloc_menai_string(MenaiVMState *vs, ssize_t len)
 {
     size_t sz = sizeof(MenaiString) + (size_t)len * sizeof(uint32_t);
-    MenaiString *obj = (MenaiString *)menai_alloc(sz);
+    MenaiString *obj = (MenaiString *)menai_alloc(vs, sz);
     if (obj == NULL) {
         return NULL;
     }
@@ -1141,7 +1141,7 @@ _utf8_encode(const uint32_t *data, ssize_t len, ssize_t *out_nbytes)
 }
 
 MenaiString *
-alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes)
+alloc_menai_string_from_utf8(MenaiVMState *vs, const char *utf8, ssize_t nbytes)
 {
     ssize_t len;
     uint32_t *buf = _utf8_decode(utf8, nbytes, &len);
@@ -1149,7 +1149,7 @@ alloc_menai_string_from_utf8(const char *utf8, ssize_t nbytes)
         return NULL;
     }
 
-    MenaiString *obj = alloc_menai_string(len);
+    MenaiString *obj = alloc_menai_string(vs, len);
     if (!obj) {
         free(buf);
         return NULL;
@@ -1303,7 +1303,7 @@ menai_string_downcase(MenaiString *s, MenaiString *r)
 }
 
 MenaiString *
-alloc_menai_string_from_trim_left(MenaiString *s)
+alloc_menai_string_from_trim_left(MenaiVMState *vs, MenaiString *s)
 {
     ssize_t len = s->length;
     ssize_t start = 0;
@@ -1312,7 +1312,7 @@ alloc_menai_string_from_trim_left(MenaiString *s)
     }
 
     len -= start;
-    MenaiString *obj = alloc_menai_string(len);
+    MenaiString *obj = alloc_menai_string(vs, len);
     if (!obj) {
         return NULL;
     }
@@ -1322,14 +1322,14 @@ alloc_menai_string_from_trim_left(MenaiString *s)
 }
 
 MenaiString *
-alloc_menai_string_from_trim_right(MenaiString *s)
+alloc_menai_string_from_trim_right(MenaiVMState *vs, MenaiString *s)
 {
     ssize_t end = s->length;
     while (end > 0 && unicode_is_whitespace(s->data[end - 1])) {
         end--;
     }
 
-    MenaiString *obj = alloc_menai_string(end);
+    MenaiString *obj = alloc_menai_string(vs, end);
     if (!obj) {
         return NULL;
     }
@@ -1339,7 +1339,7 @@ alloc_menai_string_from_trim_right(MenaiString *s)
 }
 
 MenaiString *
-alloc_menai_string_from_trim(MenaiString *s)
+alloc_menai_string_from_trim(MenaiVMState *vs, MenaiString *s)
 {
     ssize_t len = s->length;
     ssize_t start = 0;
@@ -1352,7 +1352,7 @@ alloc_menai_string_from_trim(MenaiString *s)
         end--;
     }
 
-    MenaiString *obj = alloc_menai_string(end - start);
+    MenaiString *obj = alloc_menai_string(vs, end - start);
     if (!obj) {
         return NULL;
     }
@@ -1386,7 +1386,7 @@ menai_string_find(MenaiString *haystack, MenaiString *needle)
 }
 
 MenaiString *
-alloc_menai_string_from_replace(MenaiString *s, MenaiString *from, MenaiString *to)
+alloc_menai_string_from_replace(MenaiVMState *vs, MenaiString *s, MenaiString *from, MenaiString *to)
 {
     ssize_t slen = s->length;
     ssize_t frlen = from->length;
@@ -1398,7 +1398,7 @@ alloc_menai_string_from_replace(MenaiString *s, MenaiString *from, MenaiString *
          * last.  "hello".replace("", "X") -> "XhXeXlXlXoX"
          */
         ssize_t out_len = slen + (slen + 1) * tolen;
-        MenaiString *obj = alloc_menai_string(out_len);
+        MenaiString *obj = alloc_menai_string(vs, out_len);
         if (!obj) {
             return NULL;
         }
@@ -1440,7 +1440,7 @@ alloc_menai_string_from_replace(MenaiString *s, MenaiString *from, MenaiString *
     }
 
     ssize_t out_len = slen + count * (tolen - frlen);
-    MenaiString *obj = alloc_menai_string(out_len);
+    MenaiString *obj = alloc_menai_string(vs, out_len);
     if (!obj) {
         return NULL;
     }
@@ -1531,7 +1531,7 @@ format_component(double v, char *buf, size_t bufsz)
  * Returns a new MenaiValue * (MenaiString), or NULL on allocation failure.
  */
 MenaiString *
-alloc_menai_string_from_float(double v)
+alloc_menai_string_from_float(MenaiVMState *vs, double v)
 {
     char buf[32];
 
@@ -1545,7 +1545,7 @@ alloc_menai_string_from_float(double v)
         shortest_double(v, buf, sizeof(buf));
     }
 
-    return alloc_menai_string_from_utf8(buf, (ssize_t)strlen(buf));
+    return alloc_menai_string_from_utf8(vs, buf, (ssize_t)strlen(buf));
 }
 
 /*
@@ -1555,7 +1555,7 @@ alloc_menai_string_from_float(double v)
  * Returns a new MenaiValue * (MenaiString), or NULL on allocation failure.
  */
 MenaiString *
-alloc_menai_string_from_complex(double real, double imag)
+alloc_menai_string_from_complex(MenaiVMState *vs, double real, double imag)
 {
     char rbuf[32];
     char ibuf[32];
@@ -1576,5 +1576,5 @@ alloc_menai_string_from_complex(double real, double imag)
         snprintf(out, sizeof(out), "%sj", ibuf);
     }
 
-    return alloc_menai_string_from_utf8(out, (ssize_t)strlen(out));
+    return alloc_menai_string_from_utf8(vs, out, (ssize_t)strlen(out));
 }

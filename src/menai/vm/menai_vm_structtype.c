@@ -18,10 +18,10 @@
  * Returns a new reference, or NULL on error.
  */
 MenaiStructType *
-alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields)
+alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStructType) + (size_t)nfields * sizeof(MenaiFieldEntry);
-    MenaiStructType *self = (MenaiStructType *)menai_alloc(sz);
+    MenaiStructType *self = (MenaiStructType *)menai_alloc(vs, sz);
     if (!self) {
         return NULL;
     }
@@ -43,13 +43,13 @@ alloc_menai_structtype(MenaiString *name, int tag, MenaiString **field_names, ss
     }
 
     if (menai_ht_init(&self->field_ht, nfields) < 0) {
-        menai_value_xrelease((MenaiValue *)self->name);
+        menai_value_xrelease(vs, (MenaiValue *)self->name);
         int n = self->nfields;
         for (int i = 0; i < n; i++) {
-            menai_value_xrelease((MenaiValue *)self->fields[i].name);
+            menai_value_xrelease(vs, (MenaiValue *)self->fields[i].name);
         }
 
-        menai_free(self);
+        menai_free(vs, self);
         return NULL;
     }
 

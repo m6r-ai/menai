@@ -19,10 +19,10 @@
  * Returns a new reference, or NULL on allocation failure.
  */
 MenaiBytes *
-alloc_menai_bytes(ssize_t n)
+alloc_menai_bytes(MenaiVMState *vs, ssize_t n)
 {
     size_t sz = sizeof(MenaiBytes) + (size_t)n;
-    MenaiBytes *obj = (MenaiBytes *)menai_alloc(sz);
+    MenaiBytes *obj = (MenaiBytes *)menai_alloc(vs, sz);
     if (obj == NULL) {
         return NULL;
     }
@@ -38,9 +38,9 @@ alloc_menai_bytes(ssize_t n)
 }
 
 MenaiBytes *
-alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n)
+alloc_menai_bytes_from_raw(MenaiVMState *vs, const uint8_t *src, ssize_t n)
 {
-    MenaiBytes *obj = alloc_menai_bytes(n);
+    MenaiBytes *obj = alloc_menai_bytes(vs, n);
     if (!obj) {
         return NULL;
     }
@@ -51,7 +51,7 @@ alloc_menai_bytes_from_raw(const uint8_t *src, ssize_t n)
 }
 
 MenaiBytes *
-alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
+alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssize_t end)
 {
     /*
      * Resolve the owner: if b is itself a view, point at its owner so
@@ -59,7 +59,7 @@ alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
      */
     MenaiBytes *owner = (b->owner != NULL) ? b->owner : b;
 
-    MenaiBytes *view = (MenaiBytes *)menai_alloc(sizeof(MenaiBytes));
+    MenaiBytes *view = (MenaiBytes *)menai_alloc(vs, sizeof(MenaiBytes));
     if (view == NULL) {
         return NULL;
     }
@@ -76,11 +76,11 @@ alloc_menai_bytes_from_slice(MenaiBytes *b, ssize_t start, ssize_t end)
 }
 
 MenaiBytes *
-alloc_menai_bytes_from_concat(MenaiBytes *a, MenaiBytes *b)
+alloc_menai_bytes_from_concat(MenaiVMState *vs, MenaiBytes *a, MenaiBytes *b)
 {
     ssize_t la = a->length;
     ssize_t lb = b->length;
-    MenaiBytes *obj = alloc_menai_bytes(la + lb);
+    MenaiBytes *obj = alloc_menai_bytes(vs, la + lb);
     if (!obj) {
         return NULL;
     }
@@ -97,16 +97,16 @@ alloc_menai_bytes_from_concat(MenaiBytes *a, MenaiBytes *b)
 }
 
 MenaiInteger *
-menai_bytes_ref(MenaiValue *b, ssize_t i)
+menai_bytes_ref(MenaiVMState *vs, MenaiValue *b, ssize_t i)
 {
-    return alloc_menai_integer_from_long((long)((MenaiBytes *)b)->data[i]);
+    return alloc_menai_integer_from_long(vs, (long)((MenaiBytes *)b)->data[i]);
 }
 
 MenaiBytes *
-alloc_menai_bytes_from_append_u8(MenaiBytes *b, uint8_t value)
+alloc_menai_bytes_from_append_u8(MenaiVMState *vs, MenaiBytes *b, uint8_t value)
 {
     ssize_t len = b->length;
-    MenaiBytes *obj = alloc_menai_bytes(len + 1);
+    MenaiBytes *obj = alloc_menai_bytes(vs, len + 1);
     if (!obj) {
         return NULL;
     }
@@ -125,10 +125,10 @@ alloc_menai_bytes_from_append_u8(MenaiBytes *b, uint8_t value)
  * value in the specified endianness.  width must be 1–8.
  */
 MenaiBytes *
-alloc_menai_bytes_from_append_multi(MenaiBytes *b, unsigned long long value, int width, int le)
+alloc_menai_bytes_from_append_multi(MenaiVMState *vs, MenaiBytes *b, unsigned long long value, int width, int le)
 {
     ssize_t len = b->length;
-    MenaiBytes *obj = alloc_menai_bytes(len + width);
+    MenaiBytes *obj = alloc_menai_bytes(vs, len + width);
     if (!obj) {
         return NULL;
     }
@@ -156,10 +156,10 @@ alloc_menai_bytes_from_append_multi(MenaiBytes *b, unsigned long long value, int
  * offset replaced by the encoded value.  width must be 1–8.
  */
 MenaiBytes *
-alloc_menai_bytes_from_write_multi(MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le)
+alloc_menai_bytes_from_write_multi(MenaiVMState *vs, MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le)
 {
     ssize_t len = b->length;
-    MenaiBytes *obj = alloc_menai_bytes(len);
+    MenaiBytes *obj = alloc_menai_bytes(vs, len);
     if (!obj) {
         return NULL;
     }

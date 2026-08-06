@@ -9,9 +9,9 @@
 #include "menai_vm_c.h"
 
 MenaiSymbol *
-alloc_menai_symbol(MenaiString *name)
+alloc_menai_symbol(MenaiVMState *vs, MenaiString *name)
 {
-    MenaiSymbol *self = (MenaiSymbol *)menai_alloc(sizeof(MenaiSymbol));
+    MenaiSymbol *self = (MenaiSymbol *)menai_alloc(vs, sizeof(MenaiSymbol));
     if (self == NULL) {
         return NULL;
     }

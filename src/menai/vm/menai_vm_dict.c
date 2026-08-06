@@ -16,9 +16,9 @@
 #include "menai_vm_c.h"
 
 MenaiDict *
-alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n)
+alloc_menai_dict_from_arrays_steal(MenaiVMState *vs, MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n)
 {
-    MenaiDict *obj = (MenaiDict *)menai_alloc(sizeof(MenaiDict));
+    MenaiDict *obj = (MenaiDict *)menai_alloc(vs, sizeof(MenaiDict));
     if (!obj) {
         goto err;
     }
@@ -27,7 +27,7 @@ alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_
     obj->ob_type = MENAITYPE_DICT;
 
     if (menai_ht_build(&obj->ht, keys, hashes, n) < 0) {
-        menai_free(obj);
+        menai_free(vs, obj);
         goto err;
     }
 
@@ -41,7 +41,7 @@ alloc_menai_dict_from_arrays_steal(MenaiValue **keys, MenaiValue **values, hash_
 err:
     if (keys) {
         for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(keys[i]);
+            menai_value_release(vs, keys[i]);
         }
 
         free(keys);
@@ -49,7 +49,7 @@ err:
 
     if (values) {
         for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(values[i]);
+            menai_value_release(vs, values[i]);
         }
 
         free(values);
@@ -60,9 +60,9 @@ err:
 }
 
 MenaiDict *
-alloc_menai_dict(void)
+alloc_menai_dict(MenaiVMState *vs)
 {
-    MenaiDict *obj = (MenaiDict *)menai_alloc(sizeof(MenaiDict));
+    MenaiDict *obj = (MenaiDict *)menai_alloc(vs, sizeof(MenaiDict));
     if (!obj) {
         return NULL;
     }

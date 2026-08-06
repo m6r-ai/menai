@@ -6,9 +6,9 @@
 #include "menai_vm_c.h"
 
 MenaiFloat *
-alloc_menai_float(double value)
+alloc_menai_float(MenaiVMState *vs, double value)
 {
-    MenaiFloat *self = (MenaiFloat *)menai_alloc(sizeof(MenaiFloat));
+    MenaiFloat *self = (MenaiFloat *)menai_alloc(vs, sizeof(MenaiFloat));
     if (self == NULL) {
         return NULL;
     }
