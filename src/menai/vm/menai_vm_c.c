@@ -840,8 +840,8 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiValue *func_obj, MenaiValue 
  * Returns the result value (new reference) or NULL on error.
  */
 static MenaiValue *
-execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *globals, const GlobalsTable *extra_globals,
-             MenaiValue **regs, int max_locals, MenaiVMError *out_error, int *cancel_flag)
+execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals,
+             MenaiValue **regs, int max_locals, MenaiVMError *out_error)
 {
     int vm_err = MENAI_OK;
     const char *vm_user_message = NULL;
@@ -875,7 +875,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *global
         if ((++instr_count & (CANCEL_CHECK_INTERVAL - 1)) == 0) {
             instr_count = 0;
 
-            if (cancel_flag && _menai_atomic_load((_menai_atomic_int *)cancel_flag)) {
+            if (_menai_atomic_load((_menai_atomic_int *)&vs->_cancel_flag)) {
                 vm_err = MENAI_ERR_CANCELLED;
                 goto error;
             }
@@ -935,8 +935,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *global
             if (extra_globals != NULL) {
                 val = globals_lookup(extra_globals, name_str, name_hash);
             }
-            if (val == NULL) {
-                val = globals_lookup(globals, name_str, name_hash);
+            if (val == NULL && vs->_globals_valid) {
+                val = globals_lookup(&vs->_globals, name_str, name_hash);
             }
             if (val == NULL) {
                 vm_err = MENAI_ERR_UNDEFINED_VARIABLE;
@@ -6784,45 +6784,25 @@ error:
 }
 
 /*
- * menai_vm_cancel_flag_alloc / _free / _set — per-instance cancellation flag
- * lifecycle.  Each MenaiVM instance allocates its own flag so that
- * cancelling one evaluation does not affect another.
+ * menai_vm_cancel — atomically set the cancellation flag in the VM state.
+ * Thread-safe: may be called from a different thread while the VM is
+ * executing (the GIL is released during execution).
  */
-int *
-menai_vm_cancel_flag_alloc(void)
-{
-    int *flag = (int *)malloc(sizeof(int));
-    if (flag) {
-        *flag = 0;
-    }
-    return flag;
-}
-
 void
-menai_vm_cancel_flag_free(int *flag)
+menai_vm_cancel(MenaiVMState *vs)
 {
-    if (flag) {
-        free(flag);
-    }
-}
-
-void
-menai_vm_cancel_flag_set(int *flag)
-{
-    if (flag) {
-        _menai_atomic_store((_menai_atomic_int *)flag, 1);
-    }
+    _menai_atomic_store((_menai_atomic_int *)&vs->_cancel_flag, 1);
 }
 
 /*
  * menai_vm_execute_native — native VM entry point.
  *
- * Executes code with the given cached globals table and optional extra
- * globals table (or NULL).  Returns a new reference to the result, or
- * NULL on error.  On error, *out_error is filled in.
+ * Executes code using the prelude globals stored in the VM state and an
+ * optional extra globals table (or NULL).  Returns a new reference to the
+ * result, or NULL on error.  On error, *out_error is filled in.
  */
 MenaiValue *
-menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *globals_gt, const GlobalsTable *extra_globals, MenaiVMError *out_error, int *cancel_flag)
+menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals, MenaiVMError *out_error)
 {
     if (out_error) {
         out_error->code = MENAI_OK;
@@ -6833,9 +6813,9 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     }
 
     int max_locals = menai_code_object_max_locals(code);
-    if (globals_gt != NULL) {
-        for (ssize_t i = 0; i < globals_gt->count; i++) {
-            MenaiValue *val = globals_gt->entries[i].value;
+    if (vs->_globals_valid) {
+        for (ssize_t i = 0; i < vs->_globals.count; i++) {
+            MenaiValue *val = vs->_globals.entries[i].value;
             if (IS_MENAI_FUNCTION(val)) {
                 int n = menai_code_object_max_locals(((MenaiFunction *)val)->bytecode);
                 if (n > max_locals) {
@@ -6859,8 +6839,8 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
         regs[i] = (MenaiValue *)menai_none(vs);
     }
 
-    MenaiValue *result = execute_loop(vs, code, globals_gt, extra_globals,
-                                      regs, max_locals, out_error, cancel_flag);
+    MenaiValue *result = execute_loop(vs, code, extra_globals,
+                                      regs, max_locals, out_error);
 
     for (size_t i = 0; i < num_regs; i++) {
         menai_value_release(vs, regs[i]);

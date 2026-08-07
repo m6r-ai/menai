@@ -10,11 +10,10 @@ from menai.vm.menai_vm_errors import _MenaiVMRuntimeError, translate_vm_error
 
 # pylint: disable=no-name-in-module
 from menai.vm.menai_vm_c import execute as _c_vm_execute  # type: ignore[import-not-found]
-from menai.vm.menai_vm_c import cancel_flag_alloc as _c_vm_cancel_flag_alloc  # type: ignore[import-not-found]
-from menai.vm.menai_vm_c import cancel_flag_free as _c_vm_cancel_flag_free  # type: ignore[import-not-found]
-from menai.vm.menai_vm_c import cancel_flag_set as _c_vm_cancel_flag_set  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import state_alloc as _c_vm_state_alloc  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import state_free as _c_vm_state_free  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import set_prelude as _c_vm_set_prelude  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import cancel as _c_vm_cancel  # type: ignore[import-not-found]
 
 
 class MenaiVM:
@@ -22,21 +21,20 @@ class MenaiVM:
 
     def __init__(self, validate: bool = True) -> None:
         self.validate_bytecode = validate
-        self._cancel_flag = _c_vm_cancel_flag_alloc()
         self._state = _c_vm_state_alloc()
 
     def __del__(self) -> None:
-        if hasattr(self, '_cancel_flag'):
-            _c_vm_cancel_flag_free(self._cancel_flag)
-
         if hasattr(self, '_state'):
             _c_vm_state_free(self._state)
+
+    def set_prelude(self, prelude: CodeObject) -> None:
+        """Execute a prelude CodeObject and store its globals in the VM state."""
+        _c_vm_set_prelude(self._state, prelude)
 
     def execute(
         self,
         code: CodeObject,
-        globals_dict: dict[str, MenaiValue] | CodeObject | None = None,
-        extra_bindings: dict[str, MenaiValue] | None = None
+        extra_bindings: dict[str, MenaiValue] | None = None,
     ) -> MenaiValue:
         """Execute a code object and return the result."""
         if self.validate_bytecode:
@@ -44,7 +42,7 @@ class MenaiVM:
 
         try:
             return cast(Callable[..., MenaiValue], _c_vm_execute)(
-                code, globals_dict or {}, extra_bindings or {}, self._cancel_flag, self._state
+                code, extra_bindings or {}, self._state
             )
 
         except _MenaiVMRuntimeError as exc:
@@ -64,4 +62,4 @@ class MenaiVM:
         executing the VM.  The flag is checked at the next cancellation
         check point in the C execution loop.
         """
-        _c_vm_cancel_flag_set(self._cancel_flag)
+        _c_vm_cancel(self._state)

@@ -32,7 +32,7 @@ class TestMoveOpcode:
     def _run(self, code):
         state = c_vm_state_alloc()
         try:
-            result = c_vm_execute(code, {}, {}, None, state)
+            result = c_vm_execute(code, {}, state)
         finally:
             c_vm_state_free(state)
         return result.describe()

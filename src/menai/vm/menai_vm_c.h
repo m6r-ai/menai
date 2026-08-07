@@ -451,7 +451,7 @@ typedef struct {
  * MenaiVMState — per-instance VM state.
  *
  * Owns all mutable state that must not be shared across VM instances:
- * the pool allocator free-lists, singleton values, and the globals cache.
+ * the pool allocator free-lists, singleton values, and the prelude globals.
  * Each MenaiVM Python object allocates one MenaiVMState and passes it
  * explicitly to every function that needs it.
  */
@@ -470,10 +470,11 @@ typedef struct MenaiVMState {
     MenaiDict *empty_dict;              /* heap, from this pool */
     MenaiSet *empty_set;                /* heap, from this pool */
 
-    /* Globals cache — per-instance */
-    void *_cached_globals_key;          /* opaque — bridge casts to PyObject * */
-    GlobalsTable  _cached_globals_gt;
-    int _cached_globals_gt_valid;
+    /* Prelude globals — per-instance, set once via menai_vm_set_prelude */
+    GlobalsTable _globals;
+    int _globals_valid;
+
+    int _cancel_flag;
 } MenaiVMState;
 
 MenaiVMState *menai_vm_state_alloc(void);
@@ -683,13 +684,9 @@ MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
 
 MenaiValue *menai_vm_execute_native(MenaiVMState *vs,
                                     MenaiCodeObject *code,
-                                    const GlobalsTable *globals,
                                     const GlobalsTable *extra_globals,
-                                    MenaiVMError *out_error,
-                                    int *cancel_flag);
+                                    MenaiVMError *out_error);
 
-int *menai_vm_cancel_flag_alloc(void);
-void menai_vm_cancel_flag_free(int *flag);
-void menai_vm_cancel_flag_set(int *flag);
+void menai_vm_cancel(MenaiVMState *vs);
 
 #endif /* MENAI_VM_C_H */

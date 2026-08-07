@@ -180,7 +180,7 @@ There are two categories of builtin that must not be confused:
 
 ### The C VM has no process-global mutable state
 
-All mutable VM state (pool allocator free-lists, singletons, globals cache) is
+All mutable VM state (pool allocator free-lists, singletons, prelude globals) is
 owned by `MenaiVMState`, a per-instance struct allocated by the Python `MenaiVM`
 wrapper. A `MenaiVMState *` pointer is passed explicitly as the first argument
 to every C function that allocates, frees, or touches singletons. There are no

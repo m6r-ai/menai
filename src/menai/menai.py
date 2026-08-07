@@ -1402,7 +1402,7 @@ class Menai:
         if Menai._prelude_code is None:
             Menai._prelude_code = self.compiler.compile(self._PRELUDE_SOURCE, name="<prelude>")
 
-        self._prelude = Menai._prelude_code
+        self.vm.set_prelude(Menai._prelude_code)
 
     def compile(self, expression: str) -> CodeObject:
         """
@@ -1433,7 +1433,7 @@ class Menai:
         Returns:
             The result as a raw MenaiValue
         """
-        return self.vm.execute(code, self._prelude)
+        return self.vm.execute(code)
 
     def evaluate_raw(self, expression: str) -> 'MenaiValue':
         """
@@ -1449,7 +1449,7 @@ class Menai:
         code = self.compiler.compile(expression)
 
         # Execute
-        result = self.vm.execute(code, self._prelude)
+        result = self.vm.execute(code)
         return result
 
     def evaluate(self, expression: str) -> int | float | complex | str | bool | list | MenaiFunction:
@@ -1514,7 +1514,7 @@ class Menai:
             The raw MenaiValue result (caller inspects type and extracts value).
         """
         code = self.compiler.compile(expression)
-        return self.vm.execute(code, self._prelude, bindings)
+        return self.vm.execute(code, bindings)
 
     def evaluate_and_format_with_bindings(
         self,

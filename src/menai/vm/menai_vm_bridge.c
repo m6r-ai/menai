@@ -1308,7 +1308,7 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
 
 /*
  * The CodeObject type from menai.menai_bytecode — used to identify prelude
- * CodeObjects in bridge_globals_get.  Fetched once during bridge init.
+ * CodeObjects in bridge_set_prelude.  Fetched once during bridge init.
  */
 static PyTypeObject *_py_code_object_type = NULL;
 
@@ -1372,85 +1372,52 @@ bridge_translate_error(const MenaiVMError *err)
 static MenaiDict *menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict);
 
 /*
- * bridge_globals_get
- * — return a pointer to the cached GlobalsTable, building
- * it the first time a given globals_key is seen.
+ * bridge_set_prelude — execute a prelude CodeObject and store the resulting
+ * GlobalsTable permanently in the VM state.
  *
- * globals_key is either a Python dict of slow MenaiValue objects, or a Python
- * CodeObject representing the prelude.  When it is a CodeObject the prelude is
- * executed here once and the resulting dict is unpacked into the GlobalsTable;
- * subsequent calls with the same CodeObject identity reuse the cached table.
- * Returns NULL on error with a Python exception set.
+ * The prelude is executed once via menai_vm_execute_native to produce a
+ * MenaiDict, which is unpacked into vs->_globals.  The table persists for
+ * the lifetime of the VM state and is never rebuilt.
+ * Returns 0 on success, -1 on error with a Python exception set.
  */
-static const GlobalsTable *
-bridge_globals_get(MenaiVMState *vs, PyObject *globals_key)
+static int
+bridge_set_prelude(MenaiVMState *vs, PyObject *prelude_code)
 {
-    if (globals_key == (PyObject *)vs->_cached_globals_key && vs->_cached_globals_gt_valid) {
-        return &vs->_cached_globals_gt;
+    if (!_py_code_object_type || Py_TYPE(prelude_code) != _py_code_object_type) {
+        PyErr_SetString(PyExc_TypeError, "Prelude must be a CodeObject");
+        return -1;
     }
 
-    if (vs->_cached_globals_gt_valid) {
-        globals_free(vs, &vs->_cached_globals_gt);
-        vs->_cached_globals_gt_valid = 0;
-        Py_DECREF((PyObject *)vs->_cached_globals_key);
-        vs->_cached_globals_key = NULL;
+    MenaiCodeObject *prelude_co = menai_code_object_from_python(vs, prelude_code);
+    if (!prelude_co) {
+        return -1;
     }
 
-    if (_py_code_object_type && Py_TYPE(globals_key) == _py_code_object_type) {
-        /*
-         * globals_key is a prelude CodeObject.  Execute it to obtain a
-         * MenaiDict of fast values, then unpack directly into the
-         * GlobalsTable without any slow round-trip.
-         */
-        MenaiCodeObject *prelude_co = menai_code_object_from_python(vs, globals_key);
-        if (!prelude_co) {
-            return NULL;
+    MenaiVMError vm_err;
+    MenaiValue *result = menai_vm_execute_native(vs, prelude_co, NULL, &vm_err);
+    menai_code_object_release(vs, prelude_co);
+    if (!result) {
+        if (!PyErr_Occurred()) {
+            bridge_translate_error(&vm_err);
         }
 
-        MenaiVMError vm_err;
-        MenaiValue *result = menai_vm_execute_native(vs, prelude_co, NULL, NULL, &vm_err, NULL);
-        menai_code_object_release(vs, prelude_co);
-        if (!result) {
-            if (!PyErr_Occurred()) {
-                bridge_translate_error(&vm_err);
-            }
+        return -1;
+    }
 
-            return NULL;
-        }
-
-        if (!IS_MENAI_DICT(result)) {
-            menai_value_release(vs, result);
-            PyErr_SetString(PyExc_TypeError, "Prelude must evaluate to a dict");
-            return NULL;
-        }
-
-        if (globals_build_from_dict(vs, &vs->_cached_globals_gt, (MenaiDict *)result) < 0) {
-            menai_value_release(vs, result);
-            return NULL;
-        }
-
+    if (!IS_MENAI_DICT(result)) {
         menai_value_release(vs, result);
-    } else {
-        /*
-         * globals_key is a Python dict of slow MenaiValue objects.
-         * Convert to a native MenaiDict and build the GlobalsTable from it.
-         */
-        MenaiDict *native_dict = menai_dict_from_pydict(vs, globals_key);
-        if (!native_dict) {
-            return NULL;
-        }
-
-        int rc = globals_build_from_dict(vs, &vs->_cached_globals_gt, native_dict);
-        menai_value_release(vs, (MenaiValue *)native_dict);
-        if (rc < 0) {
-            return NULL;
-        }
+        PyErr_SetString(PyExc_TypeError, "Prelude must evaluate to a dict");
+        return -1;
     }
 
-    Py_INCREF(globals_key);
-    vs->_cached_globals_key = (void *)globals_key;
-    vs->_cached_globals_gt_valid = 1;
-    return &vs->_cached_globals_gt;
+    int rc = globals_build_from_dict(vs, &vs->_globals, (MenaiDict *)result);
+    menai_value_release(vs, result);
+    if (rc < 0) {
+        return -1;
+    }
+
+    vs->_globals_valid = 1;
+    return 0;
 }
 
 /*
@@ -1518,33 +1485,20 @@ fail:
 /*
  * menai_vm_c_execute — the Python-callable entry point.
  *
- * Parses arguments (code, globals_dict, extra_bindings, cancel_flag_capsule),
- * converts the code tree, builds the globals table, and calls
- * menai_vm_execute_native to run the VM.  The result is converted back
- * to a slow Python MenaiValue before returning.
+ * Parses arguments (code, extra_bindings, state_capsule),
+ * converts the code tree, uses the prelude globals already stored in the VM
+ * state, and calls menai_vm_execute_native to run the VM.  The result is
+ * converted back to a slow Python MenaiValue before returning.
  */
 static PyObject *
 menai_vm_c_execute(PyObject *self, PyObject *args)
 {
     PyObject *code;
-    PyObject *globals_dict;
     PyObject *extra_bindings = NULL;
-    PyObject *cancel_capsule = NULL;
     PyObject *state_capsule = NULL;
 
-    if (!PyArg_ParseTuple(args, "OO|OOO", &code, &globals_dict, &extra_bindings, &cancel_capsule, &state_capsule)) {
+    if (!PyArg_ParseTuple(args, "O|OO", &code, &extra_bindings, &state_capsule)) {
         return NULL;
-    }
-
-    int *cancel_flag = NULL;
-    if (cancel_capsule && cancel_capsule != Py_None) {
-        cancel_flag = (int *)PyCapsule_GetPointer(cancel_capsule, "menai_cancel_flag");
-        if (!cancel_flag) {
-            return NULL;
-        }
-
-        /* Clear any stale cancellation from a previous call. */
-        *cancel_flag = 0;
     }
 
     MenaiVMState *vs = NULL;
@@ -1555,18 +1509,12 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
         }
     }
 
+    /* Clear any stale cancellation from a previous call. */
+    vs->_cancel_flag = 0;
+
     MenaiCodeObject *native_code = menai_code_object_from_python(vs, code);
     if (!native_code) {
         return NULL;
-    }
-
-    const GlobalsTable *globals_gt = NULL;
-    if (globals_dict && globals_dict != Py_None) {
-        globals_gt = bridge_globals_get(vs, globals_dict);
-        if (!globals_gt) {
-            menai_code_object_release(vs, native_code);
-            return NULL;
-        }
     }
 
     GlobalsTable extra_globals;
@@ -1596,7 +1544,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
      * cancellation) to run without contention.
      */
     Py_BEGIN_ALLOW_THREADS
-    result = menai_vm_execute_native(vs, native_code, globals_gt, has_extra ? &extra_globals : NULL, &vm_err, cancel_flag);
+    result = menai_vm_execute_native(vs, native_code, has_extra ? &extra_globals : NULL, &vm_err);
     Py_END_ALLOW_THREADS
 
     menai_code_object_release(vs, native_code);
@@ -1685,7 +1633,7 @@ menai_vm_bridge_init(void)
     Py_DECREF(slow_mod);
     slow_mod = NULL;
 
-    /* Fetch the CodeObject type — used by bridge_globals_get to identify
+    /* Fetch the CodeObject type — used by bridge_set_prelude to identify
      * prelude CodeObjects. */
     PyObject *bytecode_mod = PyImport_ImportModule("menai.bytecode.menai_bytecode");
     if (!bytecode_mod) {
@@ -1708,46 +1656,22 @@ fail:
 }
 
 /*
- * Python-callable wrappers for the per-instance cancel flag lifecycle.
+ * menai_vm_c_cancel — Python-callable wrapper for menai_vm_cancel.
  *
- * cancel_flag_alloc() returns a PyCapsule wrapping a heap-allocated int.
- * cancel_flag_free(capsule) frees it.
- * cancel_flag_set(capsule) sets it to 1 (non-zero = cancel requested).
+ * cancel(state_capsule) atomically sets the cancellation flag in the VM
+ * state.  Thread-safe: may be called from a different thread while the
+ * VM is executing.
  *
  */
 static PyObject *
-menai_vm_c_cancel_flag_alloc(PyObject *self, PyObject *args)
+menai_vm_c_cancel(PyObject *self, PyObject *capsule)
 {
-    int *flag = menai_vm_cancel_flag_alloc();
-    if (!flag) {
-        PyErr_NoMemory();
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
         return NULL;
     }
 
-    return PyCapsule_New(flag, "menai_cancel_flag", NULL);
-}
-
-static PyObject *
-menai_vm_c_cancel_flag_free(PyObject *self, PyObject *capsule)
-{
-    int *flag = (int *)PyCapsule_GetPointer(capsule, "menai_cancel_flag");
-    if (!flag) {
-        return NULL;
-    }
-
-    menai_vm_cancel_flag_free(flag);
-    Py_RETURN_NONE;
-}
-
-static PyObject *
-menai_vm_c_cancel_flag_set(PyObject *self, PyObject *capsule)
-{
-    int *flag = (int *)PyCapsule_GetPointer(capsule, "menai_cancel_flag");
-    if (!flag) {
-        return NULL;
-    }
-
-    menai_vm_cancel_flag_set(flag);
+    menai_vm_cancel(vs);
     Py_RETURN_NONE;
 }
 
@@ -1782,6 +1706,34 @@ menai_vm_c_state_free(PyObject *self, PyObject *capsule)
 }
 
 /*
+ * menai_vm_c_set_prelude — Python-callable wrapper for bridge_set_prelude.
+ *
+ * set_prelude(state_capsule, prelude_code) executes the prelude CodeObject
+ * once and stores the resulting GlobalsTable permanently in the VM state.
+ */
+static PyObject *
+menai_vm_c_set_prelude(PyObject *self, PyObject *args)
+{
+    PyObject *state_capsule;
+    PyObject *prelude_code;
+
+    if (!PyArg_ParseTuple(args, "OO", &state_capsule, &prelude_code)) {
+        return NULL;
+    }
+
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(state_capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    if (bridge_set_prelude(vs, prelude_code) < 0) {
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+/*
  * Module definition
  */
 static PyMethodDef menai_vm_c_methods[] = {
@@ -1792,22 +1744,10 @@ static PyMethodDef menai_vm_c_methods[] = {
         "Execute a Menai CodeObject and return the result."
     },
     {
-        "cancel_flag_alloc",
-        menai_vm_c_cancel_flag_alloc,
-        METH_NOARGS,
-        "Allocate a per-instance cancellation flag and return it as a PyCapsule."
-    },
-    {
-        "cancel_flag_free",
-        menai_vm_c_cancel_flag_free,
+        "cancel",
+        menai_vm_c_cancel,
         METH_O,
-        "Free a cancellation flag allocated by cancel_flag_alloc."
-    },
-    {
-        "cancel_flag_set",
-        menai_vm_c_cancel_flag_set,
-        METH_O,
-        "Set the cancellation flag to request cancellation of a running execute()."
+        "Set the cancellation flag in the VM state to request cancellation."
     },
     {
         "state_alloc",
@@ -1820,6 +1760,12 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_state_free,
         METH_O,
         "Free a VM state allocated by state_alloc."
+    },
+    {
+        "set_prelude",
+        menai_vm_c_set_prelude,
+        METH_VARARGS,
+        "Execute a prelude CodeObject and store its globals in the VM state."
     },
     { NULL, NULL, 0, NULL }
 };

@@ -164,8 +164,8 @@ menai_vm_state_alloc(void)
 void
 menai_vm_state_free(MenaiVMState *vs)
 {
-    if (vs->_cached_globals_gt_valid) {
-        globals_free(vs, &vs->_cached_globals_gt);
+    if (vs->_globals_valid) {
+        globals_free(vs, &vs->_globals);
     }
 
     for (int bucket = 0; bucket < MENAI_POOL_NUM_BUCKETS; bucket++) {
