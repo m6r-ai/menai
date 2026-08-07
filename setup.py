@@ -41,6 +41,7 @@ extensions = [
             f"{_MENAI_VM_SRC}/menai_vm_none.c",
             f"{_MENAI_VM_SRC}/menai_vm_string.c",
             f"{_MENAI_VM_SRC}/menai_vm_set.c",
+            f"{_MENAI_VM_SRC}/menai_vm_state.c",
             f"{_MENAI_VM_SRC}/menai_vm_struct.c",
             f"{_MENAI_VM_SRC}/menai_vm_structtype.c",
             f"{_MENAI_VM_SRC}/menai_vm_symbol.c",
