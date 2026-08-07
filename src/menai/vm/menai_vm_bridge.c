@@ -1432,12 +1432,22 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
     }
 
     MenaiValue **keys = (MenaiValue **)malloc((size_t)n * sizeof(MenaiValue *));
+    if (!keys) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+
     MenaiValue **values = (MenaiValue **)malloc((size_t)n * sizeof(MenaiValue *));
+    if (!values) {
+        free(keys);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
     hash_t *hashes = (hash_t *)malloc((size_t)n * sizeof(hash_t));
-    if (!keys || !values || !hashes) {
+    if (!hashes) {
         free(keys);
         free(values);
-        free(hashes);
         PyErr_NoMemory();
         return NULL;
     }
