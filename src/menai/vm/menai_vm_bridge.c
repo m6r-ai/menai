@@ -1369,8 +1369,6 @@ bridge_translate_error(const MenaiVMError *err)
     Py_DECREF(exc);
 }
 
-static MenaiDict *menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict);
-
 /*
  * bridge_set_prelude — execute a prelude CodeObject and store the resulting
  * GlobalsTable permanently in the VM state.
