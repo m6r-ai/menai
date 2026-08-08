@@ -992,18 +992,6 @@ menai_value_to_python_integer(MenaiValue *val)
     return menai_bigint_to_pylong(&obj->big);
 }
 
-static int
-fetch_slow_type(PyObject *mod, const char *name, PyTypeObject **dst)
-{
-    PyObject *obj = PyObject_GetAttrString(mod, name);
-    if (!obj) {
-        return -1;
-    }
-
-    *dst = (PyTypeObject *)obj;
-    return 0;
-}
-
 /*
  * menai_value_to_slow_value — convert a fast MenaiValue * to its equivalent
  * slow menai_value.py Python object.
@@ -1582,61 +1570,103 @@ menai_vm_bridge_init(void)
         return 0;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiNone", &Slow_NoneType) < 0) {
+    PyObject *none_type = PyObject_GetAttrString(slow_mod, "MenaiNone");
+    if (!none_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiBoolean", &Slow_BooleanType) < 0) {
+    Slow_NoneType = (PyTypeObject *)none_type;
+
+    PyObject *boolean_type = PyObject_GetAttrString(slow_mod, "MenaiBoolean");
+    if (!boolean_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiInteger", &Slow_IntegerType) < 0) {
+    Slow_BooleanType = (PyTypeObject *)boolean_type;
+
+    PyObject *integer_type = PyObject_GetAttrString(slow_mod, "MenaiInteger");
+    if (!integer_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiFloat", &Slow_FloatType) < 0) {
+    Slow_IntegerType = (PyTypeObject *)integer_type;
+
+    PyObject *float_type = PyObject_GetAttrString(slow_mod, "MenaiFloat");
+    if (!float_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiComplex", &Slow_ComplexType) < 0) {
+    Slow_FloatType = (PyTypeObject *)float_type;
+
+    PyObject *complex_type = PyObject_GetAttrString(slow_mod, "MenaiComplex");
+    if (!complex_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiString", &Slow_StringType) < 0) {
+    Slow_ComplexType = (PyTypeObject *)complex_type;
+
+    PyObject *string_type = PyObject_GetAttrString(slow_mod, "MenaiString");
+    if (!string_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiSymbol", &Slow_SymbolType) < 0) {
+    Slow_StringType = (PyTypeObject *)string_type;
+
+    PyObject *symbol_type = PyObject_GetAttrString(slow_mod, "MenaiSymbol");
+    if (!symbol_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiList", &Slow_ListType) < 0) {
+    Slow_SymbolType = (PyTypeObject *)symbol_type;
+
+    PyObject *list_type = PyObject_GetAttrString(slow_mod, "MenaiList");
+    if (!list_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiDict", &Slow_DictType) < 0) {
+    Slow_ListType = (PyTypeObject *)list_type;
+
+    PyObject *dict_type = PyObject_GetAttrString(slow_mod, "MenaiDict");
+    if (!dict_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiSet", &Slow_SetType) < 0) {
+    Slow_DictType = (PyTypeObject *)dict_type;
+
+    PyObject *set_type = PyObject_GetAttrString(slow_mod, "MenaiSet");
+    if (!set_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiFunction", &Slow_FunctionType) < 0) {
+    Slow_SetType = (PyTypeObject *)set_type;
+
+    PyObject *function_type = PyObject_GetAttrString(slow_mod, "MenaiFunction");
+    if (!function_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiStructType", &Slow_StructTypeType) < 0) {
+    Slow_FunctionType = (PyTypeObject *)function_type;
+
+    PyObject *struct_type_type = PyObject_GetAttrString(slow_mod, "MenaiStructType");
+    if (!struct_type_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiStruct", &Slow_StructType) < 0) {
+    Slow_StructTypeType = (PyTypeObject *)struct_type_type;
+
+    PyObject *struct_type = PyObject_GetAttrString(slow_mod, "MenaiStruct");
+    if (!struct_type) {
         goto fail;
     }
 
-    if (fetch_slow_type(slow_mod, "MenaiBytes", &Slow_BytesType) < 0) {
+    Slow_StructType = (PyTypeObject *)struct_type;
+
+    PyObject *bytes_type = PyObject_GetAttrString(slow_mod, "MenaiBytes");
+    if (!bytes_type) {
         goto fail;
     }
+
+    Slow_BytesType = (PyTypeObject *)bytes_type;
 
     Py_DECREF(slow_mod);
     slow_mod = NULL;
