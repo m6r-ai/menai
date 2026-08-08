@@ -77,111 +77,6 @@ alloc_pyunicode_from_menai_string(MenaiString *s)
     free(utf8);
     return result;
 }
-
-static MenaiBytes *
-alloc_menai_bytes_from_pybytes(MenaiVMState *vs, PyObject *pybytes)
-{
-    Py_ssize_t n;
-    char *buf;
-    if (PyBytes_AsStringAndSize(pybytes, &buf, &n) < 0) {
-        return NULL;
-    }
-
-    return alloc_menai_bytes_from_raw(vs, (const uint8_t *)buf, (ssize_t)n);
-}
-
-static int
-menai_bigint_from_pylong(PyObject *obj, MenaiBigInt *a)
-{
-    if (!PyLong_Check(obj)) {
-        PyErr_SetString(PyExc_TypeError, "expected int");
-        return -1;
-    }
-
-    int overflow = 0;
-    long v = PyLong_AsLongAndOverflow(obj, &overflow);
-    if (!overflow) {
-        if (v == -1 && PyErr_Occurred()) {
-            return -1;
-        }
-
-        return menai_bigint_from_long(v, a);
-    }
-
-    int sign = 0;
-#if PY_VERSION_HEX >= 0x030E00A1
-    PyLong_GetSign(obj, &sign);
-#else
-    sign = _PyLong_Sign(obj);
-#endif
-
-    int is_neg = (sign < 0);
-
-    size_t nbits = (size_t)_PyLong_NumBits(obj);
-    if (nbits == (size_t)-1 && PyErr_Occurred()) {
-        return -1;
-    }
-
-    int needs_extra = (is_neg || (nbits % 8 == 0));
-    size_t nbytes = (nbits + (needs_extra ? 8 : 7)) / 8;
-    if (nbytes == 0) {
-        nbytes = 1;
-    }
-
-    unsigned char *buf = (unsigned char *)malloc(nbytes);
-    if (buf == NULL) {
-        PyErr_NoMemory();
-        return -1;
-    }
-
-#if PY_VERSION_HEX >= 0x030D0000
-    int bytearray_ret = _PyLong_AsByteArray((PyLongObject *)obj, buf, nbytes, 1, 1, 1);
-#else
-    int bytearray_ret = _PyLong_AsByteArray((PyLongObject *)obj, buf, nbytes, 1, 1);
-#endif
-    if (bytearray_ret < 0) {
-        free(buf);
-        return -1;
-    }
-
-    if (is_neg) {
-        int carry = 1;
-        for (size_t i = 0; i < nbytes; i++) {
-            int val = (~buf[i] & 0xFF) + carry;
-            buf[i] = (unsigned char)(val & 0xFF);
-            carry = val >> 8;
-        }
-    }
-
-    ssize_t ndigits = (ssize_t)((nbytes + 3) / 4);
-    uint32_t *digits = (uint32_t *)malloc((size_t)ndigits * sizeof(uint32_t));
-    if (digits == NULL) {
-        free(buf);
-        PyErr_NoMemory();
-        return -1;
-    }
-
-    for (ssize_t i = 0; i < ndigits; i++) {
-        uint32_t d = 0;
-        for (int b = 0; b < 4; b++) {
-            size_t byte_idx = (size_t)(i * 4 + b);
-            if (byte_idx < nbytes) {
-                d |= ((uint32_t)buf[byte_idx]) << (b * 8);
-            }
-        }
-
-        digits[i] = d;
-    }
-
-    free(buf);
-    menai_bigint_final(a);
-    a->digits = digits;
-    a->length = ndigits;
-    a->sign = is_neg ? -1 : 1;
-    menai_bigint_normalize(a);
-    return 0;
-}
-
 /*
  * _read_int — read a named integer attribute from a Python object.
  */
@@ -521,14 +416,84 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
         return (MenaiValue *)alloc_menai_integer_from_long(vs, lv);
     }
 
-    MenaiBigInt big;
-    menai_bigint_init(&big);
-    if (menai_bigint_from_pylong(v, &big) < 0) {
+    int sign = 0;
+#if PY_VERSION_HEX >= 0x030E00A1
+    PyLong_GetSign(v, &sign);
+#else
+    sign = _PyLong_Sign(v);
+#endif
+
+    int is_neg = (sign < 0);
+
+    size_t nbits = (size_t)_PyLong_NumBits(v);
+    if (nbits == (size_t)-1 && PyErr_Occurred()) {
         Py_DECREF(v);
         return NULL;
     }
 
+    int needs_extra = (is_neg || (nbits % 8 == 0));
+    size_t nbytes = (nbits + (needs_extra ? 8 : 7)) / 8;
+    if (nbytes == 0) {
+        nbytes = 1;
+    }
+
+    unsigned char *buf = (unsigned char *)malloc(nbytes);
+    if (buf == NULL) {
+        Py_DECREF(v);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+#if PY_VERSION_HEX >= 0x030D0000
+    int bytearray_ret = _PyLong_AsByteArray((PyLongObject *)v, buf, nbytes, 1, 1, 1);
+#else
+    int bytearray_ret = _PyLong_AsByteArray((PyLongObject *)v, buf, nbytes, 1, 1);
+#endif
+    if (bytearray_ret < 0) {
+        free(buf);
+        Py_DECREF(v);
+        return NULL;
+    }
+
+    if (is_neg) {
+        int carry = 1;
+        for (size_t i = 0; i < nbytes; i++) {
+            int val = (~buf[i] & 0xFF) + carry;
+            buf[i] = (unsigned char)(val & 0xFF);
+            carry = val >> 8;
+        }
+    }
+
+    ssize_t ndigits = (ssize_t)((nbytes + 3) / 4);
+    uint32_t *digits = (uint32_t *)malloc((size_t)ndigits * sizeof(uint32_t));
+    if (digits == NULL) {
+        free(buf);
+        Py_DECREF(v);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    for (ssize_t i = 0; i < ndigits; i++) {
+        uint32_t d = 0;
+        for (int b = 0; b < 4; b++) {
+            size_t byte_idx = (size_t)(i * 4 + b);
+            if (byte_idx < nbytes) {
+                d |= ((uint32_t)buf[byte_idx]) << (b * 8);
+            }
+        }
+
+        digits[i] = d;
+    }
+
+    free(buf);
     Py_DECREF(v);
+
+    MenaiBigInt big;
+    menai_bigint_init(&big);
+    big.digits = digits;
+    big.length = ndigits;
+    big.sign = is_neg ? -1 : 1;
+    menai_bigint_normalize(&big);
     return (MenaiValue *)alloc_menai_integer_from_bigint(vs, big);
 }
 
@@ -584,7 +549,14 @@ slow_bytes_to_fast(MenaiVMState *vs, PyObject *src)
         return NULL;
     }
 
-    MenaiBytes *r = alloc_menai_bytes_from_pybytes(vs, v);
+    Py_ssize_t n;
+    char *buf;
+    if (PyBytes_AsStringAndSize(v, &buf, &n) < 0) {
+        Py_DECREF(v);
+        return NULL;
+    }
+
+    MenaiBytes *r = alloc_menai_bytes_from_raw(vs, (const uint8_t *)buf, (ssize_t)n);
     Py_DECREF(v);
     return (MenaiValue *)r;
 }
@@ -1041,8 +1013,13 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
 }
 
 static PyObject *
-menai_bigint_to_pylong(const MenaiBigInt *a)
+menai_value_to_python_integer(MenaiInteger *obj)
 {
+    if (!obj->is_big) {
+        return PyLong_FromLong(obj->fixed);
+    }
+
+    MenaiBigInt *a = &obj->big;
     if (a->length == 0) {
         return PyLong_FromLong(0);
     }
@@ -1075,16 +1052,6 @@ menai_bigint_to_pylong(const MenaiBigInt *a)
     }
 
     return result;
-}
-
-static PyObject *
-menai_value_to_python_integer(MenaiInteger *obj)
-{
-    if (!obj->is_big) {
-        return PyLong_FromLong(obj->fixed);
-    }
-
-    return menai_bigint_to_pylong(&obj->big);
 }
 
 /*
