@@ -74,7 +74,7 @@ menai_function_free(MenaiVMState *vs, MenaiFunction *self)
     menai_code_object_release(vs, self->bytecode);
     ssize_t ncap = self->ncap;
     for (ssize_t i = 0; i < ncap; i++) {
-        menai_value_xrelease(vs, self->captures[i]);
+        menai_value_release(vs, self->captures[i]);
     }
 
     menai_free(vs, self);
@@ -151,10 +151,10 @@ menai_string_free(MenaiVMState *vs, MenaiString *self)
 static inline void
 menai_struct_free(MenaiVMState *vs, MenaiStruct *self)
 {
-    menai_value_xrelease(vs, (MenaiValue *)self->struct_type);
+    menai_value_release(vs, (MenaiValue *)self->struct_type);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_value_xrelease(vs, self->items[i]);
+        menai_value_release(vs, self->items[i]);
     }
 
     menai_free(vs, self);
@@ -164,10 +164,10 @@ static inline void
 menai_structtype_free(MenaiVMState *vs, MenaiStructType *self)
 {
     menai_ht_free(&self->field_ht);
-    menai_value_xrelease(vs, (MenaiValue *)self->name);
+    menai_value_release(vs, (MenaiValue *)self->name);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_value_xrelease(vs, (MenaiValue *)self->fields[i].name);
+        menai_value_release(vs, (MenaiValue *)self->fields[i].name);
     }
 
     menai_free(vs, self);
@@ -176,7 +176,7 @@ menai_structtype_free(MenaiVMState *vs, MenaiStructType *self)
 static inline void
 menai_symbol_free(MenaiVMState *vs, MenaiSymbol *self)
 {
-    menai_value_xrelease(vs, (MenaiValue *)self->name);
+    menai_value_release(vs, (MenaiValue *)self->name);
     menai_free(vs, self);
 }
 

@@ -510,17 +510,6 @@ menai_value_release(MenaiVMState *vs, MenaiValue *val)
 }
 
 /*
- * menai_value_xrelease — relinquish an interest in val if val is non-NULL.
- */
-static inline void
-menai_value_xrelease(MenaiVMState *vs, MenaiValue *val)
-{
-    if (val != NULL) {
-        menai_value_release(vs, val);
-    }
-}
-
-/*
  * menai_name_str_hash — FNV-1a hash of a UTF-8 C string.
  *
  * Used to precompute hashes for global name strings stored in

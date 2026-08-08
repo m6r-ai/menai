@@ -189,7 +189,7 @@ read-only Python type references fetched at module init).
 
 `menai_value_retain` is the one exception: it only increments `ob_refcnt` and
 does not need `MenaiVMState *`. Every other refcount or allocation function
-(`menai_value_release`, `menai_value_xrelease`, `menai_value_free`, `menai_alloc`,
+(`menai_value_release`, `menai_value_free`, `menai_alloc`,
 `menai_free`, all `alloc_menai_*` constructors, `menai_none`, `menai_boolean_true`,
 `menai_boolean_false`) takes `MenaiVMState *vs` as its first parameter.
 

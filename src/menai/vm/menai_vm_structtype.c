@@ -43,10 +43,10 @@ alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString
     }
 
     if (menai_ht_init(&self->field_ht, nfields) < 0) {
-        menai_value_xrelease(vs, (MenaiValue *)self->name);
+        menai_value_release(vs, (MenaiValue *)self->name);
         int n = self->nfields;
         for (int i = 0; i < n; i++) {
-            menai_value_xrelease(vs, (MenaiValue *)self->fields[i].name);
+            menai_value_release(vs, (MenaiValue *)self->fields[i].name);
         }
 
         menai_free(vs, self);

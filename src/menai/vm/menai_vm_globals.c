@@ -83,7 +83,7 @@ globals_free(MenaiVMState *vs, GlobalsTable *gt)
     for (ssize_t i = 0; i < gt->count; i++) {
         free((char *)gt->entries[i].name);
 
-        menai_value_xrelease(vs, gt->entries[i].value);
+        menai_value_release(vs, gt->entries[i].value);
     }
 
     free(gt->slots);
