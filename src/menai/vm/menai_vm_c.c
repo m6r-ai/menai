@@ -3691,10 +3691,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiString *b = (MenaiString *)regs[base + src1];
             ssize_t idx = menai_string_find(a, b);
-            if (idx == -2) {
-                goto error;
-            }
-
             if (idx == -1) {
                 menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
             } else {
@@ -5464,11 +5460,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
 
                 ssize_t existing = menai_ht_lookup(&lts_seen, elem, h);
-                if (existing == -2) {
-                    lts_err = 1;
-                    break;
-                }
-
                 if (existing < 0) {
                     menai_ht_insert(&lts_seen, elem, h, out);
                     menai_value_retain(elem);
@@ -5649,10 +5640,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t idx = menai_ht_lookup(&a->ht, key, h);
-            if (idx == -2) {
-                goto error;
-            }
-
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *def = regs[base + src2];
             if (idx >= 0) {
@@ -5677,10 +5664,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t replace_idx = menai_ht_lookup(&a->ht, key, h);
-            if (replace_idx == -2) {
-                goto error;
-            }
-
             ssize_t n = a->length;
             ssize_t new_n = (replace_idx >= 0) ? n : n + 1;
             MenaiValue **nkeys = (MenaiValue **)malloc(new_n * sizeof(MenaiValue *));
@@ -5749,10 +5732,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t remove_idx = menai_ht_lookup(&a->ht, key, h);
-            if (remove_idx == -2) {
-                goto error;
-            }
-
             if (remove_idx < 0) {
                 menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)a);
                 break;
@@ -5816,18 +5795,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             /* Add a's entries, using b's value where b overrides */
             for (ssize_t i = 0; i < na; i++) {
                 ssize_t bi = menai_ht_lookup(&b->ht, a->keys[i], a->hashes[i]);
-                if (bi == -2) {
-                    for (ssize_t k = 0; k < out; k++) {
-                        menai_value_release(vs, nkeys[k]);
-                        menai_value_release(vs, nvals[k]);
-                    }
-
-                    free(nkeys);
-                    free(nvals);
-                    free(nhashes);
-                    goto error;
-                }
-
                 menai_value_retain(a->keys[i]);
                 nkeys[out] = a->keys[i];
                 nhashes[out] = a->hashes[i];
@@ -5845,18 +5812,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             /* Add b's entries not in a */
             for (ssize_t i = 0; i < nb; i++) {
                 ssize_t ai = menai_ht_lookup(&a->ht, b->keys[i], b->hashes[i]);
-                if (ai == -2) {
-                    for (ssize_t k = 0; k < out; k++) {
-                        menai_value_release(vs, nkeys[k]);
-                        menai_value_release(vs, nvals[k]);
-                    }
-
-                    free(nkeys);
-                    free(nvals);
-                    free(nhashes);
-                    goto error;
-                }
-
                 if (ai < 0) {
                     menai_value_retain(b->keys[i]);
                     nkeys[out] = b->keys[i];
@@ -5890,10 +5845,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int eq = (a->length == b->length);
             for (ssize_t i = 0; eq && i < a->length; i++) {
                 ssize_t idx = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
-                if (idx == -2) {
-                    goto error;
-                }
-
                 if (idx < 0) {
                     eq = 0;
                     break;
@@ -5912,10 +5863,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int neq = (a->length != b->length);
             for (ssize_t i = 0; !neq && i < a->length; i++) {
                 ssize_t idx = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
-                if (idx == -2) {
-                    goto error;
-                }
-
                 if (idx < 0) {
                     neq = 1;
                     break;
@@ -5950,10 +5897,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t idx = menai_ht_lookup(&a->ht, item, h);
-            if (idx == -2) {
-                goto error;
-            }
-
             bool_store(vs, regs, base + dest, idx >= 0);
             break;
         }
@@ -5970,10 +5913,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t existing = menai_ht_lookup(&a->ht, item, h);
-            if (existing == -2) {
-                goto error;
-            }
-
             if (existing >= 0) {
                 menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)a);
             } else {
@@ -6021,10 +5960,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t remove_idx = menai_ht_lookup(&a->ht, item, h);
-            if (remove_idx == -2) {
-                goto error;
-            }
-
             if (remove_idx < 0) {
                 menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)a);
                 break;
@@ -6089,15 +6024,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             for (ssize_t i = 0; i < nb; i++) {
                 ssize_t in_a = menai_ht_lookup(&a->ht, b->elements[i], b->hashes[i]);
-                if (in_a == -2) {
-                    for (ssize_t k = 0; k < out; k++) {
-                        menai_value_release(vs, nelems[k]);
-                    }
-
-                    menai_value_release(vs, (MenaiValue *)r);
-                    goto error;
-                }
-
                 if (in_a < 0) {
                     menai_value_retain(b->elements[i]);
                     nelems[out] = b->elements[i];
@@ -6135,15 +6061,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             ssize_t out = 0;
             for (ssize_t i = 0; i < na; i++) {
                 ssize_t in_b = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
-                if (in_b == -2) {
-                    for (ssize_t k = 0; k < out; k++) {
-                        menai_value_release(vs, nelems[k]);
-                    }
-
-                    menai_value_release(vs, (MenaiValue *)r);
-                    goto error;
-                }
-
                 if (in_b >= 0) {
                     menai_value_retain(a->elements[i]);
                     nelems[out] = a->elements[i];
@@ -6181,15 +6098,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             ssize_t out = 0;
             for (ssize_t i = 0; i < na; i++) {
                 ssize_t in_b = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
-                if (in_b == -2) {
-                    for (ssize_t k = 0; k < out; k++) {
-                        menai_value_release(vs, nelems[k]);
-                    }
-
-                    menai_value_release(vs, (MenaiValue *)r);
-                    goto error;
-                }
-
                 if (in_b < 0) {
                     menai_value_retain(a->elements[i]);
                     nelems[out] = a->elements[i];
@@ -6223,10 +6131,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int is_subset = 1;
             for (ssize_t i = 0; i < a->length; i++) {
                 ssize_t idx = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
-                if (idx == -2) {
-                    goto error;
-                }
-
                 if (idx < 0) {
                     is_subset = 0;
                     break;
