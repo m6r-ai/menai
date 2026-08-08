@@ -188,43 +188,6 @@ menai_bigint_from_pylong(PyObject *obj, MenaiBigInt *a)
     return 0;
 }
 
-static PyObject *
-menai_bigint_to_pylong(const MenaiBigInt *a)
-{
-    if (a->length == 0) {
-        return PyLong_FromLong(0);
-    }
-
-    size_t nbytes = (size_t)a->length * 4;
-    unsigned char *buf = (unsigned char *)malloc(nbytes);
-    if (buf == NULL) {
-        PyErr_NoMemory();
-        return NULL;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        uint32_t d = a->digits[i];
-        buf[i * 4 + 0] = (unsigned char)(d & 0xFF);
-        buf[i * 4 + 1] = (unsigned char)((d >> 8) & 0xFF);
-        buf[i * 4 + 2] = (unsigned char)((d >> 16) & 0xFF);
-        buf[i * 4 + 3] = (unsigned char)((d >> 24) & 0xFF);
-    }
-
-    PyObject *result = _PyLong_FromByteArray(buf, nbytes, 1, 0);
-    free(buf);
-    if (result == NULL) {
-        return NULL;
-    }
-
-    if (a->sign == -1) {
-        PyObject *neg = PyNumber_Negative(result);
-        Py_DECREF(result);
-        return neg;
-    }
-
-    return result;
-}
-
 /*
  * _read_int — read a named integer attribute from a Python object.
  */
@@ -975,10 +938,46 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
     return NULL;
 }
 
-PyObject *
-menai_value_to_python_integer(MenaiValue *val)
+static PyObject *
+menai_bigint_to_pylong(const MenaiBigInt *a)
 {
-    MenaiInteger *obj = (MenaiInteger *)val;
+    if (a->length == 0) {
+        return PyLong_FromLong(0);
+    }
+
+    size_t nbytes = (size_t)a->length * 4;
+    unsigned char *buf = (unsigned char *)malloc(nbytes);
+    if (buf == NULL) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        uint32_t d = a->digits[i];
+        buf[i * 4 + 0] = (unsigned char)(d & 0xFF);
+        buf[i * 4 + 1] = (unsigned char)((d >> 8) & 0xFF);
+        buf[i * 4 + 2] = (unsigned char)((d >> 16) & 0xFF);
+        buf[i * 4 + 3] = (unsigned char)((d >> 24) & 0xFF);
+    }
+
+    PyObject *result = _PyLong_FromByteArray(buf, nbytes, 1, 0);
+    free(buf);
+    if (result == NULL) {
+        return NULL;
+    }
+
+    if (a->sign == -1) {
+        PyObject *neg = PyNumber_Negative(result);
+        Py_DECREF(result);
+        return neg;
+    }
+
+    return result;
+}
+
+static PyObject *
+menai_value_to_python_integer(MenaiInteger *obj)
+{
     if (!obj->is_big) {
         return PyLong_FromLong(obj->fixed);
     }
@@ -1015,7 +1014,7 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
     }
 
     if (t == MENAITYPE_INTEGER) {
-        PyObject *py_int = menai_value_to_python_integer(val);
+        PyObject *py_int = menai_value_to_python_integer((MenaiInteger *)val);
         if (!py_int) {
             return NULL;
         }
