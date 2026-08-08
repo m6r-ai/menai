@@ -21,6 +21,32 @@ static MenaiValue *slow_value_to_menai_value(MenaiVMState *vs, PyObject *src);
 static PyObject *_VMRuntimeError_type = NULL;
 
 /*
+ * The CodeObject type from menai.menai_bytecode — used to identify prelude
+ * CodeObjects in bridge_set_prelude.  Fetched once during bridge init.
+ */
+static PyTypeObject *_py_code_object_type = NULL;
+
+/*
+ * Slow-world type objects — fetched once at module init.
+ * Used by slow_value_to_menai_value to identify slow objects by type.
+ * Will be removed in Phase 2 when the compiler emits fast types directly.
+ */
+static PyTypeObject *Slow_NoneType = NULL;
+static PyTypeObject *Slow_BooleanType = NULL;
+static PyTypeObject *Slow_IntegerType = NULL;
+static PyTypeObject *Slow_FloatType = NULL;
+static PyTypeObject *Slow_ComplexType = NULL;
+static PyTypeObject *Slow_StringType = NULL;
+static PyTypeObject *Slow_SymbolType = NULL;
+static PyTypeObject *Slow_ListType = NULL;
+static PyTypeObject *Slow_DictType = NULL;
+static PyTypeObject *Slow_SetType = NULL;
+static PyTypeObject *Slow_FunctionType = NULL;
+static PyTypeObject *Slow_StructTypeType = NULL;
+static PyTypeObject *Slow_StructType = NULL;
+static PyTypeObject *Slow_BytesType = NULL;
+
+/*
  * Conversion helpers — Python boundary only.
  * These are the sole Menai <-> Python conversion functions for types that
  * have both a native representation and a Python representation.
@@ -200,26 +226,6 @@ menai_bigint_to_pylong(const MenaiBigInt *a)
 }
 
 /*
- * Slow-world type objects — fetched once at module init.
- * Used by slow_value_to_menai_value to identify slow objects by type.
- * Will be removed in Phase 2 when the compiler emits fast types directly.
- */
-static PyTypeObject *Slow_NoneType = NULL;
-static PyTypeObject *Slow_BooleanType = NULL;
-static PyTypeObject *Slow_IntegerType = NULL;
-static PyTypeObject *Slow_FloatType = NULL;
-static PyTypeObject *Slow_ComplexType = NULL;
-static PyTypeObject *Slow_StringType = NULL;
-static PyTypeObject *Slow_SymbolType = NULL;
-static PyTypeObject *Slow_ListType = NULL;
-static PyTypeObject *Slow_DictType = NULL;
-static PyTypeObject *Slow_SetType = NULL;
-static PyTypeObject *Slow_FunctionType = NULL;
-static PyTypeObject *Slow_StructTypeType = NULL;
-static PyTypeObject *Slow_StructType = NULL;
-static PyTypeObject *Slow_BytesType = NULL;
-
-/*
  * _read_int — read a named integer attribute from a Python object.
  */
 static int
@@ -295,132 +301,122 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
     }
 
     /* name — optional, used only for error messages */
-    {
-        PyObject *py_name = PyObject_GetAttrString(py_code, "name");
-        if (py_name) {
-            if (py_name != Py_None) {
-                const char *s = PyUnicode_AsUTF8(py_name);
-                if (s) {
-                    co->name = strdup(s);
-                }
+    PyObject *py_name = PyObject_GetAttrString(py_code, "name");
+    if (py_name) {
+        if (py_name != Py_None) {
+            const char *s = PyUnicode_AsUTF8(py_name);
+            if (s) {
+                co->name = strdup(s);
             }
-
-            Py_DECREF(py_name);
-        } else {
-            PyErr_Clear();
         }
+
+        Py_DECREF(py_name);
+    } else {
+        PyErr_Clear();
     }
 
     /* ncap — length of free_vars list */
-    {
-        PyObject *fv = PyObject_GetAttrString(py_code, "free_vars");
-        if (!fv) {
-            goto fail;
-        }
-
-        co->ncap = PyList_GET_SIZE(fv);
-        Py_DECREF(fv);
+    PyObject *fv = PyObject_GetAttrString(py_code, "free_vars");
+    if (!fv) {
+        goto fail;
     }
+
+    co->ncap = PyList_GET_SIZE(fv);
+    Py_DECREF(fv);
 
     /* param_names — strdup each parameter name string */
-    {
-        PyObject *py_pnames = PyObject_GetAttrString(py_code, "param_names");
-        if (!py_pnames) {
+    PyObject *py_param_names = PyObject_GetAttrString(py_code, "param_names");
+    if (!py_param_names) {
+        goto fail;
+    }
+
+    co->nparam_names = PyList_GET_SIZE(py_param_names);
+    if (co->nparam_names > 0) {
+        co->param_names = (char **)calloc((size_t)co->nparam_names, sizeof(char *));
+        if (!co->param_names) {
+            Py_DECREF(py_param_names);
+            PyErr_NoMemory();
             goto fail;
         }
 
-        co->nparam_names = PyList_GET_SIZE(py_pnames);
-        if (co->nparam_names > 0) {
-            co->param_names = (char **)calloc((size_t)co->nparam_names, sizeof(char *));
-            if (!co->param_names) {
-                Py_DECREF(py_pnames);
-                PyErr_NoMemory();
+        for (ssize_t i = 0; i < co->nparam_names; i++) {
+            const char *s = PyUnicode_AsUTF8(PyList_GET_ITEM(py_param_names, i));
+            if (!s) {
+                Py_DECREF(py_param_names);
                 goto fail;
             }
 
-            for (ssize_t i = 0; i < co->nparam_names; i++) {
-                const char *s = PyUnicode_AsUTF8(PyList_GET_ITEM(py_pnames, i));
-                if (!s) {
-                    Py_DECREF(py_pnames);
-                    goto fail;
-                }
-
-                co->param_names[i] = strdup(s);
-                if (!co->param_names[i]) {
-                    Py_DECREF(py_pnames);
-                    PyErr_NoMemory();
-                    goto fail;
-                }
+            co->param_names[i] = strdup(s);
+            if (!co->param_names[i]) {
+                Py_DECREF(py_param_names);
+                PyErr_NoMemory();
+                goto fail;
             }
         }
-
-        Py_DECREF(py_pnames);
     }
+
+    Py_DECREF(py_param_names);
 
     /* instructions — copy the packed array.array buffer */
-    {
-        PyObject *instrs_obj = PyObject_GetAttrString(py_code, "instructions");
-        if (!instrs_obj) {
-            goto fail;
-        }
+    PyObject *instrs_obj = PyObject_GetAttrString(py_code, "instructions");
+    if (!instrs_obj) {
+        goto fail;
+    }
 
-        Py_buffer view;
-        if (PyObject_GetBuffer(instrs_obj, &view, PyBUF_SIMPLE) < 0) {
+    Py_buffer view;
+    if (PyObject_GetBuffer(instrs_obj, &view, PyBUF_SIMPLE) < 0) {
+        Py_DECREF(instrs_obj);
+        goto fail;
+    }
+
+    co->code_len = (int)(view.len / sizeof(uint64_t));
+    if (co->code_len > 0) {
+        co->instrs = (uint64_t *)malloc(view.len);
+        if (!co->instrs) {
+            PyBuffer_Release(&view);
             Py_DECREF(instrs_obj);
+            PyErr_NoMemory();
             goto fail;
         }
 
-        co->code_len = (int)(view.len / sizeof(uint64_t));
-        if (co->code_len > 0) {
-            co->instrs = (uint64_t *)malloc(view.len);
-            if (!co->instrs) {
-                PyBuffer_Release(&view);
-                Py_DECREF(instrs_obj);
-                PyErr_NoMemory();
+        memcpy(co->instrs, view.buf, view.len);
+    }
+
+    PyBuffer_Release(&view);
+    Py_DECREF(instrs_obj);
+
+    /* names — strdup each global name string */
+    PyObject *py_names = PyObject_GetAttrString(py_code, "names");
+    if (!py_names) {
+        goto fail;
+    }
+
+    co->nnames = PyList_GET_SIZE(py_names);
+    if (co->nnames > 0) {
+        co->names = (const char **)calloc((size_t)co->nnames, sizeof(char *));
+        if (!co->names) {
+            Py_DECREF(py_names);
+            PyErr_NoMemory();
+            goto fail;
+        }
+
+        for (ssize_t i = 0; i < co->nnames; i++) {
+            const char *s = PyUnicode_AsUTF8(PyList_GET_ITEM(py_names, i));
+            if (!s) {
+                Py_DECREF(py_names);
                 goto fail;
             }
 
-            memcpy(co->instrs, view.buf, view.len);
-        }
-
-        PyBuffer_Release(&view);
-        Py_DECREF(instrs_obj);
-    }
-
-    /* names — strdup each global name string */
-    {
-        PyObject *py_names = PyObject_GetAttrString(py_code, "names");
-        if (!py_names) {
-            goto fail;
-        }
-
-        co->nnames = PyList_GET_SIZE(py_names);
-        if (co->nnames > 0) {
-            co->names = (const char **)calloc((size_t)co->nnames, sizeof(char *));
-            if (!co->names) {
+            co->names[i] = strdup(s);
+            if (!co->names[i]) {
                 Py_DECREF(py_names);
                 PyErr_NoMemory();
                 goto fail;
             }
-
-            for (ssize_t i = 0; i < co->nnames; i++) {
-                const char *s = PyUnicode_AsUTF8(PyList_GET_ITEM(py_names, i));
-                if (!s) {
-                    Py_DECREF(py_names);
-                    goto fail;
-                }
-
-                co->names[i] = strdup(s);
-                if (!co->names[i]) {
-                    Py_DECREF(py_names);
-                    PyErr_NoMemory();
-                    goto fail;
-                }
-            }
         }
-
-        Py_DECREF(py_names);
     }
+
+    Py_DECREF(py_names);
 
     /* name_hashes — precompute FNV-1a hash of each global name string */
     if (co->nnames > 0) {
@@ -471,36 +467,34 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
     /*
      * constants — convert each slow Python value to a fast MenaiValue *.
      */
-    {
-        PyObject *py_constants = PyObject_GetAttrString(py_code, "constants");
-        if (!py_constants) {
+    PyObject *py_constants = PyObject_GetAttrString(py_code, "constants");
+    if (!py_constants) {
+        goto fail;
+    }
+
+    co->nconst = PyList_GET_SIZE(py_constants);
+    if (co->nconst > 0) {
+        co->constants = (MenaiValue **)calloc(
+            (size_t)co->nconst, sizeof(MenaiValue *));
+        if (!co->constants) {
+            Py_DECREF(py_constants);
+            PyErr_NoMemory();
             goto fail;
         }
 
-        co->nconst = PyList_GET_SIZE(py_constants);
-        if (co->nconst > 0) {
-            co->constants = (MenaiValue **)calloc(
-                (size_t)co->nconst, sizeof(MenaiValue *));
-            if (!co->constants) {
+        for (ssize_t i = 0; i < co->nconst; i++) {
+            PyObject *orig = PyList_GET_ITEM(py_constants, i);
+            MenaiValue *fast = slow_value_to_menai_value(vs, orig);
+            if (!fast) {
                 Py_DECREF(py_constants);
-                PyErr_NoMemory();
                 goto fail;
             }
 
-            for (ssize_t i = 0; i < co->nconst; i++) {
-                PyObject *orig = PyList_GET_ITEM(py_constants, i);
-                MenaiValue *fast = slow_value_to_menai_value(vs, orig);
-                if (!fast) {
-                    Py_DECREF(py_constants);
-                    goto fail;
-                }
-
-                co->constants[i] = fast;
-            }
+            co->constants[i] = fast;
         }
-
-        Py_DECREF(py_constants);
     }
+
+    Py_DECREF(py_constants);
 
     return co;
 
@@ -1293,12 +1287,6 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
         "menai_value_to_slow_value: unknown type tag 0x%08x", (unsigned)t);
     return NULL;
 }
-
-/*
- * The CodeObject type from menai.menai_bytecode — used to identify prelude
- * CodeObjects in bridge_set_prelude.  Fetched once during bridge init.
- */
-static PyTypeObject *_py_code_object_type = NULL;
 
 /*
  * bridge_translate_error - package a MenaiVMError from the native VM
