@@ -1011,49 +1011,6 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
     PyErr_Format(PyExc_TypeError, "slow_value_to_menai_value: unexpected type %R", (PyObject *)t);
     return NULL;
 }
-
-static PyObject *
-menai_value_to_python_integer(MenaiInteger *obj)
-{
-    if (!obj->is_big) {
-        return PyLong_FromLong(obj->fixed);
-    }
-
-    MenaiBigInt *a = &obj->big;
-    if (a->length == 0) {
-        return PyLong_FromLong(0);
-    }
-
-    size_t nbytes = (size_t)a->length * 4;
-    unsigned char *buf = (unsigned char *)malloc(nbytes);
-    if (buf == NULL) {
-        PyErr_NoMemory();
-        return NULL;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        uint32_t d = a->digits[i];
-        buf[i * 4 + 0] = (unsigned char)(d & 0xFF);
-        buf[i * 4 + 1] = (unsigned char)((d >> 8) & 0xFF);
-        buf[i * 4 + 2] = (unsigned char)((d >> 16) & 0xFF);
-        buf[i * 4 + 3] = (unsigned char)((d >> 24) & 0xFF);
-    }
-
-    PyObject *result = _PyLong_FromByteArray(buf, nbytes, 1, 0);
-    free(buf);
-    if (result == NULL) {
-        return NULL;
-    }
-
-    if (a->sign == -1) {
-        PyObject *neg = PyNumber_Negative(result);
-        Py_DECREF(result);
-        return neg;
-    }
-
-    return result;
-}
-
 /*
  * menai_value_to_slow_value — convert a fast MenaiValue * to its equivalent
  * slow menai_value.py Python object.
@@ -1080,7 +1037,45 @@ fast_boolean_to_slow(MenaiVMState *vs, MenaiValue *val)
 static inline PyObject *
 fast_integer_to_slow(MenaiVMState *vs, MenaiValue *val)
 {
-    PyObject *py_int = menai_value_to_python_integer((MenaiInteger *)val);
+    MenaiInteger *obj = (MenaiInteger *)val;
+    PyObject *py_int;
+
+    if (!obj->is_big) {
+        py_int = PyLong_FromLong(obj->fixed);
+    } else {
+        MenaiBigInt *a = &obj->big;
+        if (a->length == 0) {
+            py_int = PyLong_FromLong(0);
+        } else {
+            size_t nbytes = (size_t)a->length * 4;
+            unsigned char *buf = (unsigned char *)malloc(nbytes);
+            if (buf == NULL) {
+                PyErr_NoMemory();
+                return NULL;
+            }
+
+            for (ssize_t i = 0; i < a->length; i++) {
+                uint32_t d = a->digits[i];
+                buf[i * 4 + 0] = (unsigned char)(d & 0xFF);
+                buf[i * 4 + 1] = (unsigned char)((d >> 8) & 0xFF);
+                buf[i * 4 + 2] = (unsigned char)((d >> 16) & 0xFF);
+                buf[i * 4 + 3] = (unsigned char)((d >> 24) & 0xFF);
+            }
+
+            py_int = _PyLong_FromByteArray(buf, nbytes, 1, 0);
+            free(buf);
+            if (py_int == NULL) {
+                return NULL;
+            }
+
+            if (a->sign == -1) {
+                PyObject *neg = PyNumber_Negative(py_int);
+                Py_DECREF(py_int);
+                py_int = neg;
+            }
+        }
+    }
+
     if (!py_int) {
         return NULL;
     }
