@@ -537,7 +537,7 @@ int menai_value_equal(MenaiValue *a, MenaiValue *b);
 #define MENAI_HT_MAX_LOAD_DEN 3   /* load factor denominator */
 
 int menai_ht_init(MenaiHashTable *ht, ssize_t n);
-void menai_ht_free(MenaiHashTable *ht);
+void menai_ht_final(MenaiHashTable *ht);
 ssize_t menai_ht_lookup(const MenaiHashTable *ht, MenaiValue *key, hash_t hash);
 void menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index);
 int menai_ht_build(MenaiHashTable *ht, MenaiValue **keys, const hash_t *hashes, ssize_t n);

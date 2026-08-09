@@ -58,7 +58,7 @@ menai_dict_free(MenaiVMState *vs, MenaiDict *self)
     }
 
     free(self->hashes);
-    menai_ht_free(&self->ht);
+    menai_ht_final(&self->ht);
     menai_free(vs, self);
 }
 
@@ -138,7 +138,7 @@ menai_set_free(MenaiVMState *vs, MenaiSet *self)
         menai_value_release(vs, self->elements[i]);
     }
 
-    menai_ht_free(&self->ht);
+    menai_ht_final(&self->ht);
     menai_free(vs, self);
 }
 
@@ -163,7 +163,7 @@ menai_struct_free(MenaiVMState *vs, MenaiStruct *self)
 static inline void
 menai_structtype_free(MenaiVMState *vs, MenaiStructType *self)
 {
-    menai_ht_free(&self->field_ht);
+    menai_ht_final(&self->field_ht);
     menai_value_release(vs, (MenaiValue *)self->name);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {

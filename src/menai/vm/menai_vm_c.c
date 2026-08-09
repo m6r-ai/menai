@@ -5444,7 +5444,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiValue **nelems = r->elements;
             hash_t *nhashes = r->hashes;
             MenaiHashTable lts_seen;
-            if ((vm_err = menai_ht_init(&lts_seen, n)) < 0) {
+            vm_err = menai_ht_init(&lts_seen, n);
+            if (vm_err < 0) {
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
             }
@@ -5454,10 +5455,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiValue *elem = a->elements[i];
                 hash_t h = menai_value_hash(elem);
                 if (h == -1) {
-                    menai_ht_free(&lts_seen);
+                    menai_ht_final(&lts_seen);
                     for (ssize_t k = 0; k < out; k++) {
                         menai_value_release(vs, nelems[k]);
                     }
+
                     menai_value_release(vs, (MenaiValue *)r);
                     vm_err = MENAI_ERR_UNHASHABLE_KEY;
                     goto error;
@@ -5473,14 +5475,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            menai_ht_free(&lts_seen);
+            r->ht = lts_seen;
             r->length = out;
-            vm_err = menai_ht_build(&r->ht, nelems, nhashes, out);
-            if (vm_err < 0) {
-                vm_err = MENAI_ERR_NOMEM;
-                menai_value_release(vs, (MenaiValue *)r);
-                goto error;
-            }
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
             break;

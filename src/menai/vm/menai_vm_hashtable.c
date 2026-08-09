@@ -303,7 +303,7 @@ menai_ht_init(MenaiHashTable *ht, ssize_t n)
 }
 
 void
-menai_ht_free(MenaiHashTable *ht)
+menai_ht_final(MenaiHashTable *ht)
 {
     free(ht->slots);
     ht->slots = NULL;
