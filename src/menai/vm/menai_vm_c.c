@@ -1315,7 +1315,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBoolean *a = (MenaiBoolean *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiBoolean *b = (MenaiBoolean *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value == b->value);
+            bool_store(vs, regs, base + dest, menai_boolean_equal(a, b));
             break;
         }
 
@@ -1324,7 +1324,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBoolean *a = (MenaiBoolean *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiBoolean *b = (MenaiBoolean *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value != b->value);
+            bool_store(vs, regs, base + dest, !menai_boolean_equal(a, b));
             break;
         }
 
@@ -1346,7 +1346,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiSymbol *a = (MenaiSymbol *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSymbol *b = (MenaiSymbol *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_string_equal(a->name, b->name));
+            bool_store(vs, regs, base + dest, menai_symbol_equal(a, b));
             break;
         }
 
@@ -1355,7 +1355,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiSymbol *a = (MenaiSymbol *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSymbol *b = (MenaiSymbol *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_string_equal(a->name, b->name));
+            bool_store(vs, regs, base + dest, !menai_symbol_equal(a, b));
             break;
         }
 
@@ -1377,7 +1377,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiValue *a = regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = regs[base + src1];
-            bool_store(vs, regs, base + dest, a == b);
+            bool_store(vs, regs, base + dest, menai_function_equal(a, b));
             break;
         }
 
@@ -1386,7 +1386,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiValue *a = regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = regs[base + src1];
-            bool_store(vs, regs, base + dest, a != b);
+            bool_store(vs, regs, base + dest, !menai_function_equal(a, b));
             break;
         }
 
@@ -1445,36 +1445,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
-
-            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(vs, regs, base + dest, a->fixed == b->fixed);
-                break;
-            }
-
-            const MenaiBigInt *ma = a->is_big ? &a->big : NULL;
-            const MenaiBigInt *mb = b->is_big ? &b->big : NULL;
-
-            MenaiBigInt tmp_a;
-            menai_bigint_init(&tmp_a);
-            vm_err = menai_integer_to_menai_bigint(a, &tmp_a);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
-                goto error;
-            }
-
-            MenaiBigInt tmp_b;
-            menai_bigint_init(&tmp_b);
-            vm_err = menai_integer_to_menai_bigint(b, &tmp_b);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
-                menai_bigint_final(&tmp_a);
-                goto error;
-            }
-
-            const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
-            const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            bool_store(vs, regs, base + dest, menai_bigint_eq(pa, pb));
-
-            menai_bigint_final(&tmp_a);
-            menai_bigint_final(&tmp_b);
+            bool_store(vs, regs, base + dest, menai_integer_equal(a, b));
             break;
         }
 
@@ -1483,36 +1454,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiInteger *a = (MenaiInteger *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)regs[base + src1];
-
-            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(vs, regs, base + dest, a->fixed != b->fixed);
-                break;
-            }
-
-            const MenaiBigInt *ma = a->is_big ? &a->big : NULL;
-            const MenaiBigInt *mb = b->is_big ? &b->big : NULL;
-
-            MenaiBigInt tmp_a;
-            menai_bigint_init(&tmp_a);
-            vm_err = menai_integer_to_menai_bigint(a, &tmp_a);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
-                goto error;
-            }
-
-            MenaiBigInt tmp_b;
-            menai_bigint_init(&tmp_b);
-            vm_err = menai_integer_to_menai_bigint(b, &tmp_b);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
-                menai_bigint_final(&tmp_a);
-                goto error;
-            }
-
-            const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
-            const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            bool_store(vs, regs, base + dest, menai_bigint_ne(pa, pb));
-
-            menai_bigint_final(&tmp_a);
-            menai_bigint_final(&tmp_b);
+            bool_store(vs, regs, base + dest, !menai_integer_equal(a, b));
             break;
         }
 
@@ -2599,7 +2541,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value == b->value);
+            bool_store(vs, regs, base + dest, menai_float_equal(a, b));
             break;
         }
 
@@ -2608,7 +2550,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiFloat *a = (MenaiFloat *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value != b->value);
+            bool_store(vs, regs, base + dest, !menai_float_equal(a, b));
             break;
         }
 
@@ -3100,7 +3042,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiComplex *a = (MenaiComplex *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiComplex *b = (MenaiComplex *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->real == b->real && a->imag == b->imag);
+            bool_store(vs, regs, base + dest, menai_complex_equal(a, b));
             break;
         }
 
@@ -3109,7 +3051,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiComplex *a = (MenaiComplex *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiComplex *b = (MenaiComplex *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->real != b->real || a->imag != b->imag);
+            bool_store(vs, regs, base + dest, !menai_complex_equal(a, b));
             break;
         }
 
@@ -5026,21 +4968,19 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_LIST_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiList *a = (MenaiList *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            int eq = menai_value_equal(a, b);
-            bool_store(vs, regs, base + dest, eq);
+            MenaiList *b = (MenaiList *)regs[base + src1];
+            bool_store(vs, regs, base + dest, menai_list_equal(a, b));
             break;
         }
 
         case OP_LIST_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiList *a = (MenaiList *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            int eq = menai_value_equal(a, b);
-            bool_store(vs, regs, base + dest, !eq);
+            MenaiList *b = (MenaiList *)regs[base + src1];
+            bool_store(vs, regs, base + dest, !menai_list_equal(a, b));
             break;
         }
 
@@ -5493,27 +5433,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiDict *a = (MenaiDict *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiDict *b = (MenaiDict *)regs[base + src1];
-            int eq = (a->length == b->length);
-            for (ssize_t i = 0; eq && i < a->length; i++) {
-                if (a->hashes[i] != b->hashes[i]) {
-                    eq = 0;
-                    break;
-                }
-
-                int keq = menai_value_equal(a->keys[i], b->keys[i]);
-                if (!keq) {
-                    eq = 0;
-                    break;
-                }
-
-                int veq = menai_value_equal(a->values[i], b->values[i]);
-                if (!veq) {
-                    eq = 0;
-                    break;
-                }
-            }
-
-            bool_store(vs, regs, base + dest, eq);
+            bool_store(vs, regs, base + dest, menai_dict_equal(a, b));
             break;
         }
 
@@ -5522,27 +5442,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiDict *a = (MenaiDict *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiDict *b = (MenaiDict *)regs[base + src1];
-            int neq = (a->length != b->length);
-            for (ssize_t i = 0; !neq && i < a->length; i++) {
-                if (a->hashes[i] != b->hashes[i]) {
-                    neq = 1;
-                    break;
-                }
-
-                int keq = menai_value_equal(a->keys[i], b->keys[i]);
-                if (!keq) {
-                    neq = 1;
-                    break;
-                }
-
-                int veq = menai_value_equal(a->values[i], b->values[i]);
-                if (!veq) {
-                    neq = 1;
-                    break;
-                }
-            }
-
-            bool_store(vs, regs, base + dest, neq);
+            bool_store(vs, regs, base + dest, !menai_dict_equal(a, b));
             break;
         }
 
@@ -5925,16 +5825,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiSet *a = (MenaiSet *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSet *b = (MenaiSet *)regs[base + src1];
-            int eq = (a->length == b->length);
-            for (ssize_t i = 0; eq && i < a->length; i++) {
-                ssize_t idx = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
-                if (idx < 0) {
-                    eq = 0;
-                    break;
-                }
-            }
-
-            bool_store(vs, regs, base + dest, eq);
+            bool_store(vs, regs, base + dest, menai_set_equal(a, b));
             break;
         }
 
@@ -5943,16 +5834,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiSet *a = (MenaiSet *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSet *b = (MenaiSet *)regs[base + src1];
-            int neq = (a->length != b->length);
-            for (ssize_t i = 0; !neq && i < a->length; i++) {
-                ssize_t idx = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
-                if (idx < 0) {
-                    neq = 1;
-                    break;
-                }
-            }
-
-            bool_store(vs, regs, base + dest, neq);
+            bool_store(vs, regs, base + dest, !menai_set_equal(a, b));
             break;
         }
 
@@ -6662,13 +6544,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiStruct *a = (MenaiStruct *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiStruct *b = (MenaiStruct *)regs[base + src1];
-            int eq = (a->struct_type->tag == b->struct_type->tag);
-            ssize_t nf = a->nfields;
-            for (ssize_t i = 0; eq && i < nf; i++) {
-                eq = menai_value_equal(a->items[i], b->items[i]);
-            }
-
-            bool_store(vs, regs, base + dest, eq);
+            bool_store(vs, regs, base + dest, menai_struct_equal(a, b));
             break;
         }
 
@@ -6677,19 +6553,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiStruct *a = (MenaiStruct *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiStruct *b = (MenaiStruct *)regs[base + src1];
-            int neq = (a->struct_type->tag != b->struct_type->tag);
-            if (!neq) {
-                ssize_t nf = a->nfields;
-                for (ssize_t i = 0; i < nf; i++) {
-                    int eq = menai_value_equal(a->items[i], b->items[i]);
-                    if (!eq) {
-                        neq = 1;
-                        break;
-                    }
-                }
-            }
-
-            bool_store(vs, regs, base + dest, neq);
+            bool_store(vs, regs, base + dest, !menai_struct_equal(a, b));
             break;
         }
 
@@ -6747,7 +6611,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiStructType *a = (MenaiStructType *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiStructType *b = (MenaiStructType *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->tag == b->tag);
+            bool_store(vs, regs, base + dest, menai_structtype_equal(a, b));
             break;
         }
 
@@ -6756,7 +6620,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiStructType *a = (MenaiStructType *)regs[base + src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiStructType *b = (MenaiStructType *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->tag != b->tag);
+            bool_store(vs, regs, base + dest, !menai_structtype_equal(a, b));
             break;
         }
 

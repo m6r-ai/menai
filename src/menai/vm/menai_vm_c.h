@@ -676,4 +676,136 @@ MenaiValue *menai_vm_execute_native(MenaiVMState *vs,
 
 void menai_vm_cancel(MenaiVMState *vs);
 
+/*
+ * Per-type equality predicates.
+ *
+ * These are extracted from menai_value_equal() so that both the
+ * hash table lookup path and the type-specific VM opcodes share
+ * the same comparison logic.  Each assumes the caller has
+ * already verified that both operands are of the correct type.
+ * String and bytes equality already have dedicated functions
+ * (menai_string_equal, menai_bytes_equal) and are not duplicated here.
+ */
+static inline int
+menai_boolean_equal(MenaiBoolean *a, MenaiBoolean *b)
+{
+    return a->value == b->value;
+}
+
+static inline int
+menai_integer_equal(MenaiInteger *a, MenaiInteger *b)
+{
+    if (!a->is_big && !b->is_big) {
+        return a->fixed == b->fixed;
+    }
+
+    if (a->is_big != b->is_big) {
+        return 0;
+    }
+
+    return menai_bigint_eq(&a->big, &b->big);
+}
+
+static inline int
+menai_float_equal(MenaiFloat *a, MenaiFloat *b)
+{
+    return a->value == b->value;
+}
+
+static inline int
+menai_complex_equal(MenaiComplex *a, MenaiComplex *b)
+{
+    return a->real == b->real && a->imag == b->imag;
+}
+
+static inline int
+menai_symbol_equal(MenaiSymbol *a, MenaiSymbol *b)
+{
+    return menai_string_equal(a->name, b->name);
+}
+
+static inline int
+menai_structtype_equal(MenaiStructType *a, MenaiStructType *b)
+{
+    return a->tag == b->tag;
+}
+
+static inline int
+menai_function_equal(MenaiValue *a, MenaiValue *b)
+{
+    return a == b;
+}
+
+static inline int
+menai_list_equal(MenaiList *a, MenaiList *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (!menai_value_equal(a->elements[i], b->elements[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static inline int
+menai_struct_equal(MenaiStruct *a, MenaiStruct *b)
+{
+    if (((MenaiStructType *)a->struct_type)->tag !=
+            ((MenaiStructType *)b->struct_type)->tag) {
+        return 0;
+    }
+
+    int n = a->nfields;
+    if (n != b->nfields) {
+        return 0;
+    }
+
+    for (int i = 0; i < n; i++) {
+        if (!menai_value_equal(a->items[i], b->items[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static inline int
+menai_dict_equal(MenaiDict *a, MenaiDict *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (a->hashes[i] != b->hashes[i] ||
+                !menai_value_equal(a->keys[i], b->keys[i]) ||
+                !menai_value_equal(a->values[i], b->values[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static inline int
+menai_set_equal(MenaiSet *a, MenaiSet *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]) == -1) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 #endif /* MENAI_VM_C_H */

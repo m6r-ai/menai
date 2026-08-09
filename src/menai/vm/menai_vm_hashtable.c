@@ -66,11 +66,23 @@ menai_value_hash(MenaiValue *val)
     MenaiType t = val->ob_type;
 
     switch (t) {
-    case MENAITYPE_NONE:
-        return (hash_t)0x4e6f6e65UL;
-
     case MENAITYPE_BOOLEAN:
         return (hash_t)((MenaiBoolean *)val)->value;
+
+    case MENAITYPE_BYTES:
+        return menai_bytes_hash((MenaiBytes *)val);
+
+    case MENAITYPE_COMPLEX: {
+        MenaiComplex *c = (MenaiComplex *)val;
+        hash_t hr = menai_hash_double(c->real);
+        hash_t hi = menai_hash_double(c->imag);
+        uhash_t acc = (uhash_t)hr * 1000003UL ^ (uhash_t)hi;
+        hash_t h = (hash_t)(acc & (uhash_t)SSIZE_MAX);
+        return h == -1 ? -2 : h;
+    }
+
+    case MENAITYPE_FLOAT:
+        return menai_hash_double(((MenaiFloat *)val)->value);
 
     case MENAITYPE_INTEGER: {
         MenaiInteger *obj = (MenaiInteger *)val;
@@ -82,29 +94,11 @@ menai_value_hash(MenaiValue *val)
         return menai_bigint_hash(&obj->big);
     }
 
-    case MENAITYPE_FLOAT:
-        return menai_hash_double(((MenaiFloat *)val)->value);
-
-    case MENAITYPE_COMPLEX: {
-        MenaiComplex *c = (MenaiComplex *)val;
-        hash_t hr = menai_hash_double(c->real);
-        hash_t hi = menai_hash_double(c->imag);
-        uhash_t acc = (uhash_t)hr * 1000003UL ^ (uhash_t)hi;
-        hash_t h = (hash_t)(acc & (uhash_t)SSIZE_MAX);
-        return h == -1 ? -2 : h;
-    }
+    case MENAITYPE_NONE:
+        return (hash_t)0x4e6f6e65UL;
 
     case MENAITYPE_STRING:
         return menai_string_hash((MenaiString *)val);
-
-    case MENAITYPE_BYTES:
-        return menai_bytes_hash((MenaiBytes *)val);
-
-    case MENAITYPE_SYMBOL:
-        return menai_string_hash(((MenaiSymbol *)val)->name);
-
-    case MENAITYPE_STRUCTTYPE:
-        return (hash_t)((MenaiStructType *)val)->tag;
 
     case MENAITYPE_STRUCT: {
         MenaiStruct *s = (MenaiStruct *)val;
@@ -122,6 +116,12 @@ menai_value_hash(MenaiValue *val)
 
         return _hash_finalise(acc, n);
     }
+
+    case MENAITYPE_STRUCTTYPE:
+        return (hash_t)((MenaiStructType *)val)->tag;
+
+    case MENAITYPE_SYMBOL:
+        return menai_string_hash(((MenaiSymbol *)val)->name);
     }
 
     return -1;
@@ -142,123 +142,44 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
     }
 
     switch (ta) {
-    case MENAITYPE_NONE:
-        return 1;
-
     case MENAITYPE_BOOLEAN:
-        return ((MenaiBoolean *)a)->value == ((MenaiBoolean *)b)->value;
-
-    case MENAITYPE_INTEGER: {
-        MenaiInteger *ia = (MenaiInteger *)a;
-        MenaiInteger *ib = (MenaiInteger *)b;
-        if (!ia->is_big && !ib->is_big) {
-            return ia->fixed == ib->fixed;
-        }
-
-        if (ia->is_big != ib->is_big) {
-            return 0;
-        }
-
-        return menai_bigint_eq(&ia->big, &ib->big);
-    }
-
-    case MENAITYPE_FLOAT:
-        return ((MenaiFloat *)a)->value == ((MenaiFloat *)b)->value;
-
-    case MENAITYPE_COMPLEX: {
-        MenaiComplex *ca = (MenaiComplex *)a;
-        MenaiComplex *cb = (MenaiComplex *)b;
-        return ca->real == cb->real && ca->imag == cb->imag;
-    }
-
-    case MENAITYPE_STRING:
-        return menai_string_equal((MenaiString *)a, (MenaiString *)b);
+        return menai_boolean_equal((MenaiBoolean *)a, (MenaiBoolean *)b);
 
     case MENAITYPE_BYTES:
         return menai_bytes_equal((MenaiBytes *)a, (MenaiBytes *)b);
 
-    case MENAITYPE_SYMBOL:
-        return menai_string_equal(((MenaiSymbol *)a)->name, ((MenaiSymbol *)b)->name);
+    case MENAITYPE_COMPLEX:
+        return menai_complex_equal((MenaiComplex *)a, (MenaiComplex *)b);
+
+    case MENAITYPE_DICT:
+        return menai_dict_equal((MenaiDict *)a, (MenaiDict *)b);
+
+    case MENAITYPE_FLOAT:
+        return menai_float_equal((MenaiFloat *)a, (MenaiFloat *)b);
+
+    case MENAITYPE_INTEGER:
+        return menai_integer_equal((MenaiInteger *)a, (MenaiInteger *)b);
+
+    case MENAITYPE_LIST:
+        return menai_list_equal((MenaiList *)a, (MenaiList *)b);
+
+    case MENAITYPE_NONE:
+        return 1;
+
+    case MENAITYPE_SET:
+        return menai_set_equal((MenaiSet *)a, (MenaiSet *)b);
+
+    case MENAITYPE_STRING:
+        return menai_string_equal((MenaiString *)a, (MenaiString *)b);
+
+    case MENAITYPE_STRUCT:
+        return menai_struct_equal((MenaiStruct *)a, (MenaiStruct *)b);
 
     case MENAITYPE_STRUCTTYPE:
-        return ((MenaiStructType *)a)->tag == ((MenaiStructType *)b)->tag;
+        return menai_structtype_equal((MenaiStructType *)a, (MenaiStructType *)b);
 
-    case MENAITYPE_STRUCT: {
-        MenaiStruct *sa = (MenaiStruct *)a;
-        MenaiStruct *sb = (MenaiStruct *)b;
-        if (((MenaiStructType *)sa->struct_type)->tag != ((MenaiStructType *)sb->struct_type)->tag) {
-            return 0;
-        }
-
-        int n = sa->nfields;
-        if (n != sb->nfields) {
-            return 0;
-        }
-
-        for (int i = 0; i < n; i++) {
-            if (!menai_value_equal(sa->items[i], sb->items[i])) {
-                return 0;
-            }
-        }
-
-        return 1;
-    }
-
-    case MENAITYPE_LIST: {
-        MenaiList *la = (MenaiList *)a;
-        MenaiList *lb = (MenaiList *)b;
-        if (la->length != lb->length) {
-            return 0;
-        }
-
-        for (ssize_t i = 0; i < la->length; i++) {
-            if (!menai_value_equal(la->elements[i], lb->elements[i])) {
-                return 0;
-            }
-        }
-
-        return 1;
-    }
-
-    case MENAITYPE_DICT: {
-        MenaiDict *da = (MenaiDict *)a;
-        MenaiDict *db = (MenaiDict *)b;
-        if (da->length != db->length) {
-            return 0;
-        }
-
-        for (ssize_t i = 0; i < da->length; i++) {
-            if (da->hashes[i] != db->hashes[i]) {
-                return 0;
-            }
-
-            if (!menai_value_equal(da->keys[i], db->keys[i])) {
-                return 0;
-            }
-
-            if (!menai_value_equal(da->values[i], db->values[i])) {
-                return 0;
-            }
-        }
-
-        return 1;
-    }
-
-    case MENAITYPE_SET: {
-        MenaiSet *sa = (MenaiSet *)a;
-        MenaiSet *sb = (MenaiSet *)b;
-        if (sa->length != sb->length) {
-            return 0;
-        }
-
-        for (ssize_t i = 0; i < sa->length; i++) {
-            if (menai_ht_lookup(&sb->ht, sa->elements[i], sa->hashes[i]) == -1) {
-                return 0;
-            }
-        }
-
-        return 1;
-    }
+    case MENAITYPE_SYMBOL:
+        return menai_symbol_equal((MenaiSymbol *)a, (MenaiSymbol *)b);
     }
 
     return 0;
