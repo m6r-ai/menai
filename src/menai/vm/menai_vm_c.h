@@ -530,6 +530,39 @@ menai_name_str_hash(const char *s)
     return r == -1 ? -2 : r;
 }
 
+/*
+ * menai_hash_double — hash a C double without any Python API calls.
+ *
+ * Reinterprets the IEEE 754 bit pattern as a uint64_t via memcpy (safe
+ * under strict aliasing rules) then applies a finalisation mix so that
+ * nearby values produce well-distributed hashes.  NaN is normalised to a
+ * fixed bit pattern before mixing so all NaN values hash identically.
+ * The result is mapped away from -1 (the CPython "error" sentinel).
+ *
+ * This is a Menai-internal hash — it does not need to match Python's
+ * float hash, because Menai floats and integers are never equal and are
+ * never mixed in the same dict or set.
+ */
+static inline hash_t
+menai_hash_double(double v)
+{
+    uint64_t bits;
+    if (v != v) {
+        bits = 0x7FF8000000000000ULL;
+    } else {
+        memcpy(&bits, &v, sizeof(bits));
+    }
+
+    /* Finalisation mix from SplitMix64 */
+    bits ^= bits >> 30;
+    bits *= 0xbf58476d1ce4e5b9ULL;
+    bits ^= bits >> 27;
+    bits *= 0x94d049bb133111ebULL;
+    bits ^= bits >> 31;
+    hash_t h = (hash_t)(bits & (uint64_t)PTRDIFF_MAX);
+    return h == -1 ? -2 : h;
+}
+
 hash_t menai_value_hash(MenaiValue *val);
 int menai_value_equal(MenaiValue *a, MenaiValue *b);
 
@@ -602,14 +635,67 @@ int menai_bigint_le(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 
 MenaiNone *menai_none(MenaiVMState *vs);
+
+static inline hash_t
+menai_none_hash(void)
+{
+    return (hash_t)0x4e6f6e65UL;
+}
+
 MenaiBoolean *menai_boolean_true(MenaiVMState *vs);
 MenaiBoolean *menai_boolean_false(MenaiVMState *vs);
 
+static inline hash_t
+menai_boolean_hash(MenaiBoolean *b)
+{
+    return (hash_t)b->value;
+}
+
+static inline int
+menai_boolean_equal(MenaiBoolean *a, MenaiBoolean *b)
+{
+    return a->value == b->value;
+}
+
 MenaiFloat *alloc_menai_float(MenaiVMState *vs, double value);
+
+static inline hash_t
+menai_float_hash(MenaiFloat *f)
+{
+    return menai_hash_double(f->value);
+}
+
+static inline int
+menai_float_equal(MenaiFloat *a, MenaiFloat *b)
+{
+    return a->value == b->value;
+}
 
 MenaiComplex *alloc_menai_complex(MenaiVMState *vs, double real, double imag);
 
+static inline hash_t
+menai_complex_hash(MenaiComplex *c)
+{
+    hash_t hr = menai_hash_double(c->real);
+    hash_t hi = menai_hash_double(c->imag);
+    uhash_t acc = (uhash_t)hr * 1000003UL ^ (uhash_t)hi;
+    hash_t h = (hash_t)(acc & (uhash_t)SSIZE_MAX);
+    return h == -1 ? -2 : h;
+}
+
+static inline int
+menai_complex_equal(MenaiComplex *a, MenaiComplex *b)
+{
+    return a->real == b->real && a->imag == b->imag;
+}
+
 MenaiFunction *alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co, MenaiNone *none_val);
+
+static inline int
+menai_function_equal(MenaiValue *a, MenaiValue *b)
+{
+    return a == b;
+}
 
 MenaiString *alloc_menai_string(MenaiVMState *vs, ssize_t len);
 MenaiString *alloc_menai_string_from_utf8(MenaiVMState *vs, const char *utf8, ssize_t nbytes);
@@ -631,6 +717,18 @@ MenaiString *alloc_menai_string_from_complex(MenaiVMState *vs, double real, doub
 
 MenaiSymbol *alloc_menai_symbol(MenaiVMState *vs, MenaiString *name);
 
+static inline hash_t
+menai_symbol_hash(MenaiSymbol *sym)
+{
+    return menai_string_hash(sym->name);
+}
+
+static inline int
+menai_symbol_equal(MenaiSymbol *a, MenaiSymbol *b)
+{
+    return menai_string_equal(a->name, b->name);
+}
+
 MenaiInteger *alloc_menai_integer_from_long(MenaiVMState *vs, long n);
 MenaiInteger *alloc_menai_integer_from_long_long(MenaiVMState *vs, long long n);
 MenaiInteger *alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src);
@@ -641,55 +739,15 @@ alloc_menai_integer_from_ssize_t(MenaiVMState *vs, ssize_t n)
     return alloc_menai_integer_from_long(vs, (long)n);
 }
 
-MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
-MenaiBytes *alloc_menai_bytes_from_raw(MenaiVMState *vs, const uint8_t *src, ssize_t n);
-MenaiBytes *alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssize_t end);
-MenaiBytes *alloc_menai_bytes_from_concat(MenaiVMState *vs, MenaiBytes *a, MenaiBytes *b);
-MenaiBytes *alloc_menai_bytes_from_append_u8(MenaiVMState *vs, MenaiBytes *b, uint8_t value);
-MenaiBytes *alloc_menai_bytes_from_append_multi(MenaiVMState *vs, MenaiBytes *b, unsigned long long value, int width, int le);
-MenaiBytes *alloc_menai_bytes_from_write_multi(MenaiVMState *vs, MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
-int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
-int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
-hash_t menai_bytes_hash(MenaiBytes *b);
-
-MenaiStruct *alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
-MenaiStructType *alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
-
-MenaiDict *alloc_menai_dict(MenaiVMState *vs);
-
-MenaiList *alloc_menai_list(MenaiVMState *vs, ssize_t n);
-void menai_list_rest(MenaiList *lst, MenaiList *r);
-void menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r);
-
-MenaiSet *alloc_menai_set(MenaiVMState *vs, ssize_t cap);
-
-int menai_vm_bridge_init(void);
-
-void globals_free(MenaiVMState *vs, GlobalsTable *gt);
-int globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d);
-MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
-
-MenaiValue *menai_vm_execute_native(MenaiVMState *vs,
-                                    MenaiCodeObject *code,
-                                    const GlobalsTable *extra_globals,
-                                    MenaiVMError *out_error);
-
-void menai_vm_cancel(MenaiVMState *vs);
-
-/*
- * Per-type equality predicates.
- *
- * These are extracted from menai_value_equal() so that both the
- * hash table lookup path and the type-specific VM opcodes share
- * the same comparison logic.  Each assumes the caller has
- * already verified that both operands are of the correct type.
- * String and bytes equality already have dedicated functions
- * (menai_string_equal, menai_bytes_equal) and are not duplicated here.
- */
-static inline int
-menai_boolean_equal(MenaiBoolean *a, MenaiBoolean *b)
+static inline hash_t
+menai_integer_hash(MenaiInteger *obj)
 {
-    return a->value == b->value;
+    if (!obj->is_big) {
+        hash_t h = (hash_t)obj->fixed;
+        return h == -1 ? -2 : h;
+    }
+
+    return menai_bigint_hash(&obj->big);
 }
 
 static inline int
@@ -706,50 +764,23 @@ menai_integer_equal(MenaiInteger *a, MenaiInteger *b)
     return menai_bigint_eq(&a->big, &b->big);
 }
 
-static inline int
-menai_float_equal(MenaiFloat *a, MenaiFloat *b)
-{
-    return a->value == b->value;
-}
+MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
+MenaiBytes *alloc_menai_bytes_from_raw(MenaiVMState *vs, const uint8_t *src, ssize_t n);
+MenaiBytes *alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssize_t end);
+MenaiBytes *alloc_menai_bytes_from_concat(MenaiVMState *vs, MenaiBytes *a, MenaiBytes *b);
+MenaiBytes *alloc_menai_bytes_from_append_u8(MenaiVMState *vs, MenaiBytes *b, uint8_t value);
+MenaiBytes *alloc_menai_bytes_from_append_multi(MenaiVMState *vs, MenaiBytes *b, unsigned long long value, int width, int le);
+MenaiBytes *alloc_menai_bytes_from_write_multi(MenaiVMState *vs, MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
+int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
+int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
+hash_t menai_bytes_hash(MenaiBytes *b);
 
-static inline int
-menai_complex_equal(MenaiComplex *a, MenaiComplex *b)
-{
-    return a->real == b->real && a->imag == b->imag;
-}
-
-static inline int
-menai_symbol_equal(MenaiSymbol *a, MenaiSymbol *b)
-{
-    return menai_string_equal(a->name, b->name);
-}
+MenaiStruct *alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
 
 static inline int
 menai_structtype_equal(MenaiStructType *a, MenaiStructType *b)
 {
     return a->tag == b->tag;
-}
-
-static inline int
-menai_function_equal(MenaiValue *a, MenaiValue *b)
-{
-    return a == b;
-}
-
-static inline int
-menai_list_equal(MenaiList *a, MenaiList *b)
-{
-    if (a->length != b->length) {
-        return 0;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        if (!menai_value_equal(a->elements[i], b->elements[i])) {
-            return 0;
-        }
-    }
-
-    return 1;
 }
 
 static inline int
@@ -774,123 +805,6 @@ menai_struct_equal(MenaiStruct *a, MenaiStruct *b)
     return 1;
 }
 
-static inline int
-menai_dict_equal(MenaiDict *a, MenaiDict *b)
-{
-    if (a->length != b->length) {
-        return 0;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        if (a->hashes[i] != b->hashes[i] ||
-                !menai_value_equal(a->keys[i], b->keys[i]) ||
-                !menai_value_equal(a->values[i], b->values[i])) {
-            return 0;
-        }
-    }
-
-    return 1;
-}
-
-static inline int
-menai_set_equal(MenaiSet *a, MenaiSet *b)
-{
-    if (a->length != b->length) {
-        return 0;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        if (menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]) == -1) {
-            return 0;
-        }
-    }
-
-    return 1;
-}
-
-/*
- * menai_hash_double — hash a C double without any Python API calls.
- *
- * Reinterprets the IEEE 754 bit pattern as a uint64_t via memcpy (safe
- * under strict aliasing rules) then applies a finalisation mix so that
- * nearby values produce well-distributed hashes.  NaN is normalised to a
- * fixed bit pattern before mixing so all NaN values hash identically.
- * The result is mapped away from -1 (the CPython "error" sentinel).
- *
- * This is a Menai-internal hash — it does not need to match Python's
- * float hash, because Menai floats and integers are never equal and are
- * never mixed in the same dict or set.
- */
-static inline hash_t
-menai_hash_double(double v)
-{
-    uint64_t bits;
-    if (v != v) {
-        bits = 0x7FF8000000000000ULL;
-    } else {
-        memcpy(&bits, &v, sizeof(bits));
-    }
-
-    /* Finalisation mix from SplitMix64 */
-    bits ^= bits >> 30;
-    bits *= 0xbf58476d1ce4e5b9ULL;
-    bits ^= bits >> 27;
-    bits *= 0x94d049bb133111ebULL;
-    bits ^= bits >> 31;
-    hash_t h = (hash_t)(bits & (uint64_t)PTRDIFF_MAX);
-    return h == -1 ? -2 : h;
-}
-
-/*
- * Per-type hash functions.
- *
- * These are extracted from menai_value_hash() so that the hash table
- * and any type-specific code can share the same hashing logic, mirroring
- * the per-type equality predicates above.  Each assumes the caller has
- * already verified that the operand is of the correct type.  String,
- * bytes, and bigint hashes already have dedicated functions
- * (menai_string_hash, menai_bytes_hash, menai_bigint_hash) and are not
- * duplicated here.
- */
-static inline hash_t
-menai_boolean_hash(MenaiBoolean *b)
-{
-    return (hash_t)b->value;
-}
-
-static inline hash_t
-menai_complex_hash(MenaiComplex *c)
-{
-    hash_t hr = menai_hash_double(c->real);
-    hash_t hi = menai_hash_double(c->imag);
-    uhash_t acc = (uhash_t)hr * 1000003UL ^ (uhash_t)hi;
-    hash_t h = (hash_t)(acc & (uhash_t)SSIZE_MAX);
-    return h == -1 ? -2 : h;
-}
-
-static inline hash_t
-menai_float_hash(MenaiFloat *f)
-{
-    return menai_hash_double(f->value);
-}
-
-static inline hash_t
-menai_integer_hash(MenaiInteger *obj)
-{
-    if (!obj->is_big) {
-        hash_t h = (hash_t)obj->fixed;
-        return h == -1 ? -2 : h;
-    }
-
-    return menai_bigint_hash(&obj->big);
-}
-
-static inline hash_t
-menai_none_hash(void)
-{
-    return (hash_t)0x4e6f6e65UL;
-}
-
 static inline hash_t
 menai_struct_hash(MenaiStruct *s)
 {
@@ -910,16 +824,83 @@ menai_struct_hash(MenaiStruct *s)
     return (hash_t)(acc == (uhash_t)-1 ? (uhash_t)-2 : acc);
 }
 
+MenaiStructType *alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
+
 static inline hash_t
 menai_structtype_hash(MenaiStructType *st)
 {
     return (hash_t)st->tag;
 }
 
-static inline hash_t
-menai_symbol_hash(MenaiSymbol *sym)
+MenaiDict *alloc_menai_dict(MenaiVMState *vs);
+
+static inline int
+menai_dict_equal(MenaiDict *a, MenaiDict *b)
 {
-    return menai_string_hash(sym->name);
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (a->hashes[i] != b->hashes[i] ||
+                !menai_value_equal(a->keys[i], b->keys[i]) ||
+                !menai_value_equal(a->values[i], b->values[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
 }
+
+MenaiList *alloc_menai_list(MenaiVMState *vs, ssize_t n);
+void menai_list_rest(MenaiList *lst, MenaiList *r);
+void menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r);
+
+static inline int
+menai_list_equal(MenaiList *a, MenaiList *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (!menai_value_equal(a->elements[i], b->elements[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+MenaiSet *alloc_menai_set(MenaiVMState *vs, ssize_t cap);
+
+static inline int
+menai_set_equal(MenaiSet *a, MenaiSet *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]) == -1) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int menai_vm_bridge_init(void);
+
+void globals_free(MenaiVMState *vs, GlobalsTable *gt);
+int globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d);
+MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
+
+MenaiValue *menai_vm_execute_native(MenaiVMState *vs,
+                                    MenaiCodeObject *code,
+                                    const GlobalsTable *extra_globals,
+                                    MenaiVMError *out_error);
+
+void menai_vm_cancel(MenaiVMState *vs);
 
 #endif /* MENAI_VM_C_H */
