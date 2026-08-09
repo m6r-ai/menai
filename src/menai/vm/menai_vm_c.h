@@ -656,7 +656,6 @@ MenaiStruct *alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, 
 MenaiStructType *alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
 
 MenaiDict *alloc_menai_dict(MenaiVMState *vs);
-MenaiDict *alloc_menai_dict_from_arrays_steal(MenaiVMState *vs, MenaiValue **keys, MenaiValue **values, hash_t *hashes, ssize_t n);
 
 MenaiList *alloc_menai_list(MenaiVMState *vs, ssize_t n);
 void menai_list_rest(MenaiList *lst, MenaiList *r);

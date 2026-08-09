@@ -5698,10 +5698,42 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 nhashes[n] = h;
             }
 
-            MenaiDict *result = alloc_menai_dict_from_arrays_steal(vs, nkeys, nvals, nhashes, new_n);
-            if (result == NULL) {
+            MenaiDict *result = alloc_menai_dict(vs);
+            if (!result) {
+                for (ssize_t i = 0; i < new_n; i++) {
+                    menai_value_release(vs, nkeys[i]);
+                    menai_value_release(vs, nvals[i]);
+                }
+
+                free(nkeys);
+                free(nvals);
+                free(nhashes);
+                vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
+
+            if (menai_ht_init(&result->ht, new_n) < 0) {
+                menai_free(vs, result);
+                for (ssize_t i = 0; i < new_n; i++) {
+                    menai_value_release(vs, nkeys[i]);
+                    menai_value_release(vs, nvals[i]);
+                }
+
+                free(nkeys);
+                free(nvals);
+                free(nhashes);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            for (ssize_t i = 0; i < new_n; i++) {
+                menai_ht_insert(&result->ht, nkeys[i], nhashes[i], i);
+            }
+
+            result->keys = nkeys;
+            result->values = nvals;
+            result->hashes = nhashes;
+            result->length = new_n;
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)result);
             break;
@@ -5750,10 +5782,42 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 j++;
             }
 
-            MenaiDict *r = alloc_menai_dict_from_arrays_steal(vs, nkeys, nvals, nhashes, new_n);
-            if (r == NULL) {
+            MenaiDict *r = alloc_menai_dict(vs);
+            if (!r) {
+                for (ssize_t i = 0; i < new_n; i++) {
+                    menai_value_release(vs, nkeys[i]);
+                    menai_value_release(vs, nvals[i]);
+                }
+
+                free(nkeys);
+                free(nvals);
+                free(nhashes);
+                vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
+
+            if (menai_ht_init(&r->ht, new_n) < 0) {
+                menai_free(vs, r);
+                for (ssize_t i = 0; i < new_n; i++) {
+                    menai_value_release(vs, nkeys[i]);
+                    menai_value_release(vs, nvals[i]);
+                }
+
+                free(nkeys);
+                free(nvals);
+                free(nhashes);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            for (ssize_t i = 0; i < new_n; i++) {
+                menai_ht_insert(&r->ht, nkeys[i], nhashes[i], i);
+            }
+
+            r->keys = nkeys;
+            r->values = nvals;
+            r->hashes = nhashes;
+            r->length = new_n;
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
             break;
@@ -5809,10 +5873,42 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            MenaiDict *r = alloc_menai_dict_from_arrays_steal(vs, nkeys, nvals, nhashes, out);
-            if (r == NULL) {
+            MenaiDict *r = alloc_menai_dict(vs);
+            if (!r) {
+                for (ssize_t i = 0; i < out; i++) {
+                    menai_value_release(vs, nkeys[i]);
+                    menai_value_release(vs, nvals[i]);
+                }
+
+                free(nkeys);
+                free(nvals);
+                free(nhashes);
+                vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
+
+            if (menai_ht_init(&r->ht, out) < 0) {
+                menai_free(vs, r);
+                for (ssize_t i = 0; i < out; i++) {
+                    menai_value_release(vs, nkeys[i]);
+                    menai_value_release(vs, nvals[i]);
+                }
+
+                free(nkeys);
+                free(nvals);
+                free(nhashes);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            for (ssize_t i = 0; i < out; i++) {
+                menai_ht_insert(&r->ht, nkeys[i], nhashes[i], i);
+            }
+
+            r->keys = nkeys;
+            r->values = nvals;
+            r->hashes = nhashes;
+            r->length = out;
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
             break;
@@ -6352,10 +6448,42 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 hashes[i] = h;
             }
 
-            MenaiDict *r = alloc_menai_dict_from_arrays_steal(vs, keys, values, hashes, n);
+            MenaiDict *r = alloc_menai_dict(vs);
             if (!r) {
+                for (int i = 0; i < n; i++) {
+                    menai_value_release(vs, keys[i]);
+                    menai_value_release(vs, values[i]);
+                }
+
+                free(keys);
+                free(values);
+                free(hashes);
+                vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
+
+            if (menai_ht_init(&r->ht, (ssize_t)n) < 0) {
+                menai_free(vs, r);
+                for (int i = 0; i < n; i++) {
+                    menai_value_release(vs, keys[i]);
+                    menai_value_release(vs, values[i]);
+                }
+
+                free(keys);
+                free(values);
+                free(hashes);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            for (int i = 0; i < n; i++) {
+                menai_ht_insert(&r->ht, keys[i], hashes[i], (ssize_t)i);
+            }
+
+            r->keys = keys;
+            r->values = values;
+            r->hashes = hashes;
+            r->length = (ssize_t)n;
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
             break;
