@@ -14,39 +14,6 @@
 
 #include "menai_vm_c.h"
 
-/*
- * menai_hash_double — hash a C double without any Python API calls.
- *
- * Reinterprets the IEEE 754 bit pattern as a uint64_t via memcpy (safe
- * under strict aliasing rules) then applies a finalisation mix so that
- * nearby values produce well-distributed hashes.  NaN is normalised to a
- * fixed bit pattern before mixing so all NaN values hash identically.
- * The result is mapped away from -1 (the CPython "error" sentinel).
- *
- * This is a Menai-internal hash — it does not need to match Python's
- * float hash, because Menai floats and integers are never equal and are
- * never mixed in the same dict or set.
- */
-static inline hash_t
-menai_hash_double(double v)
-{
-    uint64_t bits;
-    if (v != v) {
-        bits = 0x7FF8000000000000ULL;
-    } else {
-        memcpy(&bits, &v, sizeof(bits));
-    }
-
-    /* Finalisation mix from SplitMix64 */
-    bits ^= bits >> 30;
-    bits *= 0xbf58476d1ce4e5b9ULL;
-    bits ^= bits >> 27;
-    bits *= 0x94d049bb133111ebULL;
-    bits ^= bits >> 31;
-    hash_t h = (hash_t)(bits & (uint64_t)PTRDIFF_MAX);
-    return h == -1 ? -2 : h;
-}
-
 hash_t
 menai_value_hash(MenaiValue *val)
 {
@@ -54,62 +21,34 @@ menai_value_hash(MenaiValue *val)
 
     switch (t) {
     case MENAITYPE_BOOLEAN:
-        return (hash_t)((MenaiBoolean *)val)->value;
+        return menai_boolean_hash((MenaiBoolean *)val);
 
     case MENAITYPE_BYTES:
         return menai_bytes_hash((MenaiBytes *)val);
 
-    case MENAITYPE_COMPLEX: {
-        MenaiComplex *c = (MenaiComplex *)val;
-        hash_t hr = menai_hash_double(c->real);
-        hash_t hi = menai_hash_double(c->imag);
-        uhash_t acc = (uhash_t)hr * 1000003UL ^ (uhash_t)hi;
-        hash_t h = (hash_t)(acc & (uhash_t)SSIZE_MAX);
-        return h == -1 ? -2 : h;
-    }
+    case MENAITYPE_COMPLEX:
+        return menai_complex_hash((MenaiComplex *)val);
 
     case MENAITYPE_FLOAT:
-        return menai_hash_double(((MenaiFloat *)val)->value);
+        return menai_float_hash((MenaiFloat *)val);
 
-    case MENAITYPE_INTEGER: {
-        MenaiInteger *obj = (MenaiInteger *)val;
-        if (!obj->is_big) {
-            hash_t h = (hash_t)obj->fixed;
-            return h == -1 ? -2 : h;
-        }
-
-        return menai_bigint_hash(&obj->big);
-    }
+    case MENAITYPE_INTEGER:
+        return menai_integer_hash((MenaiInteger *)val);
 
     case MENAITYPE_NONE:
-        return (hash_t)0x4e6f6e65UL;
+        return menai_none_hash();
 
     case MENAITYPE_STRING:
         return menai_string_hash((MenaiString *)val);
 
-    case MENAITYPE_STRUCT: {
-        MenaiStruct *s = (MenaiStruct *)val;
-        int tag = ((MenaiStructType *)s->struct_type)->tag;
-        int n = s->nfields;
-        uhash_t acc = 0x345678UL ^ (uhash_t)tag;
-        for (int i = 0; i < n; i++) {
-            hash_t fh = menai_value_hash(s->items[i]);
-            if (fh == -1) {
-                return -1;
-            }
-
-            acc = acc * 1000003UL ^ (uhash_t)fh;
-        }
-
-        acc ^= (uhash_t)n;
-        return (hash_t)(acc == (uhash_t)-1 ? (uhash_t)-2 : acc);
-    }
+    case MENAITYPE_STRUCT:
+        return menai_struct_hash((MenaiStruct *)val);
 
     case MENAITYPE_STRUCTTYPE:
-        return (hash_t)((MenaiStructType *)val)->tag;
+        return menai_structtype_hash((MenaiStructType *)val);
 
     case MENAITYPE_SYMBOL:
-        return menai_string_hash(((MenaiSymbol *)val)->name);
+        return menai_symbol_hash((MenaiSymbol *)val);
     }
 
     return -1;

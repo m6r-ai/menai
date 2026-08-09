@@ -808,4 +808,118 @@ menai_set_equal(MenaiSet *a, MenaiSet *b)
     return 1;
 }
 
+/*
+ * menai_hash_double — hash a C double without any Python API calls.
+ *
+ * Reinterprets the IEEE 754 bit pattern as a uint64_t via memcpy (safe
+ * under strict aliasing rules) then applies a finalisation mix so that
+ * nearby values produce well-distributed hashes.  NaN is normalised to a
+ * fixed bit pattern before mixing so all NaN values hash identically.
+ * The result is mapped away from -1 (the CPython "error" sentinel).
+ *
+ * This is a Menai-internal hash — it does not need to match Python's
+ * float hash, because Menai floats and integers are never equal and are
+ * never mixed in the same dict or set.
+ */
+static inline hash_t
+menai_hash_double(double v)
+{
+    uint64_t bits;
+    if (v != v) {
+        bits = 0x7FF8000000000000ULL;
+    } else {
+        memcpy(&bits, &v, sizeof(bits));
+    }
+
+    /* Finalisation mix from SplitMix64 */
+    bits ^= bits >> 30;
+    bits *= 0xbf58476d1ce4e5b9ULL;
+    bits ^= bits >> 27;
+    bits *= 0x94d049bb133111ebULL;
+    bits ^= bits >> 31;
+    hash_t h = (hash_t)(bits & (uint64_t)PTRDIFF_MAX);
+    return h == -1 ? -2 : h;
+}
+
+/*
+ * Per-type hash functions.
+ *
+ * These are extracted from menai_value_hash() so that the hash table
+ * and any type-specific code can share the same hashing logic, mirroring
+ * the per-type equality predicates above.  Each assumes the caller has
+ * already verified that the operand is of the correct type.  String,
+ * bytes, and bigint hashes already have dedicated functions
+ * (menai_string_hash, menai_bytes_hash, menai_bigint_hash) and are not
+ * duplicated here.
+ */
+static inline hash_t
+menai_boolean_hash(MenaiBoolean *b)
+{
+    return (hash_t)b->value;
+}
+
+static inline hash_t
+menai_complex_hash(MenaiComplex *c)
+{
+    hash_t hr = menai_hash_double(c->real);
+    hash_t hi = menai_hash_double(c->imag);
+    uhash_t acc = (uhash_t)hr * 1000003UL ^ (uhash_t)hi;
+    hash_t h = (hash_t)(acc & (uhash_t)SSIZE_MAX);
+    return h == -1 ? -2 : h;
+}
+
+static inline hash_t
+menai_float_hash(MenaiFloat *f)
+{
+    return menai_hash_double(f->value);
+}
+
+static inline hash_t
+menai_integer_hash(MenaiInteger *obj)
+{
+    if (!obj->is_big) {
+        hash_t h = (hash_t)obj->fixed;
+        return h == -1 ? -2 : h;
+    }
+
+    return menai_bigint_hash(&obj->big);
+}
+
+static inline hash_t
+menai_none_hash(void)
+{
+    return (hash_t)0x4e6f6e65UL;
+}
+
+static inline hash_t
+menai_struct_hash(MenaiStruct *s)
+{
+    int tag = ((MenaiStructType *)s->struct_type)->tag;
+    int n = s->nfields;
+    uhash_t acc = 0x345678UL ^ (uhash_t)tag;
+    for (int i = 0; i < n; i++) {
+        hash_t fh = menai_value_hash(s->items[i]);
+        if (fh == -1) {
+            return -1;
+        }
+
+        acc = acc * 1000003UL ^ (uhash_t)fh;
+    }
+
+    acc ^= (uhash_t)n;
+    return (hash_t)(acc == (uhash_t)-1 ? (uhash_t)-2 : acc);
+}
+
+static inline hash_t
+menai_structtype_hash(MenaiStructType *st)
+{
+    return (hash_t)st->tag;
+}
+
+static inline hash_t
+menai_symbol_hash(MenaiSymbol *sym)
+{
+    return menai_string_hash(sym->name);
+}
+
 #endif /* MENAI_VM_C_H */
