@@ -47,19 +47,6 @@ menai_hash_double(double v)
     return h == -1 ? -2 : h;
 }
 
-static inline uhash_t
-_hash_combine(uhash_t acc, hash_t h)
-{
-    return acc * 1000003UL ^ (uhash_t)h;
-}
-
-static inline hash_t
-_hash_finalise(uhash_t acc, ssize_t n)
-{
-    acc ^= (uhash_t)n;
-    return (hash_t)(acc == (uhash_t)-1 ? (uhash_t)-2 : acc);
-}
-
 hash_t
 menai_value_hash(MenaiValue *val)
 {
@@ -111,10 +98,11 @@ menai_value_hash(MenaiValue *val)
                 return -1;
             }
 
-            acc = _hash_combine(acc, fh);
+            acc = acc * 1000003UL ^ (uhash_t)fh;
         }
 
-        return _hash_finalise(acc, n);
+        acc ^= (uhash_t)n;
+        return (hash_t)(acc == (uhash_t)-1 ? (uhash_t)-2 : acc);
     }
 
     case MENAITYPE_STRUCTTYPE:
