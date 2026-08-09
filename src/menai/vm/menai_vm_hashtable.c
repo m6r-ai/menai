@@ -264,10 +264,13 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
     return 0;
 }
 
-static ssize_t
-_ht_slot_count(ssize_t n)
+int
+menai_ht_init(MenaiHashTable *ht, ssize_t n)
 {
     if (n == 0) {
+        ht->slots = NULL;
+        ht->slot_count = 0;
+        ht->used = 0;
         return 0;
     }
 
@@ -275,20 +278,6 @@ _ht_slot_count(ssize_t n)
     ssize_t sc = 4;
     while (sc < min_slots) {
         sc <<= 1;
-    }
-
-    return sc;
-}
-
-int
-menai_ht_init(MenaiHashTable *ht, ssize_t n)
-{
-    ssize_t sc = _ht_slot_count(n);
-    if (sc == 0) {
-        ht->slots = NULL;
-        ht->slot_count = 0;
-        ht->used = 0;
-        return 0;
     }
 
     ht->slots = (MenaiHashSlot *)malloc((size_t)sc * sizeof(MenaiHashSlot));
