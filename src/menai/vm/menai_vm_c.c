@@ -5922,11 +5922,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 nelems[n] = item;
                 nhashes[n] = h;
                 r->length = n + 1;
-                vm_err = menai_ht_build(&r->ht, nelems, nhashes, n + 1);
+                vm_err = menai_ht_init(&r->ht, n + 1);
                 if (vm_err < 0) {
-                    vm_err = MENAI_ERR_NOMEM;
                     menai_value_release(vs, (MenaiValue *)r);
                     goto error;
+                }
+
+                for (ssize_t i = 0; i < n + 1; i++) {
+                    menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
                 }
 
                 menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
@@ -5974,11 +5977,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->length = new_n;
-            vm_err = menai_ht_build(&r->ht, nelems, nhashes, new_n);
+            vm_err = menai_ht_init(&r->ht, new_n);
             if (vm_err < 0) {
-                vm_err = MENAI_ERR_NOMEM;
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
+            }
+
+            for (ssize_t i = 0; i < new_n; i++) {
+                menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
@@ -6020,11 +6026,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->length = out;
-            vm_err = menai_ht_build(&r->ht, nelems, nhashes, out);
+            vm_err = menai_ht_init(&r->ht, out);
             if (vm_err < 0) {
-                vm_err = MENAI_ERR_NOMEM;
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
+            }
+
+            for (ssize_t i = 0; i < out; i++) {
+                menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
@@ -6057,11 +6066,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->length = out;
-            vm_err = menai_ht_build(&r->ht, nelems, nhashes, out);
+            vm_err = menai_ht_init(&r->ht, out);
             if (vm_err < 0) {
-                vm_err = MENAI_ERR_NOMEM;
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
+            }
+
+            for (ssize_t i = 0; i < out; i++) {
+                menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
@@ -6094,11 +6106,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->length = out;
-            vm_err = menai_ht_build(&r->ht, nelems, nhashes, out);
+            vm_err = menai_ht_init(&r->ht, out);
             if (vm_err < 0) {
-                vm_err = MENAI_ERR_NOMEM;
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
+            }
+
+            for (ssize_t i = 0; i < out; i++) {
+                menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
@@ -6282,11 +6297,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = n;
             if (n > 0) {
-                vm_err = menai_ht_build(&r->ht, r->elements, r->hashes, n);
+                vm_err = menai_ht_init(&r->ht, n);
                 if (vm_err < 0) {
-                    vm_err = MENAI_ERR_NOMEM;
                     menai_value_release(vs, (MenaiValue *)r);
                     goto error;
+                }
+
+                for (ssize_t i = 0; i < n; i++) {
+                    menai_ht_insert(&r->ht, r->elements[i], r->hashes[i], i);
                 }
             }
 

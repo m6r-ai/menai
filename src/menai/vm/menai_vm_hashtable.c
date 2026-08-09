@@ -347,17 +347,3 @@ menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index)
         slot = (ssize_t)((5 * (uhash_t)slot + 1 + perturb) & (uhash_t)mask);
     }
 }
-
-int
-menai_ht_build(MenaiHashTable *ht, MenaiValue **keys, const hash_t *hashes, ssize_t n)
-{
-    if (menai_ht_init(ht, n) < 0) {
-        return -1;
-    }
-
-    for (ssize_t i = 0; i < n; i++) {
-        menai_ht_insert(ht, keys[i], hashes[i], i);
-    }
-
-    return 0;
-}

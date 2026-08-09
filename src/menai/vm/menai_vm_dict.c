@@ -26,9 +26,13 @@ alloc_menai_dict_from_arrays_steal(MenaiVMState *vs, MenaiValue **keys, MenaiVal
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_DICT;
 
-    if (menai_ht_build(&obj->ht, keys, hashes, n) < 0) {
+    if (menai_ht_init(&obj->ht, n) < 0) {
         menai_free(vs, obj);
         goto err;
+    }
+
+    for (ssize_t i = 0; i < n; i++) {
+        menai_ht_insert(&obj->ht, keys[i], hashes[i], i);
     }
 
     obj->keys = keys;

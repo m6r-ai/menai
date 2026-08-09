@@ -759,9 +759,13 @@ slow_set_to_fast(MenaiVMState *vs, PyObject *src)
 
     Py_DECREF(elems);
     s->length = n;
-    if (menai_ht_build(&s->ht, elements, hashes, n) < 0) {
+    if (menai_ht_init(&s->ht, n) < 0) {
         menai_value_release(vs, (MenaiValue *)s);
         return NULL;
+    }
+
+    for (ssize_t i = 0; i < n; i++) {
+        menai_ht_insert(&s->ht, elements[i], hashes[i], i);
     }
 
     return (MenaiValue *)s;
