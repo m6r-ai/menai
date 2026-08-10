@@ -230,14 +230,26 @@ class TestStrictEqualityPredicates:
             (dict "name" "Alice" "age" 30))'''
         assert menai.evaluate(code) is True
 
-    def test_dict_eq_order_matters(self, menai):
-        """Test dict=? is sensitive to order (structural equality)."""
-        # Different order should be different (structural comparison)
-        # Note: This tests the current implementation behavior
+    def test_dict_eq_order_independent(self, menai):
+        """Dicts with the same key-value pairs but different insertion order are equal."""
         code1 = '(dict=? (dict "a" 1 "b" 2) (dict "b" 2 "a" 1))'
-        result = menai.evaluate(code1)
-        # This will be False because dicts compare structurally (order matters)
-        assert result is False
+        assert menai.evaluate(code1) is True
+
+        # Three pairs, fully reversed
+        code2 = '(dict=? (dict "a" 1 "b" 2 "c" 3) (dict "c" 3 "b" 2 "a" 1))'
+        assert menai.evaluate(code2) is True
+
+        # Three pairs, partial reorder
+        code3 = '(dict=? (dict "a" 1 "b" 2 "c" 3) (dict "b" 2 "c" 3 "a" 1))'
+        assert menai.evaluate(code3) is True
+
+        # Single pair is always trivially order-independent
+        code4 = '(dict=? (dict "x" 42) (dict "x" 42))'
+        assert menai.evaluate(code4) is True
+
+        # Different content in different order is still not equal
+        code5 = '(dict=? (dict "a" 1 "b" 2) (dict "b" 3 "a" 1))'
+        assert menai.evaluate(code5) is False
 
     def test_dict_eq_rejects_non_dicts(self, menai):
         """Test dict=? raises error on non-dict arguments."""

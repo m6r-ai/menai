@@ -557,6 +557,17 @@ class TestDictEquality:
         result = tool.evaluate('(dict=? (dict "a" 1) (dict "b" 1))')
         assert result is False
 
+    def test_dict_equality_order_independent(self, tool):
+        """Dicts with the same key-value pairs but different insertion order are equal."""
+        result = tool.evaluate('(dict=? (dict "a" 1 "b" 2) (dict "b" 2 "a" 1))')
+        assert result is True
+
+        result = tool.evaluate('(dict=? (dict "a" 1 "b" 2 "c" 3) (dict "c" 3 "b" 2 "a" 1))')
+        assert result is True
+
+        result = tool.evaluate('(dict!=? (dict "a" 1 "b" 2) (dict "b" 2 "a" 1))')
+        assert result is False
+
     def test_dict_inequality(self, tool):
         """Test dict inequality operator."""
         result = tool.evaluate('(dict!=? (dict "a" 1) (dict "a" 2))')

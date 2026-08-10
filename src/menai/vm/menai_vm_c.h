@@ -635,14 +635,6 @@ int menai_bigint_gt(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_le(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 
-MenaiNone *menai_none(MenaiVMState *vs);
-
-static inline hash_t
-menai_none_hash(void)
-{
-    return (hash_t)0x4e6f6e65UL;
-}
-
 MenaiBoolean *menai_boolean_true(MenaiVMState *vs);
 MenaiBoolean *menai_boolean_false(MenaiVMState *vs);
 
@@ -658,21 +650,34 @@ menai_boolean_equal(MenaiBoolean *a, MenaiBoolean *b)
     return a->value == b->value;
 }
 
-MenaiFloat *alloc_menai_float(MenaiVMState *vs, double value);
+MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
 
-static inline hash_t
-menai_float_hash(MenaiFloat *f)
+static inline void
+menai_bytes_final(MenaiVMState *vs, MenaiBytes *self)
 {
-    return menai_hash_double(f->value);
+    if (self->owner != NULL) {
+        /* View — release the backing owner; do not touch the data array. */
+        menai_value_release(vs, (MenaiValue *)self->owner);
+        return;
+    }
 }
 
-static inline int
-menai_float_equal(MenaiFloat *a, MenaiFloat *b)
-{
-    return a->value == b->value;
-}
+MenaiBytes *alloc_menai_bytes_from_raw(MenaiVMState *vs, const uint8_t *src, ssize_t n);
+MenaiBytes *alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssize_t end);
+MenaiBytes *alloc_menai_bytes_from_concat(MenaiVMState *vs, MenaiBytes *a, MenaiBytes *b);
+MenaiBytes *alloc_menai_bytes_from_append_u8(MenaiVMState *vs, MenaiBytes *b, uint8_t value);
+MenaiBytes *alloc_menai_bytes_from_append_multi(MenaiVMState *vs, MenaiBytes *b, unsigned long long value, int width, int le);
+MenaiBytes *alloc_menai_bytes_from_write_multi(MenaiVMState *vs, MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
+int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
+int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
+hash_t menai_bytes_hash(MenaiBytes *b);
 
 MenaiComplex *alloc_menai_complex(MenaiVMState *vs, double real, double imag);
+
+static inline void
+menai_complex_final(MenaiVMState *vs, MenaiComplex *self)
+{
+}
 
 static inline hash_t
 menai_complex_hash(MenaiComplex *c)
@@ -690,7 +695,71 @@ menai_complex_equal(MenaiComplex *a, MenaiComplex *b)
     return a->real == b->real && a->imag == b->imag;
 }
 
+MenaiDict *alloc_menai_dict(MenaiVMState *vs, ssize_t cap);
+
+static inline void
+menai_dict_final(MenaiVMState *vs, MenaiDict *self)
+{
+    ssize_t n = self->length;
+    for (ssize_t i = 0; i < n; i++) {
+        menai_value_release(vs, self->keys[i]);
+        menai_value_release(vs, self->values[i]);
+    }
+
+    menai_ht_final(&self->ht);
+}
+
+static inline int
+menai_dict_equal(MenaiDict *a, MenaiDict *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        ssize_t bi = menai_ht_lookup(&b->ht, a->keys[i], a->hashes[i]);
+        if (bi < 0) {
+            return 0;
+        }
+
+        if (!menai_value_equal(a->values[i], b->values[bi])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+MenaiFloat *alloc_menai_float(MenaiVMState *vs, double value);
+
+static inline void
+menai_float_final(MenaiVMState *vs, MenaiFloat *self)
+{
+}
+
+static inline hash_t
+menai_float_hash(MenaiFloat *f)
+{
+    return menai_hash_double(f->value);
+}
+
+static inline int
+menai_float_equal(MenaiFloat *a, MenaiFloat *b)
+{
+    return a->value == b->value;
+}
+
 MenaiFunction *alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co, MenaiNone *none_val);
+
+static inline void
+menai_function_final(MenaiVMState *vs, MenaiFunction *self)
+{
+    menai_code_object_release(vs, self->bytecode);
+    ssize_t ncap = self->ncap;
+    for (ssize_t i = 0; i < ncap; i++) {
+        menai_value_release(vs, self->captures[i]);
+    }
+}
 
 static inline int
 menai_function_equal(MenaiValue *a, MenaiValue *b)
@@ -698,39 +767,16 @@ menai_function_equal(MenaiValue *a, MenaiValue *b)
     return a == b;
 }
 
-MenaiString *alloc_menai_string(MenaiVMState *vs, ssize_t len);
-MenaiString *alloc_menai_string_from_utf8(MenaiVMState *vs, const char *utf8, ssize_t nbytes);
-char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
-int menai_string_compare(MenaiString *a, MenaiString *b);
-int menai_string_equal(MenaiString *a, MenaiString *b);
-hash_t menai_string_hash(MenaiString *s);
-void menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *r);
-ssize_t menai_string_upcase_length(MenaiString *s);
-void menai_string_upcase(MenaiString *s, MenaiString *r);
-void menai_string_downcase(MenaiString *s, MenaiString *r);
-MenaiString *alloc_menai_string_from_trim(MenaiVMState *vs, MenaiString *s);
-MenaiString *alloc_menai_string_from_trim_left(MenaiVMState *vs, MenaiString *s);
-MenaiString *alloc_menai_string_from_trim_right(MenaiVMState *vs, MenaiString *s);
-ssize_t menai_string_find(MenaiString *haystack, MenaiString *needle);
-MenaiString *alloc_menai_string_from_replace(MenaiVMState *vs, MenaiString *s, MenaiString *from, MenaiString *to);
-MenaiString *alloc_menai_string_from_float(MenaiVMState *vs, double v);
-MenaiString *alloc_menai_string_from_complex(MenaiVMState *vs, double real, double imag);
-
-MenaiSymbol *alloc_menai_symbol(MenaiVMState *vs, MenaiString *name);
-
-static inline hash_t
-menai_symbol_hash(MenaiSymbol *sym)
-{
-    return menai_string_hash(sym->name);
-}
-
-static inline int
-menai_symbol_equal(MenaiSymbol *a, MenaiSymbol *b)
-{
-    return menai_string_equal(a->name, b->name);
-}
-
 MenaiInteger *alloc_menai_integer_from_long(MenaiVMState *vs, long n);
+
+static inline void
+menai_integer_final(MenaiVMState *vs, MenaiInteger *self)
+{
+    if (self->is_big) {
+        menai_bigint_final(&self->big);
+    }
+}
+
 MenaiInteger *alloc_menai_integer_from_long_long(MenaiVMState *vs, long long n);
 MenaiInteger *alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src);
 
@@ -765,30 +811,121 @@ menai_integer_equal(MenaiInteger *a, MenaiInteger *b)
     return menai_bigint_eq(&a->big, &b->big);
 }
 
-MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
-MenaiBytes *alloc_menai_bytes_from_raw(MenaiVMState *vs, const uint8_t *src, ssize_t n);
-MenaiBytes *alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssize_t end);
-MenaiBytes *alloc_menai_bytes_from_concat(MenaiVMState *vs, MenaiBytes *a, MenaiBytes *b);
-MenaiBytes *alloc_menai_bytes_from_append_u8(MenaiVMState *vs, MenaiBytes *b, uint8_t value);
-MenaiBytes *alloc_menai_bytes_from_append_multi(MenaiVMState *vs, MenaiBytes *b, unsigned long long value, int width, int le);
-MenaiBytes *alloc_menai_bytes_from_write_multi(MenaiVMState *vs, MenaiBytes *b, ssize_t offset, unsigned long long value, int width, int le);
-int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
-int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
-hash_t menai_bytes_hash(MenaiBytes *b);
+MenaiList *alloc_menai_list(MenaiVMState *vs, ssize_t n);
+
+static inline void
+menai_list_final(MenaiVMState *vs, MenaiList *self)
+{
+    if (self->owner != NULL) {
+        /* View — release the backing list; do not touch the element array. */
+        menai_value_release(vs, (MenaiValue *)self->owner);
+        return;
+    }
+
+    /* Owner — release all elements then free the combined block. */
+    ssize_t n = self->length;
+    MenaiValue **arr = self->elements;
+    for (ssize_t i = 0; i < n; i++) {
+        menai_value_release(vs, *arr++);
+    }
+}
+
+static inline int
+menai_list_equal(MenaiList *a, MenaiList *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (!menai_value_equal(a->elements[i], b->elements[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+void menai_list_rest(MenaiList *lst, MenaiList *r);
+void menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r);
+
+MenaiNone *menai_none(MenaiVMState *vs);
+
+static inline hash_t
+menai_none_hash(void)
+{
+    return (hash_t)0x4e6f6e65UL;
+}
+
+MenaiSet *alloc_menai_set(MenaiVMState *vs, ssize_t cap);
+
+static inline void
+menai_set_final(MenaiVMState *vs, MenaiSet *self)
+{
+    ssize_t n = self->length;
+    for (ssize_t i = 0; i < n; i++) {
+        menai_value_release(vs, self->elements[i]);
+    }
+
+    menai_ht_final(&self->ht);
+}
+
+static inline int
+menai_set_equal(MenaiSet *a, MenaiSet *b)
+{
+    if (a->length != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < a->length; i++) {
+        if (menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]) == -1) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+MenaiString *alloc_menai_string(MenaiVMState *vs, ssize_t len);
+
+static inline void
+menai_string_final(MenaiVMState *vs, MenaiString *self)
+{
+}
+
+MenaiString *alloc_menai_string_from_utf8(MenaiVMState *vs, const char *utf8, ssize_t nbytes);
+char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
+int menai_string_compare(MenaiString *a, MenaiString *b);
+int menai_string_equal(MenaiString *a, MenaiString *b);
+hash_t menai_string_hash(MenaiString *s);
+void menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *r);
+ssize_t menai_string_upcase_length(MenaiString *s);
+void menai_string_upcase(MenaiString *s, MenaiString *r);
+void menai_string_downcase(MenaiString *s, MenaiString *r);
+MenaiString *alloc_menai_string_from_trim(MenaiVMState *vs, MenaiString *s);
+MenaiString *alloc_menai_string_from_trim_left(MenaiVMState *vs, MenaiString *s);
+MenaiString *alloc_menai_string_from_trim_right(MenaiVMState *vs, MenaiString *s);
+ssize_t menai_string_find(MenaiString *haystack, MenaiString *needle);
+MenaiString *alloc_menai_string_from_replace(MenaiVMState *vs, MenaiString *s, MenaiString *from, MenaiString *to);
+MenaiString *alloc_menai_string_from_float(MenaiVMState *vs, double v);
+MenaiString *alloc_menai_string_from_complex(MenaiVMState *vs, double real, double imag);
 
 MenaiStruct *alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
 
-static inline int
-menai_structtype_equal(MenaiStructType *a, MenaiStructType *b)
+static inline void
+menai_struct_final(MenaiVMState *vs, MenaiStruct *self)
 {
-    return a->tag == b->tag;
+    menai_value_release(vs, (MenaiValue *)self->struct_type);
+    int n = self->nfields;
+    for (int i = 0; i < n; i++) {
+        menai_value_release(vs, self->items[i]);
+    }
 }
 
 static inline int
 menai_struct_equal(MenaiStruct *a, MenaiStruct *b)
 {
-    if (((MenaiStructType *)a->struct_type)->tag !=
-            ((MenaiStructType *)b->struct_type)->tag) {
+    if (((MenaiStructType *)a->struct_type)->tag != ((MenaiStructType *)b->struct_type)->tag) {
         return 0;
     }
 
@@ -827,68 +964,47 @@ menai_struct_hash(MenaiStruct *s)
 
 MenaiStructType *alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields);
 
+static inline void
+menai_structtype_final(MenaiVMState *vs, MenaiStructType *self)
+{
+    menai_ht_final(&self->field_ht);
+    menai_value_release(vs, (MenaiValue *)self->name);
+    int n = self->nfields;
+    for (int i = 0; i < n; i++) {
+        menai_value_release(vs, (MenaiValue *)self->fields[i].name);
+    }
+}
+
+static inline int
+menai_structtype_equal(MenaiStructType *a, MenaiStructType *b)
+{
+    return a->tag == b->tag;
+}
+
 static inline hash_t
 menai_structtype_hash(MenaiStructType *st)
 {
     return (hash_t)st->tag;
 }
 
-MenaiDict *alloc_menai_dict(MenaiVMState *vs, ssize_t cap);
+MenaiSymbol *alloc_menai_symbol(MenaiVMState *vs, MenaiString *name);
 
-static inline int
-menai_dict_equal(MenaiDict *a, MenaiDict *b)
+static inline void
+menai_symbol_final(MenaiVMState *vs, MenaiSymbol *self)
 {
-    if (a->length != b->length) {
-        return 0;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        if (a->hashes[i] != b->hashes[i] ||
-                !menai_value_equal(a->keys[i], b->keys[i]) ||
-                !menai_value_equal(a->values[i], b->values[i])) {
-            return 0;
-        }
-    }
-
-    return 1;
+    menai_value_release(vs, (MenaiValue *)self->name);
 }
 
-MenaiList *alloc_menai_list(MenaiVMState *vs, ssize_t n);
-void menai_list_rest(MenaiList *lst, MenaiList *r);
-void menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r);
-
 static inline int
-menai_list_equal(MenaiList *a, MenaiList *b)
+menai_symbol_equal(MenaiSymbol *a, MenaiSymbol *b)
 {
-    if (a->length != b->length) {
-        return 0;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        if (!menai_value_equal(a->elements[i], b->elements[i])) {
-            return 0;
-        }
-    }
-
-    return 1;
+    return menai_string_equal(a->name, b->name);
 }
 
-MenaiSet *alloc_menai_set(MenaiVMState *vs, ssize_t cap);
-
-static inline int
-menai_set_equal(MenaiSet *a, MenaiSet *b)
+static inline hash_t
+menai_symbol_hash(MenaiSymbol *sym)
 {
-    if (a->length != b->length) {
-        return 0;
-    }
-
-    for (ssize_t i = 0; i < a->length; i++) {
-        if (menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]) == -1) {
-            return 0;
-        }
-    }
-
-    return 1;
+    return menai_string_hash(sym->name);
 }
 
 int menai_vm_bridge_init(void);
