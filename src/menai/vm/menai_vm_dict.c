@@ -30,7 +30,6 @@ alloc_menai_dict(MenaiVMState *vs, ssize_t cap)
     obj->hashes = (hash_t *)(data + (size_t)cap * 2 * sizeof(MenaiValue *));
     obj->ht.slots = NULL;
     obj->ht.slot_count = 0;
-    obj->ht.used = 0;
     obj->length = 0;
 
     return obj;

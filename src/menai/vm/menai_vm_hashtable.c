@@ -118,7 +118,6 @@ menai_ht_init(MenaiHashTable *ht, ssize_t n)
     if (n == 0) {
         ht->slots = NULL;
         ht->slot_count = 0;
-        ht->used = 0;
         return 0;
     }
 
@@ -135,7 +134,6 @@ menai_ht_init(MenaiHashTable *ht, ssize_t n)
 
     memset(ht->slots, 0, (size_t)sc * sizeof(MenaiHashSlot));
     ht->slot_count = sc;
-    ht->used = 0;
     return 0;
 }
 
@@ -145,7 +143,6 @@ menai_ht_final(MenaiHashTable *ht)
     free(ht->slots);
     ht->slots = NULL;
     ht->slot_count = 0;
-    ht->used = 0;
 }
 
 ssize_t
@@ -187,7 +184,6 @@ menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index)
             s->key = key;
             s->hash = hash;
             s->index = index;
-            ht->used++;
             return;
         }
 

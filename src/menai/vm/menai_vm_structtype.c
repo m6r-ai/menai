@@ -31,7 +31,6 @@ alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString
     menai_value_retain((MenaiValue *)name);
     self->field_ht.slots = NULL;
     self->field_ht.slot_count = 0;
-    self->field_ht.used = 0;
     self->name = name;
     self->tag = tag;
     self->nfields = (int)nfields;

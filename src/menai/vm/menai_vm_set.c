@@ -22,7 +22,6 @@ alloc_menai_set(MenaiVMState *vs, ssize_t cap)
     obj->length = 0;
     obj->ht.slots = NULL;
     obj->ht.slot_count = 0;
-    obj->ht.used = 0;
 
     return obj;
 }

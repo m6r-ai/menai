@@ -88,14 +88,13 @@ typedef struct {
  *
  * Invariants:
  *   - slot_count is always a power of 2 (or 0 for an empty table).
- *   - used <= slot_count * MENAI_HT_MAX_LOAD.
+ *   - slot_count is sized so that n <= slot_count * MENAI_HT_MAX_LOAD at construction.
  *   - A slot is empty when its key pointer is NULL.
  *   - Deleted slots are not used (tables are immutable after construction).
  */
 typedef struct {
     MenaiHashSlot *slots;
     ssize_t slot_count;  /* power of 2; 0 means uninitialised */
-    ssize_t used;
 } MenaiHashTable;
 
 struct MenaiCodeObject {
