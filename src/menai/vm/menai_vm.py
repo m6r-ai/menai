@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import cast
 
+from menai.bytecode.menai_bytecode import Opcode
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_value import MenaiValue
 from menai.vm.menai_vm_bytecode_validator import validate_bytecode
@@ -14,6 +15,8 @@ from menai.vm.menai_vm_c import state_alloc as _c_vm_state_alloc  # type: ignore
 from menai.vm.menai_vm_c import state_free as _c_vm_state_free  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import set_prelude as _c_vm_set_prelude  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import cancel as _c_vm_cancel  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import enable_profiling as _c_vm_enable_profiling  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import get_profile_data as _c_vm_get_profile_data  # type: ignore[import-not-found]
 
 
 class MenaiVM:
@@ -63,3 +66,26 @@ class MenaiVM:
         check point in the C execution loop.
         """
         _c_vm_cancel(self._state)
+
+    def enable_profiling(self) -> None:
+        """Reset profiling counters and enable per-opcode profiling."""
+        _c_vm_enable_profiling(self._state)
+
+    def get_profile_data(self) -> dict[str, int]:
+        """
+        Return profiling data as a dict mapping opcode name to execution count.
+
+        The special key "__total__" maps to total instruction count.
+        Returns an empty dict if profiling was never enabled or the VM
+        was not built with MENAI_PROFILE=1.
+        """
+        raw = _c_vm_get_profile_data(self._state)
+        result: dict[str, int] = {}
+        for key, count in raw.items():
+            if key == "__total__":
+                result["__total__"] = count
+
+            else:
+                result[Opcode(int(key)).name] = count
+
+        return result

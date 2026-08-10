@@ -423,6 +423,28 @@ typedef struct {
 #define MENAI_INT_CACHE_SIZE (MENAI_INT_CACHE_MAX - MENAI_INT_CACHE_MIN + 1)
 
 /*
+ * OP_MAX — upper bound for opcode values, used to size profiling arrays.
+ * The highest current opcode is 543; 1024 gives headroom.
+ */
+#define OP_MAX 1024
+
+/*
+ * MenaiProfileData — per-instance opcode profiling counters.
+ *
+ * Collected in C with zero Python overhead during execution (the GIL is
+ * released).  Exported to Python via the bridge after execution completes.
+ *
+ * opcode_counts[opcode]  — number of times each opcode was executed.
+ * total_instructions     — sum of all opcode_counts.
+ * enabled                — 0 = profiling off, 1 = counting.
+ */
+typedef struct {
+    uint64_t opcode_counts[OP_MAX];
+    uint64_t total_instructions;
+    int enabled;
+} MenaiProfileData;
+
+/*
  * GlobalsTable — open-addressing hash table for O(1) name lookup.
  *
  * Built once by the bridge and cached.  The cached table is a complete
@@ -475,6 +497,8 @@ typedef struct MenaiVMState {
     int _globals_valid;
 
     int _cancel_flag;
+
+    MenaiProfileData _profile;
 } MenaiVMState;
 
 MenaiVMState *menai_vm_state_alloc(void);
@@ -1018,5 +1042,9 @@ MenaiValue *menai_vm_execute_native(MenaiVMState *vs,
                                     MenaiVMError *out_error);
 
 void menai_vm_cancel(MenaiVMState *vs);
+
+void menai_vm_enable_profiling(MenaiVMState *vs);
+
+void menai_vm_get_profile_data(MenaiVMState *vs, uint64_t *out_counts, uint64_t *out_total_instr);
 
 #endif /* MENAI_VM_C_H */

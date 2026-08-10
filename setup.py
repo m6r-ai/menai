@@ -10,7 +10,6 @@ pyproject.toml.  This file only contributes the ext-modules.
 
 Usage:
     python setup.py build_ext --inplace    # development build
-    pip wheel .                             # wheel build (used by cibuildwheel)
 """
 
 import sys

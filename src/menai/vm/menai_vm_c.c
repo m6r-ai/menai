@@ -471,6 +471,26 @@ _menai_mul_overflow(long a, long b, long *r) {
 #define OP_ASSERT_STRUCTTYPE 543
 
 /*
+ * Profiling control — enable and extract.
+ * These are always compiled in (not under MENAI_PROFILE) so the bridge
+ * can call them regardless of build mode.  When profiling is not compiled
+ * into the dispatch loop the counters simply stay at zero.
+ */
+void
+menai_vm_enable_profiling(MenaiVMState *vs)
+{
+    memset(&vs->_profile, 0, sizeof(MenaiProfileData));
+    vs->_profile.enabled = 1;
+}
+
+void
+menai_vm_get_profile_data(MenaiVMState *vs, uint64_t *out_counts, uint64_t *out_total_instr)
+{
+    memcpy(out_counts, vs->_profile.opcode_counts, sizeof(vs->_profile.opcode_counts));
+    *out_total_instr = vs->_profile.total_instructions;
+}
+
+/*
  * menai_integer_to_menai_bigint — promote a MenaiInteger to an owned MenaiBigInt.
  * Caller must ensure val is a MenaiInteger and must free *out after use.
  * *out must be initialised (menai_bigint_init) before calling.
@@ -894,6 +914,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         cur_opcode = opcode;
         cur_ip = frame->ip - 1;
+
+        if (MENAI_LIKELY(vs->_profile.enabled)) {
+            vs->_profile.opcode_counts[opcode]++;
+            vs->_profile.total_instructions++;
+        }
 
         switch (opcode) {
         case OP_LOAD_NONE:

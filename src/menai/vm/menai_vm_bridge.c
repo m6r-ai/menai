@@ -1892,6 +1892,105 @@ menai_vm_c_set_prelude(PyObject *self, PyObject *args)
 }
 
 /*
+ * menai_vm_c_enable_profiling — Python-callable wrapper.
+ *
+ * enable_profiling(state_capsule) resets all profiling counters and sets
+ * the enabled flag so the dispatch loop starts recording per-opcode data.
+ */
+static PyObject *
+menai_vm_c_enable_profiling(PyObject *self, PyObject *capsule)
+{
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    menai_vm_enable_profiling(vs);
+    Py_RETURN_NONE;
+}
+
+/*
+ * menai_vm_c_get_profile_data — Python-callable wrapper.
+ *
+ * get_profile_data(state_capsule) returns a dict mapping opcode integer
+ * value to count for every opcode that was executed at least once.
+ * Also includes "__total__" with [total_instructions].
+ * Opcode integer keys are mapped to names by the Python wrapper using
+ * the existing Opcode IntEnum — no duplicate name table in C.
+ */
+static PyObject *
+menai_vm_c_get_profile_data(PyObject *self, PyObject *capsule)
+{
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    uint64_t counts[OP_MAX];
+    uint64_t total_instr;
+    menai_vm_get_profile_data(vs, counts, &total_instr);
+
+    PyObject *result = PyDict_New();
+    if (!result) {
+        return NULL;
+    }
+
+    for (int i = 0; i < OP_MAX; i++) {
+        if (counts[i] == 0) {
+            continue;
+        }
+
+        PyObject *count_val = PyLong_FromUnsignedLongLong(counts[i]);
+        if (!count_val) {
+            Py_DECREF(result);
+            return NULL;
+        }
+
+        PyObject *key = PyLong_FromLong(i);
+        if (!key) {
+            Py_DECREF(count_val);
+            Py_DECREF(result);
+            return NULL;
+        }
+
+        if (PyDict_SetItem(result, key, count_val) < 0) {
+            Py_DECREF(key);
+            Py_DECREF(count_val);
+            Py_DECREF(result);
+            return NULL;
+        }
+
+        Py_DECREF(key);
+        Py_DECREF(count_val);
+    }
+
+    PyObject *total_key = PyUnicode_FromString("__total__");
+    if (!total_key) {
+        Py_DECREF(result);
+        return NULL;
+    }
+
+    PyObject *total_val = PyLong_FromUnsignedLongLong(total_instr);
+    if (!total_val) {
+        Py_DECREF(total_key);
+        Py_DECREF(result);
+        return NULL;
+    }
+
+    if (PyDict_SetItem(result, total_key, total_val) < 0) {
+        Py_DECREF(total_key);
+        Py_DECREF(total_val);
+        Py_DECREF(result);
+        return NULL;
+    }
+
+    Py_DECREF(total_key);
+    Py_DECREF(total_val);
+
+    return result;
+}
+
+/*
  * Module definition
  */
 static PyMethodDef menai_vm_c_methods[] = {
@@ -1924,6 +2023,18 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_set_prelude,
         METH_VARARGS,
         "Execute a prelude CodeObject and store its globals in the VM state."
+    },
+    {
+        "enable_profiling",
+        menai_vm_c_enable_profiling,
+        METH_O,
+        "Enable opcode profiling and reset counters."
+    },
+    {
+        "get_profile_data",
+        menai_vm_c_get_profile_data,
+        METH_O,
+        "Return profiling data as a dict mapping opcode name to [count, cycles]."
     },
     { NULL, NULL, 0, NULL }
 };
