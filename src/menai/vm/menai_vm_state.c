@@ -55,7 +55,7 @@ menai_vm_state_alloc(void)
         return NULL;
     }
 
-    vs->empty_dict = alloc_menai_dict(vs);
+    vs->empty_dict = alloc_menai_dict(vs, 0);
     if (vs->empty_dict == NULL) {
         menai_vm_state_free(vs);
         return NULL;

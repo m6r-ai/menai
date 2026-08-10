@@ -190,11 +190,12 @@ struct MenaiComplex {
 
 struct MenaiDict {
     MenaiValue_HEAD
-    MenaiValue **keys;                  /* C array of owned MenaiValues */
-    MenaiValue **values;                /* C array of owned MenaiValues */
-    hash_t *hashes;                     /* C array of menai_value_hash(keys[i]) */
+    MenaiValue **keys;                  /* points into inline_data[0..cap-1] */
+    MenaiValue **values;                /* points into inline_data past keys */
+    hash_t *hashes;                     /* points into inline_data past values */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) key lookup */
     ssize_t length;
+    MenaiValue *inline_data[];          /* FAM: keys[0..cap-1] then values[0..cap-1] then hashes[0..cap-1] */
 };
 
 struct MenaiFloat {
@@ -832,7 +833,7 @@ menai_structtype_hash(MenaiStructType *st)
     return (hash_t)st->tag;
 }
 
-MenaiDict *alloc_menai_dict(MenaiVMState *vs);
+MenaiDict *alloc_menai_dict(MenaiVMState *vs, ssize_t cap);
 
 static inline int
 menai_dict_equal(MenaiDict *a, MenaiDict *b)

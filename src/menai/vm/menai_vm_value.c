@@ -40,24 +40,11 @@ static inline void
 menai_dict_free(MenaiVMState *vs, MenaiDict *self)
 {
     ssize_t n = self->length;
-
-    if (self->keys) {
-        for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(vs, self->keys[i]);
-        }
-
-        free(self->keys);
+    for (ssize_t i = 0; i < n; i++) {
+        menai_value_release(vs, self->keys[i]);
+        menai_value_release(vs, self->values[i]);
     }
 
-    if (self->values) {
-        for (ssize_t i = 0; i < n; i++) {
-            menai_value_release(vs, self->values[i]);
-        }
-
-        free(self->values);
-    }
-
-    free(self->hashes);
     menai_ht_final(&self->ht);
     menai_free(vs, self);
 }

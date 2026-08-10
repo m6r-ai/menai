@@ -626,32 +626,19 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
 
     if (n == 0) {
         Py_DECREF(pairs);
-        return (MenaiValue *)alloc_menai_dict(vs);
+        return (MenaiValue *)alloc_menai_dict(vs, 0);
     }
 
-    MenaiValue **keys = (MenaiValue **)malloc(n * sizeof(MenaiValue *));
-    if (!keys) {
+    MenaiDict *r = alloc_menai_dict(vs, (ssize_t)n);
+    if (!r) {
         Py_DECREF(pairs);
         PyErr_NoMemory();
         return NULL;
     }
 
-    MenaiValue **values = (MenaiValue **)malloc(n * sizeof(MenaiValue *));
-    if (!values) {
-        free(keys);
-        Py_DECREF(pairs);
-        PyErr_NoMemory();
-        return NULL;
-    }
-
-    hash_t *hashes = (hash_t *)malloc(n * sizeof(hash_t));
-    if (!hashes) {
-        free(values);
-        free(keys);
-        Py_DECREF(pairs);
-        PyErr_NoMemory();
-        return NULL;
-    }
+    MenaiValue **keys = r->keys;
+    MenaiValue **values = r->values;
+    hash_t *hashes = r->hashes;
 
     Py_ssize_t populated = 0;
 
@@ -687,25 +674,16 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
 
     Py_DECREF(pairs);
 
-    MenaiDict *r = alloc_menai_dict(vs);
-    if (!r) {
-        PyErr_NoMemory();
-        goto fail_full;
-    }
-
     if (menai_ht_init(&r->ht, (ssize_t)n) < 0) {
         menai_free(vs, r);
         PyErr_NoMemory();
-        goto fail_full;
+        return NULL;
     }
 
     for (Py_ssize_t i = 0; i < n; i++) {
         menai_ht_insert(&r->ht, keys[i], hashes[i], (ssize_t)i);
     }
 
-    r->keys = keys;
-    r->values = values;
-    r->hashes = hashes;
     r->length = (ssize_t)n;
 
     return (MenaiValue *)r;
@@ -715,11 +693,6 @@ fail:
         menai_value_release(vs, keys[j]);
         menai_value_release(vs, values[j]);
     }
-
-fail_full:
-    free(hashes);
-    free(values);
-    free(keys);
     return NULL;
 }
 
@@ -1565,29 +1538,18 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
 {
     Py_ssize_t n = PyDict_Size(pydict);
     if (n == 0) {
-        return alloc_menai_dict(vs);
+        return alloc_menai_dict(vs, 0);
     }
 
-    MenaiValue **keys = (MenaiValue **)malloc((size_t)n * sizeof(MenaiValue *));
-    if (!keys) {
+    MenaiDict *r = alloc_menai_dict(vs, (ssize_t)n);
+    if (!r) {
         PyErr_NoMemory();
         return NULL;
     }
 
-    MenaiValue **values = (MenaiValue **)malloc((size_t)n * sizeof(MenaiValue *));
-    if (!values) {
-        free(keys);
-        PyErr_NoMemory();
-        return NULL;
-    }
-
-    hash_t *hashes = (hash_t *)malloc((size_t)n * sizeof(hash_t));
-    if (!hashes) {
-        free(keys);
-        free(values);
-        PyErr_NoMemory();
-        return NULL;
-    }
+    MenaiValue **keys = r->keys;
+    MenaiValue **values = r->values;
+    hash_t *hashes = r->hashes;
 
     Py_ssize_t i = 0;
     PyObject *key, *val;
@@ -1614,12 +1576,6 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
         i++;
     }
 
-    MenaiDict *r = alloc_menai_dict(vs);
-    if (!r) {
-        PyErr_NoMemory();
-        goto fail;
-    }
-
     if (menai_ht_init(&r->ht, (ssize_t)n) < 0) {
         menai_free(vs, r);
         PyErr_NoMemory();
@@ -1630,9 +1586,6 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
         menai_ht_insert(&r->ht, keys[j], hashes[j], (ssize_t)j);
     }
 
-    r->keys = keys;
-    r->values = values;
-    r->hashes = hashes;
     r->length = (ssize_t)n;
 
     return r;
@@ -1642,9 +1595,6 @@ fail:
         menai_value_release(vs, keys[j]);
         menai_value_release(vs, values[j]);
     }
-    free(keys);
-    free(values);
-    free(hashes);
     return NULL;
 }
 
