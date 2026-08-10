@@ -2,6 +2,10 @@
 
 ## v0.2.0 (2026-08-10)
 
+New features:
+
+- Adde VM opcode profiling support.
+
 Bug fixes:
 
 - Fixed a problem with dictionary comparisons.  The order of elements does not matter.
