@@ -792,16 +792,16 @@ class Menai:
                         (error "bytes-split: delimiter must be non-empty")
                         (letrec ((loop (lambda (start acc)
                                          (match (bytes-index (bytes-slice b start (bytes-length b)) delimiter)
-                                          (#none (list-reverse (list-prepend acc (bytes-slice b start (bytes-length b)))))
+                                          (#none (list-append acc (bytes-slice b start (bytes-length b))))
                                            (pos (loop (integer+ start pos dlen)
-                                                     (list-prepend acc (bytes-slice b start (integer+ start pos)))))))))
+                                                     (list-append acc (bytes-slice b start (integer+ start pos)))))))))
                           (loop 0 (list)))))))
    (bytes-split-int (lambda (b byte)
                       (letrec ((loop (lambda (start acc)
                                        (match (bytes-index-int (bytes-slice b start (bytes-length b)) byte)
-                                         (#none (list-reverse (list-prepend acc (bytes-slice b start (bytes-length b)))))
+                                         (#none (list-append acc (bytes-slice b start (bytes-length b))))
                                          (pos (loop (integer+ start pos 1)
-                                                    (list-prepend acc (bytes-slice b start (integer+ start pos)))))))))
+                                                    (list-append acc (bytes-slice b start (integer+ start pos)))))))))
                         (loop 0 (list)))))
    (list (lambda (. args) args))
    (list? (lambda (x) ($list? x)))
@@ -975,20 +975,20 @@ class Menai:
                (letrec
                  ((helper (lambda (f lst acc)
                             (if ($list-null? lst)
-                                ($list-reverse acc)
+                                acc
                                 (helper f
                                         ($list-rest lst)
-                                        ($list-prepend acc (f ($list-first lst))))))))
+                                        ($list-append acc (f ($list-first lst))))))))
                  (helper f lst (list)))))
    (filter-list (lambda (pred lst)
                   (letrec
                     ((helper (lambda (pred lst acc)
                                (if ($list-null? lst)
-                                   ($list-reverse acc)
+                                   acc
                                    (if (pred ($list-first lst))
                                        (helper pred
                                                ($list-rest lst)
-                                               ($list-prepend acc ($list-first lst)))
+                                               ($list-append acc ($list-first lst)))
                                        (helper pred ($list-rest lst) acc))))))
                     (helper pred lst (list)))))
    (fold-list (lambda (f init lst)
@@ -1029,27 +1029,27 @@ class Menai:
                (letrec
                  ((helper (lambda (l1 l2 acc)
                             (if (or ($list-null? l1) ($list-null? l2))
-                                ($list-reverse acc)
+                                acc
                                 (helper ($list-rest l1)
                                         ($list-rest l2)
-                                        ($list-prepend acc (list ($list-first l1) ($list-first l2))))))))
+                                        ($list-append acc (list ($list-first l1) ($list-first l2))))))))
                  (helper lst1 lst2 (list)))))
    (sort-list (lambda (cmp lst)
                 (letrec
                   ((merge (lambda (cmp a b acc)
                             (if ($list-null? a)
-                                ($list-concat ($list-reverse acc) b)
+                                ($list-concat acc b)
                                 (if ($list-null? b)
-                                    ($list-concat ($list-reverse acc) a)
+                                    ($list-concat acc a)
                                     (if (cmp ($list-first b) ($list-first a))
                                         (merge cmp
                                                a
                                                ($list-rest b)
-                                               ($list-prepend acc ($list-first b)))
+                                               ($list-append acc ($list-first b)))
                                         (merge cmp
                                                ($list-rest a)
                                                b
-                                               ($list-prepend acc ($list-first a))))))))
+                                               ($list-append acc ($list-first a))))))))
                    (sort (lambda (cmp lst)
                            (let
                              ((n ($list-length lst)))
