@@ -4,13 +4,16 @@
 
 New features:
 
-- Adde VM opcode profiling support.
+- Added VM opcode profiling support.
+- Improved performance of a number of prelude functions by using a `list-append` operation rather
+  than `list-prepend` followed by `list-reverse`.
 
 Bug fixes:
 
 - Fixed a problem with dictionary comparisons.  The order of elements does not matter.
 - Fixed several out-of-memory error handling issues.
 - Fixed thread-safety issues.
+- Fixed a type propagation error that was removing necessary type check opcodes.
 
 Internal structure changes:
 
