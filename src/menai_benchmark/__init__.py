@@ -7,6 +7,7 @@ from .benchmark import (
     BenchmarkSuite,
     CaseResult,
     Implementation,
+    ProfileResult,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "BenchmarkSuite",
     "CaseResult",
     "Implementation",
+    "ProfileResult",
 ]

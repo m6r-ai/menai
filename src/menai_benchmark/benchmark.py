@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import field
 import time
 from typing import Any
 
@@ -47,6 +48,17 @@ class CaseResult:
     error: str | None
 
 
+@dataclass
+class ProfileResult:
+    """Opcode profiling data for one implementation on one case."""
+
+    case: BenchmarkCase
+    impl_name: str
+    opcode_counts: dict[str, int] = field(default_factory=dict)
+    total_instructions: int = 0
+    error: str | None = None
+
+
 class BenchmarkSuite(ABC):
     """
     Abstract base class for a family of related benchmarks.
@@ -83,18 +95,26 @@ class BenchmarkRunner:
 
     The caller is responsible for warming up the Menai instance before
     passing it in.  No additional warmup is performed here.
+
+    When *profile* is True, opcode profiling is enabled on the Menai VM
+    during the timed runs.  Profile data is collected from the final
+    timed iteration of each Menai implementation and returned alongside
+    the timing results.  The profiling overhead is included in the
+    measured times, reflecting the real cost of profiling.
     """
 
-    def __init__(self, suite: BenchmarkSuite, menai: Menai) -> None:
-        """Initialise the runner with a suite and a warmed-up Menai instance."""
+    def __init__(self, suite: BenchmarkSuite, menai: Menai, profile: bool = False) -> None:
+        """Initialise the runner with a suite, a warmed-up Menai instance, and optional profiling."""
         self._suite = suite
         self._menai = menai
+        self._profile = profile
 
-    def run(self) -> list[CaseResult]:
-        """Execute every (case, implementation) combination and return the results."""
+    def run(self) -> tuple[list[CaseResult], list[ProfileResult]]:
+        """Execute every (case, implementation) combination and return timing and profile results."""
         suite = self._suite
         impls = suite.implementations(self._menai)
         results: list[CaseResult] = []
+        profile_results: list[ProfileResult] = []
 
         for case in suite.cases():
             reference_result: Any = None
@@ -104,6 +124,7 @@ class BenchmarkRunner:
                 times: list[float] = []
                 result: Any = None
                 error: str | None = None
+                profile_data: dict[str, int] = {}
 
                 # Pre-timing setup: build strings, compile, etc.
                 if impl.prepare is not None:
@@ -112,12 +133,19 @@ class BenchmarkRunner:
                 else:
                     prepared = case.input
 
+                if self._profile:
+                    self._menai.vm.enable_profiling()
+
                 try:
-                    for _ in range(case.iterations):
+                    for iteration in range(case.iterations):
                         t0 = time.perf_counter()
                         raw = impl.run(prepared)
                         t1 = time.perf_counter()
                         times.append(t1 - t0)
+
+                        # Collect profile data from the last iteration.
+                        if self._profile and iteration == case.iterations - 1:
+                            profile_data = self._menai.vm.get_profile_data()
 
                     # Convert MenaiValue → Python outside the timed loop.
                     if hasattr(raw, 'to_python'):
@@ -156,7 +184,19 @@ class BenchmarkRunner:
                     )
                 )
 
-        return results
+                if self._profile:
+                    total = profile_data.pop("__total__", 0) if profile_data else 0
+                    profile_results.append(
+                        ProfileResult(
+                            case=case,
+                            impl_name=impl.name,
+                            opcode_counts=profile_data,
+                            total_instructions=total,
+                            error=error,
+                        )
+                    )
+
+        return results, profile_results
 
 
 class BenchmarkReporter:
@@ -168,6 +208,10 @@ class BenchmarkReporter:
     _COL_MEAN = 9
     _COL_MIN = 9
     _COL_VS = 16
+    _PROFILE_SEPARATOR = "─" * 70
+    _COL_OPCODE = 40
+    _COL_COUNT = 15
+    _COL_PCT = 12
 
     def report(
         self,
@@ -273,6 +317,71 @@ class BenchmarkReporter:
             summary_parts.append(f"{name} {count}/{total} {marker}")
 
         print("Validation: " + "  |  ".join(summary_parts))
+        print()
+
+    def report_profile(
+        self,
+        suite_name: str,
+        profile_results: list[ProfileResult],
+        implementations: list[Implementation],
+        top_n: int = 40,
+    ) -> None:
+        """
+        Print opcode frequency profiles for each (case, implementation) pair.
+
+        Only Menai implementations produce opcode profile data.  Non-Menai
+        implementations are skipped silently.
+        """
+        if not profile_results:
+            return
+
+        impl_names = [i.name for i in implementations]
+        cases: list[BenchmarkCase] = []
+        seen: set[str] = set()
+        for prof in profile_results:
+            if prof.case.name not in seen:
+                cases.append(prof.case)
+                seen.add(prof.case.name)
+
+        by_key: dict[tuple[str, str], ProfileResult] = {
+            (prof.case.name, prof.impl_name): prof for prof in profile_results
+        }
+
+        print()
+        print(f"{suite_name.upper()} — OPCODE PROFILES")
+        print(self._SEPARATOR)
+
+        for case in cases:
+            for name in impl_names:
+                pr: ProfileResult | None = by_key.get((case.name, name))
+                if pr is None or pr.error is not None:
+                    continue
+
+                if not pr.opcode_counts or pr.total_instructions == 0:
+                    continue
+
+                print(f"\n  {case.name} / {name}")
+                print(f"  {self._PROFILE_SEPARATOR}")
+
+                entries = [
+                    (op, count)
+                    for op, count in pr.opcode_counts.items()
+                    if count > 0
+                ]
+                entries.sort(key=lambda e: e[1], reverse=True)
+
+                print(f"  {'Opcode':<{self._COL_OPCODE}} {'Count':>{self._COL_COUNT}} {'% of total':>{self._COL_PCT}}")
+                print(f"  {'-' * self._COL_OPCODE} {'-' * self._COL_COUNT} {'-' * self._COL_PCT}")
+
+                for op, count in entries[:top_n]:
+                    pct = (count / pr.total_instructions * 100.0) if pr.total_instructions > 0 else 0.0
+                    print(f"  {op:<{self._COL_OPCODE}} {count:>{self._COL_COUNT},} {pct:>{self._COL_PCT - 1}.1f}%")
+
+                print(f"  {'-' * self._COL_OPCODE} {'-' * self._COL_COUNT} {'-' * self._COL_PCT}")
+                print(f"  {'TOTAL':<{self._COL_OPCODE}} {pr.total_instructions:>{self._COL_COUNT},}")
+
+        print()
+        print(self._SEPARATOR)
         print()
 
     def _vs_ref(self, ref_mean_s: float | None, impl_mean_s: float | None) -> str:

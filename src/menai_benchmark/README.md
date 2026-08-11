@@ -13,6 +13,8 @@ python run.py --suite sort           # run only the sort suite
 python run.py --suite sort sudoku    # run multiple suites
 python run.py --iterations 3         # override iteration count on every case
 python run.py --no-validate          # skip correctness checks (timing only)
+python run.py --profile              # opcode profiling (Menai only)
+python run.py --profile --profile-top 20  # limit opcode output
 ```
 
 ## Structure
@@ -27,7 +29,7 @@ benchmark/
     │   ├── suite.py          # JSON parser benchmark suite
     │   ├── json_parser.menai
     │   └── json_parser.py
-    ├── rubiks/
+    ├── rubiks_cube/
     │   ├── suite.py          # Rubik's cube IDA* benchmark suite
     │   └── rubiks_cube.menai
     ├── sort/
@@ -49,6 +51,23 @@ Each suite benchmarks three implementations:
 The first implementation (Menai) is the reference. All others are validated
 against it using per-suite correctness checks.
 
+## Opcode profiling
+
+The `--profile` flag enables VM-level opcode frequency profiling during the
+timed runs.  After the timing report, an opcode frequency table is printed
+for each Menai implementation and case, showing which bytecode opcodes
+dominate execution by count and as a percentage of total instructions.
+
+Profiling overhead is included in the measured times, so the timing numbers
+reflect the real cost of running with profiling enabled.  This lets you
+assess the profiling overhead by comparing a profiled run against an
+unprofiled run.
+
+Only Menai implementations produce opcode profile data — the Python
+implementations run outside the VM and are skipped in the profile output.
+
+`--profile-top N` controls how many opcodes are shown per case (default: 40).
+
 ## Suites
 
 ### JSON Parser
@@ -68,7 +87,7 @@ is solved.
 ### Sort
 Sorts a list of random integers using `sort-list` in Menai, `sorted()` in
 idiomatic Python, and a recursive merge sort in functional Python.
-Sizes: 10, 50, 100, 250, 500, 1000, 2000 elements.
+Sizes: 10, 50, 100, 250, 500, 1000, 2500, 5000, 10000 elements.
 
 ### Sudoku
 Solves sudoku puzzles using a backtracking solver. Four difficulty levels:

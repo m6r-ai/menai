@@ -92,11 +92,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run Menai benchmark suites and report timing results.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "python run.py                        # run all suites\n"
-            "python run.py --suite sort           # run only the sort suite\n"
-            "python run.py --suite sort sudoku    # run multiple\n"
-            "python run.py --iterations 5         # override iteration count\n"
-            "python run.py --no-validate          # skip correctness checks"
+            "python run.py                             # run all suites\n"
+            "python run.py --suite sort                # run only the sort suite\n"
+            "python run.py --suite sort sudoku         # run multiple\n"
+            "python run.py --iterations 5              # override iteration count\n"
+            "python run.py --no-validate               # skip correctness checks\n"
+            "python run.py --profile                   # opcode profiling (Menai only)\n"
+            "python run.py --profile --profile-top 20  # limit opcode output"
         ),
     )
     parser.add_argument(
@@ -127,6 +129,24 @@ def build_parser() -> argparse.ArgumentParser:
             "results_equal calls.  Useful when you only care about timing."
         ),
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        dest="profile",
+        help=(
+            "Enable VM opcode profiling during timed runs.  Adds per-opcode "
+            "frequency tables after the timing report.  Profiling overhead "
+            "is included in the measured times."
+        ),
+    )
+    parser.add_argument(
+        "--profile-top",
+        metavar="N",
+        type=int,
+        default=40,
+        dest="profile_top",
+        help="Show top N opcodes in the profile output (default: 40).",
+    )
     return parser
 
 
@@ -135,6 +155,8 @@ def run_suite(
     suite_class: type[BenchmarkSuite],
     iterations: int | None,
     no_validate: bool,
+    profile: bool,
+    profile_top: int,
 ) -> None:
     """
     Instantiate, run, and report a single benchmark suite.
@@ -147,6 +169,8 @@ def run_suite(
                       case before running.
         no_validate:  If ``True``, patch all ``CaseResult`` objects so that
                       ``valid=True`` and ``error=None`` before reporting.
+        profile:      If ``True``, enable opcode profiling during timed runs.
+        profile_top:  Number of top opcodes to show in the profile output.
     """
     suite = suite_class()
 
@@ -157,8 +181,8 @@ def run_suite(
     module_path = [str(suite_dir), str(_MENAI_MODULES_DIR)]
     menai = Menai(module_path=module_path)
 
-    runner = BenchmarkRunner(suite, menai)
-    results = runner.run()
+    runner = BenchmarkRunner(suite, menai, profile=profile)
+    results, profile_results = runner.run()
 
     if no_validate:
         for result in results:
@@ -167,6 +191,14 @@ def run_suite(
 
     reporter = BenchmarkReporter()
     reporter.report(suite.name, results, suite.implementations(menai))
+
+    if profile:
+        reporter.report_profile(
+            suite.name,
+            profile_results,
+            suite.implementations(menai),
+            top_n=profile_top,
+        )
 
 
 def main() -> None:
@@ -200,6 +232,8 @@ def main() -> None:
             suite_class=suite_class,
             iterations=args.iterations,
             no_validate=args.no_validate,
+            profile=args.profile,
+            profile_top=args.profile_top,
         )
 
     if len(selected) > 1:
