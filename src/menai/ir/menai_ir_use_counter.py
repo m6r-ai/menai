@@ -3,7 +3,7 @@ Menai IR Use Counter - pure analysis pass over the IR tree.
 
 Walks a MenaiIRExpr tree and counts every reference to every locally-bound
 variable, producing an IRUseCounts annotation that downstream passes
-(MenaiIRCopyPropagator, MenaiIRInlineOnce, MenaiIROptimizer) can consume.
+(MenaiIROptimizer) can consume.
 """
 
 from dataclasses import dataclass, field
