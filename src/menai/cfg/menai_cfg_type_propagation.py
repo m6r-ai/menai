@@ -218,24 +218,51 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
     ) -> bool:
         """
         Insert guard instructions where type-specific builtins receive
-        operands of unknown type.
+        operands of unknown type.  Guards are scoped by dominance: a guard
+        inserted in a block suppresses redundant guards in blocks it
+        dominates (those with a single chain of single-predecessor blocks
+        from it), but not in sibling blocks reached via alternative
+        branches.
 
-        As guards are inserted, the types dict is updated so that subsequent
-        uses of the same value don't trigger redundant guards.
+        For each block, the incoming type knowledge is determined by its
+        predecessors:
+          - A block with exactly one predecessor inherits that
+            predecessor's outgoing types (which include guards inserted
+            there).  This is sound because the single predecessor is the
+            only way to reach the block, so any guard in it must have
+            executed.
+          - A block with zero or multiple predecessors starts from the
+            Phase 1 propagated types.  Multiple predecessors mean the
+            block is a join point; a guard on one incoming path does not
+            prove the type on other paths.
+
+        Within a single block, guards still suppress redundant guards for
+        later instructions in that block.
 
         Returns True if any guards were inserted.
         """
         changed = False
 
+        outgoing_types: dict[int, dict[int, str | None]] = {}
+
         for block in func.blocks:
+            preds = block.predecessors
+            if len(preds) == 1:
+                block_types = dict(outgoing_types.get(preds[0].id, types))
+
+            else:
+                block_types = dict(types)
+
             new_instrs: list[MenaiCFGInstr] = []
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGBuiltinInstr):
-                    self._guard_builtin_args(instr, types, new_instrs)
+                    self._guard_builtin_args(instr, block_types, new_instrs)
 
                 new_instrs.append(instr)
 
-            self._guard_branch(block, types, new_instrs)
+            self._guard_branch(block, block_types, new_instrs)
+
+            outgoing_types[block.id] = block_types
 
             if len(new_instrs) != len(block.instrs):
                 block.instrs = new_instrs
