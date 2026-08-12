@@ -44,6 +44,14 @@ unknown-typed value only need one guard.
 
 The pass mutates the CFG in place — it inserts MenaiCFGGuardInstr instructions
 into block.instrs lists and returns the same MenaiCFGFunction.
+
+Phase 3 — Loop-invariant guard hoisting.  When a function contains a
+SelfLoopTerm, guards inserted in the entry block on free vars (which never
+change) and on params whose type is preserved through the loop body (the
+back-edge type matches the guard's expected type) are hoisted into a
+preamble block.  The SelfLoopTerm's target is set to the loop-entry block
+(the original entry minus the hoisted guards), so the self-loop skips the
+preamble on every iteration after the first.
 """
 
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
@@ -59,12 +67,14 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFunction,
     MenaiCFGGlobalInstr,
     MenaiCFGGuardInstr,
+    MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGMakeListInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeStructInstr,
     MenaiCFGParamInstr,
+    MenaiCFGSelfLoopTerm,
     MenaiCFGPhiInstr,
 )
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
@@ -127,6 +137,9 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
 
         # Phase 2: insert guards where needed.
         changed = self._insert_guards(func, types)
+
+        # Phase 3: hoist loop-invariant guards out of self-loops.
+        changed = self._hoist_loop_invariant_guards(func, types) or changed
 
         return func, changed
 
@@ -331,3 +344,194 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
             expected_type='boolean',
         ))
         types[term.cond.id] = 'boolean'
+
+    def _hoist_loop_invariant_guards(
+        self,
+        func: MenaiCFGFunction,
+        types: dict[int, str | None],
+    ) -> bool:
+        """
+        Hoist loop-invariant guards from the entry block into a preamble
+        block so they execute once on function entry rather than on every
+        self-loop iteration.
+
+        A guard in the entry block is loop-invariant if it guards a value
+        whose type is known to be preserved across the self-loop back-edge:
+
+          - Free var guards: always loop-invariant (free vars are never
+            reassigned).
+          - Param guards: loop-invariant when the type of the corresponding
+            SelfLoopTerm arg (the new value assigned to that param) matches
+            the guard's expected type.  The arg's type comes from the Phase 1
+            types dict.
+
+        When loop-invariant guards are found, the entry block is split:
+          - Preamble: ParamInstr/FreeVarInstr instructions plus the
+            loop-invariant guards, terminated by a JumpTerm to the loop-entry.
+          - Loop-entry: remaining instructions (including non-loop-invariant
+            guards), with the original terminator.
+
+        The SelfLoopTerm's target is set to the loop-entry block.
+
+        Returns True if the entry block was split.
+        """
+        self_loop = self._find_self_loop(func)
+        if self_loop is None:
+            return False
+
+        entry = func.entry()
+        param_ids = self._param_ids_by_index(entry)
+        free_var_ids = self._free_var_ids(entry)
+
+        # Params not reassigned by the self-loop (their index is beyond
+        # the self-loop args) are loop-invariant, just like free vars.
+        unchanged_param_ids = self._unchanged_param_ids(self_loop, param_ids)
+
+        back_edge_types = self._back_edge_types(self_loop, param_ids, types)
+
+        preamble_instrs: list[MenaiCFGInstr] = []
+        loop_instrs: list[MenaiCFGInstr] = []
+
+        for instr in entry.instrs:
+            if isinstance(instr, MenaiCFGGuardInstr):
+                if self._is_loop_invariant_guard(
+                    instr, free_var_ids, unchanged_param_ids, back_edge_types,
+                ):
+                    preamble_instrs.append(instr)
+                    continue
+
+            loop_instrs.append(instr)
+
+        if not preamble_instrs:
+            return False
+
+        # The preamble also needs the ParamInstr/FreeVarInstr that
+        # define the SSA values the guards reference.  These are at
+        # the top of the original entry block, before any guards.
+        def_instrs: list[MenaiCFGInstr] = []
+        for instr in loop_instrs:
+            if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr)):
+                def_instrs.append(instr)
+
+        loop_instrs = [
+            i for i in loop_instrs
+            if not isinstance(i, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
+        ]
+
+        # Preamble: param/free-var definitions, then hoisted guards.
+        entry.instrs = def_instrs + preamble_instrs
+        loop_entry = MenaiCFGBlock(
+            id=self._next_block_id(func),
+            label="loop_entry",
+            instrs=loop_instrs,
+            terminator=entry.terminator,
+        )
+
+        entry.terminator = MenaiCFGJumpTerm(target=loop_entry)
+
+        func.blocks.append(loop_entry)
+
+        self_loop.target = loop_entry
+
+        return True
+
+    def _next_block_id(self, func: MenaiCFGFunction) -> int:
+        """Return the next available block id in func."""
+        return max(b.id for b in func.blocks) + 1
+
+    def _find_self_loop(
+        self, func: MenaiCFGFunction,
+    ) -> MenaiCFGSelfLoopTerm | None:
+        """Return the SelfLoopTerm in func, or None if there is none."""
+        for block in func.blocks:
+            if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
+                return block.terminator
+
+        return None
+
+    def _param_ids_by_index(
+        self, entry: MenaiCFGBlock,
+    ) -> dict[int, int]:
+        """Map param index → SSA value id, from ParamInstr in the entry block."""
+        result: dict[int, int] = {}
+        for instr in entry.instrs:
+            if isinstance(instr, MenaiCFGParamInstr):
+                result[instr.index] = instr.result.id
+
+        return result
+
+    def _free_var_ids(
+        self, entry: MenaiCFGBlock,
+    ) -> set[int]:
+        """Return the set of SSA value ids for free vars in the entry block."""
+        result: set[int] = set()
+        for instr in entry.instrs:
+            if isinstance(instr, MenaiCFGFreeVarInstr):
+                result.add(instr.result.id)
+
+        return result
+
+    def _back_edge_types(
+        self,
+        self_loop: MenaiCFGSelfLoopTerm,
+        param_ids: dict[int, int],
+        types: dict[int, str | None],
+    ) -> dict[int, str | None]:
+        """
+        Map param SSA value id → type at the self-loop back-edge.
+
+        For each param, the back-edge type is the type of the corresponding
+        SelfLoopTerm arg (the new value assigned to that param on the
+        back-edge).  The arg's type comes from the Phase 1 types dict.
+        """
+        result: dict[int, str | None] = {}
+        for param_index, arg_val in enumerate(self_loop.args):
+            param_id = param_ids.get(param_index)
+            if param_id is not None:
+                result[param_id] = types.get(arg_val.id)
+
+        return result
+
+    def _unchanged_param_ids(
+        self,
+        self_loop: MenaiCFGSelfLoopTerm,
+        param_ids: dict[int, int],
+    ) -> set[int]:
+        """
+        Return the set of SSA value ids for params that are not reassigned
+        by the self-loop (their index is beyond the length of self_loop.args).
+        These params are loop-invariant, just like free vars.
+        """
+        n_args = len(self_loop.args)
+        return {
+            param_id for index, param_id in param_ids.items()
+            if index >= n_args
+        }
+
+    def _is_loop_invariant_guard(
+        self,
+        guard: MenaiCFGGuardInstr,
+        free_var_ids: set[int],
+        unchanged_param_ids: set[int],
+        back_edge_types: dict[int, str | None],
+    ) -> bool:
+        """
+        Return True if a guard is loop-invariant (redundant on all
+        self-loop iterations after the first).
+
+        A guard on a free var or an unchanged param is always loop-invariant
+        — these values are never reassigned across the self-loop back-edge.
+
+        A guard on a param is loop-invariant when the back-edge type (the
+        type of the value assigned to that param by the SelfLoopTerm)
+        matches the guard's expected type.
+        """
+        val_id = guard.value.id
+
+        if val_id in free_var_ids or val_id in unchanged_param_ids:
+            return True
+
+        if val_id in back_edge_types:
+            return back_edge_types[val_id] == guard.expected_type
+
+        return False

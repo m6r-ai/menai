@@ -139,6 +139,15 @@ class MenaiVCodeBuilder:
         # places (phi-move pre-computation and terminator emission).
         labels: dict[int, str] = {block.id: self._label(block) for block in rpo}
 
+        # When a SelfLoopTerm has an explicit target (set by the type
+        # propagation pass's loop-invariant guard hoisting), the target
+        # block's label is "__entry__" so that the slot allocator and bytecode
+        # builder still recognise the self-loop jump pattern.
+        for block in rpo:
+            term = block.terminator
+            if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                labels[term.target.id] = "__entry__"
+
         # Pre-compute param and free-var register lookups from the entry block,
         # so SelfLoopTerm handling can do O(1) lookups instead of linear scans.
         param_regs: dict[int, MenaiVCodeReg] = {}

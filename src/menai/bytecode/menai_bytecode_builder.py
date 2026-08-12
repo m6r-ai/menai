@@ -479,7 +479,12 @@ class MenaiBytecodeBuilder:
 
             if isinstance(instr, MenaiVCodeJump):
                 if instr.label == "__entry__":
-                    ctx.emit(Opcode.JUMP, entry_index)
+                    # When the self-loop targets a split loop-entry block,
+                    # the VCode builder emits a MenaiVCodeLabel(name="__entry__")
+                    # for that block.  Use its resolved position if present;
+                    # otherwise fall back to the function's entry instruction.
+                    target = label_index.get("__entry__", entry_index)
+                    ctx.emit(Opcode.JUMP, target)
 
                 else:
                     jump_idx = ctx.emit(Opcode.JUMP, 0)

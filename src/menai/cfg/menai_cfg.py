@@ -350,9 +350,15 @@ class MenaiCFGSelfLoopTerm:
 
     The callee is the enclosing function itself.  `args` are the new
     argument values, in parameter order.  The VM codegen lowers this to
-    JUMP 0 (after storing args into the parameter slots).
+    JUMP (after storing args into the parameter slots).
+
+    `target` is the block the self-loop jumps to.  When None (the default),
+    the self-loop targets the entry block (block 0).  When set (by the type
+    propagation pass's loop-invariant guard hoisting), the self-loop targets
+    a loop-entry block that skips hoisted guards in the preamble.
     """
     args: list[MenaiCFGValue]
+    target: 'MenaiCFGBlock | None' = None
 
 
 @dataclass
@@ -540,7 +546,8 @@ def _fmt_term(term: MenaiCFGTerminator) -> str:
         return f"tail_apply {term.func} {term.arg_list}"
 
     if isinstance(term, MenaiCFGSelfLoopTerm):
-        return f"self_loop {_fmt_values(term.args)}"
+        target = f" → block{term.target.id}" if term.target is not None else ""
+        return f"self_loop{_fmt_values(term.args)}{target}"
 
     if isinstance(term, MenaiCFGRaiseTerm):
         return f"raise {term.message}"
@@ -566,6 +573,9 @@ def relink_predecessors(func: MenaiCFGFunction) -> None:
         elif isinstance(term, MenaiCFGBranchTerm):
             _safe_add_pred(term.true_block, block, func)
             _safe_add_pred(term.false_block, block, func)
+
+        elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+            _safe_add_pred(term.target, block, func)
 
 
 def _safe_add_pred(
@@ -604,6 +614,13 @@ def remap_term(
             true_block=new_true,
             false_block=new_false,
         )
+
+    if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+        new_target = remap_block(term.target)
+        if new_target is term.target:
+            return term
+
+        return MenaiCFGSelfLoopTerm(args=term.args, target=new_target)
 
     return term
 
