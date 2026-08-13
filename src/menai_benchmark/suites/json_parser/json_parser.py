@@ -14,6 +14,8 @@ Parses a JSON string into Python native types:
 Raises ValueError on malformed input.
 """
 
+import json
+
 
 def parse(s: str) -> object:
     """Parse a JSON string and return the equivalent Python value."""
@@ -241,21 +243,51 @@ def _dispatch(s: str, pos: int, stack: list) -> tuple[object, int]:
     raise ValueError(f"Unexpected character {ch!r} at position {pos}")
 
 
-if __name__ == '__main__':
-    import json
+def _run_self_tests() -> None:
+    """Run the self-test suite comparing our parser against json.loads."""
+    # Large flat array: 100 integers
+    flat_array = "[" + ",".join(str(i) for i in range(100)) + "]"
+
+    # Large flat object: 50 key-value pairs
+    flat_object = "{" + ",".join(f'"k{i}": {i}' for i in range(50)) + "}"
+
+    # Mixed nested: array of 20 objects, each with a nested array of 5 integers
+    mixed_items = []
+    for i in range(20):
+        vals = ",".join(str(i * 5 + j) for j in range(5))
+        active = "true" if i % 2 == 0 else "false"
+        mixed_items.append(f'{{"id": {i}, "vals": [{vals}], "active": {active}}}')
+
+    mixed_nested = "[" + ",".join(mixed_items) + "]"
+
+    # String-heavy object: 20 string values with various escapes
+    string_pairs = []
+    for i in range(20):
+        string_pairs.append(f'"field{i}": "value\\nwith\\ttab\\nand\\nnewlines {i}"')
+
+    string_heavy = "{" + ",".join(string_pairs) + "}"
+
+    # Number variety: integers, negative floats, scientific notation
+    numbers_array = (
+        "[0, -42, 3.14, -3.14, 1.0e10, -2.5e-3, 100, 0.001, 999999, -0.5,"
+        " 42.0, 1e5, 6.022e23, -1.602e-19, 12345.6789]"
+    )
+
+    # Unicode escapes: strings with multiple \uXXXX sequences
+    unicode_strings = (
+        '["\\u0041\\u0042\\u0043", "\\u00e9\\u00e8\\u00ea",'
+        ' "\\u4e2d\\u6587\\u5b57\\u7b26", "\\u03a0\\u03b1\\u03b9"]'
+    )
 
     tests = [
         '{"name": "Alice", "age": 30, "active": true, "score": 9.5, "tags": ["admin", "user"], '
         '"address": {"city": "Wonderland", "zip": null}}',
-        '42',
-        '-3.14',
-        'true',
-        'false',
-        'null',
-        '"hello\\nworld"',
-        '[]',
-        '{}',
-        '[1, [2, [3]]]',
+        flat_array,
+        flat_object,
+        mixed_nested,
+        string_heavy,
+        numbers_array,
+        unicode_strings,
         # Long string (2000 chars)
         '"' + ('abcdefghij' * 200) + '"',
         # Deep nesting (500 levels)
@@ -284,3 +316,7 @@ if __name__ == '__main__':
 
     print()
     print("All passed!" if all_passed else "Some tests FAILED.")
+
+
+if __name__ == '__main__':
+    _run_self_tests()
