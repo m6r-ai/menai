@@ -244,10 +244,16 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
             there).  This is sound because the single predecessor is the
             only way to reach the block, so any guard in it must have
             executed.
-          - A block with zero or multiple predecessors starts from the
-            Phase 1 propagated types.  Multiple predecessors mean the
-            block is a join point; a guard on one incoming path does not
-            prove the type on other paths.
+          - A block with zero predecessors starts from the Phase 1
+            propagated types.
+          - A block with multiple predecessors starts from the
+            intersection of all predecessors' outgoing types: a value
+            is known to have type T at the join point only if every
+            predecessor's outgoing types agree on T.  This is sound
+            because regardless of which predecessor delivered control,
+            the type was established.  Values not present in any
+            predecessor's outgoing types fall back to the Phase 1
+            propagated types.
 
         Within a single block, guards still suppress redundant guards for
         later instructions in that block.
@@ -262,6 +268,9 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
             preds = block.predecessors
             if len(preds) == 1:
                 block_types = dict(outgoing_types.get(preds[0].id, types))
+
+            elif len(preds) > 1:
+                block_types = self._meet_outgoing_types(preds, outgoing_types, types)
 
             else:
                 block_types = dict(types)
@@ -282,6 +291,57 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
                 changed = True
 
         return changed
+
+    def _meet_outgoing_types(
+        self,
+        preds: list[MenaiCFGBlock],
+        outgoing_types: dict[int, dict[int, str | None]],
+        types: dict[int, str | None],
+    ) -> dict[int, str | None]:
+        """
+        Compute the incoming type knowledge at a join point (block with
+        multiple predecessors) by intersecting all predecessors' outgoing
+        types.
+
+        A value is known to have type T at the join point only if every
+        predecessor's outgoing types agree on T.  If any predecessor has
+        a different type, or has no outgoing type for that value (meaning
+        the value is unknown on that path), the type is unknown at the
+        join point.
+
+        Values not present in any predecessor's outgoing types fall back
+        to the Phase 1 propagated types.
+        """
+        result: dict[int, str | None] = {}
+
+        # Collect all value ids that appear in any predecessor's outgoing types.
+        all_ids: set[int] = set()
+        for pred in preds:
+            all_ids.update(outgoing_types.get(pred.id, {}).keys())
+
+        for val_id in all_ids:
+            agreed_type: str | None = None
+            for pred in preds:
+                pred_type = outgoing_types.get(pred.id, {}).get(val_id)
+                if pred_type is None:
+                    agreed_type = None
+                    break
+
+                if agreed_type is None:
+                    agreed_type = pred_type
+
+                elif agreed_type != pred_type:
+                    agreed_type = None
+                    break
+
+            result[val_id] = agreed_type
+
+        # Values not in any predecessor's outgoing types fall back to Phase 1 types.
+        for val_id, phase1_type in types.items():
+            if val_id not in result:
+                result[val_id] = phase1_type
+
+        return result
 
     def _guard_builtin_args(
         self,

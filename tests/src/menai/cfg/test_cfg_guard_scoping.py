@@ -87,3 +87,34 @@ class TestGuardScoping:
         src = '(lambda (x) (if (boolean? x) ($list-length x) 0))'
         code = _find_lambda(_compile(src))
         assert _count_op(code, Opcode.ASSERT_LIST) == 1
+
+    def test_join_point_inherits_type_when_all_preds_agree(self):
+        """
+        (lambda (n s)
+          (if (integer>=? n 0)
+              (if (string=? (string-ref s n) "-")
+                  (integer+ n 1)
+                  (if (string=? (string-ref s n) "+")
+                      (integer+ n 1)
+                      n))
+              n))
+
+        The parameter n is guarded as integer in the entry block.  Both
+        inner branches call integer+ on n, and both jump to the same join
+        point (the block containing integer+).  Since all predecessors of
+        the join point agree that n is integer, no redundant ASSERT_INTEGER
+        guard should be inserted there.  There should be exactly one
+        ASSERT_INTEGER guard (in the entry block).
+        """
+        src = """
+        (lambda (n s)
+          (if (integer>=? n 0)
+              (if (string=? (string-ref s n) "-")
+                  (integer+ n 1)
+                  (if (string=? (string-ref s n) "+")
+                      (integer+ n 1)
+                      n))
+              n))
+        """
+        code = _find_lambda(_compile(src))
+        assert _count_op(code, Opcode.ASSERT_INTEGER) == 1
