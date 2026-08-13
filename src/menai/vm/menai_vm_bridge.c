@@ -1628,10 +1628,15 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     /* Clear any stale cancellation from a previous call. */
     vs->_cancel_flag = 0;
 
+    PyTime_t _t0, _t1;
+
+    PyTime_PerfCounter(&_t0);
     MenaiCodeObject *native_code = menai_code_object_from_python(vs, code);
     if (!native_code) {
         return NULL;
     }
+    PyTime_PerfCounter(&_t1);
+    vs->_convert_time_ns = (uint64_t)(_t1 - _t0);
 
     GlobalsTable extra_globals;
     int has_extra = 0;
@@ -1653,15 +1658,14 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     MenaiVMError vm_err;
     MenaiValue *result;
 
-    /*
-     * Release the GIL for the duration of VM execution.  The execute loop is
-     * pure C operating on Menai values — it does not touch any Python objects.
-     * This allows other Python threads (e.g. the event loop requesting
-     * cancellation) to run without contention.
-     */
+    PyTime_PerfCounter(&_t0);
     Py_BEGIN_ALLOW_THREADS
     result = menai_vm_execute_native(vs, native_code, has_extra ? &extra_globals : NULL, &vm_err);
     Py_END_ALLOW_THREADS
+    PyTime_PerfCounter(&_t1);
+    vs->_execute_time_ns = (uint64_t)(_t1 - _t0);
+
+    PyTime_PerfCounter(&_t0);
 
     menai_code_object_release(vs, native_code);
     if (has_extra) {
@@ -1677,6 +1681,9 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     }
 
     PyObject *slow = menai_value_to_slow_value(vs, result);
+    PyTime_PerfCounter(&_t1);
+    vs->_convert_time_ns += (uint64_t)(_t1 - _t0);
+
     menai_value_release(vs, result);
     return slow;
 }
@@ -1991,6 +1998,52 @@ menai_vm_c_get_profile_data(PyObject *self, PyObject *capsule)
 }
 
 /*
+ * menai_vm_c_get_timing_data — Python-callable wrapper.
+ *
+ * get_timing_data(state_capsule) returns a dict with:
+ *   "convert_ns" — nanoseconds spent converting Python CodeObject to native.
+ *   "execute_ns" — nanoseconds spent in VM execution.
+ * Times are from the most recent execute() call.
+ */
+static PyObject *
+menai_vm_c_get_timing_data(PyObject *self, PyObject *capsule)
+{
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    PyObject *result = PyDict_New();
+    if (!result) {
+        return NULL;
+    }
+
+    PyObject *convert_key = PyUnicode_FromString("convert_ns");
+    PyObject *convert_val = PyLong_FromUnsignedLongLong(vs->_convert_time_ns);
+    PyObject *execute_key = PyUnicode_FromString("execute_ns");
+    PyObject *execute_val = PyLong_FromUnsignedLongLong(vs->_execute_time_ns);
+
+    if (!convert_key || !convert_val || !execute_key || !execute_val) {
+        Py_XDECREF(convert_key);
+        Py_XDECREF(convert_val);
+        Py_XDECREF(execute_key);
+        Py_XDECREF(execute_val);
+        Py_DECREF(result);
+        return NULL;
+    }
+
+    PyDict_SetItem(result, convert_key, convert_val);
+    PyDict_SetItem(result, execute_key, execute_val);
+
+    Py_DECREF(convert_key);
+    Py_DECREF(convert_val);
+    Py_DECREF(execute_key);
+    Py_DECREF(execute_val);
+
+    return result;
+}
+
+/*
  * Module definition
  */
 static PyMethodDef menai_vm_c_methods[] = {
@@ -2035,6 +2088,12 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_get_profile_data,
         METH_O,
         "Return profiling data as a dict mapping opcode name to [count, cycles]."
+    },
+    {
+        "get_timing_data",
+        menai_vm_c_get_timing_data,
+        METH_O,
+        "Return timing data (convert_ns, execute_ns) from the last execute call."
     },
     { NULL, NULL, 0, NULL }
 };

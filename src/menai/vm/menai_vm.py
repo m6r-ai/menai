@@ -17,6 +17,7 @@ from menai.vm.menai_vm_c import set_prelude as _c_vm_set_prelude  # type: ignore
 from menai.vm.menai_vm_c import cancel as _c_vm_cancel  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import enable_profiling as _c_vm_enable_profiling  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import get_profile_data as _c_vm_get_profile_data  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import get_timing_data as _c_vm_get_timing_data  # type: ignore[import-not-found]
 
 
 class MenaiVM:
@@ -89,3 +90,13 @@ class MenaiVM:
                 result[Opcode(int(key)).name] = count
 
         return result
+
+    def get_timing_data(self) -> dict[str, int]:
+        """
+        Return timing data from the most recent execute() call.
+
+        Returns a dict with:
+            "convert_ns" — nanoseconds converting Python CodeObject to native.
+            "execute_ns" — nanoseconds in VM execution.
+        """
+        return cast(dict[str, int], _c_vm_get_timing_data(self._state))

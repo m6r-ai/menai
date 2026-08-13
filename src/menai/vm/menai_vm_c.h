@@ -499,6 +499,10 @@ typedef struct MenaiVMState {
     int _cancel_flag;
 
     MenaiProfileData _profile;
+
+    /* Timing data — last execute call's conversion and execution times in nanoseconds. */
+    uint64_t _convert_time_ns;
+    uint64_t _execute_time_ns;
 } MenaiVMState;
 
 MenaiVMState *menai_vm_state_alloc(void);
