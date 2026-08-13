@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_compiler import MenaiCompiler
 from menai.ast.menai_ast import MenaiASTNode
+from menai.ir.menai_ir import MenaiIRLambda
 from menai.menai_value import MenaiFunction, MenaiValue
 from menai.vm.menai_vm import MenaiVM
 from menai.menai_error import MenaiModuleNotFoundError, MenaiModuleError, MenaiCircularImportError
@@ -1380,6 +1381,7 @@ class Menai:
 """
 
     _prelude_code: CodeObject | None = None
+    _prelude_lambdas: dict[str, MenaiIRLambda] | None = None
 
     def __init__(self, module_path: list[str] | None = None):
         """
@@ -1401,6 +1403,12 @@ class Menai:
 
         if Menai._prelude_code is None:
             Menai._prelude_code = self.compiler.compile(self._PRELUDE_SOURCE, name="<prelude>")
+
+        if Menai._prelude_lambdas is None:
+            prelude_ir = self.compiler.compile_to_ir(self._PRELUDE_SOURCE, name="<prelude>")
+            Menai._prelude_lambdas = MenaiCompiler._extract_prelude_lambdas(prelude_ir)
+
+        self.compiler.set_prelude_lambdas(Menai._prelude_lambdas)
 
         self.vm.set_prelude(Menai._prelude_code)
 

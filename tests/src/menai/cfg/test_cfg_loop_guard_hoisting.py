@@ -187,12 +187,20 @@ class TestLoopInvariantGuardHoisting:
         """
         A function without a self-loop should not be modified by the
         hoisting pass.  Guards should remain in their original positions.
+
+        Uses a mutually recursive letrec so that the functions cannot be
+        inlined and survive to the CFG stage.  'even?' calls 'odd?' (not
+        itself), so it has no self-loop.
         """
-        src = "(letrec ((f (lambda (x) (integer+ x 1)))) (f 42))"
+        src = """
+        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+                 (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
+          (even? 10))
+        """
         code = _compile(src)
-        f = _find_lambda(code, "f")
-        assert _count_op(f, Opcode.ASSERT_INTEGER) == 1
-        assert _self_loop_target(f) is None
+        even_fn = _find_lambda(code, "even?")
+        assert _count_op(even_fn, Opcode.ASSERT_INTEGER) == 1
+        assert _self_loop_target(even_fn) is None
 
     def test_correct_results_after_hoisting(self):
         """

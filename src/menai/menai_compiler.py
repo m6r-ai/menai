@@ -25,7 +25,10 @@ from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 from menai.ir.menai_ir_builder import MenaiIRBuilder
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 from menai.ir.menai_ir_optimizer import MenaiIROptimizer
+from menai.ir.menai_ir_inliner import MenaiIRInliner
 from menai.ast.menai_lexer import MenaiLexer
+
+from menai.ir.menai_ir import MenaiIRExpr, MenaiIRLambda, MenaiIRLet, MenaiIRLetrec, MenaiIRReturn
 
 
 class MenaiCompiler:
@@ -46,6 +49,8 @@ class MenaiCompiler:
         self.module_loader = module_loader
 
         self.lexer = MenaiLexer()
+
+        self._prelude_lambdas: dict[str, MenaiIRLambda] = {}
         self.ast_builder = MenaiASTBuilder()
         self.ast_semantic_analyzer = MenaiASTSemanticAnalyzer()
         self.ast_module_resolver = MenaiASTModuleResolver(module_loader)
@@ -54,7 +59,9 @@ class MenaiCompiler:
             MenaiASTConstantFolder(),
         ]
         self.ir_builder = MenaiIRBuilder()
+        self._ir_inliner = MenaiIRInliner(prelude_lambdas=self._prelude_lambdas)
         self.ir_passes: list[MenaiIROptimizationPass] = [
+            self._ir_inliner,
             MenaiIROptimizer(),
         ]
         self.cfg_builder = MenaiCFGBuilder()
@@ -66,6 +73,67 @@ class MenaiCompiler:
         ]
         self.vcode_builder = MenaiVCodeBuilder()
         self.bytecode_builder = MenaiBytecodeBuilder()
+
+    def set_prelude_lambdas(self, lambdas: dict[str, MenaiIRLambda]) -> None:
+        """
+        Set the prelude lambda map used by the IR inliner.
+
+        Called after prelude compilation to make prelude function bodies
+        available for inlining into user code.
+        """
+        self._prelude_lambdas = lambdas
+        self._ir_inliner.set_prelude_lambdas(lambdas)
+
+    def compile_to_ir(self, source: str, name: str = "<module>") -> MenaiIRExpr:
+        """
+        Compile source through desugaring, AST optimization, and IR building.
+
+        Returns the IR tree before any IR optimization passes run.
+        Used to extract prelude lambda bodies for the inliner.
+        """
+        resolved_ast = self.compile_to_resolved_ast(source, name)
+        desugared_ast = self.ast_desugarer.desugar(resolved_ast)
+
+        for ast_pass in self.ast_passes:
+            desugared_ast = ast_pass.optimize(desugared_ast)
+
+        return self.ir_builder.build(desugared_ast)
+
+    @staticmethod
+    def _extract_prelude_lambdas(ir: MenaiIRExpr) -> dict[str, MenaiIRLambda]:
+        """
+        Walk the top-level IR of a prelude module and extract all
+        let/letrec-bound lambdas indexed by binding name.
+        """
+        result: dict[str, MenaiIRLambda] = {}
+        MenaiCompiler._collect_lambdas(ir, result)
+        return result
+
+    @staticmethod
+    def _collect_lambdas(ir: MenaiIRExpr, result: dict[str, MenaiIRLambda]) -> None:
+        """Recursively collect lambda bindings from let/letrec nodes."""
+        if isinstance(ir, MenaiIRReturn):
+            MenaiCompiler._collect_lambdas(ir.value_plan, result)
+
+        if isinstance(ir, MenaiIRLet):
+            for name, value_plan in ir.bindings:
+                if isinstance(value_plan, MenaiIRLambda):
+                    result[name] = value_plan
+
+                else:
+                    MenaiCompiler._collect_lambdas(value_plan, result)
+
+            MenaiCompiler._collect_lambdas(ir.body_plan, result)
+
+        elif isinstance(ir, MenaiIRLetrec):
+            for name, value_plan in ir.bindings:
+                if isinstance(value_plan, MenaiIRLambda):
+                    result[name] = value_plan
+
+                else:
+                    MenaiCompiler._collect_lambdas(value_plan, result)
+
+            MenaiCompiler._collect_lambdas(ir.body_plan, result)
 
 
     def compile_to_resolved_ast(self, source: str, source_file: str = "") -> MenaiASTNode:

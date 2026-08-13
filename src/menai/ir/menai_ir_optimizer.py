@@ -260,24 +260,121 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         )
 
     def _opt_lambda(self, ir: MenaiIRLambda, frame_stack: list[int]) -> MenaiIRLambda:
-        """Optimize the body of a lambda."""
+        """
+        Optimize the body of a lambda and prune dead captures.
+
+        After inlining, some captured free vars may no longer be referenced
+        in the body.  This method identifies and removes those stale captures
+        so that closures are smaller and closure setup is faster.
+        """
         counts = cast(IRUseCounts, self._counts)
         lambda_frame_id = counts.lambda_frame_ids.get(id(ir))
         child_stack = frame_stack if lambda_frame_id is None else frame_stack + [lambda_frame_id]
 
+        opt_body = self._opt(ir.body_plan, child_stack)
+
+        sibling_fvs = ir.sibling_free_vars
+        sibling_fv_plans = ir.sibling_free_var_plans
+        outer_fvs = ir.outer_free_vars
+        outer_fv_plans = ir.outer_free_var_plans
+
+        all_fv_names = sibling_fvs + outer_fvs
+        if all_fv_names:
+            used_names = self._collect_used_names(opt_body, set(ir.params))
+            keep = [fv for fv in all_fv_names if fv in used_names]
+            if len(keep) < len(all_fv_names):
+                self._eliminations += len(all_fv_names) - len(keep)
+                keep_set = set(keep)
+                sibling_fvs = [fv for fv in sibling_fvs if fv in keep_set]
+                sibling_fv_plans = [p for fv, p in zip(ir.sibling_free_vars, ir.sibling_free_var_plans) if fv in keep_set]
+                outer_fvs = [fv for fv in outer_fvs if fv in keep_set]
+                outer_fv_plans = [p for fv, p in zip(ir.outer_free_vars, ir.outer_free_var_plans) if fv in keep_set]
+
         return MenaiIRLambda(
             params=ir.params,
-            body_plan=self._opt(ir.body_plan, child_stack),
-            sibling_free_vars=ir.sibling_free_vars,
-            sibling_free_var_plans=ir.sibling_free_var_plans,
-            outer_free_vars=ir.outer_free_vars,
-            outer_free_var_plans=ir.outer_free_var_plans,
+            body_plan=opt_body,
+            sibling_free_vars=sibling_fvs,
+            sibling_free_var_plans=sibling_fv_plans,
+            outer_free_vars=outer_fvs,
+            outer_free_var_plans=outer_fv_plans,
             param_count=ir.param_count,
             is_variadic=ir.is_variadic,
             binding_name=ir.binding_name,
             source_line=ir.source_line,
             source_file=ir.source_file,
         )
+
+    @staticmethod
+    def _collect_used_names(ir: MenaiIRExpr, bound: set[str]) -> set[str]:
+        """
+        Collect all local variable names referenced in *ir* that are not
+        in *bound*.
+
+        Tracks shadowing by inner let/letrec bindings and lambda
+        params/captures.  Nested lambda capture plans (free_var_plans)
+        are evaluated in the enclosing scope, so their references are
+        collected against the current *bound* set.
+        """
+        refs: set[str] = set()
+        if isinstance(ir, MenaiIRVariable):
+            if ir.var_type == 'local' and ir.name not in bound:
+                refs.add(ir.name)
+
+        elif isinstance(ir, MenaiIRLambda):
+            for plan in ir.sibling_free_var_plans + ir.outer_free_var_plans:
+                refs |= MenaiIROptimizer._collect_used_names(plan, bound)
+
+            inner_bound = bound | set(ir.params) | set(ir.sibling_free_vars) | set(ir.outer_free_vars)
+            refs |= MenaiIROptimizer._collect_used_names(ir.body_plan, inner_bound)
+
+        elif isinstance(ir, MenaiIRLet):
+            for _, val in ir.bindings:
+                refs |= MenaiIROptimizer._collect_used_names(val, bound)
+
+            new_bound = bound | {name for name, _ in ir.bindings}
+            refs |= MenaiIROptimizer._collect_used_names(ir.body_plan, new_bound)
+
+        elif isinstance(ir, MenaiIRLetrec):
+            new_bound = bound | {name for name, _ in ir.bindings}
+            for _, val in ir.bindings:
+                refs |= MenaiIROptimizer._collect_used_names(val, new_bound)
+
+            refs |= MenaiIROptimizer._collect_used_names(ir.body_plan, new_bound)
+
+        elif isinstance(ir, MenaiIRIf):
+            refs |= MenaiIROptimizer._collect_used_names(ir.condition_plan, bound)
+            refs |= MenaiIROptimizer._collect_used_names(ir.then_plan, bound)
+            refs |= MenaiIROptimizer._collect_used_names(ir.else_plan, bound)
+
+        elif isinstance(ir, MenaiIRCall):
+            refs |= MenaiIROptimizer._collect_used_names(ir.func_plan, bound)
+            for a in ir.arg_plans:
+                refs |= MenaiIROptimizer._collect_used_names(a, bound)
+
+        elif isinstance(ir, MenaiIRReturn):
+            refs |= MenaiIROptimizer._collect_used_names(ir.value_plan, bound)
+
+        elif isinstance(ir, MenaiIRBuildList):
+            for e in ir.element_plans:
+                refs |= MenaiIROptimizer._collect_used_names(e, bound)
+
+        elif isinstance(ir, MenaiIRBuildDict):
+            for k, v in ir.pair_plans:
+                refs |= MenaiIROptimizer._collect_used_names(k, bound)
+                refs |= MenaiIROptimizer._collect_used_names(v, bound)
+
+        elif isinstance(ir, MenaiIRBuildSet):
+            for e in ir.element_plans:
+                refs |= MenaiIROptimizer._collect_used_names(e, bound)
+
+        elif isinstance(ir, MenaiIRBuildStruct):
+            for f in ir.field_plans:
+                refs |= MenaiIROptimizer._collect_used_names(f, bound)
+
+        elif isinstance(ir, MenaiIRError):
+            refs |= MenaiIROptimizer._collect_used_names(ir.message, bound)
+
+        return refs
 
     def _opt_call(self, ir: MenaiIRCall, frame_stack: list[int]) -> MenaiIRCall:
         """Optimize the function and argument plans of a call."""
