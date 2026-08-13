@@ -430,8 +430,8 @@ class Suite(BenchmarkSuite):
 
     def implementations(self, menai: Menai) -> list[Implementation]:
         """Return Menai, idiomatic Python, and functional Python IDA* solver implementations."""
-        def run_menai(scramble_moves: list[str]) -> tuple[list[str], list[str]]:
-            """Scramble the cube via Menai and solve it with the Menai IDA* solver."""
+        def prepare_menai(scramble_moves: list[str]) -> tuple[list[str], Any]:
+            """Build the expression string and compile to bytecode (untimed)."""
             moves_literal = "(list " + " ".join(f'"{m}"' for m in scramble_moves) + ")"
             expr = (
                 '(let ((rubiks (import "rubiks_cube")))'
@@ -441,7 +441,13 @@ class Suite(BenchmarkSuite):
                 f'    (let ((scrambled (apply-moves-fn (solved-cube-fn) {moves_literal})))'
                 '      (ida-star-fn scrambled 20))))'
             )
-            raw = menai.evaluate(expr)
+            code = menai.compile(expr)
+            return (scramble_moves, code)
+
+        def run_menai(prepared: tuple[list[str], Any]) -> tuple[list[str], list[str]]:
+            """Execute pre-compiled bytecode and extract the solution (timed)."""
+            scramble_moves, code = prepared
+            raw = menai.execute_raw(code).to_python()
             if not isinstance(raw, dict):
                 raise ValueError(f"Unexpected Menai result type: {type(raw)}")
 
@@ -471,7 +477,7 @@ class Suite(BenchmarkSuite):
             return (scramble_moves, solution)
 
         return [
-            Implementation(name="Menai", run=run_menai),
+            Implementation(name="Menai", run=run_menai, prepare=prepare_menai),
             Implementation(name="Python (idiomatic)", run=run_python_idiomatic),
             Implementation(name="Python (functional)", run=run_python_functional),
         ]
