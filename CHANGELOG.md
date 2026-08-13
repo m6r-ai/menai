@@ -7,10 +7,14 @@ New features:
 - Added VM opcode profiling support.
 - Improved performance of a number of prelude functions by using a `list-append` operation rather
   than `list-prepend` followed by `list-reverse`.
+- Improved type assertion removal pass.
+- Added a simple function inliner.
+- Added support for getting accurate VM timings when benchmarking, so we only measure execution time and not
+  execution setup time.
 
 Bug fixes:
 
-- Fixed a problem with dictionary comparisons.  The order of elements does not matter.
+- Fixed a problem with dictionary comparisons.  The order of elements must not matter.
 - Fixed several out-of-memory error handling issues.
 - Fixed thread-safety issues.
 - Fixed a type propagation error that was removing necessary type check opcodes.
