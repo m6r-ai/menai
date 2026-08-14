@@ -12,8 +12,8 @@ from menai.menai_value import (
     MenaiString, MenaiValue,
 )
 
-from menai_pipeline_runner.pipeline_step import MenaiStep, Pipeline, ToolStep, resolve_step_expression
-from menai_pipeline_runner.pipeline_tools import (
+from menai_pipeline.pipeline_step import MenaiStep, Pipeline, ToolStep, resolve_step_expression
+from menai_pipeline.pipeline_tools import (
     ClockTool, ConsoleTool, FilesystemTool,
     PipelineAuthorizationDenied, PipelineToolError,
 )

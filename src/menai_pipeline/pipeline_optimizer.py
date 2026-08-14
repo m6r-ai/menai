@@ -1,7 +1,7 @@
 """Pipeline optimizer: collapses adjacent Menai steps into a single step."""
 
 
-from menai_pipeline_runner.pipeline_step import MenaiStep, Pipeline, PipelineStep, resolve_step_expression
+from menai_pipeline.pipeline_step import MenaiStep, Pipeline, PipelineStep, resolve_step_expression
 
 
 def _merge_two_menai_steps(first: MenaiStep, second: MenaiStep) -> MenaiStep:

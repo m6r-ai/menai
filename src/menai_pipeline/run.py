@@ -10,10 +10,10 @@ import pstats
 import sys
 import time
 
-from menai_pipeline_runner.pipeline_engine import PipelineResult, StepResult, execute_pipeline
-from menai_pipeline_runner.pipeline_optimizer import optimize_pipeline
-from menai_pipeline_runner.pipeline_parser import PipelineParseError, load_pipeline
-from menai_pipeline_runner.pipeline_step import MenaiStep, Pipeline, ToolStep
+from menai_pipeline.pipeline_engine import PipelineResult, StepResult, execute_pipeline
+from menai_pipeline.pipeline_optimizer import optimize_pipeline
+from menai_pipeline.pipeline_parser import PipelineParseError, load_pipeline
+from menai_pipeline.pipeline_step import MenaiStep, Pipeline, ToolStep
 
 
 _ANSI_CYAN = "\033[36m"
@@ -206,11 +206,11 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m menai_pipeline_runner.run examples/hello-timestamp/pipeline.json
-  python -m menai_pipeline_runner.run --no-optimize examples/adjacent-collapse/pipeline.json
-  python -m menai_pipeline_runner.run -v examples/file-transform/pipeline.json
-  python -m menai_pipeline_runner.run -v --timings examples/clock-and-file/pipeline.json
-  python -m menai_pipeline_runner.run --profile examples/file-transform/pipeline.json
+  python -m menai_pipeline.run examples/hello-timestamp/pipeline.json
+  python -m menai_pipeline.run --no-optimize examples/adjacent-collapse/pipeline.json
+  python -m menai_pipeline.run -v examples/file-transform/pipeline.json
+  python -m menai_pipeline.run -v --timings examples/clock-and-file/pipeline.json
+  python -m menai_pipeline.run --profile examples/file-transform/pipeline.json
         """
     )
 

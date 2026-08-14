@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from menai_pipeline_runner.pipeline_step import MenaiStep, Pipeline, PipelineStep, ToolStep
+from menai_pipeline.pipeline_step import MenaiStep, Pipeline, PipelineStep, ToolStep
 
 
 class PipelineParseError(Exception):
