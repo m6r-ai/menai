@@ -46,12 +46,13 @@ The pass mutates the CFG in place — it inserts MenaiCFGGuardInstr instructions
 into block.instrs lists and returns the same MenaiCFGFunction.
 
 Phase 3 — Loop-invariant guard hoisting.  When a function contains a
-SelfLoopTerm, guards inserted in the entry block on free vars (which never
-change) and on params whose type is preserved through the loop body (the
-back-edge type matches the guard's expected type) are hoisted into a
-preamble block.  The SelfLoopTerm's target is set to the loop-entry block
-(the original entry minus the hoisted guards), so the self-loop skips the
-preamble on every iteration after the first.
+SelfLoopTerm, loop-invariant guards from any block in the function are
+hoisted into a preamble block.  A guard is loop-invariant if it guards a
+free var (which never changes) or a param whose type is preserved through
+the loop body (the back-edge type matches the guard's expected type).
+The SelfLoopTerm's target is set to the loop-entry block (the original entry
+minus the hoisted guards), so the self-loop skips the preamble on every
+iteration after the first.
 """
 
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
@@ -411,11 +412,11 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
         types: dict[int, str | None],
     ) -> bool:
         """
-        Hoist loop-invariant guards from the entry block into a preamble
+        Hoist loop-invariant guards from all blocks into a preamble
         block so they execute once on function entry rather than on every
         self-loop iteration.
 
-        A guard in the entry block is loop-invariant if it guards a value
+        A guard in any block is loop-invariant if it guards a value
         whose type is known to be preserved across the self-loop back-edge:
 
           - Free var guards: always loop-invariant (free vars are never
@@ -432,6 +433,7 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
             guards), with the original terminator.
 
         The SelfLoopTerm's target is set to the loop-entry block.
+        Guards hoisted from non-entry blocks are removed from those blocks.
 
         Returns True if the entry block was split.
         """
@@ -450,32 +452,35 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
         back_edge_types = self._back_edge_types(self_loop, param_ids, types)
 
         preamble_instrs: list[MenaiCFGInstr] = []
-        loop_instrs: list[MenaiCFGInstr] = []
 
-        for instr in entry.instrs:
-            if isinstance(instr, MenaiCFGGuardInstr):
-                if self._is_loop_invariant_guard(
-                    instr, free_var_ids, unchanged_param_ids, back_edge_types,
-                ):
-                    preamble_instrs.append(instr)
-                    continue
+        for block in func.blocks:
+            remaining: list[MenaiCFGInstr] = []
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGGuardInstr):
+                    if self._is_loop_invariant_guard(
+                        instr, free_var_ids, unchanged_param_ids, back_edge_types,
+                    ):
+                        preamble_instrs.append(instr)
+                        continue
 
-            loop_instrs.append(instr)
+                remaining.append(instr)
+
+            block.instrs = remaining
 
         if not preamble_instrs:
             return False
 
-        # The preamble also needs the ParamInstr/FreeVarInstr that
+        # The preamble needs the ParamInstr/FreeVarInstr that
         # define the SSA values the guards reference.  These are at
         # the top of the original entry block, before any guards.
-        def_instrs: list[MenaiCFGInstr] = []
-        for instr in loop_instrs:
-            if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr)):
-                def_instrs.append(instr)
+        def_instrs: list[MenaiCFGInstr] = [
+            instr for instr in entry.instrs
+            if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
+        ]
 
-        loop_instrs = [
-            i for i in loop_instrs
-            if not isinstance(i, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
+        loop_instrs: list[MenaiCFGInstr] = [
+            instr for instr in entry.instrs
+            if not isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
         ]
 
         # Preamble: param/free-var definitions, then hoisted guards.

@@ -1,9 +1,9 @@
 """
 Tests for loop-invariant guard hoisting in the type propagation pass.
 
-When a function contains a self-loop, guards in the entry block that are
-loop-invariant (redundant on all iterations after the first) are hoisted into
-a preamble block.  The self-loop's jump target is set to the loop-entry block
+When a function contains a self-loop, loop-invariant guards (redundant on all
+iterations after the first) from any block in the function are hoisted into a
+preamble block.  The self-loop's jump target is set to the loop-entry block
 (skipping the preamble), so the hoisted guards execute once on function entry
 rather than on every iteration.
 
@@ -237,3 +237,74 @@ class TestLoopInvariantGuardHoisting:
           (count-down 10 0))
         """)
         assert result == 0
+
+
+class TestGuardHoistingFromNonEntryBlocks:
+    """Loop-invariant guards in non-entry blocks should also be hoisted."""
+
+    def test_free_var_guard_in_loop_body_hoisted(self):
+        """
+        A self-recursive function where a free var is first used inside a
+        conditional branch (not the entry block).  The guard on that free var
+        is loop-invariant and should be hoisted to the preamble even though it
+        is not in the entry block.
+
+        (letrec ((scan
+                  (lambda (i)
+                    (if (integer>=? i len)
+                        i
+                        (if (string=? (string-ref s i) "-")
+                            (scan (integer+ i 1))
+                            (scan (integer+ i 1))))))
+                 (len 10)
+                 (s "abc"))
+          (scan 0))
+
+        's' is a free var (captured), never reassigned.  Its ASSERT_STRING
+        guard is inserted in the loop body (after the branch), not in the
+        entry block.  It should still be hoisted.
+        """
+        src = """
+        (letrec ((scan
+                  (lambda (i)
+                    (if (integer>=? i len)
+                        i
+                        (if (string=? (string-ref s i) "-")
+                            (scan (integer+ i 1))
+                            (scan (integer+ i 1))))))
+                 (len 10)
+                 (s "abc"))
+          (scan 0))
+        """
+        code = _compile(src)
+        scan = _find_lambda(code, "scan")
+        assert _count_op(scan, Opcode.ASSERT_STRING) == 1
+        target = _self_loop_target(scan)
+        assert target is not None
+        # The ASSERT_STRING guard should be before the self-loop target,
+        # meaning it has been hoisted to the preamble.
+        # scan has 1 param (i=slot0) and 3 free vars (scan=slot1, len=slot2, s=slot3).
+        guard_idx = _find_assert(scan, Opcode.ASSERT_STRING, 3)
+        assert guard_idx is not None
+        assert target > guard_idx, (
+            "self-loop must skip the hoisted ASSERT_STRING guard on free var 's'"
+        )
+
+    def test_correct_results_with_hoisted_body_guard(self):
+        """
+        End-to-end: a self-recursive function with a loop-invariant guard
+        in the loop body should produce correct results after hoisting.
+        """
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (letrec ((count-chars
+                  (lambda (i)
+                    (if (integer>=? i (string-length text))
+                        i
+                        (count-chars (integer+ i 1)))))
+                 (text "hello world"))
+          (count-chars 0))
+        """)
+        assert result == 11
