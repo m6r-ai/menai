@@ -5,11 +5,13 @@ A standalone tool for validating parenthesis balance in Menai files. Provides de
 ## Features
 
 - ✅ Fast parenthesis balance validation
-- ✅ Line-by-line depth tracking
+- ✅ Line-by-line depth tracking (start→end depth per line)
 - ✅ Form type annotations (lambda, let, letrec, if, match)
+- ✅ Descriptive names for special form groups (let bindings, lambda params, etc.)
 - ✅ Line range filtering for large files
 - ✅ Robust handling of strings, comments, and complex literals
 - ✅ Full depth chart shown by default
+- ✅ Unclosed form reporting (lists each unclosed form with type, line, and column)
 - ✅ Clear exit codes for CI/CD integration
 
 ## Installation
@@ -21,7 +23,7 @@ No installation needed! The tool uses the Menai lexer from `src/menai`.
 ### Basic Check
 
 ```bash
-python -m tools.menai.checker.check file.menai
+python -m menai_checker.check file.menai
 ```
 
 **Output (default - shows full depth chart):**
@@ -30,7 +32,6 @@ python -m tools.menai.checker.check file.menai
   Total: 5 opens, 5 closes
   Maximum depth: 3
 
-Line | Depth | Code
 -----|-------|--------------------------------------------------
    1 |     0 | ; Example file
    2 |     2 | (let ((x 5)
@@ -47,7 +48,6 @@ Line | Depth | Code
   Total: 506 opens, 505 closes
   Missing 1 closing parenthesis
 
-Line | Depth | Code
 -----|-------|-----------------------------------------------------
  395 |   4   |     (list "forward-pass" forward-pass)
  396 |   4   |     (list "backward-pass" backward-pass)
@@ -66,23 +66,23 @@ Useful for large files - only display depth chart for specific lines:
 
 ```bash
 # Lines 100 to 200
-python -m tools.menai.checker.check file.menai -l 100-200
+python -m menai_checker.check file.menai -l 100-200
 
 # From line 100 to end
-python -m tools.menai.checker.check file.menai -l 100-
+python -m menai_checker.check file.menai -l 100-
 
 # From start to line 200
-python -m tools.menai.checker.check file.menai -l -200
+python -m menai_checker.check file.menai -l -200
 ```
 
 ### Combined Options
 
 ```bash
 # Check specific range with annotations
-python -m tools.menai.checker.check file.menai -l 100-200 -a
+python -m menai_checker.check file.menai -l 100-200 -a
 
 # Quick summary check
-python -m tools.menai.checker.check file.menai -s
+python -m menai_checker.check file.menai -s
 ```
 
 ### ANSI Color Output
@@ -90,7 +90,7 @@ python -m tools.menai.checker.check file.menai -s
 Use `-c` or `--color` to enable colorized output:
 
 ```bash
-python -m tools.menai.checker.check file.menai -a -c
+python -m menai_checker.check file.menai -a -c
 ```
 
 **Color features:**
@@ -127,7 +127,7 @@ python -m tools.menai.checker.check file.menai -a -c
 ### Example 1: Balanced File
 
 ```bash
-$ python -m tools.menai.checker.check examples/balanced.menai
+$ python -m menai_checker.check examples/balanced.menai
 ✓ Parentheses balanced in balanced.menai
   Total: 42 opens, 42 closes
   Maximum depth: 5
@@ -136,12 +136,11 @@ $ python -m tools.menai.checker.check examples/balanced.menai
 ### Example 2: Missing Closing Paren
 
 ```bash
-$ python -m tools.menai.checker.check examples/missing_close.menai
+$ python -m menai_checker.check examples/missing_close.menai
 ✗ Parentheses UNBALANCED in missing_close.menai
   Total: 43 opens, 42 closes
   Missing 1 closing parenthesis
 
-Line | Depth | Code
 -----|-------|-----------------------------------------------------
   38 |   3   |     (+ x y)
   39 |   2   |   )
@@ -154,12 +153,11 @@ Unclosed expressions at end of file
 ### Example 3: With Annotations
 
 ```bash
-$ python -m tools.menai.checker.check scheduling.menai -a -l 395-402
+$ python -m menai_checker.check scheduling.menai -a -l 395-402
 ✓ Parentheses balanced in scheduling.menai
   Total: 502 opens, 502 closes
   Maximum depth: 25
 
-Line | Depth | Code
 -----|-------|-----------------------------------------------------
  395 |     5 |     (list "calculate-slack" calculate-slack)
  396 |     5 |     (list "identify-critical-path" identify-critical-path)
@@ -182,10 +180,15 @@ Line | Depth | Code
 2. **Depth Tracking**: Tracks parenthesis depth at each line:
    - Opening paren `(` increases depth by 1
    - Closing paren `)` decreases depth by 1
+   - Depth column shows `start->end` for each line
 
-3. **Error Detection**:
+3. **Form Tracking**: Every opening paren is tracked with its form type (the symbol
+   after `(`, or descriptive names like `let bindings` / `lambda params` for special
+   forms). Annotations show what each closing paren closes and where it was opened.
+
+4. **Error Detection**:
    - **Negative depth**: More closing parens than opening parens
-   - **Non-zero final depth**: Unclosed expressions at end of file
+   - **Non-zero final depth**: Lists each unclosed form with its type, line, and column
 
 ## Integration
 
@@ -196,7 +199,7 @@ Add to `.git/hooks/pre-commit`:
 ```bash
 #!/bin/bash
 for file in $(git diff --cached --name-only --diff-filter=ACM | grep '\.menai$'); do
-    python -m tools.menai.checker.check "$file"
+    python -m menai_checker.check "$file"
     if [ $? -ne 0 ]; then
         echo "Parenthesis balance check failed for $file"
         exit 1
@@ -218,7 +221,7 @@ jobs:
       - name: Check Menai parentheses
         run: |
           for file in $(find . -name "*.menai"); do
-            python -m tools.menai.checker.check "$file" || exit 1
+            python -m menai_checker.check "$file" || exit 1
           done
 ```
 
@@ -230,7 +233,7 @@ Make sure you're running from the project root directory, or adjust your `PYTHON
 
 ```bash
 export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
-python -m tools.menai.checker.check file.menai
+python -m menai_checker.check file.menai
 ```
 
 ### Lexer Errors

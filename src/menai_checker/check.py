@@ -45,19 +45,15 @@ class Colors:
         """Wrap text in color codes."""
         return f"{color}{text}{Colors.RESET}"
 
-    @staticmethod
-    def get_form_color(form_type: str) -> str:
-        """Get color for a specific form type."""
-        return getattr(Colors, f'FORM_{form_type.upper()}', Colors.WHITE)
-
 
 @dataclass
 class FormStackFrame:
-    """Tracks an opened special form for annotation."""
+    """Tracks an opened form for annotation."""
     open_line: int
+    open_column: int  # 1-indexed column of the opening paren
     depth_when_opened: int  # Depth after the opening paren
-    form_type: str  # 'lambda', 'let', 'letrec', 'if', 'match'
-    name: str | None = None  # Optional identifier (e.g., function name)
+    form_type: str  # The symbol after the opening paren, or '(' for nested groups
+    first_child_seen: bool = False  # Whether any child form has been pushed yet
 
 
 @dataclass
@@ -72,7 +68,8 @@ class ParenPosition:
 @dataclass
 class CloseAnnotation:
     """Annotation for a closing parenthesis."""
-    form_type: str  # 'lambda', 'let', etc.
+    form_type: str  # The symbol after the opening paren, or '(' for nested groups
+    open_line: int  # Line where the matching open paren was
     depth: int  # Depth of the paren being closed
 
 
@@ -100,9 +97,6 @@ class ParenError:
 
 class ParenChecker:
     """Checks parenthesis balance in Menai files."""
-
-    # Special forms to track (Tier 1)
-    TRACKED_FORMS = {'lambda', 'let', 'letrec', 'if', 'match'}
 
     # Color palette for depth-based paren coloring (cycles through these)
     PAREN_COLORS = [Colors.CYAN, Colors.YELLOW, Colors.GREEN, Colors.MAGENTA, Colors.BLUE, Colors.RED]
@@ -230,17 +224,38 @@ class ParenChecker:
                 if line_idx < len(self.line_info):
                     self.line_info[line_idx].has_open = True
 
-                # Check if next token is a tracked special form
+                # Determine the form type from the next token
+                form_type = '('
                 if i + 1 < len(tokens):
                     next_token = tokens[i + 1]
-                    if (next_token.type == MenaiTokenType.SYMBOL and
-                        next_token.value in self.TRACKED_FORMS):
-                        # Push form onto stack
-                        self.form_stack.append(FormStackFrame(
-                            open_line=token.line,
-                            depth_when_opened=current_depth,
-                            form_type=next_token.value
-                        ))
+                    if next_token.type == MenaiTokenType.SYMBOL:
+                        form_type = next_token.value
+
+                    elif next_token.type == MenaiTokenType.LPAREN:
+                        form_type = '('
+
+                # If this ( is the first direct child of a special form, use a
+                # descriptive name for the bindings/params group
+                if self.form_stack:
+                    parent = self.form_stack[-1]
+                    is_direct_child = parent.depth_when_opened == current_depth - 1
+                    if is_direct_child and not parent.first_child_seen:
+                        if parent.form_type in ('let', 'let*', 'letrec'):
+                            form_type = f'{parent.form_type} bindings'
+
+                        elif parent.form_type == 'lambda':
+                            form_type = 'lambda params'
+
+                    if is_direct_child:
+                        parent.first_child_seen = True
+
+                # Push every form onto the stack
+                self.form_stack.append(FormStackFrame(
+                    open_line=token.line,
+                    open_column=token.column,
+                    depth_when_opened=current_depth,
+                    form_type=form_type
+                ))
 
                 # Track paren position
                 if line_idx < len(self.line_info):
@@ -255,16 +270,13 @@ class ParenChecker:
                     self.line_info[line_idx].has_close = True
 
                 # Pop form from stack and annotate
-                # Only pop if this closing paren matches the depth of a tracked form
-                if self.form_stack and current_depth + 1 == self.form_stack[-1].depth_when_opened:
+                if self.form_stack:
                     frame = self.form_stack.pop()
                     if line_idx < len(self.line_info):
-                        if self.line_info[line_idx].close_annotations is None:
-                            self.line_info[line_idx].close_annotations = []
-
                         self.line_info[line_idx].close_annotations.append(CloseAnnotation(
                             form_type=frame.form_type,
-                            depth=current_depth  # Depth after closing (which was the depth when opened - 1)
+                            open_line=frame.open_line,
+                            depth=current_depth
                         ))
 
                 # Track paren position
@@ -289,13 +301,23 @@ class ParenChecker:
             # Track max depth
             self.max_depth = max(self.max_depth, current_depth)
 
-        # Check final depth
+        # Check final depth — list each unclosed form
         if current_depth > 0:
+            unclosed_descs = []
+            for frame in reversed(self.form_stack):
+                unclosed_descs.append(
+                    f"'{frame.form_type}' opened at line {frame.open_line}, col {frame.open_column}"
+                )
+
+            detail = "; ".join(unclosed_descs)
             self.errors.append(ParenError(
                 line_num=len(self.lines),
                 depth=current_depth,
                 error_type="unclosed",
-                message=f"Missing {current_depth} closing parenthes{'is' if current_depth == 1 else 'es'}"
+                message=(
+                    f"Missing {current_depth} closing parenthes"
+                    f"{'is' if current_depth == 1 else 'es'}: {detail}"
+                )
             ))
 
         # Fill in depth for lines without tokens (empty lines, comment-only lines)
@@ -378,8 +400,8 @@ class ParenChecker:
 
         # Build chart
         lines = []
-        lines.append("Line | Depth | Code")
-        lines.append("-----|-------|" + "-" * 50)
+        lines.append("Line |  Depth  | Code")
+        lines.append("-----|---------|" + "-" * 50)
 
         for line_num in lines_to_show:
             if line_num > len(self.line_info):
@@ -407,7 +429,7 @@ class ParenChecker:
                     # Color each annotation based on the depth of the paren being closed
                     colored_annotations = []
                     for ann in info.close_annotations:
-                        ann_text = f"closes {ann.form_type}"
+                        ann_text = f"closes {ann.form_type} (from L{ann.open_line})"
                         # Use the color of the paren being closed (based on its depth)
                         paren_color = self.get_paren_color(ann.depth)
                         colored_annotations.append(Colors.colorize(ann_text, paren_color))
@@ -415,7 +437,7 @@ class ParenChecker:
                     annotation = "  " + Colors.colorize("<--", Colors.DIM) + " " + ", ".join(colored_annotations)
 
                 else:
-                    ann_texts = [f"closes {ann.form_type}" for ann in info.close_annotations]
+                    ann_texts = [f"closes {ann.form_type} (from L{ann.open_line})" for ann in info.close_annotations]
                     annotation = "  <-- " + ", ".join(ann_texts)
 
             # Format line number with color matching the depth at start of line
@@ -433,7 +455,8 @@ class ParenChecker:
             else:
                 line_num_str = f"{line_num:4d}"
 
-            line_display = f"{line_num_str} | {info.start_depth:5d} | {code}{annotation}{error_marker}"
+            depth_str = f"{info.start_depth}->{info.depth}"
+            line_display = f"{line_num_str} | {depth_str:>8s} | {code}{annotation}{error_marker}"
             lines.append(line_display)
 
         return "\n".join(lines)
@@ -503,7 +526,7 @@ class ParenChecker:
                         print(f"Unmatched closing parenthesis at line {error.line_num}")
 
                     elif error.error_type == "unclosed":
-                        print("Unclosed expressions at end of file")
+                        print(error.message)
 
         finally:
             # Always reset colors at the end
