@@ -59,17 +59,6 @@ class ProfileResult:
     error: str | None = None
 
 
-@dataclass
-class TimingResult:
-    """VM phase timing data for one implementation on one case."""
-
-    case: BenchmarkCase
-    impl_name: str
-    convert_ns: int = 0
-    execute_ns: int = 0
-    error: str | None = None
-
-
 class BenchmarkSuite(ABC):
     """
     Abstract base class for a family of related benchmarks.
@@ -107,11 +96,19 @@ class BenchmarkRunner:
     The caller is responsible for warming up the Menai instance before
     passing it in.  No additional warmup is performed here.
 
+    Timing is collected uniformly for all implementations: the runner
+    records a per-iteration time for every implementation and computes
+    mean and min from those samples.  For the Menai reference (the first
+    implementation), the per-iteration time is the VM's internal
+    execute_ns (pure VM execution, excluding Python↔C bridge overhead),
+    read via get_timing_data() after each call.  For Python
+    implementations, the per-iteration time is wall-clock
+    time.perf_counter() around the run call.
+
     When *profile* is True, opcode profiling is enabled on the Menai VM
     during the timed runs.  Profile data is collected from the final
     timed iteration of each Menai implementation and returned alongside
-    timing results.  VM phase timing (conversion vs execution) is always
-    collected for Menai implementations.
+    timing results.
     """
 
     def __init__(self, suite: BenchmarkSuite, menai: Menai, profile: bool = False) -> None:
@@ -120,13 +117,12 @@ class BenchmarkRunner:
         self._menai = menai
         self._profile = profile
 
-    def run(self) -> tuple[list[CaseResult], list[ProfileResult], list[TimingResult]]:
+    def run(self) -> tuple[list[CaseResult], list[ProfileResult]]:
         """Execute every (case, implementation) combination and return timing and profile results."""
         suite = self._suite
         impls = suite.implementations(self._menai)
         results: list[CaseResult] = []
         profile_results: list[ProfileResult] = []
-        timing_results: list[TimingResult] = []
 
         for case in suite.cases():
             reference_result: Any = None
@@ -137,7 +133,6 @@ class BenchmarkRunner:
                 result: Any = None
                 error: str | None = None
                 profile_data: dict[str, int] = {}
-                timing_data: dict[str, int] = {}
 
                 # Pre-timing setup: build strings, compile, etc.
                 if impl.prepare is not None:
@@ -151,18 +146,20 @@ class BenchmarkRunner:
 
                 try:
                     for iteration in range(case.iterations):
-                        t0 = time.perf_counter()
-                        raw = impl.run(prepared)
-                        t1 = time.perf_counter()
-                        times.append(t1 - t0)
+                        if idx == 0:
+                            raw = impl.run(prepared)
+                            vm_timing = self._menai.vm.get_timing_data()
+                            times.append(vm_timing.get("execute_ns", 0) / 1_000_000_000.0)
+
+                        else:
+                            t0 = time.perf_counter()
+                            raw = impl.run(prepared)
+                            t1 = time.perf_counter()
+                            times.append(t1 - t0)
 
                         # Collect profile data from the last iteration.
                         if self._profile and iteration == case.iterations - 1:
                             profile_data = self._menai.vm.get_profile_data()
-
-                        # Collect VM timing data from the last iteration.
-                        if iteration == case.iterations - 1:
-                            timing_data = self._menai.vm.get_timing_data()
 
                     # Convert MenaiValue → Python outside the timed loop.
                     if hasattr(raw, 'to_python'):
@@ -213,17 +210,7 @@ class BenchmarkRunner:
                         )
                     )
 
-                timing_results.append(
-                    TimingResult(
-                        case=case,
-                        impl_name=impl.name,
-                        convert_ns=timing_data.get("convert_ns", 0) if timing_data else 0,
-                        execute_ns=timing_data.get("execute_ns", 0) if timing_data else 0,
-                        error=error,
-                    )
-                )
-
-        return results, profile_results, timing_results
+        return results, profile_results
 
 
 class BenchmarkReporter:
@@ -244,7 +231,6 @@ class BenchmarkReporter:
         self,
         suite_name: str,
         results: list[CaseResult],
-        timing_results: list[TimingResult],
         implementations: list[Implementation],
     ) -> None:
         """
@@ -266,9 +252,6 @@ class BenchmarkReporter:
 
         by_key: dict[tuple[str, str], CaseResult] = {
             (result.case.name, result.impl_name): result for result in results
-        }
-        timing_by_key: dict[tuple[str, str], TimingResult] = {
-            (tr.case.name, tr.impl_name): tr for tr in timing_results
         }
 
         print()
@@ -300,10 +283,7 @@ class BenchmarkReporter:
 
         for case in cases:
             ref_result = by_key.get((case.name, impl_names[0]))
-            ref_tr: TimingResult | None = timing_by_key.get((case.name, impl_names[0]))
-            ref_mean = (ref_tr.execute_ns / 1_000_000_000.0) if ref_tr and not ref_tr.error else (
-                ref_result.mean_s if ref_result and not ref_result.error else None
-            )
+            ref_mean = ref_result.mean_s if ref_result and not ref_result.error else None
 
             row_parts = [f"{case.name:<{self._COL_CASE}}"]
 
@@ -322,14 +302,8 @@ class BenchmarkReporter:
                     min_str = ""
 
                 else:
-                    tr: TimingResult | None = timing_by_key.get((case.name, name)) if idx == 0 else None
-                    if tr is not None and not tr.error and tr.execute_ns > 0:
-                        mean_str = f"{tr.execute_ns / 1_000_000.0:.3f}"
-                        min_str = f"{tr.execute_ns / 1_000_000.0:.3f}"
-
-                    else:
-                        mean_str = f"{r.mean_s * self._MS:.3f}"
-                        min_str = f"{r.min_s * self._MS:.3f}"
+                    mean_str = f"{r.mean_s * self._MS:.3f}"
+                    min_str = f"{r.min_s * self._MS:.3f}"
 
                     if r.valid:
                         validation_counts[name] += 1

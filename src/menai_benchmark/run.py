@@ -182,7 +182,7 @@ def run_suite(
     menai = Menai(module_path=module_path)
 
     runner = BenchmarkRunner(suite, menai, profile=profile)
-    results, profile_results, timing_results = runner.run()
+    results, profile_results = runner.run()
 
     if no_validate:
         for result in results:
@@ -190,7 +190,7 @@ def run_suite(
             result.error = None
 
     reporter = BenchmarkReporter()
-    reporter.report(suite.name, results, timing_results, suite.implementations(menai))
+    reporter.report(suite.name, results, suite.implementations(menai))
 
     if profile:
         reporter.report_profile(
