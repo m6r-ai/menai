@@ -16,6 +16,13 @@ from menai.ast.menai_ast import (
 )
 from menai.ast.menai_ast_optimization_pass import MenaiASTOptimizationPass
 
+from menai.vm.menai_vm_c import state_alloc as _c_vm_state_alloc  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import fold_upcase as _c_fold_upcase  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import fold_downcase as _c_fold_downcase  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import fold_trim as _c_fold_trim  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import fold_trim_left as _c_fold_trim_left  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import fold_trim_right as _c_fold_trim_right  # type: ignore[import-not-found]
+
 
 class MenaiASTConstantFolder(MenaiASTOptimizationPass):
     """
@@ -121,6 +128,11 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$string->integer',
         '$string->bytes',
         '$string-hex->bytes',
+        '$string-upcase',
+        '$string-downcase',
+        '$string-trim',
+        '$string-trim-left',
+        '$string-trim-right',
     }
 
     def __init__(self) -> None:
@@ -219,6 +231,11 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$string->integer': self._fold_string_to_integer,
             '$string->bytes': self._fold_string_to_bytes,
             '$string-hex->bytes': self._fold_string_hex_to_bytes,
+            '$string-upcase': self._fold_string_upcase,
+            '$string-downcase': self._fold_string_downcase,
+            '$string-trim': self._fold_string_trim,
+            '$string-trim-left': self._fold_string_trim_left,
+            '$string-trim-right': self._fold_string_trim_right,
         }
 
         # Build jump table for special form optimization.  Note we don't include any special forms that were
@@ -231,6 +248,11 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             'quote': self._optimize_quote,
             'error': self._optimize_error,
         }
+
+        # VM state for C-backed string folds (upcase, downcase, trim).
+        # Allocated lazily on first use so modules that never fold these
+        # operations pay no cost.
+        self._vm_state: object = None
 
     def optimize(self, expr: MenaiASTNode) -> MenaiASTNode:
         """
@@ -1463,3 +1485,65 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             return MenaiASTNone()
 
         return MenaiASTInteger(sign * int(s, radix))
+
+    def _get_vm_state(self) -> object:
+        """Lazily allocate a C VM state for C-backed string folds."""
+        if self._vm_state is None:
+            self._vm_state = _c_vm_state_alloc()
+
+        return self._vm_state
+
+    def _fold_string_upcase(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-upcase: calls the C VM's menai_string_upcase for exact Unicode semantics."""
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        result = _c_fold_upcase(self._get_vm_state(), args[0].value)
+        if result is None:
+            return None
+
+        return MenaiASTString(result)
+
+    def _fold_string_downcase(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-downcase: calls the C VM's menai_string_downcase for exact Unicode semantics."""
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        result = _c_fold_downcase(self._get_vm_state(), args[0].value)
+        if result is None:
+            return None
+
+        return MenaiASTString(result)
+
+    def _fold_string_trim(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-trim: calls the C VM's trim for exact whitespace semantics."""
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        result = _c_fold_trim(self._get_vm_state(), args[0].value)
+        if result is None:
+            return None
+
+        return MenaiASTString(result)
+
+    def _fold_string_trim_left(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-trim-left: calls the C VM's trim-left for exact whitespace semantics."""
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        result = _c_fold_trim_left(self._get_vm_state(), args[0].value)
+        if result is None:
+            return None
+
+        return MenaiASTString(result)
+
+    def _fold_string_trim_right(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-trim-right: calls the C VM's trim-right for exact whitespace semantics."""
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        result = _c_fold_trim_right(self._get_vm_state(), args[0].value)
+        if result is None:
+            return None
+
+        return MenaiASTString(result)

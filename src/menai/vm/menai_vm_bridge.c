@@ -2044,6 +2044,161 @@ menai_vm_c_get_timing_data(PyObject *self, PyObject *capsule)
 }
 
 /*
+ * Compile-time constant folding helpers.
+ *
+ * Each function wraps a single C VM string operation so the AST constant
+ * folder can evaluate it at compile time with identical Unicode semantics.
+ * All take (state_capsule, py_string) and return a Python str, or NULL on
+ * error.
+ */
+static PyObject *
+_fold_string_1arg(PyObject *capsule, PyObject *py_str,
+                   MenaiString *(*fn)(MenaiVMState *, MenaiString *))
+{
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    if (!PyUnicode_Check(py_str)) {
+        Py_RETURN_NONE;
+    }
+
+    MenaiString *input = alloc_menai_string_from_pyunicode(vs, py_str);
+    if (!input) {
+        return NULL;
+    }
+
+    MenaiString *result = fn(vs, input);
+    menai_value_release(vs, (MenaiValue *)input);
+
+    if (!result) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    PyObject *py_result = alloc_pyunicode_from_menai_string(result);
+    menai_value_release(vs, (MenaiValue *)result);
+
+    return py_result;
+}
+
+static PyObject *
+menai_vm_c_fold_upcase(PyObject *self, PyObject *args)
+{
+    PyObject *capsule;
+    PyObject *py_str;
+    if (!PyArg_ParseTuple(args, "OO", &capsule, &py_str)) {
+        return NULL;
+    }
+
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    if (!PyUnicode_Check(py_str)) {
+        Py_RETURN_NONE;
+    }
+
+    MenaiString *input = alloc_menai_string_from_pyunicode(vs, py_str);
+    if (!input) {
+        return NULL;
+    }
+
+    ssize_t upcase_len = menai_string_upcase_length(input);
+    MenaiString *result = alloc_menai_string(vs, upcase_len);
+    if (result) {
+        menai_string_upcase(input, result);
+    }
+
+    menai_value_release(vs, (MenaiValue *)input);
+    if (!result) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    PyObject *py_result = alloc_pyunicode_from_menai_string(result);
+    menai_value_release(vs, (MenaiValue *)result);
+    return py_result;
+}
+
+static PyObject *
+menai_vm_c_fold_downcase(PyObject *self, PyObject *args)
+{
+    PyObject *capsule;
+    PyObject *py_str;
+    if (!PyArg_ParseTuple(args, "OO", &capsule, &py_str)) {
+        return NULL;
+    }
+
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    if (!PyUnicode_Check(py_str)) {
+        Py_RETURN_NONE;
+    }
+
+    MenaiString *input = alloc_menai_string_from_pyunicode(vs, py_str);
+    if (!input) {
+        return NULL;
+    }
+
+    MenaiString *result = alloc_menai_string(vs, input->length);
+    if (result) {
+        menai_string_downcase(input, result);
+    }
+
+    menai_value_release(vs, (MenaiValue *)input);
+    if (!result) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    PyObject *py_result = alloc_pyunicode_from_menai_string(result);
+    menai_value_release(vs, (MenaiValue *)result);
+    return py_result;
+}
+
+static PyObject *
+menai_vm_c_fold_trim(PyObject *self, PyObject *args)
+{
+    PyObject *capsule;
+    PyObject *py_str;
+    if (!PyArg_ParseTuple(args, "OO", &capsule, &py_str)) {
+        return NULL;
+    }
+
+    return _fold_string_1arg(capsule, py_str, alloc_menai_string_from_trim);
+}
+
+static PyObject *
+menai_vm_c_fold_trim_left(PyObject *self, PyObject *args)
+{
+    PyObject *capsule;
+    PyObject *py_str;
+    if (!PyArg_ParseTuple(args, "OO", &capsule, &py_str)) {
+        return NULL;
+    }
+
+    return _fold_string_1arg(capsule, py_str, alloc_menai_string_from_trim_left);
+}
+
+static PyObject *
+menai_vm_c_fold_trim_right(PyObject *self, PyObject *args)
+{
+    PyObject *capsule;
+    PyObject *py_str;
+    if (!PyArg_ParseTuple(args, "OO", &capsule, &py_str)) {
+        return NULL;
+    }
+
+    return _fold_string_1arg(capsule, py_str, alloc_menai_string_from_trim_right);
+}
+
+/*
  * Module definition
  */
 static PyMethodDef menai_vm_c_methods[] = {
@@ -2094,6 +2249,36 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_get_timing_data,
         METH_O,
         "Return timing data (convert_ns, execute_ns) from the last execute call."
+    },
+    {
+        "fold_upcase",
+        menai_vm_c_fold_upcase,
+        METH_VARARGS,
+        "Compile-time fold: string-upcase using C VM Unicode tables."
+    },
+    {
+        "fold_downcase",
+        menai_vm_c_fold_downcase,
+        METH_VARARGS,
+        "Compile-time fold: string-downcase using C VM Unicode tables."
+    },
+    {
+        "fold_trim",
+        menai_vm_c_fold_trim,
+        METH_VARARGS,
+        "Compile-time fold: string-trim using C VM whitespace tables."
+    },
+    {
+        "fold_trim_left",
+        menai_vm_c_fold_trim_left,
+        METH_VARARGS,
+        "Compile-time fold: string-trim-left using C VM whitespace tables."
+    },
+    {
+        "fold_trim_right",
+        menai_vm_c_fold_trim_right,
+        METH_VARARGS,
+        "Compile-time fold: string-trim-right using C VM whitespace tables."
     },
     { NULL, NULL, 0, NULL }
 };

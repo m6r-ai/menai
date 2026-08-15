@@ -142,6 +142,31 @@ class TestConstantFolding:
         assert menai.evaluate('(string->integer "0xff" 16)') is None
         _assert_folded_to_constant(menai, '(string->integer "0xff" 16)')
 
+    def test_string_upcase(self, menai):
+        assert menai.evaluate('(string-upcase "hello")') == "HELLO"
+        _assert_folded_to_constant(menai, '(string-upcase "hello")')
+
+    def test_string_upcase_expansion(self, menai):
+        """ß → SS is a multi-codepoint expansion in the C VM."""
+        assert menai.evaluate('(string-upcase "ß")') == "SS"
+        _assert_folded_to_constant(menai, '(string-upcase "ß")')
+
+    def test_string_downcase(self, menai):
+        assert menai.evaluate('(string-downcase "HELLO")') == "hello"
+        _assert_folded_to_constant(menai, '(string-downcase "HELLO")')
+
+    def test_string_trim(self, menai):
+        assert menai.evaluate('(string-trim "  hello  ")') == "hello"
+        _assert_folded_to_constant(menai, '(string-trim "  hello  ")')
+
+    def test_string_trim_left(self, menai):
+        assert menai.evaluate('(string-trim-left "  hello  ")') == "hello  "
+        _assert_folded_to_constant(menai, '(string-trim-left "  hello  ")')
+
+    def test_string_trim_right(self, menai):
+        assert menai.evaluate('(string-trim-right "  hello  ")') == "  hello"
+        _assert_folded_to_constant(menai, '(string-trim-right "  hello  ")')
+
     def test_nested_folds(self, menai):
         # Verifies that the folder recurses: inner fold feeds outer fold.
         assert menai.evaluate("(integer+ (integer+ 1 2) (integer+ 3 4))") == 10
