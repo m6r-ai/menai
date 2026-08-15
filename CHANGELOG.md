@@ -12,6 +12,8 @@ New features:
 - Added support for getting accurate VM timings when benchmarking, so we only measure execution time and not
   execution setup time.
 - Improved the `menai-check` tool annotations so they show all closed parens.
+- Improved register lifetime analysis to improve code generation.
+- Added "names" output to disassembler output.
 
 Bug fixes:
 

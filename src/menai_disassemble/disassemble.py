@@ -227,6 +227,16 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
 
         output.append(_grey(f"{indent}{'-'*70}", color))
 
+    # Show names table
+    if code.names:
+        output.append(f"{indent}{_green('Names: ' + str(len(code.names)), color)}")
+        output.append(_grey(f"{indent}{'-'*70}", color))
+        for i, gname in enumerate(code.names):
+            nid = f"n{i}"
+            output.append(f"{indent}{_cyan(f'{nid:>6}: {gname}', color)}")
+
+        output.append(_grey(f"{indent}{'-'*70}", color))
+
     # Show register map for params and captures (only when present)
     param_count = code.param_count
     if param_count:
