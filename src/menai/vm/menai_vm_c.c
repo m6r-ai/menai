@@ -3510,10 +3510,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiString *p = (MenaiString *)regs[base + src1];
             ssize_t plen = p->length;
 
-            bool r = true;
-            if (plen > s->length) {
-                r = false;
-            } else {
+            bool r = false;
+            if (plen <= s->length) {
                 r = (memcmp(s->data, p->data, (size_t)plen * sizeof(uint32_t)) == 0);
             }
 
@@ -3529,10 +3527,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             ssize_t slen = s->length;
             ssize_t sulen = su->length;
 
-            bool r = true;
-            if (sulen > slen) {
-                r = false;
-            } else {
+            bool r = false;
+            if (sulen <= slen) {
                 r = (memcmp(s->data + (slen - sulen), su->data, (size_t)sulen * sizeof(uint32_t)) == 0);
             }
 
