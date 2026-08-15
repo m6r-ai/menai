@@ -3829,7 +3829,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             ssize_t blen = b->length;
             const uint32_t *adata = a->data;
             const uint32_t *bdata = b->data;
-            MenaiList *r;
             if (blen == 0) {
                 /* Split into individual codepoints */
                 MenaiList *r_stl = alloc_menai_list(vs, alen);
@@ -3854,65 +3853,60 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     stl_arr[i] = (MenaiValue *)r;
                 }
 
-                r = r_stl;
-            } else {
-                /* Split on delimiter — find occurrences and build list */
-                ssize_t count = 0;
-                for (ssize_t i = 0; i <= alen - blen; ) {
-                    if (memcmp(adata + i, bdata, (size_t)blen * sizeof(uint32_t)) == 0) {
-                        count++;
-                        i += blen;
-                    } else {
-                        i++;
-                    }
-                }
-
-                ssize_t nparts = count + 1;
-                MenaiList *r_parts = alloc_menai_list(vs, nparts);
-                if (!r_parts) {
-                    vm_err = MENAI_ERR_NOMEM;
-                    goto error;
-                }
-
-                MenaiValue **parts2 = r_parts->elements;
-                ssize_t seg_start = 0, pi2 = 0;
-                for (ssize_t i = 0; i <= alen; ) {
-                    int match = (i <= alen - blen) &&
-                        (memcmp(adata + i, bdata, (size_t)blen * sizeof(uint32_t)) == 0);
-                    if (match || i == alen) {
-                        ssize_t seg_len = i - seg_start;
-                        MenaiString *p = alloc_menai_string(vs, seg_len);
-                        if (!p) {
-                            for (ssize_t k = 0; k < pi2; k++) {
-                                menai_value_release(vs, parts2[k]);
-                            }
-
-                            menai_value_release(vs, (MenaiValue *)r_parts);
-                            goto error;
-                        }
-
-                        memcpy(p->data, adata + seg_start, seg_len * sizeof(uint32_t));
-                        parts2[pi2] = (MenaiValue *)p;
-                        pi2++;
-                        if (match) {
-                            seg_start = i + blen;
-                            i += blen;
-                        } else {
-                            break;
-                        }
-                    } else {
-                        i++;
-                    }
-                }
-
-                r = r_parts;
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r_stl);
+                break;
             }
 
-            if (r == NULL) {
+            /* Split on delimiter — find occurrences and build list */
+            ssize_t count = 0;
+            for (ssize_t i = 0; i <= alen - blen; ) {
+                if (memcmp(adata + i, bdata, (size_t)blen * sizeof(uint32_t)) == 0) {
+                    count++;
+                    i += blen;
+                } else {
+                    i++;
+                }
+            }
+
+            ssize_t nparts = count + 1;
+            MenaiList *r_parts = alloc_menai_list(vs, nparts);
+            if (!r_parts) {
+                vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            MenaiValue **parts2 = r_parts->elements;
+            ssize_t seg_start = 0, pi2 = 0;
+            for (ssize_t i = 0; i <= alen; ) {
+                int match = (i <= alen - blen) &&
+                    (memcmp(adata + i, bdata, (size_t)blen * sizeof(uint32_t)) == 0);
+                if (match || i == alen) {
+                    ssize_t seg_len = i - seg_start;
+                    MenaiString *p = alloc_menai_string(vs, seg_len);
+                    if (!p) {
+                        for (ssize_t k = 0; k < pi2; k++) {
+                            menai_value_release(vs, parts2[k]);
+                        }
+
+                        menai_value_release(vs, (MenaiValue *)r_parts);
+                        goto error;
+                    }
+
+                    memcpy(p->data, adata + seg_start, seg_len * sizeof(uint32_t));
+                    parts2[pi2] = (MenaiValue *)p;
+                    pi2++;
+                    if (match) {
+                        seg_start = i + blen;
+                        i += blen;
+                    } else {
+                        break;
+                    }
+                } else {
+                    i++;
+                }
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r_parts);
             break;
         }
 
@@ -5561,12 +5555,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t idx = menai_ht_lookup(&a->ht, key, h);
-            int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *def = frame_regs[src2];
             if (idx >= 0) {
                 menai_reg_set_borrow(vs, frame_regs, dest, a->values[idx]);
             } else {
-                menai_reg_set_borrow(vs, frame_regs, dest, def);
+                int src2 = (int)(word & FIELD_MASK);
+                menai_reg_set_borrow(vs, frame_regs, dest, frame_regs[src2]);
             }
 
             break;
