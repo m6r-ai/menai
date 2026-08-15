@@ -1,0 +1,1083 @@
+----------------------------------------------------------------------
+Function: src/menai_benchmark/suites/json_parser/json_parser.menai
+----------------------------------------------------------------------
+Code Objects: 8
+----------------------------------------------------------------------
+    x0: skip-ws [src/menai_benchmark/suites/json_parser/json_parser.menai:line 21]
+    x1: parse-string-chars [src/menai_benchmark/suites/json_parser/json_parser.menai:line 44]
+    x2: scan-number-end [src/menai_benchmark/suites/json_parser/json_parser.menai:line 88]
+    x3: parse-number [src/menai_benchmark/suites/json_parser/json_parser.menai:line 104]
+    x4: resume [src/menai_benchmark/suites/json_parser/json_parser.menai:line 124]
+    x5: parse-object-key [src/menai_benchmark/suites/json_parser/json_parser.menai:line 160]
+    x6: dispatch [src/menai_benchmark/suites/json_parser/json_parser.menai:line 178]
+    x7: <lambda-0> [src/menai_benchmark/suites/json_parser/json_parser.menai:line 212]
+----------------------------------------------------------------------
+Constants: 4
+----------------------------------------------------------------------
+    k0: MenaiFunction(parameters=('s', 'pos'), name='sk...
+    k1: MenaiFunction(parameters=('s', 'pos', 'acc'), n...
+    k2: MenaiFunction(parameters=('s', 'i', 'len'), nam...
+    k3: MenaiString(value='parse')
+----------------------------------------------------------------------
+Locals: 6
+----------------------------------------------------------------------
+Instructions: 28
+----------------------------------------------------------------------
+     0: l0 = LOAD_CONST k0                          ; MenaiFunction(parameters=('s', 'pos')...
+     1: l1 = LOAD_CONST k1                          ; MenaiFunction(parameters=('s', 'pos',...
+     2: l2 = LOAD_CONST k2                          ; MenaiFunction(parameters=('s', 'i', '...
+     3: l3 = MAKE_CLOSURE x3                        ; closure for 'parse-number' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 104
+     4: PATCH_CLOSURE l3, 0, l2                     ; 'parse-number'.'scan-number-end' = 'resume'
+     5: l2 = MAKE_CLOSURE x4                        ; closure for 'resume' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 124
+     6: PATCH_CLOSURE l2, 3, l0                     ; 'resume'.'skip-ws' = l0
+     7: l4 = MAKE_CLOSURE x5                        ; closure for 'parse-object-key' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 160
+     8: PATCH_CLOSURE l4, 1, l1                     ; 'parse-object-key'.'parse-string-chars' = '<lambda-0>'
+     9: PATCH_CLOSURE l4, 2, l0                     ; 'parse-object-key'.'skip-ws' = l0
+    10: l5 = MAKE_CLOSURE x6                        ; closure for 'dispatch' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 178
+    11: PATCH_CLOSURE l5, 3, l0                     ; 'dispatch'.'skip-ws' = l0
+    12: PATCH_CLOSURE l5, 4, l1                     ; 'dispatch'.'parse-string-chars' = '<lambda-0>'
+    13: PATCH_CLOSURE l5, 5, l3                     ; 'dispatch'.'parse-number' = 'parse-number'
+    14: PATCH_CLOSURE l2, 0, l2                     ; 'resume'.'resume' = 'resume'
+    15: PATCH_CLOSURE l2, 1, l5                     ; 'resume'.'dispatch' = 'dispatch'
+    16: PATCH_CLOSURE l2, 2, l4                     ; 'resume'.'parse-object-key' = 'parse-object-key'
+    17: PATCH_CLOSURE l4, 0, l5                     ; 'parse-object-key'.'dispatch' = 'dispatch'
+    18: PATCH_CLOSURE l5, 0, l2                     ; 'dispatch'.'resume' = 'resume'
+    19: PATCH_CLOSURE l5, 1, l4                     ; 'dispatch'.'parse-object-key' = 'parse-object-key'
+    20: PATCH_CLOSURE l5, 2, l5                     ; 'dispatch'.'dispatch' = 'dispatch'
+    21: l0 = LOAD_CONST k3                          ; MenaiString(value='parse')
+    22: l1 = MAKE_CLOSURE x7                        ; closure for '<lambda-0>' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 212
+    23: PATCH_CLOSURE l1, 0, l5                     ; '<lambda-0>'.'dispatch' = 'dispatch'
+    24: o0 = MOVE l0                              
+    25: o1 = MOVE l1                              
+    26: l0 = MAKE_DICT o0, l1                     
+    27: RETURN l0                                 
+----------------------------------------------------------------------
+
+  ----------------------------------------------------------------------
+  Function: skip-ws [src/menai_benchmark/suites/json_parser/json_parser.menai:line 21]
+  ----------------------------------------------------------------------
+  Code Objects: 1
+  ----------------------------------------------------------------------
+      x0: loop [src/menai_benchmark/suites/json_parser/json_parser.menai:line 22]
+  ----------------------------------------------------------------------
+  Inputs: 2
+  ----------------------------------------------------------------------
+      i0: 's'
+      i1: 'pos'
+  ----------------------------------------------------------------------
+  Locals: 1
+  ----------------------------------------------------------------------
+  Instructions: 5
+  ----------------------------------------------------------------------
+       0: l0 = MAKE_CLOSURE x0                        ; closure for 'loop' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 22
+       1: PATCH_CLOSURE l0, 1, i0                     ; 'loop'.'s' = i0
+       2: PATCH_CLOSURE l0, 0, l0                     ; 'loop'.'loop' = 'loop'
+       3: o0 = MOVE i1                              
+       4: TAIL_CALL l0, 1                           
+  ----------------------------------------------------------------------
+  
+    ----------------------------------------------------------------------
+    Function: loop [src/menai_benchmark/suites/json_parser/json_parser.menai:line 22]
+    ----------------------------------------------------------------------
+    Constants: 5
+    ----------------------------------------------------------------------
+        k0: MenaiString(value=' ')
+        k1: MenaiString(value='\t')
+        k2: MenaiString(value='\n')
+        k3: MenaiString(value='\r')
+        k4: MenaiInteger(value=1)
+    ----------------------------------------------------------------------
+    Inputs: 1
+    ----------------------------------------------------------------------
+        i0: 'i'
+    ----------------------------------------------------------------------
+    Captured: 2
+    ----------------------------------------------------------------------
+        c0: 'loop'
+        c1: 's'
+    ----------------------------------------------------------------------
+    Locals: 2
+    ----------------------------------------------------------------------
+    Instructions: 23
+    ----------------------------------------------------------------------
+         0: ASSERT_STRING c1                          
+         1: ASSERT_INTEGER i0                         
+    
+    ►    2: l0 = STRING_LENGTH c1                     
+         3: l0 = INTEGER_GTE_P i0, l0                 
+         4: JUMP_IF_TRUE l0, @22                      
+    
+         5: l0 = STRING_REF c1, i0                    
+         6: l1 = LOAD_CONST k0                          ; MenaiString(value=' ')
+         7: l1 = STRING_EQ_P l0, l1                   
+         8: JUMP_IF_TRUE l1, @19                      
+    
+         9: l1 = LOAD_CONST k1                          ; MenaiString(value='\t')
+        10: l1 = STRING_EQ_P l0, l1                   
+        11: JUMP_IF_TRUE l1, @19                      
+    
+        12: l1 = LOAD_CONST k2                          ; MenaiString(value='\n')
+        13: l1 = STRING_EQ_P l0, l1                   
+        14: JUMP_IF_TRUE l1, @19                      
+    
+        15: l1 = LOAD_CONST k3                          ; MenaiString(value='\r')
+        16: l0 = STRING_EQ_P l0, l1                   
+        17: JUMP_IF_TRUE l0, @19                      
+    
+        18: RETURN i0                                 
+    
+    ►   19: l0 = LOAD_CONST k4                          ; MenaiInteger(value=1)
+        20: i0 = INTEGER_ADD i0, l0                   
+        21: JUMP @2                                   
+    
+    ►   22: RETURN i0                                 
+    ----------------------------------------------------------------------
+    
+  ----------------------------------------------------------------------
+  Function: parse-string-chars [src/menai_benchmark/suites/json_parser/json_parser.menai:line 44]
+  ----------------------------------------------------------------------
+  Code Objects: 1
+  ----------------------------------------------------------------------
+      x0: loop [src/menai_benchmark/suites/json_parser/json_parser.menai:line 47]
+  ----------------------------------------------------------------------
+  Inputs: 3
+  ----------------------------------------------------------------------
+      i0: 's'
+      i1: 'pos'
+      i2: 'acc'
+  ----------------------------------------------------------------------
+  Locals: 2
+  ----------------------------------------------------------------------
+  Instructions: 10
+  ----------------------------------------------------------------------
+       0: ASSERT_STRING i0                          
+       1: l0 = STRING_LENGTH i0                     
+       2: l1 = MAKE_CLOSURE x0                        ; closure for 'loop' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 47
+       3: PATCH_CLOSURE l1, 1, l0                     ; 'loop'.'len' = l0
+       4: PATCH_CLOSURE l1, 2, i0                     ; 'loop'.'s' = i0
+       5: PATCH_CLOSURE l1, 0, l1                     ; 'loop'.'loop' = 'loop'
+       6: o0 = MOVE i1                              
+       7: o1 = MOVE i1                              
+       8: o2 = MOVE i2                              
+       9: TAIL_CALL l1, 3                           
+  ----------------------------------------------------------------------
+  
+    ----------------------------------------------------------------------
+    Function: loop [src/menai_benchmark/suites/json_parser/json_parser.menai:line 47]
+    ----------------------------------------------------------------------
+    Constants: 24
+    ----------------------------------------------------------------------
+        k0: MenaiString(value='"')
+        k1: MenaiString(value='\\')
+        k2: MenaiInteger(value=1)
+        k3: MenaiString(value='/')
+        k4: MenaiString(value='b')
+        k5: MenaiString(value='f')
+        k6: MenaiString(value='n')
+        k7: MenaiString(value='r')
+        k8: MenaiString(value='t')
+        k9: MenaiString(value='\t')
+       k10: MenaiString(value='\r')
+       k11: MenaiString(value='\n')
+       k12: MenaiString(value='\x0c')
+       k13: MenaiString(value='\x08')
+       k14: MenaiInteger(value=2)
+       k15: MenaiString(value='u')
+       k16: MenaiString(value='Unknown escape sequence in s...
+       k17: MenaiInteger(value=6)
+       k18: MenaiInteger(value=16)
+       k19: MenaiString(value='Invalid hex digits in \\u es...
+       k20: MenaiString(value='Unterminated \\u escape sequ...
+       k21: MenaiString(value='Unterminated escape sequence')
+       k22: MenaiString(value='')
+       k23: MenaiString(value='Unterminated string literal')
+    ----------------------------------------------------------------------
+    Inputs: 3
+    ----------------------------------------------------------------------
+        i0: 'i'
+        i1: 'run-start'
+        i2: 'chunks'
+    ----------------------------------------------------------------------
+    Captured: 3
+    ----------------------------------------------------------------------
+        c0: 'loop'
+        c1: 'len'
+        c2: 's'
+    ----------------------------------------------------------------------
+    Locals: 5
+    ----------------------------------------------------------------------
+    Instructions: 148
+    ----------------------------------------------------------------------
+         0: ASSERT_INTEGER i0                         
+         1: ASSERT_INTEGER c1                         
+         2: ASSERT_STRING c2                          
+    
+    ►    3: l0 = INTEGER_GTE_P i0, c1                 
+         4: JUMP_IF_TRUE l0, @146                     
+    
+         5: l0 = STRING_REF c2, i0                    
+         6: l1 = LOAD_CONST k0                          ; MenaiString(value='"')
+         7: l1 = STRING_EQ_P l0, l1                   
+         8: JUMP_IF_TRUE l1, @128                     
+    
+         9: l1 = LOAD_CONST k1                          ; MenaiString(value='\\')
+        10: l0 = STRING_EQ_P l0, l1                   
+        11: JUMP_IF_TRUE l0, @15                      
+    
+        12: l0 = LOAD_CONST k2                          ; MenaiInteger(value=1)
+        13: i0 = INTEGER_ADD i0, l0                   
+        14: JUMP @3                                   
+    
+    ►   15: l0 = LOAD_CONST k2                          ; MenaiInteger(value=1)
+        16: l0 = INTEGER_ADD i0, l0                   
+        17: l0 = INTEGER_GTE_P l0, c1                 
+        18: JUMP_IF_TRUE l0, @126                     
+    
+        19: l0 = LOAD_CONST k2                          ; MenaiInteger(value=1)
+        20: l0 = INTEGER_ADD i0, l0                   
+        21: l0 = STRING_REF c2, l0                    
+        22: ASSERT_INTEGER i1                         
+        23: l1 = INTEGER_LT_P i1, i0                  
+        24: JUMP_IF_TRUE l1, @27                      
+    
+        25: l1 = MOVE i2                              
+        26: JUMP @31                                  
+    
+    ►   27: l2 = STRING_SLICE c2, i1, i0              
+        28: ASSERT_LIST i2                            
+        29: l2 = LIST_PREPEND i2, l2                  
+        30: l1 = MOVE l2                              
+    
+    ►   31: l2 = STRING_P l0                          
+        32: JUMP_IF_TRUE l2, @35                      
+    
+        33: l2 = LOAD_NONE                              ; #none
+        34: JUMP @85                                  
+    
+    ►   35: l3 = LOAD_CONST k0                          ; MenaiString(value='"')
+        36: l3 = STRING_EQ_P l0, l3                   
+        37: JUMP_IF_TRUE l3, @83                      
+    
+        38: l3 = LOAD_CONST k1                          ; MenaiString(value='\\')
+        39: l3 = STRING_EQ_P l0, l3                   
+        40: JUMP_IF_TRUE l3, @80                      
+    
+        41: l3 = LOAD_CONST k3                          ; MenaiString(value='/')
+        42: l3 = STRING_EQ_P l0, l3                   
+        43: JUMP_IF_TRUE l3, @77                      
+    
+        44: l3 = LOAD_CONST k4                          ; MenaiString(value='b')
+        45: l3 = STRING_EQ_P l0, l3                   
+        46: JUMP_IF_TRUE l3, @74                      
+    
+        47: l3 = LOAD_CONST k5                          ; MenaiString(value='f')
+        48: l3 = STRING_EQ_P l0, l3                   
+        49: JUMP_IF_TRUE l3, @71                      
+    
+        50: l3 = LOAD_CONST k6                          ; MenaiString(value='n')
+        51: l3 = STRING_EQ_P l0, l3                   
+        52: JUMP_IF_TRUE l3, @68                      
+    
+        53: l3 = LOAD_CONST k7                          ; MenaiString(value='r')
+        54: l3 = STRING_EQ_P l0, l3                   
+        55: JUMP_IF_TRUE l3, @65                      
+    
+        56: l3 = LOAD_CONST k8                          ; MenaiString(value='t')
+        57: l3 = STRING_EQ_P l0, l3                   
+        58: JUMP_IF_TRUE l3, @62                      
+    
+        59: l3 = LOAD_NONE                              ; #none
+        60: l2 = MOVE l3                              
+        61: JUMP @85                                  
+    
+    ►   62: l3 = LOAD_CONST k9                          ; MenaiString(value='\t')
+        63: l2 = MOVE l3                              
+        64: JUMP @85                                  
+    
+    ►   65: l3 = LOAD_CONST k10                         ; MenaiString(value='\r')
+        66: l2 = MOVE l3                              
+        67: JUMP @85                                  
+    
+    ►   68: l3 = LOAD_CONST k11                         ; MenaiString(value='\n')
+        69: l2 = MOVE l3                              
+        70: JUMP @85                                  
+    
+    ►   71: l3 = LOAD_CONST k12                         ; MenaiString(value='\x0c')
+        72: l2 = MOVE l3                              
+        73: JUMP @85                                  
+    
+    ►   74: l3 = LOAD_CONST k13                         ; MenaiString(value='\x08')
+        75: l2 = MOVE l3                              
+        76: JUMP @85                                  
+    
+    ►   77: l3 = LOAD_CONST k3                          ; MenaiString(value='/')
+        78: l2 = MOVE l3                              
+        79: JUMP @85                                  
+    
+    ►   80: l3 = LOAD_CONST k1                          ; MenaiString(value='\\')
+        81: l2 = MOVE l3                              
+        82: JUMP @85                                  
+    
+    ►   83: l3 = LOAD_CONST k0                          ; MenaiString(value='"')
+        84: l2 = MOVE l3                              
+    
+    ►   85: l3 = NONE_P l2                            
+        86: JUMP_IF_TRUE l3, @95                      
+    
+        87: l3 = LOAD_CONST k14                         ; MenaiInteger(value=2)
+        88: l3 = INTEGER_ADD i0, l3                   
+        89: l4 = LOAD_CONST k14                         ; MenaiInteger(value=2)
+        90: i1 = INTEGER_ADD i0, l4                   
+        91: ASSERT_LIST l1                            
+        92: i2 = LIST_PREPEND l1, l2                  
+        93: i0 = MOVE l3                              
+        94: JUMP @3                                   
+    
+    ►   95: l2 = LOAD_CONST k15                         ; MenaiString(value='u')
+        96: l0 = STRING_EQ_P l0, l2                   
+        97: JUMP_IF_TRUE l0, @100                     
+    
+        98: l0 = LOAD_CONST k16                         ; MenaiString(value='Unknown escape seq...
+        99: RAISE_ERROR l0                              ; Raise error: MenaiString(value='n')
+    
+    ►  100: l0 = LOAD_CONST k17                         ; MenaiInteger(value=6)
+       101: l0 = INTEGER_ADD i0, l0                   
+       102: l0 = INTEGER_GT_P l0, c1                  
+       103: JUMP_IF_TRUE l0, @124                     
+    
+       104: l0 = LOAD_CONST k14                         ; MenaiInteger(value=2)
+       105: l0 = INTEGER_ADD i0, l0                   
+       106: l2 = LOAD_CONST k17                         ; MenaiInteger(value=6)
+       107: l2 = INTEGER_ADD i0, l2                   
+       108: l0 = STRING_SLICE c2, l0, l2              
+       109: l2 = LOAD_CONST k18                         ; MenaiInteger(value=16)
+       110: l0 = STRING_TO_INTEGER l0, l2             
+       111: l2 = NONE_P l0                            
+       112: JUMP_IF_TRUE l2, @122                     
+    
+       113: l2 = LOAD_CONST k17                         ; MenaiInteger(value=6)
+       114: l2 = INTEGER_ADD i0, l2                   
+       115: l3 = LOAD_CONST k17                         ; MenaiInteger(value=6)
+       116: i1 = INTEGER_ADD i0, l3                   
+       117: l0 = INTEGER_CODEPOINT_TO_STRING l0       
+       118: ASSERT_LIST l1                            
+       119: i2 = LIST_PREPEND l1, l0                  
+       120: i0 = MOVE l2                              
+       121: JUMP @3                                   
+    
+    ►  122: l0 = LOAD_CONST k19                         ; MenaiString(value='Invalid hex digits...
+       123: RAISE_ERROR l0                              ; Raise error: MenaiString(value='n')
+    
+    ►  124: l0 = LOAD_CONST k20                         ; MenaiString(value='Unterminated \\u e...
+       125: RAISE_ERROR l0                              ; Raise error: MenaiString(value='n')
+    
+    ►  126: l0 = LOAD_CONST k21                         ; MenaiString(value='Unterminated escap...
+       127: RAISE_ERROR l0                              ; Raise error: MenaiString(value='n')
+    
+    ►  128: ASSERT_INTEGER i1                         
+       129: l0 = INTEGER_LT_P i1, i0                  
+       130: JUMP_IF_TRUE l0, @133                     
+    
+       131: l0 = MOVE i2                              
+       132: JUMP @137                                 
+    
+    ►  133: l1 = STRING_SLICE c2, i1, i0              
+       134: ASSERT_LIST i2                            
+       135: l1 = LIST_APPEND i2, l1                   
+       136: l0 = MOVE l1                              
+    
+    ►  137: l1 = LOAD_CONST k22                         ; MenaiString(value='')
+       138: ASSERT_LIST l0                            
+       139: l0 = LIST_TO_STRING l0, l1                
+       140: l1 = LOAD_CONST k2                          ; MenaiInteger(value=1)
+       141: l1 = INTEGER_ADD i0, l1                   
+       142: o0 = MOVE l0                              
+       143: o1 = MOVE l1                              
+       144: l0 = MAKE_LIST o0, i2                     
+       145: RETURN l0                                 
+    
+    ►  146: l0 = LOAD_CONST k23                         ; MenaiString(value='Unterminated strin...
+       147: RAISE_ERROR l0                              ; Raise error: MenaiString(value='n')
+    ----------------------------------------------------------------------
+    
+  ----------------------------------------------------------------------
+  Function: scan-number-end [src/menai_benchmark/suites/json_parser/json_parser.menai:line 88]
+  ----------------------------------------------------------------------
+  Code Objects: 1
+  ----------------------------------------------------------------------
+      x0: loop [src/menai_benchmark/suites/json_parser/json_parser.menai:line 89]
+  ----------------------------------------------------------------------
+  Inputs: 3
+  ----------------------------------------------------------------------
+      i0: 's'
+      i1: 'i'
+      i2: 'len'
+  ----------------------------------------------------------------------
+  Locals: 1
+  ----------------------------------------------------------------------
+  Instructions: 6
+  ----------------------------------------------------------------------
+       0: l0 = MAKE_CLOSURE x0                        ; closure for 'loop' at src/menai_benchmark/suites/json_parser/json_parser.menai:line 89
+       1: PATCH_CLOSURE l0, 1, i2                     ; 'loop'.'len' = i2
+       2: PATCH_CLOSURE l0, 2, i0                     ; 'loop'.'s' = i0
+       3: PATCH_CLOSURE l0, 0, l0                     ; 'loop'.'loop' = 'loop'
+       4: o0 = MOVE i1                              
+       5: TAIL_CALL l0, 1                           
+  ----------------------------------------------------------------------
+  
+    ----------------------------------------------------------------------
+    Function: loop [src/menai_benchmark/suites/json_parser/json_parser.menai:line 89]
+    ----------------------------------------------------------------------
+    Constants: 8
+    ----------------------------------------------------------------------
+        k0: MenaiString(value='-')
+        k1: MenaiString(value='+')
+        k2: MenaiString(value='.')
+        k3: MenaiString(value='e')
+        k4: MenaiString(value='E')
+        k5: MenaiString(value='0')
+        k6: MenaiString(value='9')
+        k7: MenaiInteger(value=1)
+    ----------------------------------------------------------------------
+    Inputs: 1
+    ----------------------------------------------------------------------
+        i0: 'j'
+    ----------------------------------------------------------------------
+    Captured: 3
+    ----------------------------------------------------------------------
+        c0: 'loop'
+        c1: 'len'
+        c2: 's'
+    ----------------------------------------------------------------------
+    Locals: 2
+    ----------------------------------------------------------------------
+    Instructions: 32
+    ----------------------------------------------------------------------
+         0: ASSERT_INTEGER i0                         
+         1: ASSERT_INTEGER c1                         
+         2: ASSERT_STRING c2                          
+    
+    ►    3: l0 = INTEGER_GTE_P i0, c1                 
+         4: JUMP_IF_TRUE l0, @31                      
+    
+         5: l0 = STRING_REF c2, i0                    
+         6: l1 = LOAD_CONST k0                          ; MenaiString(value='-')
+         7: l1 = STRING_EQ_P l0, l1                   
+         8: JUMP_IF_TRUE l1, @28                      
+    
+         9: l1 = LOAD_CONST k1                          ; MenaiString(value='+')
+        10: l1 = STRING_EQ_P l0, l1                   
+        11: JUMP_IF_TRUE l1, @28                      
+    
+        12: l1 = LOAD_CONST k2                          ; MenaiString(value='.')
+        13: l1 = STRING_EQ_P l0, l1                   
+        14: JUMP_IF_TRUE l1, @28                      
+    
+        15: l1 = LOAD_CONST k3                          ; MenaiString(value='e')
+        16: l1 = STRING_EQ_P l0, l1                   
+        17: JUMP_IF_TRUE l1, @28                      
+    
+        18: l1 = LOAD_CONST k4                          ; MenaiString(value='E')
+        19: l1 = STRING_EQ_P l0, l1                   
+        20: JUMP_IF_TRUE l1, @28                      
+    
+        21: l1 = LOAD_CONST k5                          ; MenaiString(value='0')
+        22: l1 = STRING_GTE_P l0, l1                  
+        23: JUMP_IF_FALSE l1, @27                     
+    
+        24: l1 = LOAD_CONST k6                          ; MenaiString(value='9')
+        25: l0 = STRING_LTE_P l0, l1                  
+        26: JUMP_IF_TRUE l0, @28                      
+    
+    ►   27: RETURN i0                                 
+    
+    ►   28: l0 = LOAD_CONST k7                          ; MenaiInteger(value=1)
+        29: i0 = INTEGER_ADD i0, l0                   
+        30: JUMP @3                                   
+    
+    ►   31: RETURN i0                                 
+    ----------------------------------------------------------------------
+    
+  ----------------------------------------------------------------------
+  Function: parse-number [src/menai_benchmark/suites/json_parser/json_parser.menai:line 104]
+  ----------------------------------------------------------------------
+  Constants: 1
+  ----------------------------------------------------------------------
+      k0: MenaiString(value='Invalid number literal in JS...
+  ----------------------------------------------------------------------
+  Inputs: 2
+  ----------------------------------------------------------------------
+      i0: 's'
+      i1: 'pos'
+  ----------------------------------------------------------------------
+  Captured: 1
+  ----------------------------------------------------------------------
+      c0: 'scan-number-end'
+  ----------------------------------------------------------------------
+  Locals: 3
+  ----------------------------------------------------------------------
+  Instructions: 17
+  ----------------------------------------------------------------------
+       0: ASSERT_STRING i0                          
+       1: o2 = STRING_LENGTH i0                     
+       2: o0 = MOVE i0                              
+       3: o1 = MOVE i1                              
+       4: l0 = CALL c0, 3                           
+  
+       5: ASSERT_INTEGER i1                         
+       6: ASSERT_INTEGER l0                         
+       7: l1 = STRING_SLICE i0, i1, l0              
+       8: l1 = STRING_TO_NUMBER l1                  
+       9: l2 = NONE_P l1                            
+      10: JUMP_IF_TRUE l2, @15                      
+  
+      11: o0 = MOVE l1                              
+      12: o1 = MOVE l0                              
+      13: l0 = MAKE_LIST o0, c0                     
+      14: RETURN l0                                 
+  
+  ►   15: l0 = LOAD_CONST k0                          ; MenaiString(value='Invalid number lit...
+      16: RAISE_ERROR l0                            
+  ----------------------------------------------------------------------
+  
+  ----------------------------------------------------------------------
+  Function: resume [src/menai_benchmark/suites/json_parser/json_parser.menai:line 124]
+  ----------------------------------------------------------------------
+  Constants: 11
+  ----------------------------------------------------------------------
+      k0: MenaiString(value='array')
+      k1: MenaiInteger(value=1)
+      k2: MenaiInteger(value=2)
+      k3: MenaiInteger(value=3)
+      k4: MenaiString(value='}')
+      k5: MenaiString(value=',')
+      k6: MenaiString(value='Expected , or } in object')
+      k7: MenaiString(value='Unterminated object')
+      k8: MenaiString(value=']')
+      k9: MenaiString(value='Expected , or ] in array')
+     k10: MenaiString(value='Unterminated array')
+  ----------------------------------------------------------------------
+  Inputs: 3
+  ----------------------------------------------------------------------
+      i0: 'val'
+      i1: 'pos'
+      i2: 'stack'
+  ----------------------------------------------------------------------
+  Captured: 4
+  ----------------------------------------------------------------------
+      c0: 'resume'
+      c1: 'dispatch'
+      c2: 'parse-object-key'
+      c3: 'skip-ws'
+  ----------------------------------------------------------------------
+  Locals: 8
+  ----------------------------------------------------------------------
+  Instructions: 96
+  ----------------------------------------------------------------------
+       0: ASSERT_LIST i2                            
+  
+  ►    1: l0 = LIST_NULL_P i2                       
+       2: JUMP_IF_TRUE l0, @95                      
+  
+       3: l0 = LIST_FIRST i2                        
+       4: l1 = LIST_REST i2                         
+       5: ASSERT_LIST l0                            
+       6: l2 = LIST_FIRST l0                        
+       7: l3 = LOAD_CONST k0                          ; MenaiString(value='array')
+       8: ASSERT_STRING l2                          
+       9: l2 = STRING_EQ_P l2, l3                   
+      10: JUMP_IF_TRUE l2, @51                      
+  
+      11: l2 = LOAD_CONST k1                          ; MenaiInteger(value=1)
+      12: l2 = LIST_REF l0, l2                      
+      13: l3 = LOAD_CONST k2                          ; MenaiInteger(value=2)
+      14: l3 = LIST_REF l0, l3                      
+      15: l4 = LOAD_CONST k3                          ; MenaiInteger(value=3)
+      16: l4 = LIST_REF l0, l4                      
+      17: o0 = MOVE l2                              
+      18: o1 = MOVE i1                              
+      19: l5 = CALL c3, 2                           
+  
+      20: ASSERT_STRING l2                          
+      21: l6 = STRING_LENGTH l2                     
+      22: ASSERT_INTEGER l5                         
+      23: l6 = INTEGER_GTE_P l5, l6                 
+      24: JUMP_IF_TRUE l6, @49                      
+  
+      25: l6 = STRING_REF l2, l5                    
+      26: l7 = LOAD_CONST k4                          ; MenaiString(value='}')
+      27: l7 = STRING_EQ_P l6, l7                   
+      28: JUMP_IF_TRUE l7, @43                      
+  
+      29: l7 = LOAD_CONST k5                          ; MenaiString(value=',')
+      30: l6 = STRING_EQ_P l6, l7                   
+      31: JUMP_IF_TRUE l6, @34                      
+  
+      32: l6 = LOAD_CONST k6                          ; MenaiString(value='Expected , or } in...
+      33: RAISE_ERROR l6                            
+  
+  ►   34: l6 = LOAD_CONST k1                          ; MenaiInteger(value=1)
+      35: o1 = INTEGER_ADD l5, l6                   
+      36: o0 = MOVE l2                              
+      37: o1 = CALL c3, 2                           
+  
+      38: ASSERT_DICT l3                            
+      39: o2 = DICT_SET l3, l4, i0                  
+      40: o0 = MOVE l2                              
+      41: o3 = MOVE l1                              
+      42: TAIL_CALL c2, 4                           
+  
+  ►   43: ASSERT_DICT l3                            
+      44: i0 = DICT_SET l3, l4, i0                  
+      45: l3 = LOAD_CONST k1                          ; MenaiInteger(value=1)
+      46: i1 = INTEGER_ADD l5, l3                   
+      47: i2 = MOVE l1                              
+      48: JUMP @1                                   
+  
+  ►   49: l2 = LOAD_CONST k7                          ; MenaiString(value='Unterminated object')
+      50: RAISE_ERROR l2                              ; Raise error: MenaiString(value='Expected , or ] in ar
+  
+  ►   51: l2 = LOAD_CONST k1                          ; MenaiInteger(value=1)
+      52: l2 = LIST_REF l0, l2                      
+      53: l3 = LOAD_CONST k2                          ; MenaiInteger(value=2)
+      54: l0 = LIST_REF l0, l3                      
+      55: o0 = MOVE l2                              
+      56: o1 = MOVE i1                              
+      57: l3 = CALL c3, 2                           
+  
+      58: ASSERT_STRING l2                          
+      59: l4 = STRING_LENGTH l2                     
+      60: ASSERT_INTEGER l3                         
+      61: l4 = INTEGER_GTE_P l3, l4                 
+      62: JUMP_IF_TRUE l4, @93                      
+  
+      63: l4 = STRING_REF l2, l3                    
+      64: l5 = LOAD_CONST k8                          ; MenaiString(value=']')
+      65: l5 = STRING_EQ_P l4, l5                   
+      66: JUMP_IF_TRUE l5, @87                      
+  
+      67: l5 = LOAD_CONST k5                          ; MenaiString(value=',')
+      68: l4 = STRING_EQ_P l4, l5                   
+      69: JUMP_IF_TRUE l4, @72                      
+  
+      70: l4 = LOAD_CONST k9                          ; MenaiString(value='Expected , or ] in...
+      71: RAISE_ERROR l4                            
+  
+  ►   72: l4 = LOAD_CONST k1                          ; MenaiInteger(value=1)
+      73: o1 = INTEGER_ADD l3, l4                   
+      74: o0 = MOVE l2                              
+      75: l4 = CALL c3, 2                           
+  
+      76: l5 = LOAD_CONST k0                          ; MenaiString(value='array')
+      77: ASSERT_LIST l0                            
+      78: l6 = LIST_APPEND l0, i0                   
+      79: o0 = MOVE l5                              
+      80: o1 = MOVE l2                              
+      81: o2 = MOVE l6                              
+      82: l5 = MAKE_LIST o0, c0                     
+      83: o2 = LIST_PREPEND l1, l5                  
+      84: o0 = MOVE l2                              
+      85: o1 = MOVE l4                              
+      86: TAIL_CALL c1, 3                           
+  
+  ►   87: ASSERT_LIST l0                            
+      88: i0 = LIST_APPEND l0, i0                   
+      89: l2 = LOAD_CONST k1                          ; MenaiInteger(value=1)
+      90: i1 = INTEGER_ADD l3, l2                   
+      91: i2 = MOVE l1                              
+      92: JUMP @1                                   
+  
+  ►   93: l0 = LOAD_CONST k10                         ; MenaiString(value='Unterminated array')
+      94: RAISE_ERROR l0                              ; Raise error: MenaiString(value='Unterminated object')
+  
+  ►   95: RETURN i0                                 
+  ----------------------------------------------------------------------
+  
+  ----------------------------------------------------------------------
+  Function: parse-object-key [src/menai_benchmark/suites/json_parser/json_parser.menai:line 160]
+  ----------------------------------------------------------------------
+  Constants: 7
+  ----------------------------------------------------------------------
+      k0: MenaiString(value='"')
+      k1: MenaiString(value='Expected string key in object')
+      k2: MenaiInteger(value=1)
+      k3: MenaiString(value=':')
+      k4: MenaiString(value='Expected : after object key')
+      k5: MenaiString(value='object')
+      k6: MenaiString(value='Unterminated object')
+  ----------------------------------------------------------------------
+  Inputs: 4
+  ----------------------------------------------------------------------
+      i0: 's'
+      i1: 'pos'
+      i2: 'd'
+      i3: 'stack'
+  ----------------------------------------------------------------------
+  Captured: 3
+  ----------------------------------------------------------------------
+      c0: 'dispatch'
+      c1: 'parse-string-chars'
+      c2: 'skip-ws'
+  ----------------------------------------------------------------------
+  Locals: 4
+  ----------------------------------------------------------------------
+  Instructions: 51
+  ----------------------------------------------------------------------
+       0: ASSERT_STRING i0                          
+       1: l0 = STRING_LENGTH i0                     
+       2: ASSERT_INTEGER i1                         
+       3: l0 = INTEGER_GTE_P i1, l0                 
+       4: JUMP_IF_TRUE l0, @49                      
+  
+       5: l0 = STRING_REF i0, i1                    
+       6: l1 = LOAD_CONST k0                          ; MenaiString(value='"')
+       7: l0 = STRING_EQ_P l0, l1                   
+       8: JUMP_IF_TRUE l0, @11                      
+  
+       9: l0 = LOAD_CONST k1                          ; MenaiString(value='Expected string ke...
+      10: RAISE_ERROR l0                            
+  
+  ►   11: l0 = LOAD_CONST k2                          ; MenaiInteger(value=1)
+      12: o1 = INTEGER_ADD i1, l0                   
+      13: o2 = LOAD_EMPTY_LIST                        ; []
+      14: o0 = MOVE i0                              
+      15: l0 = CALL c1, 3                           
+  
+      16: ASSERT_LIST l0                            
+      17: l1 = LIST_FIRST l0                        
+      18: l2 = LOAD_CONST k2                          ; MenaiInteger(value=1)
+      19: o1 = LIST_REF l0, l2                      
+      20: o0 = MOVE i0                              
+      21: l0 = CALL c2, 2                           
+  
+      22: l2 = STRING_LENGTH i0                     
+      23: ASSERT_INTEGER l0                         
+      24: l2 = INTEGER_GTE_P l0, l2                 
+      25: JUMP_IF_TRUE l2, @47                      
+  
+      26: l2 = STRING_REF i0, l0                    
+      27: l3 = LOAD_CONST k3                          ; MenaiString(value=':')
+      28: l2 = STRING_EQ_P l2, l3                   
+      29: JUMP_IF_TRUE l2, @32                      
+  
+      30: l2 = LOAD_CONST k4                          ; MenaiString(value='Expected : after o...
+      31: RAISE_ERROR l2                            
+  
+  ►   32: l2 = LOAD_CONST k2                          ; MenaiInteger(value=1)
+      33: o1 = INTEGER_ADD l0, l2                   
+      34: o0 = MOVE i0                              
+      35: l0 = CALL c2, 2                           
+  
+      36: l2 = LOAD_CONST k5                          ; MenaiString(value='object')
+      37: o0 = MOVE l2                              
+      38: o1 = MOVE i0                              
+      39: o2 = MOVE i2                              
+      40: o3 = MOVE l1                              
+      41: l1 = MAKE_LIST o0, c0                     
+      42: ASSERT_LIST i3                            
+      43: o2 = LIST_PREPEND i3, l1                  
+      44: o0 = MOVE i0                              
+      45: o1 = MOVE l0                              
+      46: TAIL_CALL c0, 3                           
+  
+  ►   47: l0 = LOAD_CONST k4                          ; MenaiString(value='Expected : after o...
+      48: RAISE_ERROR l0                            
+  
+  ►   49: l0 = LOAD_CONST k6                          ; MenaiString(value='Unterminated object')
+      50: RAISE_ERROR l0                            
+  ----------------------------------------------------------------------
+  
+  ----------------------------------------------------------------------
+  Function: dispatch [src/menai_benchmark/suites/json_parser/json_parser.menai:line 178]
+  ----------------------------------------------------------------------
+  Constants: 22
+  ----------------------------------------------------------------------
+      k0: MenaiString(value='{')
+      k1: MenaiString(value='[')
+      k2: MenaiString(value='"')
+      k3: MenaiString(value='t')
+      k4: MenaiString(value='f')
+      k5: MenaiString(value='n')
+      k6: MenaiString(value='-')
+      k7: MenaiString(value='0')
+      k8: MenaiString(value='9')
+      k9: MenaiString(value='Unexpected character in JSON')
+     k10: MenaiString(value='null')
+     k11: MenaiString(value='Unrecognized keyword in JSON')
+     k12: MenaiString(value='Unexpected end of input read...
+     k13: MenaiString(value='false')
+     k14: MenaiString(value='true')
+     k15: MenaiInteger(value=1)
+     k16: MenaiString(value=']')
+     k17: MenaiString(value='array')
+     k18: MenaiString(value='Unterminated array')
+     k19: MenaiString(value='}')
+     k20: MenaiString(value='Unterminated object')
+     k21: MenaiString(value='Unexpected end of JSON input')
+  ----------------------------------------------------------------------
+  Inputs: 3
+  ----------------------------------------------------------------------
+      i0: 's'
+      i1: 'pos'
+      i2: 'stack'
+  ----------------------------------------------------------------------
+  Captured: 6
+  ----------------------------------------------------------------------
+      c0: 'resume'
+      c1: 'parse-object-key'
+      c2: 'dispatch'
+      c3: 'skip-ws'
+      c4: 'parse-string-chars'
+      c5: 'parse-number'
+  ----------------------------------------------------------------------
+  Locals: 5
+  ----------------------------------------------------------------------
+  Instructions: 175
+  ----------------------------------------------------------------------
+       0: ASSERT_LIST i2                            
+  
+  ►    1: o0 = MOVE i0                              
+       2: o1 = MOVE i1                              
+       3: l0 = CALL c3, 2                           
+  
+       4: ASSERT_STRING i0                          
+       5: l1 = STRING_LENGTH i0                     
+       6: ASSERT_INTEGER l0                         
+       7: l1 = INTEGER_GTE_P l0, l1                 
+       8: JUMP_IF_TRUE l1, @173                     
+  
+       9: l1 = STRING_REF i0, l0                    
+      10: l2 = LOAD_CONST k0                          ; MenaiString(value='{')
+      11: l2 = STRING_EQ_P l1, l2                   
+      12: JUMP_IF_TRUE l2, @149                     
+  
+      13: l2 = LOAD_CONST k1                          ; MenaiString(value='[')
+      14: l2 = STRING_EQ_P l1, l2                   
+      15: JUMP_IF_TRUE l2, @121                     
+  
+      16: l2 = LOAD_CONST k2                          ; MenaiString(value='"')
+      17: l2 = STRING_EQ_P l1, l2                   
+      18: JUMP_IF_TRUE l2, @109                     
+  
+      19: l2 = LOAD_CONST k3                          ; MenaiString(value='t')
+      20: l2 = STRING_EQ_P l1, l2                   
+      21: JUMP_IF_TRUE l2, @87                      
+  
+      22: l2 = LOAD_CONST k4                          ; MenaiString(value='f')
+      23: l2 = STRING_EQ_P l1, l2                   
+      24: JUMP_IF_TRUE l2, @65                      
+  
+      25: l2 = LOAD_CONST k5                          ; MenaiString(value='n')
+      26: l2 = STRING_EQ_P l1, l2                   
+      27: JUMP_IF_TRUE l2, @43                      
+  
+      28: l2 = LOAD_CONST k6                          ; MenaiString(value='-')
+      29: l2 = STRING_EQ_P l1, l2                   
+      30: JUMP_IF_TRUE l2, @39                      
+  
+      31: l2 = LOAD_CONST k7                          ; MenaiString(value='0')
+      32: l2 = STRING_GTE_P l1, l2                  
+      33: JUMP_IF_FALSE l2, @37                     
+  
+      34: l2 = LOAD_CONST k8                          ; MenaiString(value='9')
+      35: l1 = STRING_LTE_P l1, l2                  
+      36: JUMP_IF_TRUE l1, @39                      
+  
+  ►   37: l1 = LOAD_CONST k9                          ; MenaiString(value='Unexpected charact...
+      38: RAISE_ERROR l1                              ; Raise error: MenaiString(value='null')
+  
+  ►   39: o0 = MOVE i0                              
+      40: o1 = MOVE l0                              
+      41: l1 = CALL c5, 2                           
+  
+      42: JUMP @115                                 
+  
+  ►   43: l2 = LOAD_CONST k10                         ; MenaiString(value='null')
+      44: l2 = STRING_LENGTH l2                     
+      45: l3 = INTEGER_ADD l0, l2                   
+      46: l4 = STRING_LENGTH i0                     
+      47: l3 = INTEGER_GT_P l3, l4                  
+      48: JUMP_IF_TRUE l3, @63                      
+  
+      49: l3 = INTEGER_ADD l0, l2                   
+      50: l3 = STRING_SLICE i0, l0, l3              
+      51: l4 = LOAD_CONST k10                         ; MenaiString(value='null')
+      52: l3 = STRING_EQ_P l3, l4                   
+      53: JUMP_IF_TRUE l3, @56                      
+  
+      54: l3 = LOAD_CONST k11                         ; MenaiString(value='Unrecognized keywo...
+      55: RAISE_ERROR l3                              ; Raise error: MenaiString(value='Unexpected end of inp
+  
+  ►   56: l3 = LOAD_NONE                              ; #none
+      57: l2 = INTEGER_ADD l0, l2                   
+      58: o0 = MOVE l3                              
+      59: o1 = MOVE l2                              
+      60: l2 = MAKE_LIST o0, i2                     
+      61: l1 = MOVE l2                              
+      62: JUMP @115                                 
+  
+  ►   63: l2 = LOAD_CONST k12                         ; MenaiString(value='Unexpected end of ...
+      64: RAISE_ERROR l2                              ; Raise error: MenaiString(value='Unrecognized keyword 
+  
+  ►   65: l2 = LOAD_CONST k13                         ; MenaiString(value='false')
+      66: l2 = STRING_LENGTH l2                     
+      67: l3 = INTEGER_ADD l0, l2                   
+      68: l4 = STRING_LENGTH i0                     
+      69: l3 = INTEGER_GT_P l3, l4                  
+      70: JUMP_IF_TRUE l3, @85                      
+  
+      71: l3 = INTEGER_ADD l0, l2                   
+      72: l3 = STRING_SLICE i0, l0, l3              
+      73: l4 = LOAD_CONST k13                         ; MenaiString(value='false')
+      74: l3 = STRING_EQ_P l3, l4                   
+      75: JUMP_IF_TRUE l3, @78                      
+  
+      76: l3 = LOAD_CONST k11                         ; MenaiString(value='Unrecognized keywo...
+      77: RAISE_ERROR l3                              ; Raise error: MenaiString(value='Unexpected end of inp
+  
+  ►   78: l3 = LOAD_FALSE                             ; #f
+      79: l2 = INTEGER_ADD l0, l2                   
+      80: o0 = MOVE l3                              
+      81: o1 = MOVE l2                              
+      82: l2 = MAKE_LIST o0, i2                     
+      83: l1 = MOVE l2                              
+      84: JUMP @115                                 
+  
+  ►   85: l2 = LOAD_CONST k12                         ; MenaiString(value='Unexpected end of ...
+      86: RAISE_ERROR l2                              ; Raise error: MenaiString(value='Unrecognized keyword 
+  
+  ►   87: l2 = LOAD_CONST k14                         ; MenaiString(value='true')
+      88: l2 = STRING_LENGTH l2                     
+      89: l3 = INTEGER_ADD l0, l2                   
+      90: l4 = STRING_LENGTH i0                     
+      91: l3 = INTEGER_GT_P l3, l4                  
+      92: JUMP_IF_TRUE l3, @107                     
+  
+      93: l3 = INTEGER_ADD l0, l2                   
+      94: l3 = STRING_SLICE i0, l0, l3              
+      95: l4 = LOAD_CONST k14                         ; MenaiString(value='true')
+      96: l3 = STRING_EQ_P l3, l4                   
+      97: JUMP_IF_TRUE l3, @100                     
+  
+      98: l3 = LOAD_CONST k11                         ; MenaiString(value='Unrecognized keywo...
+      99: RAISE_ERROR l3                              ; Raise error: MenaiString(value='Unexpected end of inp
+  
+  ►  100: l3 = LOAD_TRUE                              ; #t
+     101: l2 = INTEGER_ADD l0, l2                   
+     102: o0 = MOVE l3                              
+     103: o1 = MOVE l2                              
+     104: l2 = MAKE_LIST o0, i2                     
+     105: l1 = MOVE l2                              
+     106: JUMP @115                                 
+  
+  ►  107: l2 = LOAD_CONST k12                         ; MenaiString(value='Unexpected end of ...
+     108: RAISE_ERROR l2                              ; Raise error: MenaiString(value='Unrecognized keyword 
+  
+  ►  109: l2 = LOAD_CONST k15                         ; MenaiInteger(value=1)
+     110: o1 = INTEGER_ADD l0, l2                   
+     111: o2 = LOAD_EMPTY_LIST                        ; []
+     112: o0 = MOVE i0                              
+     113: l2 = CALL c4, 3                           
+  
+     114: l1 = MOVE l2                              
+  
+  ►  115: ASSERT_LIST l1                            
+     116: o0 = LIST_FIRST l1                        
+     117: l3 = LOAD_CONST k15                         ; MenaiInteger(value=1)
+     118: o1 = LIST_REF l1, l3                      
+     119: o2 = MOVE i2                              
+     120: TAIL_CALL c0, 3                           
+  
+  ►  121: l1 = LOAD_CONST k15                         ; MenaiInteger(value=1)
+     122: o1 = INTEGER_ADD l0, l1                   
+     123: o0 = MOVE i0                              
+     124: l1 = CALL c3, 2                           
+  
+     125: l2 = STRING_LENGTH i0                     
+     126: ASSERT_INTEGER l1                         
+     127: l2 = INTEGER_GTE_P l1, l2                 
+     128: JUMP_IF_TRUE l2, @147                     
+  
+     129: l2 = STRING_REF i0, l1                    
+     130: l3 = LOAD_CONST k16                         ; MenaiString(value=']')
+     131: l2 = STRING_EQ_P l2, l3                   
+     132: JUMP_IF_TRUE l2, @142                     
+  
+     133: l2 = LOAD_CONST k17                         ; MenaiString(value='array')
+     134: l3 = LOAD_EMPTY_LIST                        ; []
+     135: o0 = MOVE l2                              
+     136: o1 = MOVE i0                              
+     137: o2 = MOVE l3                              
+     138: l2 = MAKE_LIST o0, c0                     
+     139: i2 = LIST_PREPEND i2, l2                  
+     140: i1 = MOVE l1                              
+     141: JUMP @1                                   
+  
+  ►  142: o0 = LOAD_EMPTY_LIST                        ; []
+     143: l3 = LOAD_CONST k15                         ; MenaiInteger(value=1)
+     144: o1 = INTEGER_ADD l1, l3                   
+     145: o2 = MOVE i2                              
+     146: TAIL_CALL c0, 3                           
+  
+  ►  147: l1 = LOAD_CONST k18                         ; MenaiString(value='Unterminated array')
+     148: RAISE_ERROR l1                              ; Raise error: MenaiString(value='null')
+  
+  ►  149: l1 = LOAD_CONST k15                         ; MenaiInteger(value=1)
+     150: o1 = INTEGER_ADD l0, l1                   
+     151: o0 = MOVE i0                              
+     152: l0 = CALL c3, 2                           
+  
+     153: l1 = STRING_LENGTH i0                     
+     154: ASSERT_INTEGER l0                         
+     155: l1 = INTEGER_GTE_P l0, l1                 
+     156: JUMP_IF_TRUE l1, @171                     
+  
+     157: l1 = STRING_REF i0, l0                    
+     158: l2 = LOAD_CONST k19                         ; MenaiString(value='}')
+     159: l1 = STRING_EQ_P l1, l2                   
+     160: JUMP_IF_TRUE l1, @166                     
+  
+     161: o2 = LOAD_EMPTY_DICT                      
+     162: o0 = MOVE i0                              
+     163: o1 = MOVE l0                              
+     164: o3 = MOVE i2                              
+     165: TAIL_CALL c1, 4                           
+  
+  ►  166: o0 = LOAD_EMPTY_DICT                      
+     167: l2 = LOAD_CONST k15                         ; MenaiInteger(value=1)
+     168: o1 = INTEGER_ADD l0, l2                   
+     169: o2 = MOVE i2                              
+     170: TAIL_CALL c0, 3                           
+  
+  ►  171: l0 = LOAD_CONST k20                         ; MenaiString(value='Unterminated object')
+     172: RAISE_ERROR l0                              ; Raise error: MenaiString(value='Unexpected character 
+  
+  ►  173: l0 = LOAD_CONST k21                         ; MenaiString(value='Unexpected end of ...
+     174: RAISE_ERROR l0                              ; Raise error: MenaiString(value='Unexpected character 
+  ----------------------------------------------------------------------
+  
+  ----------------------------------------------------------------------
+  Function: <lambda-0> [src/menai_benchmark/suites/json_parser/json_parser.menai:line 212]
+  ----------------------------------------------------------------------
+  Constants: 1
+  ----------------------------------------------------------------------
+      k0: MenaiInteger(value=0)
+  ----------------------------------------------------------------------
+  Inputs: 1
+  ----------------------------------------------------------------------
+      i0: 'json-string'
+  ----------------------------------------------------------------------
+  Captured: 1
+  ----------------------------------------------------------------------
+      c0: 'dispatch'
+  ----------------------------------------------------------------------
+  Locals: 2
+  ----------------------------------------------------------------------
+  Instructions: 4
+  ----------------------------------------------------------------------
+       0: o1 = LOAD_CONST k0                          ; MenaiInteger(value=0)
+       1: o2 = LOAD_EMPTY_LIST                        ; []
+       2: o0 = MOVE i0                              
+       3: TAIL_CALL c0, 3                           
+  ----------------------------------------------------------------------
+  

@@ -12,7 +12,7 @@ import math
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex,
     MenaiASTBoolean, MenaiASTSymbol, MenaiASTList, MenaiASTListLiteral, MenaiASTString,
-    MenaiASTDict, MenaiASTSet, MenaiASTBytes,
+    MenaiASTDict, MenaiASTSet, MenaiASTBytes, MenaiASTNone,
 )
 from menai.ast.menai_ast_optimization_pass import MenaiASTOptimizationPass
 
@@ -106,6 +106,19 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$string=?',
         '$string!=?',
         '$string->integer-codepoint',
+        '$string-length',
+        '$string<?',
+        '$string>?',
+        '$string<=?',
+        '$string>=?',
+        '$string-concat',
+        '$string-ref',
+        '$string-slice',
+        '$string-prefix?',
+        '$string-suffix?',
+        '$string-index',
+        '$string-replace',
+        '$string->integer',
         '$string->bytes',
         '$string-hex->bytes',
     }
@@ -191,6 +204,19 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$string=?': self._fold_string_eq,
             '$string!=?': self._fold_string_neq,
             '$string->integer-codepoint': self._fold_string_to_integer_codepoint,
+            '$string-length': self._fold_string_length,
+            '$string<?': self._fold_string_lt,
+            '$string>?': self._fold_string_gt,
+            '$string<=?': self._fold_string_lte,
+            '$string>=?': self._fold_string_gte,
+            '$string-concat': self._fold_string_concat,
+            '$string-ref': self._fold_string_ref,
+            '$string-slice': self._fold_string_slice,
+            '$string-prefix?': self._fold_string_prefix,
+            '$string-suffix?': self._fold_string_suffix,
+            '$string-index': self._fold_string_index,
+            '$string-replace': self._fold_string_replace,
+            '$string->integer': self._fold_string_to_integer,
             '$string->bytes': self._fold_string_to_bytes,
             '$string-hex->bytes': self._fold_string_hex_to_bytes,
         }
@@ -1279,3 +1305,161 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
 
         except ValueError:
             return None  # Invalid hex — let runtime raise the error
+
+    def _fold_string_length(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-length: arg must be a string, returns integer (codepoint count)."""
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        return MenaiASTInteger(len(args[0].value))
+
+    def _fold_string_lt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string<?: both args must be strings, returns boolean (codepoint order)."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        return MenaiASTBoolean(args[0].value < args[1].value)
+
+    def _fold_string_gt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string>?: both args must be strings, returns boolean (codepoint order)."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        return MenaiASTBoolean(args[0].value > args[1].value)
+
+    def _fold_string_lte(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string<=?: both args must be strings, returns boolean (codepoint order)."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        return MenaiASTBoolean(args[0].value <= args[1].value)
+
+    def _fold_string_gte(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string>=?: both args must be strings, returns boolean (codepoint order)."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        return MenaiASTBoolean(args[0].value >= args[1].value)
+
+    def _fold_string_concat(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-concat: both args must be strings, returns concatenated string."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        return MenaiASTString(args[0].value + args[1].value)
+
+    def _fold_string_ref(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-ref: arg0 must be string, arg1 must be integer, returns single-char string."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        s = args[0].value
+        idx = args[1].value
+        if idx < 0 or idx >= len(s):
+            return None  # Out of bounds — let runtime raise the error
+
+        return MenaiASTString(s[idx])
+
+    def _fold_string_slice(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-slice: arg0=string, arg1=start, arg2=end, returns substring."""
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        if not isinstance(args[1], MenaiASTInteger) or not isinstance(args[2], MenaiASTInteger):
+            return None
+
+        s = args[0].value
+        start = args[1].value
+        end = args[2].value
+        slen = len(s)
+
+        if start < 0 or end < 0:
+            return None  # Negative index — let runtime raise the error
+
+        if start > slen or end > slen:
+            return None  # Out of bounds — let runtime raise the error
+
+        if start > end:
+            return None  # Start after end — let runtime raise the error
+
+        return MenaiASTString(s[start:end])
+
+    def _fold_string_prefix(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-prefix?: both args must be strings, returns boolean."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        return MenaiASTBoolean(args[0].value.startswith(args[1].value))
+
+    def _fold_string_suffix(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-suffix?: both args must be strings, returns boolean."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        return MenaiASTBoolean(args[0].value.endswith(args[1].value))
+
+    def _fold_string_index(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-index: both args must be strings, returns integer or #none."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        idx = args[0].value.find(args[1].value)
+        if idx == -1:
+            return MenaiASTNone()
+
+        return MenaiASTInteger(idx)
+
+    def _fold_string_replace(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-replace: all three args must be strings, returns string with all occurrences replaced."""
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTString):
+            return None
+
+        if not isinstance(args[2], MenaiASTString):
+            return None
+
+        return MenaiASTString(args[0].value.replace(args[1].value, args[2].value))
+
+    def _fold_string_to_integer(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """
+        Fold string->integer: arg0=string, arg1=radix integer, returns integer or #none.
+
+        The C VM parser accepts: optional leading whitespace, optional sign,
+        then raw digit characters valid for the base (no 0x/0o/0b prefixes).
+        We replicate that exact validation to avoid silent miscompilation.
+        """
+        if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        s = args[0].value.strip()
+        radix = args[1].value
+
+        if radix not in (2, 8, 10, 16):
+            return None  # Invalid radix — let runtime raise the error
+
+        if not s:
+            return MenaiASTNone()
+
+        # Check for optional sign.
+        sign = 1
+        if s[0] == '-':
+            sign = -1
+            s = s[1:]
+
+        if s and s[0] == '+':
+            s = s[1:]
+
+        if not s:
+            return MenaiASTNone()
+
+        # Validate all characters are raw digits for the base (no prefixes).
+        valid_digits = {
+            2: set('01'),
+            8: set('01234567'),
+            10: set('0123456789'),
+            16: set('0123456789abcdefABCDEF'),
+        }[radix]
+
+        if not all(c in valid_digits for c in s):
+            return MenaiASTNone()
+
+        return MenaiASTInteger(sign * int(s, radix))

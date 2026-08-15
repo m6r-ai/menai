@@ -1,18 +1,23 @@
 """
 Regression tests for MenaiASTConstantFolder through the full pipeline.
 
-Each test compiles and evaluates a Menai expression whose arguments are all
-compile-time literals.  The point is not to exhaustively test every fold
-function — it is to verify that the constant folder fires at all for each
-type family, so that a rename or pipeline reordering that silently breaks
-folding will be caught.
+Each test compiles a Menai expression whose arguments are all compile-time
+literals and asserts two things:
 
-One representative case per type family is sufficient.  Correctness of the
-arithmetic itself is covered by the broader test suite.
+1. The expression evaluates to the correct value (correctness).
+2. The compiled bytecode contains only a single load instruction (LOAD_CONST,
+   LOAD_TRUE, LOAD_FALSE, or LOAD_NONE) followed by RETURN — no runtime
+   opcode for the operation — proving the constant folder actually fired.
+
+Without the bytecode check a broken folder that silently falls through to
+runtime would still pass, since the runtime produces the same answer.
 """
 
 import pytest
 from menai import Menai
+from menai.bytecode.menai_bytecode import (
+    Opcode, unpack_instruction,
+)
 
 
 @pytest.fixture
@@ -20,35 +25,129 @@ def menai():
     return Menai()
 
 
+def _assert_folded_to_constant(menai: Menai, expr: str) -> None:
+    """Compile expr and assert it was folded to a load + RETURN.
+
+    The load may be LOAD_CONST (integers, floats, strings, etc.),
+    LOAD_TRUE, LOAD_FALSE, or LOAD_NONE depending on the folded value type.
+
+    This proves the constant folder fired: if the operation were still
+    present as a runtime opcode, there would be more than two instructions.
+    """
+    code = menai.compile(expr)
+    instrs = [unpack_instruction(w) for w in code.instructions]
+    opcodes = [i.opcode for i in instrs]
+    load_ops = {Opcode.LOAD_CONST, Opcode.LOAD_TRUE, Opcode.LOAD_FALSE, Opcode.LOAD_NONE}
+    assert len(opcodes) == 2 and opcodes[0] in load_ops and opcodes[1] == Opcode.RETURN, (
+        f"Expected [load, RETURN] for folded expression {expr!r}, "
+        f"got opcodes: {[Opcode(o).name for o in opcodes]}"
+    )
+
+
 class TestConstantFolding:
     def test_boolean_not(self, menai):
         assert menai.evaluate("(boolean-not #t)") is False
+        _assert_folded_to_constant(menai, "(boolean-not #t)")
 
     def test_integer_add(self, menai):
         assert menai.evaluate("(integer+ 3 4)") == 7
+        _assert_folded_to_constant(menai, "(integer+ 3 4)")
 
     def test_integer_eq(self, menai):
         assert menai.evaluate("(integer=? 5 5)") is True
+        _assert_folded_to_constant(menai, "(integer=? 5 5)")
 
     def test_integer_neq(self, menai):
         assert menai.evaluate("(integer!=? 3 4)") is True
+        _assert_folded_to_constant(menai, "(integer!=? 3 4)")
 
     def test_float_mul(self, menai):
         assert menai.evaluate("(float* 2.0 3.0)") == 6.0
+        _assert_folded_to_constant(menai, "(float* 2.0 3.0)")
 
     def test_float_sqrt(self, menai):
         assert menai.evaluate("(float-sqrt 9.0)") == 3.0
+        _assert_folded_to_constant(menai, "(float-sqrt 9.0)")
 
     def test_complex_add(self, menai):
         assert menai.evaluate("(complex+ 1+2j 3+4j)") == (4+6j)
+        _assert_folded_to_constant(menai, "(complex+ 1+2j 3+4j)")
 
     def test_string_eq(self, menai):
         assert menai.evaluate('(string=? "hello" "hello")') is True
+        _assert_folded_to_constant(menai, '(string=? "hello" "hello")')
+
+    def test_string_length(self, menai):
+        assert menai.evaluate('(string-length "hello")') == 5
+        _assert_folded_to_constant(menai, '(string-length "hello")')
+
+    def test_string_lt(self, menai):
+        assert menai.evaluate('(string<? "abc" "abd")') is True
+        _assert_folded_to_constant(menai, '(string<? "abc" "abd")')
+
+    def test_string_gt(self, menai):
+        assert menai.evaluate('(string>? "abd" "abc")') is True
+        _assert_folded_to_constant(menai, '(string>? "abd" "abc")')
+
+    def test_string_lte(self, menai):
+        assert menai.evaluate('(string<=? "abc" "abc")') is True
+        _assert_folded_to_constant(menai, '(string<=? "abc" "abc")')
+
+    def test_string_gte(self, menai):
+        assert menai.evaluate('(string>=? "abc" "abc")') is True
+        _assert_folded_to_constant(menai, '(string>=? "abc" "abc")')
+
+    def test_string_concat(self, menai):
+        assert menai.evaluate('(string-concat "foo" "bar")') == "foobar"
+        _assert_folded_to_constant(menai, '(string-concat "foo" "bar")')
+
+    def test_string_ref(self, menai):
+        assert menai.evaluate('(string-ref "hello" 1)') == "e"
+        _assert_folded_to_constant(menai, '(string-ref "hello" 1)')
+
+    def test_string_slice(self, menai):
+        assert menai.evaluate('(string-slice "hello" 1 4)') == "ell"
+        _assert_folded_to_constant(menai, '(string-slice "hello" 1 4)')
+
+    def test_string_prefix(self, menai):
+        assert menai.evaluate('(string-prefix? "hello world" "hello")') is True
+        _assert_folded_to_constant(menai, '(string-prefix? "hello world" "hello")')
+
+    def test_string_suffix(self, menai):
+        assert menai.evaluate('(string-suffix? "hello world" "world")') is True
+        _assert_folded_to_constant(menai, '(string-suffix? "hello world" "world")')
+
+    def test_string_index(self, menai):
+        assert menai.evaluate('(string-index "hello" "l")') == 2
+        _assert_folded_to_constant(menai, '(string-index "hello" "l")')
+
+    def test_string_index_not_found(self, menai):
+        assert menai.evaluate('(string-index "hello" "z")') is None
+        _assert_folded_to_constant(menai, '(string-index "hello" "z")')
+
+    def test_string_replace(self, menai):
+        assert menai.evaluate('(string-replace "hello" "l" "L")') == "heLLo"
+        _assert_folded_to_constant(menai, '(string-replace "hello" "l" "L")')
+
+    def test_string_to_integer(self, menai):
+        assert menai.evaluate('(string->integer "ff" 16)') == 255
+        _assert_folded_to_constant(menai, '(string->integer "ff" 16)')
+
+    def test_string_to_integer_invalid(self, menai):
+        assert menai.evaluate('(string->integer "xyz" 10)') is None
+        _assert_folded_to_constant(menai, '(string->integer "xyz" 10)')
+
+    def test_string_to_integer_no_prefix(self, menai):
+        """C VM does not accept 0x prefixes — folding must match."""
+        assert menai.evaluate('(string->integer "0xff" 16)') is None
+        _assert_folded_to_constant(menai, '(string->integer "0xff" 16)')
 
     def test_nested_folds(self, menai):
         # Verifies that the folder recurses: inner fold feeds outer fold.
         assert menai.evaluate("(integer+ (integer+ 1 2) (integer+ 3 4))") == 10
+        _assert_folded_to_constant(menai, "(integer+ (integer+ 1 2) (integer+ 3 4))")
 
     def test_if_constant_condition(self, menai):
         # The if-elimination path is distinct from the builtin-fold path.
         assert menai.evaluate("(if #t 42 0)") == 42
+        _assert_folded_to_constant(menai, "(if #t 42 0)")
