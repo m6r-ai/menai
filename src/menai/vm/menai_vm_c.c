@@ -759,6 +759,7 @@ typedef struct {
     int local_count;
     int ip;
     int base;
+    MenaiValue **frame_regs;
     int return_dest;
     int is_sentinel;
 } Frame;
@@ -769,7 +770,7 @@ typedef struct {
  * Populates a Frame from a MenaiCodeObject.  Takes a retain on co.
  */
 static void
-frame_setup(Frame *f, MenaiCodeObject *co, int base, int return_dest)
+frame_setup(Frame *f, MenaiValue **regs, MenaiCodeObject *co, int base, int return_dest)
 {
     menai_code_object_retain(co);
     assert(!f->code_obj);
@@ -786,6 +787,7 @@ frame_setup(Frame *f, MenaiCodeObject *co, int base, int return_dest)
     f->local_count = co->local_count;
     f->ip = 0;
     f->base = base;
+    f->frame_regs = regs + base;
     f->return_dest = return_dest;
     f->is_sentinel = 0;
 }
@@ -851,7 +853,7 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiValue *func_obj, MenaiValue 
         menai_reg_set_borrow(vs, regs, callee_base + param_count + (int)i, cv);
     }
 
-    frame_setup(new_frame, co, callee_base, return_dest);
+    frame_setup(new_frame, regs, co, callee_base, return_dest);
     return MENAI_OK;
 }
 
@@ -882,7 +884,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
     };
 
     /* Set up frame at depth 1 for the top-level code object. */
-    frame_setup(&frames[1], code, 0, 0);
+    frame_setup(&frames[1], regs, code, 0, 0);
 
     int frame_depth = 1;
     Frame *frame = &frames[1];
@@ -910,7 +912,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         uint64_t word = frame->instrs[frame->ip++];
         int opcode = (int)((word >> OPCODE_SHIFT) & OPCODE_MASK);
         int dest = (int)((word >> DEST_SHIFT) & FIELD_MASK);
-        int base = frame->base;
+        MenaiValue **frame_regs = frame->frame_regs;
 
         cur_opcode = opcode;
         cur_ip = frame->ip - 1;
@@ -922,33 +924,33 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         switch (opcode) {
         case OP_LOAD_NONE:
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             break;
 
         case OP_LOAD_TRUE:
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_boolean_true(vs));
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_boolean_true(vs));
             break;
 
         case OP_LOAD_FALSE:
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_boolean_false(vs));
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_boolean_false(vs));
             break;
 
         case OP_LOAD_EMPTY_LIST:
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)vs->empty_list);
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)vs->empty_list);
             break;
 
         case OP_LOAD_EMPTY_DICT:
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)vs->empty_dict);
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)vs->empty_dict);
             break;
 
         case OP_LOAD_EMPTY_SET:
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)vs->empty_set);
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)vs->empty_set);
             break;
 
         case OP_LOAD_CONST: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiValue *val = frame->constants_items[src0];
-            menai_reg_set_borrow(vs, regs, base + dest, val);
+            menai_reg_set_borrow(vs, frame_regs, dest, val);
             break;
         }
 
@@ -968,13 +970,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_borrow(vs, regs, base + dest, val);
+            menai_reg_set_borrow(vs, frame_regs, dest, val);
             break;
         }
 
         case OP_MOVE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            menai_reg_set_borrow(vs, regs, base + dest, regs[base + src0]);
+            menai_reg_set_borrow(vs, frame_regs, dest, frame_regs[src0]);
             break;
         }
 
@@ -986,7 +988,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_JUMP_IF_FALSE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBoolean *cond = (MenaiBoolean *)regs[base + src0];
+            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
             if (!cond->value) {
                 int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
                 frame->ip = src1;
@@ -997,7 +999,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_JUMP_IF_TRUE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBoolean *cond = (MenaiBoolean *)regs[base + src0];
+            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
             if (cond->value) {
                 int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
                 frame->ip = src1;
@@ -1008,7 +1010,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_RAISE_ERROR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *msg = (MenaiString *)regs[base + src0];
+            MenaiString *msg = (MenaiString *)frame_regs[src0];
             char *cstr = alloc_utf8_from_menai_string(msg, NULL);
             if (cstr == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -1022,7 +1024,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_RETURN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *retval = regs[base + src0];
+            MenaiValue *retval = frame_regs[src0];
             menai_value_retain(retval);
 
             int saved_return_dest = frame->return_dest;
@@ -1045,9 +1047,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_CALL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *raw = regs[base + src0];
+            MenaiValue *raw = frame_regs[src0];
             int arity = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            int callee_base = base + frame->local_count;
+            int callee_base = frame->base + frame->local_count;
 
             if (IS_MENAI_FUNCTION(raw)) {
                 if (frame_depth >= MAX_FRAME_DEPTH) {
@@ -1085,7 +1087,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)instance);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)instance);
                 break;
             }
 
@@ -1095,7 +1097,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_TAIL_CALL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *raw = regs[base + src0];
+            MenaiValue *raw = frame_regs[src0];
             int n_args = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
 
             /* Take an owned reference before the arg-moving loop.
@@ -1108,8 +1110,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             if (IS_MENAI_FUNCTION(raw)) {
                 /* Move outgoing args down to base+0..n_args-1 in place. */
                 for (int i = 0; i < n_args; i++) {
-                    MenaiValue *v = regs[base + local_count + i];
-                    menai_reg_set_borrow(vs, regs, base + i, v);
+                    MenaiValue *v = frame_regs[local_count + i];
+                    menai_reg_set_borrow(vs, frame_regs, i, v);
                 }
 
                 /* Reuse current frame — release old code_obj and instructions. */
@@ -1117,7 +1119,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
-                vm_err = call_setup(vs, frame, raw, regs, base, n_args, saved_return_dest);
+                vm_err = call_setup(vs, frame, raw, regs, frame->base, n_args, saved_return_dest);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     menai_value_release(vs, raw);
                     goto error;
@@ -1136,7 +1138,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                MenaiStruct *retval = alloc_menai_struct(vs, sraw, &regs[base + local_count], n_fields);
+                MenaiStruct *retval = alloc_menai_struct(vs, sraw, &frame_regs[local_count], n_fields);
                 if (retval == NULL) {
                     menai_value_release(vs, raw);
                     goto error;
@@ -1171,9 +1173,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              * Scatters the list into the callee's register window and pushes a frame.
              */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *raw_func = regs[base + src0];
+            MenaiValue *raw_func = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *raw_args = regs[base + src1];
+            MenaiValue *raw_args = frame_regs[src1];
             if (MENAI_UNLIKELY(!IS_MENAI_LIST(raw_args))) {
                 vm_err = MENAI_ERR_APPLY_SECOND_NOT_LIST;
                 goto error;
@@ -1189,7 +1191,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                int callee_base = base + frame->local_count;
+                int callee_base = frame->base + frame->local_count;
 
                 /* Scatter list elements into the callee window */
                 for (int i = 0; i < arity; i++) {
@@ -1225,7 +1227,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)instance);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)instance);
                 break;
             }
 
@@ -1240,9 +1242,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              * Reuses current frame (tail position).
              */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *raw_func = regs[base + src0];
+            MenaiValue *raw_func = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *raw_args = regs[base + src1];
+            MenaiValue *raw_args = frame_regs[src1];
 
             /* Own raw_func before the scatter loop which may overwrite its slot. */
             /* Own raw_args for the same reason — src1 may be < arity. */
@@ -1262,7 +1264,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             if (IS_MENAI_FUNCTION(raw_func)) {
                 /* Scatter args into base+0..arity-1 (reusing current frame's base) */
                 for (int i = 0; i < arity; i++) {
-                    menai_reg_set_borrow(vs, regs, base + i, elements[i]);
+                    menai_reg_set_borrow(vs, frame_regs, i, elements[i]);
                 }
 
                 menai_value_release(vs, raw_args);
@@ -1272,7 +1274,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
-                vm_err = call_setup(vs, frame, raw_func, regs, base, arity, saved_return_dest);
+                vm_err = call_setup(vs, frame, raw_func, regs, frame->base, arity, saved_return_dest);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     menai_value_release(vs, raw_func);
                     goto error;
@@ -1325,121 +1327,121 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_NONE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_NONE(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_NONE(frame_regs[src0]));
             break;
         }
 
         case OP_BOOLEAN_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_BOOLEAN(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_BOOLEAN(frame_regs[src0]));
             break;
         }
 
         case OP_BOOLEAN_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBoolean *a = (MenaiBoolean *)regs[base + src0];
+            MenaiBoolean *a = (MenaiBoolean *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBoolean *b = (MenaiBoolean *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_boolean_equal(a, b));
+            MenaiBoolean *b = (MenaiBoolean *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_boolean_equal(a, b));
             break;
         }
 
         case OP_BOOLEAN_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBoolean *a = (MenaiBoolean *)regs[base + src0];
+            MenaiBoolean *a = (MenaiBoolean *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBoolean *b = (MenaiBoolean *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_boolean_equal(a, b));
+            MenaiBoolean *b = (MenaiBoolean *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_boolean_equal(a, b));
             break;
         }
 
         case OP_BOOLEAN_NOT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBoolean *a = (MenaiBoolean *)regs[base + src0];
-            bool_store(vs, regs, base + dest, !a->value);
+            MenaiBoolean *a = (MenaiBoolean *)frame_regs[src0];
+            bool_store(vs, frame_regs, dest, !a->value);
             break;
         }
 
         case OP_SYMBOL_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_SYMBOL(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_SYMBOL(frame_regs[src0]));
             break;
         }
 
         case OP_SYMBOL_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSymbol *a = (MenaiSymbol *)regs[base + src0];
+            MenaiSymbol *a = (MenaiSymbol *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSymbol *b = (MenaiSymbol *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_symbol_equal(a, b));
+            MenaiSymbol *b = (MenaiSymbol *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_symbol_equal(a, b));
             break;
         }
 
         case OP_SYMBOL_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSymbol *a = (MenaiSymbol *)regs[base + src0];
+            MenaiSymbol *a = (MenaiSymbol *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSymbol *b = (MenaiSymbol *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_symbol_equal(a, b));
+            MenaiSymbol *b = (MenaiSymbol *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_symbol_equal(a, b));
             break;
         }
 
         case OP_SYMBOL_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSymbol *a = (MenaiSymbol *)regs[base + src0];
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)a->name);
+            MenaiSymbol *a = (MenaiSymbol *)frame_regs[src0];
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)a->name);
             break;
         }
 
         case OP_FUNCTION_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_FUNCTION(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_FUNCTION(frame_regs[src0]));
             break;
         }
 
         case OP_FUNCTION_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiValue *a = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_function_equal(a, b));
+            MenaiValue *b = frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_function_equal(a, b));
             break;
         }
 
         case OP_FUNCTION_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *a = regs[base + src0];
+            MenaiValue *a = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *b = regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_function_equal(a, b));
+            MenaiValue *b = frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_function_equal(a, b));
             break;
         }
 
         case OP_FUNCTION_MIN_ARITY: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFunction *f = (MenaiFunction *)regs[base + src0];
+            MenaiFunction *f = (MenaiFunction *)frame_regs[src0];
             int min_a = f->bytecode->is_variadic ? f->bytecode->param_count - 1 : f->bytecode->param_count;
             MenaiInteger *r = alloc_menai_integer_from_long(vs, min_a);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FUNCTION_VARIADIC_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFunction *f = (MenaiFunction *)regs[base + src0];
-            bool_store(vs, regs, base + dest, f->bytecode->is_variadic);
+            MenaiFunction *f = (MenaiFunction *)frame_regs[src0];
+            bool_store(vs, frame_regs, dest, f->bytecode->is_variadic);
             break;
         }
 
         case OP_FUNCTION_ACCEPTS_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFunction *f = (MenaiFunction *)regs[base + src0];
+            MenaiFunction *f = (MenaiFunction *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *n_obj = regs[base + src1];
+            MenaiValue *n_obj = frame_regs[src1];
             int pc = f->bytecode->param_count;
             int is_var = f->bytecode->is_variadic;
             MenaiInteger *n_io = (MenaiInteger *)n_obj;
@@ -1455,42 +1457,42 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             int accepts = is_var ? (n >= pc - 1) : (n == pc);
-            bool_store(vs, regs, base + dest, accepts);
+            bool_store(vs, frame_regs, dest, accepts);
             break;
         }
 
         case OP_INTEGER_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_INTEGER(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_INTEGER(frame_regs[src0]));
             break;
         }
 
         case OP_INTEGER_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_integer_equal(a, b));
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_integer_equal(a, b));
             break;
         }
 
         case OP_INTEGER_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_integer_equal(a, b));
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_integer_equal(a, b));
             break;
         }
 
         case OP_INTEGER_LT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(vs, regs, base + dest, a->fixed < b->fixed);
+                bool_store(vs, frame_regs, dest, a->fixed < b->fixed);
                 break;
             }
 
@@ -1514,7 +1516,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
             const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            bool_store(vs, regs, base + dest, menai_bigint_lt(pa, pb));
+            bool_store(vs, frame_regs, dest, menai_bigint_lt(pa, pb));
 
             menai_bigint_final(&tmp_a);
             menai_bigint_final(&tmp_b);
@@ -1523,12 +1525,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_INTEGER_GT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(vs, regs, base + dest, a->fixed > b->fixed);
+                bool_store(vs, frame_regs, dest, a->fixed > b->fixed);
                 break;
             }
 
@@ -1552,7 +1554,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
             const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            bool_store(vs, regs, base + dest, menai_bigint_gt(pa, pb));
+            bool_store(vs, frame_regs, dest, menai_bigint_gt(pa, pb));
 
             menai_bigint_final(&tmp_a);
             menai_bigint_final(&tmp_b);
@@ -1561,12 +1563,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_INTEGER_LTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(vs, regs, base + dest, a->fixed <= b->fixed);
+                bool_store(vs, frame_regs, dest, a->fixed <= b->fixed);
                 break;
             }
 
@@ -1590,7 +1592,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
             const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            bool_store(vs, regs, base + dest, menai_bigint_le(pa, pb));
+            bool_store(vs, frame_regs, dest, menai_bigint_le(pa, pb));
 
             menai_bigint_final(&tmp_a);
             menai_bigint_final(&tmp_b);
@@ -1599,12 +1601,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_INTEGER_GTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                bool_store(vs, regs, base + dest, a->fixed >= b->fixed);
+                bool_store(vs, frame_regs, dest, a->fixed >= b->fixed);
                 break;
             }
 
@@ -1628,7 +1630,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
             const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            bool_store(vs, regs, base + dest, menai_bigint_ge(pa, pb));
+            bool_store(vs, frame_regs, dest, menai_bigint_ge(pa, pb));
 
             menai_bigint_final(&tmp_a);
             menai_bigint_final(&tmp_b);
@@ -1637,7 +1639,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_INTEGER_ABS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
 
             if (!a->is_big) {
                 long sv = a->fixed;
@@ -1665,7 +1667,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         goto error;
                     }
 
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                     break;
                 }
 
@@ -1674,7 +1676,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                 break;
             }
 
@@ -1690,13 +1692,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_NEG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
 
             if (!a->is_big) {
                 long sv = a->fixed;
@@ -1723,7 +1725,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         goto error;
                     }
 
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                     break;
                 }
 
@@ -1732,7 +1734,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                 break;
             }
 
@@ -1748,13 +1750,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_BIT_NOT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
 
             MenaiBigInt tmp;
             menai_bigint_init(&tmp);
@@ -1777,15 +1779,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_ADD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (!a->is_big && !b->is_big) {
                 long la = a->fixed;
@@ -1797,7 +1799,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         goto error;
                     }
 
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                     break;
                 }
             }
@@ -1833,15 +1835,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_SUB: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (!a->is_big && !b->is_big) {
                 long la = a->fixed;
@@ -1853,7 +1855,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         goto error;
                     }
 
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                     break;
                 }
             }
@@ -1889,15 +1891,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_MUL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (!a->is_big && !b->is_big) {
                 long la = a->fixed;
@@ -1909,7 +1911,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         goto error;
                     }
 
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                     break;
                 }
             }
@@ -1945,15 +1947,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_DIV: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             int b_is_zero = (!b->is_big && b->fixed == 0) || (b->is_big && b->big.sign == 0);
             if (b_is_zero) {
@@ -1977,7 +1979,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                 break;
             }
 
@@ -2012,15 +2014,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_MOD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             int b_is_zero = (!b->is_big && b->fixed == 0) || (b->is_big && b->big.sign == 0);
             if (b_is_zero) {
@@ -2043,7 +2045,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                 break;
             }
 
@@ -2078,15 +2080,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_EXPN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
             int b_is_neg = (!b->is_big && b->fixed < 0) || (b->is_big && b->big.sign == -1);
             if (b_is_neg) {
                 vm_err = MENAI_ERR_NEGATIVE_EXPONENT;
@@ -2124,15 +2126,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_BIT_OR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             MenaiBigInt av;
             menai_bigint_init(&av);
@@ -2165,15 +2167,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_BIT_AND: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             MenaiBigInt av;
             menai_bigint_init(&av);
@@ -2206,15 +2208,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_BIT_XOR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             MenaiBigInt av;
             menai_bigint_init(&av);
@@ -2247,15 +2249,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_BIT_SHIFT_LEFT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             long shift;
             if (!b->is_big) {
@@ -2298,15 +2300,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_BIT_SHIFT_RIGHT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             long shift;
             if (!b->is_big) {
@@ -2349,18 +2351,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_MIN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                menai_reg_set_borrow(vs, regs, base + dest, a->fixed <= b->fixed ? (MenaiValue *)a : (MenaiValue *)b);
+                menai_reg_set_borrow(vs, frame_regs, dest, a->fixed <= b->fixed ? (MenaiValue *)a : (MenaiValue *)b);
                 break;
             }
 
@@ -2384,7 +2386,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
             const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            menai_reg_set_borrow(vs, regs, base + dest, menai_bigint_le(pa, pb) ? (MenaiValue *)a : (MenaiValue *)b);
+            menai_reg_set_borrow(vs, frame_regs, dest, menai_bigint_le(pa, pb) ? (MenaiValue *)a : (MenaiValue *)b);
 
             menai_bigint_final(&tmp_a);
             menai_bigint_final(&tmp_b);
@@ -2393,12 +2395,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_INTEGER_MAX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
-                menai_reg_set_borrow(vs, regs, base + dest, a->fixed >= b->fixed ? (MenaiValue *)a : (MenaiValue *)b);
+                menai_reg_set_borrow(vs, frame_regs, dest, a->fixed >= b->fixed ? (MenaiValue *)a : (MenaiValue *)b);
                 break;
             }
 
@@ -2422,7 +2424,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             const MenaiBigInt *pa = a->is_big ? ma : &tmp_a;
             const MenaiBigInt *pb = b->is_big ? mb : &tmp_b;
-            menai_reg_set_borrow(vs, regs, base + dest, menai_bigint_ge(pa, pb) ? (MenaiValue *)a : (MenaiValue *)b);
+            menai_reg_set_borrow(vs, frame_regs, dest, menai_bigint_ge(pa, pb) ? (MenaiValue *)a : (MenaiValue *)b);
 
             menai_bigint_final(&tmp_a);
             menai_bigint_final(&tmp_b);
@@ -2431,7 +2433,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_INTEGER_TO_FLOAT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
 
             double d;
             if (!a->is_big) {
@@ -2448,15 +2450,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_TO_COMPLEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             double re;
             if (!a->is_big) {
@@ -2483,15 +2485,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             long radix;
             if (!b->is_big) {
@@ -2522,13 +2524,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_INTEGER_CODEPOINT_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
 
             long cp;
             if (!a->is_big) {
@@ -2551,142 +2553,142 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->data[0] = cp;
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_FLOAT(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_FLOAT(frame_regs[src0]));
             break;
         }
 
         case OP_FLOAT_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_float_equal(a, b));
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_float_equal(a, b));
             break;
         }
 
         case OP_FLOAT_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_float_equal(a, b));
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_float_equal(a, b));
             break;
         }
 
         case OP_FLOAT_LT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value < b->value);
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, a->value < b->value);
             break;
         }
 
         case OP_FLOAT_GT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value > b->value);
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, a->value > b->value);
             break;
         }
 
         case OP_FLOAT_LTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value <= b->value);
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, a->value <= b->value);
             break;
         }
 
         case OP_FLOAT_GTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
-            bool_store(vs, regs, base + dest, a->value >= b->value);
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, a->value >= b->value);
             break;
         }
 
         case OP_FLOAT_NEG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, -a->value);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_ABS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, fabs(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
 
             break;
         }
 
         case OP_FLOAT_ADD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             MenaiFloat *r = alloc_menai_float(vs, a->value + b->value);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_SUB: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             MenaiFloat *r = alloc_menai_float(vs, a->value - b->value);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_MUL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             MenaiFloat *r = alloc_menai_float(vs, a->value * b->value);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_DIV: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             double bv = b->value;
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
@@ -2698,15 +2700,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_FLOOR_DIV: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             double bv = b->value;
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
@@ -2718,15 +2720,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_MOD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             double bv = b->value;
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_MODULO_BY_ZERO;
@@ -2738,39 +2740,39 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_EXP: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, exp(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_EXPN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             MenaiFloat *r = alloc_menai_float(vs, pow(a->value, b->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_LOG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
@@ -2782,13 +2784,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_LOG10: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
@@ -2800,13 +2802,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_LOG2: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
@@ -2818,15 +2820,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_LOGN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             double av = a->value;
             double bv = b->value;
             if (bv <= 0.0 || bv == 1.0) {
@@ -2844,49 +2846,49 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_SIN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, sin(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_COS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, cos(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_TAN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, tan(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_SQRT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             double v = a->value;
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
@@ -2898,51 +2900,51 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_FLOOR: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, floor(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_CEIL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, ceil(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_ROUND: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, round(a->value));
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_MIN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             double av = a->value;
             double bv = b->value;
             MenaiFloat *r = alloc_menai_float(vs, av <= bv ? av : bv);
@@ -2950,15 +2952,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_MAX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             double av = a->value;
             double bv = b->value;
             MenaiFloat *r = alloc_menai_float(vs, av >= bv ? av : bv);
@@ -2966,13 +2968,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_TO_INTEGER: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
 
             MenaiBigInt res;
             menai_bigint_init(&res);
@@ -2986,33 +2988,33 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_TO_COMPLEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)regs[base + src1];
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
             MenaiComplex *r = alloc_menai_complex(vs, a->value, b->value);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_FLOAT_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFloat *a = (MenaiFloat *)regs[base + src0];
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
             MenaiString *r = alloc_menai_string_from_float(vs, a->value);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
@@ -3034,7 +3036,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)func);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)func);
             break;
         }
 
@@ -3044,9 +3046,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              * src0 = closure register, src1 = capture slot index, src2 = value register.
              */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiFunction *closure = (MenaiFunction *)regs[base + src0];
+            MenaiFunction *closure = (MenaiFunction *)frame_regs[src0];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *val = regs[base + src2];
+            MenaiValue *val = frame_regs[src2];
 
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *old = closure->captures[src1];
@@ -3058,55 +3060,55 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_COMPLEX_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_COMPLEX(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_COMPLEX(frame_regs[src0]));
             break;
         }
 
         case OP_COMPLEX_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_complex_equal(a, b));
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_complex_equal(a, b));
             break;
         }
 
         case OP_COMPLEX_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_complex_equal(a, b));
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_complex_equal(a, b));
             break;
         }
 
         case OP_COMPLEX_REAL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, a->real);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_IMAG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             MenaiFloat *r = alloc_menai_float(vs, a->imag);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_ABS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             double re = a->real;
             double im = a->imag;
             MenaiFloat *r = alloc_menai_float(vs, sqrt(re * re + im * im));
@@ -3114,55 +3116,55 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_NEG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             MenaiComplex *r = alloc_menai_complex(vs, -a->real, -a->imag);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_ADD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
             MenaiComplex *r = alloc_menai_complex(vs, a->real + b->real, a->imag + b->imag);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_SUB: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
             MenaiComplex *r = alloc_menai_complex(vs, a->real - b->real, a->imag - b->imag);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_MUL: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
             double ar = a->real;
             double ai = a->imag;
             double br = b->real;
@@ -3172,15 +3174,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_DIV: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
             double ar = a->real;
             double ai = a->imag;
             double br = b->real;
@@ -3196,15 +3198,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_EXPN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
             mc_t za = mc(a->real, a->imag);
             mc_t zb = mc(b->real, b->imag);
             mc_t cr = mc_pow(za, zb);
@@ -3213,13 +3215,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_EXP: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             mc_t z = mc(a->real, a->imag);
             mc_t cr = mc_exp(z);
             MenaiComplex *r = alloc_menai_complex(vs, cr.re, cr.im);
@@ -3227,13 +3229,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_LOG: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             mc_t z = mc(a->real, a->imag);
             mc_t cr = mc_log(z);
             MenaiComplex *r = alloc_menai_complex(vs, cr.re, cr.im);
@@ -3241,13 +3243,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_LOG10: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             mc_t z = mc(a->real, a->imag);
             mc_t cr = mc_log10(z);
             MenaiComplex *r = alloc_menai_complex(vs, cr.re, cr.im);
@@ -3255,13 +3257,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_SIN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             mc_t z = mc(a->real, a->imag);
             mc_t cr = mc_sin(z);
             MenaiComplex *r = alloc_menai_complex(vs, cr.re, cr.im);
@@ -3269,13 +3271,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_COS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             mc_t z = mc(a->real, a->imag);
             mc_t cr = mc_cos(z);
             MenaiComplex *r = alloc_menai_complex(vs, cr.re, cr.im);
@@ -3283,13 +3285,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_TAN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             mc_t z = mc(a->real, a->imag);
             mc_t cr = mc_tan(z);
             MenaiComplex *r = alloc_menai_complex(vs, cr.re, cr.im);
@@ -3297,13 +3299,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_SQRT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             mc_t z = mc(a->real, a->imag);
             mc_t cr = mc_sqrt(z);
             MenaiComplex *r = alloc_menai_complex(vs, cr.re, cr.im);
@@ -3311,15 +3313,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_LOGN: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiComplex *b = (MenaiComplex *)regs[base + src1];
+            MenaiComplex *b = (MenaiComplex *)frame_regs[src1];
             mc_t za = mc(a->real, a->imag);
             mc_t zb = mc(b->real, b->imag);
             if (mc_zero(zb)) {
@@ -3333,97 +3335,97 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_COMPLEX_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiComplex *a = (MenaiComplex *)regs[base + src0];
+            MenaiComplex *a = (MenaiComplex *)frame_regs[src0];
             MenaiString *r = alloc_menai_string_from_complex(vs, a->real, a->imag);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_STRING(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_STRING(frame_regs[src0]));
             break;
         }
 
         case OP_STRING_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_string_equal(a, b));
+            MenaiString *b = (MenaiString *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_string_equal(a, b));
             break;
         }
 
         case OP_STRING_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_string_equal(a, b));
+            MenaiString *b = (MenaiString *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_string_equal(a, b));
             break;
         }
 
         case OP_STRING_LT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_string_compare(a, b) < 0);
+            MenaiString *b = (MenaiString *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_string_compare(a, b) < 0);
             break;
         }
 
         case OP_STRING_GT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_string_compare(a, b) > 0);
+            MenaiString *b = (MenaiString *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_string_compare(a, b) > 0);
             break;
         }
 
         case OP_STRING_LTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_string_compare(a, b) <= 0);
+            MenaiString *b = (MenaiString *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_string_compare(a, b) <= 0);
             break;
         }
 
         case OP_STRING_GTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_string_compare(a, b) >= 0);
+            MenaiString *b = (MenaiString *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_string_compare(a, b) >= 0);
             break;
         }
 
         case OP_STRING_LENGTH: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, a->length);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_UPCASE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             ssize_t upcase_len = menai_string_upcase_length(a);
             MenaiString *r = alloc_menai_string(vs, upcase_len);
             if (r == NULL) {
@@ -3431,64 +3433,64 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             menai_string_upcase(a, r);
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_DOWNCASE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             MenaiString *r = alloc_menai_string(vs, a->length);
             if (r == NULL) {
                 goto error;
             }
 
             menai_string_downcase(a, r);
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_TRIM: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             MenaiString *r = alloc_menai_string_from_trim(vs, a);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_TRIM_LEFT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             MenaiString *r = alloc_menai_string_from_trim_left(vs, a);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_TRIM_RIGHT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             MenaiString *r = alloc_menai_string_from_trim_right(vs, a);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_CONCAT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
+            MenaiString *b = (MenaiString *)frame_regs[src1];
 
             MenaiString *r = alloc_menai_string(vs, a->length + b->length);
             if (r == NULL) {
@@ -3499,15 +3501,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             memcpy(r->data, a->data, (size_t)la * sizeof(uint32_t));
             ssize_t lb = b->length;
             memcpy(r->data + la, b->data, (size_t)lb * sizeof(uint32_t));
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_PREFIX_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *s = (MenaiString *)regs[base + src0];
+            MenaiString *s = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *p = (MenaiString *)regs[base + src1];
+            MenaiString *p = (MenaiString *)frame_regs[src1];
             ssize_t plen = p->length;
 
             bool r = false;
@@ -3515,15 +3517,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 r = (memcmp(s->data, p->data, (size_t)plen * sizeof(uint32_t)) == 0);
             }
 
-            bool_store(vs, regs, base + dest, r);
+            bool_store(vs, frame_regs, dest, r);
             break;
         }
 
         case OP_STRING_SUFFIX_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *s = (MenaiString *)regs[base + src0];
+            MenaiString *s = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *su = (MenaiString *)regs[base + src1];
+            MenaiString *su = (MenaiString *)frame_regs[src1];
             ssize_t slen = s->length;
             ssize_t sulen = su->length;
 
@@ -3532,15 +3534,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 r = (memcmp(s->data + (slen - sulen), su->data, (size_t)sulen * sizeof(uint32_t)) == 0);
             }
 
-            bool_store(vs, regs, base + dest, r);
+            bool_store(vs, frame_regs, dest, r);
             break;
         }
 
         case OP_STRING_REF: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             long idx_l;
             if (!b->is_big) {
@@ -3565,17 +3567,17 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->data[0] = a->data[idx];
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_SLICE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiInteger *c = (MenaiInteger *)regs[base + src2];
+            MenaiInteger *c = (MenaiInteger *)frame_regs[src2];
 
             long start_l;
             if (!b->is_big) {
@@ -3631,41 +3633,41 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             memcpy(r->data, a->data + start, (size_t)len * sizeof(uint32_t));
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_REPLACE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
+            MenaiString *b = (MenaiString *)frame_regs[src1];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiString *c = (MenaiString *)regs[base + src2];
+            MenaiString *c = (MenaiString *)frame_regs[src2];
             MenaiString *r = alloc_menai_string_from_replace(vs, a, b, c);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_INDEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
+            MenaiString *b = (MenaiString *)frame_regs[src1];
             ssize_t idx = menai_string_find(a, b);
             if (idx == -1) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, idx);
                 if (r == NULL) {
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             }
 
             break;
@@ -3673,7 +3675,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_STRING_TO_INTEGER_CODEPOINT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             ssize_t slen = a->length;
             if (slen != 1) {
                 vm_err = MENAI_ERR_NOT_SINGLE_CHAR_STRING;
@@ -3685,16 +3687,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_TO_INTEGER: {
             /* src0=string, src1=radix(integer) */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             long radix;
             if (!b->is_big) {
@@ -3721,14 +3723,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int sti_ok = menai_bigint_from_codepoints(trimmed->data, trimmed->length, (int)radix, &sti_tmp);
             menai_value_release(vs, (MenaiValue *)trimmed);
             if (sti_ok < 0) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_bigint(vs, sti_tmp);
                 if (r == NULL) {
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             }
 
             break;
@@ -3736,7 +3738,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_STRING_TO_NUMBER: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             ssize_t slen = a->length;
             const uint32_t *sdata = a->data;
 
@@ -3747,7 +3749,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              */
             char stn_buf[64];
             if (slen >= (ssize_t)(sizeof(stn_buf))) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
                 break;
             }
 
@@ -3768,7 +3770,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             stn_buf[slen] = '\0';
 
             if (!stn_ascii_ok) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
                 break;
             }
 
@@ -3781,7 +3783,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                 break;
             }
 
@@ -3794,7 +3796,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         goto error;
                     }
 
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
                     break;
                 }
             }
@@ -3809,9 +3811,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             } else {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             }
 
             break;
@@ -3820,9 +3822,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         case OP_STRING_TO_LIST: {
             /* src0=string, src1=delimiter string */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *a = (MenaiString *)regs[base + src0];
+            MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
+            MenaiString *b = (MenaiString *)frame_regs[src1];
             ssize_t alen = a->length;
             ssize_t blen = b->length;
             const uint32_t *adata = a->data;
@@ -3910,51 +3912,51 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_BYTES_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_BYTES(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_BYTES(frame_regs[src0]));
             break;
         }
 
         case OP_BYTES_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_bytes_equal(a, b));
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_bytes_equal(a, b));
             break;
         }
 
         case OP_BYTES_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_bytes_equal(a, b));
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_bytes_equal(a, b));
             break;
         }
 
         case OP_BYTES_LENGTH: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, a->length);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_BYTES_REF: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *idx_val = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(idx_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -3972,15 +3974,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_BYTES_APPEND_U8: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *v = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *v = (MenaiInteger *)frame_regs[src1];
             long val;
             if (MENAI_UNLIKELY(menai_integer_to_long(v, &val) < 0)) {
                 vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE;
@@ -3997,13 +3999,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_TO_BYTES: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *lst = (MenaiList *)regs[base + src0];
+            MenaiList *lst = (MenaiList *)frame_regs[src0];
             ssize_t n = lst->length;
             MenaiBytes *mb = alloc_menai_bytes(vs, n);
             if (mb == NULL) {
@@ -4034,17 +4036,17 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 mb->inline_data[i] = (uint8_t)val;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)mb);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)mb);
             break;
         }
 
         case OP_BYTES_SLICE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *start_val = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *start_val = (MenaiInteger *)frame_regs[src1];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiInteger *end_val = (MenaiInteger *)regs[base + src2];
+            MenaiInteger *end_val = (MenaiInteger *)frame_regs[src2];
             ssize_t blen = b->length;
 
             ssize_t start;
@@ -4076,13 +4078,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRING_TO_BYTES: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *s = (MenaiString *)regs[base + src0];
+            MenaiString *s = (MenaiString *)frame_regs[src0];
             ssize_t slen = s->length;
             const uint32_t *cp = s->data;
 
@@ -4126,13 +4128,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)mb);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)mb);
             break;
         }
 
         case OP_BYTES_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             ssize_t nbytes = b->length;
             const uint8_t *data = b->data;
 
@@ -4200,14 +4202,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             memcpy(result->data, cp_buf, ncp * sizeof(uint32_t));
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)result);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)result);
             free(cp_buf);
             break;
         }
 
         case OP_BYTES_TO_LIST: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             ssize_t nbytes = b->length;
             MenaiList *result = alloc_menai_list(vs, nbytes);
             if (result == NULL) {
@@ -4228,13 +4230,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)result);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)result);
             break;
         }
 
         case OP_BYTES_TO_STRING_HEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             ssize_t nbytes = b->length;
             const uint8_t *data = b->data;
 
@@ -4261,14 +4263,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             memcpy(result->data, cp_buf, nbytes * 2 * sizeof(uint32_t));
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)result);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)result);
             free(cp_buf);
             break;
         }
 
         case OP_STRING_HEX_TO_BYTES: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiString *s = (MenaiString *)regs[base + src0];
+            MenaiString *s = (MenaiString *)frame_regs[src0];
             ssize_t slen = s->length;
             const uint32_t *cp = s->data;
 
@@ -4314,38 +4316,38 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 mb->inline_data[i] = (uint8_t)((hi_val << 4) | lo_val);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)mb);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)mb);
             break;
         }
 
         case OP_BYTES_CONCAT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src1];
             MenaiBytes *r = alloc_menai_bytes_from_concat(vs, a, b);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_BYTES_INDEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *haystack = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *haystack = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *needle = (MenaiBytes *)regs[base + src1];
+            MenaiBytes *needle = (MenaiBytes *)frame_regs[src1];
             ssize_t nlen = needle->length;
             ssize_t hlen = haystack->length;
             if (nlen == 0) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)alloc_menai_integer_from_ssize_t(vs, 0));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)alloc_menai_integer_from_ssize_t(vs, 0));
                 break;
             }
 
             if (nlen > hlen) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
                 break;
             }
 
@@ -4361,23 +4363,23 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (found == -1) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, found);
                 if (r == NULL) {
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             }
             break;
         }
 
         case OP_BYTES_INDEX_INT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *byte_val = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *byte_val = (MenaiInteger *)frame_regs[src1];
 
             long target;
             if (MENAI_UNLIKELY(menai_integer_to_long(byte_val, &target) < 0)) {
@@ -4401,59 +4403,59 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (found == -1) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, found);
                 if (r == NULL) {
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             }
             break;
         }
 
         case OP_BYTES_LT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_bytes_compare(a, b) < 0);
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_bytes_compare(a, b) < 0);
             break;
         }
 
         case OP_BYTES_GT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_bytes_compare(a, b) > 0);
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_bytes_compare(a, b) > 0);
             break;
         }
 
         case OP_BYTES_LTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_bytes_compare(a, b) <= 0);
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_bytes_compare(a, b) <= 0);
             break;
         }
 
         case OP_BYTES_GTE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *a = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_bytes_compare(a, b) >= 0);
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_bytes_compare(a, b) >= 0);
             break;
         }
 
         case OP_BYTES_READ_U8: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4471,15 +4473,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_BYTES_READ_I8: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4498,7 +4500,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
@@ -4508,9 +4510,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 #define BYTES_READ_MULTI(opcode_name, width, is_signed, le) \
         case opcode_name: { \
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0]; \
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0]; \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
-            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1]; \
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1]; \
             ssize_t offset; \
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
@@ -4556,7 +4558,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error; \
                 } \
 \
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r); \
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r); \
             } else { \
                 if (uval > (unsigned long long)LONG_MAX) { \
                     /* Value exceeds LONG_MAX; would misrepresent as \
@@ -4573,14 +4575,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         goto error; \
                     } \
 \
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r); \
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r); \
                 } else { \
                     MenaiInteger *r = alloc_menai_integer_from_long_long(vs, (long long)uval); \
                     if (r == NULL) { \
                         goto error; \
                     } \
 \
-                    menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r); \
+                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r); \
                 } \
             } \
             break; \
@@ -4614,9 +4616,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 #define BYTES_APPEND_MULTI(opcode_name, width, is_signed, le) \
         case opcode_name: { \
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0]; \
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0]; \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
-            MenaiInteger *v = (MenaiInteger *)regs[base + src1]; \
+            MenaiInteger *v = (MenaiInteger *)frame_regs[src1]; \
             long long val; \
             if (is_signed) { \
                 if (MENAI_UNLIKELY(menai_integer_to_long_long(v, &val) < 0)) { \
@@ -4637,7 +4639,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error; \
                 } \
 \
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r); \
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r); \
             } else { \
                 unsigned long long uval_ull; \
                 if (menai_integer_to_unsigned_long_long(v, &uval_ull) < 0) { \
@@ -4655,7 +4657,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error; \
                 } \
 \
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r); \
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r); \
             } \
             break; \
         }
@@ -4688,11 +4690,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 #define BYTES_WRITE_MULTI(opcode_name, width, is_signed, le) \
         case opcode_name: { \
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0]; \
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0]; \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
-            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1]; \
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1]; \
             int src2 = (int)(word & FIELD_MASK); \
-            MenaiInteger *v = (MenaiInteger *)regs[base + src2]; \
+            MenaiInteger *v = (MenaiInteger *)frame_regs[src2]; \
             ssize_t offset; \
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
@@ -4738,7 +4740,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error; \
             } \
 \
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r); \
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r); \
             break; \
         }
 
@@ -4768,9 +4770,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
          */
         case OP_BYTES_READ_ULEB128: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4835,7 +4837,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiValue **elems = lst->elements;
             elems[0] = (MenaiValue *)val_result;
             elems[1] = (MenaiValue *)next_off;
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)lst);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)lst);
             break;
         }
 
@@ -4844,9 +4846,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
          */
         case OP_BYTES_APPEND_ULEB128: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *v = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *v = (MenaiInteger *)frame_regs[src1];
             unsigned long long uval;
             if (MENAI_UNLIKELY(menai_integer_to_unsigned_long_long(v, &uval) < 0)) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
@@ -4873,7 +4875,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
                 result = next;
             }
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)result);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)result);
             break;
         }
 
@@ -4882,9 +4884,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
          */
         case OP_BYTES_READ_SLEB128: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *off_val = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1];
             ssize_t offset;
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
@@ -4939,7 +4941,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiValue **elems = lst->elements;
             elems[0] = (MenaiValue *)val_result;
             elems[1] = (MenaiValue *)next_off;
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)lst);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)lst);
             break;
         }
 
@@ -4948,9 +4950,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
          */
         case OP_BYTES_APPEND_SLEB128: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiBytes *b = (MenaiBytes *)regs[base + src0];
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *v = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *v = (MenaiInteger *)frame_regs[src1];
             long long val;
             if (MENAI_UNLIKELY(menai_integer_to_long_long(v, &val) < 0)) {
                 vm_err = MENAI_ERR_OVERFLOW;
@@ -4980,70 +4982,70 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
                 result = next;
             }
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)result);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)result);
             break;
         }
 
         case OP_LIST_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_LIST(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_LIST(frame_regs[src0]));
             break;
         }
 
         case OP_LIST_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiList *b = (MenaiList *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_list_equal(a, b));
+            MenaiList *b = (MenaiList *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_list_equal(a, b));
             break;
         }
 
         case OP_LIST_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiList *b = (MenaiList *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_list_equal(a, b));
+            MenaiList *b = (MenaiList *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_list_equal(a, b));
             break;
         }
 
         case OP_LIST_NULL_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int is_null = (a->length == 0);
-            bool_store(vs, regs, base + dest, is_null);
+            bool_store(vs, frame_regs, dest, is_null);
             break;
         }
 
         case OP_LIST_LENGTH: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             ssize_t n = a->length;
             MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, n);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_FIRST: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             if (a->length == 0) {
                 vm_err = MENAI_ERR_EMPTY_LIST;
                 goto error;
             }
 
-            menai_reg_set_borrow(vs, regs, base + dest, a->elements[0]);
+            menai_reg_set_borrow(vs, frame_regs, dest, a->elements[0]);
             break;
         }
 
         case OP_LIST_REST: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             if (a->length == 0) {
                 vm_err = MENAI_ERR_EMPTY_LIST;
                 goto error;
@@ -5060,28 +5062,28 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             r->owner = owner;
             r->elements = a->elements + 1;
             r->length = a->length - 1;
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_LAST: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             ssize_t n = a->length;
             if (n == 0) {
                 vm_err = MENAI_ERR_EMPTY_LIST;
                 goto error;
             }
 
-            menai_reg_set_borrow(vs, regs, base + dest, a->elements[n - 1]);
+            menai_reg_set_borrow(vs, frame_regs, dest, a->elements[n - 1]);
             break;
         }
 
         case OP_LIST_REF: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
             long idx_l;
             if (!b->is_big) {
@@ -5100,13 +5102,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_borrow(vs, regs, base + dest, a->elements[idx]);
+            menai_reg_set_borrow(vs, frame_regs, dest, a->elements[idx]);
             break;
         }
 
         case OP_LIST_PREPEND: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             ssize_t n = a->length;
             MenaiList *r = alloc_menai_list(vs, n + 1);
             if (!r) {
@@ -5115,7 +5117,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             MenaiValue **pre_arr = r->elements;
             pre_arr[0] = item;
             menai_value_retain(item);
@@ -5124,13 +5126,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_value_retain(pre_arr[i + 1]);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_APPEND: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             ssize_t n = a->length;
             MenaiList *r = alloc_menai_list(vs, n + 1);
             if (!r) {
@@ -5145,16 +5147,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             app_arr[n] = item;
             menai_value_retain(item);
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_REVERSE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             ssize_t n = a->length;
             MenaiList *r = alloc_menai_list(vs, n);
             if (!r) {
@@ -5168,15 +5170,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_value_retain(rev_arr[i]);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_CONCAT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiList *b = (MenaiList *)regs[base + src1];
+            MenaiList *b = (MenaiList *)frame_regs[src1];
             ssize_t na = a->length;
             ssize_t nb = b->length;
             ssize_t nc = na + nb;
@@ -5197,15 +5199,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_value_retain(cat_arr[na + i]);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_MEMBER_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             int mem_found = 0;
             for (ssize_t i = 0; i < a->length; i++) {
                 int eq = menai_value_equal(a->elements[i], item);
@@ -5215,15 +5217,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            bool_store(vs, regs, base + dest, mem_found);
+            bool_store(vs, frame_regs, dest, mem_found);
             break;
         }
 
         case OP_LIST_INDEX: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             ssize_t n = a->length;
             ssize_t found = -1;
             for (ssize_t i = 0; i < n; i++) {
@@ -5235,14 +5237,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (found == -1) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)menai_none(vs));
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             } else {
                 MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, found);
                 if (r == NULL) {
                     goto error;
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             }
 
             break;
@@ -5250,11 +5252,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_LIST_SLICE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiInteger *c = (MenaiInteger *)regs[base + src2];
+            MenaiInteger *c = (MenaiInteger *)frame_regs[src2];
 
             long start_l;
             if (!b->is_big) {
@@ -5314,13 +5316,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             r->owner = owner;
             r->elements = a->elements + start;
             r->length = end - start;
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_REMOVE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             ssize_t n = a->length;
 
             MenaiList *r = alloc_menai_list(vs, n);
@@ -5330,7 +5332,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             MenaiValue **rm_arr = r->elements;
             ssize_t j = 0;
             for (ssize_t i = 0; i < n; i++) {
@@ -5343,15 +5345,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ((MenaiList *)r)->length = j;
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_LIST_TO_STRING: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiString *b = (MenaiString *)regs[base + src1];
+            MenaiString *b = (MenaiString *)frame_regs[src1];
 
             /* Validate all elements are strings first. */
             ssize_t n = a->length;
@@ -5398,14 +5400,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             memcpy(r->data, lts_buf, total * sizeof(uint32_t));
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             free(lts_buf);
             break;
         }
 
         case OP_LIST_TO_SET: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiList *a = (MenaiList *)regs[base + src0];
+            MenaiList *a = (MenaiList *)frame_regs[src0];
             ssize_t n = a->length;
             MenaiSet *r = alloc_menai_set(vs, n);
             if (!r) {
@@ -5450,49 +5452,49 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             r->ht = lts_seen;
             r->length = out;
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_DICT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_DICT(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_DICT(frame_regs[src0]));
             break;
         }
 
         case OP_DICT_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiDict *b = (MenaiDict *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_dict_equal(a, b));
+            MenaiDict *b = (MenaiDict *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_dict_equal(a, b));
             break;
         }
 
         case OP_DICT_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiDict *b = (MenaiDict *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_dict_equal(a, b));
+            MenaiDict *b = (MenaiDict *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_dict_equal(a, b));
             break;
         }
 
         case OP_DICT_LENGTH: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, a->length);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_DICT_KEYS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             ssize_t n = a->length;
             MenaiList *r = alloc_menai_list(vs, n);
             if (!r) {
@@ -5506,13 +5508,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 dk_arr[i] = a->keys[i];
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_DICT_VALUES: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             ssize_t n = a->length;
             MenaiList *r = alloc_menai_list(vs, n);
             if (!r) {
@@ -5526,15 +5528,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 dv_arr[i] = a->values[i];
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_DICT_HAS_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *key = regs[base + src1];
+            MenaiValue *key = frame_regs[src1];
             hash_t h = menai_value_hash(key);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -5542,16 +5544,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             int has = (menai_ht_lookup(&a->ht, key, h) >= 0);
-            bool_store(vs, regs, base + dest, has);
+            bool_store(vs, frame_regs, dest, has);
             break;
         }
 
         case OP_DICT_GET: {
             /* src0=dict, src1=key, src2=default */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *key = regs[base + src1];
+            MenaiValue *key = frame_regs[src1];
             hash_t h = menai_value_hash(key);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -5560,11 +5562,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             ssize_t idx = menai_ht_lookup(&a->ht, key, h);
             int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *def = regs[base + src2];
+            MenaiValue *def = frame_regs[src2];
             if (idx >= 0) {
-                menai_reg_set_borrow(vs, regs, base + dest, a->values[idx]);
+                menai_reg_set_borrow(vs, frame_regs, dest, a->values[idx]);
             } else {
-                menai_reg_set_borrow(vs, regs, base + dest, def);
+                menai_reg_set_borrow(vs, frame_regs, dest, def);
             }
 
             break;
@@ -5573,9 +5575,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         case OP_DICT_SET: {
             /* src0=dict, src1=key, src2=value */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *key = regs[base + src1];
+            MenaiValue *key = frame_regs[src1];
             hash_t h = menai_value_hash(key);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -5596,7 +5598,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             hash_t *nhashes = result->hashes;
 
             int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *val = regs[base + src2];
+            MenaiValue *val = frame_regs[src2];
             if (replace_idx >= 0) {
                 for (ssize_t i = 0; i < n; i++) {
                     if (i == replace_idx) {
@@ -5642,15 +5644,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             result->length = new_n;
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)result);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)result);
             break;
         }
 
         case OP_DICT_REMOVE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *key = regs[base + src1];
+            MenaiValue *key = frame_regs[src1];
             hash_t h = menai_value_hash(key);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -5659,7 +5661,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             ssize_t remove_idx = menai_ht_lookup(&a->ht, key, h);
             if (remove_idx < 0) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)a);
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)a);
                 break;
             }
 
@@ -5701,15 +5703,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = new_n;
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_DICT_MERGE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiDict *a = (MenaiDict *)regs[base + src0];
+            MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiDict *b = (MenaiDict *)regs[base + src1];
+            MenaiDict *b = (MenaiDict *)frame_regs[src1];
             ssize_t na = a->length;
             ssize_t nb = b->length;
             ssize_t cap = na + nb;
@@ -5767,51 +5769,51 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = out;
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_SET_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_SET(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_SET(frame_regs[src0]));
             break;
         }
 
         case OP_SET_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSet *b = (MenaiSet *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_set_equal(a, b));
+            MenaiSet *b = (MenaiSet *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_set_equal(a, b));
             break;
         }
 
         case OP_SET_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSet *b = (MenaiSet *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_set_equal(a, b));
+            MenaiSet *b = (MenaiSet *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_set_equal(a, b));
             break;
         }
 
         case OP_SET_LENGTH: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, a->length);
             if (r == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_SET_MEMBER_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             hash_t h = menai_value_hash(item);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -5819,15 +5821,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             ssize_t idx = menai_ht_lookup(&a->ht, item, h);
-            bool_store(vs, regs, base + dest, idx >= 0);
+            bool_store(vs, frame_regs, dest, idx >= 0);
             break;
         }
 
         case OP_SET_ADD: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             hash_t h = menai_value_hash(item);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -5836,7 +5838,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             ssize_t existing = menai_ht_lookup(&a->ht, item, h);
             if (existing >= 0) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)a);
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)a);
             } else {
                 ssize_t n = a->length;
                 MenaiSet *r = alloc_menai_set(vs, n + 1);
@@ -5867,7 +5869,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
                 }
 
-                menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             }
 
             break;
@@ -5875,9 +5877,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_SET_REMOVE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *item = regs[base + src1];
+            MenaiValue *item = frame_regs[src1];
             hash_t h = menai_value_hash(item);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -5886,7 +5888,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             ssize_t remove_idx = menai_ht_lookup(&a->ht, item, h);
             if (remove_idx < 0) {
-                menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)a);
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)a);
                 break;
             }
 
@@ -5922,15 +5924,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_SET_UNION: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSet *b = (MenaiSet *)regs[base + src1];
+            MenaiSet *b = (MenaiSet *)frame_regs[src1];
             ssize_t na = a->length;
             ssize_t nb = b->length;
             ssize_t cap = na + nb;
@@ -5971,15 +5973,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_SET_INTERSECTION: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSet *b = (MenaiSet *)regs[base + src1];
+            MenaiSet *b = (MenaiSet *)frame_regs[src1];
             ssize_t na = a->length;
             MenaiSet *r = alloc_menai_set(vs, na);
             if (!r) {
@@ -6011,15 +6013,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_SET_DIFFERENCE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSet *b = (MenaiSet *)regs[base + src1];
+            MenaiSet *b = (MenaiSet *)frame_regs[src1];
             ssize_t na = a->length;
             MenaiSet *r = alloc_menai_set(vs, na);
             if (!r) {
@@ -6051,17 +6053,17 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_ht_insert(&r->ht, nelems[i], nhashes[i], i);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_SET_SUBSET_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSet *b = (MenaiSet *)regs[base + src1];
+            MenaiSet *b = (MenaiSet *)frame_regs[src1];
             if (a->length > b->length) {
-                bool_store(vs, regs, base + dest, 0);
+                bool_store(vs, frame_regs, dest, 0);
                 break;
             }
 
@@ -6074,13 +6076,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            bool_store(vs, regs, base + dest, is_subset);
+            bool_store(vs, frame_regs, dest, is_subset);
             break;
         }
 
         case OP_SET_TO_LIST: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)regs[base + src0];
+            MenaiSet *a = (MenaiSet *)frame_regs[src0];
             ssize_t set_n = a->length;
             MenaiList *r = alloc_menai_list(vs, set_n);
             if (!r) {
@@ -6094,18 +6096,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 stl_arr[i] = a->elements[i];
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_RANGE: {
             /* src0=start, src1=end, src2=step — all integers */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiInteger *a = (MenaiInteger *)regs[base + src0];
+            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
             int src2 = (int)(word & FIELD_MASK);
-            MenaiInteger *c = (MenaiInteger *)regs[base + src2];
+            MenaiInteger *c = (MenaiInteger *)frame_regs[src2];
             long start, end, step;
             if (!a->is_big) {
                 start = a->fixed;
@@ -6170,7 +6172,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 val += step;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
@@ -6192,11 +6194,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiValue **lst_arr = r->elements;
             for (int i = 0; i < n; i++) {
-                lst_arr[i] = regs[base + src0 + i];
+                lst_arr[i] = frame_regs[src0 + i];
                 menai_value_retain(lst_arr[i]);
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
@@ -6217,7 +6219,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             for (int i = 0; i < n; i++) {
-                MenaiValue *elem = regs[base + src0 + i];
+                MenaiValue *elem = frame_regs[src0 + i];
                 hash_t h = menai_value_hash(elem);
                 if (h == -1) {
                     vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -6243,7 +6245,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
@@ -6268,8 +6270,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             for (int i = 0; i < n; i++) {
-                MenaiValue *k = regs[base + src0 + i * 2];
-                MenaiValue *v = regs[base + src0 + i * 2 + 1];
+                MenaiValue *k = frame_regs[src0 + i * 2];
+                MenaiValue *v = frame_regs[src0 + i * 2 + 1];
                 hash_t h = menai_value_hash(k);
                 if (h == -1) {
                     vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -6298,7 +6300,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = (ssize_t)n;
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
@@ -6309,40 +6311,40 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              * src1 = field count. Fields are in slots src0+1..src0+n_fields.
              */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStructType *struct_type = (MenaiStructType *)regs[base + src0];
+            MenaiStructType *struct_type = (MenaiStructType *)frame_regs[src0];
             int n_fields = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiStruct *instance = alloc_menai_struct(vs, struct_type, &regs[base + src0 + 1], n_fields);
+            MenaiStruct *instance = alloc_menai_struct(vs, struct_type, &frame_regs[src0 + 1], n_fields);
             if (instance == NULL) {
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)instance);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)instance);
             break;
         }
 
         case OP_STRUCT_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_STRUCT(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_STRUCT(frame_regs[src0]));
             break;
         }
 
         case OP_STRUCT_IS_INSTANCE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStruct *sval = (MenaiStruct *)regs[base + src0];
+            MenaiStruct *sval = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiStructType *stype = (MenaiStructType *)regs[base + src1];
+            MenaiStructType *stype = (MenaiStructType *)frame_regs[src1];
             int tag_a = ((MenaiStructType *)sval->struct_type)->tag;
             int tag_b = stype->tag;
-            bool_store(vs, regs, base + dest, tag_a == tag_b);
+            bool_store(vs, frame_regs, dest, tag_a == tag_b);
             break;
         }
 
         case OP_STRUCT_GET: {
             /* src1 holds a MenaiSymbol field name */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStruct *sval = (MenaiStruct *)regs[base + src0];
+            MenaiStruct *sval = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
+            MenaiSymbol *field_sym = (MenaiSymbol *)frame_regs[src1];
             MenaiStructType *stype = sval->struct_type;
             MenaiString *field_name = field_sym->name;
             hash_t h = menai_string_hash(field_name);
@@ -6354,16 +6356,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             MenaiValue *fv = sval->items[fi];
-            menai_reg_set_borrow(vs, regs, base + dest, fv);
+            menai_reg_set_borrow(vs, frame_regs, dest, fv);
             break;
         }
 
         case OP_STRUCT_REF: {
             /* src1 holds a MenaiInteger field index */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiValue *val = regs[base + src0];
+            MenaiValue *val = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *fidx = regs[base + src1];
+            MenaiValue *fidx = frame_regs[src1];
             MenaiInteger *fi_io = (MenaiInteger *)fidx;
             long fi_l;
             if (!fi_io->is_big) {
@@ -6383,15 +6385,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             MenaiValue *fv = ((MenaiStruct *)val)->items[fi];
-            menai_reg_set_borrow(vs, regs, base + dest, fv);
+            menai_reg_set_borrow(vs, frame_regs, dest, fv);
             break;
         }
 
         case OP_STRUCT_SET: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStruct *sval = (MenaiStruct *)regs[base + src0];
+            MenaiStruct *sval = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSymbol *field_sym = (MenaiSymbol *)regs[base + src1];
+            MenaiSymbol *field_sym = (MenaiSymbol *)frame_regs[src1];
             MenaiStructType *stype = sval->struct_type;
             MenaiString *field_name = field_sym->name;
             hash_t h = menai_string_hash(field_name);
@@ -6409,7 +6411,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *new_val = regs[base + src2];
+            MenaiValue *new_val = frame_regs[src2];
             for (ssize_t i = 0; i < nf; i++) {
                 tmp[i] = (i == fi) ? new_val : sval->items[i];
             }
@@ -6420,15 +6422,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRUCT_SET_REF: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStruct *sval = (MenaiStruct *)regs[base + src0];
+            MenaiStruct *sval = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *fi_io = (MenaiInteger *)regs[base + src1];
+            MenaiInteger *fi_io = (MenaiInteger *)frame_regs[src1];
 
             long fi_l;
             if (!fi_io->is_big) {
@@ -6455,7 +6457,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *new_val = regs[base + src2];
+            MenaiValue *new_val = frame_regs[src2];
             for (ssize_t i = 0; i < nf; i++) {
                 tmp[i] = (i == fi) ? new_val : sval->items[i];
             }
@@ -6466,45 +6468,45 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRUCT_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStruct *a = (MenaiStruct *)regs[base + src0];
+            MenaiStruct *a = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiStruct *b = (MenaiStruct *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_struct_equal(a, b));
+            MenaiStruct *b = (MenaiStruct *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_struct_equal(a, b));
             break;
         }
 
         case OP_STRUCT_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStruct *a = (MenaiStruct *)regs[base + src0];
+            MenaiStruct *a = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiStruct *b = (MenaiStruct *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_struct_equal(a, b));
+            MenaiStruct *b = (MenaiStruct *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_struct_equal(a, b));
             break;
         }
 
         case OP_STRUCT_TYPE: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStruct *val = (MenaiStruct *)regs[base + src0];
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)val->struct_type);
+            MenaiStruct *val = (MenaiStruct *)frame_regs[src0];
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)val->struct_type);
             break;
         }
 
         case OP_STRUCTTYPE_NAME: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStructType *val = (MenaiStructType *)regs[base + src0];
-            menai_reg_set_borrow(vs, regs, base + dest, (MenaiValue *)val->name);
+            MenaiStructType *val = (MenaiStructType *)frame_regs[src0];
+            menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)val->name);
             break;
         }
 
         case OP_STRUCTTYPE_FIELDS: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStructType *st = (MenaiStructType *)regs[base + src0];
+            MenaiStructType *st = (MenaiStructType *)frame_regs[src0];
             int n = st->nfields;
             MenaiList *r = alloc_menai_list(vs, n);
             if (!r) {
@@ -6527,31 +6529,31 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 sf_arr[i] = (MenaiValue *)sym;
             }
 
-            menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 
         case OP_STRUCTTYPE_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            bool_store(vs, regs, base + dest, IS_MENAI_STRUCTTYPE(regs[base + src0]));
+            bool_store(vs, frame_regs, dest, IS_MENAI_STRUCTTYPE(frame_regs[src0]));
             break;
         }
 
         case OP_STRUCTTYPE_EQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStructType *a = (MenaiStructType *)regs[base + src0];
+            MenaiStructType *a = (MenaiStructType *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiStructType *b = (MenaiStructType *)regs[base + src1];
-            bool_store(vs, regs, base + dest, menai_structtype_equal(a, b));
+            MenaiStructType *b = (MenaiStructType *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_structtype_equal(a, b));
             break;
         }
 
         case OP_STRUCTTYPE_NEQ_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiStructType *a = (MenaiStructType *)regs[base + src0];
+            MenaiStructType *a = (MenaiStructType *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiStructType *b = (MenaiStructType *)regs[base + src1];
-            bool_store(vs, regs, base + dest, !menai_structtype_equal(a, b));
+            MenaiStructType *b = (MenaiStructType *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_structtype_equal(a, b));
             break;
         }
 
@@ -6566,7 +6568,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         #define DEFINE_ASSERT_OP(name, type_check) \
         case OP_ASSERT_##name: { \
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK); \
-            MenaiValue *v = regs[base + src0]; \
+            MenaiValue *v = frame_regs[src0]; \
             if (MENAI_UNLIKELY(!(type_check))) { \
                 vm_err = MENAI_ERR_TYPE_MISMATCH; \
                 goto error; \
