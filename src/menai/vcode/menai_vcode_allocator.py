@@ -1,29 +1,34 @@
 """
 Slot allocator for the Menai VM backend.
 
-Takes a MenaiVCodeFunction with virtual registers (MenaiVCodeReg) and
-produces a SlotMap — a mapping from register id to slot index — that the
-bytecode emitter uses to assign concrete local variable slots.
+Takes a MenaiVCodeFunction with virtual registers (MenaiVCodeReg) and produces
+a SlotMap — a mapping from register id to slot index — that the bytecode emitter
+uses to assign concrete local variable slots.
 
 Algorithm
 ---------
 Params are pre-assigned to slots 0..P-1 and free vars to slots P..P+F-1 and
 those slots are never reused — they remain live for the entire function body.
-A single-pass linear scan is used for all other registers:
+A linear scan is used for all other registers:
 
-1. Scan the flat instruction list to find the last-use index for every
-   register.
+1. Scan the flat instruction list to compute per-definition lifetimes.  A
+   register id can be defined multiple times in the VCode (e.g. a phi-elimination
+   move source that is redefined in each match arm).  Each definition has its
+   own independent lifetime: from the definition index to the last use before
+   the next redefinition of the same register id (or end of list).
 
 2. Walk the instruction list forward.  At each definition point assign the
-   lowest slot not currently occupied by a live register.  At each use
-   point, if this is the register's last use, free its slot so it can be
-   reused by a subsequent definition.
+   lowest slot not currently occupied by a live register.  When a register is
+   redefined, its previous definition is killed first, freeing its slot for
+   reuse.  At each use point, if this is the last use of the current
+   definition, free its slot so it can be reused by a subsequent definition.
 
-Because VCode is phi-free and already linearised in RPO order, this simple
-linear scan produces correct results without full dataflow liveness analysis.
-Registers defined before a forward jump are still live at the jump target
-if they are used there, and the last-use scan captures this correctly by
-finding the actual last use index in the flat list regardless of labels.
+Because VCode is phi-free and already linearised in RPO order, this linear
+scan produces correct results without full dataflow liveness analysis.
+Registers defined before a forward jump are still live at the jump target if
+they are used there, and the per-definition lifetime scan captures this
+correctly by finding the actual last use index in the flat list regardless of
+labels.
 
 MenaiVCodeMove instructions where src and dst are assigned the same slot
 are no-ops and will be eliminated by the peephole pass.
@@ -124,18 +129,44 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         for cap in instr.captures
     }
 
-    # Phase 1: scan the flat instruction list to find the last-use index for
-    # every register.
-    last_use: dict[int, int] = {}
-    def_index: dict[int, int] = {}
+    # Phase 1: scan the flat instruction list to compute per-definition
+    # lifetimes.  A register id can be defined multiple times in the VCode
+    # (e.g. a phi-elimination move source that is redefined in each match arm).
+    # Each definition has its own independent lifetime: from the definition
+    # index to the last use before the next redefinition of the same register
+    # id (or end of list).
+    #
+    # We build:
+    #   def_last_use: def_idx → last_use_idx for that definition
+    #   reg_defs:     reg_id → sorted list of definition indices
+    #
+    # Phase 2 uses def_last_use via a current_def map that tracks which
+    # definition is active for each register id as the scan progresses.
+    # Phases 3 and 3b use reg_defs to find the active definition at a given
+    # use index (the most recent def of the same reg_id at or before that
+    # index), then check def_last_use for that definition.
+    def_last_use: dict[int, int] = {}
+    reg_defs: dict[int, list[int]] = {}
 
     for idx, instr in enumerate(func.instrs):
         defs, uses = _defs_uses(instr)
         for reg_id in defs:
-            def_index[reg_id] = idx
+            reg_defs.setdefault(reg_id, []).append(idx)
 
-        for reg_id in uses:
-            last_use[reg_id] = idx
+    # For each definition, find its last use: the last use of the same
+    # register id at an index after this definition and before the next
+    # definition of the same register id (or end of list).
+    for reg_id, def_indices in reg_defs.items():
+        for i, d in enumerate(def_indices):
+            next_def = def_indices[i + 1] if i + 1 < len(def_indices) else len(func.instrs)
+            last = d  # a definition with no uses dies immediately
+            for scan_idx in range(d + 1, next_def):
+                scan_instr = func.instrs[scan_idx]
+                _, scan_uses = _defs_uses(scan_instr)
+                if reg_id in scan_uses:
+                    last = scan_idx
+
+            def_last_use[d] = last
 
     # Pre-assign fixed slots for params (0..P-1) and free vars (P..P+F-1).
     # These register ids are guaranteed by the CFG builder's assignment order.
@@ -146,6 +177,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     # Phase 2: linear scan allocation for all other registers.  Fixed slots
     # (params and free vars) are permanently live and never released for reuse.
     live: set[int] = set(fixed_reg_ids)
+    current_def: dict[int, int] = {}
 
     def _free_slot() -> int:
         """Return the lowest slot index not currently occupied by a live register."""
@@ -161,8 +193,15 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         return slot
 
     def _kill_if_dead(reg_id: int, current_idx: int) -> None:
-        """Remove reg_id from the live set if its last use is at or before current_idx."""
-        if reg_id >= fixed_count and last_use.get(reg_id, -1) <= current_idx:
+        """
+        Remove reg_id from the live set if its current definition's last
+        use is at or before current_idx.
+        """
+        if reg_id < fixed_count:
+            return
+
+        d = current_def.get(reg_id)
+        if d is not None and def_last_use.get(d, d) <= current_idx:
             live.discard(reg_id)
 
     for idx, instr in enumerate(func.instrs):
@@ -170,6 +209,12 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             continue
 
         defs, uses = _defs_uses(instr)
+
+        # Kill any register being redefined — its previous definition's
+        # lifetime ends here, freeing its slot for reuse.
+        for reg_id in defs:
+            if reg_id >= fixed_count and reg_id in live:
+                live.discard(reg_id)
 
         # MenaiVCodeMakeClosure: allocate the result first, then kill dead
         # inputs.  The bytecode emitter reads captures after writing the
@@ -181,6 +226,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
                 slots[dst_id] = _free_slot()
 
             live.add(dst_id)
+            current_def[dst_id] = idx
             for reg_id in uses:
                 _kill_if_dead(reg_id, idx)
 
@@ -197,6 +243,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
                 slots[reg_id] = _free_slot()
 
             live.add(reg_id)
+            current_def[reg_id] = idx
 
         for reg_id in defs:
             _kill_if_dead(reg_id, idx)
@@ -224,9 +271,9 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #   2. Not a closure register or a closure capture register — PATCH_CLOSURE
     #      requires both its closure operand and its value operand within
     #      local_count.
-    #   3. The consuming instruction is the last use of the register — the
-    #      outgoing zone is clobbered when the instruction executes, so no
-    #      later read is safe.
+    #   3. The consuming instruction is the last use of the register's current
+    #      definition — the outgoing zone is clobbered when the instruction
+    #      executes, so no later read is safe.
     #   4. No call/apply/make barrier between the register's definition and
     #      this instruction — a prior call, apply, or make-* would have
     #      already written local_count + outgoing_offset.
@@ -268,12 +315,12 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_id in capture_reg_ids:
                 continue
 
-            if last_use.get(reg_id, -1) != instr_idx:
+            reg_def = _active_def(reg_defs, reg_id, instr_idx)
+            if reg_def is None or def_last_use.get(reg_def, reg_def) != instr_idx:
                 continue
 
-            # Condition 4: scan for a barrier between def and use.
-            reg_def = def_index.get(reg_id, 0)
             barrier = False
+            # Condition 4: scan for a barrier between def and use.
             for scan_idx in range(reg_def + 1, instr_idx):
                 scan_instr = func.instrs[scan_idx]
                 if isinstance(scan_instr, barrier_types):
@@ -300,7 +347,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     # Safety conditions (parallel to Phase 3):
     #   1. Not a fixed register (param or free var).
     #   2. Not a closure register.
-    #   3. The self-loop move is the last use of the register.
+    #   3. The self-loop move is the last use of the register's current definition.
     #   4. No call or apply between the register's definition and this move.
     #   5. No instruction between the definition and this move reads from param_slot.
     for jump_idx, instr in enumerate(func.instrs):
@@ -326,10 +373,10 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_id in closure_reg_ids:
                 continue
 
-            if last_use.get(reg_id, -1) != move_idx:
+            reg_def = _active_def(reg_defs, reg_id, move_idx)
+            if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
                 continue
 
-            reg_def = def_index.get(reg_id, 0)
             barrier = False
             for scan_idx in range(reg_def + 1, move_idx):
                 scan_instr = func.instrs[scan_idx]
@@ -414,6 +461,35 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     # MenaiVCodeJump, MenaiVCodeRaise: no register references.
     return [], []
+
+
+def _active_def(
+    reg_defs: dict[int, list[int]],
+    reg_id: int,
+    use_idx: int,
+) -> int | None:
+    """
+    Return the definition index of reg_id that is active at use_idx.
+
+    The active definition is the most recent definition of reg_id at or
+    before use_idx.  reg_defs[reg_id] is a sorted list of definition indices.
+    Returns None if reg_id has no definition before use_idx.
+    """
+    defs = reg_defs.get(reg_id)
+    if not defs:
+        return None
+
+    # Binary search for the largest def index <= use_idx.
+    lo, hi = 0, len(defs) - 1
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if defs[mid] <= use_idx:
+            lo = mid
+
+        else:
+            hi = mid - 1
+
+    return defs[lo] if defs[lo] <= use_idx else None
 
 
 def _outgoing_args(instr: MenaiVCodeInstr) -> list[tuple[MenaiVCodeReg, int]]:
