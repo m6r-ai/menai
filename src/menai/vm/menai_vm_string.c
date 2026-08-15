@@ -1204,17 +1204,6 @@ menai_string_compare(MenaiString *a, MenaiString *b)
     return 0;
 }
 
-int
-menai_string_equal(MenaiString *a, MenaiString *b)
-{
-    ssize_t la = a->length;
-    if (la != b->length) {
-        return 0;
-    }
-
-    return memcmp(a->data, b->data, (size_t)la * sizeof(uint32_t)) == 0;
-}
-
 hash_t
 menai_string_hash(MenaiString *s)
 {
@@ -1239,20 +1228,6 @@ menai_string_hash(MenaiString *s)
 
     s->hash = result;
     return result;
-}
-
-void
-menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *r)
-{
-    ssize_t la = a->length;
-    if (la > 0) {
-        memcpy(r->data, a->data, (size_t)la * sizeof(uint32_t));
-    }
-
-    ssize_t lb = b->length;
-    if (lb > 0) {
-        memcpy(r->data + la, b->data, (size_t)lb * sizeof(uint32_t));
-    }
 }
 
 ssize_t

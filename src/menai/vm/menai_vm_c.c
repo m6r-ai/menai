@@ -3495,7 +3495,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_string_concat(a, b, r);
+            ssize_t la = a->length;
+            memcpy(r->data, a->data, (size_t)la * sizeof(uint32_t));
+            ssize_t lb = b->length;
+            memcpy(r->data + la, b->data, (size_t)lb * sizeof(uint32_t));
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
             break;
         }
@@ -5056,7 +5059,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_list_rest(a, r);
+            MenaiList *owner = (a->owner != NULL) ? a->owner : a;
+            menai_value_retain((MenaiValue *)owner);
+            r->owner = owner;
+            r->elements = a->elements + 1;
+            r->length = a->length - 1;
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
             break;
         }
@@ -5306,7 +5313,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_list_slice(a, start, end, r);
+            MenaiList *owner = (a->owner != NULL) ? a->owner : a;
+            menai_value_retain((MenaiValue *)owner);
+            r->owner = owner;
+            r->elements = a->elements + start;
+            r->length = end - start;
             menai_reg_set_own(vs, regs, base + dest, (MenaiValue *)r);
             break;
         }

@@ -873,9 +873,6 @@ menai_list_equal(MenaiList *a, MenaiList *b)
     return 1;
 }
 
-void menai_list_rest(MenaiList *lst, MenaiList *r);
-void menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r);
-
 MenaiNone *menai_none(MenaiVMState *vs);
 
 static inline hash_t
@@ -923,9 +920,7 @@ menai_string_final(MenaiVMState *vs, MenaiString *self)
 MenaiString *alloc_menai_string_from_utf8(MenaiVMState *vs, const char *utf8, ssize_t nbytes);
 char *alloc_utf8_from_menai_string(MenaiString *s, ssize_t *out_nbytes);
 int menai_string_compare(MenaiString *a, MenaiString *b);
-int menai_string_equal(MenaiString *a, MenaiString *b);
 hash_t menai_string_hash(MenaiString *s);
-void menai_string_concat(MenaiString *a, MenaiString *b, MenaiString *r);
 ssize_t menai_string_upcase_length(MenaiString *s);
 void menai_string_upcase(MenaiString *s, MenaiString *r);
 void menai_string_downcase(MenaiString *s, MenaiString *r);
@@ -936,6 +931,17 @@ ssize_t menai_string_find(MenaiString *haystack, MenaiString *needle);
 MenaiString *alloc_menai_string_from_replace(MenaiVMState *vs, MenaiString *s, MenaiString *from, MenaiString *to);
 MenaiString *alloc_menai_string_from_float(MenaiVMState *vs, double v);
 MenaiString *alloc_menai_string_from_complex(MenaiVMState *vs, double real, double imag);
+
+static inline int
+menai_string_equal(MenaiString *a, MenaiString *b)
+{
+    ssize_t la = a->length;
+    if (la != b->length) {
+        return 0;
+    }
+
+    return memcmp(a->data, b->data, (size_t)la * sizeof(uint32_t)) == 0;
+}
 
 MenaiStruct *alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
 

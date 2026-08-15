@@ -32,31 +32,3 @@ alloc_menai_list(MenaiVMState *vs, ssize_t n)
 
     return obj;
 }
-
-void
-menai_list_rest(MenaiList *lst, MenaiList *r)
-{
-    /*
-     * Resolve the owner: if lst is itself a view, use its owner so we never
-     * build a chain — all views point directly at the root array owner.
-     */
-    MenaiList *owner = (lst->owner != NULL) ? lst->owner : lst;
-    menai_value_retain((MenaiValue *)owner);
-    r->owner = owner;
-    r->elements = lst->elements + 1;
-    r->length = lst->length - 1;
-}
-
-void
-menai_list_slice(MenaiList *lst, ssize_t start, ssize_t end, MenaiList *r)
-{
-    /*
-     * Resolve the owner: if lst is itself a view, point at its owner so
-     * all views are depth-1 from the root array owner.
-     */
-    MenaiList *owner = (lst->owner != NULL) ? lst->owner : lst;
-    menai_value_retain((MenaiValue *)owner);
-    r->owner = owner;
-    r->elements = lst->elements + start;
-    r->length = end - start;
-}
