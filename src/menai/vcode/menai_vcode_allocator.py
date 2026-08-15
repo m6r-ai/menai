@@ -28,12 +28,13 @@ finding the actual last use index in the flat list regardless of labels.
 MenaiVCodeMove instructions where src and dst are assigned the same slot
 are no-ops and will be eliminated by the peephole pass.
 
-Call argument registers whose last use is the call itself, and whose
-definition has no intervening call barrier, are reassigned directly to the
-outgoing zone (local_count + arg_index) in Phase 3.
+Call argument registers and make-* instruction element registers (make-list,
+make-set, make-struct, make-dict) whose last use is the consuming instruction
+itself, and whose definition has no intervening barrier, are reassigned
+directly to the outgoing zone (local_count + outgoing_offset) in Phase 3.
 
 Self-loop argument registers whose last use is the self-loop move itself,
-and whose definition has no intervening call barrier, are reassigned directly
+and whose definition has no intervening barrier, are reassigned directly
 to the target param slot (arg_index) in Phase 3b, eliminating the MOVE.
 
 Param/free-var register ids
@@ -112,6 +113,15 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     closure_reg_ids: set[int] = {
         instr.dst.id for instr in func.instrs
         if isinstance(instr, MenaiVCodeMakeClosure)
+    }
+
+    # capture_reg_ids: registers used as captures in MAKE_CLOSURE — the
+    # bytecode emitter reads each capture via PATCH_CLOSURE, which requires
+    # its value operand within local_count.
+    capture_reg_ids: set[int] = {
+        cap.id for instr in func.instrs
+        if isinstance(instr, MenaiVCodeMakeClosure)
+        for cap in instr.captures
     }
 
     # Phase 1: scan the flat instruction list to find the last-use index for
@@ -199,27 +209,54 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
 
     local_count = slot_count
 
-    # Phase 3: back-propagate outgoing slot assignments.  For each call/tail-call
-    # argument that meets all safety conditions, reassign its scratch slot to
-    # local_count + arg_index so the bytecode emitter needs no MOVE instruction.
+    # Phase 3: back-propagate outgoing slot assignments.  For each argument of
+    # a call, tail-call, or make-* instruction (make-list, make-set, make-struct,
+    # make-dict) that meets all safety conditions, reassign its scratch slot to
+    # local_count + outgoing_offset so the bytecode emitter needs no MOVE.
+    #
+    # The make-* instructions use the same outgoing-zone staging convention as
+    # calls: the bytecode emitter moves each argument into local_count + offset
+    # before emitting the opcode.  Back-propagating the slot assignment eliminates
+    # those MOVEs, just as it does for call arguments.
     #
     # Safety conditions:
     #   1. Not a fixed register (param or free var) — those have fixed slots.
-    #   2. Not a closure register — PATCH_CLOSURE requires its operands within
+    #   2. Not a closure register or a closure capture register — PATCH_CLOSURE
+    #      requires both its closure operand and its value operand within
     #      local_count.
-    #   3. The call is the last use of the register — the outgoing zone is
-    #      clobbered when the call returns, so no later read is safe.
-    #   4. No call or apply between the register's definition and this call —
-    #      a prior call, apply, or struct construction would have already written
-    #      local_count + arg_index.
+    #   3. The consuming instruction is the last use of the register — the
+    #      outgoing zone is clobbered when the instruction executes, so no
+    #      later read is safe.
+    #   4. No call/apply/make barrier between the register's definition and
+    #      this instruction — a prior call, apply, or make-* would have
+    #      already written local_count + outgoing_offset.
     #      For call/apply result registers the defining call itself is not a
     #      barrier — the scan starts strictly after the definition index.
+
+    # Barrier types: any instruction that writes into the outgoing zone and
+    # therefore clobbers slots local_count..local_count+N.
+    barrier_types = (
+        MenaiVCodeCall, MenaiVCodeApply,
+        MenaiVCodeTailCall, MenaiVCodeTailApply,
+        MenaiVCodeMakeStruct, MenaiVCodeMakeList,
+        MenaiVCodeMakeSet, MenaiVCodeMakeDict,
+    )
+
+    # Consuming types: instructions whose arguments are staged into the
+    # outgoing zone by the bytecode emitter and are therefore eligible for
+    # back-propagation.
+    consuming_types = (
+        MenaiVCodeCall, MenaiVCodeTailCall,
+        MenaiVCodeMakeList, MenaiVCodeMakeSet,
+        MenaiVCodeMakeStruct, MenaiVCodeMakeDict,
+    )
+
     max_outgoing_index = -1
-    for call_idx, instr in enumerate(func.instrs):
-        if not isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall)):
+    for instr_idx, instr in enumerate(func.instrs):
+        if not isinstance(instr, consuming_types):
             continue
 
-        for arg_index, arg in enumerate(instr.args):
+        for arg, outgoing_offset in _outgoing_args(instr):
             reg_id = arg.id
 
             if reg_id < fixed_count:
@@ -228,26 +265,26 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_id in closure_reg_ids:
                 continue
 
-            if last_use.get(reg_id, -1) != call_idx:
+            if reg_id in capture_reg_ids:
                 continue
 
-            # Condition 4: scan for a call/apply barrier between def and use.
+            if last_use.get(reg_id, -1) != instr_idx:
+                continue
+
+            # Condition 4: scan for a barrier between def and use.
             reg_def = def_index.get(reg_id, 0)
             barrier = False
-            for scan_idx in range(reg_def + 1, call_idx):
+            for scan_idx in range(reg_def + 1, instr_idx):
                 scan_instr = func.instrs[scan_idx]
-                if isinstance(scan_instr, (MenaiVCodeCall, MenaiVCodeApply,
-                                           MenaiVCodeTailCall, MenaiVCodeTailApply,
-                                           MenaiVCodeMakeStruct, MenaiVCodeMakeList,
-                                           MenaiVCodeMakeSet, MenaiVCodeMakeDict)):
+                if isinstance(scan_instr, barrier_types):
                     barrier = True
                     break
 
             if barrier:
                 continue
 
-            slots[reg_id] = local_count + arg_index
-            max_outgoing_index = max(max_outgoing_index, arg_index)
+            slots[reg_id] = local_count + outgoing_offset
+            max_outgoing_index = max(max_outgoing_index, outgoing_offset)
 
     if max_outgoing_index >= 0:
         slot_count = local_count + max_outgoing_index + 1
@@ -296,10 +333,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             barrier = False
             for scan_idx in range(reg_def + 1, move_idx):
                 scan_instr = func.instrs[scan_idx]
-                if isinstance(scan_instr, (MenaiVCodeCall, MenaiVCodeApply,
-                                           MenaiVCodeTailCall, MenaiVCodeTailApply,
-                                           MenaiVCodeMakeStruct, MenaiVCodeMakeList,
-                                           MenaiVCodeMakeSet, MenaiVCodeMakeDict)):
+                if isinstance(scan_instr, barrier_types):
                     barrier = True
                     break
 
@@ -380,3 +414,32 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     # MenaiVCodeJump, MenaiVCodeRaise: no register references.
     return [], []
+
+
+def _outgoing_args(instr: MenaiVCodeInstr) -> list[tuple[MenaiVCodeReg, int]]:
+    """
+    Return (register, outgoing_offset) pairs for instructions that stage
+    arguments into the outgoing zone.
+
+    The outgoing_offset is the index relative to local_count where the
+    bytecode emitter will place the value.  This mirrors the staging logic
+    in menai_bytecode_builder._emit_vcode:
+
+      Call / TailCall:  args[j]           -> local_count + j
+      MakeList / Set:   args[j]           -> local_count + j
+      MakeStruct:       args[j]           -> local_count + 1 + j  (slot 0 = type)
+      MakeDict:         pairs[j] = (k,v)  -> local_count + j*2, local_count + j*2 + 1
+    """
+    if isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall,
+                          MenaiVCodeMakeList, MenaiVCodeMakeSet)):
+        return [(arg, j) for j, arg in enumerate(instr.args)]
+
+    if isinstance(instr, MenaiVCodeMakeStruct):
+        return [(arg, j + 1) for j, arg in enumerate(instr.args)]
+
+    if isinstance(instr, MenaiVCodeMakeDict):
+        return [(reg, j * 2 + offset)
+                for j, (k, v) in enumerate(instr.pairs)
+                for offset, reg in enumerate((k, v))]
+
+    return []

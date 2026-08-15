@@ -30,6 +30,24 @@ def _opcodes_in(source: str) -> set:
     return collect(code)
 
 
+def _count_op(code, opcode) -> int:
+    """Count occurrences of `opcode` in `code` and all nested code objects."""
+    n = sum(1 for i in code.instructions if unpack_instruction(i).opcode == opcode)
+    for nested in code.code_objects:
+        n += _count_op(nested, opcode)
+    return n
+
+
+def _find_lambda(code):
+    """Return the first nested code object (the compiled lambda body)."""
+    assert code.code_objects, "expected at least one nested code object"
+    return code.code_objects[0]
+
+
+def _compile(src: str):
+    return MenaiCompiler().compile(src)
+
+
 @pytest.fixture
 def menai():
     return Menai()
@@ -59,6 +77,76 @@ class TestMakeList:
 
     def test_dynamic_list_nine_elements(self, menai):
         """Exercise the case that motivated the optimisation."""
+        result = menai.evaluate("""
+            (let ((f (lambda (face)
+                       (list
+                         (integer* face 1)
+                         (integer* face 2)
+                         (integer* face 3)
+                         (integer* face 4)
+                         (integer* face 5)
+                         (integer* face 6)
+                         (integer* face 7)
+                         (integer* face 8)
+                         (integer* face 9)))))
+              (f 1))
+        """)
+        assert result == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+class TestMakeListMoveElimination:
+    """The slot allocator back-propagates MAKE_LIST element registers into the
+    outgoing zone so the bytecode emitter does not need MOVE instructions to
+    stage them.
+    """
+
+    def test_list_elements_no_move(self):
+        """A list of builtin results whose last use is the MAKE_LIST should
+        not require any MOVE instructions to stage elements.
+
+        Each integer* result is used only by the MAKE_LIST, so each result
+        register is assigned directly to its outgoing zone slot.
+        """
+        src = """
+            (lambda (face)
+              (list
+                (integer* face 1)
+                (integer* face 2)
+                (integer* face 3)))
+        """
+        code = _find_lambda(_compile(src))
+        assert _count_op(code, Opcode.MOVE) == 0
+
+    def test_list_nine_elements_no_move(self):
+        """The nine-element case from the rubiks cube benchmark should produce
+        no MOVE instructions for element staging.
+        """
+        src = """
+            (lambda (face)
+              (list
+                (integer* face 1) (integer* face 2) (integer* face 3)
+                (integer* face 4) (integer* face 5) (integer* face 6)
+                (integer* face 7) (integer* face 8) (integer* face 9)))
+        """
+        code = _find_lambda(_compile(src))
+        assert _count_op(code, Opcode.MOVE) == 0
+
+    def test_list_element_used_elsewhere_keeps_move(self):
+        """When a list element value is used after the MAKE_LIST, its register
+        cannot be placed in the outgoing zone (which is clobbered by the
+        MAKE_LIST).  A MOVE must be preserved for that element.
+        """
+        src = """
+            (lambda (a b)
+              (let ((x (integer* a b)))
+                (list x x)))
+        """
+        code = _find_lambda(_compile(src))
+        # x is used twice by the MAKE_LIST and is not a last-use at the
+        # MAKE_LIST, so at least one MOVE is needed to stage the second copy.
+        assert _count_op(code, Opcode.MOVE) >= 1
+
+    def test_list_correct_result_after_optimisation(self, menai):
         result = menai.evaluate("""
             (let ((f (lambda (face)
                        (list
