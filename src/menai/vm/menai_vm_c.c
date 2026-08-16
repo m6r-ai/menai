@@ -1055,10 +1055,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 frame_depth++;
                 Frame *new_frame = &frames[frame_depth];
-                new_frame->code_obj = NULL;
-                new_frame->constants_items = NULL;
-                new_frame->instrs = NULL;
-
                 vm_err = call_setup(vs, new_frame, (MenaiFunction *)raw, regs, callee_base, arity, dest);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
@@ -1113,7 +1109,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 /* Reuse current frame — release old code_obj and instructions. */
                 menai_code_object_release(vs, frame->code_obj);
-                frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
                 vm_err = call_setup(vs, frame, (MenaiFunction *)raw, regs, frame->base, n_args, saved_return_dest);
@@ -1197,10 +1192,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 frame_depth++;
                 Frame *new_frame = &frames[frame_depth];
-                new_frame->code_obj = NULL;
-                new_frame->constants_items = NULL;
-                new_frame->instrs = NULL;
-
                 vm_err = call_setup(vs, new_frame, (MenaiFunction *)raw_func, regs, callee_base, arity, dest);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
@@ -1269,7 +1260,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 /* Release old code_obj and instructions, reuse frame. */
                 menai_code_object_release(vs, frame->code_obj);
-                frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
                 vm_err = call_setup(vs, frame, (MenaiFunction *)raw_func, regs, frame->base, arity, saved_return_dest);
