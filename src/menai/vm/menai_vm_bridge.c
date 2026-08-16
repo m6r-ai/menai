@@ -909,7 +909,7 @@ slow_function_to_fast(MenaiVMState *vs, PyObject *src)
         return NULL;
     }
 
-    MenaiFunction *f = alloc_menai_function(vs, co, menai_none(vs));
+    MenaiFunction *f = alloc_menai_function(vs, co);
     menai_code_object_release(vs, co);
     if (!f) {
         return NULL;
@@ -929,7 +929,6 @@ slow_function_to_fast(MenaiVMState *vs, PyObject *src)
             return NULL;
         }
 
-        menai_value_release(vs, f->captures[ci]);
         f->captures[ci] = fast_cv;
     }
 

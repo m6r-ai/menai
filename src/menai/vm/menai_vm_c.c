@@ -773,7 +773,6 @@ static void
 frame_setup(Frame *f, MenaiValue **regs, MenaiCodeObject *co, int base, int return_dest)
 {
     menai_code_object_retain(co);
-    assert(!f->code_obj);
     f->code_obj = co;
     f->constants_items = co->constants;
     f->nconst = co->nconst;
@@ -3031,7 +3030,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiFunction *func = alloc_menai_function(vs, frame->children[src0], menai_none(vs));
+            MenaiFunction *func = alloc_menai_function(vs, frame->children[src0]);
             if (func == NULL) {
                 goto error;
             }
@@ -3047,14 +3046,19 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiFunction *closure = (MenaiFunction *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            if (src1 >= closure->ncap) {
+                vm_err = MENAI_ERR_CLOSURE_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            MenaiValue *old = closure->captures[src1];
+            menai_value_release(vs, old);
+
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *val = frame_regs[src2];
-
-            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *old = closure->captures[src1];
             menai_value_retain(val);
             closure->captures[src1] = val;
-            menai_value_release(vs, old);
             break;
         }
 

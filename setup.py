@@ -24,7 +24,6 @@ extensions = [
         sources=[
             f"{_MENAI_VM_SRC}/menai_vm_alloc.c",
             f"{_MENAI_VM_SRC}/menai_vm_bigint.c",
-            f"{_MENAI_VM_SRC}/menai_vm_boolean.c",
             f"{_MENAI_VM_SRC}/menai_vm_bridge.c",
             f"{_MENAI_VM_SRC}/menai_vm_bytes.c",
             f"{_MENAI_VM_SRC}/menai_vm_c.c",
@@ -37,7 +36,6 @@ extensions = [
             f"{_MENAI_VM_SRC}/menai_vm_hashtable.c",
             f"{_MENAI_VM_SRC}/menai_vm_integer.c",
             f"{_MENAI_VM_SRC}/menai_vm_list.c",
-            f"{_MENAI_VM_SRC}/menai_vm_none.c",
             f"{_MENAI_VM_SRC}/menai_vm_string.c",
             f"{_MENAI_VM_SRC}/menai_vm_set.c",
             f"{_MENAI_VM_SRC}/menai_vm_state.c",

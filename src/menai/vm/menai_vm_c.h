@@ -519,7 +519,6 @@ void menai_value_free(MenaiVMState *vs, MenaiValue *v);
 static inline void
 menai_value_retain(MenaiValue *val)
 {
-    assert(val->ob_type != 0);
     val->ob_refcnt++;
 }
 
@@ -531,7 +530,6 @@ menai_value_retain(MenaiValue *val)
 static inline void
 menai_value_release(MenaiVMState *vs, MenaiValue *val)
 {
-    assert(val->ob_type != 0);
     if (--val->ob_refcnt == 0) {
         menai_value_free(vs, val);
     }
@@ -662,8 +660,17 @@ int menai_bigint_gt(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_le(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 
-MenaiBoolean *menai_boolean_true(MenaiVMState *vs);
-MenaiBoolean *menai_boolean_false(MenaiVMState *vs);
+static inline MenaiBoolean *
+menai_boolean_true(MenaiVMState *vs)
+{
+    return &vs->true_storage;
+}
+
+static inline MenaiBoolean *
+menai_boolean_false(MenaiVMState *vs)
+{
+    return &vs->false_storage;
+}
 
 static inline hash_t
 menai_boolean_hash(MenaiBoolean *b)
@@ -674,7 +681,11 @@ menai_boolean_hash(MenaiBoolean *b)
 static inline int
 menai_boolean_equal(MenaiBoolean *a, MenaiBoolean *b)
 {
-    return a->value == b->value;
+    /*
+     * We have two singletons so we don't need to actually check the values here,
+     * just see if we have the same singleton objects.
+     */
+    return a == b;
 }
 
 MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
@@ -776,7 +787,7 @@ menai_float_equal(MenaiFloat *a, MenaiFloat *b)
     return a->value == b->value;
 }
 
-MenaiFunction *alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co, MenaiNone *none_val);
+MenaiFunction *alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co);
 
 static inline void
 menai_function_final(MenaiVMState *vs, MenaiFunction *self)
@@ -784,7 +795,9 @@ menai_function_final(MenaiVMState *vs, MenaiFunction *self)
     menai_code_object_release(vs, self->bytecode);
     ssize_t ncap = self->ncap;
     for (ssize_t i = 0; i < ncap; i++) {
-        menai_value_release(vs, self->captures[i]);
+        if (self->captures[i]) {
+            menai_value_release(vs, self->captures[i]);
+        }
     }
 }
 
@@ -873,7 +886,11 @@ menai_list_equal(MenaiList *a, MenaiList *b)
     return 1;
 }
 
-MenaiNone *menai_none(MenaiVMState *vs);
+static inline MenaiNone *
+menai_none(MenaiVMState *vs)
+{
+    return &vs->none_storage;
+}
 
 static inline hash_t
 menai_none_hash(void)

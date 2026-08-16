@@ -11,7 +11,7 @@
 #include "menai_vm_c.h"
 
 MenaiFunction *
-alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co, MenaiNone *none_val)
+alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
 {
     ssize_t ncap = co->ncap;
     size_t sz = sizeof(MenaiFunction) + (size_t)ncap * sizeof(MenaiValue *);
@@ -26,6 +26,7 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co, MenaiNone *none_val)
     menai_code_object_retain(co);
     self->bytecode = co;
 
+    MenaiValue *none_val = (MenaiValue *)menai_none(vs);
     for (ssize_t i = 0; i < ncap; i++) {
         menai_value_retain((MenaiValue *)none_val);
         self->captures[i] = (MenaiValue *)none_val;
