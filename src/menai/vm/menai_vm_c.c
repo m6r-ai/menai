@@ -748,7 +748,6 @@ parse_complex_string(const char *s, double *out_real, double *out_imag)
 typedef struct {
     MenaiCodeObject *code_obj;       /* retained — owns all frame metadata */
     MenaiValue **constants_items;    /* borrowed from code_obj->constants */
-    ssize_t nconst;                  /* borrowed from code_obj->nconst */
     const char **names_items;        /* borrowed from code_obj->names */
     hash_t *name_hashes;             /* borrowed from code_obj->name_hashes */
     ssize_t nnames;                  /* borrowed from code_obj->nnames */
@@ -775,7 +774,6 @@ frame_setup(Frame *f, MenaiValue **regs, MenaiCodeObject *co, int base, int retu
     menai_code_object_retain(co);
     f->code_obj = co;
     f->constants_items = co->constants;
-    f->nconst = co->nconst;
     f->names_items = co->names;
     f->name_hashes = co->name_hashes;
     f->nnames = co->nnames;
@@ -813,9 +811,8 @@ frame_setup(Frame *f, MenaiValue **regs, MenaiCodeObject *co, int base, int retu
  * Returns MENAI_OK on success, or a MENAI_ERR_* code on error.
  */
 static int
-call_setup(MenaiVMState *vs, Frame *new_frame, MenaiValue *func_obj, MenaiValue **regs, int callee_base, int arity, int return_dest)
+call_setup(MenaiVMState *vs, Frame *new_frame, MenaiFunction *func, MenaiValue **regs, int callee_base, int arity, int return_dest)
 {
-    MenaiFunction *func = (MenaiFunction *)func_obj;
     MenaiCodeObject *co = func->bytecode;
     int param_count = co->param_count;
     int is_variadic = co->is_variadic;
@@ -889,6 +886,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
     Frame *frame = &frames[1];
     int instr_count = 0;
     int cur_ip = 0;
+    MenaiValue **frame_regs = frame->frame_regs;
 
     while (1) {
         /* Cancellation check */
@@ -911,9 +909,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         uint64_t word = frame->instrs[frame->ip++];
         int opcode = (int)((word >> OPCODE_SHIFT) & OPCODE_MASK);
         int dest = (int)((word >> DEST_SHIFT) & FIELD_MASK);
-        MenaiValue **frame_regs = frame->frame_regs;
 
-        if (MENAI_LIKELY(vs->_profile.enabled)) {
+        if (vs->_profile.enabled) {
             vs->_profile.opcode_counts[opcode]++;
             vs->_profile.total_instructions++;
         }
@@ -958,9 +955,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             if (extra_globals != NULL) {
                 val = globals_lookup(extra_globals, name_str, name_hash);
             }
+
             if (val == NULL && vs->_globals_valid) {
                 val = globals_lookup(&vs->_globals, name_str, name_hash);
             }
+
             if (val == NULL) {
                 vm_err = MENAI_ERR_UNDEFINED_VARIABLE;
                 goto error;
@@ -1038,6 +1037,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             menai_reg_set_own(vs, regs, caller->base + saved_return_dest, retval);
 
             frame = caller;
+            frame_regs = frame->frame_regs;
             break;
         }
 
@@ -1059,13 +1059,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 new_frame->constants_items = NULL;
                 new_frame->instrs = NULL;
 
-                vm_err = call_setup(vs, new_frame, raw, regs, callee_base, arity, dest);
+                vm_err = call_setup(vs, new_frame, (MenaiFunction *)raw, regs, callee_base, arity, dest);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
                     goto error;
                 }
 
                 frame = new_frame;
+                frame_regs = frame->frame_regs;
                 break;
             }
 
@@ -1115,13 +1116,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
-                vm_err = call_setup(vs, frame, raw, regs, frame->base, n_args, saved_return_dest);
+                vm_err = call_setup(vs, frame, (MenaiFunction *)raw, regs, frame->base, n_args, saved_return_dest);
+                menai_value_release(vs, raw);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
-                    menai_value_release(vs, raw);
                     goto error;
                 }
 
-                menai_value_release(vs, raw);
                 break;
             }
 
@@ -1154,6 +1154,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_reg_set_own(vs, regs, caller->base + saved_return_dest, (MenaiValue *)retval);
                 menai_value_release(vs, raw);
                 frame = caller;
+                frame_regs = frame->frame_regs;
                 break;
             }
 
@@ -1200,13 +1201,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 new_frame->constants_items = NULL;
                 new_frame->instrs = NULL;
 
-                vm_err = call_setup(vs, new_frame, raw_func, regs, callee_base, arity, dest);
+                vm_err = call_setup(vs, new_frame, (MenaiFunction *)raw_func, regs, callee_base, arity, dest);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
                     goto error;
                 }
 
                 frame = new_frame;
+                frame_regs = frame->frame_regs;
                 break;
             }
 
@@ -1270,13 +1272,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
-                vm_err = call_setup(vs, frame, raw_func, regs, frame->base, arity, saved_return_dest);
+                vm_err = call_setup(vs, frame, (MenaiFunction *)raw_func, regs, frame->base, arity, saved_return_dest);
+                menai_value_release(vs, raw_func);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
-                    menai_value_release(vs, raw_func);
                     goto error;
                 }
 
-                menai_value_release(vs, raw_func);
                 break;
             }
 
@@ -1312,6 +1313,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_value_release(vs, raw_args);
                 menai_value_release(vs, raw_func);
                 frame = caller;
+                frame_regs = frame->frame_regs;
                 break;
             }
 
@@ -1447,7 +1449,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 n = n_io->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&n_io->big, &n);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -1645,14 +1647,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     MenaiBigInt tmp;
                     menai_bigint_init(&tmp);
                     vm_err = menai_bigint_from_long(sv, &tmp);
-                    if (vm_err < 0) {
+                    if (MENAI_UNLIKELY(vm_err < 0)) {
                         goto error;
                     }
 
                     MenaiBigInt res;
                     menai_bigint_init(&res);
                     vm_err = menai_bigint_abs(&tmp, &res);
-                    if (vm_err < 0) {
+                    if (MENAI_UNLIKELY(vm_err < 0)) {
                         menai_bigint_final(&tmp);
                         goto error;
                     }
@@ -1679,7 +1681,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_abs(&a->big, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
@@ -1703,14 +1705,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     MenaiBigInt tmp;
                     menai_bigint_init(&tmp);
                     vm_err = menai_bigint_from_long(sv, &tmp);
-                    if (vm_err < 0) {
+                    if (MENAI_UNLIKELY(vm_err < 0)) {
                         goto error;
                     }
 
                     MenaiBigInt res;
                     menai_bigint_init(&res);
                     vm_err = menai_bigint_neg(&tmp, &res);
-                    if (vm_err < 0) {
+                    if (MENAI_UNLIKELY(vm_err < 0)) {
                         menai_bigint_final(&tmp);
                         goto error;
                     }
@@ -1737,7 +1739,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_neg(&a->big, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
@@ -1757,14 +1759,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt tmp;
             menai_bigint_init(&tmp);
             vm_err = menai_integer_to_menai_bigint(a, &tmp);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_not(&tmp, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&tmp);
                 goto error;
             }
@@ -1803,14 +1805,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -1818,7 +1820,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_add(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -1859,14 +1861,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -1874,7 +1876,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_sub(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -1915,14 +1917,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -1930,7 +1932,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_mul(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -1982,14 +1984,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -1997,7 +1999,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_floordiv(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -2048,14 +2050,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -2063,7 +2065,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_mod(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -2094,14 +2096,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -2109,7 +2111,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_pow(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -2135,14 +2137,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -2150,7 +2152,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_or(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -2176,14 +2178,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -2191,7 +2193,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_and(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -2217,14 +2219,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt bv;
             menai_bigint_init(&bv);
             vm_err = menai_integer_to_menai_bigint(b, &bv);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -2232,7 +2234,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_xor(&av, &bv, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 menai_bigint_final(&bv);
                 goto error;
@@ -2265,7 +2267,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
 
                 vm_err = menai_bigint_to_long(&b->big, &shift);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -2278,14 +2280,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_shift_left(&av, (ssize_t)shift, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -2316,7 +2318,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
 
                 vm_err = menai_bigint_to_long(&b->big, &shift);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -2329,14 +2331,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(a, &av);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_shift_right(&av, (ssize_t)shift, &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_bigint_final(&av);
                 goto error;
             }
@@ -2436,7 +2438,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 d = (double)a->fixed;
             } else {
                 vm_err = menai_bigint_to_double(&a->big, &d);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -2461,7 +2463,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 re = (double)a->fixed;
             } else {
                 vm_err = menai_bigint_to_double(&a->big, &re);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -2471,7 +2473,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 im = (double)b->fixed;
             } else {
                 vm_err = menai_bigint_to_double(&b->big, &im);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -2496,7 +2498,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 radix = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &radix);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -2509,7 +2511,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt tmp;
             menai_bigint_init(&tmp);
             vm_err = menai_integer_to_menai_bigint(a, &tmp);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
@@ -2533,7 +2535,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 cp = a->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&a->big, &cp);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -2975,7 +2977,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiBigInt res;
             menai_bigint_init(&res);
             vm_err = menai_bigint_from_double(trunc(a->value), &res);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
 
@@ -3550,7 +3552,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 idx_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &idx_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -3585,7 +3587,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 start_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &start_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -3595,7 +3597,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 end_l = c->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&c->big, &end_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -3704,7 +3706,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 radix = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &radix);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -4561,7 +4563,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     MenaiBigInt big; \
                     menai_bigint_init(&big); \
                     vm_err = menai_bigint_from_unsigned_long_long((unsigned long long)uval, &big); \
-                    if (vm_err < 0) { \
+                    if (MENAI_UNLIKELY(vm_err < 0)) { \
                         goto error; \
                     } \
 \
@@ -4802,7 +4804,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiBigInt big;
                 menai_bigint_init(&big);
                 vm_err = menai_bigint_from_unsigned_long_long(result, &big);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
                 val_result = alloc_menai_integer_from_bigint(vs, big);
@@ -5085,7 +5087,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 idx_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &idx_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -5258,7 +5260,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 start_l = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &start_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -5268,7 +5270,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 end_l = c->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&c->big, &end_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -5414,7 +5416,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             hash_t *nhashes = r->hashes;
             MenaiHashTable lts_seen;
             vm_err = menai_ht_init(&lts_seen, n);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
             }
@@ -5854,7 +5856,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 nhashes[n] = h;
                 r->length = n + 1;
                 vm_err = menai_ht_init(&r->ht, n + 1);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     menai_value_release(vs, (MenaiValue *)r);
                     goto error;
                 }
@@ -5909,7 +5911,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = new_n;
             vm_err = menai_ht_init(&r->ht, new_n);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
             }
@@ -5958,7 +5960,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = out;
             vm_err = menai_ht_init(&r->ht, out);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
             }
@@ -5998,7 +6000,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = out;
             vm_err = menai_ht_init(&r->ht, out);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
             }
@@ -6038,7 +6040,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             r->length = out;
             vm_err = menai_ht_init(&r->ht, out);
-            if (vm_err < 0) {
+            if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
             }
@@ -6107,7 +6109,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 start = a->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&a->big, &start);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -6116,7 +6118,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 end = b->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&b->big, &end);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -6125,7 +6127,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 step = c->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&c->big, &step);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -6229,7 +6231,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             r->length = n;
             if (n > 0) {
                 vm_err = menai_ht_init(&r->ht, n);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     menai_value_release(vs, (MenaiValue *)r);
                     goto error;
                 }
@@ -6366,7 +6368,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 fi_l = fi_io->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&fi_io->big, &fi_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
@@ -6431,7 +6433,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 fi_l = fi_io->fixed;
             } else {
                 vm_err = menai_bigint_to_long(&fi_io->big, &fi_l);
-                if (vm_err < 0) {
+                if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
             }
