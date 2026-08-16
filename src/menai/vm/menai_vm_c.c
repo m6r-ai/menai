@@ -769,7 +769,7 @@ typedef struct {
  *
  * Populates a Frame from a MenaiCodeObject.  Takes a retain on co.
  */
-static void
+static inline void
 frame_setup(Frame *f, MenaiValue **regs, MenaiCodeObject *co, int base, int return_dest)
 {
     menai_code_object_retain(co);
@@ -888,7 +888,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
     int frame_depth = 1;
     Frame *frame = &frames[1];
     int instr_count = 0;
-    int cur_opcode = 0;
     int cur_ip = 0;
 
     while (1) {
@@ -908,13 +907,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         }
 
         /* Fetch and decode instruction */
+        cur_ip = frame->ip;
         uint64_t word = frame->instrs[frame->ip++];
         int opcode = (int)((word >> OPCODE_SHIFT) & OPCODE_MASK);
         int dest = (int)((word >> DEST_SHIFT) & FIELD_MASK);
         MenaiValue **frame_regs = frame->frame_regs;
-
-        cur_opcode = opcode;
-        cur_ip = frame->ip - 1;
 
         if (MENAI_LIKELY(vs->_profile.enabled)) {
             vs->_profile.opcode_counts[opcode]++;
@@ -6606,7 +6603,7 @@ error:
         }
 
         out_error->code = vm_err;
-        out_error->opcode = cur_opcode;
+        out_error->opcode = opcode;
         out_error->ip = cur_ip;
         out_error->call_depth = frame_depth;
         out_error->user_message = vm_user_message;
