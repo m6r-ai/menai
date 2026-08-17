@@ -1634,6 +1634,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     if (!native_code) {
         return NULL;
     }
+
     PyTime_PerfCounter(&_t1);
     vs->_convert_time_ns = (uint64_t)(_t1 - _t0);
 
@@ -1645,12 +1646,14 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
             menai_code_object_release(vs, native_code);
             return NULL;
         }
+
         int gerr = globals_build_from_dict(vs, &extra_globals, native_extra);
         menai_value_release(vs, (MenaiValue *)native_extra);
         if (gerr < 0) {
             menai_code_object_release(vs, native_code);
             return NULL;
         }
+
         has_extra = 1;
     }
 
