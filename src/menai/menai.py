@@ -1412,6 +1412,17 @@ class Menai:
 
         self.vm.set_prelude(Menai._prelude_code)
 
+    def prelude_code(self) -> CodeObject:
+        """
+        Return the compiled prelude CodeObject.
+
+        The prelude is compiled once on first instantiation and shared across
+        all Menai instances.  This accessor exposes it for tools (e.g. the
+        disassembler) that need to inspect the prelude bytecode.
+        """
+        assert Menai._prelude_code is not None
+        return Menai._prelude_code
+
     def compile(self, expression: str) -> CodeObject:
         """
         Compile a Menai expression to bytecode without executing it.

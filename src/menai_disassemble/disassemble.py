@@ -11,9 +11,11 @@ showing:
 - Nested function hierarchy
 
 Usage:
-    python menai_disassemble.py <file.menai>
-    python menai_disassemble.py <file.menai> --output disasm.txt
-    python menai_disassemble.py <file.menai> --trace  # Also show function call trace
+    menai-disassemble <file.menai>
+    menai-disassemble <file.menai> --output disasm.txt
+    menai-disassemble <file.menai> --trace  # Also show function call trace
+    menai-disassemble --prelude              # Disassemble the prelude only
+    menai-disassemble <file.menai> --prelude # Disassemble prelude then the file
 """
 
 import argparse
@@ -416,7 +418,8 @@ def main() -> int:
         description="Disassemble Menai bytecode with detailed annotations",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument('file', help='Menai source file to disassemble')
+    parser.add_argument('file', nargs='?', help='Menai source file to disassemble')
+    parser.add_argument('--prelude', action='store_true', help='Also disassemble the prelude')
     parser.add_argument('--output', '-o', help='Output file (default: stdout)')
     parser.add_argument('--trace', '-t', action='store_true', help='Also generate function call trace')
     parser.add_argument('--no-color', action='store_true', help='Disable ANSI colour output')
@@ -425,53 +428,80 @@ def main() -> int:
     args = parser.parse_args()
     color = (not args.no_color and not args.output and sys.stdout.isatty()) or args.color
 
+    if not args.file and not args.prelude:
+        parser.error('at least one of <file> or --prelude is required')
+
+    output_lines: list[str] = []
+    total_code_objects = 0
+
+    # --- Prelude disassembly ---
+
+    if args.prelude:
+        print("Compiling: <prelude>", file=sys.stderr)
+        menai = Menai()
+        prelude_code = menai.prelude_code()
+        output_lines.extend(disassemble_with_nested(prelude_code, name="<prelude>", color=color))
+        total_code_objects += len(prelude_code.code_objects) + 1
+
+        if args.trace:
+            output_lines.append("\n\n")
+            output_lines.append("="*80)
+            output_lines.append("PRELUDE FUNCTION CALL TRACE")
+            output_lines.append("="*80)
+            trace_lines = generate_trace(prelude_code, name="<prelude>")
+            output_lines.extend(trace_lines)
+
+    # --- User file disassembly ---
+
     # Read source file
-    source_path = Path(args.file)
-    if not source_path.exists():
-        print(f"Error: File not found: {args.file}", file=sys.stderr)
-        return 1
+    if args.file:
+        source_path = Path(args.file)
+        if not source_path.exists():
+            print(f"Error: File not found: {args.file}", file=sys.stderr)
+            return 1
 
-    with open(source_path, 'r', encoding='utf-8') as f:
-        source = f.read()
+        with open(source_path, 'r', encoding='utf-8') as f:
+            source = f.read()
 
-    # Compile
-    print(f"Compiling: {args.file}", file=sys.stderr)
+        # Compile
+        print(f"Compiling: {args.file}", file=sys.stderr)
 
-    # Build a deduplicated module search path:
-    #   1. The file's own directory (for bare imports like "calendar" when
-    #      the source file lives alongside its modules)
-    #   2. The current working directory (so that import paths written
-    #      relative to the project root, e.g. "tools/planner/calendar",
-    #      resolve correctly when the tool is run from the root)
-    file_dir = str(source_path.parent.absolute())
-    cwd = str(Path.cwd())
-    module_path: list[str] = []
-    for d in [file_dir, cwd]:
-        if d not in module_path:
-            module_path.append(d)
+        # Build a deduplicated module search path:
+        #   1. The file's own directory (for bare imports like "calendar" when
+        #      the source file lives alongside its modules)
+        #   2. The current working directory (so that import paths written
+        #      relative to the project root, e.g. "tools/planner/calendar",
+        #      resolve correctly when the tool is run from the root)
+        file_dir = str(source_path.parent.absolute())
+        cwd = str(Path.cwd())
+        module_path: list[str] = []
+        for d in [file_dir, cwd]:
+            if d not in module_path:
+                module_path.append(d)
 
-    menai = Menai(module_path=module_path)
+        menai = Menai(module_path=module_path)
 
-    try:
-        compiler = MenaiCompiler(module_loader=menai)
-        code = compiler.compile(source, name=str(source_path))
+        try:
+            compiler = MenaiCompiler(module_loader=menai)
+            code = compiler.compile(source, name=str(source_path))
 
-    except Exception as e:
-        print(f"Error compiling: {e}", file=sys.stderr)
-        traceback.print_exc()
-        return 1
+        except Exception as e:
+            print(f"Error compiling: {e}", file=sys.stderr)
+            traceback.print_exc()
+            return 1
 
-    # Generate disassembly
-    output_lines = disassemble_with_nested(code, name=args.file, color=color)
+        # Generate disassembly
+        output_lines.extend(disassemble_with_nested(code, name=args.file, color=color))
+        total_code_objects += len(code.code_objects) + 1
 
-    # Add trace if requested
-    if args.trace:
-        output_lines.append("\n\n")
-        output_lines.append("="*80)
-        output_lines.append("FUNCTION CALL TRACE")
-        output_lines.append("="*80)
-        trace_lines = generate_trace(code, name=args.file)
-        output_lines.extend(trace_lines)
+        # Add trace if requested
+        if args.trace:
+            output_lines.append("\n\n")
+            output_lines.append("="*80)
+            output_lines.append("FUNCTION CALL TRACE")
+            output_lines.append("="*80)
+            trace_lines = generate_trace(code, name=args.file)
+            output_lines.extend(trace_lines)
 
     # Output
     output_text = '\n'.join(output_lines)
@@ -483,7 +513,7 @@ def main() -> int:
 
         print(f"✓ Disassembly written to: {output_path}", file=sys.stderr)
         print(f"  Total lines: {len(output_lines)}", file=sys.stderr)
-        print(f"  Total code objects: {len(code.code_objects) + 1}", file=sys.stderr)
+        print(f"  Total code objects: {total_code_objects}", file=sys.stderr)
 
     else:
         print(output_text)
