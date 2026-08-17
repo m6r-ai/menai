@@ -8,12 +8,8 @@
 #include "menai_vm_c.h"
 
 void
-menai_code_object_release(MenaiVMState *vs, MenaiCodeObject *co)
+menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co)
 {
-    if (--co->ob_refcnt > 0) {
-        return;
-    }
-
     for (ssize_t i = 0; i < co->nconst; i++) {
         menai_value_release(vs, co->constants[i]);
     }

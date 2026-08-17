@@ -609,7 +609,16 @@ menai_code_object_retain(MenaiCodeObject *co)
     co->ob_refcnt++;
 }
 
-void menai_code_object_release(MenaiVMState *vs, MenaiCodeObject *co);
+void menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co);
+
+static inline void
+menai_code_object_release(MenaiVMState *vs, MenaiCodeObject *co)
+{
+    if (--co->ob_refcnt == 0) {
+        menai_code_object_final(vs, co);
+    }
+}
+
 int menai_code_object_max_locals(const MenaiCodeObject *co);
 
 static inline void
