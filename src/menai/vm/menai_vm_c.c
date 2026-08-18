@@ -1109,6 +1109,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 /* Reuse current frame — release old code_obj and instructions. */
                 menai_code_object_release(vs, frame->code_obj);
+                frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
                 vm_err = call_setup(vs, frame, (MenaiFunction *)raw, regs, frame->base, n_args, saved_return_dest);
@@ -1260,6 +1261,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 /* Release old code_obj and instructions, reuse frame. */
                 menai_code_object_release(vs, frame->code_obj);
+                frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
                 vm_err = call_setup(vs, frame, (MenaiFunction *)raw_func, regs, frame->base, arity, saved_return_dest);

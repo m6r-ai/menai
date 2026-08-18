@@ -134,6 +134,7 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
     }
 
     co->ob_refcnt = 1;
+    MENAI_SET_MAGIC(co);
 
     /* Scalar fields */
     if (_read_int(py_code, "param_count", &co->param_count) < 0) {

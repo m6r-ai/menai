@@ -76,5 +76,7 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         assert(0);
     }
 
+    MENAI_CLEAR_MAGIC(v);
+
     menai_free(vs, v);
 }

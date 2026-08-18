@@ -49,6 +49,7 @@ menai_alloc(MenaiVMState *vs, size_t size)
     if (size > MENAI_POOL_MAX_SIZE) {
         void *ptr = malloc(size);
         if (ptr) {
+            MENAI_SET_MAGIC((MenaiValue *)ptr);
             ((MenaiValue *)ptr)->ob_alloc_bucket = -1;
         }
 
@@ -72,6 +73,7 @@ menai_alloc(MenaiVMState *vs, size_t size)
     }
 
     ((MenaiValue *)ptr)->ob_alloc_bucket = (int16_t)bucket;
+    MENAI_SET_MAGIC((MenaiValue *)ptr);
     return ptr;
 }
 

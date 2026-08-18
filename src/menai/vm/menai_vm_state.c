@@ -24,14 +24,17 @@ menai_vm_state_alloc(void)
 
     vs->none_storage.ob_refcnt = 1;
     vs->none_storage.ob_type = MENAITYPE_NONE;
+    MENAI_SET_MAGIC(&vs->none_storage);
 
     vs->true_storage.ob_refcnt = 1;
     vs->true_storage.ob_type = MENAITYPE_BOOLEAN;
     vs->true_storage.value = 1;
+    MENAI_SET_MAGIC(&vs->true_storage);
 
     vs->false_storage.ob_refcnt = 1;
     vs->false_storage.ob_type = MENAITYPE_BOOLEAN;
     vs->false_storage.value = 0;
+    MENAI_SET_MAGIC(&vs->false_storage);
 
     for (long v = MENAI_INT_CACHE_MIN; v <= MENAI_INT_CACHE_MAX; v++) {
         MenaiInteger *obj = (MenaiInteger *)menai_alloc(vs, sizeof(MenaiInteger));

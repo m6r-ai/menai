@@ -11,6 +11,11 @@
 #include <stdint.h>
 #include <assert.h>
 
+#ifdef MENAI_DEBUG_MAGIC
+#include <stdio.h>
+#include <stdlib.h>
+#endif
+
 #ifdef _MSC_VER
 
 typedef ptrdiff_t ssize_t;
@@ -36,6 +41,39 @@ typedef ptrdiff_t ssize_t;
  * use-after-free (the allocator poisons freed blocks with ob_type = 0).
  */
 typedef uint16_t MenaiType;
+
+/*
+ * Magic-field use-after-free detection.
+ *
+ * When MENAI_DEBUG_MAGIC is defined, every MenaiValue and MenaiCodeObject
+ * carries a uint32_t ob_magic field set to MENAI_MAGIC_ALIVE at allocation
+ * and cleared to 0 in the finalizer before the block is freed or returned
+ * to the pool.  MENAI_CHECK_MAGIC aborts if the field does not match,
+ * catching use-after-free and double-free at the point of access.
+ *
+ * When MENAI_DEBUG_MAGIC is not defined the field, the setter, and the
+ * check macro all compile away to nothing — zero overhead, no struct
+ * layout change.
+ */
+#ifdef MENAI_DEBUG_MAGIC
+#define MENAI_MAGIC_ALIVE 0x4d454e41u  /* "MENA" */
+#define MENAI_CHECK_MAGIC(ptr) \
+    do { \
+        if ((ptr)->ob_magic != MENAI_MAGIC_ALIVE) { \
+            fprintf(stderr, "MENAI: bad magic 0x%08x at %s:%d (use-after-free?)\n", \
+                    (unsigned)(ptr)->ob_magic, __FILE__, __LINE__); \
+            abort(); \
+        } \
+    } while (0)
+#define MENAI_SET_MAGIC(ptr) ((ptr)->ob_magic = MENAI_MAGIC_ALIVE)
+#define MENAI_CLEAR_MAGIC(ptr) ((ptr)->ob_magic = 0)
+#define MENAI_MAGIC_FIELD uint32_t ob_magic;
+#else
+#define MENAI_CHECK_MAGIC(ptr) ((void)0)
+#define MENAI_SET_MAGIC(ptr) ((void)0)
+#define MENAI_CLEAR_MAGIC(ptr) ((void)0)
+#define MENAI_MAGIC_FIELD
+#endif
 
 #define MENAITYPE_NONE 0x0001
 #define MENAITYPE_BOOLEAN 0x0002
@@ -98,8 +136,9 @@ typedef struct {
 } MenaiHashTable;
 
 struct MenaiCodeObject {
-    size_t ob_refcnt;
+    MENAI_MAGIC_FIELD
 
+    size_t ob_refcnt;
     uint64_t *instrs;                    /* packed instruction words */
     int code_len;                        /* number of instructions */
 
@@ -154,6 +193,7 @@ typedef struct {
  *                to return the block.
  */
 #define MenaiValue_HEAD              \
+    MENAI_MAGIC_FIELD                \
     uint32_t ob_refcnt;              \
     MenaiType ob_type;               \
     int16_t ob_alloc_bucket;
@@ -519,6 +559,7 @@ void menai_value_free(MenaiVMState *vs, MenaiValue *v);
 static inline void
 menai_value_retain(MenaiValue *val)
 {
+    MENAI_CHECK_MAGIC(val);
     val->ob_refcnt++;
 }
 
@@ -530,6 +571,7 @@ menai_value_retain(MenaiValue *val)
 static inline void
 menai_value_release(MenaiVMState *vs, MenaiValue *val)
 {
+    MENAI_CHECK_MAGIC(val);
     if (--val->ob_refcnt == 0) {
         menai_value_free(vs, val);
     }
@@ -606,6 +648,7 @@ void menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t i
 static inline void
 menai_code_object_retain(MenaiCodeObject *co)
 {
+    MENAI_CHECK_MAGIC(co);
     co->ob_refcnt++;
 }
 
@@ -614,6 +657,7 @@ void menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co);
 static inline void
 menai_code_object_release(MenaiVMState *vs, MenaiCodeObject *co)
 {
+    MENAI_CHECK_MAGIC(co);
     if (--co->ob_refcnt == 0) {
         menai_code_object_final(vs, co);
     }
