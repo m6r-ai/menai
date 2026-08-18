@@ -1015,3 +1015,556 @@ class TestEndToEnd:
                 (is-digit? "/") (is-digit? ":")))
         """)
         assert result == [True, True, True, False, False]
+
+
+# ---------------------------------------------------------------------------
+# 12. Predicate-branch: phi → type-predicate → BranchTerm
+# ---------------------------------------------------------------------------
+
+from menai.menai_value import MenaiNone, MenaiString
+
+
+class TestPredicateBranchFullElimination:
+    """When the phi result is used ONLY by the predicate, both the phi and
+    the predicate can be eliminated entirely."""
+
+    def test_none_predicate_all_arms_constant(self):
+        """
+        phi [#none←A, #none←B] → none? → branch true/false
+
+        Both arms are #none, so none? is always True.  Both defining blocks
+        should be re-wired to true_block, and the phi, none?, and branch
+        should all be eliminated.
+        """
+        vnone1 = v("none1"); vnone2 = v("none2"); vphi = v("phi"); vpred = v("pred")
+
+        body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
+        exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone1, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vnone2, value=MenaiNone()), label="B")
+
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone1, block_a), (vnone2, block_b)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, body, exit_)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert changed
+
+        # Both defining blocks should jump directly to body (true_block).
+        a_new = next(b for b in new_f.blocks if b.id == 1)
+        assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
+        assert a_new.terminator.target.id == body.id
+
+        b_new = next(b for b in new_f.blocks if b.id == 2)
+        assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
+        assert b_new.terminator.target.id == body.id
+
+        # Join block should have no phi, no predicate, and a stale jump.
+        join_new = next(b for b in new_f.blocks if b.id == 3)
+        assert not any(isinstance(i, MenaiCFGPhiInstr) for i in join_new.instrs)
+        assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
+
+    def test_none_predicate_mixed_arms_full(self):
+        """
+        phi [#none←A, "str"←B] → none? → branch true/false
+        Phi result is used ONLY by none? (not by downstream code).
+
+        #none → none? is True → re-wire to true_block.
+        "str" → none? is False → re-wire to false_block.
+        Both arms re-wired, phi and predicate eliminated.
+        """
+        vnone = v("none"); vstr = v("str"); vphi = v("phi"); vpred = v("pred")
+
+        body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
+        exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), label="B")
+
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vstr, block_b)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, body, exit_)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert changed
+
+        # #none arm → true_block.
+        a_new = next(b for b in new_f.blocks if b.id == 1)
+        assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
+        assert a_new.terminator.target.id == body.id
+
+        # "str" arm → false_block.
+        b_new = next(b for b in new_f.blocks if b.id == 2)
+        assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
+        assert b_new.terminator.target.id == exit_.id
+
+        # Join block should have no phi, no predicate.
+        join_new = next(b for b in new_f.blocks if b.id == 3)
+        assert not any(isinstance(i, MenaiCFGPhiInstr) for i in join_new.instrs)
+        assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
+
+
+class TestPredicateBranchPartialElimination:
+    """When the phi result is used by downstream code (outside the join block),
+    only arms whose branch target does NOT use the phi result can be re-wired.
+    The remaining arms stay in the phi."""
+
+    def test_none_predicate_phi_used_in_false_branch(self):
+        """
+        phi [#none←A, "str"←B, "str2"←C] → none? → branch true/false
+        false_block uses the phi result.
+
+        #none → none? True → true_block (safe, true_block doesn't use phi).
+        "str" → none? False → false_block (NOT safe, false_block uses phi).
+        "str2" → none? False → false_block (NOT safe).
+
+        Result: A re-wired to true_block.  B and C stay in phi.
+        The none? and branch are replaced with a direct jump to false_block
+        (all remaining arms evaluate to False).
+        """
+        vnone = v("none"); vs1 = v("s1"); vs2 = v("s2")
+        vphi = v("phi"); vpred = v("pred")
+        vuse = v("use")
+
+        # false_block uses the phi result — makes it unsafe.
+        false_block = block(
+            11,
+            MenaiCFGBuiltinInstr(result=vuse, op="list-prepend", args=[v("other"), vphi]),
+            terminator=MenaiCFGReturnTerm(value=vuse),
+            label="false",
+        )
+        true_block = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="true")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vs1, value=MenaiString("s1")), label="B")
+        block_c = block(3, MenaiCFGConstInstr(result=vs2, value=MenaiString("s2")), label="C")
+
+        join = block(
+            4,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vs1, block_b), (vs2, block_c)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+        block_c.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, block_c, join, true_block, false_block)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert changed
+
+        # #none arm → true_block (safe).
+        a_new = next(b for b in new_f.blocks if b.id == 1)
+        assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
+        assert a_new.terminator.target.id == true_block.id
+
+        # String arms stay in phi (not re-wired).
+        b_new = next(b for b in new_f.blocks if b.id == 2)
+        assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
+        assert b_new.terminator.target.id == join.id
+
+        c_new = next(b for b in new_f.blocks if b.id == 3)
+        assert isinstance(c_new.terminator, MenaiCFGJumpTerm)
+        assert c_new.terminator.target.id == join.id
+
+        # Join block: phi has only the two string arms, predicate and branch
+        # replaced with a direct jump to false_block (all remaining arms
+        # evaluate to False).
+        join_new = next(b for b in new_f.blocks if b.id == 4)
+        phi_new = next(i for i in join_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        assert len(phi_new.incoming) == 2
+        assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
+        assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
+        assert join_new.terminator.target.id == false_block.id
+
+    def test_none_predicate_phi_used_in_false_branch_single_remaining(self):
+        """
+        phi [#none←A, "str"←B] → none? → branch true/false
+        false_block uses the phi result.
+
+        #none → True → true_block (safe).
+        "str" → False → false_block (NOT safe).
+
+        Result: A re-wired to true_block.  B is the sole remaining arm.
+        The phi becomes trivial (removed), the predicate's arg is updated
+        to the sole remaining value, and the branch condition becomes the
+        predicate result directly.
+        """
+        vnone = v("none"); vstr = v("str")
+        vphi = v("phi"); vpred = v("pred"); vuse = v("use")
+
+        false_block = block(
+            11,
+            MenaiCFGBuiltinInstr(result=vuse, op="list-prepend", args=[v("other"), vphi]),
+            terminator=MenaiCFGReturnTerm(value=vuse),
+            label="false",
+        )
+        true_block = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="true")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), label="B")
+
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vstr, block_b)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, true_block, false_block)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert changed
+
+        # #none arm → true_block.
+        a_new = next(b for b in new_f.blocks if b.id == 1)
+        assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
+        assert a_new.terminator.target.id == true_block.id
+
+        # B still jumps to join.
+        b_new = next(b for b in new_f.blocks if b.id == 2)
+        assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
+        assert b_new.terminator.target.id == join.id
+
+        # Join block: phi stays (trivial but needed — false_block uses its
+        # result).  Predicate and branch replaced with a direct jump to
+        # false_block (the sole remaining arm evaluates to False).
+        join_new = next(b for b in new_f.blocks if b.id == 3)
+        phi_new = next(i for i in join_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        assert len(phi_new.incoming) == 1
+        assert phi_new.incoming[0][0].id == vstr.id
+        assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
+        assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
+        assert join_new.terminator.target.id == false_block.id
+
+    def test_none_predicate_phi_used_in_true_branch(self):
+        """
+        phi [#none←A, "str"←B, "str2"←C] → none? → branch true/false
+        true_block uses the phi result.
+
+        #none → True → true_block (NOT safe, true_block uses phi).
+        "str" → False → false_block (safe, false_block doesn't use phi).
+        "str2" → False → false_block (safe).
+
+        Result: B and C re-wired to false_block.  A stays in phi.
+        The predicate and branch are replaced with a direct jump to
+        true_block (the sole remaining arm evaluates to True).
+        """
+        vnone = v("none"); vs1 = v("s1"); vs2 = v("s2")
+        vphi = v("phi"); vpred = v("pred"); vuse = v("use")
+
+        # true_block uses the phi result — makes it unsafe.
+        true_block = block(
+            10,
+            MenaiCFGBuiltinInstr(result=vuse, op="list-prepend", args=[v("other"), vphi]),
+            terminator=MenaiCFGReturnTerm(value=vuse),
+            label="true",
+        )
+        false_block = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="false")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vs1, value=MenaiString("s1")), label="B")
+        block_c = block(3, MenaiCFGConstInstr(result=vs2, value=MenaiString("s2")), label="C")
+
+        join = block(
+            4,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vs1, block_b), (vs2, block_c)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+        block_c.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, block_c, join, true_block, false_block)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert changed
+
+        # String arms → false_block (safe).
+        b_new = next(b for b in new_f.blocks if b.id == 2)
+        assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
+        assert b_new.terminator.target.id == false_block.id
+
+        c_new = next(b for b in new_f.blocks if b.id == 3)
+        assert isinstance(c_new.terminator, MenaiCFGJumpTerm)
+        assert c_new.terminator.target.id == false_block.id
+
+        # #none arm stays in phi.
+        a_new = next(b for b in new_f.blocks if b.id == 1)
+        assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
+        assert a_new.terminator.target.id == join.id
+
+        # Join block: phi has only the #none arm, predicate and branch
+        # replaced with a direct jump to true_block.
+        join_new = next(b for b in new_f.blocks if b.id == 4)
+        phi_new = next(i for i in join_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        assert len(phi_new.incoming) == 1
+        assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
+        assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
+        assert join_new.terminator.target.id == true_block.id
+
+
+class TestPredicateBranchNonQualifying:
+    """Blocks that do not qualify for the predicate-branch optimization."""
+
+    def test_non_predicate_builtin_not_optimized(self):
+        """
+        A phi feeding a non-type-predicate builtin (e.g. string-length)
+        should not be optimized by the predicate-branch path.
+        """
+        vstr = v("str"); vphi = v("phi"); vpred = v("pred")
+
+        body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
+        exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vstr, value=MenaiString("a")), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=v("b"), value=MenaiString("b")), label="B")
+
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vstr, block_a), (v("b"), block_b)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="string-length", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, body, exit_)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert not changed
+        assert new_f is f
+
+    def test_phi_not_first_instruction_not_optimized(self):
+        """
+        A block where the phi is not the first instruction (e.g. a guard
+        before the phi) should not qualify.
+        """
+        vnone = v("none"); vstr = v("str"); vphi = v("phi"); vpred = v("pred")
+
+        body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
+        exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), label="B")
+
+        from menai.cfg.menai_cfg import MenaiCFGGuardInstr
+        join = block(
+            3,
+            MenaiCFGGuardInstr(value=vphi, expected_type="string"),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vstr, block_b)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, body, exit_)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert not changed
+        assert new_f is f
+
+
+class TestPredicateBranchEndToEnd:
+    """End-to-end tests compiling real Menai source through the full pipeline."""
+
+    def _compile_cfg(self, source: str, passes):
+        from menai.ast.menai_lexer import MenaiLexer
+        from menai.ast.menai_ast_builder import MenaiASTBuilder
+        from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
+        from menai.ast.menai_ast_module_resolver import MenaiASTModuleResolver
+        from menai.ast.menai_ast_desugarer import MenaiASTDesugarer
+        from menai.ast.menai_ast_constant_folder import MenaiASTConstantFolder
+        from menai.ir.menai_ir_builder import MenaiIRBuilder
+        from menai.ir.menai_ir_optimizer import MenaiIROptimizer
+        from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
+
+        tokens = MenaiLexer().lex(source)
+        ast = MenaiASTBuilder().build(tokens, source, "")
+        ast = MenaiASTSemanticAnalyzer().analyze(ast, source)
+        ast = MenaiASTModuleResolver(None).resolve(ast)
+        ast = MenaiASTDesugarer().desugar(ast)
+        ast = MenaiASTConstantFolder().optimize(ast)
+        ir = MenaiIRBuilder().build(ast)
+        ir, _ = MenaiIROptimizer().optimize(ir)
+        cfg = MenaiCFGBuilder().build(ir)
+
+        changed = True
+        while changed:
+            changed = False
+            for p in passes:
+                cfg, c = p.optimize(cfg)
+                changed = changed or c
+        return cfg
+
+    def _find_func(self, cfg, name):
+        for b in cfg.blocks:
+            for instr in b.instrs:
+                if isinstance(instr, MenaiCFGMakeClosureInstr):
+                    if instr.function.binding_name == name:
+                        return instr.function
+                    found = self._find_func(instr.function, name)
+                    if found:
+                        return found
+        return None
+
+    def _all_funcs(self, cfg):
+        """Return all MenaiCFGFunctions in the closure tree."""
+        result = []
+        for b in cfg.blocks:
+            for instr in b.instrs:
+                if isinstance(instr, MenaiCFGMakeClosureInstr):
+                    result.append(instr.function)
+                    result.extend(self._all_funcs(instr.function))
+        return result
+
+    MATCH_NONE = r"""
+    (letrec ((parse-esc
+              (lambda (s)
+                (let ((unescaped
+                       (match s
+                         ("\"" "\"") ("\\" "\\") ("/" "/")
+                         ("n" "\n") ("r" "\r") ("t" "\t")
+                         (_ #none))))
+                  (if (none? unescaped)
+                      "none"
+                      unescaped)))))
+      parse-esc)
+    """
+
+    def test_match_none_predicate_eliminated(self):
+        """
+        (match s (... (_ #none))) followed by (if (none? unescaped) ...)
+        should eliminate the none? runtime check.
+
+        The matched string arms produce known strings; none? on them is
+        statically False, so they jump directly to the false branch.
+        The #none wildcard arm produces #none; none? on that is statically
+        True, so it jumps directly to the true branch.
+        The none? builtin should be eliminated entirely.
+        """
+        passes = [
+            MenaiCFGCollapsePhiChains(),
+            MenaiCFGBranchConstProp(),
+            MenaiCFGSimplifyBlocks(),
+        ]
+
+        cfg = self._compile_cfg(self.MATCH_NONE, passes)
+        all_funcs = self._all_funcs(cfg)
+        assert len(all_funcs) > 0, "should have at least one function"
+
+        # No none? builtins should remain in the function.
+        # The match+none? pattern should be optimized in all functions.
+        assert not any(
+            isinstance(i, MenaiCFGBuiltinInstr) and i.op == 'none?'
+            for f in all_funcs
+            for b in f.blocks
+            for i in b.instrs
+        ), "none? should be eliminated by predicate-branch optimization"
+
+    def test_match_none_correct_results(self):
+        """The match+none? pattern must produce correct results."""
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate(r"""
+        (letrec ((parse-esc
+                  (lambda (s)
+                    (let ((unescaped
+                           (match s
+                             ("\"" "\"") ("\\" "\\") ("/" "/")
+                             ("n" "\n") ("r" "\r") ("t" "\t")
+                             (_ #none))))
+                      (if (none? unescaped)
+                          "none"
+                          unescaped)))))
+          (list
+            (parse-esc "\\")
+            (parse-esc "n")
+            (parse-esc "t")
+            (parse-esc "x")))
+        """)
+        assert result == ["\\", "\n", "\t", "none"]
