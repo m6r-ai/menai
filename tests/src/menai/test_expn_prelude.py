@@ -7,7 +7,7 @@ exercised when:
   1. The function is passed as a first-class value (e.g. to apply/map/fold).
   2. The function is called with more than 2 arguments (variadic fold path).
 
-A naming bug in _PRELUDE_SOURCE caused the lambdas to be registered under
+A naming bug in the prelude source caused the lambdas to be registered under
 'float-expt' / 'complex-expt' instead of 'float-expn' / 'complex-expn',
 making the variadic/first-class paths fail at runtime.  These tests pin the
 correct behaviour so the bug is visible before the fix and passes after it.

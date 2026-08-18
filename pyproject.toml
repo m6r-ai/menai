@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "menai"
-version = "0.1.1"
+version = "0.2.0"
 description = "The Menai programming language"
 readme = "README.md"
 license = "Apache-2.0"
@@ -39,6 +39,9 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+menai = ["*.menai", "py.typed"]
 
 [tool.coverage.run]
 source = ["src"]

@@ -153,7 +153,7 @@ class TestPreludeInlining:
         from menai.menai_compiler import MenaiCompiler
 
         compiler = MenaiCompiler()
-        prelude_ir = compiler.compile_to_ir(Menai._PRELUDE_SOURCE, name="<prelude>")
+        prelude_ir = compiler.compile_to_ir(Menai._load_prelude_source(), name="<prelude>")
         return MenaiCompiler._extract_prelude_lambdas(prelude_ir)
 
     def test_map_list_inlined(self, prelude_lambdas):
