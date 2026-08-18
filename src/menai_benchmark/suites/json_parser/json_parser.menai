@@ -51,9 +51,9 @@
                          (if (string=? ch "\"")
                              (let ((final-chunks
                                     (if (integer<? run-start i)
-                                        (list-append chunks (string-slice s run-start i))
+                                        (list-prepend chunks (string-slice s run-start i))
                                         chunks)))
-                               (list (list->string final-chunks) (integer+ i 1)))
+                               (list (list->string (list-reverse final-chunks)) (integer+ i 1)))
                              (if (string=? ch "\\")
                                  (if (integer>=? (integer+ i 1) len)
                                      (error "Unterminated escape sequence")
