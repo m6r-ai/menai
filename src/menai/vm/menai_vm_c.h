@@ -582,7 +582,7 @@ menai_value_release(MenaiVMState *vs, MenaiValue *val)
  *
  * Used to precompute hashes for global name strings stored in
  * MenaiCodeObject name_hashes, and to hash entries when building
- * GlobalsTable slots.  Returns a value in [0, PY_SSIZE_T_MAX]; never -1.
+ * GlobalsTable slots.  Returns a value in [0, PTRDIFF_MAX]; never -1.
  */
 static inline hash_t
 menai_name_str_hash(const char *s)
@@ -776,7 +776,7 @@ menai_complex_hash(MenaiComplex *c)
     hash_t hr = menai_hash_double(c->real);
     hash_t hi = menai_hash_double(c->imag);
     uhash_t acc = (uhash_t)hr * 1000003UL ^ (uhash_t)hi;
-    hash_t h = (hash_t)(acc & (uhash_t)SSIZE_MAX);
+    hash_t h = (hash_t)(acc & (uhash_t)PTRDIFF_MAX);
     return h == -1 ? -2 : h;
 }
 
