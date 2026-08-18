@@ -10,8 +10,35 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
 #include "menai_vm_c.h"
 #include "menai_vm_atomic.h"
+
+/*
+ * Portable monotonic timer returning elapsed nanoseconds.
+ */
+static uint64_t
+perf_counter_ns(void)
+{
+#if defined(_WIN32)
+    static LARGE_INTEGER freq = {0};
+    LARGE_INTEGER counter;
+    if (freq.QuadPart == 0) {
+        QueryPerformanceFrequency(&freq);
+    }
+    QueryPerformanceCounter(&counter);
+    return (uint64_t)((counter.QuadPart * 1000000000ULL) / freq.QuadPart);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+#endif
+}
 
 static MenaiValue *slow_value_to_menai_value(MenaiVMState *vs, PyObject *src);
 static PyObject *menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val);
@@ -1628,15 +1655,15 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     /* Clear any stale cancellation from a previous call. */
     vs->_cancel_flag = 0;
 
-    PyTime_t _t0, _t1;
+    uint64_t _t0, _t1;
 
-    PyTime_PerfCounter(&_t0);
+    _t0 = perf_counter_ns();
     MenaiCodeObject *native_code = menai_code_object_from_python(vs, code);
     if (!native_code) {
         return NULL;
     }
 
-    PyTime_PerfCounter(&_t1);
+    _t1 = perf_counter_ns();
     vs->_convert_time_ns = (uint64_t)(_t1 - _t0);
 
     GlobalsTable extra_globals;
@@ -1661,14 +1688,14 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     MenaiVMError vm_err;
     MenaiValue *result;
 
-    PyTime_PerfCounter(&_t0);
+    _t0 = perf_counter_ns();
     Py_BEGIN_ALLOW_THREADS
     result = menai_vm_execute_native(vs, native_code, has_extra ? &extra_globals : NULL, &vm_err);
     Py_END_ALLOW_THREADS
-    PyTime_PerfCounter(&_t1);
+    _t1 = perf_counter_ns();
     vs->_execute_time_ns = (uint64_t)(_t1 - _t0);
 
-    PyTime_PerfCounter(&_t0);
+    _t0 = perf_counter_ns();
 
     menai_code_object_release(vs, native_code);
     if (has_extra) {
@@ -1684,7 +1711,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     }
 
     PyObject *slow = menai_value_to_slow_value(vs, result);
-    PyTime_PerfCounter(&_t1);
+    _t1 = perf_counter_ns();
     vs->_convert_time_ns += (uint64_t)(_t1 - _t0);
 
     menai_value_release(vs, result);
