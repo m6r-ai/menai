@@ -29,8 +29,13 @@ non-obvious invariant to record that cannot be expressed in the code itself.
 - Language semantics: use the AI tool description (available via the `help` tool).
   Do not rely on README.md for semantics. Do NOT assume that because it looks a bit like
   Scheme or Lisp that it's actually the same.
-- Language manual: `docs/` contains the human-readable language reference. It is
-  AI-maintained and kept in sync with the tool description.
+- AI-facing language reference: `src/menai/menai_help.py` is the canonical source of the
+  text shown to AI agents via the `help` tool (exposed as `menai.get_help()`). The Menai
+  AI tool (e.g. Humbug's `menai_ai_tool.py`) fetches this text rather than maintaining its
+  own copy, so the help can never drift out of sync with the language. When you add a
+  language feature, update `menai_help.py` so the AI-facing reference stays accurate.
+- Human-readable language manual: `docs/` is the manual for human readers. It is
+  AI-maintained and kept consistent with `menai_help.py`.
 - Individual passes: each source file has a module-level docstring that describes
   what that pass does, its invariants, and its position in the pipeline.
 

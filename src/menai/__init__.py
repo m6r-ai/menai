@@ -28,6 +28,9 @@ from menai.ast.menai_token import MenaiToken, MenaiTokenType
 from menai.ast.menai_lexer import MenaiLexer
 from menai.ast.menai_ast_builder import MenaiASTBuilder
 
+# AI-facing language reference
+from menai.menai_help import get_help
+
 __all__ = [
     # Main API
     "Menai",
@@ -49,4 +52,7 @@ __all__ = [
 
     # Lower-level components
     "MenaiToken", "MenaiTokenType", "MenaiLexer", "MenaiASTBuilder",
+
+    # AI-facing language reference
+    "get_help",
 ]
