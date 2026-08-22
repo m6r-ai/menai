@@ -41,6 +41,7 @@ class Menai:
         """Load the prelude source from the bundled prelude.menai file."""
         if cls._prelude_source is None:
             cls._prelude_source = (files("menai") / "prelude.menai").read_text()
+
         return cls._prelude_source
 
     _prelude_source: str | None = None
