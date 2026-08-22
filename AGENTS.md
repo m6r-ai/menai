@@ -175,8 +175,7 @@ There are two categories of builtin that must not be confused:
   corresponding opcode in `BUILTIN_OPCODE_MAP`. Adding a name here without an opcode
   will cause an assertion failure at startup.
 - Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
-  as Menai lambdas in `_PRELUDE_SOURCE` in `menai.py`. They MUST NOT be added to
-  `BUILTIN_OPCODE_ARITIES`.
+  as Menai lambdas in `prelude.menai`. They MUST NOT be added to `BUILTIN_OPCODE_ARITIES`.
 
 ### The C VM has no process-global mutable state
 
