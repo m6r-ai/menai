@@ -1,5 +1,11 @@
 # Change log for Menai
 
+## v0.3.0 (2026-08-xx)
+
+New features:
+
+- Added more floating point operations.
+
 ## v0.2.0 (2026-08-10)
 
 New features:
