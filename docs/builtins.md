@@ -155,6 +155,8 @@ outside 0–0x10FFFF.
 | `(float-expn base exp)` | Exponentiation: `(float-expn 2.0 10.0)` → 1024.0 |
 | `(float-min a b)` | Minimum |
 | `(float-max a b)` | Maximum |
+| `(float-copysign a b)` | Magnitude of `a` with the sign of `b` |
+| `(float-hypot a b)` | `sqrt(a²+b²)` without intermediate overflow/underflow |
 
 ### Rounding
 
@@ -163,6 +165,7 @@ outside 0–0x10FFFF.
 | `(float-floor x)` | Floor → float |
 | `(float-ceil x)` | Ceiling → float |
 | `(float-round x)` | Round → float |
+| `(float-trunc x)` | Truncate toward zero → float |
 
 All rounding functions return `float`, not `integer`. Use
 `(float->integer (float-round x))` to get an integer.
@@ -172,14 +175,25 @@ All rounding functions return `float`, not `integer`. Use
 | Function | Description |
 |----------|-------------|
 | `(float-exp x)` | e^x |
+| `(float-exp2 x)` | 2^x |
+| `(float-expm1 x)` | e^x − 1 (numerically stable for small x) |
 | `(float-log x)` | Natural log; negative arg is error; 0.0 → -inf |
 | `(float-log2 x)` | Log base 2 (correctly rounded) |
 | `(float-log10 x)` | Log base 10 |
 | `(float-logn x base)` | Log base n; base must be positive and ≠ 1 |
+| `(float-log1p x)` | log(1+x), numerically stable for small x; x < -1 is error; -1.0 → -inf |
 | `(float-sqrt x)` | Square root; negative arg is error (use `complex-sqrt`) |
+| `(float-cbrt x)` | Cube root (works for negative x) |
 | `(float-sin x)` | Sine |
 | `(float-cos x)` | Cosine |
 | `(float-tan x)` | Tangent |
+| `(float-asin x)` | Inverse sine; arg must be in [-1, 1] |
+| `(float-acos x)` | Inverse cosine; arg must be in [-1, 1] |
+| `(float-atan x)` | Inverse tangent |
+| `(float-atan2 y x)` | Four-quadrant inverse tangent of y/x |
+| `(float-sinh x)` | Hyperbolic sine |
+| `(float-cosh x)` | Hyperbolic cosine |
+| `(float-tanh x)` | Hyperbolic tangent |
 
 ### Conversions
 

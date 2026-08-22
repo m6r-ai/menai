@@ -272,6 +272,20 @@ _menai_mul_overflow(long a, long b, long *r) {
 #define OP_FLOAT_ROUND 190
 #define OP_FLOAT_MIN 191
 #define OP_FLOAT_MAX 192
+#define OP_FLOAT_ATAN2 193
+#define OP_FLOAT_COSH 194
+#define OP_FLOAT_SINH 195
+#define OP_FLOAT_TANH 196
+#define OP_FLOAT_ASIN 197
+#define OP_FLOAT_ACOS 198
+#define OP_FLOAT_ATAN 199
+#define OP_FLOAT_HYPOT 221
+#define OP_FLOAT_EXP2 222
+#define OP_FLOAT_CBRT 223
+#define OP_FLOAT_EXPM1 224
+#define OP_FLOAT_LOG1P 225
+#define OP_FLOAT_TRUNC 226
+#define OP_FLOAT_COPYSIGN 227
 #define OP_COMPLEX_P 200
 #define OP_COMPLEX_EQ_P 201
 #define OP_COMPLEX_NEQ_P 202
@@ -2954,6 +2968,198 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             double av = a->value;
             double bv = b->value;
             MenaiFloat *r = alloc_menai_float(vs, av >= bv ? av : bv);
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_ATAN2: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            MenaiFloat *r = alloc_menai_float(vs, atan2(a->value, b->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_COSH: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, cosh(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_SINH: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, sinh(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_TANH: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, tanh(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_ASIN: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            double v = a->value;
+            if (v < -1.0 || v > 1.0) {
+                vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE;
+                goto error;
+            }
+
+            MenaiFloat *r = alloc_menai_float(vs, asin(v));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_ACOS: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            double v = a->value;
+            if (v < -1.0 || v > 1.0) {
+                vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE;
+                goto error;
+            }
+
+            MenaiFloat *r = alloc_menai_float(vs, acos(v));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_ATAN: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, atan(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_HYPOT: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            MenaiFloat *r = alloc_menai_float(vs, hypot(a->value, b->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_EXP2: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, exp2(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_CBRT: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, cbrt(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_EXPM1: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, expm1(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_LOG1P: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            double v = a->value;
+            if (v < -1.0) {
+                vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
+                goto error;
+            }
+
+            MenaiFloat *r = alloc_menai_float(vs, v == -1.0 ? -INFINITY : log1p(v));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_TRUNC: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            MenaiFloat *r = alloc_menai_float(vs, trunc(a->value));
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_FLOAT_COPYSIGN: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiFloat *a = (MenaiFloat *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiFloat *b = (MenaiFloat *)frame_regs[src1];
+            MenaiFloat *r = alloc_menai_float(vs, copysign(a->value, b->value));
             if (r == NULL) {
                 goto error;
             }

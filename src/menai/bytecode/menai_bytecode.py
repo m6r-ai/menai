@@ -157,6 +157,23 @@ class Opcode(IntEnum):
     FLOAT_ROUND = _op(190, 1)           # r_dest = (float-round r_src0)
     FLOAT_MIN = _op(191, 2)             # r_dest = (float-min r_src0 r_src1)
     FLOAT_MAX = _op(192, 2)             # r_dest = (float-max r_src0 r_src1)
+    FLOAT_ATAN2 = _op(193, 2)           # r_dest = (float-atan2 r_src0 r_src1)
+    FLOAT_COSH = _op(194, 1)            # r_dest = (float-cosh r_src0)
+    FLOAT_SINH = _op(195, 1)            # r_dest = (float-sinh r_src0)
+    FLOAT_TANH = _op(196, 1)            # r_dest = (float-tanh r_src0)
+    FLOAT_ASIN = _op(197, 1)            # r_dest = (float-asin r_src0)
+    FLOAT_ACOS = _op(198, 1)            # r_dest = (float-acos r_src0)
+    FLOAT_ATAN = _op(199, 1)            # r_dest = (float-atan r_src0)
+
+    # Continuation of the float block (see note above complex operations).
+    # These occupy the gap 221-227 between the complex and string blocks.
+    FLOAT_HYPOT = _op(221, 2)           # r_dest = (float-hypot r_src0 r_src1)
+    FLOAT_EXP2 = _op(222, 1)            # r_dest = (float-exp2 r_src0)
+    FLOAT_CBRT = _op(223, 1)            # r_dest = (float-cbrt r_src0)
+    FLOAT_EXPM1 = _op(224, 1)           # r_dest = (float-expm1 r_src0)
+    FLOAT_LOG1P = _op(225, 1)           # r_dest = (float-log1p r_src0)
+    FLOAT_TRUNC = _op(226, 1)           # r_dest = (float-trunc r_src0)
+    FLOAT_COPYSIGN = _op(227, 2)        # r_dest = (float-copysign r_src0 r_src1)
 
     # Complex operations
     COMPLEX_P = _op(200, 1)             # r_dest = (complex? r_src0)
@@ -459,6 +476,20 @@ BUILTIN_OPCODE_MAP: dict[str, tuple[Opcode, int]] = {
     'float-round': (Opcode.FLOAT_ROUND, 1),
     'float-min': (Opcode.FLOAT_MIN, 2),
     'float-max': (Opcode.FLOAT_MAX, 2),
+    'float-atan2': (Opcode.FLOAT_ATAN2, 2),
+    'float-cosh': (Opcode.FLOAT_COSH, 1),
+    'float-sinh': (Opcode.FLOAT_SINH, 1),
+    'float-tanh': (Opcode.FLOAT_TANH, 1),
+    'float-asin': (Opcode.FLOAT_ASIN, 1),
+    'float-acos': (Opcode.FLOAT_ACOS, 1),
+    'float-atan': (Opcode.FLOAT_ATAN, 1),
+    'float-hypot': (Opcode.FLOAT_HYPOT, 2),
+    'float-exp2': (Opcode.FLOAT_EXP2, 1),
+    'float-cbrt': (Opcode.FLOAT_CBRT, 1),
+    'float-expm1': (Opcode.FLOAT_EXPM1, 1),
+    'float-log1p': (Opcode.FLOAT_LOG1P, 1),
+    'float-trunc': (Opcode.FLOAT_TRUNC, 1),
+    'float-copysign': (Opcode.FLOAT_COPYSIGN, 2),
     'complex?': (Opcode.COMPLEX_P, 1),
     'complex=?': (Opcode.COMPLEX_EQ_P, 2),
     'complex!=?': (Opcode.COMPLEX_NEQ_P, 2),

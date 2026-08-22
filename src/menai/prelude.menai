@@ -369,6 +369,20 @@
                                    acc
                                    (loop ($list-rest lst) ($float-max acc ($list-first lst)))))))
                       (loop ($list-rest args) ($list-first args))))))
+   (float-atan2 (lambda (y x) ($float-atan2 y x)))
+   (float-cosh (lambda (a) ($float-cosh a)))
+   (float-sinh (lambda (a) ($float-sinh a)))
+   (float-tanh (lambda (a) ($float-tanh a)))
+   (float-asin (lambda (a) ($float-asin a)))
+   (float-acos (lambda (a) ($float-acos a)))
+   (float-atan (lambda (a) ($float-atan a)))
+   (float-hypot (lambda (a b) ($float-hypot a b)))
+   (float-exp2 (lambda (a) ($float-exp2 a)))
+   (float-cbrt (lambda (a) ($float-cbrt a)))
+   (float-expm1 (lambda (a) ($float-expm1 a)))
+   (float-log1p (lambda (a) ($float-log1p a)))
+   (float-trunc (lambda (a) ($float-trunc a)))
+   (float-copysign (lambda (a b) ($float-copysign a b)))
    (complex? (lambda (x) ($complex? x)))
    (complex=? (lambda (. args)
                 (if ($integer<? ($list-length args) 2)
@@ -1132,6 +1146,20 @@
         "float-round" float-round
         "float-min" float-min
         "float-max" float-max
+        "float-atan2" float-atan2
+        "float-cosh" float-cosh
+        "float-sinh" float-sinh
+        "float-tanh" float-tanh
+        "float-asin" float-asin
+        "float-acos" float-acos
+        "float-atan" float-atan
+        "float-hypot" float-hypot
+        "float-exp2" float-exp2
+        "float-cbrt" float-cbrt
+        "float-expm1" float-expm1
+        "float-log1p" float-log1p
+        "float-trunc" float-trunc
+        "float-copysign" float-copysign
         "complex?" complex?
         "complex=?" complex=?
         "complex!=?" complex!=?

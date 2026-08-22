@@ -90,6 +90,20 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$float-round',
         '$float-min',
         '$float-max',
+        '$float-atan2',
+        '$float-cosh',
+        '$float-sinh',
+        '$float-tanh',
+        '$float-asin',
+        '$float-acos',
+        '$float-atan',
+        '$float-hypot',
+        '$float-exp2',
+        '$float-cbrt',
+        '$float-expm1',
+        '$float-log1p',
+        '$float-trunc',
+        '$float-copysign',
         '$float->complex',
         '$complex=?',
         '$complex!=?',
@@ -193,6 +207,20 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$float-round': self._fold_float_round,
             '$float-min': self._fold_float_min,
             '$float-max': self._fold_float_max,
+            '$float-atan2': self._fold_float_atan2,
+            '$float-cosh': self._fold_float_cosh,
+            '$float-sinh': self._fold_float_sinh,
+            '$float-tanh': self._fold_float_tanh,
+            '$float-asin': self._fold_float_asin,
+            '$float-acos': self._fold_float_acos,
+            '$float-atan': self._fold_float_atan,
+            '$float-hypot': self._fold_float_hypot,
+            '$float-exp2': self._fold_float_exp2,
+            '$float-cbrt': self._fold_float_cbrt,
+            '$float-expm1': self._fold_float_expm1,
+            '$float-log1p': self._fold_float_log1p,
+            '$float-trunc': self._fold_float_trunc,
+            '$float-copysign': self._fold_float_copysign,
             '$float->complex': self._fold_float_to_complex,
             '$complex=?': self._fold_complex_eq,
             '$complex!=?': self._fold_complex_neq,
@@ -1301,6 +1329,119 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             return None
 
         return MenaiASTFloat(args[0].value if args[0].value >= args[1].value else args[1].value)
+
+    def _fold_float_atan2(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-atan2: (float-atan2 y x) -> float"""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.atan2(args[0].value, args[1].value))
+
+    def _fold_float_cosh(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-cosh: arg must be float, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.cosh(args[0].value))
+
+    def _fold_float_sinh(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-sinh: arg must be float, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.sinh(args[0].value))
+
+    def _fold_float_tanh(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-tanh: arg must be float, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.tanh(args[0].value))
+
+    def _fold_float_asin(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-asin: arg must be float in [-1, 1], returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        val = args[0].value
+        if val < -1.0 or val > 1.0:
+            return None
+
+        return MenaiASTFloat(math.asin(val))
+
+    def _fold_float_acos(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-acos: arg must be float in [-1, 1], returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        val = args[0].value
+        if val < -1.0 or val > 1.0:
+            return None
+
+        return MenaiASTFloat(math.acos(val))
+
+    def _fold_float_atan(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-atan: arg must be float, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.atan(args[0].value))
+
+    def _fold_float_hypot(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-hypot: (float-hypot a b) -> float."""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.hypot(args[0].value, args[1].value))
+
+    def _fold_float_exp2(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-exp2: arg must be float, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.exp2(args[0].value))
+
+    def _fold_float_cbrt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-cbrt: arg must be float, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.cbrt(args[0].value))
+
+    def _fold_float_expm1(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-expm1: arg must be float, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.expm1(args[0].value))
+
+    def _fold_float_log1p(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-log1p: arg must be float > -1, returns float."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        val = args[0].value
+        if val < -1.0:
+            return None
+
+        if val == -1.0:
+            return MenaiASTFloat(float('-inf'))
+
+        return MenaiASTFloat(math.log1p(val))
+
+    def _fold_float_trunc(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-trunc: arg must be float, returns float (truncated toward zero)."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(float(math.trunc(args[0].value)))
+
+    def _fold_float_copysign(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-copysign: (float-copysign a b) -> a with b's sign."""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTFloat):
+            return None
+
+        return MenaiASTFloat(math.copysign(args[0].value, args[1].value))
 
     def _fold_string_to_bytes(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
         """Fold string->bytes: arg must be a string, returns bytes (UTF-8 encoded)."""
