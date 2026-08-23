@@ -3,6 +3,7 @@
 import pytest
 
 from menai import Menai, MenaiEvalError, VMErrorCode
+from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
 
 
 class TestStrings:
@@ -418,6 +419,62 @@ class TestStrings:
     ])
     def test_string_to_float(self, menai, expression, expected):
         """Test string->float conversion."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression,expected", [
+        ('(let ((s "ff") (r 16)) ($string->integer s r))', '255'),
+        ('(let ((s "1010") (r 2)) ($string->integer s r))', '10'),
+        ('(let ((s "377") (r 8)) ($string->integer s r))', '255'),
+        ('(let ((s "42") (r 10)) ($string->integer s r))', '42'),
+        ('(let ((s "-5") (r 10)) ($string->integer s r))', '-5'),
+        ('(let ((s "  42  ") (r 10)) ($string->integer s r))', '42'),
+        ('(let ((s "xyz") (r 10)) ($string->integer s r))', '#none'),
+        ('(let ((s "0xff") (r 16)) ($string->integer s r))', '#none'),
+        ('(let ((s "") (r 10)) ($string->integer s r))', '#none'),
+    ])
+    def test_string_to_integer_runtime(self, menai, expression, expected):
+        """Test the $string->integer opcode directly (not constant-folded)."""
+        code = menai.compile(expression)
+        ops = [unpack_instruction(w).opcode for w in code.instructions]
+        assert Opcode.STRING_TO_INTEGER in ops, \
+            f"Expected STRING_TO_INTEGER in bytecode for {expression!r}"
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression,expected", [
+        ('(let ((s "3.14")) ($string->float s))', '3.14'),
+        ('(let ((s "-5.5")) ($string->float s))', '-5.5'),
+        ('(let ((s "0")) ($string->float s))', '0.0'),
+        ('(let ((s "1e2")) ($string->float s))', '100.0'),
+        ('(let ((s "  42  ")) ($string->float s))', '42.0'),
+        ('(let ((s "hello")) ($string->float s))', '#none'),
+        ('(let ((s "")) ($string->float s))', '#none'),
+        ('(let ((s "1+2j")) ($string->float s))', '#none'),
+        ('(let ((s "12.34.56")) ($string->float s))', '#none'),
+    ])
+    def test_string_to_float_runtime(self, menai, expression, expected):
+        """Test the $string->float opcode directly (not constant-folded)."""
+        code = menai.compile(expression)
+        ops = [unpack_instruction(w).opcode for w in code.instructions]
+        assert Opcode.STRING_TO_FLOAT in ops, \
+            f"Expected STRING_TO_FLOAT in bytecode for {expression!r}"
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression,expected", [
+        ('(let ((s "1+2j")) ($string->complex s))', '1+2j'),
+        ('(let ((s "3j")) ($string->complex s))', '3j'),
+        ('(let ((s "2.5-0.5j")) ($string->complex s))', '2.5-0.5j'),
+        ('(let ((s " 1+2j ")) ($string->complex s))', '1+2j'),
+        ('(let ((s "1.5")) ($string->complex s))', '1.5+0j'),
+        ('(let ((s "hello")) ($string->complex s))', '#none'),
+        ('(let ((s "")) ($string->complex s))', '#none'),
+        ('(let ((s "junk+2j")) ($string->complex s))', '#none'),
+    ])
+    def test_string_to_complex_runtime(self, menai, expression, expected):
+        """Test the $string->complex opcode directly (not constant-folded)."""
+        code = menai.compile(expression)
+        ops = [unpack_instruction(w).opcode for w in code.instructions]
+        assert Opcode.STRING_TO_COMPLEX in ops, \
+            f"Expected STRING_TO_COMPLEX in bytecode for {expression!r}"
         assert menai.evaluate_and_format(expression) == expected
 
     def test_string_to_float_type_error(self, menai):

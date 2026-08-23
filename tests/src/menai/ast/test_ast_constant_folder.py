@@ -142,6 +142,46 @@ class TestConstantFolding:
         assert menai.evaluate('(string->integer "0xff" 16)') is None
         _assert_folded_to_constant(menai, '(string->integer "0xff" 16)')
 
+    def test_string_to_float(self, menai):
+        assert menai.evaluate('(string->float "3.14")') == 3.14
+        _assert_folded_to_constant(menai, '(string->float "3.14")')
+
+    def test_string_to_float_scientific(self, menai):
+        assert menai.evaluate('(string->float "1e2")') == 100.0
+        _assert_folded_to_constant(menai, '(string->float "1e2")')
+
+    def test_string_to_float_negative(self, menai):
+        assert menai.evaluate('(string->float "-5.5")') == -5.5
+        _assert_folded_to_constant(menai, '(string->float "-5.5")')
+
+    def test_string_to_float_trimmed(self, menai):
+        assert menai.evaluate('(string->float "  42  ")') == 42.0
+        _assert_folded_to_constant(menai, '(string->float "  42  ")')
+
+    def test_string_to_float_invalid(self, menai):
+        assert menai.evaluate('(string->float "hello")') is None
+        _assert_folded_to_constant(menai, '(string->float "hello")')
+
+    def test_string_to_complex(self, menai):
+        assert menai.evaluate('(string->complex "1+2j")') == (1 + 2j)
+        _assert_folded_to_constant(menai, '(string->complex "1+2j")')
+
+    def test_string_to_complex_pure_imaginary(self, menai):
+        assert menai.evaluate('(string->complex "3j")') == 3j
+        _assert_folded_to_constant(menai, '(string->complex "3j")')
+
+    def test_string_to_complex_bare_j(self, menai):
+        assert menai.evaluate('(string->complex "j")') == 1j
+        _assert_folded_to_constant(menai, '(string->complex "j")')
+
+    def test_string_to_complex_real_only(self, menai):
+        assert menai.evaluate('(string->complex "1.5")') == (1.5 + 0j)
+        _assert_folded_to_constant(menai, '(string->complex "1.5")')
+
+    def test_string_to_complex_invalid(self, menai):
+        assert menai.evaluate('(string->complex "hello")') is None
+        _assert_folded_to_constant(menai, '(string->complex "hello")')
+
     def test_string_upcase(self, menai):
         assert menai.evaluate('(string-upcase "hello")') == "HELLO"
         _assert_folded_to_constant(menai, '(string-upcase "hello")')

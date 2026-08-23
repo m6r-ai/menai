@@ -140,6 +140,8 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$string-index',
         '$string-replace',
         '$string->integer',
+        '$string->float',
+        '$string->complex',
         '$string->bytes',
         '$string-hex->bytes',
         '$string-upcase',
@@ -257,6 +259,8 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$string-index': self._fold_string_index,
             '$string-replace': self._fold_string_replace,
             '$string->integer': self._fold_string_to_integer,
+            '$string->float': self._fold_string_to_float,
+            '$string->complex': self._fold_string_to_complex,
             '$string->bytes': self._fold_string_to_bytes,
             '$string-hex->bytes': self._fold_string_hex_to_bytes,
             '$string-upcase': self._fold_string_upcase,
@@ -1626,6 +1630,100 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             return MenaiASTNone()
 
         return MenaiASTInteger(sign * int(s, radix))
+
+    def _fold_string_to_float(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """
+        Fold string->float: arg0=string, returns float or #none.
+
+        The C VM trims the string, checks ASCII, then calls strtod.
+        We replicate that: strip, reject non-ASCII, parse with float().
+        """
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        s = args[0].value.strip()
+        if not s or any(ord(c) > 0x7F for c in s):
+            return MenaiASTNone()
+
+        try:
+            result = float(s)
+
+        except ValueError:
+            return MenaiASTNone()
+
+        return MenaiASTFloat(result)
+
+    def _fold_string_to_complex(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """
+        Fold string->complex: arg0=string, returns complex or #none.
+
+        Replicates the C VM's parse_complex_string grammar:
+          complex := float | imag | float imag
+          imag    := sign? coefficient? ('j'|'J')
+        A bare 'j'/'+j'/'-j' with no coefficient means 1j/-1j.
+        """
+        if not isinstance(args[0], MenaiASTString):
+            return None
+
+        s = args[0].value.strip()
+        if not s or any(ord(c) > 0x7F for c in s):
+            return MenaiASTNone()
+
+        try:
+            result = self._parse_complex_literal(s)
+
+        except ValueError:
+            return MenaiASTNone()
+
+        return MenaiASTComplex(result)
+
+    @staticmethod
+    def _parse_complex_literal(s: str) -> complex:
+        """Parse a string matching the C VM's parse_complex_string grammar."""
+        p = 0
+        n = len(s)
+
+        # Try to parse a leading float via Python's float(), which
+        # matches strtod for the cases the C parser accepts.
+        first = 0.0
+        has_first = False
+        for i in range(n, 0, -1):
+            try:
+                first = float(s[:i])
+                p = i
+                has_first = True
+                break
+
+            except ValueError:
+                continue
+
+        if p == n:
+            return complex(first, 0.0)
+
+        if s[p] in 'jJ':
+            if p + 1 != n:
+                raise ValueError()
+
+            imag = first if has_first else 1.0
+            return complex(0.0, imag)
+
+        if s[p] not in '+-':
+            raise ValueError()
+
+        real = first
+
+        # Bare +j or -j (coefficient 1)
+        if p + 2 == n and s[p + 1] in 'jJ':
+            imag = -1.0 if s[p] == '-' else 1.0
+            return complex(real, imag)
+
+        # Parse imaginary coefficient
+        rest = s[p:]
+        coeff = float(rest[:-1])
+        if rest[-1] not in 'jJ':
+            raise ValueError()
+
+        return complex(real, coeff)
 
     def _get_vm_state(self) -> object:
         """Lazily allocate a C VM state for C-backed string folds."""
