@@ -5,6 +5,8 @@
 New features:
 
 - Added more floating point operations.
+- Added `string->float` and `string->complex` operations.
+- Improved performance of `string->integer`.
 
 ## v0.2.0 (2026-08-10)
 

@@ -567,7 +567,16 @@
                    (if ($list-null? rest)
                        ($string-slice str start ($string-length str))
                        ($string-slice str start ($list-first rest)))))
-   (string->number (lambda (s) ($string->number s)))
+   (string->float (lambda (s) ($string->float s)))
+   (string->complex (lambda (s) ($string->complex s)))
+   (string->number (lambda (s)
+                     (let ((n (string->integer s)))
+                       (if (integer? n)
+                           n
+                           (let ((f ($string->float s)))
+                             (if (float? f)
+                                 f
+                                 ($string->complex s)))))))
    (string->integer (lambda (s . rest)
                       (if ($list-null? rest)
                           ($string->integer s 10)
@@ -1201,6 +1210,8 @@
         "string-suffix?" string-suffix?
         "string-ref" string-ref
         "string-slice" string-slice
+        "string->float" string->float
+        "string->complex" string->complex
         "string->number" string->number
         "string->integer" string->integer
         "string->integer-codepoint" string->integer-codepoint

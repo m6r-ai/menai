@@ -368,6 +368,10 @@ class TestStrings:
         ('(string->number "1e2")', '100.0'),
         ('(string->number "1.5e-2")', '0.015'),
 
+        # Surrounding whitespace is accepted (trimmed before parsing)
+        ('(string->number " 42 ")', '42'),
+        ('(string->number "  3.14  ")', '3.14'),
+
         # Complex numbers
         ('(string->number "1+2j")', '1+2j'),
         ('(string->number "3j")', '3j'),
@@ -398,6 +402,49 @@ class TestStrings:
     def test_string_to_number(self, menai, expression, expected):
         """Test string->number conversion."""
         assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression,expected", [
+        ('(string->float "3.14")', '3.14'),
+        ('(string->float "-5.5")', '-5.5'),
+        ('(string->float "0")', '0.0'),
+        ('(string->float "1e2")', '100.0'),
+        ('(string->float "  42  ")', '42.0'),
+
+        # Strings that are not floats return #none
+        ('(string->float "hello")', '#none'),
+        ('(string->float "")', '#none'),
+        ('(string->float "1+2j")', '#none'),
+        ('(string->float "12.34.56")', '#none'),
+    ])
+    def test_string_to_float(self, menai, expression, expected):
+        """Test string->float conversion."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    def test_string_to_float_type_error(self, menai):
+        """Test string->float raises on non-string argument (type error, not parse failure)."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string->float 42)')
+
+    @pytest.mark.parametrize("expression,expected", [
+        ('(string->complex "1+2j")', '1+2j'),
+        ('(string->complex "3j")', '3j'),
+        ('(string->complex "2.5-0.5j")', '2.5-0.5j'),
+        ('(string->complex " 1+2j ")', '1+2j'),
+        ('(string->complex "1.5")', '1.5+0j'),
+
+        # Strings that are not complex numbers return #none
+        ('(string->complex "hello")', '#none'),
+        ('(string->complex "")', '#none'),
+        ('(string->complex "junk+2j")', '#none'),
+    ])
+    def test_string_to_complex(self, menai, expression, expected):
+        """Test string->complex conversion."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    def test_string_to_complex_type_error(self, menai):
+        """Test string->complex raises on non-string argument (type error, not parse failure)."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string->complex 42)')
 
     def test_string_to_number_type_error(self, menai):
         """Test string->number raises on non-string argument (type error, not parse failure)."""

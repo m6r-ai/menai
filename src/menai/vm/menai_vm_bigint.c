@@ -635,40 +635,6 @@ fail:
     return -1;
 }
 
-/*
- * Parse a UTF-32 codepoint array as an integer in the given base.
- * Since all valid digit characters are ASCII, each codepoint is validated
- * against 0x7F before being cast to char and forwarded to menai_bigint_from_string
- * via a temporary UTF-8 buffer.
- */
-int
-menai_bigint_from_codepoints(const uint32_t *data, ssize_t len, int base, MenaiBigInt *a)
-{
-    if (base != 2 && base != 8 && base != 10 && base != 16) {
-        return MENAI_ERR_VALUE;
-    }
-
-    /* Allow a leading sign plus all digit characters — all ASCII. */
-    char *buf = (char *)malloc((size_t)(len + 1));
-    if (!buf) {
-        return MENAI_ERR_NOMEM;
-    }
-
-    for (ssize_t i = 0; i < len; i++) {
-        if (data[i] > 0x7F) {
-            free(buf);
-            return MENAI_ERR_VALUE;
-        }
-
-        buf[i] = (char)data[i];
-    }
-
-    buf[len] = '\0';
-
-    int result = menai_bigint_from_string(buf, base, a);
-    free(buf);
-    return result;
-}
 
 /*
  * Convert trunc(v) to a MenaiInt.  v must be finite.

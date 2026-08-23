@@ -321,7 +321,7 @@ _menai_mul_overflow(long a, long b, long *r) {
 #define OP_STRING_TRIM_LEFT 251
 #define OP_STRING_TRIM_RIGHT 252
 #define OP_STRING_TO_INTEGER 253
-#define OP_STRING_TO_NUMBER 254
+#define OP_STRING_TO_FLOAT 254
 #define OP_STRING_TO_LIST 255
 #define OP_STRING_REF 256
 #define OP_STRING_PREFIX_P 257
@@ -331,6 +331,7 @@ _menai_mul_overflow(long a, long b, long *r) {
 #define OP_STRING_REPLACE 261
 #define OP_STRING_INDEX 262
 #define OP_STRING_TO_INTEGER_CODEPOINT 263
+#define OP_STRING_TO_COMPLEX 264
 #define OP_MAKE_DICT 280
 #define OP_DICT_P 281
 #define OP_DICT_EQ_P 282
@@ -628,6 +629,43 @@ menai_reg_set_borrow(MenaiVMState *vs, MenaiValue **regs, int slot, MenaiValue *
 static inline void bool_store(MenaiVMState *vs, MenaiValue **regs, int slot, int cond)
 {
     menai_reg_set_borrow(vs, regs, slot, cond ? (MenaiValue *)menai_boolean_true(vs) : (MenaiValue *)menai_boolean_false(vs));
+}
+
+/*
+ * trim_to_ascii_buf — trim whitespace from a MenaiString, copy the result
+ * into a caller-provided stack buffer as null-terminated ASCII, and release
+ * the trimmed intermediate.  Returns 1 on success, 0 if the trimmed string
+ * is too long for the buffer or contains a non-ASCII codepoint.  On failure
+ * the trimmed string is still released.
+ */
+static int
+trim_to_ascii_buf(MenaiVMState *vs, MenaiString *s, char *buf, size_t buf_size)
+{
+    MenaiString *trimmed = alloc_menai_string_from_trim(vs, s);
+    if (trimmed == NULL) {
+        return -1;
+    }
+
+    ssize_t len = trimmed->length;
+    int ok = 0;
+    if (len < (ssize_t)buf_size) {
+        ok = 1;
+        for (ssize_t i = 0; i < len; i++) {
+            if (trimmed->data[i] > 0x7F) {
+                ok = 0;
+                break;
+            }
+
+            buf[i] = (char)trimmed->data[i];
+        }
+
+        if (ok) {
+            buf[len] = '\0';
+        }
+    }
+
+    menai_value_release(vs, (MenaiValue *)trimmed);
+    return ok;
 }
 
 /*
@@ -3893,7 +3931,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         }
 
         case OP_STRING_TO_INTEGER: {
-            /* src0=string, src1=radix(integer) */
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
@@ -3914,15 +3951,19 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiString *trimmed = alloc_menai_string_from_trim(vs, a);
-            if (trimmed == NULL) {
+            char buf[64];
+            int ok = trim_to_ascii_buf(vs, a, buf, sizeof(buf));
+            if (ok < 0) {
                 goto error;
+            }
+            if (!ok) {
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
+                break;
             }
 
             MenaiBigInt sti_tmp;
             menai_bigint_init(&sti_tmp);
-            int sti_ok = menai_bigint_from_codepoints(trimmed->data, trimmed->length, (int)radix, &sti_tmp);
-            menai_value_release(vs, (MenaiValue *)trimmed);
+            int sti_ok = menai_bigint_from_string(buf, (int)radix, &sti_tmp);
             if (sti_ok < 0) {
                 menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
             } else {
@@ -3937,86 +3978,62 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             break;
         }
 
-        case OP_STRING_TO_NUMBER: {
+        case OP_STRING_TO_FLOAT: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiString *a = (MenaiString *)frame_regs[src0];
-            ssize_t slen = a->length;
-            const uint32_t *sdata = a->data;
 
-            /*
-             * Copy codepoints to a stack-allocated ASCII buffer.
-             * Any non-ASCII codepoint means the string cannot be a number.
-             * The buffer limit of 64 is generous for any valid numeric literal.
-             */
-            char stn_buf[64];
-            if (slen >= (ssize_t)(sizeof(stn_buf))) {
+            char buf[64];
+            int ok = trim_to_ascii_buf(vs, a, buf, sizeof(buf));
+            if (ok < 0) {
+                goto error;
+            }
+            if (!ok) {
                 menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
                 break;
             }
 
-            int stn_ascii_ok = 1;
-            int stn_has_j = 0;
-            for (ssize_t _i = 0; _i < slen; _i++) {
-                if (sdata[_i] > 0x7F) {
-                    stn_ascii_ok = 0;
-                    break;
-                }
-
-                stn_buf[_i] = (char)sdata[_i];
-                if (sdata[_i] == 'j' || sdata[_i] == 'J') {
-                    stn_has_j = 1;
-                }
-            }
-
-            stn_buf[slen] = '\0';
-
-            if (!stn_ascii_ok) {
+            char *end = NULL;
+            double dv = strtod(buf, &end);
+            if (end == buf || *end != '\0') {
                 menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
                 break;
             }
 
-            /* Try integer first: fast path for the common case. */
-            MenaiBigInt stn_tmp;
-            menai_bigint_init(&stn_tmp);
-            if (menai_bigint_from_codepoints(sdata, slen, 10, &stn_tmp) == 0) {
-                MenaiInteger *r = alloc_menai_integer_from_bigint(vs, stn_tmp);
-                if (r == NULL) {
-                    goto error;
-                }
+            MenaiFloat *r = alloc_menai_float(vs, dv);
+            if (r == NULL) {
+                goto error;
+            }
 
-                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
+            break;
+        }
+
+        case OP_STRING_TO_COMPLEX: {
+            int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+            MenaiString *a = (MenaiString *)frame_regs[src0];
+
+            char buf[64];
+            int ok = trim_to_ascii_buf(vs, a, buf, sizeof(buf));
+            if (ok < 0) {
+                goto error;
+            }
+            if (!ok) {
+                menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
                 break;
             }
 
-            /* Try complex if the string contains 'j' or 'J'. */
-            if (stn_has_j) {
-                double stn_re, stn_im;
-                if (parse_complex_string(stn_buf, &stn_re, &stn_im)) {
-                    MenaiComplex *r = alloc_menai_complex(vs, stn_re, stn_im);
-                    if (r == NULL) {
-                        goto error;
-                    }
-
-                    menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
-                    break;
-                }
-            }
-
-            /* Try float. */
-            char *stn_end = NULL;
-            double stn_dv = strtod(stn_buf, &stn_end);
-            int stn_ok = (stn_end != stn_buf && *stn_end == '\0');
-            if (stn_ok) {
-                MenaiFloat *r = alloc_menai_float(vs, stn_dv);
-                if (r == NULL) {
-                    goto error;
-                }
-
-                menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
-            } else {
+            double re, im;
+            if (!parse_complex_string(buf, &re, &im)) {
                 menai_reg_set_borrow(vs, frame_regs, dest, (MenaiValue *)menai_none(vs));
+                break;
             }
 
+            MenaiComplex *r = alloc_menai_complex(vs, re, im);
+            if (r == NULL) {
+                goto error;
+            }
+
+            menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
             break;
         }
 

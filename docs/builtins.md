@@ -301,6 +301,8 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | Function | Description |
 |----------|-------------|
 | `(string->number s)` | Parse to number (integer, float, or complex); `→ #none` if unparseable |
+| `(string->float s)` | Parse to float; `→ #none` if unparseable |
+| `(string->complex s)` | Parse to complex (e.g. `1+2j`, `3j`); `→ #none` if unparseable |
 | `(string->integer s [radix])` | Parse to integer; radix: 2, 8, 10, 16 (default 10); `→ #none` if unparseable |
 | `(string->list s [delimiter])` | Split into list of strings |
 | `(integer-codepoint->string n)` | (See integer section) |
@@ -311,6 +313,9 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 (string->number "3.14")    → 3.14
 (string->number "1+2j")    → 1+2j
 (string->number "hello")   → #none
+
+(string->float "3.14")     → 3.14
+(string->complex "1+2j")   → 1+2j
 
 (string->integer "ff" 16)  → 255
 (string->integer "FF" 16)  → 255   ; case-insensitive

@@ -680,7 +680,6 @@ int menai_bigint_from_long(long v, MenaiBigInt *a);
 int menai_bigint_from_long_long(long long v, MenaiBigInt *a);
 int menai_bigint_from_unsigned_long_long(unsigned long long v, MenaiBigInt *a);
 int menai_bigint_from_string(const char *s, int base, MenaiBigInt *a);
-int menai_bigint_from_codepoints(const uint32_t *data, ssize_t len, int base, MenaiBigInt *a);
 int menai_bigint_from_double(double v, MenaiBigInt *a);
 int menai_bigint_fits_long(const MenaiBigInt *a);
 int menai_bigint_to_long(const MenaiBigInt *a, long *out);

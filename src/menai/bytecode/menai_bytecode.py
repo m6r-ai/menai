@@ -213,7 +213,7 @@ class Opcode(IntEnum):
     STRING_TRIM_LEFT = _op(251, 1)      # r_dest = (string-trim-left r_src0)
     STRING_TRIM_RIGHT = _op(252, 1)     # r_dest = (string-trim-right r_src0)
     STRING_TO_INTEGER = _op(253, 2)     # r_dest = (string->integer r_src0 r_src1)
-    STRING_TO_NUMBER = _op(254, 1)      # r_dest = (string->number r_src0)
+    STRING_TO_FLOAT = _op(254, 1)       # r_dest = (string->float r_src0)
     STRING_TO_LIST = _op(255, 2)        # r_dest = (string->list r_src0 r_src1)
     STRING_REF = _op(256, 2)            # r_dest = (string-ref r_src0 r_src1)
     STRING_PREFIX_P = _op(257, 2)       # r_dest = (string-prefix? r_src0 r_src1)
@@ -224,6 +224,7 @@ class Opcode(IntEnum):
     STRING_INDEX = _op(262, 2)          # r_dest = (string-index r_src0 r_src1)
     STRING_TO_INTEGER_CODEPOINT = _op(263, 1)
                                         # r_dest = (string->integer-codepoint r_src0)
+    STRING_TO_COMPLEX = _op(264, 1)     # r_dest = (string->complex r_src0)
 
     # Alist operations
     MAKE_DICT = _op(280, 2)             # r_dest = MAKE_DICT src0, src1 — base slot of outgoing zone, pair count
@@ -525,7 +526,8 @@ BUILTIN_OPCODE_MAP: dict[str, tuple[Opcode, int]] = {
     'string-trim-left': (Opcode.STRING_TRIM_LEFT, 1),
     'string-trim-right': (Opcode.STRING_TRIM_RIGHT, 1),
     'string->integer': (Opcode.STRING_TO_INTEGER, 2),
-    'string->number': (Opcode.STRING_TO_NUMBER, 1),
+    'string->float': (Opcode.STRING_TO_FLOAT, 1),
+    'string->complex': (Opcode.STRING_TO_COMPLEX, 1),
     'string->list': (Opcode.STRING_TO_LIST, 2),
     'string-ref': (Opcode.STRING_REF, 2),
     'string-index': (Opcode.STRING_INDEX, 2),

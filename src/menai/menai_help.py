@@ -38,7 +38,7 @@ Syntax: (operator arg1 arg2 ...)
 - Represents the absence of a value — distinct from #f (boolean false)
 - Literal: #none
 - Type predicate: (none? x) → #t if x is #none, #f otherwise
-- Returned by: dict-get (missing key, no default), find-list (not found), list-index (not found), string-index (not found), string->number (unparseable), string->integer (unparseable)
+- Returned by: dict-get (missing key, no default), find-list (not found), list-index (not found), string-index (not found), string->number (unparseable), string->integer (unparseable), string->float (unparseable), string->complex (unparseable)
 - Pattern matching: (match x (#none "absent") (_ "present"))
 - #none is not a boolean; (if #none ...) is a type error
 - Can be stored in lists and dicts as a value
@@ -165,6 +165,7 @@ Syntax: (operator arg1 arg2 ...)
 - Search predicates: (string-prefix? "hello" "he"), (string-suffix? "hello" "lo")
 - Search index: (string-index "hello" "l") → 2, (string-index "hello" "z") → #none (not found)
 - Conversion: (string->number "42") → 42, (string->number "3.14") → 3.14, (string->number "1+2j") → 1+2j, (string->number "hello") → #none (returns #none for any unparseable string; raises a type error if argument is not a string)
+- Typed conversion: (string->float "3.14") → 3.14, (string->complex "1+2j") → 1+2j (each returns #none for unparseable strings; raises a type error if the argument is not a string)
 - (string->integer "ff" 16) → 255, (string->integer "1010" 2) → 10, (string->integer "377" 8) → 255, (string->integer "42") → 42 (optional radix: 2, 8, 10, or 16; defaults to 10; returns #none for unparseable strings; invalid radix raises an error)
 - Note: (string->integer "ff" 16) and (string->integer "FF" 16) both → 255 (case-insensitive); surrounding whitespace is accepted
 - (string->list "hello") → ("h" "e" "l" "l" "o") (no delimiter: splits into individual characters)
