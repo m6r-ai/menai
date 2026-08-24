@@ -262,7 +262,12 @@ struct MenaiFunction {
     ssize_t ncap;                       /* number of captured values */
     MenaiCodeObject *bytecode;          /* retained — owns all frame metadata */
 
-    /* Inline capture array — ncap elements follow immediately. */
+    uint8_t gc_mark;                    /* GC mark bit — init to 0 at allocation */
+
+    /*
+     * Inline capture array — ncap elements follow immediately.
+     * gc_mark must precede the FAM so it lives in the fixed-size header.
+     */
     MenaiValue *captures[1];            /* flexible array member (C99 [1] for MSVC compat) */
 };
 
@@ -550,6 +555,12 @@ typedef struct MenaiVMState {
     /* Prelude globals — per-instance, set once via menai_vm_set_prelude */
     GlobalsTable _globals;
     int _globals_valid;
+
+    /* Closure cycle collector registry — tracks all live MenaiFunction pointers. */
+    MenaiFunction **_closure_registry;
+    ssize_t _closure_registry_count;
+    ssize_t _closure_registry_capacity;
+    int _gc_in_progress;
 
     int _cancel_flag;
 
@@ -871,6 +882,22 @@ MenaiFunction *alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co);
 static inline void
 menai_function_final(MenaiVMState *vs, MenaiFunction *self)
 {
+    /*
+     * Remove from the closure registry (swap-with-last) unless a GC sweep
+     * is in progress — during Phase 4 the registry has already been compacted
+     * and the finalizer must not touch it.
+     */
+    if (!vs->_gc_in_progress) {
+        for (ssize_t i = 0; i < vs->_closure_registry_count; i++) {
+            if (vs->_closure_registry[i] == self) {
+                vs->_closure_registry[i] =
+                    vs->_closure_registry[vs->_closure_registry_count - 1];
+                vs->_closure_registry_count--;
+                break;
+            }
+        }
+    }
+
     menai_code_object_release(vs, self->bytecode);
     ssize_t ncap = self->ncap;
     for (ssize_t i = 0; i < ncap; i++) {
@@ -1152,5 +1179,9 @@ void menai_vm_cancel(MenaiVMState *vs);
 void menai_vm_enable_profiling(MenaiVMState *vs);
 
 void menai_vm_get_profile_data(MenaiVMState *vs, uint64_t *out_counts, uint64_t *out_total_instr);
+
+void menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root);
+
+void menai_closure_registry_free(MenaiVMState *vs);
 
 #endif /* MENAI_VM_C_H */

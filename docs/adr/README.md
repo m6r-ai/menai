@@ -85,4 +85,4 @@ What costs, risks, or constraints does this decision impose?
 | [0013](0013-two-intermediate-representations.md) | Two intermediate representations — IR tree and SSA CFG | Accepted |
 | [0014](0014-pool-allocator-in-c-vm.md) | Pool allocator in the C VM | Accepted |
 | [0015](0015-desugar-to-small-core.md) | Desugar to a small core before IR | Accepted |
-| [0016](0016-reference-counting-in-c-vm.md) | Reference counting in the C VM | Accepted |
+| [0016](0016-reference-counting-with-closure-cycle-collection.md) | Reference counting with closure cycle collection in the C VM | Accepted |

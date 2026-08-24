@@ -35,6 +35,7 @@ extensions = [
             f"{_MENAI_VM_SRC}/menai_vm_function.c",
             f"{_MENAI_VM_SRC}/menai_vm_globals.c",
             f"{_MENAI_VM_SRC}/menai_vm_hashtable.c",
+            f"{_MENAI_VM_SRC}/menai_vm_gc.c",
             f"{_MENAI_VM_SRC}/menai_vm_integer.c",
             f"{_MENAI_VM_SRC}/menai_vm_list.c",
             f"{_MENAI_VM_SRC}/menai_vm_string.c",
@@ -52,6 +53,8 @@ extensions = [
         ),
         define_macros=(
             [("MENAI_DEBUG_LEAKS", "1")] if os.environ.get("MENAI_DEBUG_LEAKS") else []
+        ) + (
+            [("MENAI_DEBUG_MAGIC", "1")] if os.environ.get("MENAI_DEBUG_MAGIC") else []
         ),
     ),
 ]

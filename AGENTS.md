@@ -211,6 +211,23 @@ shared across VM instances or threads.
 
 See [ADR-0006](docs/adr/0006-no-process-global-mutable-state-in-c-vm.md).
 
+### The closure cycle collector only frees closures with refcnt == 0
+
+The GC runs at the end of every `menai_vm_execute_native` call and at VM
+teardown.  It marks all closures reachable from globals and the execute
+result, then sweeps unreachable closures.  Phase 3 breaks internal edges
+(dead-to-dead capture references) with bare refcount decrements.  Phase 4
+must only call `menai_value_free` on closures whose `ob_refcnt` is exactly
+0 after Phase 3.  Closures with `ob_refcnt > 0` have an external reference
+(e.g. from a code object's constant pool, which is released after the GC
+runs) and must be returned to the registry, not freed.
+
+The GC does not trace code object constants as roots.  This is safe because
+closures in constants are non-cyclic (the bridge strips captures during
+round-tripping).  The Phase 4 refcnt guard prevents use-after-free when a
+non-cyclic closure in constants is unreachable from roots but still held
+by the code object.  The `MENAI_DEBUG_LEAKS` build monitors this.
+
 ## Design decisions
 
 These are decisions that might otherwise look like oversights or invite "improvement".

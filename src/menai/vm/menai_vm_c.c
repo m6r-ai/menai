@@ -6891,5 +6891,8 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     }
 
     free(regs);
+
+    menai_closure_gc_collect(vs, result);
+
     return result;
 }

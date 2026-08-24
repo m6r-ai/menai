@@ -80,6 +80,14 @@ menai_vm_state_alloc(void)
 void
 menai_vm_state_free(MenaiVMState *vs)
 {
+    /*
+     * Final collection — reclaim any remaining cyclic closures before
+     * globals are freed so they are not misreported as leaks.  With the
+     * execute-time collection working, this should find nothing.
+     */
+    menai_closure_gc_collect(vs, NULL);
+    menai_closure_registry_free(vs);
+
     if (vs->_globals_valid) {
         globals_free(vs, &vs->_globals);
     }
