@@ -38,7 +38,8 @@ static const MenaiCpRange menai_whitespace_ranges[] = {
 
 #define MENAI_WHITESPACE_RANGE_COUNT ((int)(sizeof(menai_whitespace_ranges) / sizeof(menai_whitespace_ranges[0])))
 
-static inline int unicode_is_whitespace(uint32_t cp)
+static inline int
+unicode_is_whitespace(uint32_t cp)
 {
     int lo = 0;
     int hi = MENAI_WHITESPACE_RANGE_COUNT - 1;
@@ -83,7 +84,8 @@ typedef struct {
     uint32_t to;
 } MenaiCasePair;
 
-static inline uint32_t menai_search_case_ranges(uint32_t cp, const MenaiCaseRange *ranges, int count)
+static inline uint32_t
+menai_search_case_ranges(uint32_t cp, const MenaiCaseRange *ranges, int count)
 {
     int lo = 0, hi = count - 1;
     while (lo <= hi) {
@@ -100,7 +102,8 @@ static inline uint32_t menai_search_case_ranges(uint32_t cp, const MenaiCaseRang
     return 0;
 }
 
-static inline uint32_t menai_search_case_pairs(uint32_t cp, const MenaiCasePair *pairs, int count)
+static inline uint32_t
+menai_search_case_pairs(uint32_t cp, const MenaiCasePair *pairs, int count)
 {
     int lo = 0, hi = count - 1;
     while (lo <= hi) {
@@ -821,7 +824,8 @@ static const MenaiCasePair menai_downcase_pairs[] = {
 
 #define MENAI_DOWNCASE_PAIR_COUNT ((int)(sizeof(menai_downcase_pairs) / sizeof(menai_downcase_pairs[0])))
 
-static inline uint32_t unicode_simple_upcase(uint32_t cp)
+static inline uint32_t
+unicode_simple_upcase(uint32_t cp)
 {
     uint32_t result;
 
@@ -832,14 +836,12 @@ static inline uint32_t unicode_simple_upcase(uint32_t cp)
 
     /* Extended BMP ranges and irregular pairs */
     if (cp >= 0x0100) {
-        result = menai_search_case_ranges(cp, menai_upcase_ranges,
-                                          MENAI_UPCASE_RANGE_COUNT);
+        result = menai_search_case_ranges(cp, menai_upcase_ranges, MENAI_UPCASE_RANGE_COUNT);
         if (result) {
             return result;
         }
 
-        result = menai_search_case_pairs(cp, menai_upcase_pairs,
-                                         MENAI_UPCASE_PAIR_COUNT);
+        result = menai_search_case_pairs(cp, menai_upcase_pairs, MENAI_UPCASE_PAIR_COUNT);
         if (result) {
             return result;
         }
@@ -884,7 +886,8 @@ static inline uint32_t unicode_simple_upcase(uint32_t cp)
     }
 }
 
-static inline uint32_t unicode_simple_downcase(uint32_t cp)
+static inline uint32_t
+unicode_simple_downcase(uint32_t cp)
 {
     uint32_t result;
 
@@ -970,7 +973,8 @@ static const MenaiUpcaseExpansion menai_upcase_expansions[] = {
 #define MENAI_UPCASE_EXPANSION_COUNT \
     ((int)(sizeof(menai_upcase_expansions) / sizeof(menai_upcase_expansions[0])))
 
-static inline const MenaiUpcaseExpansion *unicode_upcase_expansion(uint32_t cp)
+static inline const MenaiUpcaseExpansion *
+unicode_upcase_expansion(uint32_t cp)
 {
     int lo = 0;
     int hi = MENAI_UPCASE_EXPANSION_COUNT - 1;
