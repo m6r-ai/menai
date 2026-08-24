@@ -8,6 +8,10 @@ New features:
 - Added `string->float` and `string->complex` operations.
 - Improved performance of `string->integer`.
 
+Internal structure changes:
+
+- Added ADRs into the docs so design choices are visible.
+
 ## v0.2.0 (2026-08-10)
 
 New features:

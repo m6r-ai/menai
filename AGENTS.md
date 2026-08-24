@@ -144,6 +144,8 @@ No IR optimisation pass may mutate its input tree in place. Each pass receives a
 and returns a new one, along with a boolean indicating whether anything changed. The
 pass manager uses that flag to drive the fixed-point loop.
 
+See [ADR-0005](docs/adr/0005-ir-tree-immutability.md).
+
 The reason: immutability makes passes composable and makes bugs easier to isolate. A pass
 that mutates its input can corrupt the tree in ways that only manifest later in an
 unrelated pass.
@@ -153,6 +155,8 @@ unrelated pass.
 Because Menai has no side effects, any expression whose result is never used can be
 discarded unconditionally. Optimisation passes may rely on this without checking for
 side effects.
+
+See [ADR-0007](docs/adr/0007-dead-code-elimination-always-safe.md).
 
 ### `letrec` reaching the IR builder is always a genuine mutually-recursive group
 
@@ -171,6 +175,8 @@ them), and any nested lambdas with sibling captures are patched afterward.
 
 IR passes downstream of the IR builder may not assume all `letrec` bindings are lambdas.
 
+See [ADR-0008](docs/adr/0008-letrec-is-genuine-mutual-recursion.md).
+
 ### The prelude and the builtin registry must stay consistent
 
 There are two categories of builtin that must not be confused:
@@ -181,6 +187,8 @@ There are two categories of builtin that must not be confused:
   will cause an assertion failure at startup.
 - Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
   as Menai lambdas in `prelude.menai`. They MUST NOT be added to `BUILTIN_OPCODE_ARITIES`.
+
+See [ADR-0009](docs/adr/0009-prelude-and-builtin-registry-consistency.md).
 
 ### The C VM has no process-global mutable state
 
@@ -201,6 +209,8 @@ does not need `MenaiVMState *`. Every other refcount or allocation function
 are ephemeral (built and destroyed within a single `execute()` call) and never
 shared across VM instances or threads.
 
+See [ADR-0006](docs/adr/0006-no-process-global-mutable-state-in-c-vm.md).
+
 ## Design decisions
 
 These are decisions that might otherwise look like oversights or invite "improvement".
@@ -208,26 +218,27 @@ These are decisions that might otherwise look like oversights or invite "improve
 ### No `cond` form
 
 Deliberate omission. `match` covers all multi-branch conditional use cases and is more
-expressive. Do not add `cond`.
+expressive. Do not add `cond`. See [ADR-0001](docs/adr/0001-no-cond-form.md).
 
 ### Symbols are not strings
 
 `symbol` values are produced only by `quote` and exist solely to support homoiconicity
-(code-as-data).
+(code-as-data). See [ADR-0002](docs/adr/0002-symbols-not-strings.md).
 
 ### Proper lists only
 
-There are no cons cells and no improper lists. On the Python side, `MenaiList`
-(defined in `menai_value.py`) stores its elements in a Python tuple. The C VM has
-its own internal list representation (see `vm/menai_vm_list.c`), which is an
-implementation detail of that layer. `cons` requires its second argument to be a
-list. This is intentional: improper lists add complexity for minimal benefit in a
-language without pattern-matched list destructuring at the cons-cell level.
+There are no cons cells and no improper lists. List construction uses `list`,
+`list-prepend`, and `list-append`, all of which produce proper lists. The internal
+representation of lists is an implementation detail of each binding. This is
+intentional: improper lists add complexity for minimal benefit in a language
+without pattern-matched list destructuring at the cons-cell level.
+See [ADR-0003](docs/adr/0003-proper-lists-only.md).
 
 ### Strict numeric typing
 
 There is no implicit coercion between `integer`, `float`, and `complex`. All arithmetic
 operators are type-specific (e.g. `integer+`, `float*`). This is intentional.
+See [ADR-0004](docs/adr/0004-strict-numeric-typing.md).
 
 ## VM implementation
 

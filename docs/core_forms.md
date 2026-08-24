@@ -108,6 +108,14 @@ struct type alongside its associated functions:
 
 Use `letrec` when you need functions that reference themselves or each other.
 
+## No sequencing form
+
+Menai has no `begin` or sequencing form. All binding forms (`let`, `let*`,
+`letrec`) and `lambda` accept exactly one body expression. Because Menai is
+pure, there are no side effects to sequence — if an intermediate result is
+unused, it is dead code and should be removed. Use `let*` for multi-step
+computations where each step depends on the previous one.
+
 ## lambda — anonymous functions
 
 `lambda` creates an anonymous function (a closure). Functions are first-class values

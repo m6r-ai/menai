@@ -3,6 +3,11 @@
 Thank you for your interest in contributing. This document covers what you need to know
 before submitting changes.
 
+Before proposing changes that touch architectural or design decisions, read the
+[Architecture Decision Records](docs/adr/) to understand the context and reasoning
+behind existing choices. This is especially important if your change might re-litigate
+a settled decision.
+
 ## Coding standards
 
 Consistency is more better than better. A change that makes one part of the
