@@ -50,6 +50,8 @@ _leak_set_grow(MenaiLeakSet *ls)
         new_cap = MENAI_LEAK_SET_INITIAL_CAP;
     }
 
+    fprintf(stderr, "leak set buckets: %zd\n", new_cap);
+
     MenaiLeakNode **new_buckets = (MenaiLeakNode **)calloc(
         (size_t)new_cap, sizeof(MenaiLeakNode *));
     if (!new_buckets) {
