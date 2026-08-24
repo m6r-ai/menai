@@ -146,8 +146,10 @@ _gc_is_dead(MenaiValue *val)
 
 /*
  * _gc_detach_dead_from_list — NULL out elements of a list that are dead
- * closures.  This prevents the list's finalizer from releasing already-freed
- * closures when the list itself is freed in Phase 5.
+ * closures, decrementing their refcounts.  This prevents the list's
+ * finalizer from releasing already-freed closures when the list itself is
+ * freed in Phase 5.  The bare decrement drops the reference the list held,
+ * allowing the dead closure's refcnt to reach 0 for Phase 4.
  */
 static void
 _gc_detach_dead_from_list(MenaiList *lst)
@@ -157,7 +159,9 @@ _gc_detach_dead_from_list(MenaiList *lst)
     }
 
     for (ssize_t i = 0; i < lst->length; i++) {
-        if (_gc_is_dead(lst->elements[i])) {
+        MenaiValue *e = lst->elements[i];
+        if (_gc_is_dead(e)) {
+            e->ob_refcnt--;
             lst->elements[i] = NULL;
         }
     }
@@ -165,17 +169,21 @@ _gc_detach_dead_from_list(MenaiList *lst)
 
 /*
  * _gc_detach_dead_from_dict — NULL out keys/values of a dict that are dead
- * closures.
+ * closures, decrementing their refcounts.
  */
 static void
 _gc_detach_dead_from_dict(MenaiDict *d)
 {
     for (ssize_t i = 0; i < d->length; i++) {
-        if (_gc_is_dead(d->keys[i])) {
+        MenaiValue *k = d->keys[i];
+        if (_gc_is_dead(k)) {
+            k->ob_refcnt--;
             d->keys[i] = NULL;
         }
 
-        if (_gc_is_dead(d->values[i])) {
+        MenaiValue *v = d->values[i];
+        if (_gc_is_dead(v)) {
+            v->ob_refcnt--;
             d->values[i] = NULL;
         }
     }
@@ -183,13 +191,15 @@ _gc_detach_dead_from_dict(MenaiDict *d)
 
 /*
  * _gc_detach_dead_from_set — NULL out elements of a set that are dead
- * closures.
+ * closures, decrementing their refcounts.
  */
 static void
 _gc_detach_dead_from_set(MenaiSet *s)
 {
     for (ssize_t i = 0; i < s->length; i++) {
-        if (_gc_is_dead(s->elements[i])) {
+        MenaiValue *e = s->elements[i];
+        if (_gc_is_dead(e)) {
+            e->ob_refcnt--;
             s->elements[i] = NULL;
         }
     }
@@ -197,13 +207,15 @@ _gc_detach_dead_from_set(MenaiSet *s)
 
 /*
  * _gc_detach_dead_from_struct — NULL out fields of a struct that are dead
- * closures.
+ * closures, decrementing their refcounts.
  */
 static void
 _gc_detach_dead_from_struct(MenaiStruct *st)
 {
     for (int i = 0; i < st->nfields; i++) {
-        if (_gc_is_dead(st->items[i])) {
+        MenaiValue *item = st->items[i];
+        if (_gc_is_dead(item)) {
+            item->ob_refcnt--;
             st->items[i] = NULL;
         }
     }
@@ -311,15 +323,15 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
     /*
      * Phase 3b — Detach dead closures from orphaned containers.
      *
-     * Orphaned containers (lists, dicts, sets, structs) may contain dead
-     * closures as elements.  When the container is freed in Phase 5, its
+     * Orphaned containers (lists, dicts, sets, structs) may hold references
+     * to dead closures.  When the container is freed in Phase 5, its
      * finalizer would release those elements — but the dead closures are
      * freed in Phase 4, causing a use-after-free.  To prevent this, NULL
-     * out any elements that are dead closures (gc_mark == 2) before the
-     * container is freed.  The dead closures' refcounts are not affected
-     * — they were already decremented in Phase 3 if they were captured by
-     * a dead closure, or they will be released by the container's
-     * finalizer for live elements.
+     * out any elements that are dead closures (gc_mark == 2) and decrement
+     * their refcounts with a bare decrement.  This drops the reference the
+     * container held, allowing the dead closure's refcnt to reach 0 for
+     * Phase 4.  Without this decrement, the dead closure would retain a
+     * dangling refcnt > 0 and never be freed.
      */
     for (ssize_t i = 0; i < orphan_count; i++) {
         MenaiValue *v = orphans[i];
@@ -388,32 +400,15 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
      * Non-closure values whose last reference was a dead closure capture
      * have refcnt == 0 after Phase 3 but were not freed there (to avoid
      * cascading frees that could corrupt the dead array).  Now that all
-     * dead closures have been destroyed in Phase 4, it is safe to free
-     * leaf orphans — integers, strings, floats, etc. — whose finalizers
-     * do not release other values.
-     *
-     * Container orphans (lists, dicts, sets, structs, bytes) are NOT freed
-     * here because their finalizers release elements, which may cascade and
-     * free other orphans whose memory is already invalid — causing pool
-     * corruption or use-after-free.  Container orphans are rare (they require
-     * a dead closure to capture a container that is not reachable from roots)
-     * and will be reported by the leak detector but not reclaimed.  This is
-     * a known limitation of the debug-only leak detector.
+     * dead closures have been destroyed in Phase 4, it is safe to free all
+     * orphans.  Container finalizers are safe because Phase 3b already
+     * NULLed out dead closure elements, and no orphan can contain another
+     * orphan: a value held by a container has refcnt > 0 (from the
+     * container), so it would not have reached refcnt == 0 in Phase 3 and
+     * would not be in the orphans array.
      */
     for (ssize_t i = 0; i < orphan_count; i++) {
-        MenaiValue *v = orphans[i];
-        switch (v->ob_type) {
-        case MENAITYPE_INTEGER:
-        case MENAITYPE_FLOAT:
-        case MENAITYPE_COMPLEX:
-        case MENAITYPE_STRING:
-        case MENAITYPE_SYMBOL:
-            menai_value_free(vs, v);
-            break;
-
-        default:
-            break;
-        }
+        menai_value_free(vs, orphans[i]);
     }
 
     free(orphans);

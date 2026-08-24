@@ -839,8 +839,12 @@ menai_dict_final(MenaiVMState *vs, MenaiDict *self)
 {
     ssize_t n = self->length;
     for (ssize_t i = 0; i < n; i++) {
-        menai_value_release(vs, self->keys[i]);
-        menai_value_release(vs, self->values[i]);
+        if (self->keys[i] != NULL) {
+            menai_value_release(vs, self->keys[i]);
+        }
+        if (self->values[i] != NULL) {
+            menai_value_release(vs, self->values[i]);
+        }
     }
 
     menai_ht_final(&self->ht);
@@ -981,7 +985,10 @@ menai_list_final(MenaiVMState *vs, MenaiList *self)
     ssize_t n = self->length;
     MenaiValue **arr = self->elements;
     for (ssize_t i = 0; i < n; i++) {
-        menai_value_release(vs, *arr++);
+        if (*arr != NULL) {
+            menai_value_release(vs, *arr);
+        }
+        arr++;
     }
 }
 
@@ -1020,7 +1027,9 @@ menai_set_final(MenaiVMState *vs, MenaiSet *self)
 {
     ssize_t n = self->length;
     for (ssize_t i = 0; i < n; i++) {
-        menai_value_release(vs, self->elements[i]);
+        if (self->elements[i] != NULL) {
+            menai_value_release(vs, self->elements[i]);
+        }
     }
 
     menai_ht_final(&self->ht);
@@ -1083,7 +1092,9 @@ menai_struct_final(MenaiVMState *vs, MenaiStruct *self)
     menai_value_release(vs, (MenaiValue *)self->struct_type);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        menai_value_release(vs, self->items[i]);
+        if (self->items[i] != NULL) {
+            menai_value_release(vs, self->items[i]);
+        }
     }
 }
 
