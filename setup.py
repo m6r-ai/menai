@@ -13,6 +13,7 @@ Usage:
 """
 
 import sys
+import os
 
 from setuptools import Extension, setup
 
@@ -48,6 +49,9 @@ extensions = [
         extra_compile_args=(
             ["/O2", "/std:c11", "/WX"] if sys.platform == "win32"
             else ["-O2", "-std=c11", "-Werror"]
+        ),
+        define_macros=(
+            [("MENAI_DEBUG_LEAKS", "1")] if os.environ.get("MENAI_DEBUG_LEAKS") else []
         ),
     ),
 ]

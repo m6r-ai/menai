@@ -22,6 +22,10 @@ menai_vm_state_alloc(void)
         return NULL;
     }
 
+#ifdef MENAI_DEBUG_LEAKS
+    menai_leak_set_init(&vs->_leak_set);
+#endif
+
     vs->none_storage.ob_refcnt = 1;
     vs->none_storage.ob_type = MENAITYPE_NONE;
     MENAI_SET_MAGIC(&vs->none_storage);
@@ -79,6 +83,11 @@ menai_vm_state_free(MenaiVMState *vs)
     if (vs->_globals_valid) {
         globals_free(vs, &vs->_globals);
     }
+
+#ifdef MENAI_DEBUG_LEAKS
+    menai_leak_set_report(vs);
+    menai_leak_set_final(&vs->_leak_set);
+#endif
 
     for (int bucket = 0; bucket < MENAI_POOL_NUM_BUCKETS; bucket++) {
         void *ptr = vs->_pool_heads[bucket];

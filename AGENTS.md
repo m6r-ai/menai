@@ -252,6 +252,16 @@ The C VM currently makes use of some Python runtime library functionality, but w
 exception of the bridge layer between C and Python, the C code should be systematically
 updated so Python functions and data structures are removed.
 
+### Debug build flags
+
+The C VM supports compile-time debug features via preprocessor defines:
+
+- `MENAI_DEBUG_LEAKS` — Tracks every `MenaiValue` allocation in a per-instance
+  hash set.  At VM teardown, any value still tracked (excluding known
+  singletons) is reported as a leak to stderr.  Build with `make build-leaks`.
+  Used to verify that the reference counting scheme (see ADR-0016) correctly
+  reclaims all values, including cyclic closures that require cycle collection.
+
 ### C formatting
 
 Do NOT use lines of characters in comments. E.g. never use something like:

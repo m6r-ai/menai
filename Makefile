@@ -43,6 +43,17 @@ $(SO_FILES): $(C_SOURCES)
 	@mkdir -p build && touch $@
 
 #
+# Build with the leak detector enabled (MENAI_DEBUG_LEAKS).
+#
+.PHONY: build-leaks
+
+build-leaks:
+	@rm -f $(SO_FILES)
+	@rm -rf build/temp.* build/lib.*
+	MENAI_DEBUG_LEAKS=1 $(PYTHON) setup.py build_ext --inplace
+	@mkdir -p build && touch $(SO_FILES)
+
+#
 # Run the full test suite.
 #
 .PHONY: test

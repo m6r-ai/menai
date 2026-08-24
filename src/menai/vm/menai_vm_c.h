@@ -75,6 +75,21 @@ typedef uint16_t MenaiType;
 #define MENAI_MAGIC_FIELD
 #endif
 
+#ifdef MENAI_DEBUG_LEAKS
+/*
+ * Leak detector — open-addressing hash set of all live MenaiValue * pointers.
+ *
+ * When MENAI_DEBUG_LEAKS is defined, menai_alloc registers every block it
+ * returns and menai_free unregisters it.  At VM teardown, any pointer still
+ * in the set (excluding known singletons) is a leak.
+ */
+typedef struct {
+    void **slots;         /* hash set slots; NULL = empty */
+    ssize_t slot_count;   /* power of 2, or 0 */
+    ssize_t count;        /* number of live entries */
+} MenaiLeakSet;
+#endif
+
 #define MENAITYPE_NONE 0x0001
 #define MENAITYPE_BOOLEAN 0x0002
 #define MENAITYPE_FUNCTION 0x0003
@@ -543,6 +558,10 @@ typedef struct MenaiVMState {
     /* Timing data — last execute call's conversion and execution times in nanoseconds. */
     uint64_t _convert_time_ns;
     uint64_t _execute_time_ns;
+
+#ifdef MENAI_DEBUG_LEAKS
+    MenaiLeakSet _leak_set;
+#endif
 } MenaiVMState;
 
 MenaiVMState *menai_vm_state_alloc(void);
@@ -550,6 +569,14 @@ void menai_vm_state_free(MenaiVMState *vs);
 
 void *menai_alloc(MenaiVMState *vs, size_t size);
 void menai_free(MenaiVMState *vs, void *ptr);
+
+#ifdef MENAI_DEBUG_LEAKS
+void menai_leak_set_init(MenaiLeakSet *ls);
+void menai_leak_set_final(MenaiLeakSet *ls);
+void menai_leak_set_add(MenaiLeakSet *ls, void *ptr);
+void menai_leak_set_remove(MenaiLeakSet *ls, void *ptr);
+void menai_leak_set_report(MenaiVMState *vs);
+#endif
 
 void menai_value_free(MenaiVMState *vs, MenaiValue *v);
 
