@@ -27,10 +27,10 @@
  * Leak detector implementation (only compiled when MENAI_DEBUG_LEAKS is
  * defined).
  *
- * The leak set is an open-addressing hash set of void * pointers.  It uses
- * the same probe sequence as MenaiHashTable (Python dict-style perturbation).
- * The set is per-VM-instance (stored in MenaiVMState._leak_set) so there is
- * no global state.
+ * The leak set is a chained hash set of void * pointers.  Each entry is a
+ * malloc'd MenaiLeakNode linked into a bucket.  Deletion is O(1) — find the
+ * node in its bucket and unlink it.  The per-entry allocation is fine for a
+ * debug-only tool that is never compiled into production builds.
  *
  * menai_alloc adds every block it returns; menai_free removes every block
  * it receives.  At VM teardown, menai_leak_set_report walks the set and
@@ -42,63 +42,61 @@
 #define MENAI_LEAK_SET_MAX_LOAD_NUM 2
 #define MENAI_LEAK_SET_MAX_LOAD_DEN 3
 
-static ssize_t
-_leak_set_probe(void **slots, ssize_t mask, void *key)
-{
-    uhash_t perturb = (uhash_t)(uintptr_t)key;
-    ssize_t slot = (ssize_t)(perturb & (uhash_t)mask);
-    for (;;) {
-        if (slots[slot] == NULL || slots[slot] == key) {
-            return slot;
-        }
-
-        perturb >>= 5;
-        slot = (ssize_t)((5 * (uhash_t)slot + 1 + perturb) & (uhash_t)mask);
-    }
-}
-
 static int
 _leak_set_grow(MenaiLeakSet *ls)
 {
-    ssize_t new_cap = ls->slot_count * 2;
+    ssize_t new_cap = ls->bucket_count * 2;
     if (new_cap < MENAI_LEAK_SET_INITIAL_CAP) {
         new_cap = MENAI_LEAK_SET_INITIAL_CAP;
     }
 
-    void **new_slots = (void **)calloc((size_t)new_cap, sizeof(void *));
-    if (!new_slots) {
+    MenaiLeakNode **new_buckets = (MenaiLeakNode **)calloc(
+        (size_t)new_cap, sizeof(MenaiLeakNode *));
+    if (!new_buckets) {
         return -1;
     }
 
     ssize_t new_mask = new_cap - 1;
-    for (ssize_t i = 0; i < ls->slot_count; i++) {
-        void *entry = ls->slots[i];
-        if (entry != NULL) {
-            ssize_t slot = _leak_set_probe(new_slots, new_mask, entry);
-            new_slots[slot] = entry;
+    for (ssize_t i = 0; i < ls->bucket_count; i++) {
+        MenaiLeakNode *node = ls->buckets[i];
+        while (node != NULL) {
+            MenaiLeakNode *next = node->next;
+            ssize_t b = (ssize_t)((uhash_t)(uintptr_t)node->ptr & (uhash_t)new_mask);
+            node->next = new_buckets[b];
+            new_buckets[b] = node;
+            node = next;
         }
     }
 
-    free(ls->slots);
-    ls->slots = new_slots;
-    ls->slot_count = new_cap;
+    free(ls->buckets);
+    ls->buckets = new_buckets;
+    ls->bucket_count = new_cap;
     return 0;
 }
 
 void
 menai_leak_set_init(MenaiLeakSet *ls)
 {
-    ls->slots = NULL;
-    ls->slot_count = 0;
+    ls->buckets = NULL;
+    ls->bucket_count = 0;
     ls->count = 0;
 }
 
 void
 menai_leak_set_final(MenaiLeakSet *ls)
 {
-    free(ls->slots);
-    ls->slots = NULL;
-    ls->slot_count = 0;
+    for (ssize_t i = 0; i < ls->bucket_count; i++) {
+        MenaiLeakNode *node = ls->buckets[i];
+        while (node != NULL) {
+            MenaiLeakNode *next = node->next;
+            free(node);
+            node = next;
+        }
+    }
+
+    free(ls->buckets);
+    ls->buckets = NULL;
+    ls->bucket_count = 0;
     ls->count = 0;
 }
 
@@ -109,57 +107,59 @@ menai_leak_set_add(MenaiLeakSet *ls, void *ptr)
         return;
     }
 
-    if (ls->slot_count == 0 ||
+    if (ls->bucket_count == 0 ||
         ls->count * MENAI_LEAK_SET_MAX_LOAD_DEN >=
-        ls->slot_count * MENAI_LEAK_SET_MAX_LOAD_NUM) {
+        ls->bucket_count * MENAI_LEAK_SET_MAX_LOAD_NUM) {
         if (_leak_set_grow(ls) < 0) {
             return;
         }
     }
 
-    ssize_t mask = ls->slot_count - 1;
-    ssize_t slot = _leak_set_probe(ls->slots, mask, ptr);
-    if (ls->slots[slot] == NULL) {
-        ls->slots[slot] = ptr;
-        ls->count++;
+    ssize_t mask = ls->bucket_count - 1;
+    ssize_t b = (ssize_t)((uhash_t)(uintptr_t)ptr & (uhash_t)mask);
+    for (MenaiLeakNode *node = ls->buckets[b]; node != NULL; node = node->next) {
+        if (node->ptr == ptr) {
+            return;
+        }
     }
+
+    MenaiLeakNode *node = (MenaiLeakNode *)malloc(sizeof(MenaiLeakNode));
+    if (node == NULL) {
+        return;
+    }
+
+    node->ptr = ptr;
+    node->next = ls->buckets[b];
+    ls->buckets[b] = node;
+    ls->count++;
 }
 
 void
 menai_leak_set_remove(MenaiLeakSet *ls, void *ptr)
 {
-    if (ptr == NULL || ls->slot_count == 0) {
+    if (ptr == NULL || ls->bucket_count == 0) {
         return;
     }
 
-    ssize_t mask = ls->slot_count - 1;
-    ssize_t slot = _leak_set_probe(ls->slots, mask, ptr);
-    if (ls->slots[slot] != ptr) {
-        return;
-    }
+    ssize_t mask = ls->bucket_count - 1;
+    ssize_t b = (ssize_t)((uhash_t)(uintptr_t)ptr & (uhash_t)mask);
 
-    /*
-     * Remove the entry, then rebuild the entire set from scratch.
-     * This is O(n) per removal but avoids the fragile cluster-rehash
-     * that can trigger a grow mid-iteration.  Acceptable for a debug
-     * tool that is never compiled into production builds.
-     */
-    ls->slots[slot] = NULL;
-    ls->count--;
+    MenaiLeakNode *prev = NULL;
+    for (MenaiLeakNode *node = ls->buckets[b]; node != NULL; node = node->next) {
+        if (node->ptr == ptr) {
+            if (prev != NULL) {
+                prev->next = node->next;
+            } else {
+                ls->buckets[b] = node->next;
+            }
 
-    void **old_slots = ls->slots;
-    ssize_t old_cap = ls->slot_count;
-    ls->slots = NULL;
-    ls->slot_count = 0;
-    ls->count = 0;
-
-    for (ssize_t i = 0; i < old_cap; i++) {
-        if (old_slots[i] != NULL) {
-            menai_leak_set_add(ls, old_slots[i]);
+            free(node);
+            ls->count--;
+            return;
         }
-    }
 
-    free(old_slots);
+        prev = node;
+    }
 }
 
 static const char *
@@ -237,32 +237,31 @@ menai_leak_set_report(MenaiVMState *vs)
     MenaiLeakSet *ls = &vs->_leak_set;
     ssize_t leaks = 0;
 
-    for (ssize_t i = 0; i < ls->slot_count; i++) {
-        void *entry = ls->slots[i];
-        if (entry == NULL) {
-            continue;
+    for (ssize_t i = 0; i < ls->bucket_count; i++) {
+        for (MenaiLeakNode *node = ls->buckets[i]; node != NULL; node = node->next) {
+            void *entry = node->ptr;
+
+            if (_is_singleton(vs, entry)) {
+                continue;
+            }
+
+            MenaiValue *v = (MenaiValue *)entry;
+            const char *type_name = _type_name(v->ob_type);
+
+            if (v->ob_type == MENAITYPE_FUNCTION) {
+                MenaiFunction *fn = (MenaiFunction *)v;
+                const char *fn_name = fn->bytecode->name ? fn->bytecode->name : "<anonymous>";
+                fprintf(stderr,
+                    "MENAI LEAK: type=%s refcnt=%u ptr=%p name=%s ncap=%zd\n",
+                    type_name, v->ob_refcnt, (void *)v, fn_name, fn->ncap);
+            } else {
+                fprintf(stderr,
+                    "MENAI LEAK: type=%s refcnt=%u ptr=%p\n",
+                    type_name, v->ob_refcnt, (void *)v);
+            }
+
+            leaks++;
         }
-
-        if (_is_singleton(vs, entry)) {
-            continue;
-        }
-
-        MenaiValue *v = (MenaiValue *)entry;
-        const char *type_name = _type_name(v->ob_type);
-
-        if (v->ob_type == MENAITYPE_FUNCTION) {
-            MenaiFunction *fn = (MenaiFunction *)v;
-            const char *fn_name = fn->bytecode->name ? fn->bytecode->name : "<anonymous>";
-            fprintf(stderr,
-                "MENAI LEAK: type=%s refcnt=%u ptr=%p name=%s ncap=%zd\n",
-                type_name, v->ob_refcnt, (void *)v, fn_name, fn->ncap);
-        } else {
-            fprintf(stderr,
-                "MENAI LEAK: type=%s refcnt=%u ptr=%p\n",
-                type_name, v->ob_refcnt, (void *)v);
-        }
-
-        leaks++;
     }
 
     if (leaks > 0) {

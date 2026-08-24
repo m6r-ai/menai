@@ -77,16 +77,25 @@ typedef uint16_t MenaiType;
 
 #ifdef MENAI_DEBUG_LEAKS
 /*
- * Leak detector — open-addressing hash set of all live MenaiValue * pointers.
+ * Leak detector — chained hash set of all live MenaiValue * pointers.
  *
  * When MENAI_DEBUG_LEAKS is defined, menai_alloc registers every block it
  * returns and menai_free unregisters it.  At VM teardown, any pointer still
  * in the set (excluding known singletons) is a leak.
+ *
+ * Uses chained hashing (one malloc'd node per entry) rather than open
+ * addressing so that deletion is O(1) — unlink a node from its bucket.
+ * The extra allocation per entry is irrelevant for a debug-only tool.
  */
+typedef struct MenaiLeakNode {
+    void *ptr;                      /* tracked pointer */
+    struct MenaiLeakNode *next;     /* next node in the same bucket */
+} MenaiLeakNode;
+
 typedef struct {
-    void **slots;         /* hash set slots; NULL = empty */
-    ssize_t slot_count;   /* power of 2, or 0 */
-    ssize_t count;        /* number of live entries */
+    MenaiLeakNode **buckets;  /* array of bucket heads; NULL = empty bucket */
+    ssize_t bucket_count;     /* power of 2, or 0 */
+    ssize_t count;            /* number of live entries */
 } MenaiLeakSet;
 #endif
 
