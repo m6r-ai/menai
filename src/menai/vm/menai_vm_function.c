@@ -23,6 +23,7 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_FUNCTION;
     self->ncap = ncap;
+    self->registry_index = -1;
     self->gc_mark = 0;
     menai_code_object_retain(co);
     self->bytecode = co;
@@ -49,6 +50,7 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
     }
 
     if (vs->_closure_registry_count < vs->_closure_registry_capacity) {
+        self->registry_index = vs->_closure_registry_count;
         vs->_closure_registry[vs->_closure_registry_count++] = self;
     }
 

@@ -275,9 +275,11 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
         MenaiFunction *fn = vs->_closure_registry[i];
         if (fn->gc_mark) {
             fn->gc_mark = 0;
+            fn->registry_index = live_count;
             vs->_closure_registry[live_count++] = fn;
         } else {
             fn->gc_mark = 2;
+            fn->registry_index = -1;
             dead[dead_count++] = fn;
         }
     }
@@ -390,6 +392,7 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
              * This closure is not part of a pure cycle; it will be
              * reclaimed when the external reference is released.
              */
+            fn->registry_index = vs->_closure_registry_count;
             vs->_closure_registry[vs->_closure_registry_count++] = fn;
         }
     }

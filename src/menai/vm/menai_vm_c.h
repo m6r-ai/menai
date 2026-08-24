@@ -270,6 +270,7 @@ struct MenaiFunction {
     MenaiValue_HEAD
     ssize_t ncap;                       /* number of captured values */
     MenaiCodeObject *bytecode;          /* retained — owns all frame metadata */
+    ssize_t registry_index;             /* index in _closure_registry, or -1 */
 
     uint8_t gc_mark;                    /* GC mark bit — init to 0 at allocation */
 
@@ -898,16 +899,17 @@ menai_function_final(MenaiVMState *vs, MenaiFunction *self)
     /*
      * Remove from the closure registry (swap-with-last) unless a GC sweep
      * is in progress — during Phase 4 the registry has already been compacted
-     * and the finalizer must not touch it.
+     * and the finalizer must not touch it.  Removal is O(1) via
+     * registry_index: swap the last entry into this slot and fix its index.
      */
     if (!vs->_gc_in_progress) {
-        for (ssize_t i = 0; i < vs->_closure_registry_count; i++) {
-            if (vs->_closure_registry[i] == self) {
-                vs->_closure_registry[i] =
-                    vs->_closure_registry[vs->_closure_registry_count - 1];
-                vs->_closure_registry_count--;
-                break;
-            }
+        ssize_t idx = self->registry_index;
+        if (idx >= 0 && idx < vs->_closure_registry_count &&
+            vs->_closure_registry[idx] == self) {
+            ssize_t last = --vs->_closure_registry_count;
+            MenaiFunction *moved = vs->_closure_registry[last];
+            vs->_closure_registry[idx] = moved;
+            moved->registry_index = idx;
         }
     }
 
