@@ -910,11 +910,12 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiFunction *func, MenaiValue *
  * Returns the result value (new reference) or NULL on error.
  */
 static MenaiValue *
-execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals,
-             MenaiValue **regs, int max_locals, MenaiVMError *out_error)
+execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals, MenaiVMError *out_error)
 {
     int vm_err = MENAI_OK;
     const char *vm_user_message = NULL;
+
+    MenaiValue **regs = vs->regs;
 
     /* Frame stack — depth 0 is the sentinel. */
     Frame frames[MAX_FRAME_DEPTH + 1];
@@ -939,17 +940,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
     int instr_count = 0;
     int cur_ip = 0;
     MenaiValue **frame_regs = frame->frame_regs;
-
-    /*
-     * Set up the execution context for periodic GC.  alloc_menai_function
-     * will read this pointer to trigger a collection when the registry
-     * exceeds _gc_threshold.  Cleared on exit (both normal and error).
-     */
-    MenaiExecContext gc_ctx = {
-        .regs = regs,
-        .num_regs = (size_t)(MAX_FRAME_DEPTH + 1) * (size_t)max_locals,
-    };
-    vs->_gc_exec_ctx = &gc_ctx;
 
     while (1) {
         /* Cancellation check */
@@ -1093,7 +1083,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             if (caller->is_sentinel) {
                 /* Top-level return — exit the loop. */
-                vs->_gc_exec_ctx = NULL;
                 return retval;
             }
 
@@ -1208,7 +1197,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 Frame *caller = &frames[frame_depth];
                 if (caller->is_sentinel) {
                     menai_value_release(vs, raw);
-                    vs->_gc_exec_ctx = NULL;
                     return (MenaiValue *)retval;
                 }
 
@@ -1363,7 +1351,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 if (caller->is_sentinel) {
                     menai_value_release(vs, raw_args);
                     menai_value_release(vs, raw_func);
-                    vs->_gc_exec_ctx = NULL;
                     return (MenaiValue *)retval;
                 }
 
@@ -6833,8 +6820,6 @@ error:
             }
         }
 
-        vs->_gc_exec_ctx = NULL;
-
         out_error->code = vm_err;
         out_error->opcode = opcode;
         out_error->ip = cur_ip;
@@ -6900,7 +6885,17 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
         regs[i] = (MenaiValue *)menai_none(vs);
     }
 
-    MenaiValue *result = execute_loop(vs, code, extra_globals, regs, max_locals, out_error);
+    /*
+     * Publish the register file on the VM state so that alloc_menai_function
+     * can trigger periodic GC using these registers as roots.  Cleared after
+     * execute_loop returns, before the register file is released and freed.
+     */
+    vs->regs = regs;
+    vs->num_regs = num_regs;
+
+    MenaiValue *result = execute_loop(vs, code, extra_globals, out_error);
+
+    vs->regs = NULL;
 
     for (size_t i = 0; i < num_regs; i++) {
         menai_value_release(vs, regs[i]);

@@ -434,12 +434,11 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
  * Phase 1: Mark all closures reachable from globals and the live registers.
  * Phases 2–5: delegated to _gc_sweep.
  *
- * ctx is the execution context set by execute_loop.  All registers in
- * ctx->regs[0..num_regs-1] are traced as roots.  Unused slots hold the none
- * singleton (a leaf type, skipped by the marker at negligible cost).
+ * vs->regs[0..vs->num_regs-1] are traced as roots.  Unused slots hold the
+ * none singleton (a leaf type, skipped by the marker at negligible cost).
  */
 void
-menai_closure_gc_collect_during(MenaiVMState *vs, MenaiExecContext *ctx)
+menai_closure_gc_collect_during(MenaiVMState *vs)
 {
     /*
      * Phase 1 — Mark from globals and live registers.
@@ -450,9 +449,9 @@ menai_closure_gc_collect_during(MenaiVMState *vs, MenaiExecContext *ctx)
         }
     }
 
-    if (ctx != NULL) {
-        for (size_t i = 0; i < ctx->num_regs; i++) {
-            gc_mark_value(ctx->regs[i]);
+    if (vs->regs != NULL) {
+        for (size_t i = 0; i < vs->num_regs; i++) {
+            gc_mark_value(vs->regs[i]);
         }
     }
 
