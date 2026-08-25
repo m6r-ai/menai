@@ -524,10 +524,26 @@ class TestStrings:
         # Complex numbers
         ('(complex->string (float->complex 1.0 2.0))', '"1+2j"'),
         ('(complex->string 1j)', '"1j"'),
+
+        # number->string dispatches on type
+        ('(number->string 42)', '"42"'),
+        ('(number->string 3.14)', '"3.14"'),
+        ('(number->string (float->complex 1.0 2.0))', '"1+2j"'),
+        ('(number->string -5)', '"-5"'),
+        ('(number->string 0)', '"0"'),
     ])
     def test_number_to_string(self, menai, expression, expected):
-        """Test number->string conversion."""
+        """Test number to string conversions."""
         assert menai.evaluate_and_format(expression) == expected
+
+    def test_number_to_string_type_error(self, menai):
+        """Test number->string raises on non-number argument."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(number->string "hello")')
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(number->string (list 1 2))')
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(number->string #t)')
 
     @pytest.mark.parametrize("expression,expected", [
         # String to list conversion

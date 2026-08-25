@@ -470,6 +470,14 @@
    (complex-sqrt (lambda (a) ($complex-sqrt a)))
    (complex-abs (lambda (a) ($complex-abs a)))
    (complex->string (lambda (c) ($complex->string c)))
+   (number->string (lambda (n)
+                     (if (integer? n)
+                         (integer->string n)
+                         (if (float? n)
+                             (float->string n)
+                             (if (complex? n)
+                                 (complex->string n)
+                                 (error "Function 'number->string' requires a number argument"))))))
    (string? (lambda (x) ($string? x)))
    (string=? (lambda (. args)
                (if ($integer<? ($list-length args) 2)
@@ -1215,6 +1223,7 @@
         "string->number" string->number
         "string->integer" string->integer
         "string->integer-codepoint" string->integer-codepoint
+        "number->string" number->string
         "string->list" string->list
         "list" list
         "list?" list?

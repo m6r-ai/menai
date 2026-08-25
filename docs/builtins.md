@@ -306,6 +306,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | `(string->integer s [radix])` | Parse to integer; radix: 2, 8, 10, 16 (default 10); `→ #none` if unparseable |
 | `(string->list s [delimiter])` | Split into list of strings |
 | `(integer-codepoint->string n)` | (See integer section) |
+| `(number->string n)` | Any number (integer, float, or complex) to string; type error if not a number |
 | `(string->integer-codepoint s)` | Single-character string to Unicode codepoint integer |
 
 ```menai
@@ -329,6 +330,12 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 (string->integer-codepoint "A")    → 65
 (string->integer-codepoint "π")    → 960
 (string->integer-codepoint "😀")   → 128512
+
+(number->string 42)       → "42"
+(number->string 3.14)     → "3.14"
+(number->string 1+2j)     → "1+2j"
+(number->string -5)       → "-5"
+(number->string 0)        → "0"
 ```
 
 `string->integer-codepoint` raises an error if the string is not exactly one character.
