@@ -1,9 +1,7 @@
 # ADR-0011: S-expression syntax
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

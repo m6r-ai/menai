@@ -1,9 +1,7 @@
 # ADR-0016: Reference counting with closure cycle collection in the C VM
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

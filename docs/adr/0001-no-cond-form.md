@@ -1,9 +1,7 @@
 # ADR-0001: No `cond` form
 
-| Metadata | |
-|---|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

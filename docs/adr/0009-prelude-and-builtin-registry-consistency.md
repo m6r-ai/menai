@@ -1,9 +1,7 @@
 # ADR-0009: Prelude and builtin registry must stay consistent
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

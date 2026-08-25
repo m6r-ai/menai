@@ -1,9 +1,7 @@
 # ADR-0002: Symbols are not strings
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

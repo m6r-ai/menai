@@ -1,9 +1,7 @@
 # ADR-0007: Dead code elimination is always safe
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

@@ -1,9 +1,7 @@
 # ADR-0015: Desugar to a small core before IR
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

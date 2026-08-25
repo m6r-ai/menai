@@ -20,10 +20,8 @@ Use the next available four-digit number. Copy the structure of an existing ADR:
 ```markdown
 # ADR-NNNN: Title
 
-| Metadata |
-|---|
-| Date | YYYY-MM-DD |
-| Status | Accepted |
+Date: YYYY-MM-DD  
+Status: Accepted
 
 ## Context
 

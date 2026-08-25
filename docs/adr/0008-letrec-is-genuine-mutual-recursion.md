@@ -1,9 +1,7 @@
 # ADR-0008: `letrec` reaching the IR builder is always genuine mutual recursion
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

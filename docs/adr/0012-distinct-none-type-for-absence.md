@@ -1,9 +1,7 @@
 # ADR-0012: Distinct `#none` type for absence
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

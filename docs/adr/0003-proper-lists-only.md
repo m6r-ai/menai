@@ -1,9 +1,7 @@
 # ADR-0003: Proper lists only
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

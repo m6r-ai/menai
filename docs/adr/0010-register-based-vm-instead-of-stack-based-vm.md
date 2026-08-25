@@ -1,9 +1,7 @@
 # ADR-0010: Register-based VM instead of stack-based VM
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 

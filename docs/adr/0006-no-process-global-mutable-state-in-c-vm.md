@@ -1,9 +1,7 @@
 # ADR-0006: No process-global mutable state in the C VM
 
-| Metadata |
-|---|
-| Date | 2026-08-24 |
-| Status | Accepted |
+Date: 2026-08-24  
+Status: Accepted
 
 ## Context
 
