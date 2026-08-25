@@ -7,12 +7,17 @@ New features:
 - Added more floating point operations.
 - Added `string->float` and `string->complex` operations.
 - Improved performance of `string->integer`.
+- Added a closure garbage collector so Menai can reclaim memory.
+- Added a compile-time leak detector (`MENAI_DEBUG_LEAKS`) that tracks all
+  MenaiValue allocations and reports any not freed at VM teardown.
+
+Bug fixes:
+
+- Menai no longer leaks memory!
 
 Internal structure changes:
 
 - Added ADRs into the docs so design choices are visible.
-- Added a compile-time leak detector (`MENAI_DEBUG_LEAKS`) that tracks all
-  MenaiValue allocations and reports any not freed at VM teardown.
 
 ## v0.2.0 (2026-08-10)
 
