@@ -209,12 +209,12 @@ typedef struct {
 /*
  * MenaiValue_HEAD — common prefix for every Menai value struct.
  *
- * ob_refcnt    — reference count.
- * ob_type      — type tag (MenaiType, uint16_t).
- * ob_alloc     — pool bucket number if this object was served from the
- *                pool allocator, or -1 if it was allocated directly via malloc.
- *                Written by menai_alloc; read by menai_free to determine how
- *                to return the block.
+ * ob_refcnt       — reference count.
+ * ob_type         — type tag (MenaiType, uint16_t).
+ * ob_alloc_bucket — pool bucket number if this object was served from the
+ *                   pool allocator, or -1 if it was allocated directly via malloc.
+ *                   Written by menai_alloc; read by menai_free to determine how
+ *                   to return the block.
  */
 #define MenaiValue_HEAD              \
     MENAI_MAGIC_FIELD                \

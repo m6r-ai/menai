@@ -52,8 +52,7 @@ _leak_set_grow(MenaiLeakSet *ls)
 
     fprintf(stderr, "leak set buckets: %zd\n", new_cap);
 
-    MenaiLeakNode **new_buckets = (MenaiLeakNode **)calloc(
-        (size_t)new_cap, sizeof(MenaiLeakNode *));
+    MenaiLeakNode **new_buckets = (MenaiLeakNode **)calloc((size_t)new_cap, sizeof(MenaiLeakNode *));
     if (!new_buckets) {
         return -1;
     }
@@ -126,7 +125,7 @@ menai_leak_set_add(MenaiLeakSet *ls, void *ptr)
     }
 
     MenaiLeakNode *node = (MenaiLeakNode *)malloc(sizeof(MenaiLeakNode));
-    if (node == NULL) {
+    if (!node) {
         return;
     }
 
@@ -302,14 +301,16 @@ menai_alloc(MenaiVMState *vs, size_t size)
 {
     if (size > MENAI_POOL_MAX_SIZE) {
         void *ptr = malloc(size);
-        if (ptr) {
-            MENAI_SET_MAGIC((MenaiValue *)ptr);
-            ((MenaiValue *)ptr)->ob_alloc_bucket = -1;
+        if (!ptr) {
+            return NULL;
+        }
+
+        ((MenaiValue *)ptr)->ob_alloc_bucket = -1;
+        MENAI_SET_MAGIC((MenaiValue *)ptr);
 
 #ifdef MENAI_DEBUG_LEAKS
-            menai_leak_set_add(&vs->_leak_set, ptr);
+        menai_leak_set_add(&vs->_leak_set, ptr);
 #endif
-        }
 
         return ptr;
     }
