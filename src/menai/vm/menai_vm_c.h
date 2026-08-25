@@ -483,7 +483,7 @@ typedef struct {
 #define MENAI_POOL_MIN_SIZE (1 << MENAI_POOL_LOG_MIN_SIZE)
 #define MENAI_POOL_MAX_SIZE 4096
 #define MENAI_POOL_NUM_BUCKETS 8
-#define MENAI_POOL_MAX_DEPTH 256
+#define MENAI_POOL_MAX_DEPTH GC_THRESHOLD
 
 /*
  * Small integer cache — covers [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX].
@@ -539,7 +539,7 @@ typedef struct {
     ssize_t count;
 } GlobalsTable;
 
-#define GC_THRESHOLD 8192
+#define GC_THRESHOLD 4096
 
 /*
  * MenaiVMState — per-instance VM state.
