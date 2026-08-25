@@ -74,6 +74,8 @@ menai_vm_state_alloc(void)
         return NULL;
     }
 
+    vs->_gc_threshold = GC_THRESHOLD;
+
     return vs;
 }
 

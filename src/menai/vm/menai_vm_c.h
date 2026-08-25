@@ -539,6 +539,8 @@ typedef struct {
     ssize_t count;
 } GlobalsTable;
 
+#define GC_THRESHOLD 8192
+
 /*
  * MenaiVMState — per-instance VM state.
  *
@@ -571,6 +573,15 @@ typedef struct MenaiVMState {
     ssize_t _closure_registry_count;
     ssize_t _closure_registry_capacity;
     int _gc_in_progress;
+
+    /*
+     * Periodic GC during execution.  _gc_exec_ctx is set by execute_loop
+     * before entering the interpreter loop and cleared on exit.  When the
+     * registry count exceeds _gc_threshold, alloc_menai_function triggers
+     * a collection using the live registers as additional roots.
+     */
+    struct MenaiExecContext *_gc_exec_ctx;
+    ssize_t _gc_threshold;
 
     int _cancel_flag;
 
@@ -1203,6 +1214,20 @@ void menai_vm_enable_profiling(MenaiVMState *vs);
 void menai_vm_get_profile_data(MenaiVMState *vs, uint64_t *out_counts, uint64_t *out_total_instr);
 
 void menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root);
+
+/*
+ * MenaiExecContext — snapshot of the live register state during execution.
+ * Set by execute_loop and used by menai_closure_gc_collect_during to trace
+ * live registers as GC roots.  Only regs[0..num_regs-1] are traced; unused
+ * slots hold the none singleton (a leaf type, skipped by the marker).
+ */
+struct MenaiExecContext {
+    MenaiValue **regs;
+    size_t num_regs;
+};
+typedef struct MenaiExecContext MenaiExecContext;
+
+void menai_closure_gc_collect_during(MenaiVMState *vs, MenaiExecContext *ctx);
 
 void menai_closure_registry_free(MenaiVMState *vs);
 

@@ -222,33 +222,15 @@ _gc_detach_dead_from_struct(MenaiStruct *st)
 }
 
 /*
- * menai_closure_gc_collect — run the closure cycle collector.
+ * _gc_sweep — shared sweep logic for the closure cycle collector.
  *
- * Phase 1: Mark all closures reachable from roots.
- * Phase 2: Partition the registry into live (marked) and dead (unmarked).
- * Phase 3: Break internal edges — bare refcount decrements only.
- * Phase 4: Free dead closures — destruction only.
- * Phase 5: Free orphaned non-closure values — destruction only.
- *
- * extra_root is the execute result (or NULL at teardown).  When
- * _globals_valid is set, all globals entries are also roots.
+ * Phases 2–5: partition, break edges, free dead closures, free orphans.
+ * Called after the caller has completed Phase 1 (marking from appropriate
+ * roots).
  */
-void
-menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
+static void
+_gc_sweep(MenaiVMState *vs)
 {
-    /*
-     * Phase 1 — Mark.
-     */
-    if (vs->_globals_valid) {
-        for (ssize_t i = 0; i < vs->_globals.count; i++) {
-            gc_mark_value(vs->_globals.entries[i].value);
-        }
-    }
-
-    if (extra_root != NULL) {
-        gc_mark_value(extra_root);
-    }
-
     /*
      * Phase 2 — Partition.
      *
@@ -260,8 +242,7 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
     ssize_t live_count = 0;
     ssize_t dead_count = 0;
 
-    MenaiFunction **dead = (MenaiFunction **)malloc(
-        (size_t)vs->_closure_registry_count * sizeof(MenaiFunction *));
+    MenaiFunction **dead = (MenaiFunction **)malloc((size_t)vs->_closure_registry_count * sizeof(MenaiFunction *));
     if (dead == NULL) {
         /* Bail — clear all marks and try next time. */
         for (ssize_t i = 0; i < vs->_closure_registry_count; i++) {
@@ -301,8 +282,7 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
     ssize_t orphan_count = 0;
     MenaiValue **orphans = NULL;
     if (dead_count > 0) {
-        orphans = (MenaiValue **)malloc(
-            (size_t)dead_count * sizeof(MenaiValue *));
+        orphans = (MenaiValue **)malloc((size_t)dead_count * sizeof(MenaiValue *));
         /* If malloc fails, orphans are leaked — acceptable in OOM. */
     }
 
@@ -417,6 +397,75 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
     free(orphans);
     vs->_gc_in_progress = 0;
     free(dead);
+}
+
+/*
+ * menai_closure_gc_collect — run the closure cycle collector at the end of
+ * an execute call or at VM teardown.
+ *
+ * Phase 1: Mark all closures reachable from globals and the execute result.
+ * Phases 2–5: delegated to _gc_sweep.
+ *
+ * extra_root is the execute result (or NULL at teardown).  When
+ * _globals_valid is set, all globals entries are also roots.
+ */
+void
+menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
+{
+    /*
+     * Phase 1 — Mark from globals and the execute result.
+     */
+    if (vs->_globals_valid) {
+        for (ssize_t i = 0; i < vs->_globals.count; i++) {
+            gc_mark_value(vs->_globals.entries[i].value);
+        }
+    }
+
+    if (extra_root != NULL) {
+        gc_mark_value(extra_root);
+    }
+
+    _gc_sweep(vs);
+}
+
+/*
+ * menai_closure_gc_collect_during — run the collector mid-execution.
+ *
+ * Phase 1: Mark all closures reachable from globals and the live registers.
+ * Phases 2–5: delegated to _gc_sweep.
+ *
+ * ctx is the execution context set by execute_loop.  All registers in
+ * ctx->regs[0..num_regs-1] are traced as roots.  Unused slots hold the none
+ * singleton (a leaf type, skipped by the marker at negligible cost).
+ */
+void
+menai_closure_gc_collect_during(MenaiVMState *vs, MenaiExecContext *ctx)
+{
+    /*
+     * Phase 1 — Mark from globals and live registers.
+     */
+    if (vs->_globals_valid) {
+        for (ssize_t i = 0; i < vs->_globals.count; i++) {
+            gc_mark_value(vs->_globals.entries[i].value);
+        }
+    }
+
+    if (ctx != NULL) {
+        for (size_t i = 0; i < ctx->num_regs; i++) {
+            gc_mark_value(ctx->regs[i]);
+        }
+    }
+
+    _gc_sweep(vs);
+
+    /*
+     * Set the next threshold to double the current registry size, so the
+     * collector runs at most every O(threshold) allocations.
+     */
+    vs->_gc_threshold = vs->_closure_registry_count * 2;
+    if (vs->_gc_threshold < GC_THRESHOLD) {
+        vs->_gc_threshold = GC_THRESHOLD;
+    }
 }
 
 /*

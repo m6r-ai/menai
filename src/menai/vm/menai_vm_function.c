@@ -13,6 +13,18 @@
 MenaiFunction *
 alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
 {
+    /*
+     * Periodic GC — if the registry has grown past the threshold and we are
+     * mid-execution, collect now before adding the new closure.  This keeps
+     * the registry bounded during long-running executions.  The collection
+     * traces from globals and live registers (via _gc_exec_ctx), so closures
+     * currently in use are preserved.  The new closure has not been created
+     * yet, so it cannot be misidentified as dead.
+     */
+    if (vs->_gc_exec_ctx != NULL && vs->_closure_registry_count >= vs->_gc_threshold) {
+        menai_closure_gc_collect_during(vs, vs->_gc_exec_ctx);
+    }
+
     ssize_t ncap = co->ncap;
     size_t sz = sizeof(MenaiFunction) + (size_t)ncap * sizeof(MenaiValue *);
     MenaiFunction *self = (MenaiFunction *)menai_alloc(vs, sz);
@@ -41,8 +53,7 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
             new_cap = 64;
         }
 
-        MenaiFunction **new_reg = (MenaiFunction **)realloc(
-            vs->_closure_registry, (size_t)new_cap * sizeof(MenaiFunction *));
+        MenaiFunction **new_reg = (MenaiFunction **)realloc(vs->_closure_registry, (size_t)new_cap * sizeof(MenaiFunction *));
         if (new_reg != NULL) {
             vs->_closure_registry = new_reg;
             vs->_closure_registry_capacity = new_cap;

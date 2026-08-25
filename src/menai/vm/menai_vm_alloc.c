@@ -305,6 +305,7 @@ menai_alloc(MenaiVMState *vs, size_t size)
         if (ptr) {
             MENAI_SET_MAGIC((MenaiValue *)ptr);
             ((MenaiValue *)ptr)->ob_alloc_bucket = -1;
+
 #ifdef MENAI_DEBUG_LEAKS
             menai_leak_set_add(&vs->_leak_set, ptr);
 #endif
