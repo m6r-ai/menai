@@ -10,6 +10,7 @@ New features:
 - Added a closure garbage collector so Menai can reclaim memory.
 - Added a compile-time leak detector (`MENAI_DEBUG_LEAKS`) that tracks all
   MenaiValue allocations and reports any not freed at VM teardown.
+- Added a `number->string` operation.
 
 Bug fixes:
 
