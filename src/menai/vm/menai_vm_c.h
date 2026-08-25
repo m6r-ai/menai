@@ -554,6 +554,8 @@ typedef struct MenaiVMState {
     void *_pool_heads[MENAI_POOL_NUM_BUCKETS];
     int _pool_depths[MENAI_POOL_NUM_BUCKETS];
 
+    int _cancel_flag;
+
     /* Singletons — per-instance */
     MenaiNone none_storage;             /* inline, not heap */
     MenaiBoolean true_storage;          /* inline */
@@ -582,8 +584,6 @@ typedef struct MenaiVMState {
      */
     struct MenaiExecContext *_gc_exec_ctx;
     ssize_t _gc_threshold;
-
-    int _cancel_flag;
 
     MenaiProfileData _profile;
 
