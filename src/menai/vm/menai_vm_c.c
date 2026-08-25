@@ -910,7 +910,7 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiFunction *func, MenaiValue *
  * Returns the result value (new reference) or NULL on error.
  */
 static MenaiValue *
-execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals, MenaiVMError *out_error)
+execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
 {
     int vm_err = MENAI_OK;
     const char *vm_user_message = NULL;
@@ -6820,11 +6820,11 @@ error:
             }
         }
 
-        out_error->code = vm_err;
-        out_error->opcode = opcode;
-        out_error->ip = cur_ip;
-        out_error->call_depth = frame_depth;
-        out_error->user_message = vm_user_message;
+        vs->error.code = vm_err;
+        vs->error.opcode = opcode;
+        vs->error.ip = cur_ip;
+        vs->error.call_depth = frame_depth;
+        vs->error.user_message = vm_user_message;
         return NULL;
     }
 }
@@ -6848,15 +6848,13 @@ menai_vm_cancel(MenaiVMState *vs)
  * result, or NULL on error.  On error, *out_error is filled in.
  */
 MenaiValue *
-menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals, MenaiVMError *out_error)
+menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
 {
-    if (out_error) {
-        out_error->code = MENAI_OK;
-        out_error->opcode = 0;
-        out_error->ip = 0;
-        out_error->call_depth = 0;
-        out_error->user_message = NULL;
-    }
+    vs->error.code = MENAI_OK;
+    vs->error.opcode = 0;
+    vs->error.ip = 0;
+    vs->error.call_depth = 0;
+    vs->error.user_message = NULL;
 
     int max_locals = menai_code_object_max_locals(code);
     if (vs->_globals_valid) {
@@ -6874,9 +6872,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     size_t num_regs = (size_t)(MAX_FRAME_DEPTH + 1) * max_locals;
     MenaiValue **regs = (MenaiValue **)malloc(num_regs * sizeof(MenaiValue *));
     if (regs == NULL) {
-        if (out_error) {
-            out_error->code = MENAI_ERR_NOMEM;
-        }
+        vs->error.code = MENAI_ERR_NOMEM;
         return NULL;
     }
 
@@ -6893,7 +6889,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->regs = regs;
     vs->num_regs = num_regs;
 
-    MenaiValue *result = execute_loop(vs, code, extra_globals, out_error);
+    MenaiValue *result = execute_loop(vs, code, extra_globals);
 
     vs->regs = NULL;
 

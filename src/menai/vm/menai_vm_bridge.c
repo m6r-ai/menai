@@ -1489,9 +1489,7 @@ bridge_translate_error(const MenaiVMError *err)
         Py_INCREF(py_user_msg);
     }
 
-    args = Py_BuildValue("(iiiiN)",
-        err->code, err->opcode, err->ip, err->call_depth,
-        py_user_msg);
+    args = Py_BuildValue("(iiiiN)", err->code, err->opcode, err->ip, err->call_depth, py_user_msg);
     if (!args) {
         return;
     }
@@ -1528,12 +1526,11 @@ bridge_set_prelude(MenaiVMState *vs, PyObject *prelude_code)
         return -1;
     }
 
-    MenaiVMError vm_err;
-    MenaiValue *result = menai_vm_execute_native(vs, prelude_co, NULL, &vm_err);
+    MenaiValue *result = menai_vm_execute_native(vs, prelude_co, NULL);
     menai_code_object_release(vs, prelude_co);
     if (!result) {
         if (!PyErr_Occurred()) {
-            bridge_translate_error(&vm_err);
+            bridge_translate_error(&vs->error);
         }
 
         return -1;
@@ -1685,12 +1682,11 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
         has_extra = 1;
     }
 
-    MenaiVMError vm_err;
     MenaiValue *result;
 
     _t0 = perf_counter_ns();
     Py_BEGIN_ALLOW_THREADS
-    result = menai_vm_execute_native(vs, native_code, has_extra ? &extra_globals : NULL, &vm_err);
+    result = menai_vm_execute_native(vs, native_code, has_extra ? &extra_globals : NULL);
     Py_END_ALLOW_THREADS
     _t1 = perf_counter_ns();
     vs->_execute_time_ns = (uint64_t)(_t1 - _t0);
@@ -1704,7 +1700,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
 
     if (result == NULL) {
         if (!PyErr_Occurred()) {
-            bridge_translate_error(&vm_err);
+            bridge_translate_error(&vs->error);
         }
 
         return NULL;

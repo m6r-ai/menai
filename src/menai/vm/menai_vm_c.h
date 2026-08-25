@@ -588,6 +588,11 @@ typedef struct MenaiVMState {
 
     MenaiProfileData _profile;
 
+    /*
+     * VM error status.
+     */
+    MenaiVMError error;
+
     /* Timing data — last execute call's conversion and execution times in nanoseconds. */
     uint64_t _convert_time_ns;
     uint64_t _execute_time_ns;
@@ -1203,10 +1208,7 @@ void globals_free(MenaiVMState *vs, GlobalsTable *gt);
 int globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d);
 MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
 
-MenaiValue *menai_vm_execute_native(MenaiVMState *vs,
-                                    MenaiCodeObject *code,
-                                    const GlobalsTable *extra_globals,
-                                    MenaiVMError *out_error);
+MenaiValue *menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals);
 
 void menai_vm_cancel(MenaiVMState *vs);
 
