@@ -805,7 +805,6 @@ typedef struct {
     int base;
     MenaiValue **frame_regs;
     int return_dest;
-    int is_sentinel;
 } Frame;
 
 /*
@@ -926,7 +925,6 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
     new_frame->base = callee_base;
     new_frame->frame_regs = regs + callee_base;
     new_frame->return_dest = return_dest;
-    new_frame->is_sentinel = 0;
     return MENAI_OK;
 }
 
@@ -945,13 +943,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
     /* Frame stack — depth 0 is the sentinel. */
     Frame frames[MAX_FRAME_DEPTH + 1];
     frames[0] = (Frame){
-        .is_sentinel = 1,
         .code_obj = NULL,
         .constants_items = NULL,
         .instrs = NULL,
     };
     frames[1] = (Frame){
-        .is_sentinel = 0,
         .code_obj = NULL,
         .constants_items = NULL,
         .instrs = NULL,
@@ -1107,15 +1103,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int saved_return_dest = frame->return_dest;
             menai_code_object_release(vs, frame->code_obj);
             frame->code_obj = NULL;
-            frame_depth--;
-            Frame *caller = &frames[frame_depth];
-
-            if (caller->is_sentinel) {
+            if (--frame_depth == 0) {
                 /* Top-level return — exit the loop. */
                 return retval;
             }
 
             /* Store result into caller's register window. */
+            Frame *caller = &frames[frame_depth];
             menai_reg_set_own(vs, regs, caller->base + saved_return_dest, retval);
 
             frame = caller;
@@ -1250,13 +1244,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 int saved_return_dest = frame->return_dest;
                 menai_code_object_release(vs, frame->code_obj);
                 frame->code_obj = NULL;
-                frame_depth--;
-                Frame *caller = &frames[frame_depth];
-                if (caller->is_sentinel) {
+                if (--frame_depth == 0) {
                     menai_value_release(vs, raw);
                     return (MenaiValue *)retval;
                 }
 
+                Frame *caller = &frames[frame_depth];
                 menai_reg_set_own(vs, regs, caller->base + saved_return_dest, (MenaiValue *)retval);
                 menai_value_release(vs, raw);
                 frame = caller;
@@ -1430,14 +1423,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 int saved_return_dest = frame->return_dest;
                 menai_code_object_release(vs, frame->code_obj);
                 frame->code_obj = NULL;
-                frame_depth--;
-                Frame *caller = &frames[frame_depth];
-                if (caller->is_sentinel) {
+                if (--frame_depth == 0) {
                     menai_value_release(vs, raw_args);
                     menai_value_release(vs, raw_func);
                     return (MenaiValue *)retval;
                 }
 
+                Frame *caller = &frames[frame_depth];
                 menai_reg_set_own(vs, regs, caller->base + saved_return_dest, (MenaiValue *)retval);
                 menai_value_release(vs, raw_args);
                 menai_value_release(vs, raw_func);
