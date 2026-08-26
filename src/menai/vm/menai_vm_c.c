@@ -2,6 +2,7 @@
  * menai_vm_c.c — C implementation of the Menai VM execute loop.
  */
 #define _POSIX_C_SOURCE 200809L
+#include <assert.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -808,41 +809,6 @@ typedef struct {
 } Frame;
 
 /*
- * frame_setup
- *
- * Populates a Frame from a MenaiCodeObject.  Takes a retain on co.
- */
-static inline void
-frame_setup(Frame *f, MenaiValue **regs, MenaiCodeObject *co, int base, int return_dest)
-{
-    menai_code_object_retain(co);
-    f->code_obj = co;
-    f->constants_items = co->constants;
-    f->names_items = co->names;
-    f->name_hashes = co->name_hashes;
-    f->nnames = co->nnames;
-    f->children = co->children;
-    f->nchildren = co->nchildren;
-    f->instrs = co->instrs;
-    f->code_len = co->code_len;
-    f->local_count = co->local_count;
-    f->ip = 0;
-    f->base = base;
-    f->frame_regs = regs + base;
-    f->return_dest = return_dest;
-    f->is_sentinel = 0;
-}
-
-/*
- * Register array helpers
- *
- * The register array is a flat MenaiValue * array:
- *   regs[depth * max_locals + slot]
- * All slots are initialised to menai_none(vs) (borrowed — the singleton is
- * kept alive by the VM state).  menai_reg_set_own/menai_reg_set_borrow manage reference counts correctly.
- */
-
-/*
  * Initial number of frame-sized register windows to allocate.  The register
  * file grows on demand via realloc when the call stack exceeds this depth,
  * so most programs never pay for MAX_FRAME_DEPTH worth of slots.
@@ -908,11 +874,14 @@ ensure_reg_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *fra
 
     return 0;
 }
+
 /*
- * call_setup — shared logic for CALL and APPLY
+ * call_setup — shared logic for CALL, APPLY, and top-level entry
  *
- * Sets up new_frame for a call to func_obj with arity arguments already
- * written into regs[callee_base .. callee_base+arity-1].
+ * Sets up new_frame for a call to the code object co with arity arguments
+ * already written into regs[callee_base .. callee_base+arity-1].
+ * ncap/captures describe the closure environment (0/NULL for a top-level
+ * code object that has no captures).
  *
  * Handles:
  *   - arity checking (fixed and variadic)
@@ -922,9 +891,8 @@ ensure_reg_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *fra
  * Returns MENAI_OK on success, or a MENAI_ERR_* code on error.
  */
 static int
-call_setup(MenaiVMState *vs, Frame *new_frame, MenaiFunction *func, MenaiValue **regs, int callee_base, int arity, int return_dest)
+call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue **regs, int callee_base, int arity, int return_dest, ssize_t ncap, MenaiValue **captures)
 {
-    MenaiCodeObject *co = func->bytecode;
     int param_count = co->param_count;
     int is_variadic = co->is_variadic;
 
@@ -953,14 +921,27 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiFunction *func, MenaiValue *
     }
 
     /* Populate capture slots: regs[callee_base + param_count + i] */
-    ssize_t ncap = func->ncap;
-    MenaiValue **captures = func->captures;
     for (ssize_t i = 0; i < ncap; i++) {
         MenaiValue *cv = *captures++;
         menai_reg_set_borrow(vs, regs, callee_base + param_count + (int)i, cv);
     }
 
-    frame_setup(new_frame, regs, co, callee_base, return_dest);
+    menai_code_object_retain(co);
+    new_frame->code_obj = co;
+    new_frame->constants_items = co->constants;
+    new_frame->names_items = co->names;
+    new_frame->name_hashes = co->name_hashes;
+    new_frame->nnames = co->nnames;
+    new_frame->children = co->children;
+    new_frame->nchildren = co->nchildren;
+    new_frame->instrs = co->instrs;
+    new_frame->code_len = co->code_len;
+    new_frame->local_count = co->local_count;
+    new_frame->ip = 0;
+    new_frame->base = callee_base;
+    new_frame->frame_regs = regs + callee_base;
+    new_frame->return_dest = return_dest;
+    new_frame->is_sentinel = 0;
     return MENAI_OK;
 }
 
@@ -991,8 +972,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         .instrs = NULL,
     };
 
-    /* Set up frame at depth 1 for the top-level code object. */
-    frame_setup(&frames[1], regs, code, 0, 0);
+    /*
+     * Set up frame at depth 1 — emulate a call from frame 0 (the sentinel)
+     * with zero arguments and no captures.
+     */
+    vm_err = call_setup(vs, &frames[1], code, regs, 0, 0, 0, 0, NULL);
+    assert(vm_err == MENAI_OK);
 
     int frame_depth = 1;
     Frame *frame = &frames[1];
@@ -1174,7 +1159,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 frame_depth++;
                 Frame *new_frame = &frames[frame_depth];
-                vm_err = call_setup(vs, new_frame, (MenaiFunction *)raw, regs, callee_base, arity, dest);
+                MenaiFunction *fraw = (MenaiFunction *)raw;
+                vm_err = call_setup(vs, new_frame, fraw->bytecode, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
                     goto error;
@@ -1231,7 +1217,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
-                vm_err = call_setup(vs, frame, (MenaiFunction *)raw, regs, frame->base, n_args, saved_return_dest);
+                MenaiFunction *fraw = (MenaiFunction *)raw;
+                vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, n_args, saved_return_dest, fraw->ncap, fraw->captures);
                 menai_value_release(vs, raw);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
@@ -1318,7 +1305,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 frame_depth++;
                 Frame *new_frame = &frames[frame_depth];
-                vm_err = call_setup(vs, new_frame, (MenaiFunction *)raw_func, regs, callee_base, arity, dest);
+                MenaiFunction *fraw = (MenaiFunction *)raw_func;
+                vm_err = call_setup(vs, new_frame, fraw->bytecode, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
                     goto error;
@@ -1389,7 +1377,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
-                vm_err = call_setup(vs, frame, (MenaiFunction *)raw_func, regs, frame->base, arity, saved_return_dest);
+                MenaiFunction *fraw = (MenaiFunction *)raw_func;
+                vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
                 menai_value_release(vs, raw_func);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
