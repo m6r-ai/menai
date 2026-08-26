@@ -830,8 +830,7 @@ typedef struct {
  * MENAI_ERR_NOMEM on allocation failure.
  */
 static int
-ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int frame_depth,
-                    MenaiValue ***regs_ptr)
+ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int frame_depth)
 {
     size_t new_num_regs = vs->num_regs;
     while (new_num_regs < needed_regs) {
@@ -839,7 +838,7 @@ ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int fra
     }
 
     MenaiValue **new_regs = (MenaiValue **)realloc(vs->regs, new_num_regs * sizeof(MenaiValue *));
-    if (new_regs == NULL) {
+    if (!new_regs) {
         return MENAI_ERR_NOMEM;
     }
 
@@ -852,7 +851,6 @@ ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int fra
 
     vs->regs = new_regs;
     vs->num_regs = new_num_regs;
-    *regs_ptr = new_regs;
 
     /* Refresh frame_regs for all live frames — the base pointer may have moved. */
     for (int d = 1; d <= frame_depth; d++) {
@@ -1141,10 +1139,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiCodeObject *callee_co = fraw->bytecode;
                 size_t needed_regs = (size_t)callee_base + callee_co->local_count + callee_co->outgoing_arg_slots;
                 if (needed_regs > vs->num_regs) {
-                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
                         goto error;
                     }
+
+                    regs = vs->regs;
                 }
 
                 frame_regs = frame->frame_regs;
@@ -1212,11 +1212,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiCodeObject *callee_co = fraw->bytecode;
                 size_t needed_regs = (size_t)frame->base + callee_co->local_count + callee_co->outgoing_arg_slots;
                 if (needed_regs > vs->num_regs) {
-                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
                         menai_value_release(vs, raw);
                         goto error;
                     }
+
+                    regs = vs->regs;
                 }
 
                 vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, n_args, saved_return_dest, fraw->ncap, fraw->captures);
@@ -1297,10 +1299,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiCodeObject *callee_co = fraw->bytecode;
                 size_t needed_regs = (size_t)callee_base + callee_co->local_count + callee_co->outgoing_arg_slots;
                 if (needed_regs > vs->num_regs) {
-                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
                         goto error;
                     }
+
+                    regs = vs->regs;
                 }
 
                 frame_regs = frame->frame_regs;
@@ -1387,11 +1391,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiCodeObject *callee_co = fraw->bytecode;
                 size_t needed_regs = (size_t)frame->base + callee_co->local_count + callee_co->outgoing_arg_slots;
                 if (needed_regs > vs->num_regs) {
-                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
                         menai_value_release(vs, raw_func);
                         goto error;
                     }
+
+                    regs = vs->regs;
                 }
 
                 vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
