@@ -1,13 +1,5 @@
 /*
  * menai_vm_c.c — C implementation of the Menai VM execute loop.
- *
- * Exposes:
- *   menai_vm_c.execute(code, globals_dict) -> MenaiValue *   (in menai_vm_bridge.c)
- *   menai_vm_c.cancel() -> None   (request cancellation of the running execute)
- *
- * The execute entry point and all Python-boundary logic live in
- * menai_vm_bridge.c.  This file contains the native execute loop
- * and the cancel method.  Globals table management is in menai_vm_globals.c.
  */
 #define _POSIX_C_SOURCE 200809L
 #include <math.h>
@@ -849,6 +841,73 @@ frame_setup(Frame *f, MenaiValue **regs, MenaiCodeObject *co, int base, int retu
  * All slots are initialised to menai_none(vs) (borrowed — the singleton is
  * kept alive by the VM state).  menai_reg_set_own/menai_reg_set_borrow manage reference counts correctly.
  */
+
+/*
+ * Initial number of frame-sized register windows to allocate.  The register
+ * file grows on demand via realloc when the call stack exceeds this depth,
+ * so most programs never pay for MAX_FRAME_DEPTH worth of slots.
+ */
+#define INITIAL_FRAME_CAPACITY 32
+
+/*
+ * ensure_reg_capacity — grow the register file if the next frame would
+ * exceed the current allocation.
+ *
+ * The register file is a flat array of MenaiValue * pointers, laid out as
+ *   regs[depth * max_locals + slot]
+ * with a uniform stride of max_locals per frame.  We start with
+ * INITIAL_FRAME_CAPACITY frames worth of slots and double on demand up to
+ * MAX_FRAME_DEPTH + 1.
+ *
+ * After realloc, the base pointer may move, so every live frame's frame_regs
+ * pointer (which is regs + base) must be refreshed.  The caller's regs local
+ * variable is updated via the out parameter.
+ *
+ * Returns 0 on success (capacity already sufficient or grown), -1 on
+ * allocation failure.
+ */
+static int
+ensure_reg_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *frames, int frame_depth,
+                    MenaiValue ***regs_ptr)
+{
+    size_t needed = (size_t)(next_depth + 1) * max_locals;
+    if (needed <= vs->num_regs) {
+        return 0;
+    }
+
+    size_t new_cap_frames = vs->num_regs / max_locals;
+    while (new_cap_frames * max_locals < needed) {
+        new_cap_frames *= 2;
+    }
+
+    if (new_cap_frames > (size_t)(MAX_FRAME_DEPTH + 1)) {
+        new_cap_frames = MAX_FRAME_DEPTH + 1;
+    }
+
+    size_t new_num_regs = new_cap_frames * max_locals;
+    MenaiValue **new_regs = (MenaiValue **)realloc(vs->regs, new_num_regs * sizeof(MenaiValue *));
+    if (new_regs == NULL) {
+        return -1;
+    }
+
+    /* Initialise the newly allocated slots to menai_none. */
+    MenaiValue *none_val = (MenaiValue *)menai_none(vs);
+    for (size_t i = vs->num_regs; i < new_num_regs; i++) {
+        menai_value_retain(none_val);
+        new_regs[i] = none_val;
+    }
+
+    vs->regs = new_regs;
+    vs->num_regs = new_num_regs;
+    *regs_ptr = new_regs;
+
+    /* Refresh frame_regs for all live frames — the base pointer may have moved. */
+    for (int d = 1; d <= frame_depth; d++) {
+        frames[d].frame_regs = new_regs + frames[d].base;
+    }
+
+    return 0;
+}
 /*
  * call_setup — shared logic for CALL and APPLY
  *
@@ -910,7 +969,7 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiFunction *func, MenaiValue *
  * Returns the result value (new reference) or NULL on error.
  */
 static MenaiValue *
-execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
+execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals, int max_locals)
 {
     int vm_err = MENAI_OK;
     const char *vm_user_message = NULL;
@@ -1106,6 +1165,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
+                if (ensure_reg_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs) < 0) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                frame_regs = frame->frame_regs;
+
                 frame_depth++;
                 Frame *new_frame = &frames[frame_depth];
                 vm_err = call_setup(vs, new_frame, (MenaiFunction *)raw, regs, callee_base, arity, dest);
@@ -1237,9 +1303,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                int callee_base = frame->base + frame->local_count;
+                if (ensure_reg_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs) < 0) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                frame_regs = frame->frame_regs;
 
                 /* Scatter list elements into the callee window */
+                int callee_base = frame->base + frame->local_count;
                 for (int i = 0; i < arity; i++) {
                     menai_reg_set_borrow(vs, regs, callee_base + i, elements[i]);
                 }
@@ -6869,16 +6941,17 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
         }
     }
 
-    size_t num_regs = (size_t)(MAX_FRAME_DEPTH + 1) * max_locals;
+    size_t num_regs = (size_t)INITIAL_FRAME_CAPACITY * max_locals;
     MenaiValue **regs = (MenaiValue **)malloc(num_regs * sizeof(MenaiValue *));
     if (regs == NULL) {
         vs->error.code = MENAI_ERR_NOMEM;
         return NULL;
     }
 
+    MenaiValue *none_val = (MenaiValue *)menai_none(vs);
     for (size_t i = 0; i < num_regs; i++) {
-        menai_value_retain((MenaiValue *)menai_none(vs));
-        regs[i] = (MenaiValue *)menai_none(vs);
+        menai_value_retain(none_val);
+        regs[i] = none_val;
     }
 
     /*
@@ -6889,8 +6962,10 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->regs = regs;
     vs->num_regs = num_regs;
 
-    MenaiValue *result = execute_loop(vs, code, extra_globals);
+    MenaiValue *result = execute_loop(vs, code, extra_globals, max_locals);
 
+    regs = vs->regs;
+    num_regs = vs->num_regs;
     vs->regs = NULL;
 
     for (size_t i = 0; i < num_regs; i++) {
