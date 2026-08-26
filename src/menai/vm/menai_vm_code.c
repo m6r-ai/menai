@@ -39,17 +39,3 @@ menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co)
     MENAI_CLEAR_MAGIC(co);
     free(co);
 }
-
-int
-menai_code_object_max_locals(const MenaiCodeObject *co)
-{
-    int best = co->local_count + co->outgoing_arg_slots;
-    for (ssize_t i = 0; i < co->nchildren; i++) {
-        int child_best = menai_code_object_max_locals(co->children[i]);
-        if (child_best > best) {
-            best = child_best;
-        }
-    }
-
-    return best;
-}

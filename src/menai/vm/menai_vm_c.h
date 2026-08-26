@@ -728,8 +728,6 @@ menai_code_object_release(MenaiVMState *vs, MenaiCodeObject *co)
     }
 }
 
-int menai_code_object_max_locals(const MenaiCodeObject *co);
-
 static inline void
 menai_bigint_init(MenaiBigInt *a)
 {

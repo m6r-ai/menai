@@ -809,51 +809,35 @@ typedef struct {
 } Frame;
 
 /*
- * Initial number of frame-sized register windows to allocate.  The register
- * file grows on demand via realloc when the call stack exceeds this depth,
- * so most programs never pay for MAX_FRAME_DEPTH worth of slots.
+ * Initial number of registers to allocate.  The register file grows on
+ * demand via realloc when more slots are needed.
  */
-#define INITIAL_FRAME_CAPACITY 32
+#define INITIAL_REG_CAPACITY 256
 
 /*
- * ensure_frame_capacity — check whether the next frame can be accommodated,
- * growing the register file if necessary.
+ * ensure_reg_capacity — ensure the register file has at least needed_regs
+ * slots, growing by doubling if necessary.
  *
- * The register file is a flat array of MenaiValue * pointers, laid out as
- *   regs[depth * max_locals + slot]
- * with a uniform stride of max_locals per frame.  We start with
- * INITIAL_FRAME_CAPACITY frames worth of slots and double on demand up to
- * MAX_FRAME_DEPTH + 1.
- *
- * If next_depth exceeds MAX_FRAME_DEPTH the hard limit has been reached and
- * MENAI_ERR_CALL_DEPTH_EXCEEDED is returned without attempting any growth.
+ * The register file is a flat array of MenaiValue * pointers with no fixed
+ * stride.  Each frame occupies a variable number of slots starting at
+ * frame->base.  We start with INITIAL_REG_CAPACITY slots and double on demand.
  *
  * After realloc, the base pointer may move, so every live frame's frame_regs
  * pointer (which is regs + base) must be refreshed.  The caller's regs local
  * variable is updated via the out parameter.
  *
  * Returns MENAI_OK on success (capacity already sufficient or grown), or a
- * MENAI_ERR_* code on error.
+ * MENAI_ERR_NOMEM on allocation failure.
  */
 static int
-ensure_frame_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *frames, int frame_depth,
+ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int frame_depth,
                     MenaiValue ***regs_ptr)
 {
-    if (next_depth > MAX_FRAME_DEPTH) {
-        return MENAI_ERR_CALL_DEPTH_EXCEEDED;
+    size_t new_num_regs = vs->num_regs;
+    while (new_num_regs < needed_regs) {
+        new_num_regs *= 2;
     }
 
-    size_t needed = (size_t)(next_depth + 1) * max_locals;
-    if (needed <= vs->num_regs) {
-        return MENAI_OK;
-    }
-
-    size_t new_cap_frames = vs->num_regs / max_locals;
-    while (new_cap_frames * max_locals < needed) {
-        new_cap_frames *= 2;
-    }
-
-    size_t new_num_regs = new_cap_frames * max_locals;
     MenaiValue **new_regs = (MenaiValue **)realloc(vs->regs, new_num_regs * sizeof(MenaiValue *));
     if (new_regs == NULL) {
         return MENAI_ERR_NOMEM;
@@ -953,7 +937,7 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
  * Returns the result value (new reference) or NULL on error.
  */
 static MenaiValue *
-execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals, int max_locals)
+execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
 {
     int vm_err = MENAI_OK;
     const char *vm_user_message = NULL;
@@ -1148,17 +1132,26 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int callee_base = frame->base + frame->local_count;
 
             if (IS_MENAI_FUNCTION(raw)) {
-                vm_err = ensure_frame_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs);
-                if (vm_err < 0) {
+                if (frame_depth >= MAX_FRAME_DEPTH) {
+                    vm_err = MENAI_ERR_CALL_DEPTH_EXCEEDED;
                     goto error;
+                }
+
+                MenaiFunction *fraw = (MenaiFunction *)raw;
+                MenaiCodeObject *callee_co = fraw->bytecode;
+                size_t needed_regs = (size_t)callee_base + callee_co->local_count + callee_co->outgoing_arg_slots;
+                if (needed_regs > vs->num_regs) {
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    if (vm_err < 0) {
+                        goto error;
+                    }
                 }
 
                 frame_regs = frame->frame_regs;
 
                 frame_depth++;
                 Frame *new_frame = &frames[frame_depth];
-                MenaiFunction *fraw = (MenaiFunction *)raw;
-                vm_err = call_setup(vs, new_frame, fraw->bytecode, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
+                vm_err = call_setup(vs, new_frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
                     goto error;
@@ -1216,12 +1209,23 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 int saved_return_dest = frame->return_dest;
                 MenaiFunction *fraw = (MenaiFunction *)raw;
+                MenaiCodeObject *callee_co = fraw->bytecode;
+                size_t needed_regs = (size_t)frame->base + callee_co->local_count + callee_co->outgoing_arg_slots;
+                if (needed_regs > vs->num_regs) {
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    if (vm_err < 0) {
+                        menai_value_release(vs, raw);
+                        goto error;
+                    }
+                }
+
                 vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, n_args, saved_return_dest, fraw->ncap, fraw->captures);
                 menai_value_release(vs, raw);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
 
+                frame_regs = frame->frame_regs;
                 break;
             }
 
@@ -1283,23 +1287,32 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int arity = (int)list->length;
 
             if (IS_MENAI_FUNCTION(raw_func)) {
-                vm_err = ensure_frame_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs);
-                if (vm_err < 0) {
+                if (frame_depth >= MAX_FRAME_DEPTH) {
+                    vm_err = MENAI_ERR_CALL_DEPTH_EXCEEDED;
                     goto error;
+                }
+
+                int callee_base = frame->base + frame->local_count;
+                MenaiFunction *fraw = (MenaiFunction *)raw_func;
+                MenaiCodeObject *callee_co = fraw->bytecode;
+                size_t needed_regs = (size_t)callee_base + callee_co->local_count + callee_co->outgoing_arg_slots;
+                if (needed_regs > vs->num_regs) {
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    if (vm_err < 0) {
+                        goto error;
+                    }
                 }
 
                 frame_regs = frame->frame_regs;
 
                 /* Scatter list elements into the callee window */
-                int callee_base = frame->base + frame->local_count;
                 for (int i = 0; i < arity; i++) {
                     menai_reg_set_borrow(vs, regs, callee_base + i, elements[i]);
                 }
 
                 frame_depth++;
                 Frame *new_frame = &frames[frame_depth];
-                MenaiFunction *fraw = (MenaiFunction *)raw_func;
-                vm_err = call_setup(vs, new_frame, fraw->bytecode, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
+                vm_err = call_setup(vs, new_frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     frame_depth--;
                     goto error;
@@ -1371,12 +1384,23 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 int saved_return_dest = frame->return_dest;
                 MenaiFunction *fraw = (MenaiFunction *)raw_func;
+                MenaiCodeObject *callee_co = fraw->bytecode;
+                size_t needed_regs = (size_t)frame->base + callee_co->local_count + callee_co->outgoing_arg_slots;
+                if (needed_regs > vs->num_regs) {
+                    vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth, &regs);
+                    if (vm_err < 0) {
+                        menai_value_release(vs, raw_func);
+                        goto error;
+                    }
+                }
+
                 vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
                 menai_value_release(vs, raw_func);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
 
+                frame_regs = frame->frame_regs;
                 break;
             }
 
@@ -6910,20 +6934,11 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->error.call_depth = 0;
     vs->error.user_message = NULL;
 
-    int max_locals = menai_code_object_max_locals(code);
-    if (vs->_globals_valid) {
-        for (ssize_t i = 0; i < vs->_globals.count; i++) {
-            MenaiValue *val = vs->_globals.entries[i].value;
-            if (IS_MENAI_FUNCTION(val)) {
-                int n = menai_code_object_max_locals(((MenaiFunction *)val)->bytecode);
-                if (n > max_locals) {
-                    max_locals = n;
-                }
-            }
-        }
+    size_t needed = (size_t)code->local_count + code->outgoing_arg_slots;
+    size_t num_regs = INITIAL_REG_CAPACITY;
+    if (needed > num_regs) {
+        num_regs = needed;
     }
-
-    size_t num_regs = (size_t)INITIAL_FRAME_CAPACITY * max_locals;
     MenaiValue **regs = (MenaiValue **)malloc(num_regs * sizeof(MenaiValue *));
     if (regs == NULL) {
         vs->error.code = MENAI_ERR_NOMEM;
@@ -6944,7 +6959,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->regs = regs;
     vs->num_regs = num_regs;
 
-    MenaiValue *result = execute_loop(vs, code, extra_globals, max_locals);
+    MenaiValue *result = execute_loop(vs, code, extra_globals);
 
     regs = vs->regs;
     num_regs = vs->num_regs;
