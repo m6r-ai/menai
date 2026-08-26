@@ -816,8 +816,8 @@ typedef struct {
 #define INITIAL_FRAME_CAPACITY 32
 
 /*
- * ensure_reg_capacity — grow the register file if the next frame would
- * exceed the current allocation.
+ * ensure_frame_capacity — check whether the next frame can be accommodated,
+ * growing the register file if necessary.
  *
  * The register file is a flat array of MenaiValue * pointers, laid out as
  *   regs[depth * max_locals + slot]
@@ -825,20 +825,27 @@ typedef struct {
  * INITIAL_FRAME_CAPACITY frames worth of slots and double on demand up to
  * MAX_FRAME_DEPTH + 1.
  *
+ * If next_depth exceeds MAX_FRAME_DEPTH the hard limit has been reached and
+ * MENAI_ERR_CALL_DEPTH_EXCEEDED is returned without attempting any growth.
+ *
  * After realloc, the base pointer may move, so every live frame's frame_regs
  * pointer (which is regs + base) must be refreshed.  The caller's regs local
  * variable is updated via the out parameter.
  *
- * Returns 0 on success (capacity already sufficient or grown), -1 on
- * allocation failure.
+ * Returns MENAI_OK on success (capacity already sufficient or grown), or a
+ * MENAI_ERR_* code on error.
  */
 static int
-ensure_reg_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *frames, int frame_depth,
+ensure_frame_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *frames, int frame_depth,
                     MenaiValue ***regs_ptr)
 {
+    if (next_depth > MAX_FRAME_DEPTH) {
+        return MENAI_ERR_CALL_DEPTH_EXCEEDED;
+    }
+
     size_t needed = (size_t)(next_depth + 1) * max_locals;
     if (needed <= vs->num_regs) {
-        return 0;
+        return MENAI_OK;
     }
 
     size_t new_cap_frames = vs->num_regs / max_locals;
@@ -846,14 +853,10 @@ ensure_reg_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *fra
         new_cap_frames *= 2;
     }
 
-    if (new_cap_frames > (size_t)(MAX_FRAME_DEPTH + 1)) {
-        new_cap_frames = MAX_FRAME_DEPTH + 1;
-    }
-
     size_t new_num_regs = new_cap_frames * max_locals;
     MenaiValue **new_regs = (MenaiValue **)realloc(vs->regs, new_num_regs * sizeof(MenaiValue *));
     if (new_regs == NULL) {
-        return -1;
+        return MENAI_ERR_NOMEM;
     }
 
     /* Initialise the newly allocated slots to menai_none. */
@@ -872,7 +875,7 @@ ensure_reg_capacity(MenaiVMState *vs, int max_locals, int next_depth, Frame *fra
         frames[d].frame_regs = new_regs + frames[d].base;
     }
 
-    return 0;
+    return MENAI_OK;
 }
 
 /*
@@ -1145,13 +1148,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int callee_base = frame->base + frame->local_count;
 
             if (IS_MENAI_FUNCTION(raw)) {
-                if (frame_depth >= MAX_FRAME_DEPTH) {
-                    vm_err = MENAI_ERR_CALL_DEPTH_EXCEEDED;
-                    goto error;
-                }
-
-                if (ensure_reg_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs) < 0) {
-                    vm_err = MENAI_ERR_NOMEM;
+                vm_err = ensure_frame_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs);
+                if (vm_err < 0) {
                     goto error;
                 }
 
@@ -1285,13 +1283,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int arity = (int)list->length;
 
             if (IS_MENAI_FUNCTION(raw_func)) {
-                if (frame_depth >= MAX_FRAME_DEPTH) {
-                    vm_err = MENAI_ERR_CALL_DEPTH_EXCEEDED;
-                    goto error;
-                }
-
-                if (ensure_reg_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs) < 0) {
-                    vm_err = MENAI_ERR_NOMEM;
+                vm_err = ensure_frame_capacity(vs, max_locals, frame_depth + 1, frames, frame_depth, &regs);
+                if (vm_err < 0) {
                     goto error;
                 }
 
