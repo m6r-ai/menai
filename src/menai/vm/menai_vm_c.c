@@ -1354,16 +1354,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             if (IS_MENAI_FUNCTION(raw_func)) {
                 /* Own raw_func before the scatter loop which may overwrite its slot. */
-                /* Own raw_args for the same reason — src1 may be < arity. */
                 menai_value_retain(raw_func);
-                menai_value_retain(raw_args);
 
                 /* Scatter args into base+0..arity-1 (reusing current frame's base) */
                 for (int i = 0; i < arity; i++) {
                     menai_reg_set_borrow(vs, frame_regs, i, elements[i]);
                 }
-
-                menai_value_release(vs, raw_args);
 
                 /* Release old code_obj and instructions, reuse frame. */
                 menai_code_object_release(vs, frame->code_obj);
