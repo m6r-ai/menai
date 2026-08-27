@@ -539,8 +539,14 @@ typedef struct {
     ssize_t count;
 } GlobalsTable;
 
+/*
+ * Threshold at which we start to run the garbage collector.
+ */
 #define GC_THRESHOLD 4096
 
+/*
+ * Heap bucket allocation tracker.
+ */
 typedef struct {
     void *head;
     int depth;
@@ -558,9 +564,18 @@ typedef struct MenaiVMState {
     /* Pool allocator — per-instance free lists */
     BucketEntry pool[MENAI_POOL_NUM_BUCKETS];
 
-    int _cancel_flag;
+    /*
+     * Register file for the current execution.  Set by menai_vm_execute_native
+     * before calling execute_loop and cleared on return.  When the registry
+     * count exceeds _gc_threshold, alloc_menai_function triggers a collection
+     * using these registers as additional roots.
+     */
+    MenaiValue **regs;
+    size_t num_regs;
 
-    /* Singletons — per-instance */
+    /*
+     * Singletons — per-instance
+     */
     MenaiNone none_storage;             /* inline, not heap */
     MenaiBoolean true_storage;          /* inline */
     MenaiBoolean false_storage;         /* inline */
@@ -570,26 +585,26 @@ typedef struct MenaiVMState {
     MenaiDict *empty_dict;              /* heap, from this pool */
     MenaiSet *empty_set;                /* heap, from this pool */
 
-    /* Prelude globals — per-instance, set once via menai_vm_set_prelude */
+    volatile int _cancel_flag;
+
+    /*
+     * Prelude globals — per-instance, set once via menai_vm_set_prelude
+     */
     GlobalsTable _globals;
     int _globals_valid;
 
-    /* Closure cycle collector registry — tracks all live MenaiFunction pointers. */
+    /*
+     * Closure cycle collector registry — tracks all live MenaiFunction pointers.
+     */
     MenaiFunction **_closure_registry;
     ssize_t _closure_registry_count;
     ssize_t _closure_registry_capacity;
     int _gc_in_progress;
-
-    /*
-     * Register file for the current execution.  Set by menai_vm_execute_native
-     * before calling execute_loop and cleared on return.  When the registry
-     * count exceeds _gc_threshold, alloc_menai_function triggers a collection
-     * using these registers as additional roots.
-     */
-    MenaiValue **regs;
-    size_t num_regs;
     ssize_t _gc_threshold;
 
+    /*
+     * VM instruction profiler data.
+     */
     MenaiProfileData _profile;
 
     /*

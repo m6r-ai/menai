@@ -11,7 +11,6 @@
 #include <string.h>
 
 #include "menai_vm_c.h"
-#include "menai_vm_atomic.h"
 
 /*
  * Portable complex arithmetic — avoids <complex.h>, which is unsupported on MSVC.
@@ -966,7 +965,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         if ((++instr_count & (CANCEL_CHECK_INTERVAL - 1)) == 0) {
             instr_count = 0;
 
-            if (_menai_atomic_load((_menai_atomic_int *)&vs->_cancel_flag)) {
+            if (vs->_cancel_flag) {
                 vm_err = MENAI_ERR_CANCELLED;
                 goto error;
             }
@@ -6892,7 +6891,7 @@ error:
 void
 menai_vm_cancel(MenaiVMState *vs)
 {
-    _menai_atomic_store((_menai_atomic_int *)&vs->_cancel_flag, 1);
+    vs->_cancel_flag = 1;
 }
 
 /*

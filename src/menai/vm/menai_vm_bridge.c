@@ -17,7 +17,6 @@
 #endif
 
 #include "menai_vm_c.h"
-#include "menai_vm_atomic.h"
 
 /*
  * Portable monotonic timer returning elapsed nanoseconds.
