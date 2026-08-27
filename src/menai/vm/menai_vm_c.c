@@ -5389,8 +5389,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             pre_arr[0] = item;
             menai_value_retain(item);
             for (ssize_t i = 0; i < n; i++) {
-                pre_arr[i + 1] = a->elements[i];
-                menai_value_retain(pre_arr[i + 1]);
+                MenaiValue *elem = a->elements[i];
+                menai_value_retain(elem);
+                pre_arr[i + 1] = elem;
             }
 
             menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
@@ -5409,8 +5410,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiValue **app_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
-                app_arr[i] = a->elements[i];
-                menai_value_retain(app_arr[i]);
+                MenaiValue *elem = a->elements[i];
+                menai_value_retain(elem);
+                app_arr[i] = elem;
             }
 
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
@@ -5433,8 +5435,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiValue **rev_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
-                rev_arr[i] = a->elements[n - 1 - i];
-                menai_value_retain(rev_arr[i]);
+                MenaiValue *elem = a->elements[n - 1 - i];
+                menai_value_retain(elem);
+                rev_arr[i] = elem;
             }
 
             menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
@@ -5457,13 +5460,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiValue **cat_arr = r->elements;
             for (ssize_t i = 0; i < na; i++) {
-                cat_arr[i] = a->elements[i];
-                menai_value_retain(cat_arr[i]);
+                MenaiValue *elem = a->elements[i];
+                menai_value_retain(elem);
+                cat_arr[i] = elem;
             }
 
             for (ssize_t i = 0; i < nb; i++) {
-                cat_arr[na + i] = b->elements[i];
-                menai_value_retain(cat_arr[na + i]);
+                MenaiValue *elem = b->elements[i];
+                menai_value_retain(elem);
+                cat_arr[na + i] = elem;
             }
 
             menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
