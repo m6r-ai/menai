@@ -99,9 +99,10 @@ menai_vm_state_free(MenaiVMState *vs)
     menai_leak_set_final(&vs->_leak_set);
 #endif
 
-    for (int bucket = 0; bucket < MENAI_POOL_NUM_BUCKETS; bucket++) {
-        void *ptr = vs->_pool_heads[bucket];
-        while (ptr != NULL) {
+    BucketEntry *pool_bucket = vs->pool;
+    for (int bucket = 0; bucket < MENAI_POOL_NUM_BUCKETS; bucket++, pool_bucket++) {
+        void *ptr = pool_bucket->head;
+        while (ptr) {
             void *next = *(void **)ptr;
             free(ptr);
             ptr = next;

@@ -541,6 +541,11 @@ typedef struct {
 
 #define GC_THRESHOLD 4096
 
+typedef struct {
+    void *head;
+    int depth;
+} BucketEntry;
+
 /*
  * MenaiVMState — per-instance VM state.
  *
@@ -551,8 +556,7 @@ typedef struct {
  */
 typedef struct MenaiVMState {
     /* Pool allocator — per-instance free lists */
-    void *_pool_heads[MENAI_POOL_NUM_BUCKETS];
-    int _pool_depths[MENAI_POOL_NUM_BUCKETS];
+    BucketEntry pool[MENAI_POOL_NUM_BUCKETS];
 
     int _cancel_flag;
 

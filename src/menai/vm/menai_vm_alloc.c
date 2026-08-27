@@ -319,10 +319,11 @@ menai_alloc(MenaiVMState *vs, size_t size)
     int bucket = _bucket_for(size, &block_size);
 
     void *ptr;
-    if (vs->_pool_heads[bucket] != NULL) {
-        ptr = vs->_pool_heads[bucket];
-        vs->_pool_heads[bucket] = *(void **)ptr;
-        vs->_pool_depths[bucket]--;
+    BucketEntry *pool_bucket = &vs->pool[bucket];
+    if (pool_bucket->head) {
+        ptr = pool_bucket->head;
+        pool_bucket->head = *(void **)ptr;
+        pool_bucket->depth--;
         assert(((MenaiValue *)ptr)->ob_type == 0);
     } else {
         ptr = malloc((size_t)1 << (bucket + MENAI_POOL_LOG_MIN_SIZE));
@@ -355,12 +356,13 @@ menai_free(MenaiVMState *vs, void *ptr)
         return;
     }
 
-    if (vs->_pool_depths[bucket] < MENAI_POOL_MAX_DEPTH) {
+    BucketEntry *pool_bucket = &vs->pool[bucket];
+    if (pool_bucket->depth < MENAI_POOL_MAX_DEPTH) {
         assert(((MenaiValue *)ptr)->ob_type != 0);
         ((MenaiValue *)ptr)->ob_type = 0;
-        *(void **)ptr = vs->_pool_heads[bucket];
-        vs->_pool_heads[bucket] = ptr;
-        vs->_pool_depths[bucket]++;
+        *(void **)ptr = pool_bucket->head;
+        pool_bucket->head = ptr;
+        pool_bucket->depth++;
         return;
     }
 
