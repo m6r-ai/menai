@@ -1098,13 +1098,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int saved_return_dest = frame->return_dest;
             menai_code_object_release(vs, frame->code_obj);
             frame->code_obj = NULL;
+
+            frame--;
             if (--frame_depth == 0) {
                 /* Top-level return — exit the loop. */
                 return retval;
             }
 
             /* Store result into caller's register window. */
-            frame = &frames[frame_depth];
             menai_reg_set_own(vs, regs, frame->base + saved_return_dest, retval);
 
             frame_regs = frame->frame_regs;
@@ -1135,17 +1136,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     regs = vs->regs;
                 }
 
-                frame_regs = frame->frame_regs;
-
                 frame_depth++;
-                Frame *new_frame = &frames[frame_depth];
-                vm_err = call_setup(vs, new_frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
+                frame++;
+                vm_err = call_setup(vs, frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    frame--;
                     frame_depth--;
                     goto error;
                 }
 
-                frame = new_frame;
                 frame_regs = frame->frame_regs;
                 break;
             }
@@ -1211,12 +1210,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     regs = vs->regs;
                 }
 
-                vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, n_args, saved_return_dest, fraw->ncap, fraw->captures);
-                menai_value_release(vs, raw);
+                vm_err = call_setup(vs, frame, callee_co, regs, frame->base, n_args, saved_return_dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    menai_value_release(vs, raw);
                     goto error;
                 }
 
+                menai_value_release(vs, raw);
                 frame_regs = frame->frame_regs;
                 break;
             }
@@ -1299,14 +1299,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
 
                 frame_depth++;
-                Frame *new_frame = &frames[frame_depth];
-                vm_err = call_setup(vs, new_frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
+                frame++;
+                vm_err = call_setup(vs, frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    frame--;
                     frame_depth--;
                     goto error;
                 }
 
-                frame = new_frame;
                 frame_regs = frame->frame_regs;
                 break;
             }
@@ -1379,12 +1379,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     regs = vs->regs;
                 }
 
-                vm_err = call_setup(vs, frame, fraw->bytecode, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
-                menai_value_release(vs, raw_func);
+                vm_err = call_setup(vs, frame, callee_co, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    menai_value_release(vs, raw_func);
                     goto error;
                 }
 
+                menai_value_release(vs, raw_func);
                 frame_regs = frame->frame_regs;
                 break;
             }
