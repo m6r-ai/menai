@@ -424,7 +424,7 @@ class Suite(BenchmarkSuite):
     def cases(self) -> list[BenchmarkCase]:
         """Return one case per scramble sequence."""
         return [
-            BenchmarkCase(name=name, input=moves, iterations=1)
+            BenchmarkCase(name=name, input=moves, iterations=3)
             for name, moves in _SCRAMBLES
         ]
 
@@ -435,9 +435,9 @@ class Suite(BenchmarkSuite):
             moves_literal = "(list " + " ".join(f'"{m}"' for m in scramble_moves) + ")"
             expr = (
                 '(let ((rubiks (import "rubiks_cube")))'
-                '  (let ((solved-cube-fn  (dict-get rubiks "solved-cube"))'
-                '        (apply-moves-fn  (dict-get rubiks "apply-moves"))'
-                '        (ida-star-fn     (dict-get rubiks "ida-star")))'
+                '  (let ((solved-cube-fn (dict-get rubiks "solved-cube"))'
+                '        (apply-moves-fn (dict-get rubiks "apply-moves"))'
+                '        (ida-star-fn (dict-get rubiks "ida-star")))'
                 f'    (let ((scrambled (apply-moves-fn (solved-cube-fn) {moves_literal})))'
                 '      (ida-star-fn scrambled 20))))'
             )
