@@ -1104,10 +1104,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             /* Store result into caller's register window. */
-            Frame *caller = &frames[frame_depth];
-            menai_reg_set_own(vs, regs, caller->base + saved_return_dest, retval);
+            frame = &frames[frame_depth];
+            menai_reg_set_own(vs, regs, frame->base + saved_return_dest, retval);
 
-            frame = caller;
             frame_regs = frame->frame_regs;
             break;
         }
@@ -1178,14 +1177,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiValue *raw = frame_regs[src0];
             int n_args = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
 
-            /* Take an owned reference before the arg-moving loop.
-             * The loop may overwrite regs[base+src0] if src0 < n_args,
-             * which would decrement raw's refcount to zero and free it. */
-            menai_value_retain(raw);
-
             int local_count = frame->local_count;
 
             if (IS_MENAI_FUNCTION(raw)) {
+                /*
+                 * Take an owned reference before the arg-moving loop.
+                 * The loop may overwrite regs[base+src0] if src0 < n_args,
+                 * which would decrement raw's refcount to zero and free it.
+                 */
+                menai_value_retain(raw);
+
                 /* Move outgoing args down to base+0..n_args-1 in place. */
                 for (int i = 0; i < n_args; i++) {
                     MenaiValue *v = frame_regs[local_count + i];
@@ -1225,13 +1226,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 int n_fields = sraw->nfields;
                 if (n_args != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
-                    menai_value_release(vs, raw);
                     goto error;
                 }
 
                 MenaiStruct *retval = alloc_menai_struct(vs, sraw, &frame_regs[local_count], n_fields);
                 if (retval == NULL) {
-                    menai_value_release(vs, raw);
                     goto error;
                 }
 
@@ -1240,19 +1239,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_code_object_release(vs, frame->code_obj);
                 frame->code_obj = NULL;
                 if (--frame_depth == 0) {
-                    menai_value_release(vs, raw);
                     return (MenaiValue *)retval;
                 }
 
                 Frame *caller = &frames[frame_depth];
                 menai_reg_set_own(vs, regs, caller->base + saved_return_dest, (MenaiValue *)retval);
-                menai_value_release(vs, raw);
                 frame = caller;
                 frame_regs = frame->frame_regs;
                 break;
             }
 
-            menai_value_release(vs, raw);
             vm_err = MENAI_ERR_NOT_CALLABLE;
             goto error;
         }
@@ -1347,13 +1343,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *raw_args = frame_regs[src1];
 
-            /* Own raw_func before the scatter loop which may overwrite its slot. */
-            /* Own raw_args for the same reason — src1 may be < arity. */
-            menai_value_retain(raw_func);
-            menai_value_retain(raw_args);
             if (MENAI_UNLIKELY(!IS_MENAI_LIST(raw_args))) {
-                menai_value_release(vs, raw_func);
-                menai_value_release(vs, raw_args);
                 vm_err = MENAI_ERR_APPLY_SECOND_NOT_LIST;
                 goto error;
             }
@@ -1363,6 +1353,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int arity = (int)list->length;
 
             if (IS_MENAI_FUNCTION(raw_func)) {
+                /* Own raw_func before the scatter loop which may overwrite its slot. */
+                /* Own raw_args for the same reason — src1 may be < arity. */
+                menai_value_retain(raw_func);
+                menai_value_retain(raw_args);
+
                 /* Scatter args into base+0..arity-1 (reusing current frame's base) */
                 for (int i = 0; i < arity; i++) {
                     menai_reg_set_borrow(vs, frame_regs, i, elements[i]);
@@ -1402,16 +1397,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiStructType *sraw_func = (MenaiStructType *)raw_func;
                 int n_fields = sraw_func->nfields;
                 if (arity != (int)n_fields) {
-                    menai_value_release(vs, raw_func);
-                    menai_value_release(vs, raw_args);
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
                     goto error;
                 }
 
                 MenaiStruct *retval = alloc_menai_struct(vs, sraw_func, elements, n_fields);
                 if (retval == NULL) {
-                    menai_value_release(vs, raw_args);
-                    menai_value_release(vs, raw_func);
                     goto error;
                 }
 
@@ -1419,22 +1410,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 menai_code_object_release(vs, frame->code_obj);
                 frame->code_obj = NULL;
                 if (--frame_depth == 0) {
-                    menai_value_release(vs, raw_args);
-                    menai_value_release(vs, raw_func);
                     return (MenaiValue *)retval;
                 }
 
                 Frame *caller = &frames[frame_depth];
                 menai_reg_set_own(vs, regs, caller->base + saved_return_dest, (MenaiValue *)retval);
-                menai_value_release(vs, raw_args);
-                menai_value_release(vs, raw_func);
                 frame = caller;
                 frame_regs = frame->frame_regs;
                 break;
             }
 
-            menai_value_release(vs, raw_func);
-            menai_value_release(vs, raw_args);
             vm_err = MENAI_ERR_APPLY_FIRST_NOT_FUNCTION;
             goto error;
         }
