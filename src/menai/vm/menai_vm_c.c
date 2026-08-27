@@ -880,7 +880,7 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
     int param_count = co->param_count;
     int is_variadic = co->is_variadic;
 
-    if (MENAI_UNLIKELY(is_variadic)) {
+    if (is_variadic) {
         int min_arity = param_count - 1;
         if (arity < min_arity) {
             return MENAI_ERR_ARITY_MISMATCH;
@@ -900,7 +900,7 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
         }
 
         menai_reg_set_own(vs, regs, callee_base + min_arity, (MenaiValue *)rest_list);
-    } else if (MENAI_UNLIKELY(arity != param_count)) {
+    } else if (arity != param_count) {
         return MENAI_ERR_ARITY_MISMATCH;
     }
 
@@ -1145,6 +1145,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
+                /* call_setup will have changed our frame registers so update them. */
                 frame_regs = frame->frame_regs;
                 break;
             }
@@ -1307,6 +1308,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
+                /* call_setup will have changed our frame registers so update them. */
                 frame_regs = frame->frame_regs;
                 break;
             }
