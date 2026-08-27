@@ -5776,8 +5776,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiValue **dk_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
-                menai_value_retain(a->keys[i]);
-                dk_arr[i] = a->keys[i];
+                MenaiValue *key = a->keys[i];
+                menai_value_retain(key);
+                dk_arr[i] = key;
             }
 
             menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
@@ -5796,8 +5797,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiValue **dv_arr = r->elements;
             for (ssize_t i = 0; i < n; i++) {
-                menai_value_retain(a->values[i]);
-                dv_arr[i] = a->values[i];
+                MenaiValue *value = a->values[i];
+                menai_value_retain(value);
+                dv_arr[i] = value;
             }
 
             menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
@@ -6217,8 +6219,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             hash_t *nhashes = r->hashes;
             ssize_t out = 0;
             for (ssize_t i = 0; i < na; i++) {
-                menai_value_retain(a->elements[i]);
-                nelems[out] = a->elements[i];
+                MenaiValue *elem = a->elements[i];
+                menai_value_retain(elem);
+                nelems[out] = elem;
                 nhashes[out] = a->hashes[i];
                 out++;
             }
@@ -6226,8 +6229,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             for (ssize_t i = 0; i < nb; i++) {
                 ssize_t in_a = menai_ht_lookup(&a->ht, b->elements[i], b->hashes[i]);
                 if (in_a < 0) {
-                    menai_value_retain(b->elements[i]);
-                    nelems[out] = b->elements[i];
+                    MenaiValue *elem = b->elements[i];
+                    menai_value_retain(elem);
+                    nelems[out] = elem;
                     nhashes[out] = b->hashes[i];
                     out++;
                 }
@@ -6266,8 +6270,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             for (ssize_t i = 0; i < na; i++) {
                 ssize_t in_b = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
                 if (in_b >= 0) {
-                    menai_value_retain(a->elements[i]);
-                    nelems[out] = a->elements[i];
+                    MenaiValue *elem = a->elements[i];
+                    menai_value_retain(elem);
+                    nelems[out] = elem;
                     nhashes[out] = a->hashes[i];
                     out++;
                 }
@@ -6306,8 +6311,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             for (ssize_t i = 0; i < na; i++) {
                 ssize_t in_b = menai_ht_lookup(&b->ht, a->elements[i], a->hashes[i]);
                 if (in_b < 0) {
-                    menai_value_retain(a->elements[i]);
-                    nelems[out] = a->elements[i];
+                    MenaiValue *elem = a->elements[i];
+                    menai_value_retain(elem);
+                    nelems[out] = elem;
                     nhashes[out] = a->hashes[i];
                     out++;
                 }
@@ -6363,8 +6369,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiValue **stl_arr = r->elements;
             for (ssize_t i = 0; i < set_n; i++) {
-                menai_value_retain(a->elements[i]);
-                stl_arr[i] = a->elements[i];
+                MenaiValue *elem = a->elements[i];
+                menai_value_retain(elem);
+                stl_arr[i] = elem;
             }
 
             menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
@@ -6465,8 +6472,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             MenaiValue **lst_arr = r->elements;
             for (int i = 0; i < n; i++) {
-                lst_arr[i] = frame_regs[src0 + i];
-                menai_value_retain(lst_arr[i]);
+                MenaiValue *elem = frame_regs[src0 + i];
+                menai_value_retain(elem);
+                lst_arr[i] = elem;
             }
 
             menai_reg_set_own(vs, frame_regs, dest, (MenaiValue *)r);
