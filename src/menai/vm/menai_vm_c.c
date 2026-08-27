@@ -947,11 +947,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         .constants_items = NULL,
         .instrs = NULL,
     };
-    frames[1] = (Frame){
-        .code_obj = NULL,
-        .constants_items = NULL,
-        .instrs = NULL,
-    };
 
     /*
      * Set up frame at depth 1 — emulate a call from frame 0 (the sentinel)
