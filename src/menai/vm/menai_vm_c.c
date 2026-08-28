@@ -2614,7 +2614,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2649,7 +2650,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2688,7 +2690,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2717,7 +2720,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->data[0] = cp;
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2789,7 +2793,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2801,8 +2806,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
-
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2816,7 +2821,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2830,7 +2836,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2844,7 +2851,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2864,7 +2872,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2884,7 +2893,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2904,7 +2914,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2916,7 +2927,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2930,7 +2942,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2948,7 +2961,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2966,7 +2980,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -2984,7 +2999,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3010,7 +3026,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3022,7 +3039,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3034,7 +3052,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3046,7 +3065,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3064,7 +3084,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3076,7 +3097,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3088,7 +3110,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3100,7 +3123,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3116,7 +3140,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3132,7 +3157,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3146,7 +3172,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3158,7 +3185,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3170,7 +3198,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3182,7 +3211,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3200,7 +3230,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3218,7 +3249,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3230,7 +3262,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3244,7 +3277,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3256,7 +3290,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3268,7 +3303,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3280,7 +3316,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3298,7 +3335,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3310,7 +3348,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3324,7 +3363,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3344,7 +3384,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3358,7 +3399,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3370,7 +3412,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3451,7 +3494,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3463,7 +3507,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3477,7 +3522,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3489,7 +3535,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3503,7 +3550,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3517,7 +3565,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3535,7 +3584,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3559,7 +3609,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3576,7 +3627,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3590,7 +3642,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3604,7 +3657,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3618,7 +3672,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3632,7 +3687,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3646,7 +3702,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3660,7 +3717,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3674,7 +3732,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3696,7 +3755,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3708,7 +3768,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3780,7 +3841,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3794,7 +3856,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             menai_string_upcase(a, r);
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3807,7 +3870,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             menai_string_downcase(a, r);
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3819,7 +3883,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3831,7 +3896,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3843,7 +3909,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3862,7 +3929,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             memcpy(r->data, a->data, (size_t)la * sizeof(uint32_t));
             ssize_t lb = b->length;
             memcpy(r->data + la, b->data, (size_t)lb * sizeof(uint32_t));
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3878,7 +3946,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 r = (memcmp(s->data, p->data, (size_t)plen * sizeof(uint32_t)) == 0);
             }
 
-            bool_store(vs, frame_regs, dest, r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3895,7 +3964,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 r = (memcmp(s->data + (slen - sulen), su->data, (size_t)sulen * sizeof(uint32_t)) == 0);
             }
 
-            bool_store(vs, frame_regs, dest, r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3928,7 +3998,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             r->data[0] = a->data[idx];
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -3994,7 +4065,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             memcpy(r->data, a->data + start, (size_t)len * sizeof(uint32_t));
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -4010,7 +4082,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -4032,7 +4105,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -4050,7 +4124,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -4102,7 +4177,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -4136,7 +4212,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -4169,7 +4246,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
             break;
         }
 
@@ -4260,7 +4338,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 }
             }
 
-            menai_reg_set(vs, frame_regs, dest, (MenaiValue *)r_parts);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r_parts;
             break;
         }
 
