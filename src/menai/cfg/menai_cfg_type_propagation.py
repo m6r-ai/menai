@@ -453,6 +453,7 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
 
         preamble_instrs: list[MenaiCFGInstr] = []
 
+        seen_guards: set[tuple[int, str]] = set()
         for block in func.blocks:
             remaining: list[MenaiCFGInstr] = []
             for instr in block.instrs:
@@ -460,7 +461,11 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
                     if self._is_loop_invariant_guard(
                         instr, free_var_ids, unchanged_param_ids, back_edge_types,
                     ):
-                        preamble_instrs.append(instr)
+                        key = (instr.value.id, instr.expected_type)
+                        if key not in seen_guards:
+                            seen_guards.add(key)
+                            preamble_instrs.append(instr)
+
                         continue
 
                 remaining.append(instr)
