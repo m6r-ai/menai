@@ -938,6 +938,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
     int instr_count = 0;
     int cur_ip = 0;
     MenaiValue **frame_regs = frame->frame_regs;
+    uint64_t *instrs = frame->instrs;
 
     while (1) {
         /* Cancellation check */
@@ -957,7 +958,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         /* Fetch and decode instruction */
         cur_ip = frame->ip;
-        uint64_t word = frame->instrs[frame->ip++];
+        uint64_t word = instrs[frame->ip++];
         int opcode = (int)((word >> OPCODE_SHIFT) & OPCODE_MASK);
         int dest = (int)((word >> DEST_SHIFT) & FIELD_MASK);
 
@@ -1119,6 +1120,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             regs[frame->base + saved_return_dest] = retval;
 
             frame_regs = frame->frame_regs;
+            instrs = frame->instrs;
             break;
         }
 
@@ -1157,6 +1159,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 /* call_setup will have changed our frame registers so update them. */
                 frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
                 break;
             }
 
@@ -1232,6 +1235,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 menai_value_release(vs, raw);
                 frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
                 break;
             }
 
@@ -1261,6 +1265,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 regs[caller->base + saved_return_dest] = (MenaiValue *)retval;
                 frame = caller;
                 frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
                 break;
             }
 
@@ -1306,8 +1311,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     regs = vs->regs;
                 }
 
-                frame_regs = frame->frame_regs;
-
                 /* Scatter list elements into the callee window */
                 for (int i = 0; i < arity; i++) {
                     MenaiValue *val = elements[i];
@@ -1327,6 +1330,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 /* call_setup will have changed our frame registers so update them. */
                 frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
                 break;
             }
 
@@ -1410,6 +1414,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 menai_value_release(vs, raw_func);
                 frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
                 break;
             }
 
@@ -1438,6 +1443,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 regs[caller->base + saved_return_dest] = (MenaiValue *)retval;
                 frame = caller;
                 frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
                 break;
             }
 
