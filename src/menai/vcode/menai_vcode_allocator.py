@@ -113,11 +113,15 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     next_new_slot = 0
 
     # Pre-compute sets needed for Phase 3 safety checks.
-    # closure_reg_ids: registers written by MAKE_CLOSURE — PATCH_CLOSURE
-    # requires its closure operand within local_count.
+    # closure_reg_ids: registers written by MAKE_CLOSURE that will be followed
+    # by PATCH_CLOSURE instructions — PATCH_CLOSURE requires its closure
+    # operand within local_count.  Capture-free closures with no patching
+    # (needs_patching=False, captures empty) are emitted as LOAD_CONST by the
+    # bytecode builder and never need PATCH_CLOSURE, so their result registers
+    # are safe to back-propagate into the outgoing zone.
     closure_reg_ids: set[int] = {
         instr.dst.id for instr in func.instrs
-        if isinstance(instr, MenaiVCodeMakeClosure)
+        if isinstance(instr, MenaiVCodeMakeClosure) and (instr.needs_patching or len(instr.captures) > 0)
     }
 
     # capture_reg_ids: registers used as captures in MAKE_CLOSURE — the
