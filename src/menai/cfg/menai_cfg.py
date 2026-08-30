@@ -626,7 +626,7 @@ def remap_term(
 
 
 def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
-    """Return all input value ids referenced by a non-phi instruction."""
+    """Return all input value ids referenced by an instruction."""
     if isinstance(instr, MenaiCFGBuiltinInstr):
         return [a.id for a in instr.args]
 
@@ -654,8 +654,14 @@ def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
     if isinstance(instr, MenaiCFGPatchClosureInstr):
         return [instr.closure.id, instr.value.id]
 
+    if isinstance(instr, MenaiCFGGuardInstr):
+        return [instr.value.id]
+
+    if isinstance(instr, MenaiCFGPhiInstr):
+        return [val.id for val, _ in instr.incoming]
+
     # MenaiCFGConstInstr, MenaiCFGGlobalInstr, MenaiCFGParamInstr,
-    # MenaiCFGFreeVarInstr, MenaiCFGPhiInstr: no input value references here.
+    # MenaiCFGFreeVarInstr: no input value references here.
     return []
 
 

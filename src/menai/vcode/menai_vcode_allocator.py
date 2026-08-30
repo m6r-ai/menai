@@ -105,9 +105,6 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     Returns:
         A SlotMap mapping every register id to a slot index.
     """
-    param_count = len(func.params)
-    free_var_count = len(func.free_vars)
-    fixed_count = param_count + free_var_count
 
     slots: dict[int, int] = {}
     next_new_slot = 0
@@ -172,11 +169,13 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
 
             def_last_use[d] = last
 
-    # Pre-assign fixed slots for params (0..P-1) and free vars (P..P+F-1).
-    # These register ids are guaranteed by the CFG builder's assignment order.
-    fixed_reg_ids: list[int] = list(range(fixed_count))
-    for reg_id in fixed_reg_ids:
-        slots[reg_id] = reg_id
+    # Pre-assign fixed slots for params and free vars.
+    # The register IDs come from the VCode builder, which records them
+    # explicitly from the CFG entry block's ParamInstr and FreeVarInstr.
+    fixed_reg_ids: list[int] = list(func.param_reg_ids) + list(func.free_var_reg_ids)
+    fixed_reg_id_set: set[int] = set(fixed_reg_ids)
+    for slot_idx, reg_id in enumerate(fixed_reg_ids):
+        slots[reg_id] = slot_idx
 
     # Phase 2: linear scan allocation for all other registers.  Fixed slots
     # (params and free vars) are permanently live and never released for reuse.
@@ -201,7 +200,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         Remove reg_id from the live set if its current definition's last
         use is at or before current_idx.
         """
-        if reg_id < fixed_count:
+        if reg_id in fixed_reg_id_set:
             return
 
         d = current_def.get(reg_id)
@@ -217,7 +216,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         # Kill any register being redefined — its previous definition's
         # lifetime ends here, freeing its slot for reuse.
         for reg_id in defs:
-            if reg_id >= fixed_count and reg_id in live:
+            if reg_id not in fixed_reg_id_set and reg_id in live:
                 live.discard(reg_id)
 
         # MenaiVCodeMakeClosure: allocate the result first, then kill dead
@@ -310,7 +309,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         for arg, outgoing_offset in _outgoing_args(instr):
             reg_id = arg.id
 
-            if reg_id < fixed_count:
+            if reg_id in fixed_reg_id_set:
                 continue
 
             if reg_id in closure_reg_ids:
@@ -371,7 +370,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             reg_id = move.src.id
             param_slot = slots[move.dst.id]
 
-            if reg_id < fixed_count:
+            if reg_id in fixed_reg_id_set:
                 continue
 
             if reg_id in closure_reg_ids:

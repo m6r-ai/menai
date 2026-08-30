@@ -11,10 +11,13 @@ New features:
 - Added a compile-time leak detector (`MENAI_DEBUG_LEAKS`) that tracks all
   MenaiValue allocations and reports any not freed at VM teardown.
 - Added a `number->string` operation.
+- Removed overly-conservative closure restriction for back-propagating move instructions.
+- Added a new CFG dead capture elimination pass that removes captures that are eliminated by other CFG passes.
 
 Bug fixes:
 
 - Menai no longer leaks memory!
+- Coallesced type guards that are the same (after propagation).
 
 Internal structure changes:
 

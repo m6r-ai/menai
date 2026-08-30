@@ -291,12 +291,18 @@ class MenaiVCodeFunction:
     `params` and `free_vars` mirror the corresponding CFG fields and are used
     by the slot allocator to assign fixed slots to parameters and captures.
 
+    `param_reg_ids` and `free_var_reg_ids` record the virtual register IDs
+    that correspond to params and free vars, so the slot allocator can assign
+    them fixed slots without assuming IDs 0..P+F-1.
+
     `reg_count` is the number of virtual registers allocated during lowering,
     used by the slot allocator as the upper bound on register IDs.
     """
     instrs: list[MenaiVCodeInstr] = field(default_factory=list)
     params: list[str] = field(default_factory=list)
     free_vars: list[str] = field(default_factory=list)
+    param_reg_ids: list[int] = field(default_factory=list)
+    free_var_reg_ids: list[int] = field(default_factory=list)
     is_variadic: bool = False
     binding_name: str | None = None
     reg_count: int = 0

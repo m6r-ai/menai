@@ -151,13 +151,17 @@ class MenaiVCodeBuilder:
         # Pre-compute param and free-var register lookups from the entry block,
         # so SelfLoopTerm handling can do O(1) lookups instead of linear scans.
         param_regs: dict[int, MenaiVCodeReg] = {}
+        param_reg_ids: list[int] = []
         freevar_regs: dict[str, MenaiVCodeReg] = {}
+        free_var_reg_ids: list[int] = []
         for instr in func.blocks[0].instrs:
             if isinstance(instr, MenaiCFGParamInstr):
                 param_regs[instr.index] = self._reg(instr.result)
+                param_reg_ids.append(self._reg(instr.result).id)
 
             elif isinstance(instr, MenaiCFGFreeVarInstr):
                 freevar_regs[instr.var_name] = self._reg(instr.result)
+                free_var_reg_ids.append(self._reg(instr.result).id)
 
         for block in rpo:
             term = block.terminator
@@ -311,6 +315,8 @@ class MenaiVCodeBuilder:
             instrs=instrs,
             params=list(func.params),
             free_vars=list(func.free_vars),
+            param_reg_ids=param_reg_ids,
+            free_var_reg_ids=free_var_reg_ids,
             is_variadic=func.is_variadic,
             binding_name=func.binding_name,
             reg_count=max_reg_id + 1,

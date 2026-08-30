@@ -283,8 +283,9 @@ class TestGuardHoistingFromNonEntryBlocks:
         assert target is not None
         # The ASSERT_STRING guard should be before the self-loop target,
         # meaning it has been hoisted to the preamble.
-        # scan has 1 param (i=slot0) and 3 free vars (scan=slot1, len=slot2, s=slot3).
-        guard_idx = _find_assert(scan, Opcode.ASSERT_STRING, 3)
+        # scan has 1 param (i=slot0) and 2 free vars (len=slot1, s=slot2).
+        # The scan self-capture was eliminated by the dead captures pass.
+        guard_idx = _find_assert(scan, Opcode.ASSERT_STRING, 2)
         assert guard_idx is not None
         assert target > guard_idx, (
             "self-loop must skip the hoisted ASSERT_STRING guard on free var 's'"
