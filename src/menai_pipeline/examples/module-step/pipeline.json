@@ -4,7 +4,7 @@
       "id": "read-input",
       "tool": "filesystem",
       "operation": "read_file",
-      "path": "src/menai_pipeline_runner/examples/module-step/input.txt"
+      "path": "src/menai_pipeline/examples/module-step/input.txt"
     },
     {
       "id": "transform",

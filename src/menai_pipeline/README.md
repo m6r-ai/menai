@@ -126,7 +126,7 @@ Supported operations: `write_stdout`, `write_stderr`.
 Run from the repository root with the virtual environment active:
 
 ```bash
-python -m menai_pipeline_runner.run <pipeline.json> [options]
+python -m menai_pipeline.run <pipeline.json> [options]
 ```
 
 Options:
@@ -145,7 +145,7 @@ Options:
 
 ## Examples
 
-All examples are in `src/menai_pipeline_runner/examples/` and use paths relative to the repository root.  Run them
+All examples are in `src/menai_pipeline/examples/` and use paths relative to the repository root.  Run them
 from the repository root.
 
 ### `hello-timestamp`
@@ -154,7 +154,7 @@ The simplest possible pipeline.  Gets the current time, formats a greeting in Me
 and writes it to stdout.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/hello-timestamp/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/hello-timestamp/pipeline.json
 ```
 
 ### `file-transform`
@@ -163,7 +163,7 @@ Reads a list of fruit names, sorts and uppercases them in Menai, writes to stdou
 Demonstrates single-input single-output Menai transformation.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/file-transform/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/file-transform/pipeline.json
 ```
 
 ### `multi-input`
@@ -172,7 +172,7 @@ Reads two files (a header and a body) and concatenates them in a single Menai st
 Demonstrates multiple named inputs feeding one Menai step.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/multi-input/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/multi-input/pipeline.json
 ```
 
 ### `multi-output`
@@ -182,7 +182,7 @@ uppercase-only groups in Menai, and writes each group to stdout separately.
 Demonstrates a Menai step producing multiple outputs consumed by different downstream steps.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/multi-output/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/multi-output/pipeline.json
 ```
 
 ### `adjacent-collapse`
@@ -191,8 +191,8 @@ Two adjacent Menai steps (trim whitespace, then upcase) that the optimizer colla
 into one.  Run with and without `--no-optimize` to observe identical results.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/adjacent-collapse/pipeline.json
-python -m menai_pipeline_runner.run --no-optimize src/menai_pipeline_runner/examples/adjacent-collapse/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/adjacent-collapse/pipeline.json
+python -m menai_pipeline.run --no-optimize src/menai_pipeline/examples/adjacent-collapse/pipeline.json
 ```
 
 ### `clock-and-file`
@@ -202,7 +202,7 @@ substitute the timestamp into the template.  Demonstrates mixed tool types feedi
 single Menai step.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/clock-and-file/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/clock-and-file/pipeline.json
 ```
 
 ### `module-step`
@@ -213,7 +213,7 @@ extracted into a standalone `sort-and-upcase.menai` module file.  Demonstrates t
 the pipeline that uses it.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/module-step/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/module-step/pipeline.json
 ```
 
 ### `json-parse`
@@ -223,7 +223,7 @@ Reads a JSON file and renders it back as a string using a Menai-based JSON parse
 within a pipeline step and recursive value rendering.
 
 ```bash
-python -m menai_pipeline_runner.run src/menai_pipeline_runner/examples/json-parse/pipeline.json
+python -m menai_pipeline.run src/menai_pipeline/examples/json-parse/pipeline.json
 ```
 
 ## Pipeline JSON reference
