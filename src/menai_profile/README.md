@@ -16,11 +16,11 @@ Compiles and profiles Menai source files.  Two profiling modes are available:
 Run from the repository root with the virtual environment active:
 
 ```
-python -m menai_profiler.profile <file.menai>                          # cProfile mode
-python -m menai_profiler.profile <file.menai> --mode opcode            # opcode frequency mode
-python -m menai_profiler.profile <file.menai> --output stats.prof      # save cProfile data
-python -m menai_profiler.profile <file.menai> --top 50                 # show top 50 entries
-python -m menai_profiler.profile <file.menai> --sort time              # sort cProfile by time
+python -m menai_profile.profile <file.menai>                          # cProfile mode
+python -m menai_profile.profile <file.menai> --mode opcode            # opcode frequency mode
+python -m menai_profile.profile <file.menai> --output stats.prof      # save cProfile data
+python -m menai_profile.profile <file.menai> --top 50                 # show top 50 entries
+python -m menai_profile.profile <file.menai> --sort time              # sort cProfile by time
 ```
 
 Profiling is always available — no special build flags are needed.  The
@@ -43,7 +43,7 @@ dominated by measurement overhead rather than actual work.
 ## Structure
 
 ```
-menai_profiler/
+menai_profile/
 ├── __init__.py
 ├── profile.py              # CLI tool — compile, run, and profile
 └── examples/

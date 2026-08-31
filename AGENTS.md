@@ -120,12 +120,12 @@ menai/
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   ├── menai_benchmark/        # performance benchmarking tool
-│   ├── menai_checker/          # parenthesis balance checker
-│   ├── menai_disassembler/     # bytecode disassembler
-│   ├── menai_pipeline_runner/  # JSON-defined pipeline runner (tool + Menai steps)
+│   ├── menai_check/            # parenthesis balance checker
+│   ├── menai_disassemble/      # bytecode disassembler
+│   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
 │   ├── menai_pretty_print/     # code formatter
-│   ├── menai_profiler/         # profiling tool
-│   └── menai_test_runner/      # test runner for *_test.menai files
+│   ├── menai_profile/          # profiling tool
+│   └── menai_test/             # test runner for *_test.menai files
 └── tests/
     ├── src/
     │   └── menai/              # compiler core tests

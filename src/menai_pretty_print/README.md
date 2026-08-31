@@ -7,11 +7,8 @@ A command-line tool for formatting Menai source code with comment preservation.
 No installation required - just run the script directly:
 
 ```bash
-# Make it executable (Unix/Mac)
-chmod +x tools/menai/pretty-print/pretty-print.py
-
-# Or run with Python
-python tools/menai/pretty-print/pretty-print.py
+# Run with Python
+python -m menai_pretty_print.pretty_print
 ```
 
 ## Usage
@@ -20,36 +17,36 @@ python tools/menai/pretty-print/pretty-print.py
 
 ```bash
 # Format a file and print to stdout
-python tools/menai/pretty-print/pretty-print.py myfile.menai
+python -m menai_pretty_print.pretty_print myfile.menai
 
 # Format and save to a new file
-python tools/menai/pretty-print/pretty-print.py myfile.menai -o formatted.menai
+python -m menai_pretty_print.pretty_print myfile.menai -o formatted.menai
 
 # Format in-place (overwrites original)
-python tools/menai/pretty-print/pretty-print.py myfile.menai --in-place
+python -m menai_pretty_print.pretty_print myfile.menai --in-place
 ```
 
 ### From stdin
 
 ```bash
 # Pipe code through the formatter
-echo "(let ((x 5)(y 10)) (+ x y))" | python tools/menai/pretty-print/pretty-print.py -
+echo "(let ((x 5)(y 10)) (+ x y))" | python -m menai_pretty_print.pretty_print -
 
 # Format code from clipboard (Mac)
-pbpaste | python tools/menai/pretty-print/pretty-print.py -
+pbpaste | python -m menai_pretty_print.pretty_print -
 ```
 
 ### Custom Options
 
 ```bash
 # Use 4-space indentation
-python tools/menai/pretty-print/pretty-print.py myfile.menai --indent 4
+python -m menai_pretty_print.pretty_print myfile.menai --indent 4
 
 # Adjust compact threshold
-python tools/menai/pretty-print/pretty-print.py myfile.menai --compact-threshold 80
+python -m menai_pretty_print.pretty_print myfile.menai --compact-threshold 80
 
 # Change comment spacing
-python tools/menai/pretty-print/pretty-print.py myfile.menai --comment-spacing 4
+python -m menai_pretty_print.pretty_print myfile.menai --comment-spacing 4
 ```
 
 ### Check Mode
@@ -57,7 +54,7 @@ python tools/menai/pretty-print/pretty-print.py myfile.menai --comment-spacing 4
 Check if a file is already formatted (useful for CI/CD):
 
 ```bash
-python tools/menai/pretty-print/pretty-print.py myfile.menai --check
+python -m menai_pretty_print.pretty_print myfile.menai --check
 # Exit code 0 if formatted, 1 if needs formatting
 ```
 
@@ -167,11 +164,11 @@ formatted = pretty_print(code, options)
 
 ```bash
 # Unix/Mac
-find . -name "*.menai" -exec python tools/menai/pretty-print/pretty-print.py {} --in-place \;
+find . -name "*.menai" -exec python -m menai_pretty_print.pretty_print {} --in-place \;
 
 # Or with a loop
 for file in *.menai; do
-    python tools/menai/pretty-print/pretty-print.py "$file" --in-place
+    python -m menai_pretty_print.pretty_print "$file" --in-place
 done
 ```
 
@@ -182,10 +179,10 @@ done
 # .git/hooks/pre-commit
 
 for file in $(git diff --cached --name-only --diff-filter=ACM | grep '\.menai$'); do
-    python tools/menai/pretty-print/pretty-print.py "$file" --check
+    python -m menai_pretty_print.pretty_print "$file" --check
     if [ $? -ne 0 ]; then
         echo "Error: $file needs formatting"
-        echo "Run: python tools/menai/pretty-print/pretty-print.py $file --in-place"
+        echo "Run: python -m menai_pretty_print.pretty_print $file --in-place"
         exit 1
     fi
 done

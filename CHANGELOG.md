@@ -1,12 +1,18 @@
 # Change log for Menai
 
-## v0.3.1 (2026-08-xx)
+## v0.4.0 (2026-09-xx)
+
+Bug fixes:
+
+- Fixed various help text and documentation issues related to an earlier tool renaming.
+
+## v0.3.1 (2026-08-30)
 
 Bug fixes:
 
 - Fixed path problems in the `menai-pipeline` tool examples.
 
-## v0.3.0 (2026-08-xx)
+## v0.3.0 (2026-08-30)
 
 New features:
 

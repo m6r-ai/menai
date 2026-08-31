@@ -17,19 +17,19 @@ def main() -> None:
         epilog="""
 Examples:
   # Format a file and print to stdout
-  menai_pretty_print myfile.menai
+  menai-pretty-print myfile.menai
   
   # Format a file and save to output file
-  menai_pretty_print myfile.menai -o formatted.menai
+  menai-pretty-print myfile.menai -o formatted.menai
   
   # Format from stdin
-  echo "(let ((x 5)(y 10)) (+ x y))" | menai_pretty_print -
+  echo "(let ((x 5)(y 10)) (+ x y))" | menai-pretty-print -
   
   # Format in-place (overwrites original file)
-  menai_pretty_print myfile.menai --in-place
+  menai-pretty-print myfile.menai --in-place
   
   # Check if file is already formatted
-  menai_pretty_print myfile.menai --check
+  menai-pretty-print myfile.menai --check
 """
     )
     parser.add_argument(

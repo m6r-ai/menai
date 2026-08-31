@@ -20,11 +20,11 @@ Module paths are resolved the same way as the disassembler: the file's
 own directory first, then the current working directory.
 
 Usage:
-    python menai_profiler.py <file.menai>
-    python menai_profiler.py <file.menai> --mode opcode
-    python menai_profiler.py <file.menai> --output stats.prof
-    python menai_profiler.py <file.menai> --top 50
-    python menai_profiler.py <file.menai> --sort time
+    menai-profile <file.menai>
+    menai-profile <file.menai> --mode opcode
+    menai-profile <file.menai> --output stats.prof
+    menai-profile <file.menai> --top 50
+    menai-profile <file.menai> --sort time
 """
 
 import argparse
