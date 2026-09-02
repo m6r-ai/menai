@@ -11,6 +11,8 @@ New features:
 Bug fixes:
 
 - Fixed various help text and documentation issues related to an earlier tool renaming.
+- Fixed problems with the VM not returning "no memory" errors.
+- Fixed the `string-prefix` and `string-suffix` operations.
 
 ## v0.3.1 (2026-08-30)
 

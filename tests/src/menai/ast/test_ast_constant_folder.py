@@ -109,13 +109,45 @@ class TestConstantFolding:
         assert menai.evaluate('(string-slice "hello" 1 4)') == "ell"
         _assert_folded_to_constant(menai, '(string-slice "hello" 1 4)')
 
-    def test_string_prefix(self, menai):
+    def test_string_prefix_true(self, menai):
         assert menai.evaluate('(string-prefix? "hello world" "hello")') is True
         _assert_folded_to_constant(menai, '(string-prefix? "hello world" "hello")')
 
-    def test_string_suffix(self, menai):
+    def test_string_prefix_false(self, menai):
+        assert menai.evaluate('(string-prefix? "hello world" "world")') is False
+        _assert_folded_to_constant(menai, '(string-prefix? "hello world" "world")')
+
+    def test_string_prefix_empty(self, menai):
+        assert menai.evaluate('(string-prefix? "hello world" "")') is True
+        _assert_folded_to_constant(menai, '(string-prefix? "hello world" "")')
+
+    def test_string_prefix_longer_than_string(self, menai):
+        assert menai.evaluate('(string-prefix? "hello" "hello world")') is False
+        _assert_folded_to_constant(menai, '(string-prefix? "hello" "hello world")')
+
+    def test_string_prefix_unicode(self, menai):
+        assert menai.evaluate('(string-prefix? "世界你好" "世界")') is True
+        _assert_folded_to_constant(menai, '(string-prefix? "世界你好" "世界")')
+
+    def test_string_suffix_true(self, menai):
         assert menai.evaluate('(string-suffix? "hello world" "world")') is True
         _assert_folded_to_constant(menai, '(string-suffix? "hello world" "world")')
+
+    def test_string_suffix_false(self, menai):
+        assert menai.evaluate('(string-suffix? "hello world" "hello")') is False
+        _assert_folded_to_constant(menai, '(string-suffix? "hello world" "hello")')
+
+    def test_string_suffix_empty(self, menai):
+        assert menai.evaluate('(string-suffix? "hello world" "")') is True
+        _assert_folded_to_constant(menai, '(string-suffix? "hello world" "")')
+
+    def test_string_suffix_longer_than_string(self, menai):
+        assert menai.evaluate('(string-suffix? "hello" "hello world")') is False
+        _assert_folded_to_constant(menai, '(string-suffix? "hello" "hello world")')
+
+    def test_string_suffix_unicode(self, menai):
+        assert menai.evaluate('(string-suffix? "世界你好" "你好")') is True
+        _assert_folded_to_constant(menai, '(string-suffix? "世界你好" "你好")')
 
     def test_string_index(self, menai):
         assert menai.evaluate('(string-index "hello" "l")') == 2

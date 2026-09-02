@@ -338,6 +338,46 @@ class TestStrings:
         assert menai.evaluate_and_format(expression) == expected
 
     @pytest.mark.parametrize("expression,expected", [
+        # Prefix matches
+        ('(let ((s "hello world") (p "hello")) ($string-prefix? s p))', '#t'),
+        ('(let ((s "hello world") (p "he")) ($string-prefix? s p))', '#t'),
+        ('(let ((s "hello world") (p "")) ($string-prefix? s p))', '#t'),  # Empty prefix
+        # Prefix non-matches
+        ('(let ((s "hello world") (p "world")) ($string-prefix? s p))', '#f'),  # Not at start
+        ('(let ((s "hello") (p "hello world")) ($string-prefix? s p))', '#f'),  # Prefix longer
+        # Unicode prefix
+        ('(let ((s "世界你好") (p "世界")) ($string-prefix? s p))', '#t'),
+        ('(let ((s "café") (p "ca")) ($string-prefix? s p))', '#t'),
+    ])
+    def test_string_prefix_runtime(self, menai, expression, expected):
+        """Test string-prefix? opcode directly (not constant-folded)."""
+        code = menai.compile(expression)
+        ops = [unpack_instruction(w).opcode for w in code.instructions]
+        assert Opcode.STRING_PREFIX_P in ops, \
+            f"Expected STRING_PREFIX_P in bytecode for {expression!r}"
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression,expected", [
+        # Suffix matches
+        ('(let ((s "hello world") (su "world")) ($string-suffix? s su))', '#t'),
+        ('(let ((s "hello world") (su "ld")) ($string-suffix? s su))', '#t'),
+        ('(let ((s "hello world") (su "")) ($string-suffix? s su))', '#t'),  # Empty suffix
+        # Suffix non-matches
+        ('(let ((s "hello world") (su "hello")) ($string-suffix? s su))', '#f'),  # Not at end
+        ('(let ((s "hello") (su "hello world")) ($string-suffix? s su))', '#f'),  # Suffix longer
+        # Unicode suffix
+        ('(let ((s "世界你好") (su "你好")) ($string-suffix? s su))', '#t'),
+        ('(let ((s "café") (su "é")) ($string-suffix? s su))', '#t'),
+    ])
+    def test_string_suffix_runtime(self, menai, expression, expected):
+        """Test string-suffix? opcode directly (not constant-folded)."""
+        code = menai.compile(expression)
+        ops = [unpack_instruction(w).opcode for w in code.instructions]
+        assert Opcode.STRING_SUFFIX_P in ops, \
+            f"Expected STRING_SUFFIX_P in bytecode for {expression!r}"
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression,expected", [
         # String equality predicate
         ('(string=? "hello" "hello")', '#t'),
         ('(string=? "hello" "world")', '#f'),
@@ -660,6 +700,22 @@ class TestStrings:
 
         with pytest.raises(MenaiEvalError):
             menai.evaluate('(string=? "hello" 42)')
+
+    def test_string_prefix_suffix_type_validation_runtime(self, menai):
+        """Test that string-prefix? and string-suffix? opcodes reject non-string arguments."""
+        # Non-string first argument
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(let ((s 42) (p "hello")) ($string-prefix? s p))')
+
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(let ((s #t) (p "world")) ($string-suffix? s p))')
+
+        # Non-string second argument
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(let ((s "hello") (p 42)) ($string-prefix? s p))')
+
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(let ((s "hello") (p #t)) ($string-suffix? s p))')
 
     def test_string_conversion_type_validation(self, menai):
         """Test that string conversion functions validate argument types."""

@@ -4060,13 +4060,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiString *p = (MenaiString *)frame_regs[src1];
             ssize_t plen = p->length;
 
-            bool r = false;
+            int match = 0;
             if (plen <= s->length) {
-                r = (memcmp(s->data, p->data, (size_t)plen * sizeof(uint32_t)) == 0);
+                match = (memcmp(s->data, p->data, (size_t)plen * sizeof(uint32_t)) == 0);
             }
 
-            menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = (MenaiValue *)r;
+            bool_store(vs, frame_regs, dest, match);
             break;
         }
 
@@ -4078,13 +4077,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             ssize_t slen = s->length;
             ssize_t sulen = su->length;
 
-            bool r = false;
+            int match = 0;
             if (sulen <= slen) {
-                r = (memcmp(s->data + (slen - sulen), su->data, (size_t)sulen * sizeof(uint32_t)) == 0);
+                match = (memcmp(s->data + (slen - sulen), su->data, (size_t)sulen * sizeof(uint32_t)) == 0);
             }
 
-            menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = (MenaiValue *)r;
+            bool_store(vs, frame_regs, dest, match);
             break;
         }
 
