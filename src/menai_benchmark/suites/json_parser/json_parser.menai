@@ -2,7 +2,7 @@
 ;
 ; Uses an explicit work stack to avoid call-stack overflow on deeply nested JSON.
 ; Each stack frame describes what to do when a sub-value is returned:
-;   (list "array"  s acc)      - resume building an array after an element
+;   (list "array"  s acc)      - resume building an array after an element (acc is reversed)
 ;   (list "object" s d key)    - resume building an object after a value
 ;
 ; Exports: "parse" — takes a JSON string, returns the equivalent Menai value.
@@ -127,7 +127,7 @@
          (let ((frame (list-first stack))
                (rest-stack (list-rest stack)))
            (if (string=? (list-first frame) "array")
-               ; Resume array: frame = ("array" s acc)
+               ; Resume array: frame = ("array" s acc) — acc is in reverse order
                (let ((s   (list-ref frame 1))
                      (acc (list-ref frame 2)))
                  (let ((pos2 (skip-ws s pos)))
@@ -135,10 +135,10 @@
                        (error "Unterminated array")
                        (let ((ch (string-ref s pos2)))
                          (if (string=? ch "]")
-                             (resume (list-append acc val) (integer+ pos2 1) rest-stack)
+                             (resume (list-reverse (list-prepend acc val)) (integer+ pos2 1) rest-stack)
                              (if (string=? ch ",")
                                  (dispatch s (skip-ws s (integer+ pos2 1))
-                                           (list-prepend rest-stack (list "array" s (list-append acc val))))
+                                           (list-prepend rest-stack (list "array" s (list-prepend acc val))))
                                  (error "Expected , or ] in array")))))))
                ; Resume object: frame = ("object" s d key)
                (let ((s   (list-ref frame 1))

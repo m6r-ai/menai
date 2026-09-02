@@ -61,13 +61,9 @@ gc_mark_value(MenaiValue *val)
 
     case MENAITYPE_LIST: {
         MenaiList *lst = (MenaiList *)val;
-        if (lst->owner != NULL) {
-            /* View — trace through the backing owner. */
-            gc_mark_value((MenaiValue *)lst->owner);
-        } else {
-            for (ssize_t i = 0; i < lst->length; i++) {
-                gc_mark_value(lst->elements[i]);
-            }
+        while (lst != NULL && lst->head != NULL) {
+            gc_mark_value(lst->head);
+            lst = lst->tail;
         }
 
         break;
@@ -154,16 +150,14 @@ _gc_is_dead(MenaiValue *val)
 static void
 _gc_detach_dead_from_list(MenaiList *lst)
 {
-    if (lst->owner != NULL) {
-        return;
-    }
-
-    for (ssize_t i = 0; i < lst->length; i++) {
-        MenaiValue *e = lst->elements[i];
+    while (lst != NULL && lst->head != NULL) {
+        MenaiValue *e = lst->head;
         if (_gc_is_dead(e)) {
             e->ob_refcnt--;
-            lst->elements[i] = NULL;
+            lst->head = NULL;
         }
+
+        lst = lst->tail;
     }
 }
 

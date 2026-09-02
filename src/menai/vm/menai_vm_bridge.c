@@ -616,25 +616,28 @@ slow_list_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     Py_ssize_t n = PyTuple_GET_SIZE(elems);
-    MenaiList *lst = alloc_menai_list(vs, n);
-    if (!lst) {
-        Py_DECREF(elems);
-        PyErr_NoMemory();
-        return NULL;
-    }
+    MenaiList *lst = menai_empty_list(vs);
+    menai_value_retain((MenaiValue *)lst);
 
-    MenaiValue **arr = lst->elements;
-    for (Py_ssize_t i = 0; i < n; i++) {
-        arr[i] = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
-        if (!arr[i]) {
-            for (Py_ssize_t j = 0; j < i; j++) {
-                menai_value_release(vs, arr[j]);
-            }
-
+    for (Py_ssize_t i = n - 1; i >= 0; i--) {
+        MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
+        if (!item) {
             menai_value_release(vs, (MenaiValue *)lst);
             Py_DECREF(elems);
             return NULL;
         }
+        MenaiList *cell = alloc_menai_list(vs);
+        if (!cell) {
+            menai_value_release(vs, item);
+            menai_value_release(vs, (MenaiValue *)lst);
+            Py_DECREF(elems);
+            PyErr_NoMemory();
+            return NULL;
+        }
+        cell->head = item;
+        cell->tail = lst;
+        cell->length = lst->length + 1;
+        lst = cell;
     }
 
     Py_DECREF(elems);
@@ -1178,14 +1181,16 @@ fast_list_to_slow(MenaiVMState *vs, MenaiValue *val)
         return NULL;
     }
 
+    MenaiList *cur = lst;
     for (Py_ssize_t i = 0; i < n; i++) {
-        PyObject *elem = menai_value_to_slow_value(vs, lst->elements[i]);
+        PyObject *elem = menai_value_to_slow_value(vs, cur->head);
         if (!elem) {
             Py_DECREF(py_tuple);
             return NULL;
         }
 
         PyTuple_SET_ITEM(py_tuple, i, elem);
+        cur = cur->tail;
     }
 
     PyObject *result = PyObject_CallOneArg((PyObject *)Slow_ListType, py_tuple);

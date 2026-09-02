@@ -244,12 +244,16 @@ expressive. Do not add `cond`. See [ADR-0001](docs/adr/0001-no-cond-form.md).
 
 ### Proper lists only
 
-There are no cons cells and no improper lists. List construction uses `list`,
-`list-prepend`, and `list-append`, all of which produce proper lists. The internal
-representation of lists is an implementation detail of each binding. This is
-intentional: improper lists add complexity for minimal benefit in a language
-without pattern-matched list destructuring at the cons-cell level.
-See [ADR-0003](docs/adr/0003-proper-lists-only.md).
+There are no improper lists and no `cons` operation in the surface language.
+List construction uses `list`, `list-prepend`, and `list-append`, all of which
+produce proper lists. Internally, lists are represented as cons cells (linked
+pairs where the cdr is always a list or nil) — this gives O(1) head/tail
+decomposition and O(1) prepend, which aligns with the recursive traversal
+patterns that dominate Menai list processing. Random access is O(n). The
+dotted pattern `(head . tail)` in `match` is a pattern-matching convenience,
+not a cons-cell type.
+See [ADR-0017](docs/adr/0017-cons-cell-internal-representation.md) (supersedes
+[ADR-0003](docs/adr/0003-proper-lists-only.md)).
 
 ### Strict numeric typing
 

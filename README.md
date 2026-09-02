@@ -43,7 +43,7 @@ very robust code this way.
 - **Homoiconic** — code and data share the same representation (S-expressions)
 - **Strictly typed** — no implicit coercion between numeric types; each type has
   its own operators (e.g. `integer+`, `float*`, `complex/`)
-- **Proper lists only** — no cons cells or improper lists
+- **Proper lists only** — no improper lists
 - **Tail call optimised** — recursive functions don't overflow the stack
 - **Pattern matching** — declarative branching with destructuring
 - **Module system** — write and import `.menai` files

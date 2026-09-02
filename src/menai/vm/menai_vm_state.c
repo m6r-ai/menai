@@ -2,10 +2,10 @@
  * menai_vm_state.c — MenaiVMState lifecycle management.
  *
  * menai_vm_state_alloc creates and initialises a fresh MenaiVMState: the
- * none/boolean singletons are stored inline and initialised directly, while
- * the integer cache and empty list/dict/set are allocated from this
- * instance's pool so they participate in the same allocator lifecycle as
- * every other value.
+ * none/boolean/empty-list singletons are stored inline and initialised
+ * directly, while the integer cache and empty dict/set are allocated from
+ * this instance's pool so they participate in the same allocator lifecycle
+ * as every other value.
  *
  * menai_vm_state_free tears down the globals, drains the pool free-lists, and
  * frees the struct itself.
@@ -29,6 +29,14 @@ menai_vm_state_alloc(void)
     vs->none_storage.ob_refcnt = 1;
     vs->none_storage.ob_type = MENAITYPE_NONE;
     MENAI_SET_MAGIC(&vs->none_storage);
+
+    vs->empty_list_storage.ob_refcnt = 1;
+    vs->empty_list_storage.ob_type = MENAITYPE_LIST;
+    vs->empty_list_storage.ob_alloc_bucket = -1;
+    vs->empty_list_storage.head = NULL;
+    vs->empty_list_storage.tail = NULL;
+    vs->empty_list_storage.length = 0;
+    MENAI_SET_MAGIC(&vs->empty_list_storage);
 
     vs->true_storage.ob_refcnt = 1;
     vs->true_storage.ob_type = MENAITYPE_BOOLEAN;
@@ -54,12 +62,6 @@ menai_vm_state_alloc(void)
         menai_bigint_init(&obj->big);
 
         vs->integer_cache[v - MENAI_INT_CACHE_MIN] = obj;
-    }
-
-    vs->empty_list = alloc_menai_list(vs, 0);
-    if (vs->empty_list == NULL) {
-        menai_vm_state_free(vs);
-        return NULL;
     }
 
     vs->empty_dict = alloc_menai_dict(vs, 0);

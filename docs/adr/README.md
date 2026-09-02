@@ -70,7 +70,7 @@ What costs, risks, or constraints does this decision impose?
 |--------|-------|--------|
 | [0001](0001-no-cond-form.md) | No `cond` form | Accepted |
 | [0002](0002-symbols-not-strings.md) | Symbols are not strings | Accepted |
-| [0003](0003-proper-lists-only.md) | Proper lists only | Accepted |
+| [0003](0003-proper-lists-only.md) | Proper lists only | Superseded by ADR-0017 |
 | [0004](0004-strict-numeric-typing.md) | Strict numeric typing | Accepted |
 | [0005](0005-ir-tree-immutability.md) | IR tree immutability — passes return new trees | Accepted |
 | [0006](0006-no-process-global-mutable-state-in-c-vm.md) | No process-global mutable state in the C VM | Accepted |
@@ -84,3 +84,4 @@ What costs, risks, or constraints does this decision impose?
 | [0014](0014-pool-allocator-in-c-vm.md) | Pool allocator in the C VM | Accepted |
 | [0015](0015-desugar-to-small-core.md) | Desugar to a small core before IR | Accepted |
 | [0016](0016-reference-counting-with-closure-cycle-collection.md) | Reference counting with closure cycle collection in the C VM | Accepted |
+| [0017](0017-cons-cell-internal-representation.md) | Cons-cell internal representation for lists | Accepted |

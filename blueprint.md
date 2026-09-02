@@ -165,7 +165,8 @@ Menai does not know Humbug exists.
 - **Not a general-purpose scripting language.** It has no I/O, no file access, no
   network access. It is a computational language, not a systems language.
 - **Not a Lisp dialect.** It is Lisp-inspired but deliberately different. It has
-  strict typing, no `cond`, no cons cells, and no implicit numeric coercion. Do not
+  strict typing, no `cond`, no `cons` operation or improper lists in the surface
+  language, and no implicit numeric coercion. Do not
   assume that because it looks like Scheme it behaves like Scheme.
 - **Not dependent on Python.** The reference implementation is in Python, but the
   language is independent of its implementation.

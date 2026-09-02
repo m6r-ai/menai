@@ -1,7 +1,12 @@
 # ADR-0003: Proper lists only
 
 Date: 2026-08-24  
-Status: Accepted
+Status: Superseded by ADR-0017 (2026-09-02)
+
+The surface-language decision (no cons cells, no improper lists, proper lists
+only) remains in force. The internal-representation decision — that list
+representation is "an implementation detail of each binding" — is superseded.
+ADR-0017 specifies cons cells as the internal representation for lists.
 
 ## Context
 

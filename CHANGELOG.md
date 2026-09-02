@@ -2,6 +2,12 @@
 
 ## v0.4.0 (2026-09-xx)
 
+New features:
+
+- Switched from a vector-like list representation to a cons-cell like representation inside the VM.  This wins up to 6x on
+  the sort benchmark while being slightly positive on the JSON parser and slightly negative on rubiks and sudoku.  This does
+  not change any visible aspect of the language surface, just performance.
+
 Bug fixes:
 
 - Fixed various help text and documentation issues related to an earlier tool renaming.

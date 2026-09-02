@@ -121,8 +121,8 @@ and `tail` to the rest of the list:
 ```
 
 This is the only context in Menai where a dotted (cons-style) pattern appears.
-There are no cons cells in Menai's data model — this is purely a pattern matching
-convenience.
+There is no `cons` operation or cons-cell type in Menai's surface language —
+this is purely a pattern matching convenience.
 
 ## Nested patterns
 

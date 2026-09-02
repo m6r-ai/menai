@@ -1,15 +1,12 @@
 /*
  * menai_vm_list.c — MenaiList type implementation.
  *
- * MenaiList stores its elements inline in the same allocation as the struct,
- * using a C99 flexible array member.  A single menai_alloc call covers both
- * the header and the element array for owning lists.  Slice views allocate
- * only the header (sizeof(MenaiList)) and point their elements pointer into
- * the owner's inline storage.
+ * MenaiList is a cons-cell based linked list.  Each cell is a fixed-size
+ * allocation holding one element (head) and a pointer to the rest (tail).
+ * The empty list is a shared sentinel stored inline in MenaiVMState.
  *
- * The primary constructor is menai_list_alloc(n), which allocates
- * sizeof(MenaiList) + n * sizeof(MenaiValue *) bytes and returns a list with
- * uninitialised elements ready for the caller to fill and retain.
+ * alloc_menai_list allocates a single cons cell with head and tail set to
+ * NULL and length 0.  The caller fills in head, tail, and length.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -17,18 +14,18 @@
 #include "menai_vm_c.h"
 
 MenaiList *
-alloc_menai_list(MenaiVMState *vs, ssize_t n)
+alloc_menai_list(MenaiVMState *vs)
 {
-    MenaiList *obj = (MenaiList *)menai_alloc(vs, sizeof(MenaiList) + (size_t)n * sizeof(MenaiValue *));
+    MenaiList *obj = (MenaiList *)menai_alloc(vs, sizeof(MenaiList));
     if (!obj) {
         return NULL;
     }
 
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_LIST;
-    obj->elements = obj->inline_elements;
-    obj->length = n;
-    obj->owner = NULL;
+    obj->head = NULL;
+    obj->tail = NULL;
+    obj->length = 0;
 
     return obj;
 }

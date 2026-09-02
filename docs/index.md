@@ -31,7 +31,8 @@ and its result, like this:
 - **Not a general-purpose scripting language.** Menai has no I/O, no file access,
   no network access. It is a computational language, not a systems language.
 - **Not a Lisp dialect.** Menai is Lisp-inspired but deliberately different. It has
-  strict typing, no `cond`, no cons cells, and no implicit numeric coercion. Do not
+  strict typing, no `cond`, no `cons` operation or improper lists in the surface
+  language, and no implicit numeric coercion. Do not
   assume that because it looks like Scheme it behaves like Scheme.
 
 ### Conventions used in this manual

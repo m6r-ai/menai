@@ -42,6 +42,13 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         break;
 
     case MENAITYPE_LIST:
+        if (((MenaiList *)v)->head == NULL && ((MenaiList *)v)->tail == NULL) {
+            /*
+             * We can't free the empty list sentinel.
+             */
+            assert(0);
+            break;
+        }
         menai_list_final(vs, (MenaiList *)v);
         break;
 

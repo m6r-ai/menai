@@ -189,8 +189,8 @@ Symbols are hashable and can be used as set members or dict keys.
 
 ## list
 
-Immutable proper lists — sequences of values. There are no cons cells and no
-improper lists. Lists can contain mixed types.
+Immutable proper lists — sequences of values. There is no `cons` operation and
+no improper lists in the surface language. Lists can contain mixed types.
 
 ```menai
 ()                  ; empty list

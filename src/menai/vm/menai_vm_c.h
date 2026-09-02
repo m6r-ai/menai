@@ -303,17 +303,9 @@ struct MenaiInteger {
 
 struct MenaiList {
     MenaiValue_HEAD
-    MenaiValue **elements;              /* points to inline_elements for owners, into owner for views */
-    ssize_t length;                     /* number of live elements */
-
-    /*
-     * owner is non-NULL when this list is a slice view into another list's
-     * inline_elements array.  In that case elements points into owner's storage
-     * and must not be freed; only menai_value_release(owner) is needed on dealloc.
-     * owner always points to a list with owner == NULL (never a chain).
-     */
-    MenaiList *owner;
-    MenaiValue *inline_elements[];      /* FAM — storage for owning lists */
+    MenaiValue *head;                   /* element at this position (NULL for empty list sentinel) */
+    MenaiList *tail;                    /* rest of the list (NULL for empty list sentinel) */
+    ssize_t length;                     /* cached length for O(1) list-length; 0 for empty sentinel */
 };
 
 struct MenaiNone {
@@ -577,11 +569,12 @@ typedef struct MenaiVMState {
      * Singletons — per-instance
      */
     MenaiNone none_storage;             /* inline, not heap */
+    MenaiList empty_list_storage;       /* inline, not heap */
     MenaiBoolean true_storage;          /* inline */
     MenaiBoolean false_storage;         /* inline */
     MenaiInteger *integer_cache[MENAI_INT_CACHE_SIZE];  /* heap, from this pool */
 
-    MenaiList *empty_list;              /* heap, from this pool */
+    /* empty_list now uses empty_list_storage above */
     MenaiDict *empty_dict;              /* heap, from this pool */
     MenaiSet *empty_set;                /* heap, from this pool */
 
@@ -1006,25 +999,22 @@ menai_integer_equal(MenaiInteger *a, MenaiInteger *b)
     return menai_bigint_eq(&a->big, &b->big);
 }
 
-MenaiList *alloc_menai_list(MenaiVMState *vs, ssize_t n);
+MenaiList *alloc_menai_list(MenaiVMState *vs);
 
 static inline void
 menai_list_final(MenaiVMState *vs, MenaiList *self)
 {
-    if (self->owner != NULL) {
-        /* View — release the backing list; do not touch the element array. */
-        menai_value_release(vs, (MenaiValue *)self->owner);
+    /* Empty list sentinel must not be freed. */
+    if (self->head == NULL && self->tail == NULL) {
         return;
     }
 
-    /* Owner — release all elements then free the combined block. */
-    ssize_t n = self->length;
-    MenaiValue **arr = self->elements;
-    for (ssize_t i = 0; i < n; i++) {
-        if (*arr != NULL) {
-            menai_value_release(vs, *arr);
-        }
-        arr++;
+    if (self->head != NULL) {
+        menai_value_release(vs, self->head);
+    }
+
+    if (self->tail != NULL) {
+        menai_value_release(vs, (MenaiValue *)self->tail);
     }
 }
 
@@ -1035,10 +1025,13 @@ menai_list_equal(MenaiList *a, MenaiList *b)
         return 0;
     }
 
-    for (ssize_t i = 0; i < a->length; i++) {
-        if (!menai_value_equal(a->elements[i], b->elements[i])) {
+    while (a->head != NULL) {
+        if (!menai_value_equal(a->head, b->head)) {
             return 0;
         }
+
+        a = a->tail;
+        b = b->tail;
     }
 
     return 1;
@@ -1048,6 +1041,12 @@ static inline MenaiNone *
 menai_none(MenaiVMState *vs)
 {
     return &vs->none_storage;
+}
+
+static inline MenaiList *
+menai_empty_list(MenaiVMState *vs)
+{
+    return &vs->empty_list_storage;
 }
 
 static inline hash_t

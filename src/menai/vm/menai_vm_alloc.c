@@ -223,7 +223,7 @@ _is_singleton(MenaiVMState *vs, void *ptr)
         }
     }
 
-    if ((void *)vs->empty_list == ptr ||
+    if ((void *)&vs->empty_list_storage == ptr ||
         (void *)vs->empty_dict == ptr ||
         (void *)vs->empty_set == ptr) {
         return 1;
