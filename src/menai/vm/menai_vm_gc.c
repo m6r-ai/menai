@@ -40,6 +40,8 @@ gc_mark_value(MenaiValue *val)
     case MENAITYPE_FLOAT:
     case MENAITYPE_COMPLEX:
     case MENAITYPE_STRING:
+    case MENAITYPE_DICT_ELEMENT:
+    case MENAITYPE_SET_ELEMENT:
         /* Leaf types — cannot contain closures. */
         break;
 
@@ -82,14 +84,13 @@ gc_mark_value(MenaiValue *val)
         break;
     }
 
-    case MENAITYPE_DICT_ELEMENT:
-        /* Dict elements are not closures and cannot form cycles. */
-        break;
-
     case MENAITYPE_SET: {
         MenaiSet *s = (MenaiSet *)val;
         for (ssize_t i = 0; i < s->length; i++) {
-            gc_mark_value(s->elements[i]);
+            MenaiSetElement *elem = s->elements[i];
+            if (elem != NULL) {
+                gc_mark_value(elem->value);
+            }
         }
 
         break;
@@ -203,10 +204,15 @@ static void
 _gc_detach_dead_from_set(MenaiSet *s)
 {
     for (ssize_t i = 0; i < s->length; i++) {
-        MenaiValue *e = s->elements[i];
-        if (_gc_is_dead(e)) {
-            e->ob_refcnt--;
-            s->elements[i] = NULL;
+        MenaiSetElement *elem = s->elements[i];
+        if (elem == NULL) {
+            continue;
+        }
+
+        MenaiValue *v = elem->value;
+        if (_gc_is_dead(v)) {
+            v->ob_refcnt--;
+            elem->value = NULL;
         }
     }
 }

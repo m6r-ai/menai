@@ -746,13 +746,12 @@ slow_set_to_fast(MenaiVMState *vs, PyObject *src)
         return NULL;
     }
 
-    MenaiValue **elements = s->elements;
-    hash_t *hashes = s->hashes;
+    MenaiSetElement **elements = s->elements;
     for (Py_ssize_t i = 0; i < n; i++) {
         MenaiValue *fe = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
         if (!fe) {
             for (Py_ssize_t j = 0; j < i; j++) {
-                menai_value_release(vs, elements[j]);
+                menai_value_release(vs, (MenaiValue *)elements[j]);
             }
 
             menai_value_release(vs, (MenaiValue *)s);
@@ -764,7 +763,7 @@ slow_set_to_fast(MenaiVMState *vs, PyObject *src)
         if (h == -1) {
             menai_value_release(vs, fe);
             for (Py_ssize_t j = 0; j < i; j++) {
-                menai_value_release(vs, elements[j]);
+                menai_value_release(vs, (MenaiValue *)elements[j]);
             }
 
             menai_value_release(vs, (MenaiValue *)s);
@@ -773,8 +772,20 @@ slow_set_to_fast(MenaiVMState *vs, PyObject *src)
             return NULL;
         }
 
-        elements[i] = fe;
-        hashes[i] = h;
+        MenaiSetElement *se = alloc_menai_set_element(vs, fe, h);
+        if (!se) {
+            menai_value_release(vs, fe);
+            for (Py_ssize_t j = 0; j < i; j++) {
+                menai_value_release(vs, (MenaiValue *)elements[j]);
+            }
+
+            menai_value_release(vs, (MenaiValue *)s);
+            Py_DECREF(elems);
+            PyErr_NoMemory();
+            return NULL;
+        }
+
+        elements[i] = se;
     }
 
     Py_DECREF(elems);
@@ -785,7 +796,7 @@ slow_set_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     for (ssize_t i = 0; i < n; i++) {
-        menai_ht_insert(&s->ht, elements[i], hashes[i], i);
+        menai_ht_insert(&s->ht, elements[i]->value, elements[i]->hash, i);
     }
 
     return (MenaiValue *)s;
@@ -1253,7 +1264,7 @@ fast_set_to_slow(MenaiVMState *vs, MenaiValue *val)
     }
 
     for (Py_ssize_t i = 0; i < n; i++) {
-        PyObject *elem = menai_value_to_slow_value(vs, s->elements[i]);
+        PyObject *elem = menai_value_to_slow_value(vs, s->elements[i]->value);
         if (!elem) {
             Py_DECREF(py_tuple);
             return NULL;

@@ -67,6 +67,10 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         menai_set_final(vs, (MenaiSet *)v);
         break;
 
+    case MENAITYPE_SET_ELEMENT:
+        menai_set_element_final(vs, (MenaiSetElement *)v);
+        break;
+
     case MENAITYPE_STRING:
         menai_string_final(vs, (MenaiString *)v);
         break;
