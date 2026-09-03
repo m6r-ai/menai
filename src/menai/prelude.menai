@@ -948,7 +948,7 @@
    (set-union (lambda (s1 s2) ($set-union s1 s2)))
    (set-intersection (lambda (s1 s2) ($set-intersection s1 s2)))
    (set-difference (lambda (s1 s2) ($set-difference s1 s2)))
-   (set-subset? (lambda (s1 s2) ($set-subset? s1 s2)))
+   (set-subset? (lambda (s sub) ($set-subset? s sub)))
    (set->list (lambda (s) ($set->list s)))
    (struct? (lambda (x) ($struct? x)))
    (struct-is-instance? (lambda (s t) ($struct-is-instance? s t)))

@@ -364,7 +364,7 @@ class TestSetAlgebra:
 
     def test_subset_true(self, tool):
         """Test that a proper subset is detected."""
-        result = tool.evaluate("(set-subset? (set 1 2) (set 1 2 3))")
+        result = tool.evaluate("(set-subset? (set 1 2 3) (set 1 2))")
         assert result is True
 
     def test_subset_equal_sets(self, tool):
@@ -374,12 +374,12 @@ class TestSetAlgebra:
 
     def test_subset_false(self, tool):
         """Test that a non-subset is not detected as subset."""
-        result = tool.evaluate("(set-subset? (set 1 2 4) (set 1 2 3))")
+        result = tool.evaluate("(set-subset? (set 1 2 3) (set 1 2 4))")
         assert result is False
 
     def test_subset_empty_is_subset_of_all(self, tool):
         """Test that empty set is a subset of any set."""
-        result = tool.evaluate("(set-subset? (set) (set 1 2 3))")
+        result = tool.evaluate("(set-subset? (set 1 2 3) (set))")
         assert result is True
 
     def test_subset_empty_of_empty(self, tool):

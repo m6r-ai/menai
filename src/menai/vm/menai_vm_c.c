@@ -6964,18 +6964,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_SET_SUBSET_P: {
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
-            MenaiSet *a = (MenaiSet *)frame_regs[src0];
+            MenaiSet *superset = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiSet *b = (MenaiSet *)frame_regs[src1];
-            if (a->length > b->length) {
+            MenaiSet *subset = (MenaiSet *)frame_regs[src1];
+            if (subset->length > superset->length) {
                 bool_store(vs, frame_regs, dest, 0);
                 break;
             }
 
             int is_subset = 1;
-            for (ssize_t i = 0; i < a->length; i++) {
-                MenaiSetElement *elem = a->elements[i];
-                ssize_t idx = menai_ht_lookup(&b->ht, elem->value, elem->hash);
+            for (ssize_t i = 0; i < subset->length; i++) {
+                MenaiSetElement *elem = subset->elements[i];
+                ssize_t idx = menai_ht_lookup(&superset->ht, elem->value, elem->hash);
                 if (idx < 0) {
                     is_subset = 0;
                     break;

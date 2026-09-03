@@ -274,7 +274,7 @@ class Opcode(IntEnum):
     SET_UNION = _op(348, 2)             # r_dest = (set-union r_src0 r_src1)
     SET_INTERSECTION = _op(349, 2)      # r_dest = (set-intersection r_src0 r_src1)
     SET_DIFFERENCE = _op(350, 2)        # r_dest = (set-difference r_src0 r_src1)
-    SET_SUBSET_P = _op(351, 2)          # r_dest = (set-subset? r_src0 r_src1)
+    SET_SUBSET_P = _op(351, 2)          # r_dest = (set-subset? r_src0=superset r_src1=subset)
     SET_TO_LIST = _op(352, 1)           # r_dest = (set->list r_src0)
 
     # Struct operations

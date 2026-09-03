@@ -544,7 +544,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | `(set-union s1 s2)` | Union |
 | `(set-intersection s1 s2)` | Intersection |
 | `(set-difference s1 s2)` | s1 minus s2 |
-| `(set-subset? s1 s2)` | `→ #t` if every element of s1 is in s2 |
+| `(set-subset? s sub)` | `→ #t` if `sub` is a subset of `s` (every element of `sub` is in `s`) |
 
 ### Conversion
 
