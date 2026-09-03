@@ -1046,6 +1046,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (val == NULL) {
+                vm_user_message = strdup(name_str);
                 vm_err = MENAI_ERR_UNDEFINED_VARIABLE;
                 goto error;
             }
@@ -6597,20 +6598,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             for (ssize_t i = 0; i < na; i++) {
                 ssize_t bi = menai_ht_lookup(&b->ht, a->elements[i]->key, a->elements[i]->hash);
                 if (bi >= 0) {
-                    /* b overrides a's value — create a new element with a's key and b's value */
-                    menai_value_retain(a->elements[i]->key);
-                    menai_value_retain(b->elements[bi]->value);
-                    MenaiDictElement *elem = alloc_menai_dict_element(vs,
-                        a->elements[i]->key, b->elements[bi]->value, a->elements[i]->hash);
-                    if (!elem) {
-                        menai_value_release(vs, a->elements[i]->key);
-                        menai_value_release(vs, b->elements[bi]->value);
-                        r->length = out;
-                        menai_value_release(vs, (MenaiValue *)r);
-                        vm_err = MENAI_ERR_NOMEM;
-                        goto error;
-                    }
-                    nelems[out] = elem;
+                    /*
+                     * b overrides a — share b's element directly.  It has the
+                     * same key and hash (we just looked it up), and b's value.
+                     */
+                    menai_value_retain((MenaiValue *)b->elements[bi]);
+                    nelems[out] = b->elements[bi];
                 } else {
                     /* No override — share a's element directly */
                     menai_value_retain((MenaiValue *)a->elements[i]);

@@ -446,8 +446,8 @@ struct MenaiValue {
  * depth).  The bridge reads it after execution returns and translates
  * it into a Python exception.
  *
- * user_message is only set when code == MENAI_ERR_USER_ERROR; it is
- * a malloc'd C string that the bridge must free after use.
+ * user_message is set for MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE;
+ * it is a malloc'd C string that the bridge must free after use.
  */
 typedef struct {
     int code;               /* MENAI_ERR_* code */

@@ -100,7 +100,7 @@ class _MenaiVMRuntimeError(Exception):
         opcode: Opcode that was executing (0 if unknown).
         ip: Instruction pointer at time of error (0 if unknown).
         call_depth: Call stack depth at time of error.
-        user_message: User-supplied error string (only for USER_ERROR).
+        user_message: Supplementary error string (for USER_ERROR and UNDEFINED_VARIABLE).
     """
 
     def __init__(
@@ -261,6 +261,9 @@ def translate_vm_error(
         return RuntimeError(f"unhandled VM error code: {code}")
 
     exc_class, message, suggestion = entry
+
+    if user_message is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
+        message = f"undefined variable: {user_message}"
 
     if issubclass(exc_class, MenaiEvalError):
         exc: Exception = exc_class(
