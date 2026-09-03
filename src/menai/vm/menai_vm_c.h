@@ -113,6 +113,7 @@ typedef struct {
 #define MENAITYPE_STRUCT 0x000c
 #define MENAITYPE_STRUCTTYPE 0x000d
 #define MENAITYPE_BYTES 0x000e
+#define MENAITYPE_DICT_ELEMENT 0x000f
 
 typedef struct MenaiBigInt MenaiBigInt;
 typedef struct MenaiBoolean MenaiBoolean;
@@ -122,6 +123,7 @@ typedef struct MenaiComplex MenaiComplex;
 typedef struct MenaiDict MenaiDict;
 typedef struct MenaiFloat MenaiFloat;
 typedef struct MenaiFunction MenaiFunction;
+typedef struct MenaiDictElement MenaiDictElement;
 typedef struct MenaiInteger MenaiInteger;
 typedef struct MenaiList MenaiList;
 typedef struct MenaiNone MenaiNone;
@@ -253,12 +255,17 @@ struct MenaiComplex {
 
 struct MenaiDict {
     MenaiValue_HEAD
-    MenaiValue **keys;                  /* points into inline_data[0..cap-1] */
-    MenaiValue **values;                /* points into inline_data past keys */
-    hash_t *hashes;                     /* points into inline_data past values */
+    MenaiDictElement **elements;        /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) key lookup */
     ssize_t length;
-    MenaiValue *inline_data[];          /* FAM: keys[0..cap-1] then values[0..cap-1] then hashes[0..cap-1] */
+    MenaiDictElement *inline_data[];    /* FAM: elements[0..cap-1] */
+};
+
+struct MenaiDictElement {
+    MenaiValue_HEAD
+    MenaiValue *key;
+    MenaiValue *value;
+    hash_t hash;
 };
 
 struct MenaiFloat {
@@ -862,16 +869,30 @@ menai_complex_equal(MenaiComplex *a, MenaiComplex *b)
 
 MenaiDict *alloc_menai_dict(MenaiVMState *vs, ssize_t cap);
 
+MenaiDictElement *alloc_menai_dict_element(MenaiVMState *vs,
+                                           MenaiValue *key,
+                                           MenaiValue *value,
+                                           hash_t hash);
+
+static inline void
+menai_dict_element_final(MenaiVMState *vs, MenaiDictElement *self)
+{
+    if (self->key != NULL) {
+        menai_value_release(vs, self->key);
+    }
+
+    if (self->value != NULL) {
+        menai_value_release(vs, self->value);
+    }
+}
+
 static inline void
 menai_dict_final(MenaiVMState *vs, MenaiDict *self)
 {
     ssize_t n = self->length;
     for (ssize_t i = 0; i < n; i++) {
-        if (self->keys[i] != NULL) {
-            menai_value_release(vs, self->keys[i]);
-        }
-        if (self->values[i] != NULL) {
-            menai_value_release(vs, self->values[i]);
+        if (self->elements[i] != NULL) {
+            menai_value_release(vs, (MenaiValue *)self->elements[i]);
         }
     }
 
@@ -886,12 +907,12 @@ menai_dict_equal(MenaiDict *a, MenaiDict *b)
     }
 
     for (ssize_t i = 0; i < a->length; i++) {
-        ssize_t bi = menai_ht_lookup(&b->ht, a->keys[i], a->hashes[i]);
+        ssize_t bi = menai_ht_lookup(&b->ht, a->elements[i]->key, a->elements[i]->hash);
         if (bi < 0) {
             return 0;
         }
 
-        if (!menai_value_equal(a->values[i], b->values[bi])) {
+        if (!menai_value_equal(a->elements[i]->value, b->elements[bi]->value)) {
             return 0;
         }
     }

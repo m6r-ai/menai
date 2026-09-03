@@ -6363,8 +6363,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_value_retain(a->keys[i]);
-                cell->head = a->keys[i];
+                menai_value_retain(a->elements[i]->key);
+                cell->head = a->elements[i]->key;
                 cell->tail = r;
                 cell->length = r->length + 1;
                 r = cell;
@@ -6389,8 +6389,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                menai_value_retain(a->values[i]);
-                cell->head = a->values[i];
+                menai_value_retain(a->elements[i]->value);
+                cell->head = a->elements[i]->value;
                 cell->tail = r;
                 cell->length = r->length + 1;
                 r = cell;
@@ -6439,7 +6439,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 break;
             }
 
-            MenaiValue *val = a->values[idx];
+            MenaiValue *val = a->elements[idx]->value;
             menai_value_retain(val);
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = val;
@@ -6467,42 +6467,39 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiValue **nkeys = result->keys;
-            MenaiValue **nvals = result->values;
-            hash_t *nhashes = result->hashes;
+            MenaiDictElement **nelems = result->elements;
 
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *val = frame_regs[src2];
+
+            /* Create the new element for the set/updated entry. */
+            menai_value_retain(key);
+            menai_value_retain(val);
+            MenaiDictElement *new_elem = alloc_menai_dict_element(vs, key, val, h);
+            if (!new_elem) {
+                menai_value_release(vs, key);
+                menai_value_release(vs, val);
+                menai_value_release(vs, (MenaiValue *)result);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
             if (replace_idx >= 0) {
                 for (ssize_t i = 0; i < n; i++) {
                     if (i == replace_idx) {
-                        menai_value_retain(key);
-                        nkeys[i] = key;
-                        menai_value_retain(val);
-                        nvals[i] = val;
-                        nhashes[i] = h;
+                        nelems[i] = new_elem;
                     } else {
-                        menai_value_retain(a->keys[i]);
-                        nkeys[i] = a->keys[i];
-                        menai_value_retain(a->values[i]);
-                        nvals[i] = a->values[i];
-                        nhashes[i] = a->hashes[i];
+                        menai_value_retain((MenaiValue *)a->elements[i]);
+                        nelems[i] = a->elements[i];
                     }
                 }
             } else {
                 for (ssize_t i = 0; i < n; i++) {
-                    menai_value_retain(a->keys[i]);
-                    nkeys[i] = a->keys[i];
-                    menai_value_retain(a->values[i]);
-                    nvals[i] = a->values[i];
-                    nhashes[i] = a->hashes[i];
+                    menai_value_retain((MenaiValue *)a->elements[i]);
+                    nelems[i] = a->elements[i];
                 }
 
-                menai_value_retain(key);
-                nkeys[n] = key;
-                menai_value_retain(val);
-                nvals[n] = val;
-                nhashes[n] = h;
+                nelems[n] = new_elem;
             }
 
             if (menai_ht_init(&result->ht, new_n) < 0) {
@@ -6513,7 +6510,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             for (ssize_t i = 0; i < new_n; i++) {
-                menai_ht_insert(&result->ht, nkeys[i], nhashes[i], i);
+                menai_ht_insert(&result->ht, nelems[i]->key, nelems[i]->hash, i);
             }
 
             result->length = new_n;
@@ -6550,20 +6547,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiValue **nkeys = r->keys;
-            MenaiValue **nvals = r->values;
-            hash_t *nhashes = r->hashes;
+            MenaiDictElement **nelems = r->elements;
 
             for (ssize_t i = 0, j = 0; i < n; i++) {
                 if (i == remove_idx) {
                     continue;
                 }
 
-                menai_value_retain(a->keys[i]);
-                nkeys[j] = a->keys[i];
-                menai_value_retain(a->values[i]);
-                nvals[j] = a->values[i];
-                nhashes[j] = a->hashes[i];
+                menai_value_retain((MenaiValue *)a->elements[i]);
+                nelems[j] = a->elements[i];
                 j++;
             }
 
@@ -6575,7 +6567,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             for (ssize_t i = 0; i < new_n; i++) {
-                menai_ht_insert(&r->ht, nkeys[i], nhashes[i], i);
+                menai_ht_insert(&r->ht, nelems[i]->key, nelems[i]->hash, i);
             }
 
             r->length = new_n;
@@ -6598,23 +6590,31 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiValue **nkeys = r->keys;
-            MenaiValue **nvals = r->values;
-            hash_t *nhashes = r->hashes;
+            MenaiDictElement **nelems = r->elements;
 
             ssize_t out = 0;
             /* Add a's entries, using b's value where b overrides */
             for (ssize_t i = 0; i < na; i++) {
-                ssize_t bi = menai_ht_lookup(&b->ht, a->keys[i], a->hashes[i]);
-                menai_value_retain(a->keys[i]);
-                nkeys[out] = a->keys[i];
-                nhashes[out] = a->hashes[i];
+                ssize_t bi = menai_ht_lookup(&b->ht, a->elements[i]->key, a->elements[i]->hash);
                 if (bi >= 0) {
-                    menai_value_retain(b->values[bi]);
-                    nvals[out] = b->values[bi];
+                    /* b overrides a's value — create a new element with a's key and b's value */
+                    menai_value_retain(a->elements[i]->key);
+                    menai_value_retain(b->elements[bi]->value);
+                    MenaiDictElement *elem = alloc_menai_dict_element(vs,
+                        a->elements[i]->key, b->elements[bi]->value, a->elements[i]->hash);
+                    if (!elem) {
+                        menai_value_release(vs, a->elements[i]->key);
+                        menai_value_release(vs, b->elements[bi]->value);
+                        r->length = out;
+                        menai_value_release(vs, (MenaiValue *)r);
+                        vm_err = MENAI_ERR_NOMEM;
+                        goto error;
+                    }
+                    nelems[out] = elem;
                 } else {
-                    menai_value_retain(a->values[i]);
-                    nvals[out] = a->values[i];
+                    /* No override — share a's element directly */
+                    menai_value_retain((MenaiValue *)a->elements[i]);
+                    nelems[out] = a->elements[i];
                 }
 
                 out++;
@@ -6622,13 +6622,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             /* Add b's entries not in a */
             for (ssize_t i = 0; i < nb; i++) {
-                ssize_t ai = menai_ht_lookup(&a->ht, b->keys[i], b->hashes[i]);
+                ssize_t ai = menai_ht_lookup(&a->ht, b->elements[i]->key, b->elements[i]->hash);
                 if (ai < 0) {
-                    menai_value_retain(b->keys[i]);
-                    nkeys[out] = b->keys[i];
-                    menai_value_retain(b->values[i]);
-                    nvals[out] = b->values[i];
-                    nhashes[out] = b->hashes[i];
+                    /* b's entry not in a — share b's element directly */
+                    menai_value_retain((MenaiValue *)b->elements[i]);
+                    nelems[out] = b->elements[i];
                     out++;
                 }
             }
@@ -6641,7 +6639,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             for (ssize_t i = 0; i < out; i++) {
-                menai_ht_insert(&r->ht, nkeys[i], nhashes[i], i);
+                menai_ht_insert(&r->ht, nelems[i]->key, nelems[i]->hash, i);
             }
 
             r->length = out;
@@ -7180,9 +7178,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiValue **keys = r->keys;
-            MenaiValue **values = r->values;
-            hash_t *hashes = r->hashes;
+            MenaiDictElement **elems = r->elements;
 
             int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
             for (int i = 0; i < n; i++) {
@@ -7198,9 +7194,17 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
                 menai_value_retain(k);
                 menai_value_retain(v);
-                keys[i] = k;
-                values[i] = v;
-                hashes[i] = h;
+                MenaiDictElement *elem = alloc_menai_dict_element(vs, k, v, h);
+                if (!elem) {
+                    menai_value_release(vs, k);
+                    menai_value_release(vs, v);
+                    r->length = (ssize_t)i;
+                    menai_value_release(vs, (MenaiValue *)r);
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                elems[i] = elem;
             }
 
             if (menai_ht_init(&r->ht, (ssize_t)n) < 0) {
@@ -7211,7 +7215,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             for (int i = 0; i < n; i++) {
-                menai_ht_insert(&r->ht, keys[i], hashes[i], (ssize_t)i);
+                menai_ht_insert(&r->ht, elems[i]->key, elems[i]->hash, (ssize_t)i);
             }
 
             r->length = (ssize_t)n;

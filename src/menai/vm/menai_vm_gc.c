@@ -72,12 +72,19 @@ gc_mark_value(MenaiValue *val)
     case MENAITYPE_DICT: {
         MenaiDict *d = (MenaiDict *)val;
         for (ssize_t i = 0; i < d->length; i++) {
-            gc_mark_value(d->keys[i]);
-            gc_mark_value(d->values[i]);
+            MenaiDictElement *elem = d->elements[i];
+            if (elem != NULL) {
+                gc_mark_value(elem->key);
+                gc_mark_value(elem->value);
+            }
         }
 
         break;
     }
+
+    case MENAITYPE_DICT_ELEMENT:
+        /* Dict elements are not closures and cannot form cycles. */
+        break;
 
     case MENAITYPE_SET: {
         MenaiSet *s = (MenaiSet *)val;
@@ -169,16 +176,21 @@ static void
 _gc_detach_dead_from_dict(MenaiDict *d)
 {
     for (ssize_t i = 0; i < d->length; i++) {
-        MenaiValue *k = d->keys[i];
-        if (_gc_is_dead(k)) {
-            k->ob_refcnt--;
-            d->keys[i] = NULL;
+        MenaiDictElement *elem = d->elements[i];
+        if (elem == NULL) {
+            continue;
         }
 
-        MenaiValue *v = d->values[i];
+        MenaiValue *k = elem->key;
+        if (_gc_is_dead(k)) {
+            k->ob_refcnt--;
+            elem->key = NULL;
+        }
+
+        MenaiValue *v = elem->value;
         if (_gc_is_dead(v)) {
             v->ob_refcnt--;
-            d->values[i] = NULL;
+            elem->value = NULL;
         }
     }
 }

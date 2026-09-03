@@ -666,9 +666,7 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
         return NULL;
     }
 
-    MenaiValue **keys = r->keys;
-    MenaiValue **values = r->values;
-    hash_t *hashes = r->hashes;
+    MenaiDictElement **elems = r->elements;
 
     Py_ssize_t populated = 0;
 
@@ -696,9 +694,16 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
             goto fail;
         }
 
-        keys[i] = fk;
-        values[i] = fv;
-        hashes[i] = h;
+        MenaiDictElement *elem = alloc_menai_dict_element(vs, fk, fv, h);
+        if (!elem) {
+            menai_value_release(vs, fk);
+            menai_value_release(vs, fv);
+            Py_DECREF(pairs);
+            PyErr_NoMemory();
+            goto fail;
+        }
+
+        elems[i] = elem;
         populated = i + 1;
     }
 
@@ -711,7 +716,7 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     for (Py_ssize_t i = 0; i < n; i++) {
-        menai_ht_insert(&r->ht, keys[i], hashes[i], (ssize_t)i);
+        menai_ht_insert(&r->ht, elems[i]->key, elems[i]->hash, (ssize_t)i);
     }
 
     r->length = (ssize_t)n;
@@ -720,8 +725,7 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
 
 fail:
     for (Py_ssize_t j = 0; j < populated; j++) {
-        menai_value_release(vs, keys[j]);
-        menai_value_release(vs, values[j]);
+        menai_value_release(vs, (MenaiValue *)elems[j]);
     }
     return NULL;
 }
@@ -1209,13 +1213,13 @@ fast_dict_to_slow(MenaiVMState *vs, MenaiValue *val)
     }
 
     for (Py_ssize_t i = 0; i < n; i++) {
-        PyObject *slow_key = menai_value_to_slow_value(vs, d->keys[i]);
+        PyObject *slow_key = menai_value_to_slow_value(vs, d->elements[i]->key);
         if (!slow_key) {
             Py_DECREF(py_pairs);
             return NULL;
         }
 
-        PyObject *slow_val = menai_value_to_slow_value(vs, d->values[i]);
+        PyObject *slow_val = menai_value_to_slow_value(vs, d->elements[i]->value);
         if (!slow_val) {
             Py_DECREF(slow_key);
             Py_DECREF(py_pairs);
@@ -1575,32 +1579,39 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
         return NULL;
     }
 
-    MenaiValue **keys = r->keys;
-    MenaiValue **values = r->values;
-    hash_t *hashes = r->hashes;
+    MenaiDictElement **elems = r->elements;
 
     Py_ssize_t i = 0;
     PyObject *key, *val;
     Py_ssize_t pos = 0;
     while (PyDict_Next(pydict, &pos, &key, &val)) {
-        keys[i] = (MenaiValue *)alloc_menai_string_from_pyunicode(vs, key);
-        if (!keys[i]) {
+        MenaiValue *fk = (MenaiValue *)alloc_menai_string_from_pyunicode(vs, key);
+        if (!fk) {
             goto fail;
         }
 
-        values[i] = slow_value_to_menai_value(vs, val);
-        if (!values[i]) {
-            menai_value_release(vs, keys[i]);
+        MenaiValue *fv = slow_value_to_menai_value(vs, val);
+        if (!fv) {
+            menai_value_release(vs, fk);
             goto fail;
         }
 
-        hashes[i] = menai_value_hash(keys[i]);
-        if (hashes[i] == -1) {
-            menai_value_release(vs, keys[i]);
-            menai_value_release(vs, values[i]);
+        hash_t h = menai_value_hash(fk);
+        if (h == -1) {
+            menai_value_release(vs, fk);
+            menai_value_release(vs, fv);
             goto fail;
         }
 
+        MenaiDictElement *elem = alloc_menai_dict_element(vs, fk, fv, h);
+        if (!elem) {
+            menai_value_release(vs, fk);
+            menai_value_release(vs, fv);
+            PyErr_NoMemory();
+            goto fail;
+        }
+
+        elems[i] = elem;
         i++;
     }
 
@@ -1611,7 +1622,7 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
     }
 
     for (Py_ssize_t j = 0; j < n; j++) {
-        menai_ht_insert(&r->ht, keys[j], hashes[j], (ssize_t)j);
+        menai_ht_insert(&r->ht, elems[j]->key, elems[j]->hash, (ssize_t)j);
     }
 
     r->length = (ssize_t)n;
@@ -1620,8 +1631,7 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
 
 fail:
     for (Py_ssize_t j = 0; j < i; j++) {
-        menai_value_release(vs, keys[j]);
-        menai_value_release(vs, values[j]);
+        menai_value_release(vs, (MenaiValue *)elems[j]);
     }
     return NULL;
 }

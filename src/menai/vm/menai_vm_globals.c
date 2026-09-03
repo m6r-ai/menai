@@ -112,7 +112,7 @@ globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d)
     }
 
     for (ssize_t i = 0; i < n; i++) {
-        MenaiValue *k = d->keys[i];
+        MenaiValue *k = d->elements[i]->key;
         if (MENAI_UNLIKELY(!IS_MENAI_STRING(k))) {
             globals_free(vs, gt);
             return MENAI_ERR_TYPE;
@@ -124,13 +124,13 @@ globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d)
             return MENAI_ERR_NOMEM;
         }
 
-        menai_value_retain(d->values[i]);
+        menai_value_retain(d->elements[i]->value);
         gt->entries[gt->count].name = name_copy;
-        gt->entries[gt->count].value = d->values[i];
+        gt->entries[gt->count].value = d->elements[i]->value;
         gt->count++;
 
         hash_t h = menai_name_str_hash(name_copy);
-        globals_slot_insert(gt, name_copy, h, d->values[i]);
+        globals_slot_insert(gt, name_copy, h, d->elements[i]->value);
     }
 
     return 0;
