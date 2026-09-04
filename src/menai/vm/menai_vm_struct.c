@@ -5,6 +5,8 @@
  * eliminating the Python tuple previously heap-allocated on every struct
  * construction.
  */
+#include <stdlib.h>
+
 #include "menai_vm_c.h"
 
 MenaiStruct *

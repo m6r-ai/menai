@@ -137,14 +137,6 @@ menai_ht_init(MenaiHashTable *ht, ssize_t n)
     return 0;
 }
 
-void
-menai_ht_final(MenaiHashTable *ht)
-{
-    free(ht->slots);
-    ht->slots = NULL;
-    ht->slot_count = 0;
-}
-
 ssize_t
 menai_ht_lookup(const MenaiHashTable *ht, MenaiValue *key, hash_t hash)
 {

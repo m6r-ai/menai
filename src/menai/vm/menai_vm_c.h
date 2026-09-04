@@ -729,9 +729,16 @@ int menai_value_equal(MenaiValue *a, MenaiValue *b);
 #define MENAI_HT_MAX_LOAD_DEN 3   /* load factor denominator */
 
 int menai_ht_init(MenaiHashTable *ht, ssize_t n);
-void menai_ht_final(MenaiHashTable *ht);
 ssize_t menai_ht_lookup(const MenaiHashTable *ht, MenaiValue *key, hash_t hash);
 void menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index);
+
+static inline void
+menai_ht_final(MenaiHashTable *ht)
+{
+    free(ht->slots);
+    ht->slots = NULL;
+    ht->slot_count = 0;
+}
 
 /*
  * menai_code_object_retain — increment the reference count.
