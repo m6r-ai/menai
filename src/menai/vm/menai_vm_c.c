@@ -7347,21 +7347,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            ssize_t nf = sval->nfields;
-            MenaiValue **tmp = (MenaiValue **)malloc(nf * sizeof(MenaiValue *));
-            if (!tmp) {
-                vm_err = MENAI_ERR_NOMEM;
-                goto error;
-            }
-
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *new_val = frame_regs[src2];
-            for (ssize_t i = 0; i < nf; i++) {
-                tmp[i] = (i == fi) ? new_val : sval->items[i];
-            }
 
-            MenaiStruct *r = alloc_menai_struct(vs, stype, tmp, nf);
-            free(tmp);
+            MenaiStruct *r = alloc_menai_struct_from_set_operation(vs, sval, fi, new_val);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -7395,21 +7384,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiStructType *stype = sval->struct_type;
-            MenaiValue **tmp = (MenaiValue **)malloc(nf * sizeof(MenaiValue *));
-            if (!tmp) {
-                vm_err = MENAI_ERR_NOMEM;
-                goto error;
-            }
-
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *new_val = frame_regs[src2];
-            for (ssize_t i = 0; i < nf; i++) {
-                tmp[i] = (i == fi) ? new_val : sval->items[i];
-            }
 
-            MenaiStruct *r = alloc_menai_struct(vs, stype, tmp, nf);
-            free(tmp);
+            MenaiStruct *r = alloc_menai_struct_from_set_operation(vs, sval, fi, new_val);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;

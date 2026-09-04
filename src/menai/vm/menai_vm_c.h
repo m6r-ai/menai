@@ -1156,6 +1156,8 @@ menai_string_equal(MenaiString *a, MenaiString *b)
 
 MenaiStruct *alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields);
 
+MenaiStruct *alloc_menai_struct_from_set_operation(MenaiVMState *vs, MenaiStruct *src, ssize_t field_index, MenaiValue *new_val);
+
 static inline void
 menai_struct_final(MenaiVMState *vs, MenaiStruct *self)
 {
