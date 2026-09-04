@@ -6269,8 +6269,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             MenaiSetElement **nelems = r->elements;
-            MenaiHashTable lts_seen;
-            vm_err = menai_ht_init(&lts_seen, n);
+            vm_err = menai_ht_init(&r->ht, n);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 menai_value_release(vs, (MenaiValue *)r);
                 goto error;
@@ -6282,7 +6281,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiValue *elem = cur->head;
                 hash_t h = menai_value_hash(elem);
                 if (h == -1) {
-                    menai_ht_final(&lts_seen);
                     for (ssize_t k = 0; k < out; k++) {
                         menai_value_release(vs, (MenaiValue *)nelems[k]);
                     }
@@ -6292,14 +6290,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     goto error;
                 }
 
-                ssize_t existing = menai_ht_lookup(&lts_seen, elem, h);
+                ssize_t existing = menai_ht_lookup(&r->ht, elem, h);
                 if (existing < 0) {
-                    menai_ht_insert(&lts_seen, elem, h, out);
+                    menai_ht_insert(&r->ht, elem, h, out);
                     menai_value_retain(elem);
                     MenaiSetElement *se = alloc_menai_set_element(vs, elem, h);
                     if (!se) {
                         menai_value_release(vs, elem);
-                        menai_ht_final(&lts_seen);
                         for (ssize_t k = 0; k < out; k++) {
                             menai_value_release(vs, (MenaiValue *)nelems[k]);
                         }
@@ -6316,7 +6313,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 cur = cur->tail;
             }
 
-            r->ht = lts_seen;
             r->length = out;
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)r;
