@@ -45,19 +45,11 @@
 
   ; Return a new board with `num` placed at (row, col).
   (set-cell (lambda (board row col num)
-    (map-list
-      (lambda (row-pair)
-        (let ((r-idx (list-first row-pair))
-              (row-data (list-ref row-pair 1)))
-          (if (integer=? r-idx row)
-            (map-list
-              (lambda (cell-pair)
-                (if (integer=? (list-first cell-pair) col)
-                  num
-                  (list-ref cell-pair 1)))
-              (list-zip (range 0 9) row-data))
-            row-data)))
-      (list-zip (range 0 9) board))))
+    (let* ((old-row (list-ref board row))
+           (new-row (list-concat (list-append (list-slice old-row 0 col) num)
+                                 (list-slice old-row (integer+ col 1) 9))))
+      (list-concat (list-append (list-slice board 0 row) new-row)
+                   (list-slice board (integer+ row 1) 9)))))
 
   ; Try each candidate digit for the cell at (row, col).
   ; Returns the solved board on success, or #none if all candidates fail.
