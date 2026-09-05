@@ -490,7 +490,7 @@ typedef struct {
  * stride.  Each frame occupies a variable number of slots starting at
  * frame->base.  We start with INITIAL_REG_CAPACITY slots and double on demand.
  *
- * After realloc, the base pointer may move, so every live frame's frame_regs
+ * After reallocation, the base pointer may move, so every live frame's frame_regs
  * pointer (which is regs + base) must be refreshed.  The caller's regs local
  * variable is updated via the out parameter.
  *
@@ -505,10 +505,13 @@ ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int fra
         new_num_regs *= 2;
     }
 
-    MenaiValue **new_regs = (MenaiValue **)realloc(vs->regs, new_num_regs * sizeof(MenaiValue *));
+    MenaiValue **new_regs = (MenaiValue **)menai_pool_alloc(vs, new_num_regs * sizeof(MenaiValue *));
     if (!new_regs) {
         return MENAI_ERR_NOMEM;
     }
+
+    memcpy(new_regs, vs->regs, vs->num_regs * sizeof(MenaiValue *));
+    menai_pool_free(vs, vs->regs);
 
     /* Initialise the newly allocated slots to menai_none. */
     MenaiValue *none_val = (MenaiValue *)menai_none(vs);
@@ -4303,7 +4306,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 ncp++;
             }
 
-            uint32_t *cp_buf = (uint32_t *)malloc((size_t)ncp * sizeof(uint32_t));
+            uint32_t *cp_buf = (uint32_t *)menai_pool_alloc(vs, (size_t)ncp * sizeof(uint32_t));
             if (!cp_buf) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -4330,7 +4333,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiString *result = alloc_menai_string(vs, ncp);
             if (result == NULL) {
-                free(cp_buf);
+                menai_pool_free(vs, cp_buf);
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
@@ -4338,7 +4341,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             memcpy(result->data, cp_buf, ncp * sizeof(uint32_t));
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)result;
-            free(cp_buf);
+            menai_pool_free(vs, cp_buf);
             break;
         }
 
@@ -4380,7 +4383,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             ssize_t nbytes = b->length;
             const uint8_t *data = b->data;
 
-            uint32_t *cp_buf = (uint32_t *)malloc((size_t)(nbytes * 2) * sizeof(uint32_t));
+            uint32_t *cp_buf = (uint32_t *)menai_pool_alloc(vs, (size_t)(nbytes * 2) * sizeof(uint32_t));
             if (!cp_buf) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -4398,7 +4401,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiString *result = alloc_menai_string(vs, nbytes * 2);
             if (result == NULL) {
-                free(cp_buf);
+                menai_pool_free(vs, cp_buf);
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
@@ -4406,7 +4409,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             memcpy(result->data, cp_buf, nbytes * 2 * sizeof(uint32_t));
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)result;
-            free(cp_buf);
+            menai_pool_free(vs, cp_buf);
             break;
         }
 
@@ -5719,7 +5722,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 cur = cur->tail;
             }
 
-            uint32_t *lts_buf = total > 0 ? (uint32_t *)malloc((size_t)total * sizeof(uint32_t)) : NULL;
+            uint32_t *lts_buf = total > 0 ? (uint32_t *)menai_pool_alloc(vs, (size_t)total * sizeof(uint32_t)) : NULL;
             if (total > 0 && !lts_buf) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -5746,7 +5749,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiString *r = alloc_menai_string(vs, total);
             if (r == NULL) {
-                free(lts_buf);
+                menai_pool_free(vs, lts_buf);
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
@@ -5754,7 +5757,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             memcpy(r->data, lts_buf, total * sizeof(uint32_t));
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)r;
-            free(lts_buf);
+            menai_pool_free(vs, lts_buf);
             break;
         }
 
@@ -7036,7 +7039,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     if (needed > num_regs) {
         num_regs = needed;
     }
-    MenaiValue **regs = (MenaiValue **)malloc(num_regs * sizeof(MenaiValue *));
+    MenaiValue **regs = (MenaiValue **)menai_pool_alloc(vs, num_regs * sizeof(MenaiValue *));
     if (regs == NULL) {
         vs->error.code = MENAI_ERR_NOMEM;
         return NULL;
@@ -7066,7 +7069,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
         menai_value_release(vs, regs[i]);
     }
 
-    free(regs);
+    menai_pool_free(vs, regs);
 
     menai_closure_gc_collect(vs, result);
 

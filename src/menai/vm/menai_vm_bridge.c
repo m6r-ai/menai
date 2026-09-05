@@ -464,7 +464,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
         nbytes = 1;
     }
 
-    unsigned char *buf = (unsigned char *)malloc(nbytes);
+    unsigned char *buf = (unsigned char *)menai_pool_alloc(vs, nbytes);
     if (buf == NULL) {
         Py_DECREF(v);
         PyErr_NoMemory();
@@ -477,7 +477,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
     int bytearray_ret = _PyLong_AsByteArray((PyLongObject *)v, buf, nbytes, 1, 1);
 #endif
     if (bytearray_ret < 0) {
-        free(buf);
+        menai_pool_free(vs, buf);
         Py_DECREF(v);
         return NULL;
     }
@@ -494,7 +494,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
     ssize_t ndigits = (ssize_t)((nbytes + 3) / 4);
     uint32_t *digits = (uint32_t *)malloc((size_t)ndigits * sizeof(uint32_t));
     if (digits == NULL) {
-        free(buf);
+        menai_pool_free(vs, buf);
         Py_DECREF(v);
         PyErr_NoMemory();
         return NULL;
@@ -512,7 +512,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
         digits[i] = d;
     }
 
-    free(buf);
+    menai_pool_free(vs, buf);
     Py_DECREF(v);
 
     MenaiBigInt big;
@@ -845,7 +845,8 @@ slow_structtype_to_fast(MenaiVMState *vs, PyObject *src)
     ssize_t nfields = PyTuple_GET_SIZE(fn_tup);
     MenaiString **field_names_arr = NULL;
     if (nfields > 0) {
-        field_names_arr = (MenaiString **)calloc((size_t)nfields, sizeof(MenaiString *));
+        field_names_arr = (MenaiString **)menai_pool_alloc(vs, (size_t)nfields * sizeof(MenaiString *));
+        memset(field_names_arr, 0, (size_t)nfields * sizeof(MenaiString *));
         if (!field_names_arr) {
             menai_value_release(vs, (MenaiValue *)name_str);
             Py_DECREF(fn_tup);
@@ -860,7 +861,7 @@ slow_structtype_to_fast(MenaiVMState *vs, PyObject *src)
                     menai_value_release(vs, (MenaiValue *)field_names_arr[j]);
                 }
 
-                free(field_names_arr);
+                menai_pool_free(vs, field_names_arr);
                 menai_value_release(vs, (MenaiValue *)name_str);
                 Py_DECREF(fn_tup);
                 return NULL;
@@ -875,7 +876,7 @@ slow_structtype_to_fast(MenaiVMState *vs, PyObject *src)
         menai_value_release(vs, (MenaiValue *)field_names_arr[i]);
     }
 
-    free(field_names_arr);
+    menai_pool_free(vs, field_names_arr);
     Py_DECREF(fn_tup);
     return (MenaiValue *)result;
 }
@@ -901,7 +902,7 @@ slow_struct_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     Py_ssize_t n = PyTuple_GET_SIZE(fields);
-    MenaiValue **fast_arr = n > 0 ? (MenaiValue **)malloc(n * sizeof(MenaiValue *)) : NULL;
+    MenaiValue **fast_arr = n > 0 ? (MenaiValue **)menai_pool_alloc(vs, (size_t)n * sizeof(MenaiValue *)) : NULL;
     if (n > 0 && !fast_arr) {
         menai_value_release(vs, (MenaiValue *)fast_st);
         Py_DECREF(fields);
@@ -916,7 +917,7 @@ slow_struct_to_fast(MenaiVMState *vs, PyObject *src)
                 menai_value_release(vs, fast_arr[j]);
             }
 
-            free(fast_arr);
+            menai_pool_free(vs, fast_arr);
             menai_value_release(vs, (MenaiValue *)fast_st);
             Py_DECREF(fields);
             return NULL;
@@ -935,7 +936,7 @@ slow_struct_to_fast(MenaiVMState *vs, PyObject *src)
         menai_value_release(vs, fast_arr[i]);
     }
 
-    free(fast_arr);
+    menai_pool_free(vs, fast_arr);
     menai_value_release(vs, (MenaiValue *)fast_st);
     return (MenaiValue *)r;
 }
@@ -1082,7 +1083,7 @@ fast_integer_to_slow(MenaiVMState *vs, MenaiValue *val)
             py_int = PyLong_FromLong(0);
         } else {
             size_t nbytes = (size_t)a->length * 4;
-            unsigned char *buf = (unsigned char *)malloc(nbytes);
+            unsigned char *buf = (unsigned char *)menai_pool_alloc(vs, nbytes);
             if (buf == NULL) {
                 PyErr_NoMemory();
                 return NULL;
@@ -1097,7 +1098,7 @@ fast_integer_to_slow(MenaiVMState *vs, MenaiValue *val)
             }
 
             py_int = _PyLong_FromByteArray(buf, nbytes, 1, 0);
-            free(buf);
+            menai_pool_free(vs, buf);
             if (py_int == NULL) {
                 return NULL;
             }

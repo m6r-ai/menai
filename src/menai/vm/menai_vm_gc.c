@@ -254,7 +254,7 @@ _gc_sweep(MenaiVMState *vs)
     ssize_t live_count = 0;
     ssize_t dead_count = 0;
 
-    MenaiFunction **dead = (MenaiFunction **)malloc((size_t)vs->_closure_registry_count * sizeof(MenaiFunction *));
+    MenaiFunction **dead = (MenaiFunction **)menai_pool_alloc(vs, (size_t)vs->_closure_registry_count * sizeof(MenaiFunction *));
     if (dead == NULL) {
         /* Bail — clear all marks and try next time. */
         for (ssize_t i = 0; i < vs->_closure_registry_count; i++) {
@@ -294,8 +294,8 @@ _gc_sweep(MenaiVMState *vs)
     ssize_t orphan_count = 0;
     MenaiValue **orphans = NULL;
     if (dead_count > 0) {
-        orphans = (MenaiValue **)malloc((size_t)dead_count * sizeof(MenaiValue *));
-        /* If malloc fails, orphans are leaked — acceptable in OOM. */
+        orphans = (MenaiValue **)menai_pool_alloc(vs, (size_t)dead_count * sizeof(MenaiValue *));
+        /* If allocation fails, orphans are leaked — acceptable in OOM. */
     }
 
     for (ssize_t i = 0; i < dead_count; i++) {
@@ -406,9 +406,9 @@ _gc_sweep(MenaiVMState *vs)
         menai_value_free(vs, orphans[i]);
     }
 
-    free(orphans);
+    menai_pool_free(vs, orphans);
     vs->_gc_in_progress = 0;
-    free(dead);
+    menai_pool_free(vs, dead);
 }
 
 /*
