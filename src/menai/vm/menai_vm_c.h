@@ -217,12 +217,12 @@ typedef struct {
  * ob_type   — type tag (MenaiType, uint16_t).
  */
 #define MenaiValue_HEAD              \
-    MENAI_MAGIC_FIELD                \
     uint32_t ob_refcnt;              \
     MenaiType ob_type;
 
 struct MenaiBoolean {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     int value;                          /* 0 or 1 */
 };
 
@@ -237,6 +237,7 @@ struct MenaiBoolean {
  */
 struct MenaiBytes {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     ssize_t length;                     /* logical byte count */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
     MenaiBytes *owner;                  /* non-NULL when this is a slice view */
@@ -246,12 +247,14 @@ struct MenaiBytes {
 
 struct MenaiComplex {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     double real;
     double imag;
 };
 
 struct MenaiDict {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     MenaiDictElement **elements;        /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) key lookup */
     ssize_t length;
@@ -260,6 +263,7 @@ struct MenaiDict {
 
 struct MenaiDictElement {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     MenaiValue *key;
     MenaiValue *value;
     hash_t hash;
@@ -267,11 +271,13 @@ struct MenaiDictElement {
 
 struct MenaiFloat {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     double value;
 };
 
 struct MenaiFunction {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     ssize_t ncap;                       /* number of captured values */
     MenaiCodeObject *bytecode;          /* retained — owns all frame metadata */
     ssize_t registry_index;             /* index in _closure_registry, or -1 */
@@ -300,6 +306,7 @@ struct MenaiFunction {
  */
 struct MenaiInteger {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     int is_big;
     long fixed;                         /* valid when is_big == 0 */
     MenaiBigInt big;                    /* valid when is_big == 1 */
@@ -307,6 +314,7 @@ struct MenaiInteger {
 
 struct MenaiList {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     MenaiValue *head;                   /* element at this position (NULL for empty list sentinel) */
     MenaiList *tail;                    /* rest of the list (NULL for empty list sentinel) */
     ssize_t length;                     /* cached length for O(1) list-length; 0 for empty sentinel */
@@ -314,10 +322,12 @@ struct MenaiList {
 
 struct MenaiNone {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
 };
 
 struct MenaiSet {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     MenaiSetElement **elements;         /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) membership; separate allocation */
     ssize_t length;                     /* number of live elements */
@@ -326,12 +336,14 @@ struct MenaiSet {
 
 struct MenaiSetElement {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     MenaiValue *value;
     hash_t hash;
 };
 
 struct MenaiString {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     ssize_t length;                     /* codepoint count */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
     uint32_t data[];                    /* UTF-32 codepoints, flexible array */
@@ -339,6 +351,7 @@ struct MenaiString {
 
 struct MenaiStruct {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     int nfields;                        /* number of fields */
     MenaiStructType *struct_type;       /* owned reference to MenaiStructType */
     MenaiValue *items[1];               /* inline field values, nfields entries */
@@ -346,6 +359,7 @@ struct MenaiStruct {
 
 struct MenaiStructType {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     MenaiString *name;                  /* owned MenaiString * — struct type name */
     int tag;                            /* unique integer tag */
     int nfields;                        /* number of fields */
@@ -355,6 +369,7 @@ struct MenaiStructType {
 
 struct MenaiSymbol {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
     MenaiString *name;                  /* owned MenaiString * */
 };
 
@@ -363,6 +378,7 @@ struct MenaiSymbol {
  */
 struct MenaiValue {
     MenaiValue_HEAD
+    MENAI_MAGIC_FIELD;
 };
 
 /*
