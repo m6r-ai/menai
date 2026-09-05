@@ -561,8 +561,7 @@ typedef struct {
  * caller stores in the block itself.
  *
  * When a block is in the free-list, the link is threaded through the first
- * sizeof(void *) bytes of the user data area (not the header), exactly as
- * the pool allocator has always done.
+ * sizeof(void *) bytes of the user data area (not the header).
  *
  * Padded to sizeof(void *) so the user-visible pointer remains properly
  * aligned for any type.
@@ -645,11 +644,6 @@ typedef struct MenaiVMState {
 MenaiVMState *menai_vm_state_alloc(void);
 void menai_vm_state_free(MenaiVMState *vs);
 
-void *menai_pool_alloc(MenaiVMState *vs, size_t size);
-void menai_pool_free(MenaiVMState *vs, void *ptr);
-void *menai_alloc(MenaiVMState *vs, size_t size);
-void menai_free(MenaiVMState *vs, void *ptr);
-
 #ifdef MENAI_DEBUG_LEAKS
 void menai_leak_set_init(MenaiLeakSet *ls);
 void menai_leak_set_final(MenaiLeakSet *ls);
@@ -657,6 +651,41 @@ void menai_leak_set_add(MenaiLeakSet *ls, void *ptr);
 void menai_leak_set_remove(MenaiLeakSet *ls, void *ptr);
 void menai_leak_set_report(MenaiVMState *vs);
 #endif
+
+void *menai_pool_alloc(MenaiVMState *vs, size_t size);
+void menai_pool_free(MenaiVMState *vs, void *ptr);
+
+/*
+ * menai_alloc — outer wrapper for MenaiValue-based objects.  Calls
+ * menai_pool_alloc, then registers with the leak detector (when enabled).
+ * Callers are responsible for setting the magic field via MENAI_SET_MAGIC.
+ */
+static inline void *
+menai_alloc(MenaiVMState *vs, size_t size)
+{
+    void *ptr = menai_pool_alloc(vs, size);
+    if (ptr) {
+#ifdef MENAI_DEBUG_LEAKS
+        menai_leak_set_add(&vs->_leak_set, ptr);
+#endif
+    }
+
+    return ptr;
+}
+
+/*
+ * menai_free — outer wrapper for MenaiValue-based objects.  Unregisters from
+ * the leak detector (when enabled), then calls menai_pool_free.
+ */
+static inline void
+menai_free(MenaiVMState *vs, void *ptr)
+{
+#ifdef MENAI_DEBUG_LEAKS
+    menai_leak_set_remove(&vs->_leak_set, ptr);
+#endif
+
+    menai_pool_free(vs, ptr);
+}
 
 void menai_value_free(MenaiVMState *vs, MenaiValue *v);
 
