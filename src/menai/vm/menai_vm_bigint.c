@@ -15,10 +15,10 @@
 
 /* Internal forward declarations. */
 static int _menai_bigint_cmp_mag(const MenaiBigInt *a, const MenaiBigInt *b);
-static int _menai_bigint_add_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-static int _menai_bigint_sub_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-static int _menai_bigint_divmod_1(const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, uint32_t *remainder);
-static int _menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *quotient, MenaiBigInt *remainder);
+static int _menai_bigint_add_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+static int _menai_bigint_sub_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+static int _menai_bigint_divmod_1(MenaiVMState *vs, const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, uint32_t *remainder);
+static int _menai_bigint_divmod_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *quotient, MenaiBigInt *remainder);
 
 /*
  * Multiply two 32-bit values and return the 64-bit product split into
@@ -32,7 +32,7 @@ _mul32(uint32_t a, uint32_t b)
 
 /* Strip leading zero digits and fix sign when length reaches 0. */
 void
-menai_bigint_normalize(MenaiBigInt *a)
+menai_bigint_normalize(MenaiVMState *vs, MenaiBigInt *a)
 {
     while (a->length > 0 && a->digits[a->length - 1] == 0) {
         a->length--;
@@ -40,7 +40,7 @@ menai_bigint_normalize(MenaiBigInt *a)
 
     if (a->length == 0) {
         if (a->digits != NULL) {
-            free(a->digits);
+            menai_pool_free(vs, a->digits);
             a->digits = NULL;
         }
 
@@ -72,11 +72,11 @@ _menai_bigint_cmp_mag(const MenaiBigInt *a, const MenaiBigInt *b)
  * result = |a| + |b|.  result may alias a or b.
  */
 static int
-_menai_bigint_add_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+_menai_bigint_add_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     ssize_t max_len = (a->length > b->length) ? a->length : b->length;
     ssize_t out_len = max_len + 1;
-    uint32_t *digits = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -90,11 +90,11 @@ _menai_bigint_add_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
         carry = sum >> 32;
     }
 
-    menai_bigint_final(result);
+    menai_bigint_final(vs, result);
     result->digits = digits;
     result->length = out_len;
     result->sign = 1;
-    menai_bigint_normalize(result);
+    menai_bigint_normalize(vs, result);
     return 0;
 }
 
@@ -102,11 +102,11 @@ _menai_bigint_add_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
  * result = |a| - |b|, assuming |a| >= |b|.  result may alias a or b.
  */
 static int
-_menai_bigint_sub_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+_menai_bigint_sub_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     /* |a| >= |b| is a precondition. */
     ssize_t out_len = a->length;
-    uint32_t *digits = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -126,11 +126,11 @@ _menai_bigint_sub_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
         digits[i] = (uint32_t)diff;
     }
 
-    menai_bigint_final(result);
+    menai_bigint_final(vs, result);
     result->digits = digits;
     result->length = out_len;
     result->sign = 1;
-    menai_bigint_normalize(result);
+    menai_bigint_normalize(vs, result);
     return 0;
 }
 
@@ -139,15 +139,15 @@ _menai_bigint_sub_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *r
  * and remainder digit in *remainder.  b must be non-zero.
  */
 static int
-_menai_bigint_divmod_1(const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, uint32_t *remainder)
+_menai_bigint_divmod_1(MenaiVMState *vs, const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, uint32_t *remainder)
 {
     if (a->length == 0) {
-        menai_bigint_final(quotient);
+        menai_bigint_final(vs, quotient);
         *remainder = 0;
         return 0;
     }
 
-    uint32_t *qdigits = (uint32_t *)malloc((size_t)a->length * sizeof(uint32_t));
+    uint32_t *qdigits = (uint32_t *)menai_pool_alloc(vs, (size_t)a->length * sizeof(uint32_t));
     if (qdigits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -159,11 +159,11 @@ _menai_bigint_divmod_1(const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, 
         rem = cur % b;
     }
 
-    menai_bigint_final(quotient);
+    menai_bigint_final(vs, quotient);
     quotient->digits = qdigits;
     quotient->length = a->length;
     quotient->sign = 1;
-    menai_bigint_normalize(quotient);
+    menai_bigint_normalize(vs, quotient);
     *remainder = (uint32_t)rem;
     return 0;
 }
@@ -174,7 +174,7 @@ _menai_bigint_divmod_1(const MenaiBigInt *a, uint32_t b, MenaiBigInt *quotient, 
  * Neither quotient nor remainder may alias a or b.
  */
 static int
-_menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *quotient, MenaiBigInt *remainder)
+_menai_bigint_divmod_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *quotient, MenaiBigInt *remainder)
 {
     ssize_t m = a->length;
     ssize_t n = b->length;
@@ -182,7 +182,7 @@ _menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt
     /* If |a| < |b|, quotient = 0, remainder = |a|. */
     if (m < n) {
         menai_bigint_init(quotient);
-        if (menai_bigint_copy(a, remainder) < 0) {
+        if (menai_bigint_copy(vs, a, remainder) < 0) {
             return -1;
         }
 
@@ -202,16 +202,17 @@ _menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt
 
     /* Allocate shifted copies: un has m+1 digits, vn has n digits. */
     ssize_t un_len = m + 1;
-    uint32_t *un = (uint32_t *)malloc((size_t)un_len * sizeof(uint32_t));
+    uint32_t *un = (uint32_t *)menai_pool_alloc(vs, (size_t)un_len * sizeof(uint32_t));
     if (un == NULL) {
         return MENAI_ERR_NOMEM;
     }
 
-    uint32_t *vn = (uint32_t *)calloc((size_t)n, sizeof(uint32_t));
+    uint32_t *vn = (uint32_t *)menai_pool_alloc(vs, (size_t)n * sizeof(uint32_t));
     if (vn == NULL) {
-        free(un);
+        menai_pool_free(vs, un);
         return MENAI_ERR_NOMEM;
     }
+    memset(vn, 0, (size_t)n * sizeof(uint32_t));
 
     /* Shift a left by d bits into un. */
     if (d == 0) {
@@ -248,10 +249,10 @@ _menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt
     }
 
     ssize_t q_len = m - n + 1;
-    uint32_t *qdigits = (uint32_t *)malloc((size_t)q_len * sizeof(uint32_t));
+    uint32_t *qdigits = (uint32_t *)menai_pool_alloc(vs, (size_t)q_len * sizeof(uint32_t));
     if (qdigits == NULL) {
-        free(un);
-        free(vn);
+        menai_pool_free(vs, un);
+        menai_pool_free(vs, vn);
         return MENAI_ERR_NOMEM;
     }
 
@@ -322,13 +323,13 @@ _menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt
     quotient->digits = qdigits;
     quotient->length = q_len;
     quotient->sign = 1;
-    menai_bigint_normalize(quotient);
+    menai_bigint_normalize(vs, quotient);
 
     /* Unnormalize remainder: shift un right by d bits. */
-    uint32_t *rdigits = (uint32_t *)malloc((size_t)n * sizeof(uint32_t));
+    uint32_t *rdigits = (uint32_t *)menai_pool_alloc(vs, (size_t)n * sizeof(uint32_t));
     if (rdigits == NULL) {
-        free(un);
-        free(vn);
+        menai_pool_free(vs, un);
+        menai_pool_free(vs, vn);
         return MENAI_ERR_NOMEM;
     }
 
@@ -348,19 +349,19 @@ _menai_bigint_divmod_mag(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt
     remainder->digits = rdigits;
     remainder->length = n;
     remainder->sign = 1;
-    menai_bigint_normalize(remainder);
+    menai_bigint_normalize(vs, remainder);
 
-    free(un);
-    free(vn);
+    menai_pool_free(vs, un);
+    menai_pool_free(vs, vn);
     return 0;
 }
 
 /* Free the digit array and reset to zero. */
 void
-menai_bigint_final(MenaiBigInt *a)
+menai_bigint_final(MenaiVMState *vs, MenaiBigInt *a)
 {
     if (a->digits != NULL) {
-        free(a->digits);
+        menai_pool_free(vs, a->digits);
         a->digits = NULL;
     }
 
@@ -370,20 +371,20 @@ menai_bigint_final(MenaiBigInt *a)
 
 /* Copy src into dst. */
 int
-menai_bigint_copy(const MenaiBigInt *src, MenaiBigInt *dst)
+menai_bigint_copy(MenaiVMState *vs, const MenaiBigInt *src, MenaiBigInt *dst)
 {
     if (src->length == 0) {
-        menai_bigint_final(dst);
+        menai_bigint_final(vs, dst);
         return 0;
     }
 
-    uint32_t *digits = (uint32_t *)malloc((size_t)src->length * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)src->length * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
 
     memcpy(digits, src->digits, (size_t)src->length * sizeof(uint32_t));
-    menai_bigint_final(dst);
+    menai_bigint_final(vs, dst);
     dst->digits = digits;
     dst->length = src->length;
     dst->sign = src->sign;
@@ -392,9 +393,9 @@ menai_bigint_copy(const MenaiBigInt *src, MenaiBigInt *dst)
 
 /* Set a to the value of v. */
 int
-menai_bigint_from_long(long v, MenaiBigInt *a)
+menai_bigint_from_long(MenaiVMState *vs, long v, MenaiBigInt *a)
 {
-    menai_bigint_final(a);
+    menai_bigint_final(vs, a);
     if (v == 0) {
         return 0;
     }
@@ -418,7 +419,7 @@ menai_bigint_from_long(long v, MenaiBigInt *a)
         len = 2;
     }
 
-    uint32_t *digits = (uint32_t *)malloc((size_t)len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -431,7 +432,7 @@ menai_bigint_from_long(long v, MenaiBigInt *a)
     a->digits = digits;
     a->length = len;
     a->sign = sign;
-    menai_bigint_normalize(a);
+    menai_bigint_normalize(vs, a);
     return 0;
 }
 
@@ -441,9 +442,9 @@ menai_bigint_from_long(long v, MenaiBigInt *a)
  * values that exceed the range of long.
  */
 int
-menai_bigint_from_long_long(long long v, MenaiBigInt *a)
+menai_bigint_from_long_long(MenaiVMState *vs, long long v, MenaiBigInt *a)
 {
-    menai_bigint_final(a);
+    menai_bigint_final(vs, a);
     if (v == 0) {
         return 0;
     }
@@ -466,7 +467,7 @@ menai_bigint_from_long_long(long long v, MenaiBigInt *a)
         len = 2;
     }
 
-    uint32_t *digits = (uint32_t *)malloc((size_t)len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -479,15 +480,15 @@ menai_bigint_from_long_long(long long v, MenaiBigInt *a)
     a->digits = digits;
     a->length = len;
     a->sign = sign;
-    menai_bigint_normalize(a);
+    menai_bigint_normalize(vs, a);
     return 0;
 }
 
 /* Set a to the unsigned value of v. */
 int
-menai_bigint_from_unsigned_long_long(unsigned long long v, MenaiBigInt *a)
+menai_bigint_from_unsigned_long_long(MenaiVMState *vs, unsigned long long v, MenaiBigInt *a)
 {
-    menai_bigint_final(a);
+    menai_bigint_final(vs, a);
     if (v == 0) {
         return 0;
     }
@@ -501,7 +502,7 @@ menai_bigint_from_unsigned_long_long(unsigned long long v, MenaiBigInt *a)
         len = 2;
     }
 
-    uint32_t *digits = (uint32_t *)malloc((size_t)len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -514,13 +515,13 @@ menai_bigint_from_unsigned_long_long(unsigned long long v, MenaiBigInt *a)
     a->digits = digits;
     a->length = len;
     a->sign = 1;
-    menai_bigint_normalize(a);
+    menai_bigint_normalize(vs, a);
     return 0;
 }
 
 /* Parse a NUL-terminated string in the given base and store the result in a. */
 int
-menai_bigint_from_string(const char *s, int base, MenaiBigInt *a)
+menai_bigint_from_string(MenaiVMState *vs, const char *s, int base, MenaiBigInt *a)
 {
     if (s == NULL || (base != 2 && base != 8 && base != 10 && base != 16)) {
         return MENAI_ERR_VALUE;
@@ -571,7 +572,7 @@ menai_bigint_from_string(const char *s, int base, MenaiBigInt *a)
 
     MenaiBigInt base_int;
     menai_bigint_init(&base_int);
-    if (menai_bigint_from_long((long)base, &base_int) < 0) {
+    if (menai_bigint_from_long(vs, (long)base, &base_int) < 0) {
         return -1;
     }
 
@@ -593,33 +594,33 @@ menai_bigint_from_string(const char *s, int base, MenaiBigInt *a)
         }
 
         /* acc = acc * base */
-        if (menai_bigint_mul(&acc, &base_int, &tmp) < 0) {
+        if (menai_bigint_mul(vs, &acc, &base_int, &tmp) < 0) {
             goto fail;
         }
 
-        if (menai_bigint_copy(&tmp, &acc) < 0) {
+        if (menai_bigint_copy(vs, &tmp, &acc) < 0) {
             goto fail;
         }
 
         /* acc = acc + digit */
-        if (menai_bigint_from_long((long)digit, &digit_int) < 0) {
+        if (menai_bigint_from_long(vs, (long)digit, &digit_int) < 0) {
             goto fail;
         }
 
-        if (menai_bigint_add(&acc, &digit_int, &tmp) < 0) {
+        if (menai_bigint_add(vs, &acc, &digit_int, &tmp) < 0) {
             goto fail;
         }
 
-        if (menai_bigint_copy(&tmp, &acc) < 0) {
+        if (menai_bigint_copy(vs, &tmp, &acc) < 0) {
             goto fail;
         }
     }
 
-    menai_bigint_final(&base_int);
-    menai_bigint_final(&digit_int);
-    menai_bigint_final(&tmp);
+    menai_bigint_final(vs, &base_int);
+    menai_bigint_final(vs, &digit_int);
+    menai_bigint_final(vs, &tmp);
 
-    menai_bigint_final(a);
+    menai_bigint_final(vs, a);
     *a = acc;
     if (a->sign != 0) {
         a->sign = sign;
@@ -628,10 +629,10 @@ menai_bigint_from_string(const char *s, int base, MenaiBigInt *a)
     return 0;
 
 fail:
-    menai_bigint_final(&acc);
-    menai_bigint_final(&base_int);
-    menai_bigint_final(&digit_int);
-    menai_bigint_final(&tmp);
+    menai_bigint_final(vs, &acc);
+    menai_bigint_final(vs, &base_int);
+    menai_bigint_final(vs, &digit_int);
+    menai_bigint_final(vs, &tmp);
     return -1;
 }
 
@@ -644,7 +645,7 @@ fail:
  * set the sign.
  */
 int
-menai_bigint_from_double(double v, MenaiBigInt *a)
+menai_bigint_from_double(MenaiVMState *vs, double v, MenaiBigInt *a)
 {
     /* Work with the magnitude; v is already trunc()'d by the caller. */
     double t = v < 0.0 ? -v : v;
@@ -655,7 +656,7 @@ menai_bigint_from_double(double v, MenaiBigInt *a)
     /* Fast path: magnitude fits in a non-negative long. */
     if (t <= (double)LONG_MAX) {
         long lv = (long)v;
-        return menai_bigint_from_long(lv, a);
+        return menai_bigint_from_long(vs, lv, a);
     }
 
     /* Slow path: decompose into 32-bit base-2^32 limbs using ldexp/frexp. */
@@ -664,7 +665,7 @@ menai_bigint_from_double(double v, MenaiBigInt *a)
 
     /* Number of 32-bit limbs needed: ceil(exp / 32) */
     ssize_t nlimbs = (exp + 31) / 32;
-    uint32_t *digits = (uint32_t *)malloc((size_t)nlimbs * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)nlimbs * sizeof(uint32_t));
     if (!digits) {
         return MENAI_ERR_NOMEM;
     }
@@ -676,11 +677,11 @@ menai_bigint_from_double(double v, MenaiBigInt *a)
         frac -= (double)limb;
     }
 
-    menai_bigint_final(a);
+    menai_bigint_final(vs, a);
     a->digits = digits;
     a->length = nlimbs;
     a->sign = (v < 0.0) ? -1 : 1;
-    menai_bigint_normalize(a);
+    menai_bigint_normalize(vs, a);
     return 0;
 }
 
@@ -911,7 +912,7 @@ menai_bigint_to_menai_string(MenaiVMState *vs, const MenaiBigInt *a, int base)
     /* Work on a copy so we can do repeated division. */
     MenaiBigInt tmp;
     menai_bigint_init(&tmp);
-    if (menai_bigint_copy(a, &tmp) < 0) {
+    if (menai_bigint_copy(vs, a, &tmp) < 0) {
         return NULL;
     }
 
@@ -936,9 +937,9 @@ menai_bigint_to_menai_string(MenaiVMState *vs, const MenaiBigInt *a, int base)
         max_chars = a->length * 10 + 1;
     }
 
-    uint32_t *buf = (uint32_t *)malloc((size_t)max_chars * sizeof(uint32_t));
+    uint32_t *buf = (uint32_t *)menai_pool_alloc(vs, (size_t)max_chars * sizeof(uint32_t));
     if (buf == NULL) {
-        menai_bigint_final(&tmp);
+        menai_bigint_final(vs, &tmp);
         return NULL;
     }
 
@@ -952,21 +953,21 @@ menai_bigint_to_menai_string(MenaiVMState *vs, const MenaiBigInt *a, int base)
 
     while (tmp.length > 0) {
         uint32_t rem;
-        if (_menai_bigint_divmod_1(&tmp, (uint32_t)base, &quotient, &rem) < 0) {
-            menai_bigint_final(&tmp);
-            menai_bigint_final(&quotient);
-            free(buf);
+        if (_menai_bigint_divmod_1(vs, &tmp, (uint32_t)base, &quotient, &rem) < 0) {
+            menai_bigint_final(vs, &tmp);
+            menai_bigint_final(vs, &quotient);
+            menai_pool_free(vs, buf);
             return NULL;
         }
 
-        menai_bigint_final(&tmp);
+        menai_bigint_final(vs, &tmp);
         tmp = quotient;
         menai_bigint_init(&quotient);
         buf[pos++] = hex_digits[rem & 0xF];
     }
 
-    menai_bigint_final(&tmp);
-    menai_bigint_final(&quotient);
+    menai_bigint_final(vs, &tmp);
+    menai_bigint_final(vs, &quotient);
 
     if (pos == 0) {
         buf[pos++] = (uint32_t)'0';
@@ -989,7 +990,7 @@ menai_bigint_to_menai_string(MenaiVMState *vs, const MenaiBigInt *a, int base)
     }
 
     memcpy(result->data, buf, (size_t)pos * sizeof(uint32_t));
-    free(buf);
+    menai_pool_free(vs, buf);
     return result;
 }
 
@@ -1029,21 +1030,21 @@ menai_bigint_hash(const MenaiBigInt *a)
 
 /* result = a + b */
 int
-menai_bigint_add(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_add(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     /* Handle zero operands. */
     if (a->sign == 0) {
-        return menai_bigint_copy(b, result);
+        return menai_bigint_copy(vs, b, result);
     }
 
     if (b->sign == 0) {
-        return menai_bigint_copy(a, result);
+        return menai_bigint_copy(vs, a, result);
     }
 
     if (a->sign == b->sign) {
         /* Same sign: add magnitudes, keep sign. */
         int s = a->sign;
-        if (_menai_bigint_add_mag(a, b, result) < 0) {
+        if (_menai_bigint_add_mag(vs, a, b, result) < 0) {
             return -1;
         }
 
@@ -1056,21 +1057,21 @@ menai_bigint_add(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
     /* Different signs: subtract smaller magnitude from larger. */
     int cmp = _menai_bigint_cmp_mag(a, b);
     if (cmp == 0) {
-        menai_bigint_final(result);
+        menai_bigint_final(vs, result);
         return 0;
     }
 
     int res_sign;
     if (cmp > 0) {
         /* |a| > |b|: result has sign of a */
-        if (_menai_bigint_sub_mag(a, b, result) < 0) {
+        if (_menai_bigint_sub_mag(vs, a, b, result) < 0) {
             return -1;
         }
 
         res_sign = a->sign;
     } else {
         /* |b| > |a|: result has sign of b */
-        if (_menai_bigint_sub_mag(b, a, result) < 0) {
+        if (_menai_bigint_sub_mag(vs, b, a, result) < 0) {
             return -1;
         }
 
@@ -1085,17 +1086,17 @@ menai_bigint_add(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
 
 /* result = a - b */
 int
-menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_sub(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     /* Handle zero operands. */
     if (a->sign == 0) {
         /* 0 - b = -b */
-        return menai_bigint_neg(b, result);
+        return menai_bigint_neg(vs, b, result);
     }
 
     if (b->sign == 0) {
         /* a - 0 = a */
-        return menai_bigint_copy(a, result);
+        return menai_bigint_copy(vs, a, result);
     }
 
     if (a->sign != b->sign) {
@@ -1105,7 +1106,7 @@ menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
          * (-a) - b = -(a + b)  (result has sign of a)
          */
         int s = a->sign;
-        if (_menai_bigint_add_mag(a, b, result) < 0) {
+        if (_menai_bigint_add_mag(vs, a, b, result) < 0) {
             return -1;
         }
 
@@ -1119,18 +1120,18 @@ menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
     /* Same sign: subtract smaller magnitude from larger. */
     int cmp = _menai_bigint_cmp_mag(a, b);
     if (cmp == 0) {
-        menai_bigint_final(result);
+        menai_bigint_final(vs, result);
         return 0;
     }
 
     int res_sign;
     if (cmp > 0) {
-        if (_menai_bigint_sub_mag(a, b, result) < 0) {
+        if (_menai_bigint_sub_mag(vs, a, b, result) < 0) {
             return -1;
         }
         res_sign = a->sign;
     } else {
-        if (_menai_bigint_sub_mag(b, a, result) < 0) {
+        if (_menai_bigint_sub_mag(vs, b, a, result) < 0) {
             return -1;
         }
         res_sign = -a->sign;
@@ -1145,15 +1146,15 @@ menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
 
 /* result = a * b */
 int
-menai_bigint_mul(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_mul(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     if (a->sign == 0 || b->sign == 0) {
-        menai_bigint_final(result);
+        menai_bigint_final(vs, result);
         return 0;
     }
 
     ssize_t out_len = a->length + b->length;
-    uint32_t *digits = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -1177,18 +1178,18 @@ menai_bigint_mul(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
     }
 
     int res_sign = (a->sign == b->sign) ? 1 : -1;
-    menai_bigint_final(result);
+    menai_bigint_final(vs, result);
     result->digits = digits;
     result->length = out_len;
     result->sign = res_sign;
-    menai_bigint_normalize(result);
+    menai_bigint_normalize(vs, result);
     return 0;
 }
 
 /* Compute floor-division and modulo simultaneously. */
 int
 menai_bigint_divmod(
-    const MenaiBigInt *a,
+    MenaiVMState *vs, const MenaiBigInt *a,
     const MenaiBigInt *b,
     MenaiBigInt *quotient,
     MenaiBigInt *remainder)
@@ -1198,8 +1199,8 @@ menai_bigint_divmod(
     }
 
     if (a->sign == 0) {
-        menai_bigint_final(quotient);
-        menai_bigint_final(remainder);
+        menai_bigint_final(vs, quotient);
+        menai_bigint_final(vs, remainder);
         return 0;
     }
 
@@ -1211,20 +1212,20 @@ menai_bigint_divmod(
     int ret;
     if (b->length == 1) {
         uint32_t rem_digit;
-        ret = _menai_bigint_divmod_1(a, b->digits[0], &q, &rem_digit);
+        ret = _menai_bigint_divmod_1(vs, a, b->digits[0], &q, &rem_digit);
         if (ret < 0) {
             return -1;
         }
 
         if (rem_digit != 0) {
-            ret = menai_bigint_from_long((long)rem_digit, &r);
+            ret = menai_bigint_from_long(vs, (long)rem_digit, &r);
             if (ret < 0) {
-                menai_bigint_final(&q);
+                menai_bigint_final(vs, &q);
                 return -1;
             }
         }
     } else {
-        ret = _menai_bigint_divmod_mag(a, b, &q, &r);
+        ret = _menai_bigint_divmod_mag(vs, a, b, &q, &r);
         if (ret < 0) {
             return -1;
         }
@@ -1250,20 +1251,20 @@ menai_bigint_divmod(
         /* quotient -= 1 (in-place) */
         MenaiBigInt one;
         menai_bigint_init(&one);
-        if (menai_bigint_from_long(1L, &one) < 0 ||
-            menai_bigint_sub(&q, &one, &q) < 0) {
-            menai_bigint_final(&q);
-            menai_bigint_final(&r);
-            menai_bigint_final(&one);
+        if (menai_bigint_from_long(vs, 1L, &one) < 0 ||
+            menai_bigint_sub(vs, &q, &one, &q) < 0) {
+            menai_bigint_final(vs, &q);
+            menai_bigint_final(vs, &r);
+            menai_bigint_final(vs, &one);
             return -1;
         }
 
-        menai_bigint_final(&one);
+        menai_bigint_final(vs, &one);
 
         /* remainder += b (in-place) */
-        if (menai_bigint_add(&r, b, &r) < 0) {
-            menai_bigint_final(&q);
-            menai_bigint_final(&r);
+        if (menai_bigint_add(vs, &r, b, &r) < 0) {
+            menai_bigint_final(vs, &q);
+            menai_bigint_final(vs, &r);
             return -1;
         }
     }
@@ -1275,43 +1276,43 @@ menai_bigint_divmod(
 
 /* result = floor(a / b) */
 int
-menai_bigint_floordiv(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_floordiv(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     MenaiBigInt q, r;
     menai_bigint_init(&q);
     menai_bigint_init(&r);
-    if (menai_bigint_divmod(a, b, &q, &r) < 0) {
+    if (menai_bigint_divmod(vs, a, b, &q, &r) < 0) {
         return -1;
     }
 
-    menai_bigint_final(&r);
-    menai_bigint_final(result);
+    menai_bigint_final(vs, &r);
+    menai_bigint_final(vs, result);
     *result = q;
     return 0;
 }
 
 /* result = a mod b */
 int
-menai_bigint_mod(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_mod(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     MenaiBigInt q, r;
     menai_bigint_init(&q);
     menai_bigint_init(&r);
-    if (menai_bigint_divmod(a, b, &q, &r) < 0) {
+    if (menai_bigint_divmod(vs, a, b, &q, &r) < 0) {
         return -1;
     }
 
-    menai_bigint_final(&q);
-    menai_bigint_final(result);
+    menai_bigint_final(vs, &q);
+    menai_bigint_final(vs, result);
     *result = r;
     return 0;
 }
 
 /* result = -a */
 int
-menai_bigint_neg(const MenaiBigInt *a, MenaiBigInt *result)
+menai_bigint_neg(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result)
 {
-    if (menai_bigint_copy(a, result) < 0) {
+    if (menai_bigint_copy(vs, a, result) < 0) {
         return -1;
     }
 
@@ -1323,9 +1324,9 @@ menai_bigint_neg(const MenaiBigInt *a, MenaiBigInt *result)
 
 /* result = |a| */
 int
-menai_bigint_abs(const MenaiBigInt *a, MenaiBigInt *result)
+menai_bigint_abs(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result)
 {
-    if (menai_bigint_copy(a, result) < 0) {
+    if (menai_bigint_copy(vs, a, result) < 0) {
         return -1;
     }
 
@@ -1337,7 +1338,7 @@ menai_bigint_abs(const MenaiBigInt *a, MenaiBigInt *result)
 
 /* result = a ** exp */
 int
-menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *result)
+menai_bigint_pow(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *result)
 {
     if (exp->sign == -1) {
         return MENAI_ERR_VALUE;
@@ -1346,24 +1347,24 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
     /* result = 1 */
     MenaiBigInt res;
     menai_bigint_init(&res);
-    if (menai_bigint_from_long(1L, &res) < 0) {
+    if (menai_bigint_from_long(vs, 1L, &res) < 0) {
         return -1;
     }
 
     /* base = a (copy so we can square it) */
     MenaiBigInt base;
     menai_bigint_init(&base);
-    if (menai_bigint_copy(a, &base) < 0) {
-        menai_bigint_final(&res);
+    if (menai_bigint_copy(vs, a, &base) < 0) {
+        menai_bigint_final(vs, &res);
         return -1;
     }
 
     /* e = exp (copy so we can shift it) */
     MenaiBigInt e;
     menai_bigint_init(&e);
-    if (menai_bigint_copy(exp, &e) < 0) {
-        menai_bigint_final(&res);
-        menai_bigint_final(&base);
+    if (menai_bigint_copy(vs, exp, &e) < 0) {
+        menai_bigint_final(vs, &res);
+        menai_bigint_final(vs, &base);
         return -1;
     }
 
@@ -1375,21 +1376,21 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
     while (e.sign != 0) {
         /* Check if lowest bit of e is set. */
         if (e.digits[0] & 1U) {
-            if (menai_bigint_mul(&res, &base, &tmp) < 0) {
+            if (menai_bigint_mul(vs, &res, &base, &tmp) < 0) {
                 goto fail;
             }
 
-            menai_bigint_final(&res);
+            menai_bigint_final(vs, &res);
             res = tmp;
             menai_bigint_init(&tmp);
         }
 
         /* e >>= 1 */
-        if (menai_bigint_shift_right(&e, 1, &half) < 0) {
+        if (menai_bigint_shift_right(vs, &e, 1, &half) < 0) {
             goto fail;
         }
 
-        menai_bigint_final(&e);
+        menai_bigint_final(vs, &e);
         e = half;
         menai_bigint_init(&half);
 
@@ -1398,45 +1399,45 @@ menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *resu
         }
 
         /* base = base * base */
-        if (menai_bigint_mul(&base, &base, &tmp) < 0) {
+        if (menai_bigint_mul(vs, &base, &base, &tmp) < 0) {
             goto fail;
         }
 
-        menai_bigint_final(&base);
+        menai_bigint_final(vs, &base);
         base = tmp;
         menai_bigint_init(&tmp);
     }
 
-    menai_bigint_final(&base);
-    menai_bigint_final(&e);
-    menai_bigint_final(&tmp);
-    menai_bigint_final(&half);
-    menai_bigint_final(result);
+    menai_bigint_final(vs, &base);
+    menai_bigint_final(vs, &e);
+    menai_bigint_final(vs, &tmp);
+    menai_bigint_final(vs, &half);
+    menai_bigint_final(vs, result);
     *result = res;
     return 0;
 
 fail:
-    menai_bigint_final(&res);
-    menai_bigint_final(&base);
-    menai_bigint_final(&e);
-    menai_bigint_final(&tmp);
-    menai_bigint_final(&half);
+    menai_bigint_final(vs, &res);
+    menai_bigint_final(vs, &base);
+    menai_bigint_final(vs, &e);
+    menai_bigint_final(vs, &tmp);
+    menai_bigint_final(vs, &half);
     return -1;
 }
 
 /*
  * Convert a MenaiBigInt to a two's complement digit array of length *len_out.
- * The caller must free the returned array with free().
+ * The caller must free the returned array with menai_pool_free().
  * For positive numbers: digits as-is, with a leading zero word to ensure
  * the sign bit is clear.
  * For negative numbers: flip bits and add 1.
  * Returns NULL on allocation failure.
  */
 static uint32_t *
-_to_twos_complement(const MenaiBigInt *a, ssize_t *len_out)
+_to_twos_complement(MenaiVMState *vs, const MenaiBigInt *a, ssize_t *len_out)
 {
     ssize_t len = a->length + 1; /* extra word for sign bit */
-    uint32_t *buf = (uint32_t *)malloc((size_t)len * sizeof(uint32_t));
+    uint32_t *buf = (uint32_t *)menai_pool_alloc(vs, (size_t)len * sizeof(uint32_t));
     if (buf == NULL) {
         return NULL;
     }
@@ -1472,9 +1473,9 @@ _to_twos_complement(const MenaiBigInt *a, ssize_t *len_out)
  * The sign bit is the MSB of buf[len-1].
  */
 static int
-_from_twos_complement(const uint32_t *buf, ssize_t len, MenaiBigInt *result)
+_from_twos_complement(MenaiVMState *vs, const uint32_t *buf, ssize_t len, MenaiBigInt *result)
 {
-    menai_bigint_final(result);
+    menai_bigint_final(vs, result);
     if (len == 0) {
         return 0;
     }
@@ -1483,7 +1484,7 @@ _from_twos_complement(const uint32_t *buf, ssize_t len, MenaiBigInt *result)
 
     if (!is_neg) {
         /* Positive: copy digits directly. */
-        uint32_t *digits = (uint32_t *)malloc((size_t)len * sizeof(uint32_t));
+        uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)len * sizeof(uint32_t));
         if (digits == NULL) {
             return MENAI_ERR_NOMEM;
         }
@@ -1495,10 +1496,10 @@ _from_twos_complement(const uint32_t *buf, ssize_t len, MenaiBigInt *result)
         result->digits = digits;
         result->length = len;
         result->sign = 1;
-        menai_bigint_normalize(result);
+        menai_bigint_normalize(vs, result);
     } else {
         /* Negative: negate to get magnitude. */
-        uint32_t *digits = (uint32_t *)malloc((size_t)len * sizeof(uint32_t));
+        uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)len * sizeof(uint32_t));
         if (digits == NULL) {
             return MENAI_ERR_NOMEM;
         }
@@ -1513,7 +1514,7 @@ _from_twos_complement(const uint32_t *buf, ssize_t len, MenaiBigInt *result)
         result->digits = digits;
         result->length = len;
         result->sign = -1;
-        menai_bigint_normalize(result);
+        menai_bigint_normalize(vs, result);
     }
 
     return 0;
@@ -1521,26 +1522,26 @@ _from_twos_complement(const uint32_t *buf, ssize_t len, MenaiBigInt *result)
 
 /* result = a & b */
 int
-menai_bigint_and(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_and(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     ssize_t la;
-    uint32_t *ta = _to_twos_complement(a, &la);
+    uint32_t *ta = _to_twos_complement(vs, a, &la);
     if (ta == NULL) {
         return -1;
     }
 
     ssize_t lb;
-    uint32_t *tb = _to_twos_complement(b, &lb);
+    uint32_t *tb = _to_twos_complement(vs, b, &lb);
     if (tb == NULL) {
-        free(ta);
+        menai_pool_free(vs, ta);
         return -1;
     }
 
     ssize_t out_len = (la > lb) ? la : lb;
-    uint32_t *out = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *out = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (out == NULL) {
-        free(ta);
-        free(tb);
+        menai_pool_free(vs, ta);
+        menai_pool_free(vs, tb);
         return MENAI_ERR_NOMEM;
     }
 
@@ -1554,36 +1555,36 @@ menai_bigint_and(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
         out[i] = da & db;
     }
 
-    free(ta);
-    free(tb);
+    menai_pool_free(vs, ta);
+    menai_pool_free(vs, tb);
 
-    int ret = _from_twos_complement(out, out_len, result);
-    free(out);
+    int ret = _from_twos_complement(vs, out, out_len, result);
+    menai_pool_free(vs, out);
     return ret;
 }
 
 /* result = a | b */
 int
-menai_bigint_or(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_or(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     ssize_t la;
-    uint32_t *ta = _to_twos_complement(a, &la);
+    uint32_t *ta = _to_twos_complement(vs, a, &la);
     if (ta == NULL) {
         return -1;
     }
 
     ssize_t lb;
-    uint32_t *tb = _to_twos_complement(b, &lb);
+    uint32_t *tb = _to_twos_complement(vs, b, &lb);
     if (tb == NULL) {
-        free(ta);
+        menai_pool_free(vs, ta);
         return -1;
     }
 
     ssize_t out_len = (la > lb) ? la : lb;
-    uint32_t *out = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *out = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (out == NULL) {
-        free(ta);
-        free(tb);
+        menai_pool_free(vs, ta);
+        menai_pool_free(vs, tb);
         return MENAI_ERR_NOMEM;
     }
 
@@ -1596,36 +1597,36 @@ menai_bigint_or(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
         out[i] = da | db;
     }
 
-    free(ta);
-    free(tb);
+    menai_pool_free(vs, ta);
+    menai_pool_free(vs, tb);
 
-    int ret = _from_twos_complement(out, out_len, result);
-    free(out);
+    int ret = _from_twos_complement(vs, out, out_len, result);
+    menai_pool_free(vs, out);
     return ret;
 }
 
 /* result = a ^ b */
 int
-menai_bigint_xor(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+menai_bigint_xor(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
 {
     ssize_t la;
-    uint32_t *ta = _to_twos_complement(a, &la);
+    uint32_t *ta = _to_twos_complement(vs, a, &la);
     if (ta == NULL) {
         return -1;
     }
 
     ssize_t lb;
-    uint32_t *tb = _to_twos_complement(b, &lb);
+    uint32_t *tb = _to_twos_complement(vs, b, &lb);
     if (tb == NULL) {
-        free(ta);
+        menai_pool_free(vs, ta);
         return -1;
     }
 
     ssize_t out_len = (la > lb) ? la : lb;
-    uint32_t *out = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *out = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (out == NULL) {
-        free(ta);
-        free(tb);
+        menai_pool_free(vs, ta);
+        menai_pool_free(vs, tb);
         return MENAI_ERR_NOMEM;
     }
 
@@ -1638,22 +1639,22 @@ menai_bigint_xor(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result
         out[i] = da ^ db;
     }
 
-    free(ta);
-    free(tb);
+    menai_pool_free(vs, ta);
+    menai_pool_free(vs, tb);
 
-    int ret = _from_twos_complement(out, out_len, result);
-    free(out);
+    int ret = _from_twos_complement(vs, out, out_len, result);
+    menai_pool_free(vs, out);
     return ret;
 }
 
 /* result = ~a, equivalent to -(a + 1) */
 int
-menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result)
+menai_bigint_not(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result)
 {
     if (a->sign == 0) {
         /* ~0 = -1 */
-        menai_bigint_final(result);
-        return menai_bigint_from_long(-1L, result);
+        menai_bigint_final(vs, result);
+        return menai_bigint_from_long(vs, -1L, result);
     }
 
     if (a->sign == 1) {
@@ -1663,12 +1664,12 @@ menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result)
          */
         MenaiBigInt one;
         menai_bigint_init(&one);
-        if (menai_bigint_from_long(1L, &one) < 0) {
+        if (menai_bigint_from_long(vs, 1L, &one) < 0) {
             return -1;
         }
 
-        int ret = _menai_bigint_add_mag(a, &one, result);
-        menai_bigint_final(&one);
+        int ret = _menai_bigint_add_mag(vs, a, &one, result);
+        menai_bigint_final(vs, &one);
         if (ret < 0) {
             return -1;
         }
@@ -1686,12 +1687,12 @@ menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result)
      */
     MenaiBigInt one;
     menai_bigint_init(&one);
-    if (menai_bigint_from_long(1L, &one) < 0) {
+    if (menai_bigint_from_long(vs, 1L, &one) < 0) {
         return -1;
     }
 
-    int ret = _menai_bigint_sub_mag(a, &one, result);
-    menai_bigint_final(&one);
+    int ret = _menai_bigint_sub_mag(vs, a, &one, result);
+    menai_bigint_final(vs, &one);
     if (ret < 0) {
         return -1;
     }
@@ -1705,7 +1706,7 @@ menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result)
 
 /* result = a << shift */
 int
-menai_bigint_shift_left(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result)
+menai_bigint_shift_left(MenaiVMState *vs, const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result)
 {
     if (shift < 0) {
         return MENAI_ERR_VALUE;
@@ -1714,11 +1715,11 @@ menai_bigint_shift_left(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result
     if (a->sign == 0 || shift == 0) {
         MenaiBigInt tmp;
         menai_bigint_init(&tmp);
-        if (menai_bigint_copy(a, &tmp) < 0) {
+        if (menai_bigint_copy(vs, a, &tmp) < 0) {
             return -1;
         }
 
-        menai_bigint_final(result);
+        menai_bigint_final(vs, result);
         *result = tmp;
         return 0;
     }
@@ -1727,7 +1728,7 @@ menai_bigint_shift_left(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result
     int bit_shift = (int)(shift % 32);
 
     ssize_t out_len = a->length + word_shift + 1;
-    uint32_t *digits = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -1749,35 +1750,35 @@ menai_bigint_shift_left(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result
         digits[a->length + word_shift] = carry;
     }
 
-    menai_bigint_final(result);
+    menai_bigint_final(vs, result);
     result->digits = digits;
     result->length = out_len;
     result->sign = a->sign;
-    menai_bigint_normalize(result);
+    menai_bigint_normalize(vs, result);
     return 0;
 }
 
 /* result = a >> shift (arithmetic, floor toward -inf) */
 int
-menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result)
+menai_bigint_shift_right(MenaiVMState *vs, const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result)
 {
     if (shift < 0) {
         return MENAI_ERR_VALUE;
     }
 
     if (a->sign == 0) {
-        menai_bigint_final(result);
+        menai_bigint_final(vs, result);
         return 0;
     }
 
     if (shift == 0) {
         MenaiBigInt tmp;
         menai_bigint_init(&tmp);
-        if (menai_bigint_copy(a, &tmp) < 0) {
+        if (menai_bigint_copy(vs, a, &tmp) < 0) {
             return -1;
         }
 
-        menai_bigint_final(result);
+        menai_bigint_final(vs, result);
         *result = tmp;
         return 0;
     }
@@ -1787,9 +1788,9 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
 
     /* If shifting away all digits, result is 0 (positive) or -1 (negative). */
     if (word_shift >= a->length) {
-        menai_bigint_final(result);
+        menai_bigint_final(vs, result);
         if (a->sign == -1) {
-            return menai_bigint_from_long(-1L, result);
+            return menai_bigint_from_long(vs, -1L, result);
         }
 
         return 0;
@@ -1817,7 +1818,7 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
     }
 
     ssize_t out_len = a->length - word_shift;
-    uint32_t *digits = (uint32_t *)malloc((size_t)out_len * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)out_len * sizeof(uint32_t));
     if (digits == NULL) {
         return MENAI_ERR_NOMEM;
     }
@@ -1838,31 +1839,31 @@ menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *resul
         }
     }
 
-    menai_bigint_final(result);
+    menai_bigint_final(vs, result);
     result->digits = digits;
     result->length = out_len;
     result->sign = a->sign;
-    menai_bigint_normalize(result);
+    menai_bigint_normalize(vs, result);
 
     /* For negative numbers with bits shifted out, subtract 1 (floor). */
     if (a->sign == -1 && any_bits_out) {
         MenaiBigInt one;
         menai_bigint_init(&one);
-        if (menai_bigint_from_long(1L, &one) < 0) {
-            menai_bigint_final(result);
+        if (menai_bigint_from_long(vs, 1L, &one) < 0) {
+            menai_bigint_final(vs, result);
             return -1;
         }
 
         MenaiBigInt adj;
         menai_bigint_init(&adj);
-        if (menai_bigint_sub(result, &one, &adj) < 0) {
-            menai_bigint_final(&one);
-            menai_bigint_final(result);
+        if (menai_bigint_sub(vs, result, &one, &adj) < 0) {
+            menai_bigint_final(vs, &one);
+            menai_bigint_final(vs, result);
             return -1;
         }
 
-        menai_bigint_final(&one);
-        menai_bigint_final(result);
+        menai_bigint_final(vs, &one);
+        menai_bigint_final(vs, result);
         *result = adj;
     }
 

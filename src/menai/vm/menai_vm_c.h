@@ -744,14 +744,14 @@ int menai_value_equal(MenaiValue *a, MenaiValue *b);
 #define MENAI_HT_MAX_LOAD_NUM 2   /* load factor numerator   */
 #define MENAI_HT_MAX_LOAD_DEN 3   /* load factor denominator */
 
-int menai_ht_init(MenaiHashTable *ht, ssize_t n);
+int menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n);
 ssize_t menai_ht_lookup(const MenaiHashTable *ht, MenaiValue *key, hash_t hash);
 void menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index);
 
 static inline void
-menai_ht_final(MenaiHashTable *ht)
+menai_ht_final(MenaiVMState *vs, MenaiHashTable *ht)
 {
-    free(ht->slots);
+    menai_pool_free(vs, ht->slots);
     ht->slots = NULL;
     ht->slot_count = 0;
 }
@@ -785,14 +785,14 @@ menai_bigint_init(MenaiBigInt *a)
     a->sign = 0;
 }
 
-void menai_bigint_final(MenaiBigInt *a);
-void menai_bigint_normalize(MenaiBigInt *a);
-int menai_bigint_copy(const MenaiBigInt *src, MenaiBigInt *dst);
-int menai_bigint_from_long(long v, MenaiBigInt *a);
-int menai_bigint_from_long_long(long long v, MenaiBigInt *a);
-int menai_bigint_from_unsigned_long_long(unsigned long long v, MenaiBigInt *a);
-int menai_bigint_from_string(const char *s, int base, MenaiBigInt *a);
-int menai_bigint_from_double(double v, MenaiBigInt *a);
+void menai_bigint_final(MenaiVMState *vs, MenaiBigInt *a);
+void menai_bigint_normalize(MenaiVMState *vs, MenaiBigInt *a);
+int menai_bigint_copy(MenaiVMState *vs, const MenaiBigInt *src, MenaiBigInt *dst);
+int menai_bigint_from_long(MenaiVMState *vs, long v, MenaiBigInt *a);
+int menai_bigint_from_long_long(MenaiVMState *vs, long long v, MenaiBigInt *a);
+int menai_bigint_from_unsigned_long_long(MenaiVMState *vs, unsigned long long v, MenaiBigInt *a);
+int menai_bigint_from_string(MenaiVMState *vs, const char *s, int base, MenaiBigInt *a);
+int menai_bigint_from_double(MenaiVMState *vs, double v, MenaiBigInt *a);
 int menai_bigint_fits_long(const MenaiBigInt *a);
 int menai_bigint_to_long(const MenaiBigInt *a, long *out);
 int menai_bigint_fits_long_long(const MenaiBigInt *a);
@@ -802,21 +802,21 @@ int menai_bigint_fits_unsigned_long_long(const MenaiBigInt *a);
 int menai_bigint_to_unsigned_long_long(const MenaiBigInt *a, unsigned long long *out);
 MenaiString *menai_bigint_to_menai_string(MenaiVMState *vs, const MenaiBigInt *a, int base);
 hash_t menai_bigint_hash(const MenaiBigInt *a);
-int menai_bigint_add(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_sub(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_mul(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_floordiv(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_mod(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_divmod(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *quotient, MenaiBigInt *remainder);
-int menai_bigint_neg(const MenaiBigInt *a, MenaiBigInt *result);
-int menai_bigint_abs(const MenaiBigInt *a, MenaiBigInt *result);
-int menai_bigint_pow(const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *result);
-int menai_bigint_and(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_or(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_xor(const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
-int menai_bigint_not(const MenaiBigInt *a, MenaiBigInt *result);
-int menai_bigint_shift_left(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result);
-int menai_bigint_shift_right(const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result);
+int menai_bigint_add(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_sub(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_mul(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_floordiv(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_mod(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_divmod(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *quotient, MenaiBigInt *remainder);
+int menai_bigint_neg(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result);
+int menai_bigint_abs(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result);
+int menai_bigint_pow(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *result);
+int menai_bigint_and(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_or(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_xor(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_not(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result);
+int menai_bigint_shift_left(MenaiVMState *vs, const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result);
+int menai_bigint_shift_right(MenaiVMState *vs, const MenaiBigInt *a, ssize_t shift, MenaiBigInt *result);
 int menai_bigint_eq(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ne(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_lt(const MenaiBigInt *a, const MenaiBigInt *b);
@@ -923,7 +923,7 @@ menai_dict_final(MenaiVMState *vs, MenaiDict *self)
         }
     }
 
-    menai_ht_final(&self->ht);
+    menai_ht_final(vs, &self->ht);
 }
 
 static inline int
@@ -1009,7 +1009,7 @@ static inline void
 menai_integer_final(MenaiVMState *vs, MenaiInteger *self)
 {
     if (self->is_big) {
-        menai_bigint_final(&self->big);
+        menai_bigint_final(vs, &self->big);
     }
 }
 
@@ -1125,7 +1125,7 @@ menai_set_final(MenaiVMState *vs, MenaiSet *self)
         }
     }
 
-    menai_ht_final(&self->ht);
+    menai_ht_final(vs, &self->ht);
 }
 
 static inline int
@@ -1238,7 +1238,7 @@ MenaiStructType *alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int
 static inline void
 menai_structtype_final(MenaiVMState *vs, MenaiStructType *self)
 {
-    menai_ht_final(&self->field_ht);
+    menai_ht_final(vs, &self->field_ht);
     menai_value_release(vs, (MenaiValue *)self->name);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {

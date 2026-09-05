@@ -49,7 +49,7 @@ alloc_menai_integer_from_long_long(MenaiVMState *vs, long long n)
 
     MenaiBigInt big;
     menai_bigint_init(&big);
-    if (menai_bigint_from_long_long(n, &big) < 0) {
+    if (menai_bigint_from_long_long(vs, n, &big) < 0) {
         return NULL;
     }
 
@@ -66,17 +66,17 @@ alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src)
     if (src.length <= 2 && menai_bigint_fits_long(&src)) {
         long v;
         if (menai_bigint_to_long(&src, &v) < 0) {
-            menai_bigint_final(&src);
+            menai_bigint_final(vs, &src);
             return NULL;
         }
 
-        menai_bigint_final(&src);
+        menai_bigint_final(vs, &src);
         return alloc_menai_integer_from_long(vs, v);
     }
 
     MenaiInteger *r = (MenaiInteger *)menai_alloc(vs, sizeof(MenaiInteger));
     if (r == NULL) {
-        menai_bigint_final(&src);
+        menai_bigint_final(vs, &src);
         return NULL;
     }
 

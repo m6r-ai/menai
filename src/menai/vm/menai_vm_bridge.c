@@ -492,7 +492,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     ssize_t ndigits = (ssize_t)((nbytes + 3) / 4);
-    uint32_t *digits = (uint32_t *)malloc((size_t)ndigits * sizeof(uint32_t));
+    uint32_t *digits = (uint32_t *)menai_pool_alloc(vs, (size_t)ndigits * sizeof(uint32_t));
     if (digits == NULL) {
         menai_pool_free(vs, buf);
         Py_DECREF(v);
@@ -520,7 +520,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
     big.digits = digits;
     big.length = ndigits;
     big.sign = is_neg ? -1 : 1;
-    menai_bigint_normalize(&big);
+    menai_bigint_normalize(vs, &big);
     return (MenaiValue *)alloc_menai_integer_from_bigint(vs, big);
 }
 
@@ -709,7 +709,7 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
 
     Py_DECREF(pairs);
 
-    if (menai_ht_init(&r->ht, (ssize_t)n) < 0) {
+    if (menai_ht_init(vs, &r->ht, (ssize_t)n) < 0) {
         menai_free(vs, r);
         PyErr_NoMemory();
         return NULL;
@@ -790,7 +790,7 @@ slow_set_to_fast(MenaiVMState *vs, PyObject *src)
 
     Py_DECREF(elems);
     s->length = n;
-    if (menai_ht_init(&s->ht, n) < 0) {
+    if (menai_ht_init(vs, &s->ht, n) < 0) {
         menai_value_release(vs, (MenaiValue *)s);
         return NULL;
     }
@@ -1627,7 +1627,7 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
         i++;
     }
 
-    if (menai_ht_init(&r->ht, (ssize_t)n) < 0) {
+    if (menai_ht_init(vs, &r->ht, (ssize_t)n) < 0) {
         menai_free(vs, r);
         PyErr_NoMemory();
         goto fail;

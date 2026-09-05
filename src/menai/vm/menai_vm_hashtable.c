@@ -113,7 +113,7 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
 }
 
 int
-menai_ht_init(MenaiHashTable *ht, ssize_t n)
+menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n)
 {
     if (n == 0) {
         ht->slots = NULL;
@@ -127,7 +127,7 @@ menai_ht_init(MenaiHashTable *ht, ssize_t n)
         sc <<= 1;
     }
 
-    ht->slots = (MenaiHashSlot *)malloc((size_t)sc * sizeof(MenaiHashSlot));
+    ht->slots = (MenaiHashSlot *)menai_pool_alloc(vs, (size_t)sc * sizeof(MenaiHashSlot));
     if (!ht->slots) {
         return MENAI_ERR_NOMEM;
     }
