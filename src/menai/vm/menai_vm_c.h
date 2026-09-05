@@ -213,18 +213,13 @@ typedef struct {
 /*
  * MenaiValue_HEAD — common prefix for every Menai value struct.
  *
- * ob_refcnt       — reference count.
- * ob_type         — type tag (MenaiType, uint16_t).
- * ob_alloc_bucket — pool bucket number if this object was served from the
- *                   pool allocator, or -1 if it was allocated directly via malloc.
- *                   Written by menai_alloc; read by menai_free to determine how
- *                   to return the block.
+ * ob_refcnt — reference count.
+ * ob_type   — type tag (MenaiType, uint16_t).
  */
 #define MenaiValue_HEAD              \
     MENAI_MAGIC_FIELD                \
     uint32_t ob_refcnt;              \
-    MenaiType ob_type;               \
-    int16_t ob_alloc_bucket;
+    MenaiType ob_type;
 
 struct MenaiBoolean {
     MenaiValue_HEAD
@@ -559,6 +554,25 @@ typedef struct {
 } BucketEntry;
 
 /*
+ * MenaiPoolHeader — hidden header prepended to every block allocated through
+ * the pool allocator (menai_pool_alloc).  Stored immediately before the
+ * user-visible pointer.  The bucket index lets menai_pool_free route the
+ * block back to the correct free-list without any assumptions about what the
+ * caller stores in the block itself.
+ *
+ * When a block is in the free-list, the link is threaded through the first
+ * sizeof(void *) bytes of the user data area (not the header), exactly as
+ * the pool allocator has always done.
+ *
+ * Padded to sizeof(void *) so the user-visible pointer remains properly
+ * aligned for any type.
+ */
+typedef struct {
+    int16_t bucket;  /* pool bucket index, or -1 for out-of-pool */
+    char _pad[sizeof(void *) - sizeof(int16_t)];
+} MenaiPoolHeader;
+
+/*
  * MenaiVMState — per-instance VM state.
  *
  * Owns all mutable state that must not be shared across VM instances:
@@ -631,6 +645,8 @@ typedef struct MenaiVMState {
 MenaiVMState *menai_vm_state_alloc(void);
 void menai_vm_state_free(MenaiVMState *vs);
 
+void *menai_pool_alloc(MenaiVMState *vs, size_t size);
+void menai_pool_free(MenaiVMState *vs, void *ptr);
 void *menai_alloc(MenaiVMState *vs, size_t size);
 void menai_free(MenaiVMState *vs, void *ptr);
 

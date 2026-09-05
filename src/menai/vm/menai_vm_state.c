@@ -32,7 +32,6 @@ menai_vm_state_alloc(void)
 
     vs->empty_list_storage.ob_refcnt = 1;
     vs->empty_list_storage.ob_type = MENAITYPE_LIST;
-    vs->empty_list_storage.ob_alloc_bucket = -1;
     vs->empty_list_storage.head = NULL;
     vs->empty_list_storage.tail = NULL;
     vs->empty_list_storage.length = 0;
@@ -106,7 +105,8 @@ menai_vm_state_free(MenaiVMState *vs)
         void *ptr = pool_bucket->head;
         while (ptr) {
             void *next = *(void **)ptr;
-            free(ptr);
+            /* ptr is the user-visible area; the raw malloc block is behind the header */
+            free((char *)ptr - sizeof(MenaiPoolHeader));
             ptr = next;
         }
     }

@@ -1,17 +1,21 @@
 /*
- * menai_vm_alloc.c — power-of-2 pool allocator for the Menai VM.
+ * menai_vm_alloc.c — pool allocator and MenaiValue allocation wrapper.
  *
- * Sizes 32–4096 bytes are handled by 8 buckets (one per power of 2: 32, 64,
- * 128, 256, 512, 1024, 2048, 4096).  Each bucket is a singly-linked free-list
- * threaded through the first sizeof(void *) bytes of the free block.  A
- * per-bucket depth cap of 256 entries prevents unbounded memory retention.
+ * menai_pool_alloc / menai_pool_free — the inner pool allocator.  A
+ * MenaiPoolHeader is prepended to every block to record the bucket index so
+ * the block can be returned to the correct free-list on free.  No
+ * assumptions are made about what the caller stores in the block.
  *
- * menai_alloc writes the pool block into ob_alloc_bucket in the returned header
- * (0 for out-of-pool allocations).  menai_free reads ob_alloc_bucket to route the
- * block back to the correct bucket or to free().
+ * menai_alloc / menai_free — the outer wrapper for MenaiValue-based objects.
+ * Calls menai_pool_alloc under the hood, then sets the magic field and
+ * registers the block with the leak detector (when MENAI_DEBUG_LEAKS is
+ * defined).
  *
- * The free lists live in MenaiVMState so that each VM instance has its own
- * pool; no state is shared across instances.
+ * The pool uses 8 power-of-2 buckets (32–4096 bytes).  Each bucket is a
+ * singly-linked free-list threaded through the first sizeof(void *) bytes
+ * of the user data area.  A per-bucket depth cap prevents unbounded
+ * memory retention.  The free lists live in MenaiVMState so that each VM
+ * instance has its own pool; no state is shared across instances.
  */
 #include <stdlib.h>
 #include <stddef.h>
@@ -273,13 +277,13 @@ menai_leak_set_report(MenaiVMState *vs)
 #endif /* MENAI_DEBUG_LEAKS */
 
 /*
- * _bucket_for — return the bucket index for a given size, and the rounded-up
- * block size that will be allocated from that bucket.
+ * _bucket_for — return the bucket index for a given total block size.
  *
- * size must be in [MENAI_POOL_MIN_SIZE, MENAI_POOL_MAX_SIZE].
+ * size must be in [MENAI_POOL_MIN_SIZE, MENAI_POOL_MAX_SIZE].  The returned
+ * bucket index satisfies: (1 << (bucket + MENAI_POOL_LOG_MIN_SIZE)) >= size.
  */
 static inline int
-_bucket_for(size_t size, size_t *block_size_out)
+_bucket_for(size_t size)
 {
 #if defined(__GNUC__) || defined(__clang__)
     return size <= MENAI_POOL_MIN_SIZE ? 0 : 31 - __builtin_clz(size - 1) + 1 - MENAI_POOL_LOG_MIN_SIZE;
@@ -291,48 +295,102 @@ _bucket_for(size_t size, size_t *block_size_out)
         bucket++;
     }
 
-    *block_size_out = block;
     return bucket;
 #endif
 }
 
+static inline MenaiPoolHeader *
+_header_of(void *user_ptr)
+{
+    return (MenaiPoolHeader *)((char *)user_ptr - sizeof(MenaiPoolHeader));
+}
+
+/*
+ * menai_pool_alloc — inner pool allocator.  Allocates a block of at least
+ * size bytes from the per-instance power-of-2 free-list pool.  A
+ * MenaiPoolHeader is prepended to record the bucket index.  The returned
+ * pointer is suitable for any use — no MenaiValue assumptions.
+ */
+void *
+menai_pool_alloc(MenaiVMState *vs, size_t size)
+{
+    size_t total = size + sizeof(MenaiPoolHeader);
+
+    if (total > MENAI_POOL_MAX_SIZE) {
+        char *raw = (char *)malloc(total);
+        if (!raw) {
+            return NULL;
+        }
+
+        MenaiPoolHeader *hdr = (MenaiPoolHeader *)raw;
+        hdr->bucket = -1;
+        return raw + sizeof(MenaiPoolHeader);
+    }
+
+    int bucket = _bucket_for(total);
+
+    void *user_ptr;
+    BucketEntry *pool_bucket = &vs->pool[bucket];
+    if (pool_bucket->head) {
+        user_ptr = pool_bucket->head;
+        pool_bucket->head = *(void **)user_ptr;
+        pool_bucket->depth--;
+    } else {
+        char *raw = (char *)malloc((size_t)1 << (bucket + MENAI_POOL_LOG_MIN_SIZE));
+        if (!raw) {
+            return NULL;
+        }
+        user_ptr = raw + sizeof(MenaiPoolHeader);
+    }
+
+    _header_of(user_ptr)->bucket = (int16_t)bucket;
+    return user_ptr;
+}
+
+/*
+ * menai_pool_free — return a block to the pool.  Reads the bucket index from
+ * the hidden MenaiPoolHeader to route the block to the correct free-list, or
+ * frees it directly if it was an out-of-pool allocation.
+ */
+void
+menai_pool_free(MenaiVMState *vs, void *ptr)
+{
+    if (ptr == NULL) {
+        return;
+    }
+
+    MenaiPoolHeader *hdr = _header_of(ptr);
+    int16_t bucket = hdr->bucket;
+
+    if (bucket == -1) {
+        free(hdr);
+        return;
+    }
+
+    BucketEntry *pool_bucket = &vs->pool[bucket];
+    if (pool_bucket->depth < MENAI_POOL_MAX_DEPTH) {
+        *(void **)ptr = pool_bucket->head;
+        pool_bucket->head = ptr;
+        pool_bucket->depth++;
+        return;
+    }
+
+    free(hdr);
+}
+
+/*
+ * menai_alloc — outer wrapper for MenaiValue-based objects.  Calls
+ * menai_pool_alloc, then sets the magic field and registers with the leak
+ * detector (when enabled).
+ */
 void *
 menai_alloc(MenaiVMState *vs, size_t size)
 {
-    if (size > MENAI_POOL_MAX_SIZE) {
-        void *ptr = malloc(size);
-        if (!ptr) {
-            return NULL;
-        }
-
-        ((MenaiValue *)ptr)->ob_alloc_bucket = -1;
-        MENAI_SET_MAGIC((MenaiValue *)ptr);
-
-#ifdef MENAI_DEBUG_LEAKS
-        menai_leak_set_add(&vs->_leak_set, ptr);
-#endif
-
-        return ptr;
+    void *ptr = menai_pool_alloc(vs, size);
+    if (!ptr) {
+        return NULL;
     }
 
-    size_t block_size;
-    int bucket = _bucket_for(size, &block_size);
-
-    void *ptr;
-    BucketEntry *pool_bucket = &vs->pool[bucket];
-    if (pool_bucket->head) {
-        ptr = pool_bucket->head;
-        pool_bucket->head = *(void **)ptr;
-        pool_bucket->depth--;
-        assert(((MenaiValue *)ptr)->ob_type == 0);
-    } else {
-        ptr = malloc((size_t)1 << (bucket + MENAI_POOL_LOG_MIN_SIZE));
-        if (!ptr) {
-            return NULL;
-        }
-    }
-
-    ((MenaiValue *)ptr)->ob_alloc_bucket = (int16_t)bucket;
     MENAI_SET_MAGIC((MenaiValue *)ptr);
 
 #ifdef MENAI_DEBUG_LEAKS
@@ -342,29 +400,20 @@ menai_alloc(MenaiVMState *vs, size_t size)
     return ptr;
 }
 
+/*
+ * menai_free — outer wrapper for MenaiValue-based objects.  Unregisters from
+ * the leak detector (when enabled), then calls menai_pool_free.
+ */
 void
 menai_free(MenaiVMState *vs, void *ptr)
 {
+    if (ptr == NULL) {
+        return;
+    }
+
 #ifdef MENAI_DEBUG_LEAKS
     menai_leak_set_remove(&vs->_leak_set, ptr);
 #endif
 
-    int16_t bucket = ((MenaiValue *)ptr)->ob_alloc_bucket;
-    if (bucket == -1) {
-        /* Out-of-pool allocation — return directly to malloc. */
-        free(ptr);
-        return;
-    }
-
-    BucketEntry *pool_bucket = &vs->pool[bucket];
-    if (pool_bucket->depth < MENAI_POOL_MAX_DEPTH) {
-        assert(((MenaiValue *)ptr)->ob_type != 0);
-        ((MenaiValue *)ptr)->ob_type = 0;
-        *(void **)ptr = pool_bucket->head;
-        pool_bucket->head = ptr;
-        pool_bucket->depth++;
-        return;
-    }
-
-    free(ptr);
+    menai_pool_free(vs, ptr);
 }
