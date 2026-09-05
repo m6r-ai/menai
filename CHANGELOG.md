@@ -14,6 +14,10 @@ Bug fixes:
 - Fixed problems with the VM not returning "no memory" errors.
 - Fixed the `string-prefix` and `string-suffix` operations.
 
+Internal structure changes:
+
+- VM opcodes are now a dense set and the C defines are now auto-generated from the Python list, so the two can't get out of sync.
+
 ## v0.3.1 (2026-08-30)
 
 Bug fixes:

@@ -22,6 +22,11 @@ SO_CORE_SOURCES := src/menai/vm/menai_vm_c.c
 C_SOURCES := $(wildcard src/menai/vm/menai_vm_*.[ch])
 
 #
+# Generated header — opcode #defines produced from the Python Opcode enum.
+#
+GEN_OPCODE_HEADER := src/menai/vm/menai_vm_opcodes.h
+
+#
 # Derive the expected .so name from the Python ABI tag.
 #
 EXT_SUFFIX := $(shell $(PYTHON) -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
@@ -36,7 +41,10 @@ SO_FILES := \
 
 build: $(SO_FILES)
 
-$(SO_FILES): $(C_SOURCES)
+$(GEN_OPCODE_HEADER): src/menai/bytecode/menai_bytecode.py tools/gen_opcode_defs.py
+	$(PYTHON) -m tools.gen_opcode_defs
+
+$(SO_FILES): $(C_SOURCES) $(GEN_OPCODE_HEADER)
 	@rm -f $(SO_FILES)
 	@rm -rf build/temp.* build/lib.*
 	$(PYTHON) setup.py build_ext --inplace
@@ -47,7 +55,7 @@ $(SO_FILES): $(C_SOURCES)
 #
 .PHONY: build-leaks
 
-build-leaks:
+build-leaks: $(GEN_OPCODE_HEADER)
 	@rm -f $(SO_FILES)
 	@rm -rf build/temp.* build/lib.*
 	MENAI_DEBUG_LEAKS=1 $(PYTHON) setup.py build_ext --inplace
@@ -62,12 +70,13 @@ test:
 	$(PYTHON) -m pytest tests/
 
 #
-# Remove the compiled .so files.
+# Remove the compiled .so files and generated opcode header.
 #
 .PHONY: clean
 
 clean:
 	rm -f $(SO_FILES)
+	rm -f $(GEN_OPCODE_HEADER)
 
 #
 # Remove all build artefacts.

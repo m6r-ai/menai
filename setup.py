@@ -14,10 +14,18 @@ Usage:
 
 import sys
 import os
+import subprocess
 
 from setuptools import Extension, setup
 
 _MENAI_VM_SRC = "src/menai/vm"
+
+#
+# Generate the opcode header from the Python Opcode enum before compiling.
+# This ensures the C defines are always in sync regardless of how the build
+# is invoked (make, setup.py, cibuildwheel, pip install from sdist).
+#
+subprocess.run([sys.executable, "-m", "tools.gen_opcode_defs"], check=True)
 
 extensions = [
     Extension(

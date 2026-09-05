@@ -36,3 +36,6 @@
 
 # Ignore cibuildwheel output
 /wheelhouse
+
+# Ignore generated opcode header (regenerated from menai_bytecode.py)
+src/menai/vm/menai_vm_opcodes.h

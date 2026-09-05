@@ -500,9 +500,9 @@ typedef struct {
 
 /*
  * OP_MAX — upper bound for opcode values, used to size profiling arrays.
- * The highest current opcode is 543; 1024 gives headroom.
+ * The highest current opcode is 306; 512 gives headroom.
  */
-#define OP_MAX 1024
+#define OP_MAX 512
 
 /*
  * MenaiProfileData — per-instance opcode profiling counters.
