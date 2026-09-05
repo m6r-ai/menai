@@ -13,6 +13,12 @@
 #include "menai_vm_c.h"
 
 /*
+ * Opcode values — generated from menai_bytecode.py Opcode enum.
+ * Do not edit by hand; regenerate with: python -m tools.gen_opcode_defs
+ */
+#include "menai_vm_opcodes.h"
+
+/*
  * Portable complex arithmetic — avoids <complex.h>, which is unsupported on MSVC.
  *
  * All complex math is expressed in terms of <math.h> functions (exp, log, sin,
@@ -165,12 +171,6 @@ _menai_mul_overflow(long a, long b, long *r) {
 #define SRC1_SHIFT 12
 #define FIELD_MASK 0xFFFu
 #define OPCODE_MASK 0xFFFFu
-
-/*
- * Opcode values — generated from menai_bytecode.py Opcode enum.
- * Do not edit by hand; regenerate with: python -m tools.gen_opcode_defs
- */
-#include "menai_vm_opcodes.h"
 
 /*
  * Profiling control — enable and extract.
