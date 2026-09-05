@@ -15,6 +15,7 @@ alloc_menai_float(MenaiVMState *vs, double value)
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_FLOAT;
+    MENAI_SET_MAGIC((MenaiValue *)self);
     self->value = value;
     return self;
 }

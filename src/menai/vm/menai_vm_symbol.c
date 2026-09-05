@@ -18,6 +18,7 @@ alloc_menai_symbol(MenaiVMState *vs, MenaiString *name)
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_SYMBOL;
+    MENAI_SET_MAGIC((MenaiValue *)self);
     menai_value_retain((MenaiValue *)name);
     self->name = name;
 

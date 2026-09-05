@@ -380,8 +380,8 @@ menai_pool_free(MenaiVMState *vs, void *ptr)
 
 /*
  * menai_alloc — outer wrapper for MenaiValue-based objects.  Calls
- * menai_pool_alloc, then sets the magic field and registers with the leak
- * detector (when enabled).
+ * menai_pool_alloc, then registers with the leak detector (when enabled).
+ * Callers are responsible for setting the magic field via MENAI_SET_MAGIC.
  */
 void *
 menai_alloc(MenaiVMState *vs, size_t size)
@@ -390,8 +390,6 @@ menai_alloc(MenaiVMState *vs, size_t size)
     if (!ptr) {
         return NULL;
     }
-
-    MENAI_SET_MAGIC((MenaiValue *)ptr);
 
 #ifdef MENAI_DEBUG_LEAKS
     menai_leak_set_add(&vs->_leak_set, ptr);

@@ -62,6 +62,27 @@ build-leaks: $(GEN_OPCODE_HEADER)
 	@mkdir -p build && touch $(SO_FILES)
 
 #
+# Build with use-after-free magic detection enabled (MENAI_DEBUG_MAGIC).
+#
+.PHONY: build-magic
+
+build-magic: $(GEN_OPCODE_HEADER)
+	@rm -f $(SO_FILES)
+	@rm -rf build/temp.* build/lib.*
+	MENAI_DEBUG_MAGIC=1 $(PYTHON) setup.py build_ext --inplace
+	@mkdir -p build && touch $(SO_FILES)
+
+#
+# Build with both leak detector and magic detection enabled.
+#
+.PHONY: build-debug
+
+build-debug: $(GEN_OPCODE_HEADER)
+	@rm -f $(SO_FILES)
+	@rm -rf build/temp.* build/lib.*
+	MENAI_DEBUG_LEAKS=1 MENAI_DEBUG_MAGIC=1 $(PYTHON) setup.py build_ext --inplace
+	@mkdir -p build && touch $(SO_FILES)
+#
 # Run the full test suite.
 #
 .PHONY: test
@@ -70,13 +91,17 @@ test:
 	$(PYTHON) -m pytest tests/
 
 #
-# Remove the compiled .so files and generated opcode header.
+# Remove the compiled .so files, generated opcode header, and cached
+# build artifacts (object files and staged .so in build/temp.* and build/lib.*).
+# Without removing the build dirs, setuptools will skip recompilation
+# and just copy the stale .so from build/lib.* into src/menai/vm/.
 #
 .PHONY: clean
 
 clean:
 	rm -f $(SO_FILES)
 	rm -f $(GEN_OPCODE_HEADER)
+	rm -rf build/temp.* build/lib.*
 
 #
 # Remove all build artefacts.
@@ -84,6 +109,5 @@ clean:
 .PHONY: realclean
 
 realclean: clean
-	rm -rf build/temp.* build/lib.*
 	find src -name "*.pyc" -delete
 	find src -name "__pycache__" -type d -exec rm -rf {} +

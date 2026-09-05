@@ -25,6 +25,7 @@ alloc_menai_integer_from_long(MenaiVMState *vs, long n)
 
     r->ob_refcnt = 1;
     r->ob_type = MENAITYPE_INTEGER;
+    MENAI_SET_MAGIC((MenaiValue *)r);
     r->is_big = 0;
     r->fixed = n;
     menai_bigint_init(&r->big);
@@ -81,6 +82,7 @@ alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src)
 
     r->ob_refcnt = 1;
     r->ob_type = MENAITYPE_INTEGER;
+    MENAI_SET_MAGIC((MenaiValue *)r);
     r->is_big = 1;
     r->fixed = 0;
     r->big = src; /* transfer ownership */

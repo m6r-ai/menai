@@ -56,6 +56,7 @@ menai_vm_state_alloc(void)
 
         obj->ob_refcnt = 1;
         obj->ob_type = MENAITYPE_INTEGER;
+        MENAI_SET_MAGIC((MenaiValue *)obj);
         obj->is_big = 0;
         obj->fixed = v;
         menai_bigint_init(&obj->big);

@@ -283,6 +283,12 @@ The C VM supports compile-time debug features via preprocessor defines:
   Used to verify that the reference counting scheme (see ADR-0016) correctly
   reclaims all values, including cyclic closures that require cycle collection.
 
+- `MENAI_DEBUG_MAGIC` — Every `MenaiValue` and `MenaiCodeObject` carries a
+  `ob_magic` field set at allocation and cleared before the block is freed or
+  returned to the pool.  `MENAI_CHECK_MAGIC` aborts if the field does not
+  match, catching use-after-free and double-free at the point of access.  Build
+  with `make build-magic`, or `make build-debug` to combine both debug flags.
+
 ### C formatting
 
 Do NOT use lines of characters in comments. E.g. never use something like:

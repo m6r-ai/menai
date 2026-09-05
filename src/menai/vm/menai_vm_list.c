@@ -23,6 +23,7 @@ alloc_menai_list(MenaiVMState *vs)
 
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_LIST;
+    MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->head = NULL;
     obj->tail = NULL;
     obj->length = 0;

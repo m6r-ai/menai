@@ -25,6 +25,7 @@ alloc_menai_dict(MenaiVMState *vs, ssize_t cap)
 
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_DICT;
+    MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->elements = obj->inline_data;
     obj->ht.slots = NULL;
     obj->ht.slot_count = 0;
@@ -43,6 +44,7 @@ alloc_menai_dict_element(MenaiVMState *vs, MenaiValue *key, MenaiValue *value, h
 
     elem->ob_refcnt = 1;
     elem->ob_type = MENAITYPE_DICT_ELEMENT;
+    MENAI_SET_MAGIC((MenaiValue *)elem);
     elem->key = key;
     elem->value = value;
     elem->hash = hash;

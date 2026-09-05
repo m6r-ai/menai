@@ -28,6 +28,7 @@ alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_STRUCTTYPE;
+    MENAI_SET_MAGIC((MenaiValue *)self);
     menai_value_retain((MenaiValue *)name);
     self->name = name;
     self->tag = tag;

@@ -25,6 +25,7 @@ alloc_menai_set(MenaiVMState *vs, ssize_t cap)
 
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_SET;
+    MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->elements = obj->inline_data;
     obj->length = 0;
     obj->ht.slots = NULL;
@@ -43,6 +44,7 @@ alloc_menai_set_element(MenaiVMState *vs, MenaiValue *value, hash_t hash)
 
     elem->ob_refcnt = 1;
     elem->ob_type = MENAITYPE_SET_ELEMENT;
+    MENAI_SET_MAGIC((MenaiValue *)elem);
     elem->value = value;
     elem->hash = hash;
 

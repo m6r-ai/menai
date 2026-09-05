@@ -29,6 +29,7 @@ alloc_menai_bytes(MenaiVMState *vs, ssize_t n)
 
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_BYTES;
+    MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->length = n;
     obj->hash = -1;
     obj->owner = NULL;
@@ -66,6 +67,7 @@ alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssi
 
     view->ob_refcnt = 1;
     view->ob_type = MENAITYPE_BYTES;
+    MENAI_SET_MAGIC((MenaiValue *)view);
     menai_value_retain((MenaiValue *)owner);
     view->owner = owner;
     view->data = b->data + start;

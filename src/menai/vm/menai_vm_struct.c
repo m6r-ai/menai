@@ -20,6 +20,7 @@ alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_STRUCT;
+    MENAI_SET_MAGIC((MenaiValue *)self);
     self->nfields = (int)nfields;
     menai_value_retain((MenaiValue *)struct_type);
     self->struct_type = struct_type;
@@ -45,6 +46,7 @@ alloc_menai_struct_from_set_operation(MenaiVMState *vs, MenaiStruct *src, ssize_
     MenaiStructType *struct_type = src->struct_type;
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_STRUCT;
+    MENAI_SET_MAGIC((MenaiValue *)self);
     self->nfields = (int)nf;
     menai_value_retain((MenaiValue *)struct_type);
     self->struct_type = struct_type;

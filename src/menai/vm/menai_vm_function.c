@@ -34,6 +34,7 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_FUNCTION;
+    MENAI_SET_MAGIC((MenaiValue *)self);
     self->ncap = ncap;
     self->registry_index = -1;
     self->gc_mark = 0;

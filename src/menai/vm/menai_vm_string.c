@@ -1008,6 +1008,7 @@ alloc_menai_string(MenaiVMState *vs, ssize_t len)
 
     obj->ob_refcnt = 1;
     obj->ob_type = MENAITYPE_STRING;
+    MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->length = len;
     obj->hash = -1;
 

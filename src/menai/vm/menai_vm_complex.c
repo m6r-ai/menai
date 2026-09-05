@@ -15,6 +15,7 @@ alloc_menai_complex(MenaiVMState *vs, double real, double imag)
 
     self->ob_refcnt = 1;
     self->ob_type = MENAITYPE_COMPLEX;
+    MENAI_SET_MAGIC((MenaiValue *)self);
     self->real = real;
     self->imag = imag;
 
