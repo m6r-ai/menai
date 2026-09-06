@@ -877,7 +877,7 @@ MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
 static inline void
 menai_bytes_final(MenaiVMState *vs, MenaiBytes *self)
 {
-    if (self->owner != NULL) {
+    if (self->owner) {
         /* View — release the backing owner; do not touch the data array. */
         menai_value_release(vs, (MenaiValue *)self->owner);
         return;
@@ -924,11 +924,11 @@ MenaiDictElement *alloc_menai_dict_element(MenaiVMState *vs, MenaiValue *key, Me
 static inline void
 menai_dict_element_final(MenaiVMState *vs, MenaiDictElement *self)
 {
-    if (self->key != NULL) {
+    if (self->key) {
         menai_value_release(vs, self->key);
     }
 
-    if (self->value != NULL) {
+    if (self->value) {
         menai_value_release(vs, self->value);
     }
 }
@@ -938,7 +938,7 @@ menai_dict_final(MenaiVMState *vs, MenaiDict *self)
 {
     ssize_t n = self->length;
     for (ssize_t i = 0; i < n; i++) {
-        if (self->elements[i] != NULL) {
+        if (self->elements[i]) {
             menai_value_release(vs, (MenaiValue *)self->elements[i]);
         }
     }
@@ -1094,7 +1094,7 @@ menai_list_equal(MenaiList *a, MenaiList *b)
         return 0;
     }
 
-    while (a->head != NULL) {
+    while (a->head) {
         if (!menai_value_equal(a->head, b->head)) {
             return 0;
         }
@@ -1130,7 +1130,7 @@ MenaiSetElement *alloc_menai_set_element(MenaiVMState *vs, MenaiValue *value, ha
 static inline void
 menai_set_element_final(MenaiVMState *vs, MenaiSetElement *self)
 {
-    if (self->value != NULL) {
+    if (self->value) {
         menai_value_release(vs, self->value);
     }
 }
@@ -1140,7 +1140,7 @@ menai_set_final(MenaiVMState *vs, MenaiSet *self)
 {
     ssize_t n = self->length;
     for (ssize_t i = 0; i < n; i++) {
-        if (self->elements[i] != NULL) {
+        if (self->elements[i]) {
             menai_value_release(vs, (MenaiValue *)self->elements[i]);
         }
     }
@@ -1207,7 +1207,7 @@ menai_struct_final(MenaiVMState *vs, MenaiStruct *self)
     menai_value_release(vs, (MenaiValue *)self->struct_type);
     int n = self->nfields;
     for (int i = 0; i < n; i++) {
-        if (self->items[i] != NULL) {
+        if (self->items[i]) {
             menai_value_release(vs, self->items[i]);
         }
     }

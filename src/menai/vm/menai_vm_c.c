@@ -734,7 +734,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             const char *name_str = frame->names_items[src0];
             hash_t name_hash = frame->name_hashes[src0];
             MenaiValue *val = NULL;
-            if (extra_globals != NULL) {
+            if (extra_globals) {
                 val = globals_lookup(extra_globals, name_str, name_hash);
             }
 
@@ -4022,7 +4022,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiList *result = menai_empty_list(vs);
             menai_value_retain((MenaiValue *)result);
             MenaiList *cur = r_parts;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 MenaiList *cell = alloc_menai_list(vs);
                 if (!cell) {
                     menai_value_release(vs, (MenaiValue *)result);
@@ -4144,7 +4144,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiList *cur = lst;
             ssize_t i = 0;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 MenaiValue *elem = cur->head;
                 if (MENAI_UNLIKELY(!IS_MENAI_INTEGER(elem))) {
                     vm_err = MENAI_ERR_LIST_ELEMENTS_NOT_INTEGERS;
@@ -5342,6 +5342,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *item = frame_regs[src1];
+
             /* Walk a forwards, copy each cell, then append item at the end */
             MenaiList *cur = a;
             MenaiList *first = NULL;
@@ -5455,16 +5456,15 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 remaining--;
             }
 
+            menai_value_retain((MenaiValue *)b);
             if (prev) {
-                menai_value_retain((MenaiValue *)b);
                 prev->tail = b;
-                menai_value_release(vs, frame_regs[dest]);
-                frame_regs[dest] = (MenaiValue *)first;
             } else {
-                menai_value_retain((MenaiValue *)b);
-                menai_value_release(vs, frame_regs[dest]);
-                frame_regs[dest] = (MenaiValue *)b;
+                first = b;
             }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)first;
             break;
         }
 
@@ -5595,6 +5595,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     if (first) {
                         menai_value_release(vs, (MenaiValue *)first);
                     }
+
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
@@ -5634,7 +5635,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiList *prev = NULL;
             ssize_t kept = 0;
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 MenaiValue *e = cur->head;
                 int eq = menai_value_equal(e, item);
                 if (!eq) {
@@ -5643,6 +5644,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                         if (first) {
                             menai_value_release(vs, (MenaiValue *)first);
                         }
+
                         vm_err = MENAI_ERR_NOMEM;
                         goto error;
                     }
@@ -5665,7 +5667,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             /* Set lengths and tail now that we know the total count */
             ssize_t remaining = kept;
             cur = first;
-            while (cur != NULL) {
+            while (cur) {
                 cur->length = remaining;
                 remaining--;
                 if (cur->tail == NULL) {
@@ -5694,7 +5696,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             /* Validate all elements are strings first. */
             ssize_t n = a->length;
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 if (MENAI_UNLIKELY(!IS_MENAI_STRING(cur->head))) {
                     vm_err = MENAI_ERR_LIST_TO_STRING_NOT_STRINGS;
                     goto error;
@@ -5707,7 +5709,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             const uint32_t *sep_data = b->data;
             ssize_t total = (n > 0) ? (n - 1) * sep_len : 0;
             cur = a;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 MenaiString *elem = (MenaiString *)cur->head;
                 total += elem->length;
                 cur = cur->tail;
@@ -5722,7 +5724,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             uint32_t *dst = lts_buf;
             cur = a;
             bool first = true;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 if (!first && sep_len > 0) {
                     memcpy(dst, sep_data, (size_t)sep_len * sizeof(uint32_t));
                     dst += sep_len;
@@ -5770,7 +5772,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             ssize_t out = 0;
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 MenaiValue *elem = cur->head;
                 hash_t h = menai_value_hash(elem);
                 if (h == -1) {
