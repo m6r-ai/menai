@@ -5474,7 +5474,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiValue *item = frame_regs[src1];
             int mem_found = 0;
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 int eq = menai_value_equal(cur->head, item);
                 if (eq) {
                     mem_found = 1;
@@ -5495,7 +5495,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             ssize_t found = -1;
             ssize_t i = 0;
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 int eq = menai_value_equal(cur->head, item);
                 if (eq) {
                     found = i;
@@ -5607,20 +5607,20 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 } else {
                     first = cell;
                 }
+
                 prev = cell;
                 cur = cur->tail;
                 remaining--;
             }
 
-            if (prev) {
+            if (!first) {
+                first = menai_empty_list(vs);
+                menai_value_retain((MenaiValue *)first);
+            } else {
                 prev->tail = menai_empty_list(vs);
                 menai_value_retain((MenaiValue *)prev->tail);
             }
 
-            if (!first) {
-                first = menai_empty_list(vs);
-                menai_value_retain((MenaiValue *)first);
-            }
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)first;
             break;
@@ -5654,6 +5654,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     } else {
                         first = cell;
                     }
+
                     prev = cell;
                     kept++;
                 }
@@ -5679,6 +5680,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 first = menai_empty_list(vs);
                 menai_value_retain((MenaiValue *)first);
             }
+
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)first;
             break;
