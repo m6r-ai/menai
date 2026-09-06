@@ -5342,62 +5342,56 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *item = frame_regs[src1];
-            /* Reverse a, prepend item, reverse again */
-            MenaiList *rev = menai_empty_list(vs);
-            menai_value_retain((MenaiValue *)rev);
+            /* Walk a forwards, copy each cell, then append item at the end */
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            MenaiList *first = NULL;
+            MenaiList *prev = NULL;
+            ssize_t remaining = a->length + 1;
+            while (cur->head) {
                 MenaiList *cell = alloc_menai_list(vs);
                 if (!cell) {
-                    menai_value_release(vs, (MenaiValue *)rev);
+                    if (first) {
+                        menai_value_release(vs, (MenaiValue *)first);
+                    }
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
 
                 menai_value_retain(cur->head);
                 cell->head = cur->head;
-                cell->tail = rev;
-                cell->length = rev->length + 1;
-                rev = cell;
+                cell->length = remaining;
+                if (prev) {
+                    prev->tail = cell;
+                } else {
+                    first = cell;
+                }
+                prev = cell;
                 cur = cur->tail;
+                remaining--;
             }
 
-            MenaiList *mid = alloc_menai_list(vs);
-            if (!mid) {
-                menai_value_release(vs, (MenaiValue *)rev);
+            MenaiList *last = alloc_menai_list(vs);
+            if (!last) {
+                if (first) {
+                    menai_value_release(vs, (MenaiValue *)first);
+                }
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
             menai_value_retain(item);
-            mid->head = item;
-            mid->tail = rev;
-            mid->length = rev->length + 1;
-
-            /* Reverse mid to get final result */
-            MenaiList *r = menai_empty_list(vs);
-            menai_value_retain((MenaiValue *)r);
-            cur = mid;
-            while (cur->head != NULL) {
-                MenaiList *cell = alloc_menai_list(vs);
-                if (!cell) {
-                    menai_value_release(vs, (MenaiValue *)r);
-                    menai_value_release(vs, (MenaiValue *)mid);
-                    vm_err = MENAI_ERR_NOMEM;
-                    goto error;
-                }
-
-                menai_value_retain(cur->head);
-                cell->head = cur->head;
-                cell->tail = r;
-                cell->length = r->length + 1;
-                r = cell;
-                cur = cur->tail;
+            last->head = item;
+            last->tail = menai_empty_list(vs);
+            menai_value_retain((MenaiValue *)last->tail);
+            last->length = 1;
+            if (prev) {
+                prev->tail = last;
+            } else {
+                first = last;
             }
 
-            menai_value_release(vs, (MenaiValue *)mid);
             menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = (MenaiValue *)r;
+            frame_regs[dest] = (MenaiValue *)first;
             break;
         }
 
@@ -5406,7 +5400,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiList *r = menai_empty_list(vs);
             menai_value_retain((MenaiValue *)r);
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            while (cur->head) {
                 MenaiList *cell = alloc_menai_list(vs);
                 if (!cell) {
                     menai_value_release(vs, (MenaiValue *)r);
@@ -5432,49 +5426,45 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiList *b = (MenaiList *)frame_regs[src1];
 
-            /* Reverse a, then prepend each element onto b */
-            MenaiList *rev = menai_empty_list(vs);
-            menai_value_retain((MenaiValue *)rev);
+            /* Walk a forwards, copy each cell, then chain b at the end */
             MenaiList *cur = a;
-            while (cur->head != NULL) {
+            MenaiList *first = NULL;
+            MenaiList *prev = NULL;
+            ssize_t remaining = a->length + b->length;
+            while (cur->head) {
                 MenaiList *cell = alloc_menai_list(vs);
                 if (!cell) {
-                    menai_value_release(vs, (MenaiValue *)rev);
+                    if (first) {
+                        menai_value_release(vs, (MenaiValue *)first);
+                    }
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
 
                 menai_value_retain(cur->head);
                 cell->head = cur->head;
-                cell->tail = rev;
-                cell->length = rev->length + 1;
-                rev = cell;
-                cur = cur->tail;
-            }
-
-            MenaiList *r = b;
-            menai_value_retain((MenaiValue *)r);
-            cur = rev;
-            while (cur->head != NULL) {
-                MenaiList *cell = alloc_menai_list(vs);
-                if (!cell) {
-                    menai_value_release(vs, (MenaiValue *)r);
-                    menai_value_release(vs, (MenaiValue *)rev);
-                    vm_err = MENAI_ERR_NOMEM;
-                    goto error;
+                cell->length = remaining;
+                if (prev) {
+                    prev->tail = cell;
+                } else {
+                    first = cell;
                 }
 
-                menai_value_retain(cur->head);
-                cell->head = cur->head;
-                cell->tail = r;
-                cell->length = r->length + 1;
-                r = cell;
+                prev = cell;
                 cur = cur->tail;
+                remaining--;
             }
 
-            menai_value_release(vs, (MenaiValue *)rev);
-            menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = (MenaiValue *)r;
+            if (prev) {
+                menai_value_retain((MenaiValue *)b);
+                prev->tail = b;
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)first;
+            } else {
+                menai_value_retain((MenaiValue *)b);
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)b;
+            }
             break;
         }
 
