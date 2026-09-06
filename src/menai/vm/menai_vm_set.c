@@ -18,13 +18,11 @@ MenaiSet *
 alloc_menai_set(MenaiVMState *vs, ssize_t cap)
 {
     size_t sz = sizeof(MenaiSet) + (size_t)cap * sizeof(MenaiSetElement *);
-    MenaiSet *obj = (MenaiSet *)menai_alloc(vs, sz);
+    MenaiSet *obj = (MenaiSet *)menai_value_alloc(vs, MENAITYPE_SET, sz);
     if (!obj) {
         return NULL;
     }
 
-    obj->ob_refcnt = 1;
-    obj->ob_type = MENAITYPE_SET;
     MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->elements = obj->inline_data;
     obj->length = 0;
@@ -37,13 +35,11 @@ alloc_menai_set(MenaiVMState *vs, ssize_t cap)
 MenaiSetElement *
 alloc_menai_set_element(MenaiVMState *vs, MenaiValue *value, hash_t hash)
 {
-    MenaiSetElement *elem = (MenaiSetElement *)menai_alloc(vs, sizeof(MenaiSetElement));
+    MenaiSetElement *elem = (MenaiSetElement *)menai_value_alloc(vs, MENAITYPE_SET_ELEMENT, sizeof(MenaiSetElement));
     if (!elem) {
         return NULL;
     }
 
-    elem->ob_refcnt = 1;
-    elem->ob_type = MENAITYPE_SET_ELEMENT;
     MENAI_SET_MAGIC((MenaiValue *)elem);
     elem->value = value;
     elem->hash = hash;

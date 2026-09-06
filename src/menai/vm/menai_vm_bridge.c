@@ -710,7 +710,7 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
     Py_DECREF(pairs);
 
     if (menai_ht_init(vs, &r->ht, (ssize_t)n) < 0) {
-        menai_free(vs, r);
+        menai_value_free(vs, (MenaiValue *)r);
         PyErr_NoMemory();
         return NULL;
     }
@@ -1406,7 +1406,8 @@ fast_function_to_slow(MenaiVMState *vs, MenaiValue *val)
 static PyObject *
 menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
 {
-    MenaiType t = val->ob_type;
+    MenaiPoolHeader *ph = menai_get_pool_header(val);
+    MenaiType t = ph->ob_type;
 
     if (t == MENAITYPE_NONE) {
         return fast_none_to_slow(vs, val);
@@ -1628,7 +1629,7 @@ menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
     }
 
     if (menai_ht_init(vs, &r->ht, (ssize_t)n) < 0) {
-        menai_free(vs, r);
+        menai_value_free(vs, (MenaiValue *)r);
         PyErr_NoMemory();
         goto fail;
     }

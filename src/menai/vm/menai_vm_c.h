@@ -43,6 +43,25 @@ typedef ptrdiff_t ssize_t;
 typedef uint16_t MenaiType;
 
 /*
+ * MenaiPoolHeader — hidden header prepended to every block allocated through
+ * the pool allocator (menai_pool_alloc).  Stored immediately before the
+ * user-visible pointer.  The bucket index lets menai_pool_free route the
+ * block back to the correct free-list without any assumptions about what the
+ * caller stores in the block itself.
+ *
+ * When a block is in the free-list, the link is threaded through the first
+ * sizeof(void *) bytes of the user data area (not the header).
+ *
+ * Padded to sizeof(void *) so the user-visible pointer remains properly
+ * aligned for any type.
+ */
+typedef struct {
+    int16_t bucket;                     /* pool bucket index, or -1 for out-of-pool */
+    MenaiType ob_type;                  /* Only used for reference counted objects */
+    uint32_t ob_refcnt;                 /* Only used for reference counted objects */
+} MenaiPoolHeader;
+
+/*
  * Magic-field use-after-free detection.
  *
  * When MENAI_DEBUG_MAGIC is defined, every MenaiValue and MenaiCodeObject
@@ -79,8 +98,8 @@ typedef uint16_t MenaiType;
 /*
  * Leak detector — chained hash set of all live MenaiValue * pointers.
  *
- * When MENAI_DEBUG_LEAKS is defined, menai_alloc registers every block it
- * returns and menai_free unregisters it.  At VM teardown, any pointer still
+ * When MENAI_DEBUG_LEAKS is defined, menai_value_alloc registers every block it
+ * returns and menai_value_free unregisters it.  At VM teardown, any pointer still
  * in the set (excluding known singletons) is a leak.
  *
  * Uses chained hashing (one malloc'd node per entry) rather than open
@@ -88,14 +107,14 @@ typedef uint16_t MenaiType;
  * The extra allocation per entry is irrelevant for a debug-only tool.
  */
 typedef struct MenaiLeakNode {
-    void *ptr;                      /* tracked pointer */
-    struct MenaiLeakNode *next;     /* next node in the same bucket */
+    void *ptr;                          /* tracked pointer */
+    struct MenaiLeakNode *next;         /* next node in the same bucket */
 } MenaiLeakNode;
 
 typedef struct {
-    MenaiLeakNode **buckets;  /* array of bucket heads; NULL = empty bucket */
-    ssize_t bucket_count;     /* power of 2, or 0 */
-    ssize_t count;            /* number of live entries */
+    MenaiLeakNode **buckets;            /* array of bucket heads; NULL = empty bucket */
+    ssize_t bucket_count;               /* power of 2, or 0 */
+    ssize_t count;                      /* number of live entries */
 } MenaiLeakSet;
 #endif
 
@@ -160,7 +179,7 @@ typedef struct {
  */
 typedef struct {
     MenaiHashSlot *slots;
-    ssize_t slot_count;  /* power of 2; 0 means uninitialised */
+    ssize_t slot_count;                  /* power of 2; 0 means uninitialised */
 } MenaiHashTable;
 
 struct MenaiCodeObject {
@@ -210,18 +229,7 @@ typedef struct {
     int index;
 } MenaiFieldEntry;
 
-/*
- * MenaiValue_HEAD — common prefix for every Menai value struct.
- *
- * ob_refcnt — reference count.
- * ob_type   — type tag (MenaiType, uint16_t).
- */
-#define MenaiValue_HEAD              \
-    uint32_t ob_refcnt;              \
-    MenaiType ob_type;
-
 struct MenaiBoolean {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     int value;                          /* 0 or 1 */
 };
@@ -236,7 +244,6 @@ struct MenaiBoolean {
  * directly at the root owner.
  */
 struct MenaiBytes {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     ssize_t length;                     /* logical byte count */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
@@ -246,14 +253,12 @@ struct MenaiBytes {
 };
 
 struct MenaiComplex {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     double real;
     double imag;
 };
 
 struct MenaiDict {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     MenaiDictElement **elements;        /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) key lookup */
@@ -262,7 +267,6 @@ struct MenaiDict {
 };
 
 struct MenaiDictElement {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     MenaiValue *key;
     MenaiValue *value;
@@ -270,13 +274,11 @@ struct MenaiDictElement {
 };
 
 struct MenaiFloat {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     double value;
 };
 
 struct MenaiFunction {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     ssize_t ncap;                       /* number of captured values */
     MenaiCodeObject *bytecode;          /* retained — owns all frame metadata */
@@ -305,7 +307,6 @@ struct MenaiFunction {
  * The ob_type is always &MenaiInteger_Type.
  */
 struct MenaiInteger {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     int is_big;
     long fixed;                         /* valid when is_big == 0 */
@@ -313,7 +314,6 @@ struct MenaiInteger {
 };
 
 struct MenaiList {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     MenaiValue *head;                   /* element at this position (NULL for empty list sentinel) */
     MenaiList *tail;                    /* rest of the list (NULL for empty list sentinel) */
@@ -321,12 +321,10 @@ struct MenaiList {
 };
 
 struct MenaiNone {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
 };
 
 struct MenaiSet {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     MenaiSetElement **elements;         /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) membership; separate allocation */
@@ -335,14 +333,12 @@ struct MenaiSet {
 };
 
 struct MenaiSetElement {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     MenaiValue *value;
     hash_t hash;
 };
 
 struct MenaiString {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     ssize_t length;                     /* codepoint count */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
@@ -350,7 +346,6 @@ struct MenaiString {
 };
 
 struct MenaiStruct {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     int nfields;                        /* number of fields */
     MenaiStructType *struct_type;       /* owned reference to MenaiStructType */
@@ -358,7 +353,6 @@ struct MenaiStruct {
 };
 
 struct MenaiStructType {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     MenaiString *name;                  /* owned MenaiString * — struct type name */
     int tag;                            /* unique integer tag */
@@ -368,7 +362,6 @@ struct MenaiStructType {
 };
 
 struct MenaiSymbol {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
     MenaiString *name;                  /* owned MenaiString * */
 };
@@ -377,7 +370,6 @@ struct MenaiSymbol {
  * MenaiValue — the minimal struct that every MenaiValue pointer can be safely cast to
  */
 struct MenaiValue {
-    MenaiValue_HEAD
     MENAI_MAGIC_FIELD;
 };
 
@@ -478,20 +470,20 @@ typedef struct {
 /*
  * Fast type-check macros
  */
-#define IS_MENAI_NONE(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_NONE)
-#define IS_MENAI_BOOLEAN(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_BOOLEAN)
-#define IS_MENAI_INTEGER(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_INTEGER)
-#define IS_MENAI_FLOAT(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_FLOAT)
-#define IS_MENAI_COMPLEX(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_COMPLEX)
-#define IS_MENAI_STRING(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_STRING)
-#define IS_MENAI_SYMBOL(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_SYMBOL)
-#define IS_MENAI_LIST(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_LIST)
-#define IS_MENAI_DICT(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_DICT)
-#define IS_MENAI_SET(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_SET)
-#define IS_MENAI_FUNCTION(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_FUNCTION)
-#define IS_MENAI_STRUCTTYPE(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_STRUCTTYPE)
-#define IS_MENAI_STRUCT(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_STRUCT)
-#define IS_MENAI_BYTES(o) (((MenaiValue *)(o))->ob_type == MENAITYPE_BYTES)
+#define IS_MENAI_NONE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_NONE)
+#define IS_MENAI_BOOLEAN(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_BOOLEAN)
+#define IS_MENAI_INTEGER(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_INTEGER)
+#define IS_MENAI_FLOAT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_FLOAT)
+#define IS_MENAI_COMPLEX(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_COMPLEX)
+#define IS_MENAI_STRING(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRING)
+#define IS_MENAI_SYMBOL(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_SYMBOL)
+#define IS_MENAI_LIST(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_LIST)
+#define IS_MENAI_DICT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_DICT)
+#define IS_MENAI_SET(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_SET)
+#define IS_MENAI_FUNCTION(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_FUNCTION)
+#define IS_MENAI_STRUCTTYPE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCTTYPE)
+#define IS_MENAI_STRUCT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCT)
+#define IS_MENAI_BYTES(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_BYTES)
 
 /*
  * Pool allocator constants.
@@ -570,24 +562,6 @@ typedef struct {
 } BucketEntry;
 
 /*
- * MenaiPoolHeader — hidden header prepended to every block allocated through
- * the pool allocator (menai_pool_alloc).  Stored immediately before the
- * user-visible pointer.  The bucket index lets menai_pool_free route the
- * block back to the correct free-list without any assumptions about what the
- * caller stores in the block itself.
- *
- * When a block is in the free-list, the link is threaded through the first
- * sizeof(void *) bytes of the user data area (not the header).
- *
- * Padded to sizeof(void *) so the user-visible pointer remains properly
- * aligned for any type.
- */
-typedef struct {
-    int16_t bucket;  /* pool bucket index, or -1 for out-of-pool */
-    char _pad[sizeof(void *) - sizeof(int16_t)];
-} MenaiPoolHeader;
-
-/*
  * MenaiVMState — per-instance VM state.
  *
  * Owns all mutable state that must not be shared across VM instances:
@@ -611,15 +585,13 @@ typedef struct MenaiVMState {
     /*
      * Singletons — per-instance
      */
-    MenaiNone none_storage;             /* inline, not heap */
-    MenaiList empty_list_storage;       /* inline, not heap */
-    MenaiBoolean true_storage;          /* inline */
-    MenaiBoolean false_storage;         /* inline */
-    MenaiInteger *integer_cache[MENAI_INT_CACHE_SIZE];  /* heap, from this pool */
-
-    /* empty_list now uses empty_list_storage above */
-    MenaiDict *empty_dict;              /* heap, from this pool */
-    MenaiSet *empty_set;                /* heap, from this pool */
+    MenaiNone *none;
+    MenaiBoolean *boolean_true;
+    MenaiBoolean *boolean_false;
+    MenaiInteger *integer_cache[MENAI_INT_CACHE_SIZE];
+    MenaiList *empty_list;
+    MenaiDict *empty_dict;
+    MenaiSet *empty_set;
 
     volatile int _cancel_flag;
 
@@ -671,36 +643,32 @@ void menai_leak_set_report(MenaiVMState *vs);
 void *menai_pool_alloc(MenaiVMState *vs, size_t size);
 void menai_pool_free(MenaiVMState *vs, void *ptr);
 
+static inline MenaiPoolHeader *
+menai_get_pool_header(void *user_ptr)
+{
+    return (MenaiPoolHeader *)((char *)user_ptr - sizeof(MenaiPoolHeader));
+}
+
 /*
- * menai_alloc — outer wrapper for MenaiValue-based objects.  Calls
+ * menai_value_alloc — outer wrapper for MenaiValue-based objects.  Calls
  * menai_pool_alloc, then registers with the leak detector (when enabled).
  * Callers are responsible for setting the magic field via MENAI_SET_MAGIC.
  */
 static inline void *
-menai_alloc(MenaiVMState *vs, size_t size)
+menai_value_alloc(MenaiVMState *vs, MenaiType type, size_t size)
 {
     void *ptr = menai_pool_alloc(vs, size);
     if (ptr) {
 #ifdef MENAI_DEBUG_LEAKS
         menai_leak_set_add(&vs->_leak_set, ptr);
 #endif
+
+        MenaiPoolHeader *ph = menai_get_pool_header(ptr);
+        ph->ob_refcnt = 1;
+	ph->ob_type = type;
     }
 
     return ptr;
-}
-
-/*
- * menai_free — outer wrapper for MenaiValue-based objects.  Unregisters from
- * the leak detector (when enabled), then calls menai_pool_free.
- */
-static inline void
-menai_free(MenaiVMState *vs, void *ptr)
-{
-#ifdef MENAI_DEBUG_LEAKS
-    menai_leak_set_remove(&vs->_leak_set, ptr);
-#endif
-
-    menai_pool_free(vs, ptr);
 }
 
 void menai_value_free(MenaiVMState *vs, MenaiValue *v);
@@ -712,7 +680,8 @@ static inline void
 menai_value_retain(MenaiValue *val)
 {
     MENAI_CHECK_MAGIC(val);
-    val->ob_refcnt++;
+    MenaiPoolHeader *ph = menai_get_pool_header(val);
+    ph->ob_refcnt++;
 }
 
 /*
@@ -724,7 +693,8 @@ static inline void
 menai_value_release(MenaiVMState *vs, MenaiValue *val)
 {
     MENAI_CHECK_MAGIC(val);
-    if (--val->ob_refcnt == 0) {
+    MenaiPoolHeader *ph = menai_get_pool_header(val);
+    if (--ph->ob_refcnt == 0) {
         menai_value_free(vs, val);
     }
 }
@@ -872,13 +842,18 @@ int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 static inline MenaiBoolean *
 menai_boolean_true(MenaiVMState *vs)
 {
-    return &vs->true_storage;
+    return vs->boolean_true;
 }
 
 static inline MenaiBoolean *
 menai_boolean_false(MenaiVMState *vs)
 {
-    return &vs->false_storage;
+    return vs->boolean_false;
+}
+
+static inline void
+menai_boolean_final(MenaiVMState *vs, MenaiBoolean *self)
+{
 }
 
 static inline hash_t
@@ -1094,19 +1069,20 @@ menai_integer_equal(MenaiInteger *a, MenaiInteger *b)
 
 MenaiList *alloc_menai_list(MenaiVMState *vs);
 
+static inline MenaiList *
+menai_empty_list(MenaiVMState *vs)
+{
+    return vs->empty_list;
+}
+
 static inline void
 menai_list_final(MenaiVMState *vs, MenaiList *self)
 {
-    /* Empty list sentinel must not be freed. */
-    if (self->head == NULL && self->tail == NULL) {
-        return;
-    }
-
-    if (self->head != NULL) {
+    if (self->head) {
         menai_value_release(vs, self->head);
     }
 
-    if (self->tail != NULL) {
+    if (self->tail) {
         menai_value_release(vs, (MenaiValue *)self->tail);
     }
 }
@@ -1133,13 +1109,12 @@ menai_list_equal(MenaiList *a, MenaiList *b)
 static inline MenaiNone *
 menai_none(MenaiVMState *vs)
 {
-    return &vs->none_storage;
+    return vs->none;
 }
 
-static inline MenaiList *
-menai_empty_list(MenaiVMState *vs)
+static inline void
+menai_none_final(MenaiVMState *vs, MenaiNone *self)
 {
-    return &vs->empty_list_storage;
 }
 
 static inline hash_t

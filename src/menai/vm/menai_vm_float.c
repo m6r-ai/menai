@@ -8,13 +8,11 @@
 MenaiFloat *
 alloc_menai_float(MenaiVMState *vs, double value)
 {
-    MenaiFloat *self = (MenaiFloat *)menai_alloc(vs, sizeof(MenaiFloat));
+    MenaiFloat *self = (MenaiFloat *)menai_value_alloc(vs, MENAITYPE_FLOAT, sizeof(MenaiFloat));
     if (self == NULL) {
         return NULL;
     }
 
-    self->ob_refcnt = 1;
-    self->ob_type = MENAITYPE_FLOAT;
     MENAI_SET_MAGIC((MenaiValue *)self);
     self->value = value;
     return self;

@@ -18,13 +18,11 @@ MenaiDict *
 alloc_menai_dict(MenaiVMState *vs, ssize_t cap)
 {
     size_t data_size = (size_t)cap * sizeof(MenaiDictElement *);
-    MenaiDict *obj = (MenaiDict *)menai_alloc(vs, sizeof(MenaiDict) + data_size);
+    MenaiDict *obj = (MenaiDict *)menai_value_alloc(vs, MENAITYPE_DICT, sizeof(MenaiDict) + data_size);
     if (!obj) {
         return NULL;
     }
 
-    obj->ob_refcnt = 1;
-    obj->ob_type = MENAITYPE_DICT;
     MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->elements = obj->inline_data;
     obj->ht.slots = NULL;
@@ -37,13 +35,11 @@ alloc_menai_dict(MenaiVMState *vs, ssize_t cap)
 MenaiDictElement *
 alloc_menai_dict_element(MenaiVMState *vs, MenaiValue *key, MenaiValue *value, hash_t hash)
 {
-    MenaiDictElement *elem = (MenaiDictElement *)menai_alloc(vs, sizeof(MenaiDictElement));
+    MenaiDictElement *elem = (MenaiDictElement *)menai_value_alloc(vs, MENAITYPE_DICT_ELEMENT, sizeof(MenaiDictElement));
     if (!elem) {
         return NULL;
     }
 
-    elem->ob_refcnt = 1;
-    elem->ob_type = MENAITYPE_DICT_ELEMENT;
     MENAI_SET_MAGIC((MenaiValue *)elem);
     elem->key = key;
     elem->value = value;

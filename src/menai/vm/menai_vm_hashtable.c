@@ -17,7 +17,8 @@
 hash_t
 menai_value_hash(MenaiValue *val)
 {
-    MenaiType t = val->ob_type;
+    MenaiPoolHeader *ph = menai_get_pool_header(val);
+    MenaiType t = ph->ob_type;
 
     switch (t) {
     case MENAITYPE_BOOLEAN:
@@ -61,8 +62,10 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
         return 1;
     }
 
-    MenaiType ta = a->ob_type;
-    MenaiType tb = b->ob_type;
+    MenaiPoolHeader *pha = menai_get_pool_header(a);
+    MenaiType ta = pha->ob_type;
+    MenaiPoolHeader *phb = menai_get_pool_header(b);
+    MenaiType tb = phb->ob_type;
 
     if (ta != tb) {
         return 0;

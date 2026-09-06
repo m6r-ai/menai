@@ -1001,13 +1001,11 @@ MenaiString *
 alloc_menai_string(MenaiVMState *vs, ssize_t len)
 {
     size_t sz = sizeof(MenaiString) + (size_t)len * sizeof(uint32_t);
-    MenaiString *obj = (MenaiString *)menai_alloc(vs, sz);
+    MenaiString *obj = (MenaiString *)menai_value_alloc(vs, MENAITYPE_STRING, sz);
     if (obj == NULL) {
         return NULL;
     }
 
-    obj->ob_refcnt = 1;
-    obj->ob_type = MENAITYPE_STRING;
     MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->length = len;
     obj->hash = -1;

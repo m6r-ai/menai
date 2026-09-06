@@ -18,13 +18,11 @@ alloc_menai_integer_from_long(MenaiVMState *vs, long n)
         return cached;
     }
 
-    MenaiInteger *r = (MenaiInteger *)menai_alloc(vs, sizeof(MenaiInteger));
+    MenaiInteger *r = (MenaiInteger *)menai_value_alloc(vs, MENAITYPE_INTEGER, sizeof(MenaiInteger));
     if (r == NULL) {
         return NULL;
     }
 
-    r->ob_refcnt = 1;
-    r->ob_type = MENAITYPE_INTEGER;
     MENAI_SET_MAGIC((MenaiValue *)r);
     r->is_big = 0;
     r->fixed = n;
@@ -74,14 +72,12 @@ alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src)
         return alloc_menai_integer_from_long(vs, v);
     }
 
-    MenaiInteger *r = (MenaiInteger *)menai_alloc(vs, sizeof(MenaiInteger));
+    MenaiInteger *r = (MenaiInteger *)menai_value_alloc(vs, MENAITYPE_INTEGER, sizeof(MenaiInteger));
     if (r == NULL) {
         menai_bigint_final(vs, &src);
         return NULL;
     }
 
-    r->ob_refcnt = 1;
-    r->ob_type = MENAITYPE_INTEGER;
     MENAI_SET_MAGIC((MenaiValue *)r);
     r->is_big = 1;
     r->fixed = 0;

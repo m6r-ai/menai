@@ -9,12 +9,11 @@
 void
 menai_value_free(MenaiVMState *vs, MenaiValue *v)
 {
-    switch (v->ob_type) {
+    MenaiPoolHeader *ph = menai_get_pool_header((void *)v);
+
+    switch (ph->ob_type) {
     case MENAITYPE_BOOLEAN:
-        /*
-         * We can't free booleans.
-         */
-        assert(0);
+        menai_boolean_final(vs, (MenaiBoolean *)v);
         break;
 
     case MENAITYPE_BYTES:
@@ -46,21 +45,11 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         break;
 
     case MENAITYPE_LIST:
-        if (((MenaiList *)v)->head == NULL && ((MenaiList *)v)->tail == NULL) {
-            /*
-             * We can't free the empty list sentinel.
-             */
-            assert(0);
-            break;
-        }
         menai_list_final(vs, (MenaiList *)v);
         break;
 
     case MENAITYPE_NONE:
-        /*
-         * We can't free "none".
-         */
-        assert(0);
+        menai_none_final(vs, (MenaiNone *)v);
         break;
 
     case MENAITYPE_SET:
@@ -93,5 +82,9 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
 
     MENAI_CLEAR_MAGIC(v);
 
-    menai_free(vs, v);
+#ifdef MENAI_DEBUG_LEAKS
+    menai_leak_set_remove(&vs->_leak_set, v);
+#endif
+
+    menai_pool_free(vs, v);
 }

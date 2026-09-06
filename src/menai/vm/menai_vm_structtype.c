@@ -21,13 +21,11 @@ MenaiStructType *
 alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **field_names, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStructType) + (size_t)nfields * sizeof(MenaiFieldEntry);
-    MenaiStructType *self = (MenaiStructType *)menai_alloc(vs, sz);
+    MenaiStructType *self = (MenaiStructType *)menai_value_alloc(vs, MENAITYPE_STRUCTTYPE, sz);
     if (!self) {
         return NULL;
     }
 
-    self->ob_refcnt = 1;
-    self->ob_type = MENAITYPE_STRUCTTYPE;
     MENAI_SET_MAGIC((MenaiValue *)self);
     menai_value_retain((MenaiValue *)name);
     self->name = name;
@@ -47,7 +45,7 @@ alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString
             menai_value_release(vs, (MenaiValue *)self->fields[i].name);
         }
 
-        menai_free(vs, self);
+        menai_value_free(vs, (MenaiValue *)self);
         return NULL;
     }
 

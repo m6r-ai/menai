@@ -1,16 +1,6 @@
 /*
  * menai_vm_alloc.c — pool allocator and MenaiValue allocation wrapper.
  *
- * menai_pool_alloc / menai_pool_free — the inner pool allocator.  A
- * MenaiPoolHeader is prepended to every block to record the bucket index so
- * the block can be returned to the correct free-list on free.  No
- * assumptions are made about what the caller stores in the block.
- *
- * menai_alloc / menai_free — the outer wrapper for MenaiValue-based objects.
- * Calls menai_pool_alloc under the hood, then sets the magic field and
- * registers the block with the leak detector (when MENAI_DEBUG_LEAKS is
- * defined).
- *
  * The pool uses 8 power-of-2 buckets (32–4096 bytes).  Each bucket is a
  * singly-linked free-list threaded through the first sizeof(void *) bytes
  * of the user data area.  A per-bucket depth cap prevents unbounded
@@ -36,7 +26,7 @@
  * node in its bucket and unlink it.  The per-entry allocation is fine for a
  * debug-only tool that is never compiled into production builds.
  *
- * menai_alloc adds every block it returns; menai_free removes every block
+ * Each alloc adds every block it returns; the matching free removes every block
  * it receives.  At VM teardown, menai_leak_set_report walks the set and
  * prints any pointer that is still tracked (excluding known singletons).
  */
@@ -227,9 +217,12 @@ _is_singleton(MenaiVMState *vs, void *ptr)
         }
     }
 
-    if ((void *)&vs->empty_list_storage == ptr ||
-        (void *)vs->empty_dict == ptr ||
-        (void *)vs->empty_set == ptr) {
+    if ((void *)vs->empty_list == ptr ||
+            (void *)vs->empty_dict == ptr ||
+            (void *)vs->empty_set == ptr ||
+            (void *)vs->none == ptr ||
+            (void *)vs->boolean_true == ptr ||
+            (void *)vs->boolean_false == ptr) {
         return 1;
     }
 
@@ -251,18 +244,19 @@ menai_leak_set_report(MenaiVMState *vs)
             }
 
             MenaiValue *v = (MenaiValue *)entry;
-            const char *type_name = _type_name(v->ob_type);
+            MenaiPoolHeader *ph = menai_get_pool_header(v);
+            const char *type_name = _type_name(ph->ob_type);
 
-            if (v->ob_type == MENAITYPE_FUNCTION) {
+            if (ph->ob_type == MENAITYPE_FUNCTION) {
                 MenaiFunction *fn = (MenaiFunction *)v;
                 const char *fn_name = fn->bytecode->name ? fn->bytecode->name : "<anonymous>";
                 fprintf(stderr,
                     "MENAI LEAK: type=%s refcnt=%u ptr=%p name=%s ncap=%zd\n",
-                    type_name, v->ob_refcnt, (void *)v, fn_name, fn->ncap);
+                    type_name, ph->ob_refcnt, (void *)v, fn_name, fn->ncap);
             } else {
                 fprintf(stderr,
                     "MENAI LEAK: type=%s refcnt=%u ptr=%p\n",
-                    type_name, v->ob_refcnt, (void *)v);
+                    type_name, ph->ob_refcnt, (void *)v);
             }
 
             leaks++;
@@ -297,12 +291,6 @@ _bucket_for(size_t size)
 
     return bucket;
 #endif
-}
-
-static inline MenaiPoolHeader *
-_header_of(void *user_ptr)
-{
-    return (MenaiPoolHeader *)((char *)user_ptr - sizeof(MenaiPoolHeader));
 }
 
 /*
@@ -343,7 +331,7 @@ menai_pool_alloc(MenaiVMState *vs, size_t size)
         user_ptr = raw + sizeof(MenaiPoolHeader);
     }
 
-    _header_of(user_ptr)->bucket = (int16_t)bucket;
+    menai_get_pool_header(user_ptr)->bucket = (int16_t)bucket;
     return user_ptr;
 }
 
@@ -359,7 +347,7 @@ menai_pool_free(MenaiVMState *vs, void *ptr)
         return;
     }
 
-    MenaiPoolHeader *hdr = _header_of(ptr);
+    MenaiPoolHeader *hdr = menai_get_pool_header(ptr);
     int16_t bucket = hdr->bucket;
 
     if (bucket == -1) {

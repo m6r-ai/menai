@@ -33,7 +33,8 @@ gc_mark_value(MenaiValue *val)
         return;
     }
 
-    switch (val->ob_type) {
+    MenaiPoolHeader *ph = menai_get_pool_header(val);
+    switch (ph->ob_type) {
     case MENAITYPE_NONE:
     case MENAITYPE_BOOLEAN:
     case MENAITYPE_INTEGER:
@@ -143,9 +144,8 @@ gc_mark_value(MenaiValue *val)
 static int
 _gc_is_dead(MenaiValue *val)
 {
-    return val != NULL &&
-           val->ob_type == MENAITYPE_FUNCTION &&
-           ((MenaiFunction *)val)->gc_mark == 2;
+    MenaiPoolHeader *ph = menai_get_pool_header(val);
+    return val != NULL && ph->ob_type == MENAITYPE_FUNCTION && ((MenaiFunction *)val)->gc_mark == 2;
 }
 
 /*
@@ -161,7 +161,8 @@ _gc_detach_dead_from_list(MenaiList *lst)
     while (lst != NULL && lst->head != NULL) {
         MenaiValue *e = lst->head;
         if (_gc_is_dead(e)) {
-            e->ob_refcnt--;
+            MenaiPoolHeader *ph = menai_get_pool_header(e);
+            ph->ob_refcnt--;
             lst->head = NULL;
         }
 
@@ -184,13 +185,15 @@ _gc_detach_dead_from_dict(MenaiDict *d)
 
         MenaiValue *k = elem->key;
         if (_gc_is_dead(k)) {
-            k->ob_refcnt--;
+            MenaiPoolHeader *ph = menai_get_pool_header(k);
+            ph->ob_refcnt--;
             elem->key = NULL;
         }
 
         MenaiValue *v = elem->value;
         if (_gc_is_dead(v)) {
-            v->ob_refcnt--;
+            MenaiPoolHeader *ph = menai_get_pool_header(v);
+            ph->ob_refcnt--;
             elem->value = NULL;
         }
     }
@@ -211,7 +214,8 @@ _gc_detach_dead_from_set(MenaiSet *s)
 
         MenaiValue *v = elem->value;
         if (_gc_is_dead(v)) {
-            v->ob_refcnt--;
+            MenaiPoolHeader *ph = menai_get_pool_header(v);
+            ph->ob_refcnt--;
             elem->value = NULL;
         }
     }
@@ -227,7 +231,8 @@ _gc_detach_dead_from_struct(MenaiStruct *st)
     for (int i = 0; i < st->nfields; i++) {
         MenaiValue *item = st->items[i];
         if (_gc_is_dead(item)) {
-            item->ob_refcnt--;
+            MenaiPoolHeader *ph = menai_get_pool_header(item);
+            ph->ob_refcnt--;
             st->items[i] = NULL;
         }
     }
@@ -302,12 +307,13 @@ _gc_sweep(MenaiVMState *vs)
         MenaiFunction *fn = dead[i];
         for (ssize_t j = 0; j < fn->ncap; j++) {
             MenaiValue *cap = fn->captures[j];
-            if (cap != NULL) {
-                cap->ob_refcnt--;
+            if (cap) {
+                MenaiPoolHeader *ph = menai_get_pool_header(cap);
+                ph->ob_refcnt--;
                 fn->captures[j] = NULL;
 
-                if (cap->ob_type != MENAITYPE_FUNCTION &&
-                    cap->ob_refcnt == 0 && orphans != NULL) {
+                if (ph->ob_type != MENAITYPE_FUNCTION &&
+                    ph->ob_refcnt == 0 && orphans != NULL) {
                     orphans[orphan_count++] = cap;
                 }
             }
@@ -329,7 +335,8 @@ _gc_sweep(MenaiVMState *vs)
      */
     for (ssize_t i = 0; i < orphan_count; i++) {
         MenaiValue *v = orphans[i];
-        switch (v->ob_type) {
+        MenaiPoolHeader *ph = menai_get_pool_header(v);
+        switch (ph->ob_type) {
         case MENAITYPE_LIST:
             _gc_detach_dead_from_list((MenaiList *)v);
             break;
@@ -376,7 +383,8 @@ _gc_sweep(MenaiVMState *vs)
     for (ssize_t i = 0; i < dead_count; i++) {
         MenaiFunction *fn = dead[i];
         fn->gc_mark = 0;
-        if (fn->ob_refcnt == 0) {
+        MenaiPoolHeader *ph = menai_get_pool_header(fn);
+        if (ph->ob_refcnt == 0) {
             menai_value_free(vs, (MenaiValue *)fn);
         } else {
             /*

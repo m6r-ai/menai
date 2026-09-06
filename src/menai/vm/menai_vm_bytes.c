@@ -2,8 +2,8 @@
  * menai_vm_bytes.c — MenaiBytes type implementation.
  *
  * MenaiBytes stores its data inline in the same allocation as the struct,
- * using a C99 flexible array member.  A single menai_alloc call covers both
- * the header and the data array for owning bytes.  Slice views allocate
+ * using a C99 flexible array member.  A single menai_value_alloc call covers
+ * both the header and the data array for owning bytes.  Slice views allocate
  * only the header (sizeof(MenaiBytes)) and point their data pointer into
  * the owner's inline storage, exactly mirroring MenaiList's pattern.
  */
@@ -22,13 +22,11 @@ MenaiBytes *
 alloc_menai_bytes(MenaiVMState *vs, ssize_t n)
 {
     size_t sz = sizeof(MenaiBytes) + (size_t)n;
-    MenaiBytes *obj = (MenaiBytes *)menai_alloc(vs, sz);
+    MenaiBytes *obj = (MenaiBytes *)menai_value_alloc(vs, MENAITYPE_BYTES, sz);
     if (obj == NULL) {
         return NULL;
     }
 
-    obj->ob_refcnt = 1;
-    obj->ob_type = MENAITYPE_BYTES;
     MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->length = n;
     obj->hash = -1;
@@ -60,13 +58,11 @@ alloc_menai_bytes_from_slice(MenaiVMState *vs, MenaiBytes *b, ssize_t start, ssi
      */
     MenaiBytes *owner = (b->owner != NULL) ? b->owner : b;
 
-    MenaiBytes *view = (MenaiBytes *)menai_alloc(vs, sizeof(MenaiBytes));
+    MenaiBytes *view = (MenaiBytes *)menai_value_alloc(vs, MENAITYPE_BYTES, sizeof(MenaiBytes));
     if (view == NULL) {
         return NULL;
     }
 
-    view->ob_refcnt = 1;
-    view->ob_type = MENAITYPE_BYTES;
     MENAI_SET_MAGIC((MenaiValue *)view);
     menai_value_retain((MenaiValue *)owner);
     view->owner = owner;

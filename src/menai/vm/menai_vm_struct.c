@@ -13,13 +13,11 @@ MenaiStruct *
 alloc_menai_struct(MenaiVMState *vs, MenaiStructType *struct_type, MenaiValue **field_values, ssize_t nfields)
 {
     size_t sz = sizeof(MenaiStruct) + (size_t)nfields * sizeof(MenaiValue *);
-    MenaiStruct *self = (MenaiStruct *)menai_alloc(vs, sz);
+    MenaiStruct *self = (MenaiStruct *)menai_value_alloc(vs, MENAITYPE_STRUCT, sz);
     if (!self) {
         return NULL;
     }
 
-    self->ob_refcnt = 1;
-    self->ob_type = MENAITYPE_STRUCT;
     MENAI_SET_MAGIC((MenaiValue *)self);
     self->nfields = (int)nfields;
     menai_value_retain((MenaiValue *)struct_type);
@@ -38,14 +36,12 @@ alloc_menai_struct_from_set_operation(MenaiVMState *vs, MenaiStruct *src, ssize_
 {
     ssize_t nf = src->nfields;
     size_t sz = sizeof(MenaiStruct) + (size_t)nf * sizeof(MenaiValue *);
-    MenaiStruct *self = (MenaiStruct *)menai_alloc(vs, sz);
+    MenaiStruct *self = (MenaiStruct *)menai_value_alloc(vs, MENAITYPE_STRUCT, sz);
     if (!self) {
         return NULL;
     }
 
     MenaiStructType *struct_type = src->struct_type;
-    self->ob_refcnt = 1;
-    self->ob_type = MENAITYPE_STRUCT;
     MENAI_SET_MAGIC((MenaiValue *)self);
     self->nfields = (int)nf;
     menai_value_retain((MenaiValue *)struct_type);

@@ -27,13 +27,11 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
 
     ssize_t ncap = co->ncap;
     size_t sz = sizeof(MenaiFunction) + (size_t)ncap * sizeof(MenaiValue *);
-    MenaiFunction *self = (MenaiFunction *)menai_alloc(vs, sz);
+    MenaiFunction *self = (MenaiFunction *)menai_value_alloc(vs, MENAITYPE_FUNCTION, sz);
     if (!self) {
         return NULL;
     }
 
-    self->ob_refcnt = 1;
-    self->ob_type = MENAITYPE_FUNCTION;
     MENAI_SET_MAGIC((MenaiValue *)self);
     self->ncap = ncap;
     self->registry_index = -1;

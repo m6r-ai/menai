@@ -16,13 +16,11 @@
 MenaiList *
 alloc_menai_list(MenaiVMState *vs)
 {
-    MenaiList *obj = (MenaiList *)menai_alloc(vs, sizeof(MenaiList));
+    MenaiList *obj = (MenaiList *)menai_value_alloc(vs, MENAITYPE_LIST, sizeof(MenaiList));
     if (!obj) {
         return NULL;
     }
 
-    obj->ob_refcnt = 1;
-    obj->ob_type = MENAITYPE_LIST;
     MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->head = NULL;
     obj->tail = NULL;

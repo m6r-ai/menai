@@ -26,36 +26,39 @@ menai_vm_state_alloc(void)
     menai_leak_set_init(&vs->_leak_set);
 #endif
 
-    vs->none_storage.ob_refcnt = 1;
-    vs->none_storage.ob_type = MENAITYPE_NONE;
-    MENAI_SET_MAGIC(&vs->none_storage);
+    vs->none = menai_value_alloc(vs, MENAITYPE_NONE, sizeof(MenaiNone));
+    if (!vs->none) {
+        menai_vm_state_free(vs);
+        return NULL;
+    }
 
-    vs->empty_list_storage.ob_refcnt = 1;
-    vs->empty_list_storage.ob_type = MENAITYPE_LIST;
-    vs->empty_list_storage.head = NULL;
-    vs->empty_list_storage.tail = NULL;
-    vs->empty_list_storage.length = 0;
-    MENAI_SET_MAGIC(&vs->empty_list_storage);
+    MENAI_SET_MAGIC(vs->none);
 
-    vs->true_storage.ob_refcnt = 1;
-    vs->true_storage.ob_type = MENAITYPE_BOOLEAN;
-    vs->true_storage.value = 1;
-    MENAI_SET_MAGIC(&vs->true_storage);
+    vs->boolean_true = menai_value_alloc(vs, MENAITYPE_BOOLEAN, sizeof(MenaiBoolean));
+    if (!vs->boolean_true) {
+        menai_vm_state_free(vs);
+        return NULL;
+    }
 
-    vs->false_storage.ob_refcnt = 1;
-    vs->false_storage.ob_type = MENAITYPE_BOOLEAN;
-    vs->false_storage.value = 0;
-    MENAI_SET_MAGIC(&vs->false_storage);
+    vs->boolean_true->value = 1;
+    MENAI_SET_MAGIC(vs->boolean_true);
+
+    vs->boolean_false = menai_value_alloc(vs, MENAITYPE_BOOLEAN, sizeof(MenaiBoolean));
+    if (!vs->boolean_false) {
+        menai_vm_state_free(vs);
+        return NULL;
+    }
+
+    vs->boolean_false->value = 0;
+    MENAI_SET_MAGIC(vs->boolean_false);
 
     for (long v = MENAI_INT_CACHE_MIN; v <= MENAI_INT_CACHE_MAX; v++) {
-        MenaiInteger *obj = (MenaiInteger *)menai_alloc(vs, sizeof(MenaiInteger));
+        MenaiInteger *obj = (MenaiInteger *)menai_value_alloc(vs, MENAITYPE_INTEGER, sizeof(MenaiInteger));
         if (obj == NULL) {
             menai_vm_state_free(vs);
             return NULL;
         }
 
-        obj->ob_refcnt = 1;
-        obj->ob_type = MENAITYPE_INTEGER;
         MENAI_SET_MAGIC((MenaiValue *)obj);
         obj->is_big = 0;
         obj->fixed = v;
@@ -64,14 +67,20 @@ menai_vm_state_alloc(void)
         vs->integer_cache[v - MENAI_INT_CACHE_MIN] = obj;
     }
 
+    vs->empty_list = alloc_menai_list(vs);
+    if (!vs->empty_list) {
+        menai_vm_state_free(vs);
+        return NULL;
+    }
+
     vs->empty_dict = alloc_menai_dict(vs, 0);
-    if (vs->empty_dict == NULL) {
+    if (!vs->empty_dict) {
         menai_vm_state_free(vs);
         return NULL;
     }
 
     vs->empty_set = alloc_menai_set(vs, 0);
-    if (vs->empty_set == NULL) {
+    if (!vs->empty_set) {
         menai_vm_state_free(vs);
         return NULL;
     }
@@ -94,6 +103,37 @@ menai_vm_state_free(MenaiVMState *vs)
 
     if (vs->_globals_valid) {
         globals_free(vs, &vs->_globals);
+    }
+
+    if (vs->empty_set) {
+        menai_value_free(vs, (MenaiValue *)vs->empty_set);
+    }
+
+    if (vs->empty_dict) {
+        menai_value_free(vs, (MenaiValue *)vs->empty_dict);
+    }
+
+    if (vs->empty_list) {
+        menai_value_free(vs, (MenaiValue *)vs->empty_list);
+    }
+
+    for (long v = MENAI_INT_CACHE_MIN; v <= MENAI_INT_CACHE_MAX; v++) {
+        MenaiInteger *cached_int = vs->integer_cache[v - MENAI_INT_CACHE_MIN];
+        if (cached_int) {
+            menai_value_free(vs, (MenaiValue *)cached_int);
+        }
+    }
+
+    if (vs->boolean_false) {
+        menai_value_free(vs, (MenaiValue *)vs->boolean_false);
+    }
+
+    if (vs->boolean_true) {
+        menai_value_free(vs, (MenaiValue *)vs->boolean_true);
+    }
+
+    if (vs->none) {
+        menai_value_free(vs, (MenaiValue *)vs->none);
     }
 
 #ifdef MENAI_DEBUG_LEAKS
