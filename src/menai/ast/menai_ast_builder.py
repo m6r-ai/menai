@@ -511,6 +511,8 @@ class MenaiASTBuilder:
         elements.append(self._parse_expression())
         self._update_frame_after_element()
 
+        keyword = elements[0].name if isinstance(elements[0], MenaiASTSymbol) else "let"
+
         # Check for bindings list
         if self.current_token is None:
             raise self._create_enhanced_unterminated_error(start_line, start_col)
@@ -525,7 +527,7 @@ class MenaiASTBuilder:
         # Parse bindings with special tracking
         self._mark_element_start()
         if self.current_token.type == MenaiTokenType.LPAREN:
-            bindings = self._parse_let_bindings()
+            bindings = self._parse_let_bindings(keyword)
             elements.append(bindings)
             self._update_frame_after_element()
 
@@ -554,10 +556,12 @@ class MenaiASTBuilder:
 
         return MenaiASTList(tuple(elements), line=start_line, column=start_col, source_file=self.source_file)
 
-    def _parse_let_bindings(self) -> MenaiASTList:
+    def _parse_let_bindings(self, keyword: str) -> MenaiASTList:
         """
-        Parse the bindings list of a let or letrec form with per-binding tracking.
+        Parse the bindings list of a let, let*, or letrec form with per-binding tracking.
 
+        Args:
+            keyword: The binding form keyword ('let', 'let*', or 'letrec')
         Returns:
             MenaiASTList of bindings
         """
@@ -591,7 +595,7 @@ class MenaiASTBuilder:
 
         if self.current_token is None:
             # EOF while parsing bindings - create enhanced error
-            raise self._create_incomplete_bindings_error(bindings, bindings_start_line, bindings_start_col)
+            raise self._create_incomplete_bindings_error(bindings, bindings_start_line, bindings_start_col, keyword)
 
         # Pop bindings frame
         self._pop_paren_frame()
@@ -664,15 +668,17 @@ class MenaiASTBuilder:
         self,
         parsed_bindings: list[MenaiASTNode],
         bindings_start_line: int,
-        bindings_start_col: int
+        bindings_start_col: int,
+        keyword: str
     ) -> MenaiASTBuildError:
         """
-        Create enhanced error when EOF is reached while parsing let bindings.
+        Create enhanced error when EOF is reached while parsing let/let*/letrec bindings.
 
         Args:
             parsed_bindings: List of successfully parsed bindings
             bindings_start_line: Line where bindings list started
             bindings_start_col: Column where bindings list started
+            keyword: The binding form keyword ('let', 'let*', or 'letrec')
 
         Returns:
             MenaiASTBuildError with detailed context
@@ -729,19 +735,19 @@ class MenaiASTBuilder:
         paren_word = "parentheses"  # Always plural since depth >= 2
 
         context_msg = (
-            f"Reached end of input while parsing let/let*/letrec bindings.\n\n"
+            f"Reached end of input while parsing {keyword} bindings.\n\n"
             f"Bindings parsed:\n{summary_text}\n\n"
             f"Unclosed expressions:\n{stack_trace}"
         )
 
         return MenaiASTBuildError(
-            message=f"Incomplete let/let*/letrec bindings - missing {depth} closing {paren_word}",
+            message=f"Incomplete {keyword} bindings - missing {depth} closing {paren_word}",
             line=bindings_start_line,
             column=bindings_start_col,
             expected=f'Add "{closing_parens}" to close all expressions',
             suggestion="Close each incomplete expression with ')', working from innermost to outermost",
             context=context_msg,
-            example="(let (\n  (x 5)\n  (y (integer+ x 2))\n) body)",
+            example=f"({keyword} (\n  (x 5)\n  (y (integer+ x 2))\n) body)",
             source=self.expression,
             source_file=self.source_file,
         )

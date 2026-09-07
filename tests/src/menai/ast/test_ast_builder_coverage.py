@@ -79,7 +79,7 @@ class TestInvalidBindingStructures:
 
         error = exc_info.value
         # Should show that 'x' is not a proper binding
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
         assert "<not a list>" in error.context
 
     def test_binding_is_number(self):
@@ -92,7 +92,7 @@ class TestInvalidBindingStructures:
             ast_builder.build(tokens, "(let (42")
 
         error = exc_info.value
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
         assert "<not a list>" in error.context
 
     def test_binding_invalid_structure(self):
@@ -106,7 +106,7 @@ class TestInvalidBindingStructures:
 
         error = exc_info.value
         # The binding (42 5) is parsed but should show as invalid
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
 
     def test_binding_with_non_symbol_first_element(self):
         """Test binding where first element is not a symbol."""
@@ -118,7 +118,7 @@ class TestInvalidBindingStructures:
             ast_builder.build(tokens, '(let (("string" 5)')
 
         error = exc_info.value
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
         # Should show as invalid binding since first element is not a symbol
         assert "<invalid binding>" in error.context
 
@@ -197,7 +197,7 @@ class TestComplexNestedStructures:
             ast_builder.build(tokens, "(let (")
 
         error = exc_info.value
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
         assert "(no complete bindings)" in error.context
 
     def test_multiple_invalid_bindings(self):
@@ -212,7 +212,7 @@ class TestComplexNestedStructures:
 
         error = exc_info.value
         # Should show invalid bindings
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
         assert "<not a list>" in error.context
 
 
@@ -272,7 +272,7 @@ class TestBindingSummaryFormatting:
 
         error = exc_info.value
         # Should show x and y as valid (✓), z as invalid
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
         # The summary should list the bindings
         assert "Bindings parsed:" in error.context
 
@@ -287,4 +287,47 @@ class TestBindingSummaryFormatting:
 
         error = exc_info.value
         # Should show binding as invalid due to wrong count
-        assert "Incomplete let/let*/letrec bindings" in error.message
+        assert "Incomplete let bindings" in error.message
+
+
+class TestKeywordSpecificErrorMessages:
+    """Test that error messages use the correct keyword for each binding form."""
+
+    def test_let_star_keyword_in_incomplete_bindings_error(self):
+        """let* bindings error uses 'let*' not 'let' in the message."""
+        lexer = MenaiLexer()
+        tokens = lexer.lex("(let* (x")
+        ast_builder = MenaiASTBuilder()
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            ast_builder.build(tokens, "(let* (x")
+
+        error = exc_info.value
+        assert "Incomplete let* bindings" in error.message
+        assert "parsing let* bindings" in error.context
+
+    def test_letrec_keyword_in_incomplete_bindings_error(self):
+        """letrec bindings error uses 'letrec' not 'let' in the message."""
+        lexer = MenaiLexer()
+        tokens = lexer.lex("(letrec (x")
+        ast_builder = MenaiASTBuilder()
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            ast_builder.build(tokens, "(letrec (x")
+
+        error = exc_info.value
+        assert "Incomplete letrec bindings" in error.message
+        assert "parsing letrec bindings" in error.context
+
+    def test_let_keyword_in_incomplete_bindings_error(self):
+        """let bindings error uses 'let' in the message."""
+        lexer = MenaiLexer()
+        tokens = lexer.lex("(let (x")
+        ast_builder = MenaiASTBuilder()
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            ast_builder.build(tokens, "(let (x")
+
+        error = exc_info.value
+        assert "Incomplete let bindings" in error.message
+        assert "parsing let bindings" in error.context
