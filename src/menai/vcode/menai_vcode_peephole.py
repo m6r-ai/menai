@@ -152,9 +152,11 @@ def schedule_self_loop_moves(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
     changed = True
     while changed:
         changed = False
-        for jump_idx in range(len(instrs)):
-            if not (isinstance(instrs[jump_idx], MenaiVCodeJump)
-                    and instrs[jump_idx].label == "__entry__"):
+        for jump_idx, jump_instr in enumerate(instrs):
+            if not isinstance(jump_instr, MenaiVCodeJump):
+                continue
+
+            if jump_instr.label != "__entry__":
                 continue
 
             move_start = jump_idx - 1
