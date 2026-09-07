@@ -338,6 +338,7 @@ class MenaiASTBuilder:
         # Classify based on first symbol
         special_forms = {
             'let': 'let binding',
+            'let*': 'let* binding',
             'letrec': 'letrec binding',
             'lambda': 'lambda function',
             'if': 'if expression',
@@ -465,7 +466,7 @@ class MenaiASTBuilder:
         if (
             self.current_token and
             self.current_token.type == MenaiTokenType.SYMBOL and
-            self.current_token.value in ('let', 'letrec')
+            self.current_token.value in ('let', 'let*', 'letrec')
         ):
             return self._parse_let_with_tracking(start_line, start_col, frame, elements)
 
@@ -728,13 +729,13 @@ class MenaiASTBuilder:
         paren_word = "parentheses"  # Always plural since depth >= 2
 
         context_msg = (
-            f"Reached end of input while parsing let/letrec bindings.\n\n"
+            f"Reached end of input while parsing let/let*/letrec bindings.\n\n"
             f"Bindings parsed:\n{summary_text}\n\n"
             f"Unclosed expressions:\n{stack_trace}"
         )
 
         return MenaiASTBuildError(
-            message=f"Incomplete let/letrec bindings - missing {depth} closing {paren_word}",
+            message=f"Incomplete let/let*/letrec bindings - missing {depth} closing {paren_word}",
             line=bindings_start_line,
             column=bindings_start_col,
             expected=f'Add "{closing_parens}" to close all expressions',

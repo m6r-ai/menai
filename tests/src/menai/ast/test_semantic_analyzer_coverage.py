@@ -4,24 +4,24 @@ Tests for previously uncovered branches in MenaiSemanticAnalyzer.
 
 import pytest
 
-from menai import MenaiEvalError
+from menai import MenaiASTBuildError, MenaiEvalError
 
 class TestLetStarTooManyElements:
-    """Line 247: let* expression with more than 3 elements."""
+    """let* expression with more than one body expression is caught by the parser."""
 
     def test_let_star_extra_body_expression(self, menai):
-        """(let* ((x 1)) expr1 expr2) — 4 elements, triggers 'too many elements'."""
-        with pytest.raises(MenaiEvalError, match="Let\\* expression has too many elements"):
+        """(let* ((x 1)) expr1 expr2) — parser catches the extra body expression."""
+        with pytest.raises(MenaiASTBuildError, match="Premature closing parenthesis"):
             menai.evaluate("(let* ((x 1)) x x)")
 
     def test_let_star_multiple_extra_elements(self, menai):
-        """(let* ((x 1)) a b c) — 5 elements."""
-        with pytest.raises(MenaiEvalError, match="Let\\* expression has too many elements"):
+        """(let* ((x 1)) a b c) — parser catches the extra body expressions."""
+        with pytest.raises(MenaiASTBuildError, match="Premature closing parenthesis"):
             menai.evaluate("(let* ((x 1)) x x x)")
 
     def test_let_star_no_bindings_two_bodies(self, menai):
-        """(let* () expr1 expr2) — 4 elements."""
-        with pytest.raises(MenaiEvalError, match="Let\\* expression has too many elements"):
+        """(let* () expr1 expr2) — parser catches the extra body expression."""
+        with pytest.raises(MenaiASTBuildError, match="Premature closing parenthesis"):
             menai.evaluate("(let* () 1 2)")
 
 
