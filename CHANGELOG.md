@@ -7,6 +7,10 @@ New features:
 - Switched from a vector-like list representation to a cons-cell like representation inside the VM.  This wins up to 6x on
   the sort benchmark while being slightly positive on the JSON parser and slightly negative on rubiks and sudoku.  This does
   not change any visible aspect of the language surface, just performance.
+- Added a new peephole opimization to reorder independent operations where this will reduce register pressure and allow
+  `MOVE` opcodes to be eliminated.
+- Improved closure creation behaviour to allow a greater set of registers and remove more unnecessary `MOVE` opcodes.
+- Added fast-paths for many prelude operations where there are only 2 operands.
 
 Bug fixes:
 
