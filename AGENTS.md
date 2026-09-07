@@ -269,9 +269,8 @@ VM's `execute` and `cancel` functions to the rest of the codebase. The C extensi
 is compiled into platform-specific wheels via cibuildwheel and published to PyPI
 on version tags (see `.github/workflows/release.yml`).
 
-The C VM currently makes use of some Python runtime library functionality, but with the
-exception of the bridge layer between C and Python, the C code should be systematically
-updated so Python functions and data structures are removed.
+The C VM only uses Python runtime library functionality within the bridge layer
+between C and Python. All other C code is free of Python dependencies.
 
 ### Debug build flags
 
