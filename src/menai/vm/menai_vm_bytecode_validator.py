@@ -219,10 +219,10 @@ class BytecodeValidator:
 
             if opcode == Opcode.PATCH_CLOSURE:
                 for field_name, reg in (('src0 (closure)', instr.src0), ('src2 (value)', instr.src2)):
-                    if reg < 0 or reg >= code.local_count:
+                    if reg < 0 or reg >= total_slots:
                         raise ValidationError(
                             ValidationErrorType.INVALID_VARIABLE_ACCESS,
-                            f"PATCH_CLOSURE {field_name} register {reg} out of bounds (local_count: {code.local_count})",
+                            f"PATCH_CLOSURE {field_name} register {reg} out of bounds (total_slots: {total_slots})",
                             instruction_index=i,
                             opcode=opcode
                         )

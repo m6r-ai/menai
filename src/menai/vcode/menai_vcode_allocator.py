@@ -109,27 +109,6 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     slots: dict[int, int] = {}
     next_new_slot = 0
 
-    # Pre-compute sets needed for Phase 3 safety checks.
-    # closure_reg_ids: registers written by MAKE_CLOSURE that will be followed
-    # by PATCH_CLOSURE instructions — PATCH_CLOSURE requires its closure
-    # operand within local_count.  Capture-free closures with no patching
-    # (needs_patching=False, captures empty) are emitted as LOAD_CONST by the
-    # bytecode builder and never need PATCH_CLOSURE, so their result registers
-    # are safe to back-propagate into the outgoing zone.
-    closure_reg_ids: set[int] = {
-        instr.dst.id for instr in func.instrs
-        if isinstance(instr, MenaiVCodeMakeClosure) and (instr.needs_patching or len(instr.captures) > 0)
-    }
-
-    # capture_reg_ids: registers used as captures in MAKE_CLOSURE — the
-    # bytecode emitter reads each capture via PATCH_CLOSURE, which requires
-    # its value operand within local_count.
-    capture_reg_ids: set[int] = {
-        cap.id for instr in func.instrs
-        if isinstance(instr, MenaiVCodeMakeClosure)
-        for cap in instr.captures
-    }
-
     # Phase 1: scan the flat instruction list to compute per-definition
     # lifetimes.  A register id can be defined multiple times in the VCode
     # (e.g. a phi-elimination move source that is redefined in each match arm).
@@ -271,17 +250,20 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #
     # Safety conditions:
     #   1. Not a fixed register (param or free var) — those have fixed slots.
-    #   2. Not a closure register or a closure capture register — PATCH_CLOSURE
-    #      requires both its closure operand and its value operand within
-    #      local_count.
-    #   3. The consuming instruction is the last use of the register's current
+    #   2. The consuming instruction is the last use of the register's current
     #      definition — the outgoing zone is clobbered when the instruction
     #      executes, so no later read is safe.
-    #   4. No call/apply/make barrier between the register's definition and
+    #   3. No call/apply/make barrier between the register's definition and
     #      this instruction — a prior call, apply, or make-* would have
     #      already written local_count + outgoing_offset.
     #      For call/apply result registers the defining call itself is not a
     #      barrier — the scan starts strictly after the definition index.
+    #
+    #   Closure and capture registers are NOT excluded: PATCH_CLOSURE reads its
+    #   operands from whatever slot they are assigned to, including outgoing
+    #   zone slots.  The barrier check (condition 3) ensures no call or make-*
+    #   clobbers the outgoing zone between the register's definition and the
+    #   consuming instruction, which covers any PATCH_CLOSURE in that range.
 
     # Barrier types: any instruction that writes into the outgoing zone and
     # therefore clobbers slots local_count..local_count+N.
@@ -310,12 +292,6 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             reg_id = arg.id
 
             if reg_id in fixed_reg_id_set:
-                continue
-
-            if reg_id in closure_reg_ids:
-                continue
-
-            if reg_id in capture_reg_ids:
                 continue
 
             reg_def = _active_def(reg_defs, reg_id, instr_idx)
@@ -349,10 +325,9 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #
     # Safety conditions (parallel to Phase 3):
     #   1. Not a fixed register (param or free var).
-    #   2. Not a closure register.
-    #   3. The self-loop move is the last use of the register's current definition.
-    #   4. No call or apply between the register's definition and this move.
-    #   5. No instruction between the definition and this move reads from param_slot.
+    #   2. The self-loop move is the last use of the register's current definition.
+    #   3. No call or apply between the register's definition and this move.
+    #   4. No instruction between the definition and this move reads from param_slot.
     for jump_idx, instr in enumerate(func.instrs):
         if not isinstance(instr, MenaiVCodeJump) or instr.label != "__entry__":
             continue
@@ -371,9 +346,6 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             param_slot = slots[move.dst.id]
 
             if reg_id in fixed_reg_id_set:
-                continue
-
-            if reg_id in closure_reg_ids:
                 continue
 
             reg_def = _active_def(reg_defs, reg_id, move_idx)

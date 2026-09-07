@@ -35,8 +35,8 @@ Params are pre-initialized at function entry (slots 0..param_count-1).
 Index constraints:
   All LOAD ops:  dest < local_count
   MOVE:          src0 and dest < local_count + outgoing_arg_slots
-  All other dest-writing ops: dest < local_count
-  PATCH_CLOSURE: src0, src2 < local_count
+  All other dest-writing ops: dest < local_count + outgoing_arg_slots
+  PATCH_CLOSURE: src0, src2 < local_count + outgoing_arg_slots
   CALL/TAIL_CALL: src0 (func register) < local_count
   APPLY/TAIL_APPLY: src0 (func register) < local_count, src1 (arg_list) < local_count
 
