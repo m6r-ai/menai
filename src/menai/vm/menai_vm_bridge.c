@@ -314,34 +314,31 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
      * children — recurse first so that when we convert constants that are
      * functions, their children already exist and can be referenced.
      */
-    {
-        PyObject *py_children = PyObject_GetAttrString(py_code, "code_objects");
-        if (!py_children) {
+    PyObject *py_children = PyObject_GetAttrString(py_code, "code_objects");
+    if (!py_children) {
+        goto fail;
+    }
+
+    co->nchildren = PyList_GET_SIZE(py_children);
+    if (co->nchildren > 0) {
+        co->children = (MenaiCodeObject **)calloc(
+            (size_t)co->nchildren, sizeof(MenaiCodeObject *));
+        if (!co->children) {
+            Py_DECREF(py_children);
+            PyErr_NoMemory();
             goto fail;
         }
 
-        co->nchildren = PyList_GET_SIZE(py_children);
-        if (co->nchildren > 0) {
-            co->children = (MenaiCodeObject **)calloc(
-                (size_t)co->nchildren, sizeof(MenaiCodeObject *));
-            if (!co->children) {
+        for (ssize_t i = 0; i < co->nchildren; i++) {
+            co->children[i] = menai_code_object_from_python(vs, PyList_GET_ITEM(py_children, i));
+            if (!co->children[i]) {
                 Py_DECREF(py_children);
-                PyErr_NoMemory();
                 goto fail;
             }
-
-            for (ssize_t i = 0; i < co->nchildren; i++) {
-                co->children[i] = menai_code_object_from_python(
-                    vs, PyList_GET_ITEM(py_children, i));
-                if (!co->children[i]) {
-                    Py_DECREF(py_children);
-                    goto fail;
-                }
-            }
         }
-
-        Py_DECREF(py_children);
     }
+
+    Py_DECREF(py_children);
 
     /*
      * constants — convert each slow Python value to a fast MenaiValue *.
