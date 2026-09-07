@@ -178,7 +178,7 @@ def schedule_self_loop_moves(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
             # (A, B) where A defines a move source and B reads the
             # corresponding move dest.  Swap them if independent.
             scan_end = move_start
-            for i in range(scan_end - 1, 0, -1):
+            for i in range(scan_end - 1, -1, -1):
                 a = instrs[i]
                 b = instrs[i + 1]
 
