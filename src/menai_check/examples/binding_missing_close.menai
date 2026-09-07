@@ -1,0 +1,7 @@
+(let ((x 5)
+      (y (lambda (n)
+           (if (integer=? n 0)
+               0
+               (y (integer- n 1))))  ; missing close for y binding
+      (z 10))
+  (integer+ x z))

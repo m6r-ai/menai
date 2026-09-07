@@ -53,7 +53,9 @@ class FormStackFrame:
     open_column: int  # 1-indexed column of the opening paren
     depth_when_opened: int  # Depth after the opening paren
     form_type: str  # The symbol after the opening paren, or '(' for nested groups
-    first_child_seen: bool = False  # Whether any child form has been pushed yet
+    child_count: int = 0  # Number of direct child forms seen so far
+    is_binding: bool = False  # True if this form is a binding in a let/let*/letrec bindings list
+    error_reported: bool = False  # True if a binding_not_closed error has already been reported for this frame
 
 
 @dataclass
@@ -234,12 +236,13 @@ class ParenChecker:
                     elif next_token.type == MenaiTokenType.LPAREN:
                         form_type = '('
 
-                # If this ( is the first direct child of a special form, use a
-                # descriptive name for the bindings/params group
+                # If this ( is a direct child of a special form, use a
+                # descriptive name for the bindings/params group (first child
+                # only) and check for syntax errors in binding structure
                 if self.form_stack:
                     parent = self.form_stack[-1]
                     is_direct_child = parent.depth_when_opened == current_depth - 1
-                    if is_direct_child and not parent.first_child_seen:
+                    if is_direct_child and parent.child_count == 0:
                         if parent.form_type in ('let', 'let*', 'letrec'):
                             form_type = f'{parent.form_type} bindings'
 
@@ -247,14 +250,48 @@ class ParenChecker:
                             form_type = 'lambda params'
 
                     if is_direct_child:
-                        parent.first_child_seen = True
+                        parent.child_count += 1
+
+                        # Syntax-aware check: a binding (name value) has exactly
+                        # 2 children — a name (symbol, not a paren form) and a value
+                        # (a paren form). So child_count should be at most 1 (only
+                        # the value is a paren form). If a second paren-form child
+                        # appears, the binding has a missing close paren — the new
+                        # form was supposed to be a sibling in the bindings list,
+                        # not a child of this binding.
+                        if parent.is_binding and parent.child_count > 1 and not parent.error_reported:
+                            parent.error_reported = True
+                            excess = current_depth - parent.depth_when_opened
+                            self.errors.append(ParenError(
+                                line_num=token.line,
+                                depth=current_depth,
+                                error_type="binding_not_closed",
+                                message=(
+                                    f"Missing {excess} closing parenthes"
+                                    f"{'is' if excess == 1 else 'es'} inside "
+                                    f"binding '{parent.form_type}' (opened at "
+                                    f"line {parent.open_line}, col {parent.open_column}) "
+                                    f"— form '{form_type}' at line {token.line} "
+                                    f"appears where a close paren was expected"
+                                )
+                            ))
+
+                # Determine if this form is a binding (direct child of a
+                # let/let*/letrec bindings list)
+                is_binding = False
+                if self.form_stack:
+                    parent = self.form_stack[-1]
+                    if (parent.depth_when_opened == current_depth - 1
+                            and parent.form_type in ('let bindings', 'let* bindings', 'letrec bindings')):
+                        is_binding = True
 
                 # Push every form onto the stack
                 self.form_stack.append(FormStackFrame(
                     open_line=token.line,
                     open_column=token.column,
                     depth_when_opened=current_depth,
-                    form_type=form_type
+                    form_type=form_type,
+                    is_binding=is_binding
                 ))
 
                 # Track paren position
@@ -301,8 +338,12 @@ class ParenChecker:
             # Track max depth
             self.max_depth = max(self.max_depth, current_depth)
 
-        # Check final depth — list each unclosed form
-        if current_depth > 0:
+        # Check final depth — list each unclosed form.
+        # Skip this if we already reported a binding_not_closed error, since
+        # that error is more specific and the unclosed forms are just a
+        # consequence of the missing close inside the binding.
+        has_binding_error = any(e.error_type == "binding_not_closed" for e in self.errors)
+        if current_depth > 0 and not has_binding_error:
             unclosed_descs = []
             for frame in reversed(self.form_stack):
                 unclosed_descs.append(
@@ -524,6 +565,9 @@ class ParenChecker:
                 for error in self.errors:
                     if error.error_type == "negative_depth":
                         print(f"Unmatched closing parenthesis at line {error.line_num}")
+
+                    elif error.error_type == "binding_not_closed":
+                        print(error.message)
 
                     elif error.error_type == "unclosed":
                         print(error.message)

@@ -12,6 +12,7 @@ A standalone tool for validating parenthesis balance in Menai files. Provides de
 - ✅ Robust handling of strings, comments, and complex literals
 - ✅ Full depth chart shown by default
 - ✅ Unclosed form reporting (lists each unclosed form with type, line, and column)
+- ✅ Syntax-aware binding checks (detects missing close parens inside let/let*/letrec bindings)
 - ✅ Clear exit codes for CI/CD integration
 
 ## Installation
@@ -188,7 +189,12 @@ $ python -m menai_check.check scheduling.menai -a -l 395-402
 
 4. **Error Detection**:
    - **Negative depth**: More closing parens than opening parens
+   - **Binding not closed**: A `let`/`let*`/`letrec` binding has a missing close
+     paren inside its value — detected when a new form appears where a close paren
+     was expected
    - **Non-zero final depth**: Lists each unclosed form with its type, line, and column
+     (suppressed when a binding error has already been reported, since the binding
+     error is more specific)
 
 ## Integration
 
@@ -243,10 +249,28 @@ If the lexer reports errors (invalid syntax, bad escape sequences, etc.), fix th
 ## Limitations
 
 - Only checks parenthesis balance, not semantic correctness
-- Does not validate Menai form structure (e.g., `let` bindings)
 - Requires valid Menai tokens (strings must be properly escaped, etc.)
 
 For full validation, use the Menai parser/evaluator.
+
+## Syntax-Aware Binding Checks
+
+The checker understands the structure of `let`, `let*`, and `letrec` binding
+forms. Each binding `(name value)` has exactly two children: a name (symbol)
+and a value (a paren form). When a binding's value closes, the binding itself
+should close on the next close paren.
+
+If a binding has a missing close paren inside its value (e.g., a lambda body
+that is missing a `)`), the tool detects this and reports:
+
+```
+Missing 1 closing parenthesis inside binding 'y' (opened at line 2, col 8)
+— form 'z' at line 6 appears where a close paren was expected
+```
+
+This pinpoints the binding that has the problem and the line where the
+unexpected form appears, rather than just reporting that the outermost form
+is unclosed.
 
 ## Future Enhancements
 
@@ -254,7 +278,7 @@ Potential features for future versions:
 
 - Find matching paren pairs (interactive mode)
 - Structure outline (show high-level nesting)
-- Validate Menai forms (let, lambda, etc.)
+- Extend syntax-aware checks to lambda bodies and other special forms
 - JSON output for tool integration
 - Watch mode for continuous checking
 - Editor integration (LSP)
