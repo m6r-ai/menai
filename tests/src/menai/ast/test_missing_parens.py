@@ -63,7 +63,7 @@ class TestMissingParens:
         assert "column" in error.lower()
 
     def test_deeply_nested_let_bindings(self, menai):
-        """Test error reporting for deeply nested structures."""
+        """A missing close paren inside a binding value is reported at the binding level."""
         with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("""(let (
   (x 5)
@@ -75,8 +75,8 @@ class TestMissingParens:
 
         error = str(exc_info.value)
         assert "missing" in error.lower()
-        # Should show depth information
-        assert "unclosed" in error.lower() or "depth" in error.lower()
+        # Should point at the binding with the missing close paren
+        assert "binding 'y'" in error
 
     def test_if_expression_missing_paren(self, menai):
         """Test error for if expression missing closing paren."""

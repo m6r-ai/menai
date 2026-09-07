@@ -277,7 +277,7 @@ class TestBindingSummaryFormatting:
         assert "Bindings parsed:" in error.context
 
     def test_binding_summary_with_wrong_element_count(self):
-        """Test binding with wrong number of elements."""
+        """A binding with more than 2 elements is a missing close paren inside the binding."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(let ((x 5 6 7)")
         ast_builder = MenaiASTBuilder()
@@ -286,8 +286,8 @@ class TestBindingSummaryFormatting:
             ast_builder.build(tokens, "(let ((x 5 6 7)")
 
         error = exc_info.value
-        # Should show binding as invalid due to wrong count
-        assert "Incomplete let bindings" in error.message
+        # The parser catches the third element as a missing close paren
+        assert "Missing closing parenthesis inside binding 'x'" in error.message
 
 
 class TestKeywordSpecificErrorMessages:

@@ -606,7 +606,7 @@ class MenaiASTBuilder:
 
     def _parse_single_binding(self, binding_index: int) -> MenaiASTList:
         """
-        Parse a single let or letrec binding with tracking.
+        Parse a single let, let*, or letrec binding with tracking.
 
         Args:
             binding_index: The index of this binding (1-based)
@@ -647,11 +647,47 @@ class MenaiASTBuilder:
             elements.append(self._parse_expression())
             self._update_frame_after_element()
 
-        # Parse any additional elements (evaluator will complain about wrong count)
-        while self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
-            self._mark_element_start()
-            elements.append(self._parse_expression())
-            self._update_frame_after_element()
+        # A binding (name value) has exactly 2 elements.  If a third element
+        # appears here, the value's close paren was stolen by the binding —
+        # i.e. there is a missing ')' inside the value expression.
+        if self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
+            # Determine the name of the form that appears where ')' was expected
+            form_name = "expression"
+            if self.current_token.type == MenaiTokenType.SYMBOL:
+                form_name = self.current_token.value
+
+            elif self.current_token.type == MenaiTokenType.LPAREN:
+                # Peek at the token after '(' to get the form name
+                peek_pos = self.pos + 1
+                tokens = cast(list[MenaiToken], self.tokens)
+                if peek_pos < len(tokens) and tokens[peek_pos].type == MenaiTokenType.SYMBOL:
+                    form_name = tokens[peek_pos].value
+
+            var_name = binding_frame.related_symbol or f"#{binding_index}"
+            raise MenaiASTBuildError(
+                message=(
+                    f"Missing closing parenthesis inside binding '{var_name}' "
+                    f"(opened at line {binding_start_line}, column {binding_start_col}) "
+                    f"— form '{form_name}' at line {self.current_token.line}, "
+                    f"column {self.current_token.column} appears where a close paren was expected"
+                ),
+                line=self.current_token.line,
+                column=self.current_token.column,
+                expected="')' to close the binding",
+                suggestion=(
+                    f"Check the value expression of binding '{var_name}' — "
+                    f"it is missing a closing parenthesis"
+                ),
+                context=(
+                    f"The binding '{var_name}' has parsed its name and value (2 elements), "
+                    f"but '{form_name}' at line {self.current_token.line}, "
+                    f"column {self.current_token.column} appears as a third element. "
+                    f"This means the value expression is missing a ')' — its close paren "
+                    f"was consumed by the binding instead."
+                ),
+                source=self.expression,
+                source_file=self.source_file,
+            )
 
         if self.current_token is None:
             # EOF while parsing binding

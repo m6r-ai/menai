@@ -150,8 +150,8 @@ class TestErrors:
         with pytest.raises(MenaiEvalError, match="Let binding .* has wrong number of elements"):
             menai.evaluate("(let ((x)) x)")  # Binding without value
 
-        with pytest.raises(MenaiEvalError, match="Let binding .* has wrong number of elements"):
-            menai.evaluate("(let ((x 1 2)) x)")  # Binding with too many elements
+        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis inside binding 'x'"):
+            menai.evaluate("(let ((x 1 2)) x)")  # Binding with too many elements — caught by parser
 
     def test_invalid_let_binding_variable_parse_error(self, menai):
         """Test that invalid let binding variables cause evaluation errors (pure list approach)."""

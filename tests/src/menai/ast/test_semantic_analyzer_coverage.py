@@ -34,8 +34,8 @@ class TestLetStarBindingWrongCount:
             menai.evaluate("(let* ((x)) x)")
 
     def test_let_star_binding_too_many_values(self, menai):
-        """(let* ((x 1 2)) body) — binding has 3 elements."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* has wrong number of elements"):
+        """(let* ((x 1 2)) body) — parser catches the third element as a missing close paren."""
+        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis inside binding 'x'"):
             menai.evaluate("(let* ((x 1 2)) x)")
 
     def test_let_star_empty_binding(self, menai):
@@ -139,8 +139,8 @@ class TestLetrecBindingWrongCount:
             menai.evaluate("(letrec ((x)) x)")
 
     def test_letrec_binding_too_many_values(self, menai):
-        """(letrec ((x 1 2)) body) — binding has 3 elements."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* has wrong number of elements"):
+        """(letrec ((x 1 2)) body) — parser catches the third element as a missing close paren."""
+        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis inside binding 'x'"):
             menai.evaluate("(letrec ((x 1 2)) x)")
 
     def test_letrec_empty_binding(self, menai):

@@ -12,6 +12,7 @@ New features:
 - Improved closure creation behaviour to allow a greater set of registers and remove more unnecessary `MOVE` opcodes.
 - Added fast-paths for many prelude operations where there are only 2 operands.
 - Added some syntax detection rules into `menai-check` to improve pinpointing mismatched paren issues.
+- Improved syntax checking in the compiler to pinpoint errors and provide better feedback to AI models.
 
 Bug fixes:
 
