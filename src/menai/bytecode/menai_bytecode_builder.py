@@ -7,6 +7,7 @@ the Menai VM.
 This is the final pass of the VM backend pipeline:
 
     MenaiVCodeFunction
+        → schedule_self_loop_moves (reorder instructions before self-loop moves)
         → allocate_slots      (assign virtual registers to slots)
         → peephole            (eliminate redundant moves and jumps)
         → MenaiBytecodeBuilder (emit CodeObject)  ← this file
@@ -68,6 +69,7 @@ from menai.vcode.menai_vcode import (
 )
 from menai.vcode.menai_vcode_allocator import SlotMap, allocate_slots
 from menai.vcode.menai_vcode_peephole import peephole
+from menai.vcode.menai_vcode_peephole import schedule_self_loop_moves
 
 from menai.bytecode.menai_bytecode import (
     _OPCODE_SHIFT, _DEST_SHIFT, _SRC0_SHIFT, _SRC1_SHIFT,
@@ -243,9 +245,10 @@ class MenaiBytecodeBuilder:
     Generates a CodeObject from a MenaiVCodeFunction.
 
     Runs the VM-specific backend passes:
-      1. Allocate slots (allocate_slots)
-      2. Peephole optimise (peephole)
-      3. Emit bytecode (this class)
+      1. Schedule self-loop moves (schedule_self_loop_moves)
+      2. Allocate slots (allocate_slots)
+      3. Peephole optimise (peephole)
+      4. Emit bytecode (this class)
 
     Usage::
 
@@ -266,6 +269,7 @@ class MenaiBytecodeBuilder:
         Returns:
             A CodeObject ready for execution by the Menai VM.
         """
+        func = schedule_self_loop_moves(func)
         slot_map = allocate_slots(func)
         func = peephole(func, slot_map)
 
@@ -579,6 +583,7 @@ class MenaiBytecodeBuilder:
 
     def _emit_lambda(self, func: MenaiVCodeFunction) -> CodeObject:
         """Recursively emit a nested lambda MenaiVCodeFunction to a CodeObject."""
+        func = schedule_self_loop_moves(func)
         slot_map = allocate_slots(func)
         func = peephole(func, slot_map)
 
