@@ -230,7 +230,7 @@ typedef struct {
 } MenaiFieldEntry;
 
 struct MenaiBoolean {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     int value;                          /* 0 or 1 */
 };
 
@@ -244,7 +244,7 @@ struct MenaiBoolean {
  * directly at the root owner.
  */
 struct MenaiBytes {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     ssize_t length;                     /* logical byte count */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
     MenaiBytes *owner;                  /* non-NULL when this is a slice view */
@@ -253,13 +253,13 @@ struct MenaiBytes {
 };
 
 struct MenaiComplex {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     double real;
     double imag;
 };
 
 struct MenaiDict {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     MenaiDictElement **elements;        /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) key lookup */
     ssize_t length;
@@ -267,19 +267,19 @@ struct MenaiDict {
 };
 
 struct MenaiDictElement {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     MenaiValue *key;
     MenaiValue *value;
     hash_t hash;
 };
 
 struct MenaiFloat {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     double value;
 };
 
 struct MenaiFunction {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     ssize_t ncap;                       /* number of captured values */
     MenaiCodeObject *bytecode;          /* retained — owns all frame metadata */
     ssize_t registry_index;             /* index in _closure_registry, or -1 */
@@ -307,25 +307,25 @@ struct MenaiFunction {
  * The ob_type is always &MenaiInteger_Type.
  */
 struct MenaiInteger {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     int is_big;
     long fixed;                         /* valid when is_big == 0 */
     MenaiBigInt big;                    /* valid when is_big == 1 */
 };
 
 struct MenaiList {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     MenaiValue *head;                   /* element at this position (NULL for empty list sentinel) */
     MenaiList *tail;                    /* rest of the list (NULL for empty list sentinel) */
     ssize_t length;                     /* cached length for O(1) list-length; 0 for empty sentinel */
 };
 
 struct MenaiNone {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
 };
 
 struct MenaiSet {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     MenaiSetElement **elements;         /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) membership; separate allocation */
     ssize_t length;                     /* number of live elements */
@@ -333,27 +333,27 @@ struct MenaiSet {
 };
 
 struct MenaiSetElement {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     MenaiValue *value;
     hash_t hash;
 };
 
 struct MenaiString {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     ssize_t length;                     /* codepoint count */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
     uint32_t data[];                    /* UTF-32 codepoints, flexible array */
 };
 
 struct MenaiStruct {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     int nfields;                        /* number of fields */
     MenaiStructType *struct_type;       /* owned reference to MenaiStructType */
     MenaiValue *items[1];               /* inline field values, nfields entries */
 };
 
 struct MenaiStructType {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     MenaiString *name;                  /* owned MenaiString * — struct type name */
     int tag;                            /* unique integer tag */
     int nfields;                        /* number of fields */
@@ -362,7 +362,7 @@ struct MenaiStructType {
 };
 
 struct MenaiSymbol {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
     MenaiString *name;                  /* owned MenaiString * */
 };
 
@@ -370,7 +370,7 @@ struct MenaiSymbol {
  * MenaiValue — the minimal struct that every MenaiValue pointer can be safely cast to
  */
 struct MenaiValue {
-    MENAI_MAGIC_FIELD;
+    MENAI_MAGIC_FIELD
 };
 
 /*
