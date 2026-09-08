@@ -158,6 +158,17 @@ _menai_mul_overflow(long a, long b, long *r) {
 #define MAX_FRAME_DEPTH 1024
 
 /*
+ * Portable stack allocation — alloca for GCC/Clang, _alloca for MSVC.
+ */
+#ifdef _MSC_VER
+#include <malloc.h>
+#define menai_alloca(size) _alloca(size)
+#else
+#include <alloca.h>
+#define menai_alloca(size) alloca(size)
+#endif
+
+/*
  * Cancellation check interval.
  */
 #define CANCEL_CHECK_INTERVAL (1 << 20)
@@ -990,7 +1001,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int arity = (int)list->length;
 
             /* Collect cons-cell elements into a stack-local array. */
-            MenaiValue *apply_elems[arity];
+            MenaiValue **apply_elems = menai_alloca(arity * sizeof(MenaiValue *));
             MenaiList *cur = list;
             for (int i = 0; i < arity; i++) {
                 apply_elems[i] = cur->head;
@@ -1081,7 +1092,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int arity = (int)list->length;
 
             /* Collect cons-cell elements into a stack-local array. */
-            MenaiValue *apply_elems[arity];
+            MenaiValue **apply_elems = menai_alloca(arity * sizeof(MenaiValue *));
             MenaiList *cur = list;
             for (int i = 0; i < arity; i++) {
                 apply_elems[i] = cur->head;
