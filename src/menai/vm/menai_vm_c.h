@@ -322,6 +322,10 @@ struct MenaiList {
 
 struct MenaiNone {
     MENAI_MAGIC_FIELD
+
+#ifndef MENAI_DEBUG_MAGIC
+    uint8_t _placeholder;               /* We can't have an empty structure */
+#endif
 };
 
 struct MenaiSet {
@@ -371,6 +375,10 @@ struct MenaiSymbol {
  */
 struct MenaiValue {
     MENAI_MAGIC_FIELD
+
+#ifndef MENAI_DEBUG_MAGIC
+    uint8_t _placeholder;               /* We can't have an empty structure */
+#endif
 };
 
 /*
