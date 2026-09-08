@@ -24,7 +24,7 @@ from pathlib import Path
 import sys
 import traceback
 
-from menai import Menai
+from menai import Menai, MenaiError
 from menai.menai_compiler import MenaiCompiler
 from menai.menai_value import MenaiValue
 from menai.bytecode.menai_bytecode import Opcode, CodeObject, Instruction, reg_name, unpack_instruction
@@ -484,6 +484,10 @@ def main() -> int:
         try:
             compiler = MenaiCompiler(module_loader=menai)
             code = compiler.compile(source, name=str(source_path))
+
+        except MenaiError as e:
+            print(f"Error compiling: {e}", file=sys.stderr)
+            return 1
 
         except Exception as e:
             print(f"Error compiling: {e}", file=sys.stderr)

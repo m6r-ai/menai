@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 import traceback
 
+from menai import MenaiError
 from menai.menai_pretty_printer import MenaiPrettyPrinter, FormatOptions
 
 
@@ -103,6 +104,10 @@ Examples:
     try:
         printer = MenaiPrettyPrinter(options)
         formatted_code = printer.format(source_code)
+
+    except MenaiError as e:
+        print(f"Error formatting code: {e}", file=sys.stderr)
+        sys.exit(1)
 
     except Exception as e:
         print(f"Error formatting code: {e}", file=sys.stderr)

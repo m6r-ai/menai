@@ -36,7 +36,7 @@ import traceback
 from io import StringIO
 from pathlib import Path
 
-from menai import Menai
+from menai import Menai, MenaiError
 from menai.menai_compiler import MenaiCompiler
 
 
@@ -79,6 +79,10 @@ def compile_source(source_path: Path) -> object:
     try:
         return compiler.compile(source, name=str(source_path))
 
+    except MenaiError as exc:
+        print(f"Compilation error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     except Exception as exc:
         print(f"Compilation error: {exc}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
@@ -114,6 +118,10 @@ def run_cprofile(
     try:
         code = compiler.compile(source, name=str(source_path))
 
+    except MenaiError as exc:
+        print(f"Compilation error: {exc}", file=sys.stderr)
+        return 1
+
     except Exception as exc:
         print(f"Compilation error: {exc}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
@@ -137,6 +145,10 @@ def run_cprofile(
         profiler.disable()
 
     if exec_error is not None:
+        if isinstance(exec_error, MenaiError):
+            print(f"\n\u2717 Execution failed: {exec_error}", file=sys.stderr)
+            return 1
+
         print(f"\n\u2717 Execution failed: {exec_error}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return 1
@@ -193,6 +205,10 @@ def run_opcode_profile(
     try:
         code = compiler.compile(source, name=str(source_path))
 
+    except MenaiError as exc:
+        print(f"Compilation error: {exc}", file=sys.stderr)
+        return 1
+
     except Exception as exc:
         print(f"Compilation error: {exc}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
@@ -220,6 +236,10 @@ def run_opcode_profile(
     t1 = time.perf_counter()
 
     if exec_error is not None:
+        if isinstance(exec_error, MenaiError):
+            print(f"\n\u2717 Execution failed: {exec_error}", file=sys.stderr)
+            return 1
+
         print(f"\n\u2717 Execution failed: {exec_error}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return 1
