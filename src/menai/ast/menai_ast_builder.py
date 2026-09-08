@@ -429,10 +429,23 @@ class MenaiASTBuilder:
 
         closing_parens = ")" * depth
 
+        # Look for the innermost binding frame with a related_symbol — this is
+        # the most likely culprit when EOF is reached inside a binding's value.
+        binding_hint = ""
+        for frame in reversed(self.paren_stack):
+            if frame.related_symbol:
+                binding_hint = (
+                    f"\n\nLikely culprit: binding '{frame.related_symbol}' at "
+                    f"line {frame.line}, column {frame.column} — the missing ')' "
+                    f"is inside this binding's value expression."
+                )
+                break
+
         # Create the context message
         context_msg = (
             f"Reached end of input at depth {depth}.\n\n"
             f"Unclosed expressions (innermost to outermost):\n{stack_trace}"
+            f"{binding_hint}"
         )
 
         # Determine singular vs plural

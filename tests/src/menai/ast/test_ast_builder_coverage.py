@@ -331,3 +331,35 @@ class TestKeywordSpecificErrorMessages:
         error = exc_info.value
         assert "Incomplete let bindings" in error.message
         assert "parsing let bindings" in error.context
+
+
+class TestBindingCulpritHint:
+    """Test that unterminated errors highlight binding frames as the likely culprit."""
+
+    def test_binding_culprit_hint_on_eof_inside_value(self):
+        """EOF inside a binding's value shows a 'Likely culprit' hint for that binding."""
+        lexer = MenaiLexer()
+        source = "(let ((x 5) (y (lambda (n) (if (integer=? n 0)"
+        tokens = lexer.lex(source)
+        ast_builder = MenaiASTBuilder()
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            ast_builder.build(tokens, source)
+
+        error = exc_info.value
+        assert "Unterminated list" in error.message
+        assert "Likely culprit: binding 'y'" in error.context
+
+    def test_no_binding_culprit_hint_when_no_binding_frames(self):
+        """EOF inside a non-binding form does not show a 'Likely culprit' hint."""
+        lexer = MenaiLexer()
+        source = "(if (integer=? n 0) (lambda (x) x)"
+        tokens = lexer.lex(source)
+        ast_builder = MenaiASTBuilder()
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            ast_builder.build(tokens, source)
+
+        error = exc_info.value
+        assert "Unterminated list" in error.message
+        assert "Likely culprit" not in error.context
