@@ -18,7 +18,7 @@
 
   ; Return the set of digits already placed in the given row.
   (row-set (lambda (board row)
-    (list->set (list-reverse (row-nonzero board row 0 (list))))))
+    (list->set (row-nonzero board row 0 (list)))))
 
   ; Collect the non-zero digits of the column `col`, in row order.
   (col-nonzero (lambda (board col r acc)
@@ -30,7 +30,7 @@
 
   ; Return the set of digits already placed in the given column.
   (col-set (lambda (board col)
-    (list->set (list-reverse (col-nonzero board col 0 (list))))))
+    (list->set (col-nonzero board col 0 (list)))))
 
   ; Collect the non-zero digits of the 3x3 box whose top-left corner is
   ; (box-row, box-col), in row-major order.
@@ -46,7 +46,7 @@
   (box-set (lambda (board row col)
     (let* ((box-row (integer- row (integer% row 3)))
            (box-col (integer- col (integer% col 3))))
-      (list->set (list-reverse (box-nonzero board box-row box-col 0 (list)))))))
+      (list->set (box-nonzero board box-row box-col 0 (list))))))
 
   ; Return the set of digits that may legally be placed at (row, col).
   (candidates (lambda (board row col)
