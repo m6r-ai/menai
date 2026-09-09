@@ -5287,7 +5287,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
-            MenaiValue *val = menai_vector_ref(vs, v, idx);
+            MenaiValue *val = v->data[idx];
             menai_value_retain(val);
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = val;

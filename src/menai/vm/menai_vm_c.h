@@ -1344,12 +1344,27 @@ menai_vector_final(MenaiVMState *vs, MenaiVector *self)
     }
 }
 
-MenaiVector *alloc_menai_vector_from_args(MenaiVMState *vs, MenaiValue **elems, ssize_t n);
 MenaiVector *alloc_menai_vector_from_slice(MenaiVMState *vs, MenaiVector *v, ssize_t start, ssize_t end);
 MenaiVector *alloc_menai_vector_from_concat(MenaiVMState *vs, MenaiVector *a, MenaiVector *b);
 MenaiVector *alloc_menai_vector_from_set(MenaiVMState *vs, MenaiVector *v, ssize_t index, MenaiValue *val);
 MenaiValue *menai_vector_ref(MenaiVMState *vs, MenaiVector *v, ssize_t i);
-int menai_vector_equal(MenaiVector *a, MenaiVector *b);
+
+static inline int
+menai_vector_equal(MenaiVector *a, MenaiVector *b)
+{
+    ssize_t la = a->length;
+    if (la != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < la; i++) {
+        if (!menai_value_equal(a->data[i], b->data[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
 
 int menai_vm_bridge_init(void);
 

@@ -37,21 +37,6 @@ alloc_menai_vector(MenaiVMState *vs, ssize_t n)
 }
 
 MenaiVector *
-alloc_menai_vector_from_args(MenaiVMState *vs, MenaiValue **elems, ssize_t n)
-{
-    MenaiVector *obj = alloc_menai_vector(vs, n);
-    if (!obj) {
-        return NULL;
-    }
-
-    for (ssize_t i = 0; i < n; i++) {
-        obj->inline_data[i] = elems[i];
-    }
-
-    return obj;
-}
-
-MenaiVector *
 alloc_menai_vector_from_slice(MenaiVMState *vs, MenaiVector *v, ssize_t start, ssize_t end)
 {
     /*
@@ -111,28 +96,4 @@ alloc_menai_vector_from_set(MenaiVMState *vs, MenaiVector *v, ssize_t index, Men
     obj->inline_data[index] = val;
 
     return obj;
-}
-
-MenaiValue *
-menai_vector_ref(MenaiVMState *vs, MenaiVector *v, ssize_t i)
-{
-    (void)vs;
-    return v->data[i];
-}
-
-int
-menai_vector_equal(MenaiVector *a, MenaiVector *b)
-{
-    ssize_t la = a->length;
-    if (la != b->length) {
-        return 0;
-    }
-
-    for (ssize_t i = 0; i < la; i++) {
-        if (!menai_value_equal(a->data[i], b->data[i])) {
-            return 0;
-        }
-    }
-
-    return 1;
 }
