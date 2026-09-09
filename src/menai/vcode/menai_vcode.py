@@ -171,6 +171,19 @@ class MenaiVCodeMakeList:
 
 
 @dataclass
+class MenaiVCodeMakeVector:
+    """
+    dst = make_vector(args...)
+
+    Constructs a new MenaiVector from N element values.  The bytecode emitter
+    stages element values into the outgoing zone and emits MAKE_VECTOR, which
+    allocates the vector in a single call.
+    """
+    dst: MenaiVCodeReg
+    args: list[MenaiVCodeReg]
+
+
+@dataclass
 class MenaiVCodeMakeSet:
     """
     dst = make_set(args...)
@@ -267,6 +280,7 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodePatchClosure
     | MenaiVCodeMakeStruct
     | MenaiVCodeMakeList
+    | MenaiVCodeMakeVector
     | MenaiVCodeMakeSet
     | MenaiVCodeMakeDict
     | MenaiVCodeJump
@@ -372,6 +386,9 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
 
     if isinstance(instr, MenaiVCodeMakeList):
         return f"{instr.dst} = MAKE_LIST {_fmt_regs(instr.args)}"
+
+    if isinstance(instr, MenaiVCodeMakeVector):
+        return f"{instr.dst} = MAKE_VECTOR {_fmt_regs(instr.args)}"
 
     if isinstance(instr, MenaiVCodeMakeSet):
         return f"{instr.dst} = MAKE_SET {_fmt_regs(instr.args)}"

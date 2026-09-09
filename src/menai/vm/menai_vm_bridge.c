@@ -72,6 +72,7 @@ static PyTypeObject *Slow_FunctionType = NULL;
 static PyTypeObject *Slow_StructTypeType = NULL;
 static PyTypeObject *Slow_StructType = NULL;
 static PyTypeObject *Slow_BytesType = NULL;
+static PyTypeObject *Slow_VectorType = NULL;
 
 /*
  * Conversion helpers — Python boundary only.
@@ -586,6 +587,37 @@ slow_bytes_to_fast(MenaiVMState *vs, PyObject *src)
 }
 
 static inline MenaiValue *
+slow_vector_to_fast(MenaiVMState *vs, PyObject *src)
+{
+    PyObject *elems = PyObject_GetAttrString(src, "elements");
+    if (!elems) {
+        return NULL;
+    }
+
+    Py_ssize_t n = PyTuple_GET_SIZE(elems);
+    MenaiVector *r = alloc_menai_vector(vs, (ssize_t)n);
+    if (!r) {
+        Py_DECREF(elems);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    for (Py_ssize_t i = 0; i < n; i++) {
+        MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
+        if (!item) {
+            menai_value_release(vs, (MenaiValue *)r);
+            Py_DECREF(elems);
+            return NULL;
+        }
+
+        r->inline_data[i] = item;
+    }
+
+    Py_DECREF(elems);
+    return (MenaiValue *)r;
+}
+
+static inline MenaiValue *
 slow_symbol_to_fast(MenaiVMState *vs, PyObject *src)
 {
     PyObject *n = PyObject_GetAttrString(src, "name");
@@ -1012,6 +1044,10 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
         return slow_bytes_to_fast(vs, src);
     }
 
+    if (t == Slow_VectorType) {
+        return slow_vector_to_fast(vs, src);
+    }
+
     if (t == Slow_SymbolType) {
         return slow_symbol_to_fast(vs, src);
     }
@@ -1168,6 +1204,31 @@ fast_bytes_to_slow(MenaiVMState *vs, MenaiValue *val)
 
     PyObject *result = PyObject_CallOneArg((PyObject *)Slow_BytesType, py_bytes);
     Py_DECREF(py_bytes);
+    return result;
+}
+
+static inline PyObject *
+fast_vector_to_slow(MenaiVMState *vs, MenaiValue *val)
+{
+    MenaiVector *mv = (MenaiVector *)val;
+    Py_ssize_t n = mv->length;
+    PyObject *py_tuple = PyTuple_New(n);
+    if (!py_tuple) {
+        return NULL;
+    }
+
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *elem = menai_value_to_slow_value(vs, mv->data[i]);
+        if (!elem) {
+            Py_DECREF(py_tuple);
+            return NULL;
+        }
+
+        PyTuple_SET_ITEM(py_tuple, i, elem);
+    }
+
+    PyObject *result = PyObject_CallOneArg((PyObject *)Slow_VectorType, py_tuple);
+    Py_DECREF(py_tuple);
     return result;
 }
 
@@ -1432,6 +1493,10 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
 
     if (t == MENAITYPE_BYTES) {
         return fast_bytes_to_slow(vs, val);
+    }
+
+    if (t == MENAITYPE_VECTOR) {
+        return fast_vector_to_slow(vs, val);
     }
 
     if (t == MENAITYPE_SYMBOL) {
@@ -1844,6 +1909,13 @@ menai_vm_bridge_init(void)
     }
 
     Slow_BytesType = (PyTypeObject *)bytes_type;
+
+    PyObject *vector_type = PyObject_GetAttrString(slow_mod, "MenaiVector");
+    if (!vector_type) {
+        goto fail;
+    }
+
+    Slow_VectorType = (PyTypeObject *)vector_type;
 
     Py_DECREF(slow_mod);
     slow_mod = NULL;

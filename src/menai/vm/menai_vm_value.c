@@ -76,6 +76,10 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         menai_symbol_final(vs, (MenaiSymbol *)v);
         break;
 
+    case MENAITYPE_VECTOR:
+        menai_vector_final(vs, (MenaiVector *)v);
+        break;
+
     default:
         assert(0);
     }

@@ -115,6 +115,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeClosure,
     MenaiVCodeMakeDict,
     MenaiVCodeMakeList,
+    MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeStruct,
     MenaiVCodePatchClosure,
@@ -304,6 +305,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], [r.id for r in instr.args]
 
     if isinstance(instr, MenaiVCodeMakeList):
+        return [instr.dst.id], [r.id for r in instr.args]
+
+    if isinstance(instr, MenaiVCodeMakeVector):
         return [instr.dst.id], [r.id for r in instr.args]
 
     if isinstance(instr, MenaiVCodeMakeSet):

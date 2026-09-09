@@ -307,6 +307,28 @@ Syntax: (operator arg1 arg2 ...)
 - Predicates: (bytes-empty? b) → #t if length is 0; (bytes-prefix? b prefix) → #t if b starts with prefix; (bytes-suffix? b suffix) → #t if b ends with suffix
 - Splitting: (bytes-split b delimiter) → list of bytes split on delimiter (delimiter must be non-empty); (bytes-split-int b byte) → list of bytes split on single byte value
 
+## Vector operations:
+
+- Immutable, contiguous-array-backed sequences with O(1) random access; distinct from lists (no coercion)
+- Vectors are NOT pattern-matchable and NOT hashable (cannot be set members or dict keys)
+- Construction: (vector 1 2 3) → #vector(1 2 3), (vector) → #vector(); no literal syntax
+- Type predicate: (vector? x) → #t
+- Equality: (vector=? a b), (vector!=? a b) — element-wise, order matters
+- Access: (vector-ref v i) → element at 0-based index (O(1)); (vector-length v) → integer
+- Functional update: (vector-set v i val) → new vector with element at index i replaced (original unchanged)
+- Slicing: (vector-slice v start) → from start to end, (vector-slice v start end) → from start to end (exclusive); out of bounds raises an error (matching list-slice); shares backing array
+- Concatenation: (vector-concat a b) → new vector with elements of a followed by b
+- Empty: (vector-empty? v) → #t if length is 0
+- Membership: (vector-member? v x) → #t if x is in v; (vector-index v x) → 0-based index of first occurrence, or #none
+- Conversions: (vector->list v) → list, (list->vector lst) → vector
+- Higher-order: (map-vector f v) → new vector with f applied to each element: (map-vector (lambda (x) (integer* x 2)) (vector 1 2 3)) → #vector(2 4 6)
+- Higher-order: (filter-vector pred v) → new vector of elements satisfying pred: (filter-vector (lambda (x) (integer>? x 0)) (vector -1 2 -3 4)) → #vector(2 4)
+- Higher-order: (fold-vector f init v) → left fold; f is (lambda (acc item) result): (fold-vector integer+ 0 (vector 1 2 3 4)) → 10
+- Higher-order: (find-vector pred v) → first element satisfying pred, or #none: (find-vector (lambda (x) (integer>? x 3)) (vector 1 2 3 4 5)) → 4
+- Higher-order: (any-vector? pred v) → #t if any element satisfies pred; (any-vector? pred (vector)) → #f
+- Higher-order: (all-vector? pred v) → #t if all elements satisfy pred; (all-vector? pred (vector)) → #t (vacuously true)
+- Higher-order: (sort-vector comparator v) → new vector sorted by comparator: (sort-vector integer<? (vector 3 1 4 1 5)) → #vector(1 1 3 4 5); stable sort
+
 ## Symbol operations:
 
 - Type predicate: (symbol? x) → #t if x is a symbol (produced by quote)
@@ -435,5 +457,5 @@ Syntax: (operator arg1 arg2 ...)
 - and/or require boolean arguments and always return a boolean; unlike Scheme they do not return the last evaluated value
 - #none is not a boolean and cannot be used as a condition; use (none? x) to test for absence
 - The user CANNOT see Menai expressions or Menai results used with this tool directly; if you want to show either, you must format it as a message to the user.
-- Naming convention: direct operations are named, say, `list-X` with the list as the first argument; higher-order operations are named `X-list` with the function/predicate first and the list last. The same convention applies to dicts (`dict-X` / `X-dict`), sets (`set-X` / `X-set`), and bytes (`bytes-X` / `X-bytes`).
+- Naming convention: direct operations are named, say, `list-X` with the list as the first argument; higher-order operations are named `X-list` with the function/predicate first and the list last. The same convention applies to dicts (`dict-X` / `X-dict`), sets (`set-X` / `X-set`), bytes (`bytes-X` / `X-bytes`), and vectors (`vector-X` / `X-vector`).
 """

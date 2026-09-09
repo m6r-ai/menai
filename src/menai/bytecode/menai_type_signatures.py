@@ -321,4 +321,19 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'bytes-append-uleb128': (['bytes', 'integer'], 'bytes'),
     'bytes-read-sleb128': (['bytes', 'integer'], 'integer'),
     'bytes-append-sleb128': (['bytes', 'integer'], 'bytes'),
+
+    # Vector operations
+    'vector?': (['any'], 'boolean'),
+    'vector=?': (['vector', 'vector'], 'boolean'),
+    'vector!=?': (['vector', 'vector'], 'boolean'),
+    'vector-ref': (['vector', 'integer'], None),
+    'vector-length': (['vector'], 'integer'),
+    'vector-set': (['vector', 'integer', 'any'], 'vector'),
+    'vector-slice': (['vector', 'integer', 'integer'], 'vector'),
+    'vector-concat': (['vector', 'vector'], 'vector'),
+    'vector-empty?': (['vector'], 'boolean'),
+    'vector-member?': (['vector', 'any'], 'boolean'),
+    'vector-index': (['vector', 'any'], None),
+    'vector->list': (['vector'], 'list'),
+    'list->vector': (['list'], 'vector'),
 }

@@ -16,6 +16,7 @@ from menai.ir.menai_ir import (
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
+    MenaiIRBuildVector,
     MenaiIREmptyList,
     MenaiIRError,
     MenaiIRIf,
@@ -95,6 +96,11 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
         if isinstance(ir, MenaiIRBuildSet):
             return MenaiIRBuildSet(
+                element_plans=[self._opt(e, frame_stack) for e in ir.element_plans],
+            )
+
+        if isinstance(ir, MenaiIRBuildVector):
+            return MenaiIRBuildVector(
                 element_plans=[self._opt(e, frame_stack) for e in ir.element_plans],
             )
 
@@ -364,6 +370,10 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
                 refs |= MenaiIROptimizer._collect_used_names(v, bound)
 
         elif isinstance(ir, MenaiIRBuildSet):
+            for e in ir.element_plans:
+                refs |= MenaiIROptimizer._collect_used_names(e, bound)
+
+        elif isinstance(ir, MenaiIRBuildVector):
             for e in ir.element_plans:
                 refs |= MenaiIROptimizer._collect_used_names(e, bound)
 

@@ -85,6 +85,12 @@ menai_vm_state_alloc(void)
         return NULL;
     }
 
+    vs->empty_vector = alloc_menai_vector(vs, 0);
+    if (!vs->empty_vector) {
+        menai_vm_state_free(vs);
+        return NULL;
+    }
+
     vs->_gc_threshold = GC_THRESHOLD;
 
     return vs;
@@ -103,6 +109,10 @@ menai_vm_state_free(MenaiVMState *vs)
 
     if (vs->_globals_valid) {
         globals_free(vs, &vs->_globals);
+    }
+
+    if (vs->empty_vector) {
+        menai_value_free(vs, (MenaiValue *)vs->empty_vector);
     }
 
     if (vs->empty_set) {

@@ -60,6 +60,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGPatchClosureInstr,
     MenaiCFGMakeStructInstr,
     MenaiCFGMakeListInstr,
+    MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGPhiInstr,
@@ -87,6 +88,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodePatchClosure,
     MenaiVCodeMakeStruct,
     MenaiVCodeMakeList,
+    MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
     MenaiVCodeRaise,
@@ -395,6 +397,12 @@ class MenaiVCodeBuilder:
             dst = self._reg(instr.result)
             args = [self._reg(a) for a in instr.args]
             instrs.append(MenaiVCodeMakeList(dst=dst, args=args))
+            return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
+
+        if isinstance(instr, MenaiCFGMakeVectorInstr):
+            dst = self._reg(instr.result)
+            args = [self._reg(a) for a in instr.args]
+            instrs.append(MenaiVCodeMakeVector(dst=dst, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGMakeSetInstr):

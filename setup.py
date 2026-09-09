@@ -52,6 +52,7 @@ extensions = [
             f"{_MENAI_VM_SRC}/menai_vm_struct.c",
             f"{_MENAI_VM_SRC}/menai_vm_structtype.c",
             f"{_MENAI_VM_SRC}/menai_vm_symbol.c",
+            f"{_MENAI_VM_SRC}/menai_vm_vector.c",
             f"{_MENAI_VM_SRC}/menai_vm_value.c",
         ],
         include_dirs=[_MENAI_VM_SRC],

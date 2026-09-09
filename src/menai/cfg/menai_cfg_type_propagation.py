@@ -74,6 +74,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeListInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeStructInstr,
+    MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
     MenaiCFGSelfLoopTerm,
     MenaiCFGPhiInstr,
@@ -94,6 +95,7 @@ from menai.menai_value import (
     MenaiStruct,
     MenaiStructType,
     MenaiSymbol,
+    MenaiVector,
 )
 
 # Map from Python value class to Menai type name string.
@@ -108,6 +110,7 @@ _VALUE_TYPE_MAP = {
     MenaiList: 'list',
     MenaiDict: 'dict',
     MenaiSet: 'set',
+    MenaiVector: 'vector',
     MenaiFunction: 'function',
     MenaiBytes: 'bytes',
     MenaiStruct: 'struct',
@@ -163,6 +166,7 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
                                           MenaiCFGBuiltinInstr, MenaiCFGCallInstr,
                                           MenaiCFGApplyInstr, MenaiCFGMakeClosureInstr,
                                           MenaiCFGMakeStructInstr, MenaiCFGMakeListInstr,
+                                          MenaiCFGMakeVectorInstr,
                                           MenaiCFGMakeSetInstr, MenaiCFGMakeDictInstr,
                                           MenaiCFGPhiInstr)):
                         new_type = self._instr_type(instr, types)
@@ -193,6 +197,9 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
 
         if isinstance(instr, MenaiCFGMakeListInstr):
             return 'list'
+
+        if isinstance(instr, MenaiCFGMakeVectorInstr):
+            return 'vector'
 
         if isinstance(instr, MenaiCFGMakeSetInstr):
             return 'set'

@@ -255,6 +255,15 @@ not a cons-cell type.
 See [ADR-0017](docs/adr/0017-cons-cell-internal-representation.md) (supersedes
 [ADR-0003](docs/adr/0003-proper-lists-only.md)).
 
+### Vector type
+
+Vectors are immutable, contiguous-array-backed sequences with O(1) random
+access — a distinct type from lists, with no coercion. They complement lists
+for index-heavy code where lists' O(n) random access is a bottleneck (e.g.
+Sudoku, Rubik's Cube). Vectors are not pattern-matchable and not hashable.
+There is no literal syntax; vectors are created via `(vector ...)`.
+See [ADR-0018](docs/adr/0018-vector-type.md).
+
 ### Strict numeric typing
 
 There is no implicit coercion between `integer`, `float`, and `complex`. All arithmetic

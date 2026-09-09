@@ -191,6 +191,20 @@ class MenaiCFGMakeListInstr:
 
 
 @dataclass
+class MenaiCFGMakeVectorInstr:
+    """
+    %result = make_vector [%elem, ...]
+
+    Constructs a new MenaiVector from a flat list of element values known at
+    compile time to be N elements.  The VM codegen lowers this to MAKE_VECTOR,
+    staging element values into the outgoing zone and allocating the vector in
+    a single call.
+    """
+    result: MenaiCFGValue
+    args: list[MenaiCFGValue]
+
+
+@dataclass
 class MenaiCFGMakeSetInstr:
     """
     %result = make_set [%elem, ...]
@@ -287,6 +301,7 @@ MenaiCFGInstr = (  # pylint: disable=invalid-name
     | MenaiCFGApplyInstr
     | MenaiCFGMakeStructInstr
     | MenaiCFGMakeListInstr
+    | MenaiCFGMakeVectorInstr
     | MenaiCFGMakeSetInstr
     | MenaiCFGMakeDictInstr
     | MenaiCFGMakeClosureInstr
@@ -507,6 +522,9 @@ def _fmt_instr(instr: MenaiCFGInstr) -> str:
     if isinstance(instr, MenaiCFGMakeListInstr):
         return f"{instr.result} = make_list {_fmt_values(instr.args)}"
 
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
+        return f"{instr.result} = make_vector {_fmt_values(instr.args)}"
+
     if isinstance(instr, MenaiCFGMakeSetInstr):
         return f"{instr.result} = make_set {_fmt_values(instr.args)}"
 
@@ -643,6 +661,9 @@ def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
         return [a.id for a in instr.args]
 
     if isinstance(instr, MenaiCFGMakeListInstr):
+        return [a.id for a in instr.args]
+
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
         return [a.id for a in instr.args]
 
     if isinstance(instr, MenaiCFGMakeSetInstr):

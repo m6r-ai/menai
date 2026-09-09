@@ -672,6 +672,102 @@ fit in the specified width. Raise error if not enough bytes from offset.
 
 ---
 
+## Vector
+
+### Predicates and comparison
+
+| Function | Description |
+|----------|-------------|
+| `(vector? x)` | Type predicate |
+| `(vector=? a b)` | Equality (element-wise, order matters) |
+| `(vector!=? a b)` | Inequality |
+
+### Construction
+
+| Function | Description |
+|----------|-------------|
+| `(vector a b ...)` | Create a vector |
+| `(vector-concat a b)` | Concatenate two vectors |
+
+```menai
+(vector 1 2 3)              → #vector(1 2 3)
+(vector)                   → #vector()
+(vector-concat (vector 1 2) (vector 3 4))  → #vector(1 2 3 4)
+```
+
+### Access
+
+| Function | Description |
+|----------|-------------|
+| `(vector-ref v i)` | Element at 0-based index (O(1)) |
+| `(vector-length v)` | Number of elements |
+| `(vector-set v i val)` | Return new vector with element at index i replaced |
+
+```menai
+(vector-ref (vector "a" "b" "c") 1)  → "b"
+(vector-length (vector 1 2 3))       → 3
+(vector-set (vector 1 2 3) 1 10)     → #vector(1 10 3)
+```
+
+### Slicing
+
+| Function | Description |
+|----------|-------------|
+| `(vector-slice v start [end])` | Sub-vector; end is exclusive; out of bounds raises an error; shares backing array |
+
+```menai
+(vector-slice (vector 1 2 3 4 5) 2)     → #vector(3 4 5)
+(vector-slice (vector 1 2 3 4 5) 1 3)   → #vector(2 3)
+```
+
+### Search
+
+| Function | Description |
+|----------|-------------|
+| `(vector-empty? v)` | `→ #t` if length is 0 |
+| `(vector-member? v x)` | `→ #t` if x is in v |
+| `(vector-index v x)` | 0-based index of first occurrence, or `#none` |
+
+### Conversions
+
+| Function | Description |
+|----------|-------------|
+| `(vector->list v)` | Convert vector to list |
+| `(list->vector lst)` | Convert list to vector |
+
+### Higher-order
+
+| Function | Description |
+|----------|-------------|
+| `(map-vector f v)` | Apply f to each element |
+| `(filter-vector pred v)` | Keep elements where pred returns `#t` |
+| `(fold-vector f init v)` | Left fold; f is `(lambda (acc item) result)` |
+| `(find-vector pred v)` | First element satisfying pred, or `#none` |
+| `(any-vector? pred v)` | `→ #t` if any element satisfies pred; `(any-vector? pred (vector))` → #f |
+| `(all-vector? pred v)` | `→ #t` if all elements satisfy pred; `(all-vector? pred (vector))` → #t |
+| `(sort-vector comparator v)` | Stable sort; comparator is `(lambda (a b) ...)` returning `#t` if a should come before b |
+
+```menai
+(map-vector (lambda (x) (integer* x 2)) (vector 1 2 3))
+→ #vector(2 4 6)
+
+(filter-vector (lambda (x) (integer>? x 0)) (vector -1 2 -3 4))
+→ #vector(2 4)
+
+(fold-vector integer+ 0 (vector 1 2 3 4))
+→ 10
+
+(find-vector (lambda (x) (integer>? x 3)) (vector 1 2 3 4 5))
+→ 4
+
+(sort-vector integer<? (vector 3 1 4 1 5))
+→ #vector(1 1 3 4 5)
+```
+
+Vectors are NOT pattern-matchable and NOT hashable (cannot be set members or dict keys).
+
+---
+
 ## Structtype operations
 
 Structtype values are produced by `(struct (field1 field2 ...))` as the RHS of a

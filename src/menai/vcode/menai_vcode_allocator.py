@@ -70,6 +70,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodePatchClosure,
     MenaiVCodeMakeStruct,
     MenaiVCodeMakeList,
+    MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
     MenaiVCodeReg,
@@ -271,6 +272,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         MenaiVCodeCall, MenaiVCodeApply,
         MenaiVCodeTailCall, MenaiVCodeTailApply,
         MenaiVCodeMakeStruct, MenaiVCodeMakeList,
+        MenaiVCodeMakeVector,
         MenaiVCodeMakeSet, MenaiVCodeMakeDict,
     )
 
@@ -280,6 +282,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     consuming_types = (
         MenaiVCodeCall, MenaiVCodeTailCall,
         MenaiVCodeMakeList, MenaiVCodeMakeSet,
+        MenaiVCodeMakeVector,
         MenaiVCodeMakeStruct, MenaiVCodeMakeDict,
     )
 
@@ -419,6 +422,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, MenaiVCodeMakeList):
         return [instr.dst.id], [r.id for r in instr.args]
 
+    if isinstance(instr, MenaiVCodeMakeVector):
+        return [instr.dst.id], [r.id for r in instr.args]
+
     if isinstance(instr, MenaiVCodeMakeSet):
         return [instr.dst.id], [r.id for r in instr.args]
 
@@ -477,12 +483,11 @@ def _outgoing_args(instr: MenaiVCodeInstr) -> list[tuple[MenaiVCodeReg, int]]:
     in menai_bytecode_builder._emit_vcode:
 
       Call / TailCall:  args[j]           -> local_count + j
-      MakeList / Set:   args[j]           -> local_count + j
+      MakeList / Vector / Set: args[j]    -> local_count + j
       MakeStruct:       args[j]           -> local_count + 1 + j  (slot 0 = type)
       MakeDict:         pairs[j] = (k,v)  -> local_count + j*2, local_count + j*2 + 1
     """
-    if isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall,
-                          MenaiVCodeMakeList, MenaiVCodeMakeSet)):
+    if isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall, MenaiVCodeMakeList, MenaiVCodeMakeVector, MenaiVCodeMakeSet)):
         return [(arg, j) for j, arg in enumerate(instr.args)]
 
     if isinstance(instr, MenaiVCodeMakeStruct):

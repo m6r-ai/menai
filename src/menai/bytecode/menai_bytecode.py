@@ -223,7 +223,7 @@ class Opcode(IntEnum):
                                         # r_dest = (string->integer-codepoint r_src0)
     STRING_TO_COMPLEX = _op(154, 1)     # r_dest = (string->complex r_src0)
 
-    # Alist operations
+    # Dictionary operations
     MAKE_DICT = _op(155, 2)             # r_dest = MAKE_DICT src0, src1 — base slot of outgoing zone, pair count
     DICT_P = _op(156, 1)                # r_dest = (dict? r_src0)
     DICT_EQ_P = _op(157, 2)             # r_dest = (dict=? r_src0 r_src1)
@@ -388,6 +388,24 @@ class Opcode(IntEnum):
     ASSERT_BYTES = _op(304, 1)          # Check r_src0 — assert r_src0 is bytes
     ASSERT_STRUCT = _op(305, 1)         # Check r_src0 — assert r_src0 is struct
     ASSERT_STRUCTTYPE = _op(306, 1)     # Check r_src0 — assert r_src0 is structtype
+
+    # Vector operations
+    LOAD_EMPTY_VECTOR = _op(307)        # r_dest = empty vector singleton
+    MAKE_VECTOR = _op(308, 2)           # r_dest = MAKE_VECTOR src0, src1 — base slot, element count
+    VECTOR_P = _op(309, 1)              # r_dest = (vector? r_src0)
+    VECTOR_EQ_P = _op(310, 2)           # r_dest = (vector=? r_src0 r_src1)
+    VECTOR_NEQ_P = _op(311, 2)          # r_dest = (vector!=? r_src0 r_src1)
+    VECTOR_REF = _op(312, 2)            # r_dest = (vector-ref r_src0 r_src1)
+    VECTOR_LENGTH = _op(313, 1)         # r_dest = (vector-length r_src0)
+    VECTOR_SET = _op(314, 3)            # r_dest = (vector-set r_src0 r_src1 r_src2)
+    VECTOR_SLICE = _op(315, 3)          # r_dest = (vector-slice r_src0 r_src1 r_src2)
+    VECTOR_CONCAT = _op(316, 2)         # r_dest = (vector-concat r_src0 r_src1)
+    VECTOR_EMPTY_P = _op(317, 1)        # r_dest = (vector-empty? r_src0)
+    VECTOR_MEMBER_P = _op(318, 2)       # r_dest = (vector-member? r_src0 r_src1)
+    VECTOR_INDEX = _op(319, 2)          # r_dest = (vector-index r_src0 r_src1)
+    VECTOR_TO_LIST = _op(320, 1)        # r_dest = (vector->list r_src0)
+    LIST_TO_VECTOR = _op(321, 1)        # r_dest = (list->vector r_src0)
+    ASSERT_VECTOR = _op(322, 1)         # Check r_src0 — assert r_src0 is vector
 
 # Maps builtin function name → (opcode, arity) for all fixed-arity builtins.
 #
@@ -668,6 +686,19 @@ BUILTIN_OPCODE_MAP: dict[str, tuple[Opcode, int]] = {
     'bytes-append-uleb128': (Opcode.BYTES_APPEND_ULEB128, 2),
     'bytes-read-sleb128': (Opcode.BYTES_READ_SLEB128, 2),
     'bytes-append-sleb128': (Opcode.BYTES_APPEND_SLEB128, 2),
+    'vector?': (Opcode.VECTOR_P, 1),
+    'vector=?': (Opcode.VECTOR_EQ_P, 2),
+    'vector!=?': (Opcode.VECTOR_NEQ_P, 2),
+    'vector-ref': (Opcode.VECTOR_REF, 2),
+    'vector-length': (Opcode.VECTOR_LENGTH, 1),
+    'vector-set': (Opcode.VECTOR_SET, 3),
+    'vector-slice': (Opcode.VECTOR_SLICE, 3),
+    'vector-concat': (Opcode.VECTOR_CONCAT, 2),
+    'vector-empty?': (Opcode.VECTOR_EMPTY_P, 1),
+    'vector-member?': (Opcode.VECTOR_MEMBER_P, 2),
+    'vector-index': (Opcode.VECTOR_INDEX, 2),
+    'vector->list': (Opcode.VECTOR_TO_LIST, 1),
+    'list->vector': (Opcode.LIST_TO_VECTOR, 1),
 }
 
 
@@ -864,7 +895,8 @@ class Instruction:
                       Opcode.ASSERT_SYMBOL, Opcode.ASSERT_LIST,
                       Opcode.ASSERT_DICT, Opcode.ASSERT_SET,
                       Opcode.ASSERT_FUNCTION, Opcode.ASSERT_BYTES,
-                      Opcode.ASSERT_STRUCT, Opcode.ASSERT_STRUCTTYPE):
+                      Opcode.ASSERT_STRUCT, Opcode.ASSERT_STRUCTTYPE,
+                      Opcode.ASSERT_VECTOR):
             return f"{name} {rn(self.src0)}"
 
         n = self.arg_count()

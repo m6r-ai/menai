@@ -156,6 +156,18 @@ class MenaiIRBuildSet:
 
 
 @dataclass
+class MenaiIRBuildVector:
+    """
+    Plan for compiling a (vector e1 e2 ... eN) literal.
+
+    Carries a flat list of element plans.  The VM codegen lowers it to
+    MAKE_VECTOR, staging element values into the outgoing zone and
+    allocating the vector in a single call.
+    """
+    element_plans: list['MenaiIRExpr']
+
+
+@dataclass
 class MenaiIRBuildStruct:
     """
     Plan for compiling a struct constructor call (TypeName f1 f2 ... fN).
@@ -184,6 +196,7 @@ MenaiIRExpr = (  # pylint: disable=invalid-name
     MenaiIRBuildList |
     MenaiIRBuildDict |
     MenaiIRBuildSet |
+    MenaiIRBuildVector |
     MenaiIRBuildStruct |
     MenaiIRReturn
 )

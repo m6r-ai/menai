@@ -35,9 +35,12 @@ benchmark/
     ├── sort/
     │   ├── suite.py          # Sort benchmark suite
     │   └── list-sort.menai
-    └── sudoku/
-        ├── suite.py          # Sudoku solver benchmark suite
-        └── sudoku-solver.menai
+    ├── sudoku/
+    │   ├── suite.py          # Sudoku solver benchmark suite
+    │   └── sudoku-solver.menai
+    └── sudoku_vector/
+        ├── suite.py          # Sudoku solver benchmark suite (vector board)
+        └── sudoku-vector-solver.menai
 ```
 
 ## Implementations compared
@@ -93,6 +96,14 @@ Sizes: 10, 50, 100, 250, 500, 1000, 2500, 5000, 10000 elements.
 Solves sudoku puzzles using a backtracking solver. Four difficulty levels:
 easy (36 givens), medium (30), hard (25), expert (23).
 Validation checks that every row, column, and 3×3 box contains digits 1–9.
+
+### Sudoku (vector)
+Solves the same four sudoku puzzles as the sudoku suite, but the board is a
+vector of 9 row-vectors instead of a list of lists, so cell access is
+`vector-ref` and a cell update is a `vector-set` copy. The puzzles, iteration
+counts, Python reference implementations, and validation are shared with the
+sudoku suite, which makes the Menai timings directly comparable across the
+two suites.
 
 ## Adding a new suite
 

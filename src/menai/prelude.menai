@@ -1203,7 +1203,81 @@
    (range (lambda (start end . rest)
             ($range start
                     end
-                    (if ($list-null? rest) 1 ($list-first rest))))))
+                    (if ($list-null? rest) 1 ($list-first rest)))))
+   (vector (lambda (. args) ($list->vector args)))
+   (vector? (lambda (x) ($vector? x)))
+   (vector=? (lambda (a b) ($vector=? a b)))
+   (vector!=? (lambda (a b) ($vector!=? a b)))
+   (vector-ref (lambda (v i) ($vector-ref v i)))
+   (vector-length (lambda (v) ($vector-length v)))
+   (vector-set (lambda (v i val) ($vector-set v i val)))
+   (vector-slice (lambda (v start . rest)
+                   (if ($list-null? rest)
+                       ($vector-slice v start ($vector-length v))
+                       ($vector-slice v start ($list-first rest)))))
+   (vector-concat (lambda (a b) ($vector-concat a b)))
+   (vector-empty? (lambda (v) ($vector-empty? v)))
+   (vector-member? (lambda (v x) ($vector-member? v x)))
+   (vector-index (lambda (v x) ($vector-index v x)))
+   (vector->list (lambda (v) ($vector->list v)))
+   (list->vector (lambda (lst) ($list->vector lst)))
+   (map-vector (lambda (f v)
+                 (letrec
+                   ((loop (lambda (i acc)
+                            (if ($integer=? i ($vector-length v))
+                                ($list->vector ($list-reverse acc))
+                                (loop ($integer+ i 1)
+                                      ($list-prepend acc (f ($vector-ref v i))))))))
+                   (loop 0 (list)))))
+   (filter-vector (lambda (pred v)
+                    (letrec
+                      ((loop (lambda (i acc)
+                               (if ($integer=? i ($vector-length v))
+                                   ($list->vector ($list-reverse acc))
+                                   (let ((elem ($vector-ref v i)))
+                                     (loop ($integer+ i 1)
+                                           (if (pred elem)
+                                               ($list-prepend acc elem)
+                                               acc)))))))
+                      (loop 0 (list)))))
+   (fold-vector (lambda (f init v)
+                  (letrec
+                    ((loop (lambda (i acc)
+                             (if ($integer=? i ($vector-length v))
+                                 acc
+                                 (loop ($integer+ i 1)
+                                       (f acc ($vector-ref v i)))))))
+                    (loop 0 init))))
+   (find-vector (lambda (pred v)
+                  (letrec
+                    ((loop (lambda (i)
+                             (if ($integer=? i ($vector-length v))
+                                 #none
+                                 (let ((elem ($vector-ref v i)))
+                                   (if (pred elem)
+                                       elem
+                                       (loop ($integer+ i 1))))))))
+                    (loop 0))))
+   (any-vector? (lambda (pred v)
+                  (letrec
+                    ((loop (lambda (i)
+                             (if ($integer=? i ($vector-length v))
+                                 #f
+                                 (if (pred ($vector-ref v i))
+                                     #t
+                                     (loop ($integer+ i 1)))))))
+                    (loop 0))))
+   (all-vector? (lambda (pred v)
+                  (letrec
+                    ((loop (lambda (i)
+                             (if ($integer=? i ($vector-length v))
+                                 #t
+                                 (if (pred ($vector-ref v i))
+                                     (loop ($integer+ i 1))
+                                     #f)))))
+                    (loop 0))))
+   (sort-vector (lambda (cmp v)
+                  ($list->vector (sort-list cmp ($vector->list v))))))
   (dict "function?" function?
         "function=?" function=?
         "function!=?" function!=?
@@ -1501,5 +1575,26 @@
         "bytes-suffix?" bytes-suffix?
         "bytes-split" bytes-split
         "bytes-split-int" bytes-split-int
+        "vector" vector
+        "vector?" vector?
+        "vector=?" vector=?
+        "vector!=?" vector!=?
+        "vector-ref" vector-ref
+        "vector-length" vector-length
+        "vector-set" vector-set
+        "vector-slice" vector-slice
+        "vector-concat" vector-concat
+        "vector-empty?" vector-empty?
+        "vector-member?" vector-member?
+        "vector-index" vector-index
+        "vector->list" vector->list
+        "list->vector" list->vector
+        "map-vector" map-vector
+        "filter-vector" filter-vector
+        "fold-vector" fold-vector
+        "find-vector" find-vector
+        "any-vector?" any-vector?
+        "all-vector?" all-vector?
+        "sort-vector" sort-vector
         "pi" pi
         "e" e))

@@ -38,6 +38,7 @@ from menai.menai_value import (
     MenaiInteger,
     MenaiList,
     MenaiNone,
+    MenaiVector,
     MenaiSet,
     MenaiString,
     MenaiValue,
@@ -57,6 +58,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeClosure,
     MenaiVCodeMakeDict,
     MenaiVCodeMakeList,
+    MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeStruct,
     MenaiVCodeMove,
@@ -100,6 +102,7 @@ _GUARD_OPCODES: dict[str, Opcode] = {
     'bytes': Opcode.ASSERT_BYTES,
     'struct': Opcode.ASSERT_STRUCT,
     'structtype': Opcode.ASSERT_STRUCTTYPE,
+    'vector': Opcode.ASSERT_VECTOR,
 }
 
 _FIELD_NAMES = ('opcode', 'dest', 'src0', 'src1', 'src2')
@@ -178,6 +181,10 @@ class _EmitContext:
 
         if isinstance(value, MenaiSet) and len(value.elements) == 0:
             self.emit(Opcode.LOAD_EMPTY_SET, dest=dest)
+            return
+
+        if isinstance(value, MenaiVector) and len(value.elements) == 0:
+            self.emit(Opcode.LOAD_EMPTY_VECTOR, dest=dest)
             return
 
         const_idx = self.add_constant(value)
@@ -373,6 +380,21 @@ class MenaiBytecodeBuilder:
 
                 ctx.max_outgoing_args = max(ctx.max_outgoing_args, n_elems)
                 ctx.emit(Opcode.MAKE_LIST, local_count, n_elems, dest=ctx.slot_of(instr.dst))
+                i += 1
+                continue
+
+            if isinstance(instr, MenaiVCodeMakeVector):
+                local_count = ctx.slot_map.local_count
+                n_elems = len(instr.args)
+                # Stage each element value into outgoing zone slots 0..n_elems-1.
+                for j, arg in enumerate(instr.args):
+                    src = ctx.slot_of(arg)
+                    dst_slot = local_count + j
+                    if src != dst_slot:
+                        ctx.emit(Opcode.MOVE, src, dest=dst_slot)
+
+                ctx.max_outgoing_args = max(ctx.max_outgoing_args, n_elems)
+                ctx.emit(Opcode.MAKE_VECTOR, local_count, n_elems, dest=ctx.slot_of(instr.dst))
                 i += 1
                 continue
 

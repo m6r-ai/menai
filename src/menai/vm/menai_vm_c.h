@@ -134,6 +134,7 @@ typedef struct {
 #define MENAITYPE_BYTES 0x000e
 #define MENAITYPE_DICT_ELEMENT 0x000f
 #define MENAITYPE_SET_ELEMENT 0x0010
+#define MENAITYPE_VECTOR 0x0011
 
 typedef struct MenaiBigInt MenaiBigInt;
 typedef struct MenaiBoolean MenaiBoolean;
@@ -154,6 +155,7 @@ typedef struct MenaiStruct MenaiStruct;
 typedef struct MenaiStructType MenaiStructType;
 typedef struct MenaiSymbol MenaiSymbol;
 typedef struct MenaiValue MenaiValue;
+typedef struct MenaiVector MenaiVector;
 
 typedef int64_t hash_t;
 typedef uint64_t uhash_t;
@@ -382,6 +384,21 @@ struct MenaiValue {
 };
 
 /*
+ * MenaiVector — immutable contiguous array of MenaiValue pointers with
+ * O(1) random access.  Owners store element pointers inline via a flexible
+ * array member.  Slice views allocate only the header (sizeof(MenaiVector)),
+ * point data into the owner's inline buffer at an offset, and retain the
+ * owner — exactly the same structural sharing pattern as MenaiBytes.
+ */
+struct MenaiVector {
+    MENAI_MAGIC_FIELD
+    ssize_t length;                     /* logical element count */
+    MenaiVector *owner;                 /* non-NULL when this is a slice view */
+    MenaiValue **data;                  /* points to inline_data for owners, into owner for views */
+    MenaiValue *inline_data[];          /* FAM — storage for owning vectors */
+};
+
+/*
  * Menai VM error codes — returned as negative values by leaf modules
  * (bigint, string, hashtable, etc.) and propagated by the VM to the bridge.
  * The bridge translates them into the appropriate Python exception.
@@ -492,6 +509,7 @@ typedef struct {
 #define IS_MENAI_STRUCTTYPE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCTTYPE)
 #define IS_MENAI_STRUCT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCT)
 #define IS_MENAI_BYTES(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_BYTES)
+#define IS_MENAI_VECTOR(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_VECTOR)
 
 /*
  * Pool allocator constants.
@@ -600,6 +618,7 @@ typedef struct MenaiVMState {
     MenaiList *empty_list;
     MenaiDict *empty_dict;
     MenaiSet *empty_set;
+    MenaiVector *empty_vector;
 
     volatile int _cancel_flag;
 
@@ -1305,6 +1324,32 @@ menai_symbol_hash(MenaiSymbol *sym)
 {
     return menai_string_hash(sym->name);
 }
+
+MenaiVector *alloc_menai_vector(MenaiVMState *vs, ssize_t n);
+
+static inline void
+menai_vector_final(MenaiVMState *vs, MenaiVector *self)
+{
+    if (self->owner) {
+        /* View — release the backing owner; do not touch the element array. */
+        menai_value_release(vs, (MenaiValue *)self->owner);
+        return;
+    }
+
+    /* Owner — release all element references. */
+    for (ssize_t i = 0; i < self->length; i++) {
+        if (self->data[i]) {
+            menai_value_release(vs, self->data[i]);
+        }
+    }
+}
+
+MenaiVector *alloc_menai_vector_from_args(MenaiVMState *vs, MenaiValue **elems, ssize_t n);
+MenaiVector *alloc_menai_vector_from_slice(MenaiVMState *vs, MenaiVector *v, ssize_t start, ssize_t end);
+MenaiVector *alloc_menai_vector_from_concat(MenaiVMState *vs, MenaiVector *a, MenaiVector *b);
+MenaiVector *alloc_menai_vector_from_set(MenaiVMState *vs, MenaiVector *v, ssize_t index, MenaiValue *val);
+MenaiValue *menai_vector_ref(MenaiVMState *vs, MenaiVector *v, ssize_t i);
+int menai_vector_equal(MenaiVector *a, MenaiVector *b);
 
 int menai_vm_bridge_init(void);
 
