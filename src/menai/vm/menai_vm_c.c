@@ -5601,7 +5601,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             MenaiList *cur = a;
-            while (cur->tail->head) {
+            while (--n) {
                 cur = cur->tail;
             }
 
@@ -5683,6 +5683,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     if (first) {
                         menai_value_release(vs, (MenaiValue *)first);
                     }
+
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
@@ -5695,6 +5696,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 } else {
                     first = cell;
                 }
+
                 prev = cell;
                 cur = cur->tail;
                 remaining--;
@@ -5705,6 +5707,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 if (first) {
                     menai_value_release(vs, (MenaiValue *)first);
                 }
+
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
