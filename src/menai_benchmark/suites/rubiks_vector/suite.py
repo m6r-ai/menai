@@ -1,11 +1,8 @@
-
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
 from menai import Menai
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
 from menai_benchmark.suites.rubiks_cube.suite import (
     _SCRAMBLES,
     _apply_moves_idiomatic,
