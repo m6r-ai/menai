@@ -8,6 +8,7 @@ New features:
 - Added a loop-invariant-code-motion optimizer.
 - Added a constant coalescing optimizer.
 - Added a jump threading optimizer.
+- Implemented performance improvements for some prelude functions.
 
 Bug fixes:
 
