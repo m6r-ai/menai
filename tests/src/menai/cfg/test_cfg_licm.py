@@ -450,3 +450,71 @@ class TestGuardHoisting:
           (loop 0 0))
         """)
         assert result == 25
+    def test_phi_back_edge_guard_hoisted(self):
+        """
+        A guard on a param whose back-edge value is a phi node (from an
+        inner if that either transforms or passes through the param) should
+        be hoisted when the type is preserved across the back-edge.
+
+        The back-edge value for acc is a phi merging:
+          - list-prepend result (type 'list')
+          - acc itself (passed through on the skip path)
+
+        The phi's type is unknown because acc's type is unknown on the skip
+        path (the guard is only on the prepend path).  The type preservation
+        check handles this: assuming acc is 'list', both phi incoming values
+        are 'list', so the back-edge preserves 'list', and the guard is
+        loop-invariant.
+        """
+        src = """
+        (letrec ((loop
+                  (lambda (i acc)
+                    (if (integer<? i 0)
+                        (list->vector acc)
+                        (let ((elem (vector-ref v i)))
+                          (loop (integer- i 1)
+                                (if (integer=? (integer% i 2) 0)
+                                    (list-prepend acc elem)
+                                    acc))))))
+                 (v (vector 10 20 30 40 50)))
+          (loop (integer- (vector-length v) 1) (list)))
+        """
+        code = _compile(src)
+        loop_fn = _find_lambda(code, "loop")
+        assert _count_op(loop_fn, Opcode.ASSERT_LIST) == 1
+        target = _self_loop_target(loop_fn)
+        assert target is not None
+        guard_idx = next(
+            i for i, instr in enumerate(loop_fn.instructions)
+            if unpack_instruction(instr).opcode == int(Opcode.ASSERT_LIST)
+        )
+        assert target > guard_idx, (
+            "self-loop must skip the hoisted ASSERT_LIST guard"
+        )
+
+    def test_phi_back_edge_guard_correct_results(self):
+        """
+        End-to-end: a loop with a phi-based back-edge for acc should
+        produce correct results after guard hoisting.
+
+        Elements at even indices (0, 2, 4) are 10, 30, 50.
+        The loop goes from index 4 down to 0, prepending even-index elements.
+        Result: [10, 30, 50].
+        """
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (letrec ((loop
+                  (lambda (i acc)
+                    (if (integer<? i 0)
+                        (list->vector acc)
+                        (let ((elem (vector-ref v i)))
+                          (loop (integer- i 1)
+                                (if (integer=? (integer% i 2) 0)
+                                    (list-prepend acc elem)
+                                    acc))))))
+                 (v (vector 10 20 30 40 50)))
+          (loop (integer- (vector-length v) 1) (list)))
+        """)
+        assert str(result) == "[10, 30, 50]"
