@@ -152,8 +152,14 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     # Pre-assign fixed slots for params and free vars.
     # The register IDs come from the VCode builder, which records them
     # explicitly from the CFG entry block's ParamInstr and FreeVarInstr.
-    fixed_reg_ids: list[int] = list(func.param_reg_ids) + list(func.free_var_reg_ids)
-    fixed_reg_id_set: set[int] = set(fixed_reg_ids)
+    fixed_reg_ids: list[int] = (
+        list(func.param_reg_ids) + list(func.free_var_reg_ids)
+    )
+
+    # Hoisted registers are permanently live (they survive across the
+    # self-loop back-edge) but are not pre-assigned slots — the linear
+    # scan allocates them when their defining instruction is reached.
+    fixed_reg_id_set: set[int] = set(fixed_reg_ids) | set(func.hoisted_reg_ids)
     for slot_idx, reg_id in enumerate(fixed_reg_ids):
         slots[reg_id] = slot_idx
 

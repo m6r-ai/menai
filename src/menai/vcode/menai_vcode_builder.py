@@ -70,6 +70,8 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
+    value_ids_in_instr,
+    value_ids_in_term,
 )
 from menai.vcode.menai_vcode import (
     MenaiVCodeApply,
@@ -141,10 +143,10 @@ class MenaiVCodeBuilder:
         # places (phi-move pre-computation and terminator emission).
         labels: dict[int, str] = {block.id: self._label(block) for block in rpo}
 
-        # When a SelfLoopTerm has an explicit target (set by the type
-        # propagation pass's loop-invariant guard hoisting), the target
-        # block's label is "__entry__" so that the slot allocator and bytecode
-        # builder still recognise the self-loop jump pattern.
+        # When a SelfLoopTerm has an explicit target (set by the LICM pass
+        # when it hoists loop-invariant instructions into a preamble), the
+        # target block's label is "__entry__" so that the slot allocator and
+        # bytecode builder still recognise the self-loop jump pattern.
         for block in rpo:
             term = block.terminator
             if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
@@ -164,6 +166,18 @@ class MenaiVCodeBuilder:
             elif isinstance(instr, MenaiCFGFreeVarInstr):
                 freevar_regs[instr.var_name] = self._reg(instr.result)
                 free_var_reg_ids.append(self._reg(instr.result).id)
+
+        # Collect register IDs of values hoisted into the preamble by LICM.
+        # When a SelfLoopTerm has an explicit target, the entry block is a
+        # preamble containing loop-invariant instructions.  Values defined
+        # there that are used in the loop body must survive across the
+        # back-edge, so the slot allocator treats them as permanently live.
+        hoisted_reg_ids: list[int] = []
+        for block in func.blocks:
+            term = block.terminator
+            if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                hoisted_reg_ids = self._hoisted_value_ids(func)
+                break
 
         for block in rpo:
             term = block.terminator
@@ -319,6 +333,7 @@ class MenaiVCodeBuilder:
             free_vars=list(func.free_vars),
             param_reg_ids=param_reg_ids,
             free_var_reg_ids=free_var_reg_ids,
+            hoisted_reg_ids=hoisted_reg_ids,
             is_variadic=func.is_variadic,
             binding_name=func.binding_name,
             reg_count=max_reg_id + 1,
@@ -468,3 +483,49 @@ class MenaiVCodeBuilder:
         dfs(func.entry())
         post_order.reverse()
         return post_order
+
+    def _hoisted_value_ids(
+        self,
+        func: MenaiCFGFunction,
+    ) -> list[int]:
+        """
+        Return the SSA value ids of instructions hoisted into the preamble
+        (entry block) that are used in the loop body.  These values are
+        defined in the preamble but not reassigned by the self-loop, so
+        their slots must survive the back-edge — like free vars.
+
+        Only non-param/non-free-var instructions in the entry block that
+        produce a result are considered.  Param and free-var self-moves are
+        already emitted separately.
+        """
+        # Collect value ids defined in the preamble (entry block).
+        preamble_ids: set[int] = set()
+        for instr in func.blocks[0].instrs:
+            result = getattr(instr, 'result', None)
+            if result is not None:
+                # Skip params and free vars — they are handled separately.
+                if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr)):
+                    continue
+
+                preamble_ids.add(result.id)
+
+        if not preamble_ids:
+            return []
+
+        # Collect value ids used in the loop body (all blocks except the
+        # entry/preamble block).
+        used_ids: set[int] = set()
+        for block in func.blocks:
+            if block.id == func.blocks[0].id:
+                continue
+
+            for instr in block.instrs:
+                used_ids.update(value_ids_in_instr(instr))
+
+            # Check terminator args.
+            term = block.terminator
+            if term is not None:
+                used_ids.update(value_ids_in_term(term))
+
+        # Return preamble-defined ids that are used in the loop body.
+        return sorted(preamble_ids & used_ids)

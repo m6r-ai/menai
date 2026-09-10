@@ -311,12 +311,19 @@ class MenaiVCodeFunction:
 
     `reg_count` is the number of virtual registers allocated during lowering,
     used by the slot allocator as the upper bound on register IDs.
+
+    `hoisted_reg_ids` records the virtual register IDs of values that LICM
+    has hoisted into a loop preamble.  Like params and free vars, these are
+    permanently live for the entire function body (they survive across the
+    self-loop back-edge), so the slot allocator assigns them fixed slots that
+    are never reused for loop-body temporaries.
     """
     instrs: list[MenaiVCodeInstr] = field(default_factory=list)
     params: list[str] = field(default_factory=list)
     free_vars: list[str] = field(default_factory=list)
     param_reg_ids: list[int] = field(default_factory=list)
     free_var_reg_ids: list[int] = field(default_factory=list)
+    hoisted_reg_ids: list[int] = field(default_factory=list)
     is_variadic: bool = False
     binding_name: str | None = None
     reg_count: int = 0
