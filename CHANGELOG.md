@@ -5,6 +5,13 @@
 New features:
 
 - Added a `vector` type to Menai.
+- Added a loop-invariant-code-motion optimizer.
+- Added a constant coalescing optimizer.
+- Added a jump threading optimizer.
+
+Bug fixes:
+
+- Unified `bytes-slice` so it matches the semantics of the other slice operations.
 
 ## v0.4.0 (2026-09-08)
 
