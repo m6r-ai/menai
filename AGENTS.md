@@ -270,6 +270,12 @@ There is no implicit coercion between `integer`, `float`, and `complex`. All ari
 operators are type-specific (e.g. `integer+`, `float*`). This is intentional.
 See [ADR-0004](docs/adr/0004-strict-numeric-typing.md).
 
+### Slice operations raise errors on out-of-bounds indices
+All four slice operations (`string-slice`, `list-slice`, `vector-slice`,
+`bytes-slice`) raise a runtime error on negative, out-of-range, or
+start-after-end indices. They do not silently clamp.
+See [ADR-0019](docs/adr/0019-slice-out-of-bounds-raises-error.md).
+
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and

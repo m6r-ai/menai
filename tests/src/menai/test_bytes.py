@@ -213,11 +213,38 @@ class TestBytesSlice:
         )
         assert result == expected
 
-    def test_bytes_slice_clamping(self, menai):
-        """bytes-slice clamps start and end to valid range."""
-        assert menai.evaluate('(bytes->string-hex (bytes-slice (string-hex->bytes "504b0304") -1 2))') == "504b"
-        assert menai.evaluate('(bytes->string-hex (bytes-slice (string-hex->bytes "504b0304") 0 100))') == "504b0304"
-        assert menai.evaluate('(bytes->string-hex (bytes-slice (string-hex->bytes "504b0304") 3 1))') == ""
+    @pytest.mark.parametrize("expression", [
+        '(bytes-slice (string-hex->bytes "504b0304") -1 2)',
+        '(bytes-slice (string-hex->bytes "504b0304") 0 -1)',
+        '(bytes-slice (string-hex->bytes "504b0304") -1)',
+    ])
+    def test_bytes_slice_negative_index(self, menai, expression):
+        """bytes-slice rejects negative indices."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(expression)
+
+    @pytest.mark.parametrize("expression", [
+        '(bytes-slice (string-hex->bytes "504b0304") 5 6)',
+        '(bytes-slice (string-hex->bytes "504b0304") 5)',
+    ])
+    def test_bytes_slice_start_out_of_range(self, menai, expression):
+        """bytes-slice rejects a start index beyond the bytes length."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(expression)
+
+    @pytest.mark.parametrize("expression", [
+        '(bytes-slice (string-hex->bytes "504b0304") 0 100)',
+        '(bytes-slice (string-hex->bytes "") 0 1)',
+    ])
+    def test_bytes_slice_end_out_of_range(self, menai, expression):
+        """bytes-slice rejects an end index beyond the bytes length."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(expression)
+
+    def test_bytes_slice_start_after_end(self, menai):
+        """bytes-slice rejects start greater than end."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(bytes-slice (string-hex->bytes "504b0304") 3 1)')
 
 
 class TestBytesConcat:

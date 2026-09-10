@@ -282,7 +282,7 @@ Syntax: (operator arg1 arg2 ...)
 - Construction: (string-hex->bytes "504b0304") → bytes from hex string, (string->bytes "hello") → UTF-8 encoded bytes, (list->bytes (list 80 75)) → bytes from integer list (0–255)
 - Conversion: (bytes->string-hex b) → hex string, (bytes->string b) → UTF-8 string (raises error on invalid UTF-8), (bytes->list b) → list of integers
 - Access: (bytes-ref b 0) → integer 0–255 at 0-based index, (bytes-length b) → integer
-- Slicing: (bytes-slice b start) → from start to end, (bytes-slice b start end) → from start to end (exclusive); clamps out-of-bounds to valid range
+- Slicing: (bytes-slice b start) → from start to end, (bytes-slice b start end) → from start to end (exclusive); out of bounds raises an error
 - Concatenation: (bytes-concat b1 b2 ...) → variadic, (bytes-concat) → empty bytes
 - Append single byte: (bytes-append-u8 b 255) → new bytes with byte appended (value must be 0–255)
 - Search: (bytes-index haystack needle) → integer offset or #none, (bytes-index-int b 75) → offset of first matching byte value or #none

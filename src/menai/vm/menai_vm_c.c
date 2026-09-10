@@ -4207,15 +4207,28 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (start < 0) {
-                start = 0;
+                vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
+                goto error;
+            }
+
+            if (end < 0) {
+                vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
+                goto error;
+            }
+
+            if (start > blen) {
+                vm_err = MENAI_ERR_SLICE_START_OUT_OF_RANGE;
+                goto error;
             }
 
             if (end > blen) {
-                end = blen;
+                vm_err = MENAI_ERR_SLICE_END_OUT_OF_RANGE;
+                goto error;
             }
 
             if (start > end) {
-                start = end;
+                vm_err = MENAI_ERR_SLICE_START_AFTER_END;
+                goto error;
             }
 
             MenaiBytes *r = alloc_menai_bytes_from_slice(vs, b, start, end);

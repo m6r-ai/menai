@@ -599,7 +599,7 @@ operations for ordered iteration.
 |----------|-------------|
 | `(bytes-ref b i)` | Byte value (0–255) at 0-based index |
 | `(bytes-length b)` | Number of bytes |
-| `(bytes-slice b start [end])` | Sub-sequence; end is exclusive; clamps out-of-bounds |
+| `(bytes-slice b start [end])` | Sub-sequence; end is exclusive; out of bounds raises an error |
 | `(bytes-concat b1 b2 ...)` | Concatenate; `(bytes-concat)` → empty bytes |
 | `(bytes-append-u8 b n)` | Append single byte (n must be 0–255) |
 
