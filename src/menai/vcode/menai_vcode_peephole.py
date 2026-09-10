@@ -65,7 +65,26 @@ Sub-passes
    branch condition (or that the RETURN value already is the condition
    register).
 
-The three post-allocation sub-passes are composed and iterated to a joint
+4. Jump threading
+   Rewrites any jump (conditional or unconditional) that targets a label
+   immediately followed by an unconditional JUMP to target the JUMP's
+   destination directly, bypassing the intermediate jump.  After threading,
+   labels that are no longer targeted by any jump are removed along with
+   their now-dead JUMP instruction.
+
+   This handles the common pattern where a CFG block that could not be
+   bypassed (e.g. because it had phi instructions and a BranchTerm
+   predecessor) is lowered to an empty block containing only a JUMP after
+   phi elimination.  The phi-elimination moves are emitted in predecessor
+   blocks, leaving the block itself as pure indirection.
+
+   Transitive chains (A -> B -> C) are resolved to the ultimate target
+   (A -> C) in a single pass.  The __entry__ sentinel label is never
+   threaded through — it is always a valid direct target.
+
+   Does not require a SlotMap — operates entirely on label strings.
+
+The four post-allocation sub-passes are composed and iterated to a joint
 fixed point.
 
 Pre-allocation passes
@@ -533,6 +552,17 @@ _BARRIER_TYPES = (
 )
 
 
+# Instruction types that unconditionally transfer control and do not
+# fall through to the next instruction.
+_no_fallthrough_types = (
+    MenaiVCodeJump,
+    MenaiVCodeReturn,
+    MenaiVCodeTailCall,
+    MenaiVCodeTailApply,
+    MenaiVCodeRaise,
+)
+
+
 def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     """
     Return (defs, uses) — lists of register ids defined and used by instr.
@@ -627,6 +657,8 @@ def peephole(func: MenaiVCodeFunction, slot_map: SlotMap) -> MenaiVCodeFunction:
         instrs, c = _eliminate_jump_over_jump(instrs)
         changed = changed or c
         instrs, c = _fold_branch_load_return(instrs, slot_map)
+        changed = changed or c
+        instrs, c = _thread_jumps(instrs)
         changed = changed or c
 
     if instrs is func.instrs:
@@ -824,5 +856,185 @@ def _fold_branch_load_return(
         result.append(MenaiVCodeReturn(value=instr.cond))
         i = k + 1
         changed = True
+
+    return result, changed
+
+
+def _thread_jumps(
+    instrs: list[MenaiVCodeInstr],
+) -> tuple[list[MenaiVCodeInstr], bool]:
+    """
+    Thread jumps through labels that are immediately followed by an
+    unconditional JUMP.
+
+    When a label L is immediately followed by JUMP @M (with no other
+    instructions between them), every jump targeting L can be rewritten to
+    target M directly, bypassing the intermediate JUMP.  After rewriting,
+    labels that are no longer targeted by any jump are removed along with
+    their now-dead JUMP instruction.
+
+    Transitive chains (L -> M -> N) are resolved to the ultimate target in
+    a single pass by following the redirect map to a fixed point per label.
+
+    The __entry__ sentinel label is never threaded through — it is always
+    a valid direct target and may not appear as a label instruction in the
+    stream (it is resolved specially by the bytecode emitter).
+    """
+    # Build a map: label name -> index of the next non-label instruction.
+    label_to_target: dict[str, str | None] = {}
+
+    for i, instr in enumerate(instrs):
+        if not isinstance(instr, MenaiVCodeLabel):
+            continue
+
+        # Find the next non-label instruction after this label.
+        j = i + 1
+        while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
+            j += 1
+
+        if j < len(instrs) and isinstance(instrs[j], MenaiVCodeJump):
+            jump = instrs[j]
+            assert isinstance(jump, MenaiVCodeJump)
+            label_to_target[instr.name] = jump.label
+
+        else:
+            label_to_target[instr.name] = None
+
+    if not any(v is not None for v in label_to_target.values()):
+        return instrs, False
+
+    # Resolve transitive chains to their ultimate target.
+    def resolve(label: str, seen: set[str] | None = None) -> str:
+        if seen is None:
+            seen = set()
+
+        if label in seen or label not in label_to_target:
+            return label
+
+        target = label_to_target[label]
+        if target is None:
+            return label
+
+        seen.add(label)
+        return resolve(target, seen)
+
+    redirect: dict[str, str] = {}
+    for label, target in label_to_target.items():
+        if target is None:
+            continue
+
+        ultimate = resolve(target)
+        if ultimate != label:
+            redirect[label] = ultimate
+
+    if not redirect:
+        return instrs, False
+
+    # Collect all labels still reachable after rewriting — either targeted
+    # by some jump or reachable via fall-through from the preceding
+    # instruction.  A label reachable via fall-through cannot be removed
+    # even if no jump targets it, because execution falls into it.
+    targeted_labels: set[str] = set()
+
+    # Labels targeted by jumps (using rewritten targets).
+    for instr in instrs:
+        if isinstance(instr, MenaiVCodeJump):
+            targeted_labels.add(redirect.get(instr.label, instr.label))
+
+        elif isinstance(instr, MenaiVCodeJumpIfTrue):
+            targeted_labels.add(redirect.get(instr.label, instr.label))
+
+        elif isinstance(instr, MenaiVCodeJumpIfFalse):
+            targeted_labels.add(redirect.get(instr.label, instr.label))
+
+    # Labels reachable via fall-through.  A label is reachable via
+    # fall-through if the preceding non-label instruction is not an
+    # unconditional control transfer.  Conditional jumps DO fall through.
+    prev: MenaiVCodeInstr | None = None
+    for instr in instrs:
+        if isinstance(instr, MenaiVCodeLabel):
+            if prev is not None and not isinstance(prev, _no_fallthrough_types):
+                targeted_labels.add(instr.name)
+
+        else:
+            prev = instr
+
+    # Emit the new instruction list, rewriting jump targets and removing
+    # dead labels + their associated JUMP.
+    result: list[MenaiVCodeInstr] = []
+    changed = False
+    i = 0
+    while i < len(instrs):
+        instr = instrs[i]
+
+        if isinstance(instr, MenaiVCodeLabel):
+            # If this label is followed by a JUMP and is no longer targeted
+            # after rewriting, remove both the label and the JUMP.
+            if instr.name in redirect:
+                j = i + 1
+                while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
+                    j += 1
+
+                if j < len(instrs) and isinstance(instrs[j], MenaiVCodeJump):
+                    if instr.name not in targeted_labels:
+                        changed = True
+                        i = j + 1
+                        continue
+
+                    # Label is still targeted — keep it, but rewrite the
+                    # following JUMP to its ultimate target.
+                    result.append(instr)
+                    jump = instrs[j]
+                    assert isinstance(jump, MenaiVCodeJump)
+                    new_label = redirect.get(jump.label, jump.label)
+                    if new_label != jump.label:
+                        changed = True
+                        result.append(MenaiVCodeJump(label=new_label))
+
+                    else:
+                        result.append(jump)
+
+                    i = j + 1
+                    continue
+
+                result.append(instr)
+                i += 1
+                continue
+
+            result.append(instr)
+            i += 1
+            continue
+
+        if isinstance(instr, MenaiVCodeJump):
+            new_label = redirect.get(instr.label, instr.label)
+            if new_label != instr.label:
+                changed = True
+                result.append(MenaiVCodeJump(label=new_label))
+
+            else:
+                result.append(instr)
+
+        elif isinstance(instr, MenaiVCodeJumpIfTrue):
+            new_label = redirect.get(instr.label, instr.label)
+            if new_label != instr.label:
+                changed = True
+                result.append(MenaiVCodeJumpIfTrue(cond=instr.cond, label=new_label))
+
+            else:
+                result.append(instr)
+
+        elif isinstance(instr, MenaiVCodeJumpIfFalse):
+            new_label = redirect.get(instr.label, instr.label)
+            if new_label != instr.label:
+                changed = True
+                result.append(MenaiVCodeJumpIfFalse(cond=instr.cond, label=new_label))
+
+            else:
+                result.append(instr)
+
+        else:
+            result.append(instr)
+
+        i += 1
 
     return result, changed
