@@ -15,7 +15,7 @@
    (boolean? (lambda (x) ($boolean? x)))
    (boolean=? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($boolean=? ($list-first args) ($list-first ($list-rest args)))
+                    ($boolean=? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'boolean=?' requires at least 2 arguments")
                         (letrec
@@ -28,7 +28,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (boolean!=? (lambda (. args)
                  (if ($integer=? ($list-length args) 2)
-                     ($boolean!=? ($list-first args) ($list-first ($list-rest args)))
+                     ($boolean!=? ($list-first args) ($list-last args))
                      (if ($integer<? ($list-length args) 2)
                          (error "Function 'boolean!=?' requires at least 2 arguments")
                          (letrec
@@ -48,7 +48,7 @@
    (integer? (lambda (x) ($integer? x)))
    (integer=? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($integer=? ($list-first args) ($list-first ($list-rest args)))
+                    ($integer=? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'integer=?' requires at least 2 arguments")
                         (letrec
@@ -61,7 +61,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (integer!=? (lambda (. args)
                  (if ($integer=? ($list-length args) 2)
-                     ($integer!=? ($list-first args) ($list-first ($list-rest args)))
+                     ($integer!=? ($list-first args) ($list-last args))
                      (if ($integer<? ($list-length args) 2)
                          (error "Function 'integer!=?' requires at least 2 arguments")
                          (letrec
@@ -79,7 +79,7 @@
                            (outer args))))))
    (integer<? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($integer<? ($list-first args) ($list-first ($list-rest args)))
+                    ($integer<? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'integer<?' requires at least 2 arguments")
                         (letrec
@@ -92,7 +92,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (integer>? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($integer>? ($list-first args) ($list-first ($list-rest args)))
+                    ($integer>? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'integer>?' requires at least 2 arguments")
                         (letrec
@@ -105,7 +105,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (integer<=? (lambda (. args)
                  (if ($integer=? ($list-length args) 2)
-                     ($integer<=? ($list-first args) ($list-first ($list-rest args)))
+                     ($integer<=? ($list-first args) ($list-last args))
                      (if ($integer<? ($list-length args) 2)
                          (error "Function 'integer<=?' requires at least 2 arguments")
                          (letrec
@@ -118,7 +118,7 @@
                            (loop ($list-rest args) ($list-first args)))))))
    (integer>=? (lambda (. args)
                  (if ($integer=? ($list-length args) 2)
-                     ($integer>=? ($list-first args) ($list-first ($list-rest args)))
+                     ($integer>=? ($list-first args) ($list-last args))
                      (if ($integer<? ($list-length args) 2)
                          (error "Function 'integer>=?' requires at least 2 arguments")
                          (letrec
@@ -131,7 +131,7 @@
                            (loop ($list-rest args) ($list-first args)))))))
    (integer+ (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($integer+ ($list-first args) ($list-first ($list-rest args)))
+                   ($integer+ ($list-first args) ($list-last args))
                    (if ($list-null? args)
                        0
                        (letrec
@@ -142,7 +142,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (integer- (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($integer- ($list-first args) ($list-first ($list-rest args)))
+                   ($integer- ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'integer-' requires at least 2 arguments")
                        (letrec
@@ -153,7 +153,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (integer* (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($integer* ($list-first args) ($list-first ($list-rest args)))
+                   ($integer* ($list-first args) ($list-last args))
                    (if ($list-null? args)
                        1
                        (letrec
@@ -164,7 +164,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (integer/ (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($integer/ ($list-first args) ($list-first ($list-rest args)))
+                   ($integer/ ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'integer/' requires at least 2 arguments")
                        (letrec
@@ -179,7 +179,7 @@
    (integer-abs (lambda (a) ($integer-abs a)))
    (integer-bit-or (lambda (. args)
                      (if ($integer=? ($list-length args) 2)
-                         ($integer-bit-or ($list-first args) ($list-first ($list-rest args)))
+                         ($integer-bit-or ($list-first args) ($list-last args))
                          (if ($integer<? ($list-length args) 2)
                              (error "Function 'integer-bit-or' requires at least 2 arguments")
                              (letrec
@@ -191,7 +191,7 @@
                                (loop ($list-rest args) ($list-first args)))))))
    (integer-bit-and (lambda (. args)
                       (if ($integer=? ($list-length args) 2)
-                          ($integer-bit-and ($list-first args) ($list-first ($list-rest args)))
+                          ($integer-bit-and ($list-first args) ($list-last args))
                           (if ($integer<? ($list-length args) 2)
                               (error "Function 'integer-bit-and' requires at least 2 arguments")
                               (letrec
@@ -203,7 +203,7 @@
                                 (loop ($list-rest args) ($list-first args)))))))
    (integer-bit-xor (lambda (. args)
                       (if ($integer=? ($list-length args) 2)
-                          ($integer-bit-xor ($list-first args) ($list-first ($list-rest args)))
+                          ($integer-bit-xor ($list-first args) ($list-last args))
                           (if ($integer<? ($list-length args) 2)
                               (error "Function 'integer-bit-xor' requires at least 2 arguments")
                               (letrec
@@ -218,7 +218,7 @@
    (integer-bit-shift-right (lambda (a b) ($integer-bit-shift-right a b)))
    (integer-min (lambda (. args)
                   (if ($integer=? ($list-length args) 2)
-                      ($integer-min ($list-first args) ($list-first ($list-rest args)))
+                      ($integer-min ($list-first args) ($list-last args))
                       (if ($list-null? args)
                           (error "Function 'integer-min' requires at least 1 argument")
                           (letrec
@@ -229,7 +229,7 @@
                             (loop ($list-rest args) ($list-first args)))))))
    (integer-max (lambda (. args)
                   (if ($integer=? ($list-length args) 2)
-                      ($integer-max ($list-first args) ($list-first ($list-rest args)))
+                      ($integer-max ($list-first args) ($list-last args))
                       (if ($list-null? args)
                           (error "Function 'integer-max' requires at least 1 argument")
                           (letrec
@@ -250,7 +250,7 @@
    (float? (lambda (x) ($float? x)))
    (float=? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($float=? ($list-first args) ($list-first ($list-rest args)))
+                  ($float=? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'float=?' requires at least 2 arguments")
                       (letrec
@@ -263,7 +263,7 @@
                         (loop ($list-rest args) ($list-first args)))))))
    (float!=? (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($float!=? ($list-first args) ($list-first ($list-rest args)))
+                   ($float!=? ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'float!=?' requires at least 2 arguments")
                        (letrec
@@ -281,7 +281,7 @@
                          (outer args))))))
    (float<? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($float<? ($list-first args) ($list-first ($list-rest args)))
+                  ($float<? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'float<?' requires at least 2 arguments")
                       (letrec
@@ -294,7 +294,7 @@
                         (loop ($list-rest args) ($list-first args)))))))
    (float>? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($float>? ($list-first args) ($list-first ($list-rest args)))
+                  ($float>? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'float>?' requires at least 2 arguments")
                       (letrec
@@ -307,7 +307,7 @@
                         (loop ($list-rest args) ($list-first args)))))))
    (float<=? (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($float<=? ($list-first args) ($list-first ($list-rest args)))
+                   ($float<=? ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'float<=?' requires at least 2 arguments")
                        (letrec
@@ -320,7 +320,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (float>=? (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($float>=? ($list-first args) ($list-first ($list-rest args)))
+                   ($float>=? ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'float>=?' requires at least 2 arguments")
                        (letrec
@@ -333,7 +333,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (float+ (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($float+ ($list-first args) ($list-first ($list-rest args)))
+                 ($float+ ($list-first args) ($list-last args))
                  (if ($list-null? args)
                      0.0
                      (letrec
@@ -344,7 +344,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (float- (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($float- ($list-first args) ($list-first ($list-rest args)))
+                 ($float- ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'float-' requires at least 2 arguments")
                      (letrec
@@ -355,7 +355,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (float* (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($float* ($list-first args) ($list-first ($list-rest args)))
+                 ($float* ($list-first args) ($list-last args))
                  (if ($list-null? args)
                      1.0
                      (letrec
@@ -366,7 +366,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (float/ (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($float/ ($list-first args) ($list-first ($list-rest args)))
+                 ($float/ ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'float/' requires at least 2 arguments")
                      (letrec
@@ -381,7 +381,7 @@
    (float-exp (lambda (a) ($float-exp a)))
    (float-expn (lambda (. args)
                  (if ($integer=? ($list-length args) 2)
-                     ($float-expn ($list-first args) ($list-first ($list-rest args)))
+                     ($float-expn ($list-first args) ($list-last args))
                      (if ($integer<? ($list-length args) 2)
                          (error "Function 'float-expt' requires at least 2 arguments")
                          (letrec
@@ -409,7 +409,7 @@
    (float-round (lambda (n) ($float-round n)))
    (float-min (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($float-min ($list-first args) ($list-first ($list-rest args)))
+                    ($float-min ($list-first args) ($list-last args))
                     (if ($list-null? args)
                         (error "Function 'float-min' requires at least 1 argument")
                         (letrec
@@ -420,7 +420,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (float-max (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($float-max ($list-first args) ($list-first ($list-rest args)))
+                    ($float-max ($list-first args) ($list-last args))
                     (if ($list-null? args)
                         (error "Function 'float-max' requires at least 1 argument")
                         (letrec
@@ -446,7 +446,7 @@
    (complex? (lambda (x) ($complex? x)))
    (complex=? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($complex=? ($list-first args) ($list-first ($list-rest args)))
+                    ($complex=? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'complex=?' requires at least 2 arguments")
                         (letrec
@@ -459,7 +459,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (complex!=? (lambda (. args)
                  (if ($integer=? ($list-length args) 2)
-                     ($complex!=? ($list-first args) ($list-first ($list-rest args)))
+                     ($complex!=? ($list-first args) ($list-last args))
                      (if ($integer<? ($list-length args) 2)
                          (error "Function 'complex!=?' requires at least 2 arguments")
                          (letrec
@@ -477,7 +477,7 @@
                            (outer args))))))
    (complex+ (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($complex+ ($list-first args) ($list-first ($list-rest args)))
+                   ($complex+ ($list-first args) ($list-last args))
                    (if ($list-null? args)
                        ($float->complex 0.0 0.0)
                        (letrec
@@ -488,7 +488,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (complex- (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($complex- ($list-first args) ($list-first ($list-rest args)))
+                   ($complex- ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'complex-' requires at least 2 arguments")
                        (letrec
@@ -499,7 +499,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (complex* (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($complex* ($list-first args) ($list-first ($list-rest args)))
+                   ($complex* ($list-first args) ($list-last args))
                    (if ($list-null? args)
                        ($float->complex 1.0 0.0)
                        (letrec
@@ -510,7 +510,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (complex/ (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($complex/ ($list-first args) ($list-first ($list-rest args)))
+                   ($complex/ ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'complex/' requires at least 2 arguments")
                        (letrec
@@ -525,7 +525,7 @@
    (complex-exp (lambda (a) ($complex-exp a)))
    (complex-expn (lambda (. args)
                    (if ($integer=? ($list-length args) 2)
-                       ($complex-expn ($list-first args) ($list-first ($list-rest args)))
+                       ($complex-expn ($list-first args) ($list-last args))
                        (if ($integer<? ($list-length args) 2)
                            (error "Function 'complex-expt' requires at least 2 arguments")
                            (letrec
@@ -555,7 +555,7 @@
    (string? (lambda (x) ($string? x)))
    (string=? (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($string=? ($list-first args) ($list-first ($list-rest args)))
+                   ($string=? ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'string=?' requires at least 2 arguments")
                        (letrec
@@ -568,7 +568,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (string!=? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($string!=? ($list-first args) ($list-first ($list-rest args)))
+                    ($string!=? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'string!=?' requires at least 2 arguments")
                         (letrec
@@ -586,7 +586,7 @@
                           (outer args))))))
    (string<? (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($string<? ($list-first args) ($list-first ($list-rest args)))
+                   ($string<? ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'string<?' requires at least 2 arguments")
                        (letrec
@@ -599,7 +599,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (string>? (lambda (. args)
                (if ($integer=? ($list-length args) 2)
-                   ($string>? ($list-first args) ($list-first ($list-rest args)))
+                   ($string>? ($list-first args) ($list-last args))
                    (if ($integer<? ($list-length args) 2)
                        (error "Function 'string>?' requires at least 2 arguments")
                        (letrec
@@ -612,7 +612,7 @@
                          (loop ($list-rest args) ($list-first args)))))))
    (string<=? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($string<=? ($list-first args) ($list-first ($list-rest args)))
+                    ($string<=? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'string<=?' requires at least 2 arguments")
                         (letrec
@@ -625,7 +625,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (string>=? (lambda (. args)
                 (if ($integer=? ($list-length args) 2)
-                    ($string>=? ($list-first args) ($list-first ($list-rest args)))
+                    ($string>=? ($list-first args) ($list-last args))
                     (if ($integer<? ($list-length args) 2)
                         (error "Function 'string>=?' requires at least 2 arguments")
                         (letrec
@@ -638,7 +638,7 @@
                           (loop ($list-rest args) ($list-first args)))))))
    (string-concat (lambda (. args)
                     (if ($integer=? ($list-length args) 2)
-                        ($string-concat ($list-first args) ($list-first ($list-rest args)))
+                        ($string-concat ($list-first args) ($list-last args))
                         (if ($list-null? args)
                             ""
                             (letrec
@@ -684,7 +684,7 @@
    (bytes? (lambda (x) ($bytes? x)))
    (bytes=? (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($bytes=? ($list-first args) ($list-first ($list-rest args)))
+                 ($bytes=? ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'bytes=?' requires at least 2 arguments")
                      (letrec
@@ -697,7 +697,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (bytes!=? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($bytes!=? ($list-first args) ($list-first ($list-rest args)))
+                  ($bytes!=? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'bytes!=?' requires at least 2 arguments")
                       (letrec
@@ -715,7 +715,7 @@
                         (outer args))))))
    (bytes<? (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($bytes<? ($list-first args) ($list-first ($list-rest args)))
+                 ($bytes<? ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'bytes<?' requires at least 2 arguments")
                      (letrec
@@ -728,7 +728,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (bytes>? (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($bytes>? ($list-first args) ($list-first ($list-rest args)))
+                 ($bytes>? ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'bytes>?' requires at least 2 arguments")
                      (letrec
@@ -741,7 +741,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (bytes<=? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($bytes<=? ($list-first args) ($list-first ($list-rest args)))
+                  ($bytes<=? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'bytes<=?' requires at least 2 arguments")
                       (letrec
@@ -754,7 +754,7 @@
                         (loop ($list-rest args) ($list-first args)))))))
    (bytes>=? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($bytes>=? ($list-first args) ($list-first ($list-rest args)))
+                  ($bytes>=? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'bytes>=?' requires at least 2 arguments")
                       (letrec
@@ -774,7 +774,7 @@
                       ($bytes-slice b start ($list-first rest)))))
    (bytes-concat (lambda (. args)
                    (if ($integer=? ($list-length args) 2)
-                       ($bytes-concat ($list-first args) ($list-first ($list-rest args)))
+                       ($bytes-concat ($list-first args) ($list-last args))
                        (if ($list-null? args)
                            ($string-hex->bytes "")
                            (letrec
@@ -902,7 +902,7 @@
    (list? (lambda (x) ($list? x)))
    (list=? (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($list=? ($list-first args) ($list-first ($list-rest args)))
+                 ($list=? ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'list=?' requires at least 2 arguments")
                      (letrec
@@ -915,7 +915,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (list!=? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($list!=? ($list-first args) ($list-first ($list-rest args)))
+                  ($list!=? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'list!=?' requires at least 2 arguments")
                       (letrec
@@ -935,7 +935,7 @@
    (list-append (lambda (lst elem) ($list-append lst elem)))
    (list-concat (lambda (. args)
                   (if ($integer=? ($list-length args) 2)
-                      ($list-concat ($list-first args) ($list-first ($list-rest args)))
+                      ($list-concat ($list-first args) ($list-last args))
                       (if ($list-null? args)
                           (list)
                           (letrec
@@ -977,7 +977,7 @@
    (dict? (lambda (x) ($dict? x)))
    (dict=? (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($dict=? ($list-first args) ($list-first ($list-rest args)))
+                 ($dict=? ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'dict=?' requires at least 2 arguments")
                      (letrec
@@ -990,7 +990,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (dict!=? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($dict!=? ($list-first args) ($list-first ($list-rest args)))
+                  ($dict!=? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'dict!=?' requires at least 2 arguments")
                       (letrec
@@ -1028,7 +1028,7 @@
    (set? (lambda (x) ($set? x)))
    (set=? (lambda (. args)
              (if ($integer=? ($list-length args) 2)
-                 ($set=? ($list-first args) ($list-first ($list-rest args)))
+                 ($set=? ($list-first args) ($list-last args))
                  (if ($integer<? ($list-length args) 2)
                      (error "Function 'set=?' requires at least 2 arguments")
                      (letrec
@@ -1041,7 +1041,7 @@
                        (loop ($list-rest args) ($list-first args)))))))
    (set!=? (lambda (. args)
               (if ($integer=? ($list-length args) 2)
-                  ($set!=? ($list-first args) ($list-first ($list-rest args)))
+                  ($set!=? ($list-first args) ($list-last args))
                   (if ($integer<? ($list-length args) 2)
                       (error "Function 'set!=?' requires at least 2 arguments")
                       (letrec
