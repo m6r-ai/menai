@@ -334,8 +334,10 @@ def coalesce_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
     """
     # Map from const key to (reg, instr_index) of the first LOAD_CONST.
     first_load: dict[tuple, tuple[MenaiVCodeReg, int]] = {}
+
     # Map from duplicate reg id → canonical reg to replace with.
     replacements: dict[int, MenaiVCodeReg] = {}
+
     # Indices of LOAD_CONST instructions to remove.
     remove_indices: set[int] = set()
 
