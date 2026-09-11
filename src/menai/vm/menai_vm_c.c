@@ -667,11 +667,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
         }
 
-        if (frame->ip >= frame->code_len) {
-            vm_err = MENAI_ERR_MISSING_RETURN;
-            goto error;
-        }
-
         /* Fetch and decode instruction */
         cur_ip = frame->ip;
         uint64_t word = instrs[frame->ip++];

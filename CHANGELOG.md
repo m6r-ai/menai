@@ -14,6 +14,11 @@ Bug fixes:
 
 - Unified `bytes-slice` so it matches the semantics of the other slice operations.
 
+Internal structure changes:
+
+- Reimplemented the bytecode validator in C rather than Python.  This always runs meaning we can remove runtime
+  checks that are now covered by the validator.
+
 ## v0.4.0 (2026-09-08)
 
 New features:

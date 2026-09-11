@@ -41,11 +41,19 @@ perf_counter_ns(void)
 
 static MenaiValue *slow_value_to_menai_value(MenaiVMState *vs, PyObject *src);
 static PyObject *menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val);
+static void bridge_raise_validation_error(const MenaiValidationError *err);
 
 /*
  * Module-level state fetched at init
  */
 static PyObject *_VMRuntimeError_type = NULL;
+
+/*
+ * ValidationError and ValidationErrorType from menai.vm.menai_vm_errors.
+ * Fetched once during bridge init for raising validation errors from C.
+ */
+static PyObject *_ValidationError_type = NULL;
+static PyObject *_ValidationErrorType_enum = NULL;
 
 /*
  * The CodeObject type from menai.menai_bytecode — used to identify prelude
@@ -1609,6 +1617,13 @@ bridge_set_prelude(MenaiVMState *vs, PyObject *prelude_code)
         return -1;
     }
 
+    MenaiValidationError verr;
+    if (menai_validate(prelude_co, &verr) != MENAI_OK) {
+        menai_code_object_release(vs, prelude_co);
+        bridge_raise_validation_error(&verr);
+        return -1;
+    }
+
     MenaiValue *result = menai_vm_execute_native(vs, prelude_co, NULL);
     menai_code_object_release(vs, prelude_co);
     if (!result) {
@@ -1712,6 +1727,134 @@ fail:
 }
 
 /*
+ * bridge_raise_validation_error — raise a Python ValidationError from a
+ * MenaiValidationError struct produced by menai_validate.
+ *
+ * Maps the C MenaiValidationErrorType enum to the Python ValidationErrorType
+ * enum, constructs a ValidationError dataclass instance, and sets it as the
+ * current Python exception.  Frees the malloc'd message string in err.
+ *
+ * Must only be called when no Python exception is already set.
+ */
+static void
+bridge_raise_validation_error(const MenaiValidationError *err)
+{
+    if (!err || !err->message) {
+        PyErr_SetString(PyExc_RuntimeError, "bytecode validation failed (no detail)");
+        return;
+    }
+
+    /*
+     * Map C error type enum to Python ValidationErrorType enum value.
+     * The C enum (MenaiValidationErrorType) and Python enum (ValidationErrorType)
+     * have the same ordering.
+     */
+    static const char *const err_type_names[] = {
+        "INVALID_JUMP_TARGET",
+        "INDEX_OUT_OF_BOUNDS",
+        "MISSING_RETURN",
+        "INVALID_OPCODE",
+        "INVALID_VARIABLE_ACCESS",
+        "UNINITIALIZED_VARIABLE",
+    };
+
+    int type_idx = err->error_type;
+    if (type_idx < 0 || type_idx >= (int)(sizeof(err_type_names) / sizeof(err_type_names[0]))) {
+        free((void *)err->message);
+        PyErr_SetString(PyExc_RuntimeError, "bytecode validation failed (unknown error type)");
+        return;
+    }
+
+    PyObject *py_type_enum = PyObject_GetAttrString(_ValidationErrorType_enum, err_type_names[type_idx]);
+    if (!py_type_enum) {
+        free((void *)err->message);
+        return;
+    }
+
+    PyObject *py_msg = PyUnicode_FromString(err->message);
+    free((void *)err->message);
+    if (!py_msg) {
+        Py_DECREF(py_type_enum);
+        return;
+    }
+
+    PyObject *py_instr_idx;
+    if (err->instruction_index >= 0) {
+        py_instr_idx = PyLong_FromLong(err->instruction_index);
+    } else {
+        py_instr_idx = Py_None;
+        Py_INCREF(py_instr_idx);
+    }
+
+    PyObject *py_opcode;
+    if (err->opcode >= 0) {
+        py_opcode = PyLong_FromLong(err->opcode);
+    } else {
+        py_opcode = Py_None;
+        Py_INCREF(py_opcode);
+    }
+
+    /*
+     * Construct ValidationError(error_type=..., message=...,
+     * instruction_index=..., opcode=..., context=None).
+     */
+    PyObject *kwargs = PyDict_New();
+    if (!kwargs) {
+        Py_DECREF(py_type_enum);
+        Py_DECREF(py_msg);
+        Py_DECREF(py_instr_idx);
+        Py_DECREF(py_opcode);
+        return;
+    }
+
+    PyDict_SetItemString(kwargs, "error_type", py_type_enum);
+    PyDict_SetItemString(kwargs, "message", py_msg);
+    PyDict_SetItemString(kwargs, "instruction_index", py_instr_idx);
+    PyDict_SetItemString(kwargs, "opcode", py_opcode);
+
+    Py_DECREF(py_type_enum);
+    Py_DECREF(py_msg);
+    Py_DECREF(py_instr_idx);
+    Py_DECREF(py_opcode);
+
+    PyObject *exc = PyObject_Call(_ValidationError_type, PyTuple_New(0), kwargs);
+    Py_DECREF(kwargs);
+    if (!exc) {
+        return;
+    }
+
+    PyErr_SetObject((PyObject *)Py_TYPE(exc), exc);
+    Py_DECREF(exc);
+}
+
+/*
+ * bridge_validate — convert a Python CodeObject to native, run menai_validate,
+ * and raise ValidationError on failure.  Returns 0 on success, -1 on error
+ * (with a Python exception set).
+ */
+static int
+bridge_validate(MenaiVMState *vs, PyObject *py_code)
+{
+    MenaiCodeObject *native_code = menai_code_object_from_python(vs, py_code);
+    if (!native_code) {
+        return -1;
+    }
+
+    MenaiValidationError verr;
+    int rc = menai_validate(native_code, &verr);
+    menai_code_object_release(vs, native_code);
+
+    if (rc != MENAI_OK) {
+        if (!PyErr_Occurred()) {
+            bridge_raise_validation_error(&verr);
+        }
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
  * menai_vm_c_execute — the Python-callable entry point.
  *
  * Parses arguments (code, extra_bindings, state_capsule),
@@ -1751,6 +1894,18 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
 
     _t1 = perf_counter_ns();
     vs->_convert_time_ns = (uint64_t)(_t1 - _t0);
+
+    /*
+     * Validate bytecode before execution.  The C validator is the trust
+     * boundary — this guarantees well-formedness regardless of how the
+     * CodeObject was produced (compiler, deserialization, etc.).
+     */
+    MenaiValidationError verr;
+    if (menai_validate(native_code, &verr) != MENAI_OK) {
+        menai_code_object_release(vs, native_code);
+        bridge_raise_validation_error(&verr);
+        return NULL;
+    }
 
     GlobalsTable extra_globals;
     int has_extra = 0;
@@ -2321,6 +2476,34 @@ menai_vm_c_fold_trim_right(PyObject *self, PyObject *args)
 }
 
 /*
+ * menai_vm_c_validate — Python-callable bytecode validator.
+ *
+ * validate(state_capsule, code) validates a CodeObject without executing it.
+ * Returns None on success, raises ValidationError on failure.
+ */
+static PyObject *
+menai_vm_c_validate(PyObject *self, PyObject *args)
+{
+    PyObject *state_capsule;
+    PyObject *code;
+
+    if (!PyArg_ParseTuple(args, "OO", &state_capsule, &code)) {
+        return NULL;
+    }
+
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(state_capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    if (bridge_validate(vs, code) < 0) {
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+/*
  * Module definition
  */
 static PyMethodDef menai_vm_c_methods[] = {
@@ -2329,6 +2512,12 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_execute,
         METH_VARARGS,
         "Execute a Menai CodeObject and return the result."
+    },
+    {
+        "validate",
+        menai_vm_c_validate,
+        METH_VARARGS,
+        "Validate a Menai CodeObject without executing it."
     },
     {
         "cancel",
@@ -2429,6 +2618,20 @@ menai_vm_shim_init(void)
     Py_DECREF(err_mod);
     if (_VMRuntimeError_type == NULL) {
         Py_XDECREF(_VMRuntimeError_type);
+        return -1;
+    }
+
+    PyObject *val_mod = PyImport_ImportModule("menai.vm.menai_vm_errors");
+    if (val_mod == NULL) {
+        return -1;
+    }
+
+    _ValidationError_type = PyObject_GetAttrString(val_mod, "ValidationError");
+    _ValidationErrorType_enum = PyObject_GetAttrString(val_mod, "ValidationErrorType");
+    Py_DECREF(val_mod);
+    if (!_ValidationError_type || !_ValidationErrorType_enum) {
+        Py_XDECREF(_ValidationError_type);
+        Py_XDECREF(_ValidationErrorType_enum);
         return -1;
     }
 

@@ -493,6 +493,38 @@ typedef struct {
 } MenaiVMError;
 
 /*
+ * MenaiValidationError — structured validation error record produced by
+ * menai_validate.  Matches the Python ValidationErrorType enum.
+ *
+ * error_type is one of the MenaiValidationErrorType constants below.
+ * message is a malloc'd C string that the caller must free.
+ * instruction_index is the 0-based instruction index, or -1 if N/A.
+ * opcode is the decoded opcode value, or -1 if N/A.
+ */
+typedef enum {
+    MENAI_VERR_INVALID_JUMP_TARGET = 0,
+    MENAI_VERR_INDEX_OUT_OF_BOUNDS,
+    MENAI_VERR_MISSING_RETURN,
+    MENAI_VERR_INVALID_OPCODE,
+    MENAI_VERR_INVALID_VARIABLE_ACCESS,
+    MENAI_VERR_UNINITIALIZED_VARIABLE
+} MenaiValidationErrorType;
+
+typedef struct {
+    int error_type;            /* MenaiValidationErrorType */
+    const char *message;       /* malloc'd, caller frees */
+    int instruction_index;     /* 0-based, or -1 */
+    int opcode;                /* decoded opcode, or -1 */
+} MenaiValidationError;
+
+/*
+ * menai_validate — validate a code object and all its children recursively.
+ * Returns MENAI_OK (0) if valid, or a negative error code if invalid.
+ * On error, out_err (if non-NULL) is filled with details.
+ */
+int menai_validate(MenaiCodeObject *co, MenaiValidationError *out_err);
+
+/*
  * Fast type-check macros
  */
 #define IS_MENAI_NONE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_NONE)

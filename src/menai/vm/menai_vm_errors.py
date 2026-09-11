@@ -1,19 +1,58 @@
 """
 VM error codes and the mapping from structured codes to Python exceptions.
 
-The C VM reports errors via a MenaiVMError struct containing a granular
-integer code plus diagnostic context (opcode, ip, call_depth).  The C bridge
-packages this into a _MenaiVMRuntimeError sentinel exception.  This module
-provides the Python-side table that maps each error code to the appropriate
-exception class, message, and optional suggestion/context.
+The C VM reports two categories of error:
+
+- Runtime errors via a MenaiVMError struct containing a granular integer code
+  plus diagnostic context (opcode, ip, call_depth).  The C bridge packages this
+  into a _MenaiVMRuntimeError sentinel exception.  This module provides the
+  Python-side table that maps each error code to the appropriate exception
+  class, message, and optional suggestion/context.
+- Bytecode validation errors via a MenaiValidationError struct.  The bridge
+  constructs a ValidationError exception from this.
 
 This is the single source of truth for error-code-to-message mapping.
 The C bridge no longer contains any string formatting logic.
 """
 
-from enum import IntEnum
+from dataclasses import dataclass
+from enum import Enum, IntEnum
 
+from menai.bytecode.menai_bytecode import Opcode
 from menai.menai_error import MenaiCancelledException, MenaiEvalError
+
+
+class ValidationErrorType(Enum):
+    """Types of bytecode validation errors."""
+    INVALID_JUMP_TARGET = "invalid_jump_target"
+    INDEX_OUT_OF_BOUNDS = "index_out_of_bounds"
+    MISSING_RETURN = "missing_return"
+    INVALID_OPCODE = "invalid_opcode"
+    INVALID_VARIABLE_ACCESS = "invalid_variable_access"
+    UNINITIALIZED_VARIABLE = "uninitialized_variable"
+
+
+@dataclass
+class ValidationError(Exception):
+    """Bytecode validation error with detailed context."""
+    error_type: ValidationErrorType
+    message: str
+    instruction_index: int | None = None
+    opcode: int | None = None
+    context: str | None = None
+
+    def __str__(self) -> str:
+        parts = [f"Bytecode validation error: {self.message}"]
+        if self.instruction_index is not None:
+            parts.append(f"  at instruction {self.instruction_index}")
+
+        if self.opcode is not None:
+            parts.append(f"  opcode: {Opcode(self.opcode).name}")
+
+        if self.context:
+            parts.append(f"  context: {self.context}")
+
+        return "\n".join(parts)
 
 
 class VMErrorCode(IntEnum):

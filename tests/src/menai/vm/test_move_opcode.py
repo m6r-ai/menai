@@ -7,7 +7,8 @@ from menai.menai_value import MenaiInteger, MenaiString, MenaiBoolean, Menai_NON
 from menai.vm.menai_vm_c import execute as c_vm_execute
 from menai.vm.menai_vm_c import state_alloc as c_vm_state_alloc
 from menai.vm.menai_vm_c import state_free as c_vm_state_free
-from menai.vm.menai_vm_bytecode_validator import BytecodeValidator, ValidationError, ValidationErrorType
+from menai.vm.menai_vm_c import validate as c_vm_validate
+from menai.vm.menai_vm_errors import ValidationError, ValidationErrorType
 
 
 def _make_code(instructions, local_count, constants=None, names=None, code_objects=None):
@@ -126,8 +127,13 @@ class TestMoveOpcodeArgCount:
 class TestMoveValidation:
     """Tests for MOVE validation in the bytecode validator."""
 
-    def setup_method(self):
-        self.validator = BytecodeValidator()
+    def _validate(self, code):
+        """Validate via the C validator."""
+        state = c_vm_state_alloc()
+        try:
+            c_vm_validate(state, code)
+        finally:
+            c_vm_state_free(state)
 
     def test_valid_move(self):
         """A well-formed MOVE passes validation."""
@@ -136,7 +142,7 @@ class TestMoveValidation:
             Instruction(Opcode.MOVE, dest=1, src0=0),
             Instruction(Opcode.RETURN, src0=1),
         ], local_count=2, constants=[MenaiInteger(1)])
-        self.validator.validate(code)  # must not raise
+        self._validate(code)  # must not raise
 
     def test_move_src_out_of_bounds(self):
         """MOVE with src0 >= local_count must fail index validation."""
@@ -146,7 +152,7 @@ class TestMoveValidation:
             Instruction(Opcode.RETURN, src0=1),
         ], local_count=2, constants=[MenaiInteger(1)])
         with pytest.raises(ValidationError) as exc_info:
-            self.validator.validate(code)
+            self._validate(code)
         assert exc_info.value.error_type == ValidationErrorType.INVALID_VARIABLE_ACCESS
 
     def test_move_dest_out_of_bounds(self):
@@ -157,7 +163,7 @@ class TestMoveValidation:
             Instruction(Opcode.RETURN, src0=0),
         ], local_count=2, constants=[MenaiInteger(1)])
         with pytest.raises(ValidationError) as exc_info:
-            self.validator.validate(code)
+            self._validate(code)
         assert exc_info.value.error_type == ValidationErrorType.INVALID_VARIABLE_ACCESS
 
     def test_move_uninitialized_src(self):
@@ -167,7 +173,7 @@ class TestMoveValidation:
             Instruction(Opcode.RETURN, src0=1),
         ], local_count=2)
         with pytest.raises(ValidationError) as exc_info:
-            self.validator.validate(code)
+            self._validate(code)
         assert exc_info.value.error_type == ValidationErrorType.UNINITIALIZED_VARIABLE
 
     def test_move_initializes_dest(self):
@@ -177,4 +183,4 @@ class TestMoveValidation:
             Instruction(Opcode.MOVE, dest=1, src0=0),
             Instruction(Opcode.RETURN, src0=1),
         ], local_count=2, constants=[MenaiInteger(0)])
-        self.validator.validate(code)  # must not raise
+        self._validate(code)  # must not raise

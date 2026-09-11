@@ -6,7 +6,6 @@ from typing import cast
 from menai.bytecode.menai_bytecode import Opcode
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_value import MenaiValue
-from menai.vm.menai_vm_bytecode_validator import validate_bytecode
 from menai.vm.menai_vm_errors import _MenaiVMRuntimeError, translate_vm_error
 
 # pylint: disable=no-name-in-module
@@ -23,8 +22,7 @@ from menai.vm.menai_vm_c import get_timing_data as _c_vm_get_timing_data  # type
 class MenaiVM:
     """Wrapper around the C VM, exposing execute() and cancel()."""
 
-    def __init__(self, validate: bool = True) -> None:
-        self.validate_bytecode = validate
+    def __init__(self) -> None:
         self._state = _c_vm_state_alloc()
 
     def __del__(self) -> None:
@@ -41,9 +39,6 @@ class MenaiVM:
         extra_bindings: dict[str, MenaiValue] | None = None,
     ) -> MenaiValue:
         """Execute a code object and return the result."""
-        if self.validate_bytecode:
-            validate_bytecode(code)
-
         try:
             return cast(Callable[..., MenaiValue], _c_vm_execute)(
                 code, extra_bindings or {}, self._state
