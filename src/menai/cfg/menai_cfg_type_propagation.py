@@ -292,7 +292,12 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
             preds = block.predecessors
             if len(preds) == 1:
                 pred = preds[0]
-                if pred.id in branch_true_types and block.id == pred.terminator.true_block.id:
+                term = pred.terminator
+                if (
+                    pred.id in branch_true_types
+                    and isinstance(term, MenaiCFGBranchTerm)
+                    and block.id == term.true_block.id
+                ):
                     block_types = dict(branch_true_types[pred.id])
 
                 else:
