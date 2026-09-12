@@ -52,7 +52,6 @@ If you need to use an API read the source code to understand it first.
 - If you open a terminal it will automatically be in the root of the mindspace directory.  Don't change directory unless
   you want to be somewhere else.
 - Terminals will not open with a python virtual environment by default.  The venv is at `venv/` in the mindspace root.
-- If you send a command to a terminal, don't forget the newline or carriage return required (Unix, or Windows specific).
 - Do not pipe pytest output through `grep` or other filtering tools.  pytest interleaves progress dots on stderr with
   summary lines on stdout, so filtering mangles the output and hides the pass/fail counts.  Run pytest with no flags
   and pipe through `tail` only if the output is too long to read in full:
