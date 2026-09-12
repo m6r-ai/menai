@@ -1,13 +1,7 @@
 /*
  * menai_vm_validate.c — C bytecode validator for the Menai VM.
  *
- * Ports the Python bytecode validator (menai_vm_bytecode_validator.py) into C
- * so the VM is self-contained.  This is a pure read-only analysis: it never
- * allocates from the pool allocator or touches VM state.  The only allocations
- * are temporary working buffers (calloc/free) for the CFG and definite-
- * assignment analysis.
- *
- * Validation passes (matching the Python validator):
+ * Validation passes:
  *   1. Structure — at least one instruction, all opcodes valid.
  *   2. Indices — per-instruction bounds checks on constants, names, code
  *      objects, registers, and jump targets.
@@ -67,8 +61,7 @@ static int validate_initialization(MenaiCodeObject *co, MenaiValidationError *er
 
 /*
  * is_no_dest_opcode — returns 1 if the opcode does not write a destination
- * register (dest field is unused).  Matches NO_DEST_OPCODES in the Python
- * validator.
+ * register (dest field is unused).
  */
 static int
 is_no_dest_opcode(int opcode)
