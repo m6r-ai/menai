@@ -140,6 +140,19 @@ typedef struct MenaiBigInt MenaiBigInt;
 typedef struct MenaiBoolean MenaiBoolean;
 typedef struct MenaiBytes MenaiBytes;
 typedef struct MenaiCodeObject MenaiCodeObject;
+typedef struct MenaiJumpTable MenaiJumpTable;
+
+/*
+ * One dense integer jump table (SWITCH_INTEGER).  targets[i] is the instruction
+ * index jumped to when the scrutinee equals min + i; values outside
+ * [min, min + count) or bignums dispatch to default_target.
+ */
+struct MenaiJumpTable {
+    long long min;
+    int default_target;
+    int count;
+    int *targets;
+};
 typedef struct MenaiComplex MenaiComplex;
 typedef struct MenaiDict MenaiDict;
 typedef struct MenaiDictElement MenaiDictElement;
@@ -193,6 +206,9 @@ struct MenaiCodeObject {
 
     MenaiValue **constants;              /* fast constant pool */
     ssize_t nconst;
+
+    MenaiJumpTable *jump_tables;         /* dense integer switch tables (SWITCH_INTEGER) */
+    int njt;                             /* number of jump tables */
 
     const char **names;                  /* global name strings for OP_LOAD_NAME */
     hash_t *name_hashes;                 /* precomputed FNV-1a hash of each name */

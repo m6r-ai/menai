@@ -331,6 +331,23 @@ class MenaiCFGBranchTerm:
 
 
 @dataclass
+class MenaiCFGSwitchTerm:
+    """
+    Dense integer switch on `value`.
+
+    Lowered to the SWITCH_INTEGER opcode by the VM codegen.  `targets[i]` is the
+    block jumped to when the scrutinee equals `min + i`; entries may be None,
+    meaning that value falls through to `default_block`.  The scrutinee is
+    guaranteed integer (a guard is emitted by the pass that creates the
+    switch), so no runtime type dispatch is needed.
+    """
+    value: MenaiCFGValue
+    min: int
+    targets: list['MenaiCFGBlock | None']
+    default_block: 'MenaiCFGBlock'
+
+
+@dataclass
 class MenaiCFGReturnTerm:
     """Return `value` from the current function."""
     value: MenaiCFGValue
@@ -390,6 +407,7 @@ class MenaiCFGRaiseTerm:
 MenaiCFGTerminator = (  # pylint: disable=invalid-name
     MenaiCFGJumpTerm
     | MenaiCFGBranchTerm
+    | MenaiCFGSwitchTerm
     | MenaiCFGReturnTerm
     | MenaiCFGTailCallTerm
     | MenaiCFGTailApplyTerm
@@ -554,6 +572,13 @@ def _fmt_term(term: MenaiCFGTerminator) -> str:
         return (f"branch {term.cond} → block{term.true_block.id} / "
                 f"block{term.false_block.id}")
 
+    if isinstance(term, MenaiCFGSwitchTerm):
+        arms = ", ".join(
+            f"{term.min + i}: block{t.id}" if t is not None else f"{term.min + i}: default"
+            for i, t in enumerate(term.targets)
+        )
+        return f"switch {term.value} min={term.min} [{arms}] default=block{term.default_block.id}"
+
     if isinstance(term, MenaiCFGReturnTerm):
         return f"return {term.value}"
 
@@ -591,6 +616,13 @@ def relink_predecessors(func: MenaiCFGFunction) -> None:
         elif isinstance(term, MenaiCFGBranchTerm):
             _safe_add_pred(term.true_block, block, func)
             _safe_add_pred(term.false_block, block, func)
+
+        elif isinstance(term, MenaiCFGSwitchTerm):
+            for target in term.targets:
+                if target is not None:
+                    _safe_add_pred(target, block, func)
+
+            _safe_add_pred(term.default_block, block, func)
 
         elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
             _safe_add_pred(term.target, block, func)
@@ -631,6 +663,19 @@ def remap_term(
             cond=term.cond,
             true_block=new_true,
             false_block=new_false,
+        )
+
+    if isinstance(term, MenaiCFGSwitchTerm):
+        new_targets = [remap_block(t) if t is not None else None for t in term.targets]
+        new_default = remap_block(term.default_block)
+        if all(nt is t for nt, t in zip(new_targets, term.targets)) and new_default is term.default_block:
+            return term
+
+        return MenaiCFGSwitchTerm(
+            value=term.value,
+            min=term.min,
+            targets=new_targets,
+            default_block=new_default,
         )
 
     if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
@@ -693,6 +738,9 @@ def value_ids_in_term(term: 'MenaiCFGTerminator') -> list[int]:
 
     if isinstance(term, MenaiCFGBranchTerm):
         return [term.cond.id]
+
+    if isinstance(term, MenaiCFGSwitchTerm):
+        return [term.value.id]
 
     if isinstance(term, MenaiCFGTailCallTerm):
         return [term.func.id] + [a.id for a in term.args]

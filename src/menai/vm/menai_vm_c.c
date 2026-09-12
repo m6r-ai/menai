@@ -798,6 +798,24 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             break;
         }
 
+        case OP_SWITCH_INTEGER: {
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            const MenaiJumpTable *t = &frame->code_obj->jump_tables[src1];
+            MenaiInteger *index = (MenaiInteger *)frame_regs[src0];
+
+            if (!index->is_big) {
+                long long target = (long long)index->fixed - t->min;
+                if (target >= 0 && target < (long long)t->count) {
+                    frame->ip = t->targets[target];
+                    break;
+                }
+
+            }
+
+            frame->ip = t->default_target;
+            break;
+        }
+
         case OP_RAISE_ERROR: {
             MenaiValue *val = frame_regs[src0];
 

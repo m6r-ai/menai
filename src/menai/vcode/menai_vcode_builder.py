@@ -67,6 +67,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
+    MenaiCFGSwitchTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
@@ -94,6 +95,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
     MenaiVCodeRaise,
+    MenaiVCodeSwitch,
     MenaiVCodeGuard,
     MenaiVCodeReg,
     MenaiVCodeReturn,
@@ -187,6 +189,10 @@ class MenaiVCodeBuilder:
 
             elif isinstance(term, MenaiCFGBranchTerm):
                 successors = [term.true_block, term.false_block]
+
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                successors = [t for t in term.targets if t is not None]
+                successors.append(term.default_block)
 
             for succ in successors:
                 for instr in succ.instrs:
@@ -321,6 +327,17 @@ class MenaiVCodeBuilder:
                 msg_reg = self._reg(term.message)
                 instrs.append(MenaiVCodeRaise(message=msg_reg))
                 max_reg_id = max(max_reg_id, term.message.id)
+
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                src_reg = self._reg(term.value)
+                default = labels[term.default_block.id]
+                instrs.append(MenaiVCodeSwitch(
+                    src=src_reg,
+                    min=term.min,
+                    labels=[labels[t.id] if t is not None else default for t in term.targets],
+                    default_label=default,
+                ))
+                max_reg_id = max(max_reg_id, term.value.id)
 
             else:
                 raise TypeError(
@@ -477,6 +494,13 @@ class MenaiVCodeBuilder:
             elif isinstance(term, MenaiCFGBranchTerm):
                 dfs(term.true_block)
                 dfs(term.false_block)
+
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                for t in term.targets:
+                    if t is not None:
+                        dfs(t)
+
+                dfs(term.default_block)
 
             post_order.append(block)
 

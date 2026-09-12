@@ -155,6 +155,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeStruct,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
+    MenaiVCodeSwitch,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
 )
@@ -308,6 +309,14 @@ def _replace_reg(
         return MenaiVCodeJumpIfFalse(
             cond=new_reg if instr.cond.id == old_id else instr.cond,
             label=instr.label,
+        )
+
+    if isinstance(instr, MenaiVCodeSwitch):
+        return MenaiVCodeSwitch(
+            src=new_reg if instr.src.id == old_id else instr.src,
+            min=instr.min,
+            labels=list(instr.labels),
+            default_label=instr.default_label,
         )
 
     if isinstance(instr, MenaiVCodeReturn):
@@ -556,6 +565,7 @@ _BARRIER_TYPES = (
 # fall through to the next instruction.
 _no_fallthrough_types = (
     MenaiVCodeJump,
+    MenaiVCodeSwitch,
     MenaiVCodeReturn,
     MenaiVCodeTailCall,
     MenaiVCodeTailApply,
@@ -582,6 +592,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
         return [], [instr.cond.id]
+
+    if isinstance(instr, MenaiVCodeSwitch):
+        return [], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeReturn):
         return [], [instr.value.id]
@@ -947,6 +960,11 @@ def _thread_jumps(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             targeted_labels.add(redirect.get(instr.label, instr.label))
 
+        elif isinstance(instr, MenaiVCodeSwitch):
+            targeted_labels.add(redirect.get(instr.default_label, instr.default_label))
+            for label in instr.labels:
+                targeted_labels.add(redirect.get(label, label))
+
     # Labels reachable via fall-through.  A label is reachable via
     # fall-through if the preceding non-label instruction is not an
     # unconditional control transfer.  Conditional jumps DO fall through.
@@ -1028,6 +1046,23 @@ def _thread_jumps(
             if new_label != instr.label:
                 changed = True
                 result.append(MenaiVCodeJumpIfFalse(cond=instr.cond, label=new_label))
+
+            else:
+                result.append(instr)
+
+        elif isinstance(instr, MenaiVCodeSwitch):
+            new_default = redirect.get(instr.default_label, instr.default_label)
+            new_labels = [redirect.get(l, l) for l in instr.labels]
+            if new_default != instr.default_label or any(
+                nl != l for nl, l in zip(new_labels, instr.labels)
+            ):
+                changed = True
+                result.append(MenaiVCodeSwitch(
+                    src=instr.src,
+                    min=instr.min,
+                    labels=new_labels,
+                    default_label=new_default,
+                ))
 
             else:
                 result.append(instr)

@@ -401,6 +401,75 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
 
     Py_DECREF(py_constants);
 
+    /* jump_tables — list of (min, default_target, targets) for SWITCH_INTEGER */
+    PyObject *py_jt = PyObject_GetAttrString(py_code, "jump_tables");
+    if (!py_jt) {
+        PyErr_Clear();
+        return co;
+    }
+
+    if (py_jt != Py_None && PyList_Check(py_jt) && PyList_GET_SIZE(py_jt) > 0) {
+        co->njt = (int)PyList_GET_SIZE(py_jt);
+        co->jump_tables = (MenaiJumpTable *)calloc(
+            (size_t)co->njt, sizeof(MenaiJumpTable));
+        if (!co->jump_tables) {
+            Py_DECREF(py_jt);
+            PyErr_NoMemory();
+            goto fail;
+        }
+
+        for (int i = 0; i < co->njt; i++) {
+            PyObject *entry = PyList_GET_ITEM(py_jt, i);
+            if (!PyTuple_Check(entry) || PyTuple_GET_SIZE(entry) != 3) {
+                Py_DECREF(py_jt);
+                PyErr_SetString(PyExc_TypeError, "jump_tables entries must be 3-tuples");
+                goto fail;
+            }
+
+            long long t_min = PyLong_AsLongLong(PyTuple_GET_ITEM(entry, 0));
+            long t_default = PyLong_AsLong(PyTuple_GET_ITEM(entry, 1));
+            PyObject *targets = PyTuple_GET_ITEM(entry, 2);
+            if (PyErr_Occurred() || !PySequence_Check(targets)) {
+                Py_DECREF(py_jt);
+                if (!PyErr_Occurred()) {
+                    PyErr_SetString(PyExc_TypeError, "jump table targets must be a sequence");
+                }
+                goto fail;
+            }
+
+            Py_ssize_t count = PySequence_Size(targets);
+            co->jump_tables[i].min = t_min;
+            co->jump_tables[i].default_target = (int)t_default;
+            co->jump_tables[i].count = (int)count;
+            co->jump_tables[i].targets = (int *)malloc(
+                (size_t)count * sizeof(int));
+            if (!co->jump_tables[i].targets) {
+                Py_DECREF(py_jt);
+                PyErr_NoMemory();
+                goto fail;
+            }
+
+            for (Py_ssize_t j = 0; j < count; j++) {
+                PyObject *t = PySequence_GetItem(targets, j);
+                if (!t) {
+                    Py_DECREF(py_jt);
+                    goto fail;
+                }
+
+                long v = PyLong_AsLong(t);
+                Py_DECREF(t);
+                if (PyErr_Occurred()) {
+                    Py_DECREF(py_jt);
+                    goto fail;
+                }
+
+                co->jump_tables[i].targets[j] = (int)v;
+            }
+        }
+    }
+
+    Py_DECREF(py_jt);
+
     return co;
 
 fail:

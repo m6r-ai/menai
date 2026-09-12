@@ -19,6 +19,7 @@ from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
 from menai.cfg.menai_cfg_branch_const_prop import MenaiCFGBranchConstProp
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
+from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
 from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
 from menai.cfg.menai_cfg_type_propagation import MenaiCFGTypePropagation
@@ -71,6 +72,7 @@ class MenaiCompiler:
             MenaiCFGCollapsePhiChains(),
             MenaiCFGBranchConstProp(),
             MenaiCFGSimplifyBlocks(),
+            MenaiCFGSwitchDispatch(),
             MenaiCFGTypePropagation(),
             MenaiCFGLICM(),
             MenaiCFGDeadCaptures(),

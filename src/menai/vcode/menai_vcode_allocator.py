@@ -75,6 +75,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeDict,
     MenaiVCodeReg,
     MenaiVCodeReturn,
+    MenaiVCodeSwitch,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
 )
@@ -442,6 +443,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, MenaiVCodeJumpIfFalse):
         return [], [instr.cond.id]
+
+    if isinstance(instr, MenaiVCodeSwitch):
+        return [], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeReturn):
         return [], [instr.value.id]

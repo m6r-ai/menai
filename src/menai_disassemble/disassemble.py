@@ -168,6 +168,14 @@ def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
             msg = code.constants[src0]
             annotation = f"  ; Raise error: {format_constant(msg)[:40]}"
 
+    elif opcode == Opcode.SWITCH_INTEGER:
+        if instr.src1 < len(code.jump_tables):
+            t_min, t_default, targets = code.jump_tables[instr.src1]
+            arms = ", ".join(
+                f"{t_min + i}@{t}" for i, t in enumerate(targets) if t != t_default
+            )
+            annotation = f"  ; default @{t_default} [{arms}]"
+
     return annotation
 
 
@@ -270,15 +278,22 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
     output.append(_grey(f"{indent}{'-'*70}", color))
 
     # Pre-pass: collect all jump target indices.
-    # JUMP target is in src0; JUMP_IF_FALSE/TRUE target is in src1.
+    # JUMP target is in src0; JUMP_IF_FALSE/TRUE target is in src1; SWITCH_INTEGER
+    # targets come from the jump table (all entries plus the default).
+    switch_targets = {
+        t
+        for instr in _instructions(code)
+        if instr.opcode == Opcode.SWITCH_INTEGER and instr.src1 < len(code.jump_tables)
+        for t in (*code.jump_tables[instr.src1][2], code.jump_tables[instr.src1][1])
+    }
     jump_targets = {
         instr.src1 if instr.opcode in (Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
         else instr.src0
         for instr in _instructions(code)
         if instr.opcode in (Opcode.JUMP, Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
-    }
+    } | switch_targets
     control_flow_opcodes = {
-        Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE, Opcode.CALL, Opcode.APPLY
+        Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE, Opcode.CALL, Opcode.APPLY, Opcode.SWITCH_INTEGER,
     }
 
     for i, instr in enumerate(_instructions(code)):

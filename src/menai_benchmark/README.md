@@ -25,6 +25,9 @@ benchmark/
 ├── run.py                # CLI entry point — discovers and runs suites
 ├── README.md
 └── suites/
+    ├── calendar/
+    │   ├── suite.py          # Calendar arithmetic benchmark suite
+    │   └── calendar.menai
     ├── json_parser/
     │   ├── suite.py          # JSON parser benchmark suite
     │   ├── json_parser.menai
@@ -72,6 +75,13 @@ implementations run outside the VM and are skipped in the profile output.
 `--profile-top N` controls how many opcodes are shown per case (default: 40).
 
 ## Suites
+
+### Calendar
+Working-day date arithmetic over a 5-day calendar with holidays.  The Menai
+inner loops dispatch through dense integer matches (day-name: 7 arms,
+days-in-month: 12 arms).  Five cases advance a project start date by both a
+working-day count (5–400) and a calendar-day span (5–600), so the days-in-month
+table is executed on every day step across month and year boundaries.
 
 ### JSON Parser
 Parses JSON strings of varying structure and size using a hand-written parser

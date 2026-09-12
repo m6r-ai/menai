@@ -407,6 +407,9 @@ class Opcode(IntEnum):
     LIST_TO_VECTOR = _op(321, 1)        # r_dest = (list->vector r_src0)
     ASSERT_VECTOR = _op(322, 1)         # Check r_src0 — assert r_src0 is vector
 
+    # Control flow (jump table).  Kept last so its value remains the highest opcode.
+    SWITCH_INTEGER = _op(323, 2)        # SWITCH_INTEGER r_src0, jt[src1] — dense integer jump table dispatch
+
 # Maps builtin function name → (opcode, arity) for all fixed-arity builtins.
 #
 # Variadic builtins that are fold-reduced by the desugarer appear here with
@@ -865,6 +868,9 @@ class Instruction:
         if opcode == Opcode.JUMP_IF_TRUE:
             return f"JUMP_IF_TRUE {rn(self.src0)}, @{self.src1}"
 
+        if opcode == Opcode.SWITCH_INTEGER:
+            return f"SWITCH_INTEGER {rn(self.src0)}, jt{self.src1}"
+
         if opcode == Opcode.MAKE_CLOSURE:
             return f"{rn(self.dest)} = MAKE_CLOSURE x{self.src0}"
 
@@ -924,6 +930,12 @@ class CodeObject:
 
     # Nested code objects (for lambdas/closures)
     code_objects: list['CodeObject']
+
+    # Jump tables (for SWITCH_INTEGER): each entry is (min, default_target, targets)
+    # where targets[i] is the instruction index for the value min + i and
+    # default_target is the instruction index for any other value (below min,
+    # above max, or bignum).  The opcode's src1 field indexes this list.
+    jump_tables: list[tuple[int, int, 'array.array[int]']] = field(default_factory=list)
 
     # Function metadata
     free_vars: list[str] = field(default_factory=list)  # Free variables to capture

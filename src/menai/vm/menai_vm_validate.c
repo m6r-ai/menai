@@ -26,8 +26,8 @@
 #define V_FIELD_MASK 0xFFFu
 #define V_OPCODE_MASK 0xFFFFu
 
-/* Highest valid opcode (OP_ASSERT_VECTOR) */
-#define V_HIGHEST_OPCODE 322
+/* Highest valid opcode (OP_SWITCH_INTEGER) */
+#define V_HIGHEST_OPCODE 323
 
 /*
  * Initialized-slot bitmask: 4096 bits = 64 uint64_t words.
@@ -74,6 +74,7 @@ is_no_dest_opcode(int opcode)
     case OP_JUMP:
     case OP_JUMP_IF_FALSE:
     case OP_JUMP_IF_TRUE:
+    case OP_SWITCH_INTEGER:
     case OP_RAISE_ERROR:
         return 1;
     default:
@@ -331,6 +332,53 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
                 return MENAI_ERR_MISSING_RETURN;
             }
         }
+
+        /* SWITCH_INTEGER: src0 (scrutinee register) < local_count, src1 (table
+         * index) < njt, and every table target < code_len */
+        if (opcode == OP_SWITCH_INTEGER) {
+            if (src0 < 0 || src0 >= co->local_count) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "SWITCH_INTEGER scrutinee register %d out of bounds (local_count: %d)",
+                         src0, co->local_count);
+                set_error(err, VERR_INVALID_VARIABLE_ACCESS,
+                          buf, i, opcode);
+                return MENAI_ERR_UNDEFINED_VARIABLE;
+            }
+
+            if (src1 < 0 || src1 >= co->njt) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "SWITCH_INTEGER jump table index %d out of bounds (tables: %d)",
+                         src1, co->njt);
+                set_error(err, VERR_INDEX_OUT_OF_BOUNDS,
+                          buf, i, opcode);
+                return MENAI_ERR_INDEX_OUT_OF_RANGE;
+            }
+
+            const MenaiJumpTable *t = &co->jump_tables[src1];
+            if (t->default_target < 0 || t->default_target >= code_len) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "SWITCH_INTEGER default target %d out of bounds (instructions: %d)",
+                         t->default_target, code_len);
+                set_error(err, VERR_INVALID_JUMP_TARGET,
+                          buf, i, opcode);
+                return MENAI_ERR_MISSING_RETURN;
+            }
+
+            for (int j = 0; j < t->count; j++) {
+                if (t->targets[j] < 0 || t->targets[j] >= code_len) {
+                    char buf[256];
+                    snprintf(buf, sizeof(buf),
+                             "SWITCH_INTEGER target %d out of bounds (instructions: %d)",
+                             t->targets[j], code_len);
+                    set_error(err, VERR_INVALID_JUMP_TARGET,
+                              buf, i, opcode);
+                    return MENAI_ERR_MISSING_RETURN;
+                }
+            }
+        }
     }
 
     return MENAI_OK;
@@ -373,6 +421,25 @@ validate_control_flow(MenaiCodeObject *co, MenaiValidationError *err)
         if (opcode == OP_JUMP_IF_FALSE || opcode == OP_JUMP_IF_TRUE) {
             if (src1 >= 0 && src1 < code_len) {
                 is_leader[src1] = 1;
+            }
+
+            if (i + 1 < code_len) {
+                is_leader[i + 1] = 1;
+            }
+        }
+
+        if (opcode == OP_SWITCH_INTEGER) {
+            if (src1 >= 0 && src1 < co->njt) {
+                const MenaiJumpTable *t = &co->jump_tables[src1];
+                for (int j = 0; j < t->count; j++) {
+                    if (t->targets[j] >= 0 && t->targets[j] < code_len) {
+                        is_leader[t->targets[j]] = 1;
+                    }
+                }
+
+                if (t->default_target >= 0 && t->default_target < code_len) {
+                    is_leader[t->default_target] = 1;
+                }
             }
 
             if (i + 1 < code_len) {
@@ -457,6 +524,26 @@ validate_control_flow(MenaiCodeObject *co, MenaiValidationError *err)
         int src1 = (int)((word >> V_SRC1_SHIFT) & V_FIELD_MASK);
 
         /* Compute successors of this block's last instruction */
+        if (opcode == OP_SWITCH_INTEGER) {
+            if (src1 >= 0 && src1 < co->njt) {
+                const MenaiJumpTable *t = &co->jump_tables[src1];
+                for (int j = 0; j <= t->count; j++) {
+                    int succ = (j < t->count) ? t->targets[j] : t->default_target;
+                    if (succ < 0 || succ >= code_len) {
+                        continue;
+                    }
+
+                    int succ_blk = instr_to_block[succ];
+                    if (!block_visited[succ_blk]) {
+                        block_visited[succ_blk] = 1;
+                        worklist[wl_tail++] = succ_blk;
+                    }
+                }
+            }
+
+            continue;
+        }
+
         if (is_terminal_opcode(opcode)) {
             continue;
         }
@@ -504,7 +591,15 @@ validate_control_flow(MenaiCodeObject *co, MenaiValidationError *err)
 
         int has_successors = 0;
         if (!is_terminal_opcode(opcode)) {
-            if (opcode == OP_JUMP) {
+            if (opcode == OP_SWITCH_INTEGER) {
+                int src1 = (int)((word >> V_SRC1_SHIFT) & V_FIELD_MASK);
+                if (src1 >= 0 && src1 < co->njt) {
+                    const MenaiJumpTable *t = &co->jump_tables[src1];
+                    if (t->count > 0 || (t->default_target >= 0 && t->default_target < code_len)) {
+                        has_successors = 1;
+                    }
+                }
+            } else if (opcode == OP_JUMP) {
                 int src0 = (int)((word >> V_SRC0_SHIFT) & V_FIELD_MASK);
                 if (src0 >= 0 && src0 < code_len) {
                     has_successors = 1;
@@ -803,6 +898,20 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
             }
         }
 
+        /* Check SWITCH_INTEGER: scrutinee register must be initialized */
+        if (opcode == OP_SWITCH_INTEGER) {
+            if (!init_state_get_bit(cur, src0)) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "SWITCH_INTEGER scrutinee register %d may be uninitialized",
+                         src0);
+                set_error(err, VERR_UNINITIALIZED_VARIABLE,
+                          buf, instr_idx, opcode);
+                result = MENAI_ERR_UNDEFINED_VARIABLE;
+                goto done;
+            }
+        }
+
         /* Check PATCH_CLOSURE */
         if (opcode == OP_PATCH_CLOSURE) {
             /* src0 (closure register) must be initialized */
@@ -905,9 +1014,29 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
         init_state_union(cur, &initial);
 
         /* Propagate to successors */
-        int succs[2];
-        int nsuccs = get_successors(instr_idx, opcode, src0, src1, code_len,
+        int succs_buf[2];
+        int *succs = succs_buf;
+        int nsuccs;
+
+        if (opcode == OP_SWITCH_INTEGER && src1 >= 0 && src1 < co->njt) {
+            const MenaiJumpTable *t = &co->jump_tables[src1];
+            succs = malloc(sizeof(int) * (size_t)(t->count + 1));
+            if (!succs) {
+                result = MENAI_ERR_NOMEM;
+                goto done;
+            }
+
+            nsuccs = 0;
+            for (int j = 0; j < t->count; j++) {
+                succs[nsuccs++] = t->targets[j];
+            }
+
+            succs[nsuccs++] = t->default_target;
+
+        } else {
+            nsuccs = get_successors(instr_idx, opcode, src0, src1, code_len,
                                     succs);
+        }
 
         for (int s = 0; s < nsuccs; s++) {
             int succ_idx = succs[s];
@@ -944,6 +1073,10 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
                 }
                 free(merged.closure_map);
             }
+        }
+
+        if (succs != succs_buf) {
+            free(succs);
         }
     }
 
