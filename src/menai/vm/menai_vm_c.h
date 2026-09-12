@@ -211,6 +211,8 @@ struct MenaiCodeObject {
     ssize_t nparam_names;                /* number of elements in param_names */
 
     char *name;                          /* function name for error messages, or NULL */
+    int source_line;                     /* source line where this function is defined, or 0 */
+    char *source_file;                   /* source file name, or NULL */
 };
 
 /*
@@ -484,13 +486,28 @@ struct MenaiVector {
  * user_value is set for MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE.
  * It is a retained MenaiValue * that the bridge must release after
  * converting it to a Python object.
+ *
+ * backtrace_names, backtrace_lines, and backtrace_files capture the call
+ * stack at error time.  backtrace_count is the number of valid entries
+ * (0..MENAI_MAX_BACKTRACE).  The strings are borrowed from the frame
+ * code objects and are valid only until the bridge reads them — they are
+ * NOT retained and must be copied (strdup) by the bridge if it needs them
+ * to survive beyond the immediate translation.
  */
+#define MENAI_MAX_BACKTRACE 64
+
 typedef struct {
     int code;               /* MENAI_ERR_* code */
     int opcode;             /* opcode that was executing (0 if unknown) */
     int ip;                 /* instruction pointer (0 if unknown) */
     int call_depth;         /* call stack depth at time of error */
     MenaiValue *user_value;    /* retained MenaiValue *; bridge releases */
+
+    /* Call stack backtrace (borrowed strings, valid only during translation). */
+    int backtrace_count;
+    const char *backtrace_names[MENAI_MAX_BACKTRACE];    /* function names */
+    int backtrace_lines[MENAI_MAX_BACKTRACE];            /* source lines (0 if unknown) */
+    const char *backtrace_files[MENAI_MAX_BACKTRACE];    /* source files (NULL if unknown) */
 } MenaiVMError;
 
 /*

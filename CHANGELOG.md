@@ -10,6 +10,7 @@ New features:
 - Added a jump threading optimizer.
 - Implemented performance improvements for some prelude functions.
 - The `error` operation can now take any arbitrary Menai value, allowing for structured error returns.
+- Runtime errors now generate a backtrace to make it easier to debug them.
 
 Bug fixes:
 

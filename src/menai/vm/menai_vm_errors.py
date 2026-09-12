@@ -142,6 +142,8 @@ class _MenaiVMRuntimeError(Exception):
         call_depth: Call stack depth at time of error.
         user_value: MenaiValue raised by (error ...) or variable name string
             for UNDEFINED_VARIABLE.
+        backtrace: List of (name, source_line, source_file) tuples capturing
+            the call stack at error time, or empty list if none.
     """
 
     def __init__(
@@ -151,12 +153,14 @@ class _MenaiVMRuntimeError(Exception):
         ip: int = 0,
         call_depth: int = 0,
         user_value: MenaiValue | None = None,
+        backtrace: list[tuple[str | None, int, str | None]] | None = None,
     ) -> None:
         self.code = code
         self.opcode = opcode
         self.ip = ip
         self.call_depth = call_depth
         self.user_value = user_value
+        self.backtrace = backtrace or []
         super().__init__(f"VM error {code}")
 
 
@@ -248,6 +252,7 @@ def translate_vm_error(
     ip: int = 0,
     call_depth: int = 0,
     user_value: MenaiValue | None = None,
+    backtrace: list[tuple[str | None, int, str | None]] | None = None,
 ) -> Exception:
     """
     Translate a structured VM error into the appropriate Python exception.
@@ -266,6 +271,8 @@ def translate_vm_error(
         call_depth: The call stack depth at time of error.
         user_value: MenaiValue raised by (error ...) for USER_ERROR, or
             MenaiString containing the variable name for UNDEFINED_VARIABLE.
+        backtrace: List of (name, source_line, source_file) tuples from the
+            C VM call stack at error time, or None if unavailable.
 
     Returns:
         An exception instance ready to be raised.
@@ -288,6 +295,7 @@ def translate_vm_error(
             vm_opcode=opcode,
             vm_ip=ip,
             vm_call_depth=call_depth,
+            backtrace=backtrace,
         )
 
     # CANCELLED maps to MenaiCancelledException.
@@ -297,6 +305,7 @@ def translate_vm_error(
             vm_opcode=opcode,
             vm_ip=ip,
             vm_call_depth=call_depth,
+            backtrace=backtrace,
         )
 
     # Look up in the error table.
@@ -323,6 +332,7 @@ def translate_vm_error(
             vm_opcode=opcode,
             vm_ip=ip,
             vm_call_depth=call_depth,
+            backtrace=backtrace,
         )
 
     else:
@@ -335,5 +345,6 @@ def translate_vm_error(
         exc.vm_opcode = opcode  # type: ignore[attr-defined]
         exc.vm_ip = ip  # type: ignore[attr-defined]
         exc.vm_call_depth = call_depth  # type: ignore[attr-defined]
+        exc.backtrace = backtrace or []  # type: ignore[attr-defined]
 
     return exc

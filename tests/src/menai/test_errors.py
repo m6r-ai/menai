@@ -709,3 +709,132 @@ class TestErrors:
 
         with pytest.raises(ZeroDivisionError):
             menai.evaluate(nested_functional)
+
+class TestBacktrace:
+    """Test call stack backtrace in runtime errors."""
+
+    def test_top_level_error_has_module_frame(self, menai):
+        """A top-level runtime error has a single <module> frame in the backtrace."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("(list-ref (list 1 2 3) 10)")
+
+        err = exc_info.value
+        assert len(err.backtrace) == 1
+        name, src_line, src_file = err.backtrace[0]
+        assert name == "<module>"
+
+    def test_backtrace_shows_recursive_function(self, menai):
+        """A runtime error inside a recursive function shows the function name in the backtrace."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 1
+        name, src_line, src_file = err.backtrace[0]
+        assert "recurse" in name
+
+    def test_backtrace_shows_multiple_frames(self, menai):
+        """A non-tail recursive error shows multiple frames in the backtrace."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((check-all (lambda (lst)
+                                  (if (list-null? lst)
+                                      0
+                                     (integer+ (if (integer<? (list-length lst) 2)
+                                                   (list-ref lst 100)
+                                                   0)
+                                                (check-all (list-rest lst)))))))
+             (check-all (list 1 2 3)))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 2
+        for name, src_line, src_file in err.backtrace:
+            assert "check-all" in name
+
+    def test_backtrace_shows_anonymous_lambda(self, menai):
+        """An anonymous lambda in the backtrace is identified by its source location."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((wrapper (lambda (f x)
+                                (if (integer<=? x 0)
+                                    (f (list 1 2 3))
+                                    (wrapper f (integer- x 1))))))
+              (wrapper (lambda (lst) (list-ref lst 10)) 2))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 1
+        name, src_line, src_file = err.backtrace[0]
+        assert "<lambda" in name
+
+    def test_backtrace_includes_source_line(self, menai):
+        """The backtrace includes the source line where each function is defined."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 1
+        _, src_line, _ = err.backtrace[0]
+        assert src_line > 0
+
+    def test_backtrace_user_error_shows_call_stack(self, menai):
+        """A user-raised error (error ...) captures the call stack."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((validate (lambda (x)
+                                 (if (integer<? x 0)
+                                     (error "negative value not allowed")
+                                     x)))
+                     (check-all (lambda (lst)
+                                  (if (list-null? lst)
+                                      0
+                                      (integer+ (validate (list-first lst))
+                                                (check-all (list-rest lst)))))))
+              (check-all (list 1 -2 3)))
+            """)
+
+        err = exc_info.value
+        assert "negative value not allowed" in str(err)
+        assert len(err.backtrace) >= 1
+
+    def test_backtrace_formatted_in_error_message(self, menai):
+        """The backtrace is formatted in the error message string."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        msg = str(exc_info.value)
+        assert "Call stack:" in msg
+        assert "recurse" in msg
+
+    def test_backtrace_strips_params_suffix(self, menai):
+        """The formatted backtrace strips the (N params) suffix from function names."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        msg = str(exc_info.value)
+        assert "(2 params)" not in msg

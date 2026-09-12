@@ -203,6 +203,26 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
         PyErr_Clear();
     }
 
+    /* source_line — optional, used for error backtraces */
+    if (_read_int(py_code, "source_line", &co->source_line) < 0) {
+        goto fail;
+    }
+
+    /* source_file — optional, used for error backtraces */
+    PyObject *py_source_file = PyObject_GetAttrString(py_code, "source_file");
+    if (py_source_file) {
+        if (py_source_file != Py_None) {
+            const char *sf = PyUnicode_AsUTF8(py_source_file);
+            if (sf) {
+                co->source_file = strdup(sf);
+            }
+        }
+
+        Py_DECREF(py_source_file);
+    } else {
+        PyErr_Clear();
+    }
+
     /* ncap — length of free_vars list */
     PyObject *fv = PyObject_GetAttrString(py_code, "free_vars");
     if (!fv) {
@@ -1562,36 +1582,74 @@ static void
 bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
 {
     /*
-     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth, user_value).
+     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth, user_value, backtrace).
      */
     PyObject *py_user_val;
     PyObject *args;
     PyObject *exc;
 
+    /* Build backtrace as a list of (name, source_line, source_file) tuples. */
+    PyObject *py_backtrace = PyList_New(0);
+    if (!py_backtrace) {
+        goto cleanup_bt_strings;
+    }
+
+    for (int i = 0; i < err->backtrace_count; i++) {
+        PyObject *entry = PyTuple_New(3);
+        if (!entry) {
+            Py_DECREF(py_backtrace);
+            goto cleanup_bt_strings;
+        }
+
+        PyTuple_SET_ITEM(entry, 0, err->backtrace_names[i]
+            ? PyUnicode_FromString(err->backtrace_names[i])
+            : (Py_INCREF(Py_None), Py_None));
+        PyTuple_SET_ITEM(entry, 1, PyLong_FromLong(err->backtrace_lines[i]));
+        PyTuple_SET_ITEM(entry, 2, err->backtrace_files[i]
+            ? PyUnicode_FromString(err->backtrace_files[i])
+            : (Py_INCREF(Py_None), Py_None));
+
+        if (PyList_Append(py_backtrace, entry) < 0) {
+            Py_DECREF(entry);
+            Py_DECREF(py_backtrace);
+            goto cleanup_bt_strings;
+        }
+
+        Py_DECREF(entry);
+    }
+
     if (err->user_value) {
         py_user_val = menai_value_to_slow_value(vs, err->user_value);
         menai_value_release(vs, err->user_value);
         if (!py_user_val) {
-            return;
+            Py_DECREF(py_backtrace);
+            goto cleanup_bt_strings;
         }
     } else {
         py_user_val = Py_None;
         Py_INCREF(py_user_val);
     }
 
-    args = Py_BuildValue("(iiiiN)", err->code, err->opcode, err->ip, err->call_depth, py_user_val);
+    args = Py_BuildValue("(iiiiNN)", err->code, err->opcode, err->ip, err->call_depth, py_user_val, py_backtrace);
     if (!args) {
-        return;
+        goto cleanup_bt_strings;
     }
 
     exc = PyObject_CallObject(_VMRuntimeError_type, args);
     Py_DECREF(args);
     if (!exc) {
-        return;
+        goto cleanup_bt_strings;
     }
 
     PyErr_SetObject((PyObject *)Py_TYPE(exc), exc);
     Py_DECREF(exc);
+
+cleanup_bt_strings:
+    /* Free the strdup'd backtrace strings owned by the error struct. */
+    for (int i = 0; i < err->backtrace_count; i++) {
+        free((char *)err->backtrace_names[i]);
+        free((char *)err->backtrace_files[i]);
+    }
 }
 
 /*

@@ -7318,6 +7318,27 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         continue;
 
 error:
+        /*
+         * Capture the call stack backtrace before releasing frames.
+         * Walk from the current (deepest) frame up to the sentinel,
+         * recording function name, source line, and source file from
+         * each frame's code object.  We strdup the strings because the
+         * code objects are released below and the bridge runs after
+         * execute_loop returns.  The bridge frees the strdup'd strings
+         * after converting them to Python objects.
+         */
+        vs->error.backtrace_count = 0;
+        for (int d = frame_depth; d >= 1 && vs->error.backtrace_count < MENAI_MAX_BACKTRACE; d--) {
+            MenaiCodeObject *co = frames[d].code_obj;
+            if (co) {
+                int bt_idx = vs->error.backtrace_count;
+                vs->error.backtrace_names[bt_idx] = co->name ? strdup(co->name) : NULL;
+                vs->error.backtrace_lines[bt_idx] = co->source_line;
+                vs->error.backtrace_files[bt_idx] = co->source_file ? strdup(co->source_file) : NULL;
+                vs->error.backtrace_count++;
+            }
+        }
+
         /* Release all live frames above the sentinel. */
         for (int d = frame_depth; d >= 1; d--) {
             if (frames[d].code_obj) {
@@ -7360,6 +7381,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->error.ip = 0;
     vs->error.call_depth = 0;
     vs->error.user_value = NULL;
+    vs->error.backtrace_count = 0;
 
     size_t needed = (size_t)code->local_count + code->outgoing_arg_slots;
     size_t num_regs = INITIAL_REG_CAPACITY;

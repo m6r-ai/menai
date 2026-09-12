@@ -36,6 +36,7 @@ menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co)
     free(co->children);
     free(co->instrs);
     free(co->name);
+    free(co->source_file);
     MENAI_CLEAR_MAGIC(co);
     free(co);
 }

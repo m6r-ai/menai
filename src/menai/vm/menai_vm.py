@@ -51,6 +51,7 @@ class MenaiVM:
                 exc.ip,
                 exc.call_depth,
                 exc.user_value,
+                exc.backtrace,
             ) from None
 
     def cancel(self) -> None:
