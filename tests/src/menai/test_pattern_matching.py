@@ -517,7 +517,7 @@ class TestPatternMatching:
     def test_error_in_pattern_result_evaluation(self, menai):
         """Test error handling in pattern result evaluation."""
         # Division by zero in pattern result
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate('(match 42 (x (float/ (integer->float x) 0.0)) (_ "other"))')
 
         # Type error in pattern result

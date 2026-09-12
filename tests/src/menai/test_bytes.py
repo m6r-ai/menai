@@ -1414,7 +1414,7 @@ class TestIntegerToLongOverflowValues(TestIntegerToLongOverflow):
 
     def test_bytes_append_sleb128_bigint(self, menai):
         """bytes-append-sleb128 rejects a bigint value that exceeds C long range."""
-        with pytest.raises((MenaiEvalError, OverflowError), match="overflow"):
+        with pytest.raises(MenaiEvalError, match="overflow"):
             menai.evaluate(f'(bytes-append-sleb128 {self.EMPTY} {self.BIG_POS})')
 
     def test_list_to_bytes_bigint(self, menai):
@@ -1444,7 +1444,7 @@ class TestIntegerToLongOverflowValues(TestIntegerToLongOverflow):
 
     def test_bytes_append_sleb128_bigint_negative(self, menai):
         """bytes-append-sleb128 rejects a negative bigint value that exceeds C long range."""
-        with pytest.raises((MenaiEvalError, OverflowError), match="overflow"):
+        with pytest.raises(MenaiEvalError, match="overflow"):
             menai.evaluate(f'(bytes-append-sleb128 {self.EMPTY} {self.BIG_NEG})')
 
 

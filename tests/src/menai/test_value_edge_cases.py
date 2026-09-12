@@ -206,7 +206,7 @@ class TestMenaiValueEdgeCases:
             # This might raise an error or return infinity
             if not isinstance(result, Exception):
                 assert math.isinf(result)
-        except ZeroDivisionError as exc:
+        except MenaiEvalError as exc:
             # Division by zero error is also acceptable
             assert exc.error_code == VMErrorCode.DIVISION_BY_ZERO
 

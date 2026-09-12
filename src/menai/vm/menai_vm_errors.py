@@ -1,5 +1,5 @@
 """
-VM error codes and the mapping from structured codes to Python exceptions.
+VM error codes and the mapping from structured codes to MenaiError exceptions.
 
 The C VM reports two categories of error:
 
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import Enum, IntEnum
 
 from menai.bytecode.menai_bytecode import Opcode
-from menai.menai_error import MenaiCancelledException, MenaiEvalError
+from menai.menai_error import MenaiCancelledException, MenaiError, MenaiEvalError
 from menai.menai_value import MenaiString, MenaiValue
 
 
@@ -169,7 +169,7 @@ class _MenaiVMRuntimeError(Exception):
 #   exception_class: The exception class to raise
 #   message: The error message string
 #   suggestion: Optional suggestion string
-_ErrorTableEntry = tuple[type[Exception], str, str | None]
+_ErrorTableEntry = tuple[type[MenaiError], str, str | None]
 
 
 def _eval_error_entry(message: str, suggestion: str | None = None) -> _ErrorTableEntry:
@@ -180,10 +180,10 @@ def _eval_error_entry(message: str, suggestion: str | None = None) -> _ErrorTabl
 # The error table.  Each VMErrorCode maps to (exception_class, message, suggestion).
 # USER_ERROR is handled specially — its message comes from user_value, not the table.
 _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
-    VMErrorCode.NOMEM: (MemoryError, "out of memory", None),
-    VMErrorCode.OVERFLOW: (OverflowError, "integer overflow", None),
-    VMErrorCode.VALUE: (ValueError, "invalid value", None),
-    VMErrorCode.TYPE: (TypeError, "type error", None),
+    VMErrorCode.NOMEM: _eval_error_entry("out of memory"),
+    VMErrorCode.OVERFLOW: _eval_error_entry("integer overflow"),
+    VMErrorCode.VALUE: _eval_error_entry("invalid value"),
+    VMErrorCode.TYPE: _eval_error_entry("type error"),
     VMErrorCode.CANCELLED: _eval_error_entry("Execution was cancelled"),
 
     VMErrorCode.TYPE_MISMATCH: _eval_error_entry("type mismatch"),
@@ -210,8 +210,8 @@ _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
     VMErrorCode.SLICE_START_OUT_OF_RANGE: _eval_error_entry("slice start index out of range"),
     VMErrorCode.SLICE_END_OUT_OF_RANGE: _eval_error_entry("slice end index out of range"),
     VMErrorCode.OFFSET_OUT_OF_BOUNDS: _eval_error_entry("offset out of bounds"),
-    VMErrorCode.DIVISION_BY_ZERO: (ZeroDivisionError, "division by zero", None),
-    VMErrorCode.MODULO_BY_ZERO: (ZeroDivisionError, "modulo by zero", None),
+    VMErrorCode.DIVISION_BY_ZERO: _eval_error_entry("division by zero"),
+    VMErrorCode.MODULO_BY_ZERO: _eval_error_entry("modulo by zero"),
     VMErrorCode.INVALID_RADIX: _eval_error_entry("radix must be 2, 8, 10, or 16"),
     VMErrorCode.VALUE_OUT_OF_RANGE: _eval_error_entry("value out of range"),
     VMErrorCode.INVALID_CODEPOINT: _eval_error_entry("invalid Unicode scalar value"),
@@ -255,7 +255,7 @@ def translate_vm_error(
     backtrace: list[tuple[str | None, int, str | None]] | None = None,
 ) -> Exception:
     """
-    Translate a structured VM error into the appropriate Python exception.
+    Translate a structured VM error into the appropriate MenaiError exception.
 
     This is called by MenaiVM.execute when it catches a _MenaiVMRuntimeError.
     It looks up the error code in the table and constructs the appropriate
@@ -324,27 +324,12 @@ def translate_vm_error(
     if user_value is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
         message = f"undefined variable: {user_value.to_python()}"
 
-    if issubclass(exc_class, MenaiEvalError):
-        exc: Exception = exc_class(
-            message,
-            suggestion=suggestion,
-            error_code=code,
-            vm_opcode=opcode,
-            vm_ip=ip,
-            vm_call_depth=call_depth,
-            backtrace=backtrace,
-        )
-
-    else:
-        # Python built-in exceptions (OverflowError, ZeroDivisionError, etc.)
-        exc = exc_class(message)
-
-        # Attach structured diagnostic fields as attributes for built-in
-        # exception types that don't accept them in the constructor.
-        exc.error_code = code  # type: ignore[attr-defined]
-        exc.vm_opcode = opcode  # type: ignore[attr-defined]
-        exc.vm_ip = ip  # type: ignore[attr-defined]
-        exc.vm_call_depth = call_depth  # type: ignore[attr-defined]
-        exc.backtrace = backtrace or []  # type: ignore[attr-defined]
-
-    return exc
+    return exc_class(
+        message,
+        suggestion=suggestion,
+        error_code=code,
+        vm_opcode=opcode,
+        vm_ip=ip,
+        vm_call_depth=call_depth,
+        backtrace=backtrace,
+    )

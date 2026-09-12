@@ -197,27 +197,27 @@ class TestErrors:
 
     def test_division_by_zero_eval_error(self, menai):
         """Test that division by zero causes evaluation errors."""
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer/ 1 0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer/ 5 0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(float// 1.0 0.0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer% 1 0)")
 
         assert exc_info.value.error_code == VMErrorCode.MODULO_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(float% 1.0 0.0)")
 
         assert exc_info.value.error_code == VMErrorCode.MODULO_BY_ZERO
@@ -495,7 +495,7 @@ class TestErrors:
     def test_nested_error_propagation(self, menai):
         """Test that errors in nested expressions are properly propagated."""
         # Error in nested arithmetic
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer+ (integer* 2 3) (integer/ 1 0))")
 
         # Error in nested function call
@@ -503,13 +503,13 @@ class TestErrors:
             menai.evaluate("(string-length (integer+ 1 2))")
 
         # Error in conditional branch (should still be caught despite lazy evaluation)
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(if #t (integer/ 1 0) 42)")
 
     def test_error_in_higher_order_functions(self, menai):
         """Test error handling in higher-order function contexts."""
         # Error in map function
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(map-list (lambda (x) (integer/ x 0)) (list 1 2 3))")
 
         # Error in filter predicate
@@ -517,13 +517,13 @@ class TestErrors:
             menai.evaluate("(filter-list (lambda (x) (integer+ x \"hello\")) (list 1 2 3))")
 
         # Error in fold function
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(fold-list (lambda (acc x) (integer/ acc x)) 1 (list 1 0 2))")
 
     def test_error_in_let_binding_evaluation(self, menai):
         """Test error handling in let binding evaluation."""
         # Error in binding expression
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(let ((x (integer/ 1 0))) x)")
 
         # let bindings are parallel, so y's binding cannot see x from the same let
@@ -599,7 +599,7 @@ class TestErrors:
 
     def test_error_value_not_set_for_non_user_errors(self, menai):
         """error_value is not set for VM-generated errors (e.g. division by zero)."""
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('(integer/ 1 0)')
 
         assert not hasattr(exc_info.value, 'error_value') or exc_info.value.error_value is None
@@ -645,8 +645,8 @@ class TestErrors:
         with pytest.raises(MenaiError):
             menai.evaluate("(integer+ 1 2")
 
-        # Eval error (division by zero is reported as a builtin ZeroDivisionError)
-        with pytest.raises(ZeroDivisionError):
+        # Eval error (division by zero is reported as a builtin MenaiEvalError)
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer/ 1 0)")
 
     def test_specific_exception_catching(self, menai):
@@ -659,8 +659,8 @@ class TestErrors:
         with pytest.raises(MenaiASTBuildError):
             menai.evaluate("(integer+ 1 2")
 
-        # Catch specific eval error (division by zero is a builtin ZeroDivisionError)
-        with pytest.raises(ZeroDivisionError):
+        # Catch specific eval error (division by zero is a builtin MenaiEvalError)
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer/ 1 0)")
 
     def test_exception_chaining_preservation(self, menai):
@@ -675,7 +675,7 @@ class TestErrors:
     def test_error_recovery_not_possible(self, menai):
         """Test that errors properly terminate evaluation."""
         # After an error, the evaluator should be in a clean state for next evaluation
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer/ 1 0)")
 
         # Next evaluation should work normally
@@ -694,7 +694,7 @@ class TestErrors:
             (f 5)))
         '''
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(complex_expr)
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
@@ -707,7 +707,7 @@ class TestErrors:
                            (list 1 2 3))))
         '''
 
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate(nested_functional)
 
 class TestBacktrace:

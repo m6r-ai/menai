@@ -402,7 +402,7 @@ class TestMenaiEnvironmentEdgeCases:
     def test_environment_cleanup_after_errors(self, menai):
         """Test that environment is properly cleaned up after errors."""
         # Error in nested scope
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("""
             (let ((x 10))
               (let ((y (integer/ x 0)))
