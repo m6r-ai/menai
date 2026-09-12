@@ -379,7 +379,7 @@ class MenaiCFGSelfLoopTerm:
 @dataclass
 class MenaiCFGRaiseTerm:
     """
-    Raise a runtime error with a message string from a register.
+    Raise a runtime error with a value from a register.
 
     Lowered to RAISE_ERROR by the VM codegen.
     """

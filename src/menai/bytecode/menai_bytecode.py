@@ -57,7 +57,7 @@ class Opcode(IntEnum):
     JUMP = _op(9, 1)                   # Unconditional jump: JUMP offset
     JUMP_IF_FALSE = _op(10, 2)          # JUMP_IF_FALSE r_src0, @src1 — jump to src1 if r_src0 is false
     JUMP_IF_TRUE = _op(11, 2)           # JUMP_IF_TRUE r_src0, @src1 — jump to src1 if r_src0 is true
-    RAISE_ERROR = _op(12, 1)            # RAISE_ERROR r_src0 — raise error with message string from register src0
+    RAISE_ERROR = _op(12, 1)            # RAISE_ERROR r_src0 — raise error with value from register src0 (string or any MenaiValue)
 
     # Functions
     MAKE_CLOSURE = _op(13, 1)           # r_dest = MAKE_CLOSURE code_objects[src0]

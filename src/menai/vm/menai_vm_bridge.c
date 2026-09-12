@@ -1554,33 +1554,32 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
  * final user-facing exception using the error table in
  * menai_vm_errors.py.
  *
- * For MENAI_ERR_USER_ERROR, the user-supplied message is carried in
- * err->user_message (a malloc'd C string).  This function frees it
- * after packaging it into the Python exception.
+ * For MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE, the relevant
+ * value is carried in err->user_value (a retained MenaiValue *).  This
+ * function converts it to a Python object and releases it after packaging.
  */
 static void
-bridge_translate_error(const MenaiVMError *err)
+bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
 {
     /*
-     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth,
-     * user_message).
+     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth, user_value).
      */
-    PyObject *py_user_msg;
+    PyObject *py_user_val;
     PyObject *args;
     PyObject *exc;
 
-    if (err->user_message) {
-        py_user_msg = PyUnicode_FromString(err->user_message);
-        free((void *)err->user_message);
-        if (!py_user_msg) {
+    if (err->user_value) {
+        py_user_val = menai_value_to_slow_value(vs, err->user_value);
+        menai_value_release(vs, err->user_value);
+        if (!py_user_val) {
             return;
         }
     } else {
-        py_user_msg = Py_None;
-        Py_INCREF(py_user_msg);
+        py_user_val = Py_None;
+        Py_INCREF(py_user_val);
     }
 
-    args = Py_BuildValue("(iiiiN)", err->code, err->opcode, err->ip, err->call_depth, py_user_msg);
+    args = Py_BuildValue("(iiiiN)", err->code, err->opcode, err->ip, err->call_depth, py_user_val);
     if (!args) {
         return;
     }
@@ -1628,7 +1627,7 @@ bridge_set_prelude(MenaiVMState *vs, PyObject *prelude_code)
     menai_code_object_release(vs, prelude_co);
     if (!result) {
         if (!PyErr_Occurred()) {
-            bridge_translate_error(&vs->error);
+            bridge_translate_error(vs, &vs->error);
         }
 
         return -1;
@@ -1944,7 +1943,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
 
     if (result == NULL) {
         if (!PyErr_Occurred()) {
-            bridge_translate_error(&vs->error);
+            bridge_translate_error(vs, &vs->error);
         }
 
         return NULL;

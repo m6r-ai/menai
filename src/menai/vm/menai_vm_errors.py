@@ -20,6 +20,7 @@ from enum import Enum, IntEnum
 
 from menai.bytecode.menai_bytecode import Opcode
 from menai.menai_error import MenaiCancelledException, MenaiEvalError
+from menai.menai_value import MenaiString, MenaiValue
 
 
 class ValidationErrorType(Enum):
@@ -139,7 +140,8 @@ class _MenaiVMRuntimeError(Exception):
         opcode: Opcode that was executing (0 if unknown).
         ip: Instruction pointer at time of error (0 if unknown).
         call_depth: Call stack depth at time of error.
-        user_message: Supplementary error string (for USER_ERROR and UNDEFINED_VARIABLE).
+        user_value: MenaiValue raised by (error ...) or variable name string
+            for UNDEFINED_VARIABLE.
     """
 
     def __init__(
@@ -148,13 +150,13 @@ class _MenaiVMRuntimeError(Exception):
         opcode: int = 0,
         ip: int = 0,
         call_depth: int = 0,
-        user_message: str | None = None
+        user_value: MenaiValue | None = None,
     ) -> None:
         self.code = code
         self.opcode = opcode
         self.ip = ip
         self.call_depth = call_depth
-        self.user_message = user_message
+        self.user_value = user_value
         super().__init__(f"VM error {code}")
 
 
@@ -172,7 +174,7 @@ def _eval_error_entry(message: str, suggestion: str | None = None) -> _ErrorTabl
 
 
 # The error table.  Each VMErrorCode maps to (exception_class, message, suggestion).
-# USER_ERROR is handled specially — its message comes from user_message, not the table.
+# USER_ERROR is handled specially — its message comes from user_value, not the table.
 _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
     VMErrorCode.NOMEM: (MemoryError, "out of memory", None),
     VMErrorCode.OVERFLOW: (OverflowError, "integer overflow", None),
@@ -184,7 +186,6 @@ _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
     VMErrorCode.NOT_SYMBOL: _eval_error_entry("argument must be a symbol"),
     VMErrorCode.NOT_SYMBOL_PAIR: _eval_error_entry("arguments must be symbols"),
     VMErrorCode.IF_NOT_BOOLEAN: _eval_error_entry("if condition must be boolean"),
-    VMErrorCode.ERROR_MSG_NOT_STRING: _eval_error_entry("error: message must be a string"),
     VMErrorCode.NOT_CALLABLE: _eval_error_entry("cannot call non-function value"),
     VMErrorCode.APPLY_SECOND_NOT_LIST: _eval_error_entry("apply: second argument must be a list"),
     VMErrorCode.APPLY_FIRST_NOT_FUNCTION: _eval_error_entry("apply: first argument must be a function"),
@@ -246,7 +247,7 @@ def translate_vm_error(
     opcode: int = 0,
     ip: int = 0,
     call_depth: int = 0,
-    user_message: str | None = None
+    user_value: MenaiValue | None = None,
 ) -> Exception:
     """
     Translate a structured VM error into the appropriate Python exception.
@@ -263,17 +264,27 @@ def translate_vm_error(
         opcode: The opcode that was executing.
         ip: The instruction pointer at time of error.
         call_depth: The call stack depth at time of error.
-        user_message: User-supplied error string (only for USER_ERROR).
+        user_value: MenaiValue raised by (error ...) for USER_ERROR, or
+            MenaiString containing the variable name for UNDEFINED_VARIABLE.
 
     Returns:
         An exception instance ready to be raised.
     """
-    # USER_ERROR is special — the message comes from the user's code.
+    # USER_ERROR is special — the message comes from the raised value.
     if code == VMErrorCode.USER_ERROR:
-        msg = user_message if user_message is not None else "user error"
+        if isinstance(user_value, MenaiString):
+            msg = user_value.to_python()
+
+        elif user_value is not None:
+            msg = user_value.describe()
+
+        else:
+            msg = "user error"
+
         return MenaiEvalError(
             msg,
             error_code=code,
+            error_value=user_value,
             vm_opcode=opcode,
             vm_ip=ip,
             vm_call_depth=call_depth,
@@ -301,8 +312,8 @@ def translate_vm_error(
 
     exc_class, message, suggestion = entry
 
-    if user_message is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
-        message = f"undefined variable: {user_message}"
+    if user_value is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
+        message = f"undefined variable: {user_value.to_python()}"
 
     if issubclass(exc_class, MenaiEvalError):
         exc: Exception = exc_class(

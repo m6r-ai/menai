@@ -42,7 +42,7 @@ class MenaiIRQuote:
 
 @dataclass
 class MenaiIRError:
-    """Plan for compiling an error expression. message is an IR expression that must evaluate to a string."""
+    """Plan for compiling an error expression. message is an IR expression that evaluates to any Menai value."""
     message: 'MenaiIRExpr'
 
 

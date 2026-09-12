@@ -630,7 +630,7 @@ static MenaiValue *
 execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
 {
     int vm_err = MENAI_OK;
-    const char *vm_user_message = NULL;
+    MenaiValue *vm_user_value = NULL;
 
     MenaiValue **regs = vs->regs;
 
@@ -749,7 +749,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (val == NULL) {
-                vm_user_message = strdup(name_str);
+                MenaiString *name = alloc_menai_string_from_utf8(vs, name_str, (ssize_t)strlen(name_str));
+                if (name == NULL) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+                vm_user_value = (MenaiValue *)name;
                 vm_err = MENAI_ERR_UNDEFINED_VARIABLE;
                 goto error;
             }
@@ -794,15 +799,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         }
 
         case OP_RAISE_ERROR: {
-            MenaiString *msg = (MenaiString *)frame_regs[src0];
-            char *cstr = alloc_utf8_from_menai_string(msg, NULL);
-            if (cstr == NULL) {
-                vm_err = MENAI_ERR_NOMEM;
-                goto error;
-            }
+            MenaiValue *val = frame_regs[src0];
 
+            /*
+             * Retain the value so it survives frame cleanup, and store it
+             * in the error struct for the bridge to convert to a Python
+             * MenaiValue.  The bridge releases it after conversion.
+             */
+            menai_value_retain(val);
             vm_err = MENAI_ERR_USER_ERROR;
-            vm_user_message = cstr;
+            vm_user_value = val;
             goto error;
         }
 
@@ -7323,7 +7329,7 @@ error:
         vs->error.opcode = opcode;
         vs->error.ip = cur_ip;
         vs->error.call_depth = frame_depth;
-        vs->error.user_message = vm_user_message;
+        vs->error.user_value = vm_user_value;
         return NULL;
     }
 }
@@ -7353,7 +7359,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->error.opcode = 0;
     vs->error.ip = 0;
     vs->error.call_depth = 0;
-    vs->error.user_message = NULL;
+    vs->error.user_value = NULL;
 
     size_t needed = (size_t)code->local_count + code->outgoing_arg_slots;
     size_t num_regs = INITIAL_REG_CAPACITY;

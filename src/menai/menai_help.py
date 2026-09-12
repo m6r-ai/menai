@@ -440,13 +440,16 @@ Syntax: (operator arg1 arg2 ...)
 
 ## Raising errors
 
-- (error msg) → raises a runtime error; the msg expression is evaluated normally and must produce a string
-- msg can be a string literal, a variable, or any expression that evaluates to a string
+- (error value) → raises a runtime error; the value expression is evaluated normally
+- value can be a string (traditional), or any other Menai value (integer, dict, struct, list, etc.)
+- When value is a string, it becomes the error message directly
+- When value is a non-string, its string representation becomes the error message, and the structured value is also available to the caller as error_value on the exception
 - Raises immediately; no value is ever returned
 - Valid in any expression position, including inside lambda bodies, let bindings, and match arms
 - Used to signal invalid arguments or unrecoverable conditions
 - Example: (if (integer<? n 0) (error "n must be non-negative") (float-sqrt (integer->float n)))
 - Example: (error (string-concat "invalid value: " (integer->string x)))
+- Example: (error (dict "type" "arity-error" "function" "integer+" "expected" 2 "received" n))
 
 ## Important notes
 

@@ -250,7 +250,7 @@ class MenaiVCodeReturn:
 
 @dataclass
 class MenaiVCodeRaise:
-    """Raise a runtime error with a message string from a register."""
+    """Raise a runtime error with a value from a register."""
     message: MenaiVCodeReg
 
 

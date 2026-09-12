@@ -544,6 +544,82 @@ class TestErrors:
         with pytest.raises(MenaiEvalError):
             menai.evaluate('(let ((f (lambda (x) (integer+ x "hello")))) (f 5))')
 
+    # ========== Structured Error Value Tests ==========
+
+    def test_error_with_string_message(self, menai):
+        """String error messages work as before — message is the string content."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error "something went wrong")')
+
+        assert str(exc_info.value.message) == "something went wrong"
+        assert exc_info.value.error_value is not None
+
+    def test_error_with_integer_value(self, menai):
+        """Raising a non-string integer value produces a MenaiEvalError with error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error 42)')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() == 42
+        assert "42" in exc_info.value.message
+
+    def test_error_with_dict_value(self, menai):
+        """Raising a dict value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error (dict "type" "arity-error" "expected" 2))')
+
+        assert exc_info.value.error_value is not None
+        py_val = exc_info.value.error_value.to_python()
+        assert py_val["type"] == "arity-error"
+        assert py_val["expected"] == 2
+
+    def test_error_with_list_value(self, menai):
+        """Raising a list value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error (list 1 2 3))')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() == [1, 2, 3]
+
+    def test_error_with_boolean_value(self, menai):
+        """Raising a boolean value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error #t)')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() is True
+
+    def test_error_with_none_value(self, menai):
+        """Raising #none carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error #none)')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() is None
+
+    def test_error_value_not_set_for_non_user_errors(self, menai):
+        """error_value is not set for VM-generated errors (e.g. division by zero)."""
+        with pytest.raises(ZeroDivisionError) as exc_info:
+            menai.evaluate('(integer/ 1 0)')
+
+        assert not hasattr(exc_info.value, 'error_value') or exc_info.value.error_value is None
+
+    def test_error_with_computed_string(self, menai):
+        """Computed string error messages work and carry the string as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error (string-concat "value: " (integer->string 99)))')
+
+        assert exc_info.value.message == "value: 99"
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() == "value: 99"
+
+    def test_error_with_struct_value(self, menai):
+        """Raising a struct value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(let ((point (struct (x y)))) (error (point 1 2)))')
+
+        assert exc_info.value.error_value is not None
+
     # ========== Exception Hierarchy Tests ==========
 
     def test_exception_inheritance(self):

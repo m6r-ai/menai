@@ -1,6 +1,10 @@
 """Enhanced exception classes for Menai (AI Functional Programming Language) with detailed context."""
 
 from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from menai.menai_value import MenaiValue
 
 
 class MenaiError(Exception):
@@ -20,6 +24,7 @@ class MenaiError(Exception):
         source_file: str | None = None,
         show_context: bool = True,
         error_code: int | None = None,
+        error_value: 'MenaiValue | None' = None,
         vm_opcode: int | None = None,
         vm_ip: int | None = None,
         vm_call_depth: int | None = None,
@@ -40,6 +45,7 @@ class MenaiError(Exception):
             show_context: Whether to show source code context
             source_file: Source file name for location display
             error_code: VM error code (VMErrorCode integer) if from the C VM
+            error_value: MenaiValue raised by (error ...) when it is not a string
             vm_opcode: Opcode that was executing when the error occurred
             vm_ip: Instruction pointer at time of error
             vm_call_depth: Call stack depth at time of error
@@ -56,6 +62,7 @@ class MenaiError(Exception):
         self.source_file = source_file
         self.show_context = show_context
         self.error_code = error_code
+        self.error_value = error_value
         self.vm_opcode = vm_opcode
         self.vm_ip = vm_ip
         self.vm_call_depth = vm_call_depth

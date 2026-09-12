@@ -50,7 +50,7 @@ class MenaiVM:
                 exc.opcode,
                 exc.ip,
                 exc.call_depth,
-                exc.user_message,
+                exc.user_value,
             ) from None
 
     def cancel(self) -> None:

@@ -481,15 +481,16 @@ struct MenaiVector {
  * depth).  The bridge reads it after execution returns and translates
  * it into a Python exception.
  *
- * user_message is set for MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE;
- * it is a malloc'd C string that the bridge must free after use.
+ * user_value is set for MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE.
+ * It is a retained MenaiValue * that the bridge must release after
+ * converting it to a Python object.
  */
 typedef struct {
     int code;               /* MENAI_ERR_* code */
     int opcode;             /* opcode that was executing (0 if unknown) */
     int ip;                 /* instruction pointer (0 if unknown) */
     int call_depth;         /* call stack depth at time of error */
-    const char *user_message; /* only for MENAI_ERR_USER_ERROR */
+    MenaiValue *user_value;    /* retained MenaiValue *; bridge releases */
 } MenaiVMError;
 
 /*

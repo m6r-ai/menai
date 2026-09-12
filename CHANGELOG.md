@@ -9,6 +9,7 @@ New features:
 - Added a constant coalescing optimizer.
 - Added a jump threading optimizer.
 - Implemented performance improvements for some prelude functions.
+- The `error` operation can now take any arbitrary Menai value, allowing for structured error returns.
 
 Bug fixes:
 
