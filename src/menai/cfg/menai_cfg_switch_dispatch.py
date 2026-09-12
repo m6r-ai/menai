@@ -22,10 +22,10 @@ switch default.
 Safety: every test block after the first must have exactly one predecessor
 (the preceding test block), no other block may reference the SSA values the
 transformation deletes (the eq results and literal consts), and no arm target
-may itself be a test block.  The scrutinee is guarded with an integer guard
-before the switch — `integer=?` raises a type error for non-integer operands,
-and the guard preserves that behaviour by raising before any arm is tested,
-exactly as the first `integer=?` in the chain did.
+may itself be a test block.  The integer guard for the scrutinee is inserted
+by MenaiCFGTypePropagation (which runs after this pass), preserving the type
+error behaviour of the original `integer=?` chain — `integer=?` raises on
+non-integer operands, and the guard raises before any arm is tested.
 
 Density: a table is only built when the literals span a dense range:
 span <= max(8, 4 * arm_count) and span <= 4095.  Sparse chains are left as
@@ -34,7 +34,8 @@ branches.
 This pass runs after MenaiCFGSimplifyBlocks (so empty indirection blocks are
 already gone and the chain is in its canonical shape) and before
 MenaiCFGTypePropagation (so the eq builtins it removes have not yet had
-guards inserted for them).
+guards inserted for them).  The integer guard for the switch scrutinee is
+also handled by type propagation.
 """
 
 
@@ -44,7 +45,6 @@ from menai.cfg.menai_cfg import (
     MenaiCFGBuiltinInstr,
     MenaiCFGConstInstr,
     MenaiCFGFunction,
-    MenaiCFGGuardInstr,
     MenaiCFGInstr,
     MenaiCFGSwitchTerm,
     MenaiCFGValue,
@@ -314,8 +314,8 @@ def _rewrite(
 ) -> None:
     """
     Rewrite `entry` in place: keep the scrutinee const (when the scrutinee is
-    defined here), add the integer guard, and replace the terminator with the
-    switch.  All existing references to `entry` remain valid.
+    defined here) and replace the terminator with the switch.  All existing
+    references to `entry` remain valid.
     """
     lo = min(k for k, _ in arms)
     hi = max(k for k, _ in arms)
@@ -327,8 +327,6 @@ def _rewrite(
     new_instrs: list[MenaiCFGInstr] = []
     if scrut_const_instr is not None:
         new_instrs.append(scrut_const_instr)
-
-    new_instrs.append(MenaiCFGGuardInstr(value=scrutinee, expected_type='integer'))
 
     entry.instrs = new_instrs
     entry.terminator = MenaiCFGSwitchTerm(

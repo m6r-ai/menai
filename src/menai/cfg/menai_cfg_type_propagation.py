@@ -40,7 +40,14 @@ guard is needed.  If its type is unknown but the builtin expects a specific
 type, insert a guard before the builtin call.  For branch terminators, guard
 the condition as a boolean.  After a guard, the value's type becomes known for
 subsequent uses, so multiple builtins (or branches) using the same
-unknown-typed value only need one guard.
+unknown-typed value only need one guard.  For switch terminators, guard the
+scrutinee as an integer — the SWITCH_INTEGER opcode requires an integer
+operand, just as the `integer=?` calls it replaced did.
+
+Type refinement through branch conditions: when a branch tests the result of a
+type predicate (e.g. `integer?`), the true-edge successor inherits the refined
+type of the predicate's argument.  This allows guards to be skipped when a
+prior type predicate has already established the type at runtime.
 
 The pass mutates the CFG in place — it inserts MenaiCFGGuardInstr instructions
 into block.instrs lists and returns the same MenaiCFGFunction.
@@ -67,6 +74,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
     MenaiCFGPhiInstr,
+    MenaiCFGSwitchTerm,
 )
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
 from menai.menai_value import (
@@ -104,6 +112,27 @@ _VALUE_TYPE_MAP = {
     MenaiBytes: 'bytes',
     MenaiStruct: 'struct',
     MenaiStructType: 'structtype',
+}
+
+# Map from type-predicate builtin name to the Menai type name it tests for.
+# When a branch condition is the result of one of these predicates, the
+# true-edge successor inherits the refined type of the predicate's argument.
+_TYPE_PREDICATES: dict[str, str] = {
+    'none?': 'none',
+    'boolean?': 'boolean',
+    'integer?': 'integer',
+    'float?': 'float',
+    'complex?': 'complex',
+    'string?': 'string',
+    'bytes?': 'bytes',
+    'list?': 'list',
+    'dict?': 'dict',
+    'set?': 'set',
+    'vector?': 'vector',
+    'symbol?': 'symbol',
+    'function?': 'function',
+    'struct?': 'struct',
+    'structtype?': 'structtype',
 }
 
 
@@ -257,11 +286,17 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
         changed = False
 
         outgoing_types: dict[int, dict[int, str | None]] = {}
+        branch_true_types: dict[int, dict[int, str | None]] = {}
 
         for block in func.blocks:
             preds = block.predecessors
             if len(preds) == 1:
-                block_types = dict(outgoing_types.get(preds[0].id, types))
+                pred = preds[0]
+                if pred.id in branch_true_types and block.id == pred.terminator.true_block.id:
+                    block_types = dict(branch_true_types[pred.id])
+
+                else:
+                    block_types = dict(outgoing_types.get(pred.id, types))
 
             elif len(preds) > 1:
                 block_types = self._meet_outgoing_types(preds, outgoing_types, types)
@@ -277,6 +312,9 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
                 new_instrs.append(instr)
 
             self._guard_branch(block, block_types, new_instrs)
+            self._guard_switch(block, block_types, new_instrs)
+
+            self._refine_branch_types(block, block_types, branch_true_types)
 
             outgoing_types[block.id] = block_types
 
@@ -398,3 +436,79 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
             expected_type='boolean',
         ))
         types[term.cond.id] = 'boolean'
+
+    def _guard_switch(
+        self,
+        block: MenaiCFGBlock,
+        types: dict[int, str | None],
+        new_instrs: list[MenaiCFGInstr],
+    ) -> None:
+        """
+        Insert an integer guard on a switch terminator's scrutinee if its
+        type is not statically known to be integer.
+
+        Appends a guard to new_instrs if needed and updates the types dict.
+        """
+        term = block.terminator
+        if not isinstance(term, MenaiCFGSwitchTerm):
+            return
+
+        val_type = types.get(term.value.id)
+        if val_type == 'integer':
+            return
+
+        new_instrs.append(MenaiCFGGuardInstr(
+            value=term.value,
+            expected_type='integer',
+        ))
+        types[term.value.id] = 'integer'
+
+    def _refine_branch_types(
+        self,
+        block: MenaiCFGBlock,
+        types: dict[int, str | None],
+        branch_true_types: dict[int, dict[int, str | None]],
+    ) -> None:
+        """
+        If the block's terminator is a branch whose condition is the result
+        of a type-predicate builtin, record the refined type for the true
+        edge in branch_true_types.
+
+        The true-edge successor inherits the predicate's argument type.
+        The false edge does not refine the argument's type (the predicate
+        returning #f only tells us the value is *not* that type, which is
+        not useful for guard suppression).
+        """
+        term = block.terminator
+        if not isinstance(term, MenaiCFGBranchTerm):
+            return
+
+        refinement = self._branch_type_refinement(block, term)
+        if refinement is None:
+            return
+
+        val_id, refined_type = refinement
+        true_types = dict(types)
+        true_types[val_id] = refined_type
+        branch_true_types[block.id] = true_types
+
+    @staticmethod
+    def _branch_type_refinement(
+        block: MenaiCFGBlock,
+        term: MenaiCFGBranchTerm,
+    ) -> tuple[int, str] | None:
+        """
+        Check whether a branch condition is the result of a type-predicate
+        builtin call in the same block.  If so, return (arg_value_id, type_name)
+        for the predicate's argument.  Otherwise return None.
+        """
+        for instr in block.instrs:
+            if (
+                isinstance(instr, MenaiCFGBuiltinInstr)
+                and instr.result.id == term.cond.id
+                and instr.op in _TYPE_PREDICATES
+                and len(instr.args) == 1
+            ):
+                return instr.args[0].id, _TYPE_PREDICATES[instr.op]
+
+        return None

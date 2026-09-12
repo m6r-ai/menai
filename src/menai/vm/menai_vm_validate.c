@@ -810,7 +810,7 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
     init_state_copy(&states[0], &initial, total_slots);
 
     /* Worklist */
-    int *worklist = malloc(sizeof(int) * (size_t)code_len);
+    int *worklist = malloc(sizeof(int) * (size_t)(code_len + 1));
     if (!worklist) {
         for (int i = 0; i < code_len; i++) { free(states[i].closure_map); }
         free(states);
@@ -845,8 +845,9 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
 
     int result = MENAI_OK;
 
-    while (wl_head < wl_tail) {
-        int instr_idx = worklist[wl_head++];
+    while (wl_head != wl_tail) {
+        int instr_idx = worklist[wl_head];
+        wl_head = (wl_head + 1) % (code_len + 1);
         in_worklist[instr_idx] = 0;
 
         uint64_t word = instrs[instr_idx];
@@ -1050,7 +1051,8 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
                 init_state_copy(existing, cur, total_slots);
                 visited[succ_idx] = 1;
                 if (!in_worklist[succ_idx]) {
-                    worklist[wl_tail++] = succ_idx;
+                    worklist[wl_tail] = succ_idx;
+                    wl_tail = (wl_tail + 1) % (code_len + 1);
                     in_worklist[succ_idx] = 1;
                 }
             } else {
@@ -1067,7 +1069,8 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
                 if (!init_state_equal(&merged, existing, total_slots)) {
                     init_state_copy(existing, &merged, total_slots);
                     if (!in_worklist[succ_idx]) {
-                        worklist[wl_tail++] = succ_idx;
+                        worklist[wl_tail] = succ_idx;
+                        wl_tail = (wl_tail + 1) % (code_len + 1);
                         in_worklist[succ_idx] = 1;
                     }
                 }

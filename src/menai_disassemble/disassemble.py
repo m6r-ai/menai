@@ -171,10 +171,8 @@ def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
     elif opcode == Opcode.SWITCH_INTEGER:
         if instr.src1 < len(code.jump_tables):
             t_min, t_default, targets = code.jump_tables[instr.src1]
-            arms = ", ".join(
-                f"{t_min + i}@{t}" for i, t in enumerate(targets) if t != t_default
-            )
-            annotation = f"  ; default @{t_default} [{arms}]"
+            hi = t_min + len(targets) - 1
+            annotation = f"  ; see jt{instr.src1}: {t_min}..{hi} -> arms, else @{t_default}"
 
     return annotation
 
@@ -184,6 +182,11 @@ def format_instruction(instr: Instruction, index: int, code: CodeObject) -> str:
     instr_str = f"{index:4}: {instr.format(code)}"
     # Pad to fixed width so annotations align; 48 chars covers the longest opcodes
     return instr_str.ljust(48)
+
+
+def disassemble(code: CodeObject) -> str:
+    """Return the disassembly of a single code object (no nested objects) as text."""
+    return "\n".join(disassemble_with_nested(code))
 
 
 def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None = None, color: bool = False) -> list[str]:
@@ -244,6 +247,26 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
         for i, gname in enumerate(code.names):
             nid = f"n{i}"
             output.append(f"{indent}{_cyan(f'{nid:>6}: {gname}', color)}")
+
+        output.append(_grey(f"{indent}{'-'*70}", color))
+
+    # Show jump tables (for SWITCH_INTEGER)
+    if code.jump_tables:
+        output.append(f"{indent}{_green('Jump Tables: ' + str(len(code.jump_tables)), color)}")
+        output.append(_grey(f"{indent}{'-'*70}", color))
+        for j, (t_min, t_default, targets) in enumerate(code.jump_tables):
+            hi = t_min + len(targets) - 1
+            jid = f"jt{j}"
+            output.append(
+                f"{indent}{_cyan(f'{jid:>6}: min={t_min}  default=@{t_default}  span={t_min}..{hi}', color)}"
+            )
+            for slot, target in enumerate(targets):
+                value = t_min + slot
+                if target == t_default:
+                    output.append(f"{indent}{_cyan(f'       _ : @{target}  (default)', color)}")
+
+                else:
+                    output.append(f"{indent}{_cyan(f'{value:>7} : @{target}', color)}")
 
         output.append(_grey(f"{indent}{'-'*70}", color))
 

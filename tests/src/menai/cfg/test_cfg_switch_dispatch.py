@@ -3,7 +3,10 @@ Tests for MenaiCFGSwitchDispatch.
 
 Covers:
   1. Cascading integer=? if-chain becomes a single dense switch terminator
-  2. The scrutinee is guarded as integer (preserving integer=? type errors)
+  2. The integer guard for the switch scrutinee is inserted by
+     MenaiCFGTypePropagation (not by switch dispatch), and is skipped when
+     the type is already established — either by a prior integer=? guard or
+     by an integer? type predicate on the branch true edge
   3. Sparse chains are left as branches (density heuristic)
   4. Chains shorter than two arms are not transformed
   5. A join point after the chain (phi result) still works end-to-end
@@ -92,23 +95,6 @@ class TestChainToSwitch:
         cfg, _ = _build_cfg(CHAIN_SRC)
         cfg = _run_passes(cfg)
         assert _count_switches(cfg) == 1
-
-    def test_switch_guard_integer(self):
-        """The switch block guards the scrutinee as integer before dispatch."""
-        cfg, _ = _build_cfg(CHAIN_SRC)
-        cfg = _run_passes(cfg)
-
-        from menai.cfg.menai_cfg import MenaiCFGGuardInstr
-
-        for block in cfg.blocks:
-            if isinstance(block.terminator, MenaiCFGSwitchTerm):
-                assert any(
-                    isinstance(i, MenaiCFGGuardInstr) and i.expected_type == 'integer'
-                    for i in block.instrs
-                )
-                return
-
-        raise AssertionError("no switch terminator found")
 
     def test_switch_shape(self):
         """The switch spans literals 1..4 with the correct default target."""
@@ -214,3 +200,49 @@ class TestEndToEnd:
         result = m.evaluate_raw(src)
         assert isinstance(result, MenaiSymbol)
         assert result.name == 'other'
+
+
+class TestTypeRefinement:
+    """Tests for type refinement through integer? branch conditions."""
+
+    def test_match_no_redundant_assert(self):
+        """match on integer literals skips ASSERT_INTEGER via integer? type refinement.
+
+        The match desugaring emits (if (integer? x) (integer=? x 1) ...),
+        and the self-recursive call prevents inlining.  Type propagation
+        tracks that the true edge of the integer? branch
+        establishes x as integer, so the switch scrutinee guard is skipped.
+        """
+        from menai.bytecode.menai_bytecode import Opcode
+        from menai.menai_compiler import MenaiCompiler
+
+        src = """
+        (letrec ((day-name (lambda (day-num)
+          (if (integer=? day-num 0) (day-name 0)
+          (match day-num
+            (0 "sun") (1 "mon") (2 "tue") (3 "wed")
+            (4 "thu") (5 "fri") (6 "sat") (_ "unknown"))))))
+          (day-name 3))
+        """
+        compiler = MenaiCompiler()
+        code = compiler.compile(src, "<test>")
+
+        def find_switch(code_obj):
+            for i in range(len(code_obj.instructions)):
+                word = code_obj.instructions[i]
+                op = (word >> 48) & 0xFFFF
+                if op == Opcode.SWITCH_INTEGER:
+                    prev = code_obj.instructions[i - 1]
+                    prev_op = (prev >> 48) & 0xFFFF
+                    return prev_op != Opcode.ASSERT_INTEGER
+
+            for child in code_obj.code_objects:
+                result = find_switch(child)
+                if result is not None:
+                    return result
+
+            return None
+
+        result = find_switch(code)
+        assert result is not None, "no SWITCH_INTEGER found"
+        assert result, "SWITCH_INTEGER preceded by redundant ASSERT_INTEGER"

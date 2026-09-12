@@ -338,8 +338,8 @@ class MenaiCFGSwitchTerm:
     Lowered to the SWITCH_INTEGER opcode by the VM codegen.  `targets[i]` is the
     block jumped to when the scrutinee equals `min + i`; entries may be None,
     meaning that value falls through to `default_block`.  The scrutinee is
-    guaranteed integer (a guard is emitted by the pass that creates the
-    switch), so no runtime type dispatch is needed.
+    guaranteed integer (an integer guard is inserted by MenaiCFGTypePropagation
+    when the type is not statically known), so no runtime type dispatch is needed.
     """
     value: MenaiCFGValue
     min: int
