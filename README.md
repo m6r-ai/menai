@@ -157,11 +157,12 @@ menai/
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   ├── menai_benchmark/        # performance benchmarking tool
-│   ├── menai_checker/          # parenthesis balance checker
-│   ├── menai_disassembler/     # bytecode disassembler
+│   ├── menai_check/            # parenthesis balance checker
+│   ├── menai_disassemble/      # bytecode disassembler
+│   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
+│   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
 │   ├── menai_pretty_print/     # code formatter
-│   ├── menai_profiler/         # profiling tool
-│   └── menai_test_runner/      # test runner for *_test.menai files
+│   └── menai_test/             # test runner for *_test.menai files
 └── tests/                      # compiler core tests
 ```
 

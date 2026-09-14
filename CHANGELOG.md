@@ -2,6 +2,14 @@
 
 ## v0.6.0 (2026-09-xx)
 
+New features:
+
+- Added `menai-eval`, a tool that compiles and evaluates a `.menai` file (or an
+  expression from stdin) and prints the result.  It can optionally profile the
+  compiler with `--cprofile` and/or VM execution opcodes with `--profile`, and
+  both may be combined.
+- Removed `menai-profile` as `menai-eval` does everything it did and more.
+
 ## v0.5.0 (2026-09-14)
 
 New features:

@@ -24,8 +24,8 @@ dev = [
 menai-benchmark = "menai_benchmark.run:main"
 menai-check = "menai_check.check:main"
 menai-disassemble = "menai_disassemble.disassemble:main"
+menai-eval = "menai_eval.eval:main"
 menai-pretty-print = "menai_pretty_print.pretty_print:main"
-menai-profile = "menai_profile.profile:main"
 menai-test = "menai_test.test_run:main"
 menai-pipeline = "menai_pipeline.run:main"
 
