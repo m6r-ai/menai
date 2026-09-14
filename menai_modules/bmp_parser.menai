@@ -20,7 +20,6 @@
 ; supported.  Anything else raises a runtime error.
 
 (letrec (
-
   (read-header
    (lambda (b)
      (if (integer<? (bytes-length b) 54)
@@ -33,10 +32,10 @@
                             "Unsupported BMP: DIB header size "
                             (integer->string dib-size)
                             " is smaller than BITMAPINFOHEADER (40)"))
-                   (let ((width  (bytes-read-i32-le b 18))
+                   (let ((width (bytes-read-i32-le b 18))
                          (height (bytes-read-i32-le b 22))
-                         (bpp    (bytes-read-u16-le b 28))
-                         (comp   (bytes-read-u32-le b 30)))
+                         (bpp (bytes-read-u16-le b 28))
+                         (comp (bytes-read-u32-le b 30)))
                      (if (integer<? width 1)
                          (error "Unsupported BMP: width must be positive")
                          (if (integer=? height 0)
@@ -52,18 +51,18 @@
                                               (integer->string bpp)
                                               " bits per pixel is not supported (only 24 or 32)"))
                                      (dict
-                                       "file-size"         (bytes-read-u32-le b 2)
-                                       "data-offset"       (bytes-read-u32-le b 10)
-                                       "dib-size"          dib-size
-                                       "width"             width
-                                       "height"            height
-                                       "planes"            (bytes-read-u16-le b 26)
-                                       "bpp"               bpp
-                                       "compression"       comp
-                                       "image-size"        (bytes-read-u32-le b 34)
-                                       "x-ppm"             (bytes-read-i32-le b 38)
-                                       "y-ppm"             (bytes-read-i32-le b 42)
-                                       "colours-used"      (bytes-read-u32-le b 46)
+                                       "file-size" (bytes-read-u32-le b 2)
+                                       "data-offset" (bytes-read-u32-le b 10)
+                                       "dib-size" dib-size
+                                       "width" width
+                                       "height" height
+                                       "planes" (bytes-read-u16-le b 26)
+                                       "bpp" bpp
+                                       "compression" comp
+                                       "image-size" (bytes-read-u32-le b 34)
+                                       "x-ppm" (bytes-read-i32-le b 38)
+                                       "y-ppm" (bytes-read-i32-le b 42)
+                                       "colours-used" (bytes-read-u32-le b 46)
                                        "colours-important" (bytes-read-u32-le b 50)))))))))))))
 
   ; Decode one row of pixels starting at byte offset `start`.
@@ -117,10 +116,10 @@
                  (dict
                    "header" header
                    "pixels" (decode-rows b (dict-get header "data-offset") width height bpp)
-                   "meta"   (dict
-                              "format"      "bmp"
-                              "row-padding" row-padding
-                              "bottom-up"   (integer>? height 0)))))))
+                   "meta" (dict
+                            "format" "bmp"
+                            "row-padding" row-padding
+                            "bottom-up" (integer>? height 0)))))))
          (error "bmp_parser: parse expects a bytes value")))))
 
-(dict "parse" parse))
+ (dict "parse" parse))

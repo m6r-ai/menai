@@ -128,7 +128,7 @@
                (rest-stack (list-rest stack)))
            (if (string=? (list-first frame) "array")
                ; Resume array: frame = ("array" s acc) — acc is in reverse order
-               (let ((s   (list-ref frame 1))
+               (let ((s (list-ref frame 1))
                      (acc (list-ref frame 2)))
                  (let ((pos2 (skip-ws s pos)))
                    (if (integer>=? pos2 (string-length s))
@@ -141,8 +141,8 @@
                                            (list-prepend rest-stack (list "array" s (list-prepend acc val))))
                                  (error "Expected , or ] in array")))))))
                ; Resume object: frame = ("object" s d key)
-               (let ((s   (list-ref frame 1))
-                     (d   (list-ref frame 2))
+               (let ((s (list-ref frame 1))
+                     (d (list-ref frame 2))
                      (key (list-ref frame 3)))
                  (let ((pos2 (skip-ws s pos)))
                    (if (integer>=? pos2 (string-length s))
@@ -209,5 +209,5 @@
                         (resume (list-first scalar-result) (list-ref scalar-result 1) stack))))))))))
 
 ; letrec body:
-(dict "parse" (lambda (json-string)
-           (dispatch json-string 0 (list)))))
+ (dict "parse" (lambda (json-string)
+                 (dispatch json-string 0 (list)))))
