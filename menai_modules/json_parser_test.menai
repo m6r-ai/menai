@@ -14,8 +14,7 @@
                 (lambda () (assert-equal (parse "{\"a\": 1}") (dict "a" 1))))
           (test "nested object"
                 (lambda () (assert-equal (parse "{\"a\": {\"b\": 2}}")
-                                         (dict "a" (dict "b" 2)))))
-        ))
+                                         (dict "a" (dict "b" 2)))))))
 
         ; Tests for arrays
         (list "arrays" (list
@@ -25,8 +24,7 @@
                 (lambda () (assert-equal (parse "[1, 2, 3]") (list 1 2 3))))
           (test "nested array"
                 (lambda () (assert-equal (parse "[[1, 2], [3, 4]]")
-                                         (list (list 1 2) (list 3 4)))))
-        ))
+                                         (list (list 1 2) (list 3 4)))))))
 
         ; Tests for strings
         (list "strings" (list
@@ -40,9 +38,7 @@
             (test "tab"
                   (lambda () (assert-equal (parse "\"\\t\"") "\t")))
             (test "unicode"
-                  (lambda () (assert-equal (parse "\"\\u0041\"") "A")))
-          ))
-        ))
+                  (lambda () (assert-equal (parse "\"\\u0041\"") "A")))))))
 
         ; Tests for numbers
         (list "numbers" (list
@@ -51,8 +47,7 @@
           (test "negative integer"
                 (lambda () (assert-equal (parse "-7") -7)))
           (test "float"
-                (lambda () (assert-equal (parse "3.14") 3.14)))
-        ))
+                (lambda () (assert-equal (parse "3.14") 3.14)))))
 
         ; Tests for literals
         (list "literals" (list
@@ -61,6 +56,4 @@
           (test "false"
                 (lambda () (assert-equal (parse "false") #f)))
           (test "null"
-                (lambda () (assert-equal (parse "null") #none)))
-        ))
-    ))))
+                (lambda () (assert-equal (parse "null") #none)))))))))

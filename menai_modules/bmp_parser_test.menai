@@ -7,7 +7,6 @@
         (test (dict-get t "test"))
         (test-error (dict-get t "test-error")))
     (dict "tests" (list
-
         (list "header" (list
           (test "file and dib fields"
                 (lambda ()
@@ -27,8 +26,7 @@
                                       "x-ppm" 2835
                                       "y-ppm" 2835
                                       "colours-used" 0
-                                      "colours-important" 0)))))
-        ))
+                                      "colours-important" 0)))))))
 
         (list "pixels" (list
           (test "24-bit bottom-up rows are normalised top-down"
@@ -72,8 +70,7 @@
                   (let ((p (dict-get (parse (string-hex->bytes
                               "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
                             "pixels")))
-                    (assert-equal p (vector (vector (vector 18 52 86)))))))
-        ))
+                    (assert-equal p (vector (vector (vector 18 52 86)))))))))
 
         (list "meta" (list
           (test "bottom-up file reports padding and orientation"
@@ -90,8 +87,7 @@
                   (let ((m (dict-get (parse (string-hex->bytes
                               "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
                             "meta")))
-                    (assert-equal (dict-get m "bottom-up") #f))))
-        ))
+                    (assert-equal (dict-get m "bottom-up") #f))))))
 
         (list "errors" (list
           (test-error "rejects non-BMP signature"
@@ -115,7 +111,4 @@
           (test-error "rejects non-bytes argument"
                 (lambda ()
                   (parse "not bytes"))
-                "expects a bytes value")
-        ))
-
-    ))))
+                "expects a bytes value")))))))
