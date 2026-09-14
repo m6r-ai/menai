@@ -277,7 +277,8 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
         output.append(_grey(f"{indent}{'-'*70}", color))
         for i, pname in enumerate(code.param_names):
             rid = f"i{i}"
-            output.append(f"{indent}{_cyan(f"{rid:>6}: '{pname}'", color)}")
+            label = f"{rid:>6}: '{pname}'"
+            output.append(f"{indent}{_cyan(label, color)}")
 
         output.append(_grey(f"{indent}{'-'*70}", color))
 
@@ -287,7 +288,8 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
         output.append(_grey(f"{indent}{'-'*70}", color))
         for i, fname in enumerate(code.free_vars):
             rid = f"c{i}"
-            output.append(f"{indent}{_cyan(f"{rid:>6}: '{fname}'", color)}")
+            label = f"{rid:>6}: '{fname}'"
+            output.append(f"{indent}{_cyan(label, color)}")
 
         output.append(_grey(f"{indent}{'-'*70}", color))
 
