@@ -8,8 +8,8 @@ from typing import Any
 
 from menai import Menai, MenaiError
 from menai.menai_value import (
-    MenaiBoolean, MenaiDict, MenaiFloat, MenaiInteger, MenaiList, MenaiNone,
-    MenaiString, MenaiValue,
+    MenaiBoolean, MenaiBytes, MenaiDict, MenaiFloat, MenaiInteger, MenaiList,
+    MenaiNone, MenaiString, MenaiValue,
 )
 
 from menai_pipeline.pipeline_step import MenaiStep, Pipeline, ToolStep, resolve_step_expression
@@ -57,6 +57,9 @@ def _menai_value_to_python(value: MenaiValue) -> Any:
         PipelineExecutionError: If the value type cannot be converted
     """
     if isinstance(value, MenaiString):
+        return value.value
+
+    if isinstance(value, MenaiBytes):
         return value.value
 
     if isinstance(value, MenaiInteger):
@@ -120,6 +123,9 @@ def _python_to_menai_literal(value: Any) -> str:
         )
         return f'"{escaped}"'
 
+    if isinstance(value, bytes):
+        return f'(string-hex->bytes "{value.hex()}")'
+
     if isinstance(value, list):
         items = " ".join(_python_to_menai_literal(item) for item in value)
         return f"(list {items})" if items else "(list)"
@@ -139,7 +145,26 @@ def _python_to_menai_literal(value: Any) -> str:
     )
 
 
-def _build_menai_expression(step: MenaiStep, step_outputs: dict[str, str]) -> str:
+def _format_step_value(value: str | bytes) -> str:
+    """
+    Format a step output value for display in step results.
+
+    String values are returned unchanged.  Bytes are summarised by length so
+    that large binary outputs do not flood the console.
+
+    Args:
+        value: Step output value
+
+    Returns:
+        Display string for the value
+    """
+    if isinstance(value, bytes):
+        return f"<{len(value)} bytes>"
+
+    return value
+
+
+def _build_menai_expression(step: MenaiStep, step_outputs: dict[str, str | bytes]) -> str:
     """
     Build the complete Menai expression for a step by wrapping the step's
     expression body in a let binding that injects all named inputs.
@@ -187,11 +212,11 @@ def _build_menai_expression(step: MenaiStep, step_outputs: dict[str, str]) -> st
 
 def _execute_menai_step(
     step: MenaiStep,
-    step_outputs: dict[str, str],
+    step_outputs: dict[str, str | bytes],
     menai: Menai,
-) -> dict[str, str]:
+) -> dict[str, str | bytes]:
     """
-    Execute a Menai step and return a map of output key -> string value.
+    Execute a Menai step and return a map of output key -> string or bytes value.
 
     The step expression must evaluate to a Menai dict.  Each key in the
     dict that appears in step.outputs is extracted and stored.  Keys with
@@ -199,11 +224,11 @@ def _execute_menai_step(
 
     Args:
         step: The Menai step to execute
-        step_outputs: Map of step_id -> raw string output from prior steps
+        step_outputs: Map of step_id -> raw string or bytes output from prior steps
         menai: Menai evaluator instance
 
     Returns:
-        Map of output key -> string value for all non-none outputs
+        Map of output key -> string or bytes value for all non-none outputs
 
     Raises:
         PipelineExecutionError: If evaluation fails or result is not a dict
@@ -224,7 +249,7 @@ def _execute_menai_step(
             f"got '{type(result).__name__}'"
         )
 
-    outputs: dict[str, str] = {}
+    outputs: dict[str, str | bytes] = {}
     for key_value, val in result.pairs:
         if not isinstance(key_value, MenaiString):
             raise PipelineExecutionError(
@@ -236,13 +261,17 @@ def _execute_menai_step(
         if isinstance(val, MenaiNone):
             continue
 
-        if not isinstance(val, MenaiString):
+        if isinstance(val, MenaiString):
+            outputs[key] = val.value
+
+        elif isinstance(val, MenaiBytes):
+            outputs[key] = val.value
+
+        else:
             raise PipelineExecutionError(
                 f"Menai step '{step.step_id}': output dict value for key '{key}' "
-                f"must be a string or #none, got '{type(val).__name__}'"
+                f"must be a string, bytes, or #none, got '{type(val).__name__}'"
             )
-
-        outputs[key] = val.value
 
     return outputs
 
@@ -275,19 +304,19 @@ def _get_tool(tool_name: str) -> Any:
 
 def _resolve_value_from(
     value_from: str | None,
-    step_outputs: dict[str, str],
+    step_outputs: dict[str, str | bytes],
     step_id: str,
-) -> str | None:
+) -> str | bytes | None:
     """
-    Resolve a value_from reference to a string value.
+    Resolve a value_from reference to a string or bytes value.
 
     Args:
         value_from: 'step_id.key' reference string, or None
-        step_outputs: Map of step_id -> raw string output from prior steps
+        step_outputs: Map of step_id -> raw string or bytes output from prior steps
         step_id: Current step ID (for error messages)
 
     Returns:
-        Resolved string value, or None if value_from is None
+        Resolved string or bytes value, or None if value_from is None
 
     Raises:
         PipelineExecutionError: If the reference cannot be resolved
@@ -309,20 +338,20 @@ def _resolve_value_from(
 
 def _execute_tool_step(
     step: ToolStep,
-    step_outputs: dict[str, str],
-) -> str:
+    step_outputs: dict[str, str | bytes],
+) -> str | bytes:
     """
-    Execute a tool step and return its string output.
+    Execute a tool step and return its string or bytes output.
 
-    If the step has a value_from, the resolved string is injected into
+    If the step has a value_from, the resolved value is injected into
     the step arguments as 'content' (the standard write parameter).
 
     Args:
         step: The tool step to execute
-        step_outputs: Map of step_id -> raw string output and 'step.key' entries
+        step_outputs: Map of step_id -> raw string or bytes output and 'step.key' entries
 
     Returns:
-        String output from the tool
+        String or bytes output from the tool
 
     Raises:
         PipelineExecutionError: If execution fails
@@ -371,7 +400,7 @@ def execute_pipeline(
         str(_REPO_ROOT / "menai_modules"),
     ])
 
-    step_outputs: dict[str, str] = {}
+    step_outputs: dict[str, str | bytes] = {}
     step_results: list[StepResult] = []
 
     for step in pipeline.steps:
@@ -400,7 +429,7 @@ def execute_pipeline(
                 step_results.append(StepResult(
                     step_id=step.step_id,
                     success=True,
-                    value=output,
+                    value=_format_step_value(output),
                     elapsed_s=time.monotonic() - step_start,
                 ))
                 if on_step_done is not None:

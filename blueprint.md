@@ -5,6 +5,20 @@
 Menai is a pure functional programming language designed specifically for use by AI
 agents. It is Lisp-inspired, homoiconic, strictly typed, and has no side effects.
 
+## What is Menai used for?
+
+Menai is a computational language: it transforms values, it does not perform I/O.
+The host platform supplies inputs and consumes outputs, so Menai can be applied to
+any data the host can deliver as a value.
+
+One demonstrated use is **binary format parsing**. The `bytes` type and its
+multi-byte integer primitives let a Menai module decode a binary file into a
+structured, queryable value — for example a BMP image into a dict of header
+fields plus a normalised pixel grid. The standard library ships parsers for JSON
+(`json_parser`) and BMP (`bmp_parser`), and the pattern generalises to other
+formats. The host reads the file and binds it as a `bytes` value; Menai decodes
+it purely.
+
 ## Why does it exist?
 
 Programming languages were designed for human developers. While AIs are proficient

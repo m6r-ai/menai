@@ -7,7 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from menai import Menai, MenaiError
-from menai.menai_value import MenaiDict, MenaiFunction, MenaiList, MenaiString
+from menai.menai_value import (
+    MenaiBoolean, MenaiDict, MenaiFunction, MenaiList, MenaiString, MenaiValue,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _RUNNER_DIR = str(Path(__file__).resolve().parent)
@@ -43,6 +45,8 @@ class NodeTree:
     """Parsed representation of a test node-list."""
     name: str
     thunk_path: list[str] | None = None
+    expect_error: bool = False
+    expect_error_contains: str | None = None
     children: list["NodeTree"] = field(default_factory=list)
 
     def is_leaf(self) -> bool:
@@ -60,7 +64,8 @@ def _parse_node_list(value: MenaiList, path: list[str]) -> list[NodeTree]:
     Recursively parse a Menai node-list value into NodeTree objects.
 
     Each element must be a two-element list: (name thing) where thing is
-    either a MenaiFunction (leaf) or a MenaiList (branch).
+    a MenaiFunction (plain leaf), a MenaiDict (leaf with explicit
+    expectation), or a MenaiList (branch).
 
     Raises:
         ValueError: If the structure does not match the expected format.
@@ -86,17 +91,75 @@ def _parse_node_list(value: MenaiList, path: list[str]) -> list[NodeTree]:
         if isinstance(thing_val, MenaiFunction):
             nodes.append(NodeTree(name=name, thunk_path=node_path))
 
+        elif isinstance(thing_val, MenaiDict):
+            nodes.append(_parse_dict_leaf(name, node_path, thing_val))
+
         elif isinstance(thing_val, MenaiList):
             children = _parse_node_list(thing_val, node_path)
             nodes.append(NodeTree(name=name, children=children))
 
         else:
             raise ValueError(
-                f"Node '{name}': second element must be a function (leaf) "
-                f"or list (branch), got: {thing_val.type_name()}"
+                f"Node '{name}': second element must be a function (leaf), "
+                f"dict (leaf), or list (branch), "
+                f"got: {thing_val.type_name()}"
             )
 
     return nodes
+
+
+def _parse_dict_leaf(name: str, node_path: list[str], value: MenaiDict) -> NodeTree:
+    """
+    Parse a leaf node from its dict representation.
+
+    The dict must contain a "thunk" key whose value is a zero-argument
+    function.  It may contain an "expect-error" key: when that is #t the
+    leaf is a negative test and the thunk is expected to raise.  It may
+    then also contain an "expect-error-contains" key whose value is a
+    string that must appear as a substring of the raised error's message.
+
+    Args:
+        name: Node name
+        node_path: Full path to this node
+        value: The leaf dict
+
+    Returns:
+        NodeTree configured according to the dict
+
+    Raises:
+        ValueError: If the dict structure is invalid
+    """
+    def lookup(key: str) -> MenaiValue | None:
+        entry = value.lookup.get(MenaiDict.to_hashable_key(MenaiString(key)))
+        return entry[1] if entry is not None else None
+
+    thunk = lookup("thunk")
+    if not isinstance(thunk, MenaiFunction):
+        raise ValueError(
+            f"Node '{name}': leaf dict requires a 'thunk' function"
+        )
+
+    expect_error = lookup("expect-error")
+    if expect_error is None:
+        expect_error = MenaiBoolean(False)
+
+    if not isinstance(expect_error, MenaiBoolean):
+        raise ValueError(
+            f"Node '{name}': 'expect-error' must be a boolean"
+        )
+
+    contains = lookup("expect-error-contains")
+    if contains is not None and not isinstance(contains, MenaiString):
+        raise ValueError(
+            f"Node '{name}': 'expect-error-contains' must be a string"
+        )
+
+    return NodeTree(
+        name=name,
+        thunk_path=node_path,
+        expect_error=expect_error.value,
+        expect_error_contains=contains.value if isinstance(contains, MenaiString) else None,
+    )
 
 
 def _load_test_module(menai: Menai, module_name: str) -> list[NodeTree]:
@@ -135,6 +198,8 @@ def _run_leaf(
     module_name: str,
     test_file_dir: str,
     path: list[str],
+    expect_error: bool,
+    expect_error_contains: str | None,
 ) -> TestResult:
     """
     Execute a single leaf thunk in a fresh Menai VM.
@@ -142,7 +207,10 @@ def _run_leaf(
     The expression evaluated is:
         ((test-find (import "module") (list "seg1" "seg2" ...)))
 
-    A clean return (any value) is a pass. Any MenaiError is a failure.
+    For a normal leaf, a clean return (any value) is a pass and any
+    MenaiError is a failure.  For an expect-error leaf the outcome is
+    inverted: a MenaiError is a pass (provided it contains
+    expect_error_contains when that is given) and a clean return is a failure.
     """
     path_literal = _menai_path_literal(path)
     expression = (
@@ -154,10 +222,31 @@ def _run_leaf(
     menai = _make_menai(test_file_dir)
     try:
         menai.evaluate_raw(expression)
-        return TestResult(path=path, passed=True)
 
     except MenaiError as exc:
-        return TestResult(path=path, passed=False, error=str(exc))
+        if not expect_error:
+            return TestResult(path=path, passed=False, error=str(exc))
+
+        if expect_error_contains is not None and expect_error_contains not in str(exc):
+            return TestResult(
+                path=path,
+                passed=False,
+                error=(
+                    f"expected error containing {expect_error_contains!r}, "
+                    f"but got: {exc}"
+                ),
+            )
+
+        return TestResult(path=path, passed=True)
+
+    if expect_error:
+        return TestResult(
+            path=path,
+            passed=False,
+            error="expected an error but the test returned normally",
+        )
+
+    return TestResult(path=path, passed=True)
 
 
 def _run_tree(
@@ -174,7 +263,13 @@ def _run_tree(
             if name_filter and name_filter.lower() not in " > ".join(node.thunk_path).lower():
                 continue
 
-            result = _run_leaf(module_name, test_file_dir, node.thunk_path)
+            result = _run_leaf(
+                module_name,
+                test_file_dir,
+                node.thunk_path,
+                node.expect_error,
+                node.expect_error_contains,
+            )
             results.append(result)
 
         else:

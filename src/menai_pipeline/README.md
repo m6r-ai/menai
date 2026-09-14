@@ -47,7 +47,8 @@ Or reference a `.menai` module file via `module` (mutually exclusive with `expre
 
 ### Data flow
 
-Tool step outputs are plain strings identified by `step_id`.
+Tool step outputs are identified by `step_id`.  Most are plain strings; the
+`filesystem.read_bytes` operation produces a Menai `bytes` value instead.
 
 Menai steps receive a dict called `inputs` constructed from named upstream step outputs,
 and must return a dict.  Each key in the returned dict becomes available to downstream
@@ -64,15 +65,35 @@ Tool steps consume Menai output via `value_from`:
 }
 ```
 
-Output dict values must be strings.  A `#none` value means the output is absent and any
-downstream step referencing it will not receive a `content` argument.
+Output dict values must be strings or `bytes`.  A `#none` value means the output is
+absent and any downstream step referencing it will not receive a `content` argument.
+
+### Binary data
+
+Binary files are read with the `filesystem` tool's `read_bytes` operation, which
+delivers the file's contents to a Menai step as a real `bytes` value (not a hex
+string).  A Menai step can then parse it with the bytes builtins:
+
+```json
+{
+  "id": "read-bmp",
+  "tool": "filesystem",
+  "operation": "read_bytes",
+  "path": "image.bmp"
+}
+```
+
+Bytes values flow between steps without conversion.  When a bytes value is
+rendered into a downstream step, it is handled natively; when a step needs to
+emit text (for example for `console.write_stdout`), it converts the parsed
+structure to a string itself.
 
 ### Menai step contract
 
 Every Menai step (whether using `expression` or `module`) must:
 
 - Accept a dict bound to `inputs` (constructed automatically from the `inputs` map)
-- Return a dict whose values are strings or `#none`
+- Return a dict whose values are strings, `bytes`, or `#none`
 
 ### Module files
 
@@ -103,9 +124,13 @@ disable this.
 Read operations require no
 authorization.  Write operations prompt for confirmation on stdin/stdout.
 
-Supported operations: `read_file`, `read_file_lines`, `write_file`, `append_to_file`,
-`delete_file`, `copy_file`, `list_directory`, `create_directory`, `remove_directory`,
-`move`, `get_info`.
+Supported operations: `read_file`, `read_bytes`, `read_file_lines`, `write_file`,
+`append_to_file`, `delete_file`, `copy_file`, `list_directory`, `create_directory`,
+`remove_directory`, `move`, `get_info`.
+
+`read_file` decodes to text using the `encoding` argument (default `utf-8`) and
+fails on invalid encodings.  `read_bytes` returns the raw file contents as a
+Menai `bytes` value and is the operation to use for binary formats.
 
 ### `clock`
 
@@ -224,6 +249,17 @@ within a pipeline step and recursive value rendering.
 
 ```bash
 python -m menai_pipeline.run src/menai_pipeline/examples/json-parse/pipeline.json
+```
+
+### `bmp-parse`
+
+Reads a BMP image as raw bytes and parses it with the `bmp_parser` standard
+library module, rendering the decoded pixel grid as text.  Demonstrates binary
+file reading via `read_bytes`, the bytes data flow through a Menai step, and
+binary format parsing.
+
+```bash
+python -m menai_pipeline.run src/menai_pipeline/examples/bmp-parse/pipeline.json
 ```
 
 ## Pipeline JSON reference

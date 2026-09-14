@@ -1,0 +1,126 @@
+; BMP parser module — decodes uncompressed 24-bit and 32-bit BMP files.
+;
+; Exports: "parse" — takes a bytes value containing a BMP file and returns a
+; dict describing it:
+;
+;   (dict
+;     "header" (dict "file-size" ... "data-offset" ...
+;                    "dib-size" ... "width" ... "height" ... "planes" ...
+;                    "bpp" ... "compression" ... "image-size" ...
+;                    "x-ppm" ... "y-ppm" ... "colours-used" ... "colours-important" ...)
+;     "pixels" (vector of rows, top-down; each row is a vector of pixels;
+;               each pixel is a vector of channels)
+;     "meta"   (dict "format" "bmp" "row-padding" ... "bottom-up" ...))
+;
+; The pixel grid is normalised: rows are ordered top-down regardless of the
+; file's bottom-up storage, and per-row padding is stripped.  Pixels are
+; (vector r g b) for 24-bit files and (vector r g b a) for 32-bit files.
+;
+; Only uncompressed files (compression = 0) with 24 or 32 bits per pixel are
+; supported.  Anything else raises a runtime error.
+
+(letrec (
+
+  (read-header
+   (lambda (b)
+     (if (integer<? (bytes-length b) 54)
+         (error "Not a BMP file: too short to contain a header")
+         (if (bytes!=? (bytes-slice b 0 2) (string->bytes "BM"))
+             (error "Not a BMP file: missing BM signature")
+             (let ((dib-size (bytes-read-u32-le b 14)))
+               (if (integer<? dib-size 40)
+                   (error (string-concat
+                            "Unsupported BMP: DIB header size "
+                            (integer->string dib-size)
+                            " is smaller than BITMAPINFOHEADER (40)"))
+                   (let ((width  (bytes-read-i32-le b 18))
+                         (height (bytes-read-i32-le b 22))
+                         (bpp    (bytes-read-u16-le b 28))
+                         (comp   (bytes-read-u32-le b 30)))
+                     (if (integer<? width 1)
+                         (error "Unsupported BMP: width must be positive")
+                         (if (integer=? height 0)
+                             (error "Unsupported BMP: height must be non-zero")
+                             (if (integer!=? comp 0)
+                                 (error (string-concat
+                                          "Unsupported BMP: compression "
+                                          (integer->string comp)
+                                          " is not supported (only uncompressed)"))
+                                 (if (and (integer!=? bpp 24) (integer!=? bpp 32))
+                                     (error (string-concat
+                                              "Unsupported BMP: "
+                                              (integer->string bpp)
+                                              " bits per pixel is not supported (only 24 or 32)"))
+                                     (dict
+                                       "file-size"         (bytes-read-u32-le b 2)
+                                       "data-offset"       (bytes-read-u32-le b 10)
+                                       "dib-size"          dib-size
+                                       "width"             width
+                                       "height"            height
+                                       "planes"            (bytes-read-u16-le b 26)
+                                       "bpp"               bpp
+                                       "compression"       comp
+                                       "image-size"        (bytes-read-u32-le b 34)
+                                       "x-ppm"             (bytes-read-i32-le b 38)
+                                       "y-ppm"             (bytes-read-i32-le b 42)
+                                       "colours-used"      (bytes-read-u32-le b 46)
+                                       "colours-important" (bytes-read-u32-le b 50)))))))))))))
+
+  ; Decode one row of pixels starting at byte offset `start`.
+  ; Returns a vector of pixels; each pixel is (vector r g b) or (vector r g b a).
+  (decode-row
+   (lambda (b start width bpp)
+     (let ((bytes-per-pixel (integer/ bpp 8)))
+       (letrec ((loop (lambda (x acc)
+                        (if (integer>=? x width)
+                            (list->vector (list-reverse acc))
+                            (let ((p (integer+ start (integer* x bytes-per-pixel))))
+                              (if (integer=? bpp 24)
+                                  (loop (integer+ x 1)
+                                        (list-prepend acc
+                                          (vector (bytes-ref b (integer+ p 2))
+                                                  (bytes-ref b (integer+ p 1))
+                                                  (bytes-ref b p))))
+                                  (loop (integer+ x 1)
+                                        (list-prepend acc
+                                          (vector (bytes-ref b (integer+ p 2))
+                                                  (bytes-ref b (integer+ p 1))
+                                                  (bytes-ref b p)
+                                                  (bytes-ref b (integer+ p 3)))))))))))
+         (loop 0 (list))))))
+
+  ; Decode all rows into a vector ordered top-down.
+  ; BMP rows are stored bottom-up when height is positive; a negative height
+  ; means the rows are already stored top-down.
+  (decode-rows
+   (lambda (b data-offset width height bpp)
+     (let ((row-stride (integer* (integer/ (integer+ (integer* width bpp) 31) 32) 4)))
+       (letrec ((loop (lambda (y acc)
+                        (if (integer>=? y (integer-abs height))
+                            (if (integer>? height 0)
+                                (list->vector acc)
+                                (list->vector (list-reverse acc)))
+                            (let ((row (decode-row b (integer+ data-offset (integer* y row-stride)) width bpp)))
+                              (loop (integer+ y 1) (list-prepend acc row)))))))
+         (loop 0 (list))))))
+
+  (parse
+   (lambda (b)
+     (if (bytes? b)
+         (let ((header (read-header b)))
+           (let ((width  (dict-get header "width"))
+                 (height (dict-get header "height"))
+                 (bpp    (dict-get header "bpp")))
+             (let ((row-bits (integer* width bpp)))
+               (let ((row-padding (integer- (integer* (integer/ (integer+ row-bits 31) 32) 4)
+                                            (integer/ row-bits 8))))
+                 (dict
+                   "header" header
+                   "pixels" (decode-rows b (dict-get header "data-offset") width height bpp)
+                   "meta"   (dict
+                              "format"      "bmp"
+                              "row-padding" row-padding
+                              "bottom-up"   (integer>? height 0)))))))
+         (error "bmp_parser: parse expects a bytes value")))))
+
+(dict "parse" parse))

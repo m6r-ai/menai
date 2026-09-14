@@ -1,0 +1,27 @@
+{
+  "steps": [
+    {
+      "id": "read-bmp",
+      "tool": "filesystem",
+      "operation": "read_bytes",
+      "path": "src/menai_pipeline/examples/bmp-parse/diagonal.bmp"
+    },
+    {
+      "id": "summarise",
+      "tool": "menai",
+      "inputs": {
+        "content": "read-bmp"
+      },
+      "module": "bmp-summary",
+      "outputs": {
+        "result": "write-output"
+      }
+    },
+    {
+      "id": "write-output",
+      "tool": "console",
+      "operation": "write_stdout",
+      "value_from": "summarise.result"
+    }
+  ]
+}

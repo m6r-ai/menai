@@ -9,6 +9,8 @@ New features:
   compiler with `--cprofile` and/or VM execution opcodes with `--profile`, and
   both may be combined.
 - Removed `menai-profile` as `menai-eval` does everything it did and more.
+- Added an approach for implementing negative tests in `menai-test`.
+- Added a preliminary BMP parser.
 
 ## v0.5.0 (2026-09-14)
 

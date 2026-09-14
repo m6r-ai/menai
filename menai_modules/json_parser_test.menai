@@ -1,62 +1,66 @@
 ; Tests for json_parser.menai
 
-(let ((json    (import "json_parser"))
-      (t       (import "menai_test")))
-  (let ((parse         (dict-get json "parse"))
-        (assert-equal  (dict-get t   "assert-equal")))
+(let ((json (import "json_parser"))
+      (t (import "menai_test")))
+  (let ((parse (dict-get json "parse"))
+        (assert-equal (dict-get t "assert-equal"))
+        (test (dict-get t "test")))
     (dict "tests" (list
-
+        ; Tests for objects
         (list "objects" (list
-          (list "empty object"
+          (test "empty object"
                 (lambda () (assert-equal (parse "{}") (dict))))
-          (list "single key"
+          (test "single key"
                 (lambda () (assert-equal (parse "{\"a\": 1}") (dict "a" 1))))
-          (list "nested object"
+          (test "nested object"
                 (lambda () (assert-equal (parse "{\"a\": {\"b\": 2}}")
                                          (dict "a" (dict "b" 2)))))
         ))
 
+        ; Tests for arrays
         (list "arrays" (list
-          (list "empty array"
+          (test "empty array"
                 (lambda () (assert-equal (parse "[]") (list))))
-          (list "integer array"
+          (test "integer array"
                 (lambda () (assert-equal (parse "[1, 2, 3]") (list 1 2 3))))
-          (list "nested array"
+          (test "nested array"
                 (lambda () (assert-equal (parse "[[1, 2], [3, 4]]")
                                          (list (list 1 2) (list 3 4)))))
         ))
 
+        ; Tests for strings
         (list "strings" (list
-          (list "empty string"
+          (test "empty string"
                 (lambda () (assert-equal (parse "\"\"") "")))
-          (list "simple string"
+          (test "simple string"
                 (lambda () (assert-equal (parse "\"hello\"") "hello")))
           (list "escapes" (list
-            (list "newline"
+            (test "newline"
                   (lambda () (assert-equal (parse "\"\\n\"") "\n")))
-            (list "tab"
+            (test "tab"
                   (lambda () (assert-equal (parse "\"\\t\"") "\t")))
-            (list "unicode"
+            (test "unicode"
                   (lambda () (assert-equal (parse "\"\\u0041\"") "A")))
           ))
         ))
 
+        ; Tests for numbers
         (list "numbers" (list
-          (list "integer"
+          (test "integer"
                 (lambda () (assert-equal (parse "42") 42)))
-          (list "negative integer"
+          (test "negative integer"
                 (lambda () (assert-equal (parse "-7") -7)))
-          (list "float"
+          (test "float"
                 (lambda () (assert-equal (parse "3.14") 3.14)))
         ))
 
+        ; Tests for literals
         (list "literals" (list
-          (list "true"
+          (test "true"
                 (lambda () (assert-equal (parse "true") #t)))
-          (list "false"
+          (test "false"
                 (lambda () (assert-equal (parse "false") #f)))
-          (list "null"
+          (test "null"
                 (lambda () (assert-equal (parse "null") #none)))
         ))
-
-      ))))
+    ))))

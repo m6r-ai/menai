@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,7 +56,7 @@ class FilesystemTool:
 
     MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
-    def execute(self, operation: str, arguments: dict[str, Any]) -> str:
+    def execute(self, operation: str, arguments: dict[str, Any]) -> str | bytes:
         """
         Execute a filesystem operation.
 
@@ -64,14 +65,15 @@ class FilesystemTool:
             arguments: Operation arguments
 
         Returns:
-            String result of the operation
+            Operation result: a string, except read_bytes which returns raw bytes
 
         Raises:
             PipelineToolError: If the operation fails
             PipelineAuthorizationDenied: If the user denies a write operation
         """
-        handlers = {
+        handlers: dict[str, Callable[[dict[str, Any]], str | bytes]] = {
             "read_file": self._read_file,
+            "read_bytes": self._read_bytes,
             "read_file_lines": self._read_file_lines,
             "write_file": self._write_file,
             "append_to_file": self._append_to_file,
@@ -133,6 +135,24 @@ class FilesystemTool:
             raise PipelineToolError(
                 f"Failed to decode file with encoding '{encoding}': {e}"
             ) from e
+
+        except OSError as e:
+            raise PipelineToolError(f"Failed to read file: {e}") from e
+
+    def _read_bytes(self, arguments: dict[str, Any]) -> bytes:
+        """Read and return the raw contents of a file as bytes."""
+        path = self._resolve_path("path", arguments)
+
+        if not path.exists():
+            raise PipelineToolError(f"File does not exist: {path}")
+
+        if not path.is_file():
+            raise PipelineToolError(f"Path is not a file: {path}")
+
+        self._check_size(path)
+
+        try:
+            return path.read_bytes()
 
         except OSError as e:
             raise PipelineToolError(f"Failed to read file: {e}") from e

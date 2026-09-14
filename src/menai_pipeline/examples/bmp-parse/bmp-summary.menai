@@ -1,0 +1,35 @@
+; Pipeline step: parse a BMP (received as bytes) and render a text summary.
+;
+; The 'content' input is the raw file bytes, delivered as a Menai bytes value
+; by the filesystem tool's read_bytes operation.
+
+(let ((bmp-parser (import "bmp_parser")))
+  (let ((run
+         (lambda (inputs)
+           (letrec
+             ((pixel->string
+               (lambda (p)
+                 (string-concat
+                   "("
+                   (list->string (map-list integer->string (vector->list p)) ",")
+                   ")")))
+              (row->string
+               (lambda (row)
+                 (list->string (map-list pixel->string (vector->list row)) " ")))
+              (grid->string
+               (lambda (pixels)
+                 (list->string (map-list row->string (vector->list pixels)) "\n"))))
+             (let* ((content (dict-get inputs "content"))
+                    (parsed  ((dict-get bmp-parser "parse") content))
+                    (header  (dict-get parsed "header"))
+                    (meta    (dict-get parsed "meta")))
+               (dict
+                 "result"
+                 (string-concat
+                   "BMP " (integer->string (dict-get header "width"))
+                   "x" (integer->string (dict-get header "height"))
+                   " " (integer->string (dict-get header "bpp")) "-bit"
+                   " (padding " (integer->string (dict-get meta "row-padding"))
+                   ", bottom-up " (if (dict-get meta "bottom-up") "#t" "#f") ")\n"
+                   (grid->string (dict-get parsed "pixels")))))))))
+    (dict "run" run)))

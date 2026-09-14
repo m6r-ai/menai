@@ -2,6 +2,8 @@
 ;
 ; Provides:
 ;   assert-equal  — raises if two values are not equal (polymorphic)
+;   test          — builds a positive test node (thunk should return normally)
+;   test-error    — builds a negative test node (thunk should raise)
 ;   test-find     — navigates a node-list tree by path to return a leaf thunk
 
 (letrec (
@@ -20,6 +22,7 @@
        ((? symbol? x)     (and (symbol? b)  (symbol=? x b)))
        ((? none? x)       (none? b))
        ((? list? x)       (and (list? b) (list=? x b)))
+       ((? vector? x)     (and (vector? b) (vector=? x b)))
        ((? dict? x)       (and (dict? b) (dict=? x b)))
        ((? set? x)        (and (set? b)  (set=? x b)))
        (_ #f))))
@@ -43,6 +46,14 @@
                 (map-list value-describe x)
                 " ")
               ")")))
+       ((? vector? x)
+        (if (vector-empty? x)
+            "#vector()"
+            (string-concat "#vector("
+              (list->string
+                (map-list value-describe (vector->list x))
+                " ")
+              ")")))
        ((? dict? x)
         (string-concat "{"
           (list->string
@@ -62,9 +73,29 @@
                   "\n  actual:   "
                   (value-describe actual))))))
 
+  ; Build a positive test node.  The thunk returns normally on success; any
+  ; raised error is a failure.  Use assert-equal inside the thunk to check
+  ; the produced value.
+  (test
+   (lambda (name thunk)
+     (list name (dict "thunk" thunk))))
+
+  ; Build a negative test node.  The thunk is expected to raise.  When
+  ; `contains` is supplied, the raised error's message must contain it as a
+  ; substring, ensuring the intended error fired rather than an unrelated one.
+  (test-error
+   (lambda (name thunk . rest)
+     (if (list-null? rest)
+         (list name (dict "thunk" thunk "expect-error" #t))
+         (list name (dict "thunk" thunk
+                          "expect-error" #t
+                          "expect-error-contains" (list-first rest))))))
+
   ; Walk a node-list by a list of name strings, returning the leaf thunk.
   ; Raises if any segment of the path is not found or if the final node is
   ; not a thunk (i.e. the path does not reach a leaf).
+  ; A leaf is either a function (plain test) or a dict with a "thunk" key
+  ; (expect-error test).
   (test-find
    (lambda (module path)
      (let ((nodes (dict-get module "tests")))
@@ -82,14 +113,20 @@
                                                              (if (list-null? rest)
                                                                  (if (function? thing)
                                                                      thing
-                                                                     (error (string-concat "test-find: \"" segment "\" is a branch, not a leaf")))
+                                                                     (if (dict? thing)
+                                                                         (dict-get thing "thunk")
+                                                                         (error (string-concat "test-find: \"" segment "\" is a branch, not a leaf"))))
                                                                  (if (function? thing)
                                                                      (error (string-concat "test-find: \"" segment "\" is a leaf, not a branch"))
-                                                                     (walk thing rest))))
+                                                                     (if (dict? thing)
+                                                                         (error (string-concat "test-find: \"" segment "\" is a leaf, not a branch"))
+                                                                         (walk thing rest)))))
                                                            (search (list-rest lst))))))))
                                 (search node-list)))))))
          (walk nodes path))))))
 
 (dict
   "assert-equal"  assert-equal
+  "test"          test
+  "test-error"    test-error
   "test-find"     test-find))

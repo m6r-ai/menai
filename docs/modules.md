@@ -131,5 +131,8 @@ The `menai_modules/` directory contains standard library modules. Currently this
 includes:
 
 - `json_parser.menai` — a JSON parser that converts JSON strings to Menai values
+- `bmp_parser.menai` — a BMP parser that converts uncompressed 24-bit and 32-bit
+  BMP files (as bytes) to a dict containing the decoded header, a normalised
+  top-down pixel grid, and parser metadata
 
 See [Examples](examples.md) for a walkthrough of the JSON parser.
