@@ -1,6 +1,27 @@
 # Change log for Menai
 
-## v0.4.0 (2026-09-xx)
+## v0.5.0 (2026-09-xx)
+
+New features:
+
+- Added a `vector` type to Menai.
+- Added a loop-invariant-code-motion optimizer.
+- Added a constant coalescing optimizer.
+- Added a jump threading optimizer.
+- Implemented performance improvements for some prelude functions.
+- The `error` operation can now take any arbitrary Menai value, allowing for structured error returns.
+- Runtime errors now generate a backtrace to make it easier to debug them.
+
+Bug fixes:
+
+- Unified `bytes-slice` so it matches the semantics of the other slice operations.
+
+Internal structure changes:
+
+- Reimplemented the bytecode validator in C rather than Python.  This always runs meaning we can remove runtime
+  checks that are now covered by the validator.
+
+## v0.4.0 (2026-09-08)
 
 New features:
 

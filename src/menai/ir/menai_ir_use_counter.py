@@ -16,6 +16,7 @@ from menai.ir.menai_ir import (
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
+    MenaiIRBuildVector,
     MenaiIREmptyList,
     MenaiIRError,
     MenaiIRIf,
@@ -161,6 +162,10 @@ class MenaiIRUseCounter:
                 self._walk(val_plan, result, scope_stack, current_frame_id)
 
         elif isinstance(ir, MenaiIRBuildSet):
+            for elem in ir.element_plans:
+                self._walk(elem, result, scope_stack, current_frame_id)
+
+        elif isinstance(ir, MenaiIRBuildVector):
             for elem in ir.element_plans:
                 self._walk(elem, result, scope_stack, current_frame_id)
 

@@ -1,6 +1,10 @@
 """Enhanced exception classes for Menai (AI Functional Programming Language) with detailed context."""
 
 from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from menai.menai_value import MenaiValue
 
 
 class MenaiError(Exception):
@@ -20,9 +24,11 @@ class MenaiError(Exception):
         source_file: str | None = None,
         show_context: bool = True,
         error_code: int | None = None,
+        error_value: 'MenaiValue | None' = None,
         vm_opcode: int | None = None,
         vm_ip: int | None = None,
         vm_call_depth: int | None = None,
+       backtrace: list[tuple[str | None, int, str | None]] | None = None,
     ):
         """
         Initialize detailed error.
@@ -40,9 +46,12 @@ class MenaiError(Exception):
             show_context: Whether to show source code context
             source_file: Source file name for location display
             error_code: VM error code (VMErrorCode integer) if from the C VM
+            error_value: MenaiValue raised by (error ...) when it is not a string
             vm_opcode: Opcode that was executing when the error occurred
             vm_ip: Instruction pointer at time of error
             vm_call_depth: Call stack depth at time of error
+            backtrace: List of (name, source_line, source_file) tuples
+                capturing the VM call stack at error time
         """
         self.message = message
         self.context = context
@@ -56,9 +65,11 @@ class MenaiError(Exception):
         self.source_file = source_file
         self.show_context = show_context
         self.error_code = error_code
+        self.error_value = error_value
         self.vm_opcode = vm_opcode
         self.vm_ip = vm_ip
         self.vm_call_depth = vm_call_depth
+        self.backtrace = backtrace or []
 
         super().__init__(self._format_detailed_message())
 
@@ -163,6 +174,35 @@ class MenaiError(Exception):
                     self.source, self.line, self.column, before=2, after=1
                 )
                 parts.append(f"\nSource Context:\n{context_str}")
+
+        # Add call stack backtrace if available
+        if self.backtrace:
+            bt_lines = []
+            for i, (name, src_line, src_file) in enumerate(self.backtrace):
+                display_name = name or "<unknown>"
+                # Strip the "(N params)" suffix from the code object name
+                # for cleaner display — the parameter count is not useful
+                # in a backtrace.
+                if display_name.endswith(" params)") or display_name.endswith(" param)"):
+                    paren_idx = display_name.rfind("(")
+                    if paren_idx > 0:
+                        display_name = display_name[:paren_idx]
+
+                location_parts = []
+                if src_file:
+                    location_parts.append(src_file)
+
+                if src_line and src_line > 0:
+                    location_parts.append(f"line {src_line}")
+
+                location = ": ".join(location_parts) if location_parts else None
+                if location:
+                    bt_lines.append(f"  {i + 1:>3}: {display_name:<20} at {location}")
+
+                else:
+                    bt_lines.append(f"  {i + 1:>3}: {display_name}")
+
+            parts.append("\nCall stack:\n" + "\n".join(bt_lines))
 
         # Add received/expected information
         if self.received:

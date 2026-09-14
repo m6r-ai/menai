@@ -267,7 +267,7 @@ class TestIntegerOpsEval:
         assert menai.evaluate_and_format(expr) == expected
 
     def test_integer_div_by_zero(self, menai):
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer/ 10 0)")
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
@@ -310,7 +310,7 @@ class TestFloatOpsEval:
         assert menai.evaluate_and_format(expr) == expected
 
     def test_float_div_by_zero(self, menai):
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(float/ 1.0 0.0)")
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
@@ -347,7 +347,7 @@ class TestComplexOpsEval:
         assert menai.evaluate_and_format(expr) == expected
 
     def test_complex_div_by_zero(self, menai):
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(complex/ (integer->complex 1) (integer->complex 0))")
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 

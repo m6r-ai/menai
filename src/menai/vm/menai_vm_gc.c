@@ -132,6 +132,18 @@ gc_mark_value(MenaiValue *val)
         break;
     }
 
+    case MENAITYPE_VECTOR: {
+        MenaiVector *v = (MenaiVector *)val;
+        if (v->owner != NULL) {
+            gc_mark_value((MenaiValue *)v->owner);
+        } else {
+            for (ssize_t i = 0; i < v->length; i++) {
+                gc_mark_value(v->data[i]);
+            }
+        }
+        break;
+    }
+
     default:
         assert(0);
     }
@@ -234,6 +246,23 @@ _gc_detach_dead_from_struct(MenaiStruct *st)
             MenaiPoolHeader *ph = menai_get_pool_header(item);
             ph->ob_refcnt--;
             st->items[i] = NULL;
+        }
+    }
+}
+
+/*
+ * _gc_detach_dead_from_vector — NULL out elements of a vector that are dead
+ * closures, decrementing their refcounts.
+ */
+static void
+_gc_detach_dead_from_vector(MenaiVector *v)
+{
+    for (ssize_t i = 0; i < v->length; i++) {
+        MenaiValue *item = v->data[i];
+        if (_gc_is_dead(item)) {
+            MenaiPoolHeader *ph = menai_get_pool_header(item);
+            ph->ob_refcnt--;
+            v->data[i] = NULL;
         }
     }
 }
@@ -351,6 +380,10 @@ _gc_sweep(MenaiVMState *vs)
 
         case MENAITYPE_STRUCT:
             _gc_detach_dead_from_struct((MenaiStruct *)v);
+            break;
+
+        case MENAITYPE_VECTOR:
+            _gc_detach_dead_from_vector((MenaiVector *)v);
             break;
 
         default:

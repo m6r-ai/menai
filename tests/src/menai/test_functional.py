@@ -572,13 +572,13 @@ class TestFunctional:
             menai.evaluate('((lambda (x) (integer+ x "hello")) 5)')
 
         # Division by zero in lambda body
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate('((lambda (x) (integer/ x 0)) 5)')
 
     def test_let_error_handling(self, menai):
         """Test error handling in let expressions."""
         # Error in binding expression
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate('(let ((x (integer/ 1 0))) x)')
 
         # Undefined variable in binding
@@ -588,7 +588,7 @@ class TestFunctional:
         assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
 
         # Error in let body
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate('(let ((x 5)) (integer/ x 0))')
 
     def test_first_class_functions(self, menai, helpers):

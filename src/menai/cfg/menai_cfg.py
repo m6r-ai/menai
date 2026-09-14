@@ -191,6 +191,20 @@ class MenaiCFGMakeListInstr:
 
 
 @dataclass
+class MenaiCFGMakeVectorInstr:
+    """
+    %result = make_vector [%elem, ...]
+
+    Constructs a new MenaiVector from a flat list of element values known at
+    compile time to be N elements.  The VM codegen lowers this to MAKE_VECTOR,
+    staging element values into the outgoing zone and allocating the vector in
+    a single call.
+    """
+    result: MenaiCFGValue
+    args: list[MenaiCFGValue]
+
+
+@dataclass
 class MenaiCFGMakeSetInstr:
     """
     %result = make_set [%elem, ...]
@@ -287,6 +301,7 @@ MenaiCFGInstr = (  # pylint: disable=invalid-name
     | MenaiCFGApplyInstr
     | MenaiCFGMakeStructInstr
     | MenaiCFGMakeListInstr
+    | MenaiCFGMakeVectorInstr
     | MenaiCFGMakeSetInstr
     | MenaiCFGMakeDictInstr
     | MenaiCFGMakeClosureInstr
@@ -313,6 +328,23 @@ class MenaiCFGBranchTerm:
     cond: MenaiCFGValue
     true_block: 'MenaiCFGBlock'
     false_block: 'MenaiCFGBlock'
+
+
+@dataclass
+class MenaiCFGSwitchTerm:
+    """
+    Dense integer switch on `value`.
+
+    Lowered to the SWITCH_INTEGER opcode by the VM codegen.  `targets[i]` is the
+    block jumped to when the scrutinee equals `min + i`; entries may be None,
+    meaning that value falls through to `default_block`.  The scrutinee is
+    guaranteed integer (an integer guard is inserted by MenaiCFGTypePropagation
+    when the type is not statically known), so no runtime type dispatch is needed.
+    """
+    value: MenaiCFGValue
+    min: int
+    targets: list['MenaiCFGBlock | None']
+    default_block: 'MenaiCFGBlock'
 
 
 @dataclass
@@ -364,7 +396,7 @@ class MenaiCFGSelfLoopTerm:
 @dataclass
 class MenaiCFGRaiseTerm:
     """
-    Raise a runtime error with a message string from a register.
+    Raise a runtime error with a value from a register.
 
     Lowered to RAISE_ERROR by the VM codegen.
     """
@@ -375,6 +407,7 @@ class MenaiCFGRaiseTerm:
 MenaiCFGTerminator = (  # pylint: disable=invalid-name
     MenaiCFGJumpTerm
     | MenaiCFGBranchTerm
+    | MenaiCFGSwitchTerm
     | MenaiCFGReturnTerm
     | MenaiCFGTailCallTerm
     | MenaiCFGTailApplyTerm
@@ -507,6 +540,9 @@ def _fmt_instr(instr: MenaiCFGInstr) -> str:
     if isinstance(instr, MenaiCFGMakeListInstr):
         return f"{instr.result} = make_list {_fmt_values(instr.args)}"
 
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
+        return f"{instr.result} = make_vector {_fmt_values(instr.args)}"
+
     if isinstance(instr, MenaiCFGMakeSetInstr):
         return f"{instr.result} = make_set {_fmt_values(instr.args)}"
 
@@ -535,6 +571,13 @@ def _fmt_term(term: MenaiCFGTerminator) -> str:
     if isinstance(term, MenaiCFGBranchTerm):
         return (f"branch {term.cond} → block{term.true_block.id} / "
                 f"block{term.false_block.id}")
+
+    if isinstance(term, MenaiCFGSwitchTerm):
+        arms = ", ".join(
+            f"{term.min + i}: block{t.id}" if t is not None else f"{term.min + i}: default"
+            for i, t in enumerate(term.targets)
+        )
+        return f"switch {term.value} min={term.min} [{arms}] default=block{term.default_block.id}"
 
     if isinstance(term, MenaiCFGReturnTerm):
         return f"return {term.value}"
@@ -573,6 +616,13 @@ def relink_predecessors(func: MenaiCFGFunction) -> None:
         elif isinstance(term, MenaiCFGBranchTerm):
             _safe_add_pred(term.true_block, block, func)
             _safe_add_pred(term.false_block, block, func)
+
+        elif isinstance(term, MenaiCFGSwitchTerm):
+            for target in term.targets:
+                if target is not None:
+                    _safe_add_pred(target, block, func)
+
+            _safe_add_pred(term.default_block, block, func)
 
         elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
             _safe_add_pred(term.target, block, func)
@@ -615,6 +665,19 @@ def remap_term(
             false_block=new_false,
         )
 
+    if isinstance(term, MenaiCFGSwitchTerm):
+        new_targets = [remap_block(t) if t is not None else None for t in term.targets]
+        new_default = remap_block(term.default_block)
+        if all(nt is t for nt, t in zip(new_targets, term.targets)) and new_default is term.default_block:
+            return term
+
+        return MenaiCFGSwitchTerm(
+            value=term.value,
+            min=term.min,
+            targets=new_targets,
+            default_block=new_default,
+        )
+
     if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
         new_target = remap_block(term.target)
         if new_target is term.target:
@@ -645,6 +708,9 @@ def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
     if isinstance(instr, MenaiCFGMakeListInstr):
         return [a.id for a in instr.args]
 
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
+        return [a.id for a in instr.args]
+
     if isinstance(instr, MenaiCFGMakeSetInstr):
         return [a.id for a in instr.args]
 
@@ -672,6 +738,9 @@ def value_ids_in_term(term: 'MenaiCFGTerminator') -> list[int]:
 
     if isinstance(term, MenaiCFGBranchTerm):
         return [term.cond.id]
+
+    if isinstance(term, MenaiCFGSwitchTerm):
+        return [term.value.id]
 
     if isinstance(term, MenaiCFGTailCallTerm):
         return [term.func.id] + [a.id for a in term.args]

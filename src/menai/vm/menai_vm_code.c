@@ -16,6 +16,12 @@ menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co)
 
     free(co->constants);
 
+    for (int i = 0; i < co->njt; i++) {
+        free(co->jump_tables[i].targets);
+    }
+
+    free(co->jump_tables);
+
     for (ssize_t i = 0; i < co->nnames; i++) {
         free((char *)co->names[i]);
     }
@@ -36,6 +42,7 @@ menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co)
     free(co->children);
     free(co->instrs);
     free(co->name);
+    free(co->source_file);
     MENAI_CLEAR_MAGIC(co);
     free(co);
 }

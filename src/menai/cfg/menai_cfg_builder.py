@@ -22,6 +22,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGParamInstr,
     MenaiCFGMakeStructInstr,
     MenaiCFGMakeListInstr,
+    MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGPhiInstr,
@@ -38,6 +39,7 @@ from menai.ir.menai_ir import (
     MenaiIRBuildDict,
     MenaiIRBuildList,
     MenaiIRBuildSet,
+    MenaiIRBuildVector,
     MenaiIRBuildStruct,
     MenaiIREmptyList,
     MenaiIRExpr,
@@ -50,7 +52,7 @@ from menai.ir.menai_ir import (
     MenaiIRReturn,
     MenaiIRVariable,
 )
-from menai.menai_value import MenaiList
+from menai.menai_value import MenaiList, Menai_VECTOR_EMPTY
 
 
 @dataclass
@@ -229,6 +231,9 @@ class MenaiCFGBuilder:
 
         if isinstance(ir, MenaiIRBuildSet):
             return self._build_set(ir, block, scope, state)
+
+        if isinstance(ir, MenaiIRBuildVector):
+            return self._build_vector(ir, block, scope, state)
 
         if isinstance(ir, MenaiIRBuildStruct):
             return self._build_struct(ir, block, scope, state)
@@ -707,6 +712,31 @@ class MenaiCFGBuilder:
 
         result = state.new_value("list")
         block.instrs.append(MenaiCFGMakeListInstr(result=result, args=elem_vals))
+        return result, block
+
+    def _build_vector(
+        self, ir: MenaiIRBuildVector, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState,
+    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        """
+        Build a vector literal.
+
+        Evaluates each element plan, then emits a single MenaiCFGMakeVectorInstr
+        carrying all element values.  The VM codegen lowers this to MAKE_VECTOR,
+        which allocates the vector in one call.  When there are zero elements,
+        emits a MenaiCFGConstInstr with Menai_VECTOR_EMPTY instead.
+        """
+        if not ir.element_plans:
+            result = state.new_value("empty_vector")
+            block.instrs.append(MenaiCFGConstInstr(result=result, value=Menai_VECTOR_EMPTY))
+            return result, block
+
+        elem_vals: list[MenaiCFGValue] = []
+        for elem_plan in ir.element_plans:
+            elem_val, block = self._build_expr(elem_plan, block, scope, state, tail=False)
+            elem_vals.append(elem_val)
+
+        result = state.new_value("vector")
+        block.instrs.append(MenaiCFGMakeVectorInstr(result=result, args=elem_vals))
         return result, block
 
     def _build_dict(

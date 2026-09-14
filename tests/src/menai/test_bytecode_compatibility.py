@@ -172,7 +172,7 @@ class TestErrors:
     """Test error handling - this is critical!"""
 
     def test_division_by_zero(self, menai):
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer/ 1 0)")
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 

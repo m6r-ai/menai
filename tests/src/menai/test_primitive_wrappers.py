@@ -76,7 +76,7 @@ class TestPrimitiveWrappers:
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
         # Division by zero
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(let ((div float/)) (div 10.0 0.0))")
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 

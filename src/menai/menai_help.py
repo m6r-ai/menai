@@ -282,7 +282,7 @@ Syntax: (operator arg1 arg2 ...)
 - Construction: (string-hex->bytes "504b0304") → bytes from hex string, (string->bytes "hello") → UTF-8 encoded bytes, (list->bytes (list 80 75)) → bytes from integer list (0–255)
 - Conversion: (bytes->string-hex b) → hex string, (bytes->string b) → UTF-8 string (raises error on invalid UTF-8), (bytes->list b) → list of integers
 - Access: (bytes-ref b 0) → integer 0–255 at 0-based index, (bytes-length b) → integer
-- Slicing: (bytes-slice b start) → from start to end, (bytes-slice b start end) → from start to end (exclusive); clamps out-of-bounds to valid range
+- Slicing: (bytes-slice b start) → from start to end, (bytes-slice b start end) → from start to end (exclusive); out of bounds raises an error
 - Concatenation: (bytes-concat b1 b2 ...) → variadic, (bytes-concat) → empty bytes
 - Append single byte: (bytes-append-u8 b 255) → new bytes with byte appended (value must be 0–255)
 - Search: (bytes-index haystack needle) → integer offset or #none, (bytes-index-int b 75) → offset of first matching byte value or #none
@@ -306,6 +306,28 @@ Syntax: (operator arg1 arg2 ...)
 - Higher-order: (map-bytes f b) → new bytes with f applied to each byte; (filter-bytes pred b) → bytes of bytes satisfying pred; (fold-bytes f init b) → left fold over bytes; f signature is (lambda (acc byte) result) — same argument order as fold-list, where byte is an integer 0–255
 - Predicates: (bytes-empty? b) → #t if length is 0; (bytes-prefix? b prefix) → #t if b starts with prefix; (bytes-suffix? b suffix) → #t if b ends with suffix
 - Splitting: (bytes-split b delimiter) → list of bytes split on delimiter (delimiter must be non-empty); (bytes-split-int b byte) → list of bytes split on single byte value
+
+## Vector operations:
+
+- Immutable, contiguous-array-backed sequences with O(1) random access; distinct from lists (no coercion)
+- Vectors are NOT pattern-matchable and NOT hashable (cannot be set members or dict keys)
+- Construction: (vector 1 2 3) → #vector(1 2 3), (vector) → #vector(); no literal syntax
+- Type predicate: (vector? x) → #t
+- Equality: (vector=? a b), (vector!=? a b) — element-wise, order matters
+- Access: (vector-ref v i) → element at 0-based index (O(1)); (vector-length v) → integer
+- Functional update: (vector-set v i val) → new vector with element at index i replaced (original unchanged)
+- Slicing: (vector-slice v start) → from start to end, (vector-slice v start end) → from start to end (exclusive); out of bounds raises an error (matching list-slice); shares backing array
+- Concatenation: (vector-concat a b) → new vector with elements of a followed by b
+- Empty: (vector-empty? v) → #t if length is 0
+- Membership: (vector-member? v x) → #t if x is in v; (vector-index v x) → 0-based index of first occurrence, or #none
+- Conversions: (vector->list v) → list, (list->vector lst) → vector
+- Higher-order: (map-vector f v) → new vector with f applied to each element: (map-vector (lambda (x) (integer* x 2)) (vector 1 2 3)) → #vector(2 4 6)
+- Higher-order: (filter-vector pred v) → new vector of elements satisfying pred: (filter-vector (lambda (x) (integer>? x 0)) (vector -1 2 -3 4)) → #vector(2 4)
+- Higher-order: (fold-vector f init v) → left fold; f is (lambda (acc item) result): (fold-vector integer+ 0 (vector 1 2 3 4)) → 10
+- Higher-order: (find-vector pred v) → first element satisfying pred, or #none: (find-vector (lambda (x) (integer>? x 3)) (vector 1 2 3 4 5)) → 4
+- Higher-order: (any-vector? pred v) → #t if any element satisfies pred; (any-vector? pred (vector)) → #f
+- Higher-order: (all-vector? pred v) → #t if all elements satisfy pred; (all-vector? pred (vector)) → #t (vacuously true)
+- Higher-order: (sort-vector comparator v) → new vector sorted by comparator: (sort-vector integer<? (vector 3 1 4 1 5)) → #vector(1 1 3 4 5); stable sort
 
 ## Symbol operations:
 
@@ -418,13 +440,16 @@ Syntax: (operator arg1 arg2 ...)
 
 ## Raising errors
 
-- (error msg) → raises a runtime error; the msg expression is evaluated normally and must produce a string
-- msg can be a string literal, a variable, or any expression that evaluates to a string
+- (error value) → raises a runtime error; the value expression is evaluated normally
+- value can be a string (traditional), or any other Menai value (integer, dict, struct, list, etc.)
+- When value is a string, it becomes the error message directly
+- When value is a non-string, its string representation becomes the error message, and the structured value is also available to the caller as error_value on the exception
 - Raises immediately; no value is ever returned
 - Valid in any expression position, including inside lambda bodies, let bindings, and match arms
 - Used to signal invalid arguments or unrecoverable conditions
 - Example: (if (integer<? n 0) (error "n must be non-negative") (float-sqrt (integer->float n)))
 - Example: (error (string-concat "invalid value: " (integer->string x)))
+- Example: (error (dict "type" "arity-error" "function" "integer+" "expected" 2 "received" n))
 
 ## Important notes
 
@@ -435,5 +460,5 @@ Syntax: (operator arg1 arg2 ...)
 - and/or require boolean arguments and always return a boolean; unlike Scheme they do not return the last evaluated value
 - #none is not a boolean and cannot be used as a condition; use (none? x) to test for absence
 - The user CANNOT see Menai expressions or Menai results used with this tool directly; if you want to show either, you must format it as a message to the user.
-- Naming convention: direct operations are named, say, `list-X` with the list as the first argument; higher-order operations are named `X-list` with the function/predicate first and the list last. The same convention applies to dicts (`dict-X` / `X-dict`), sets (`set-X` / `X-set`), and bytes (`bytes-X` / `X-bytes`).
+- Naming convention: direct operations are named, say, `list-X` with the list as the first argument; higher-order operations are named `X-list` with the function/predicate first and the list last. The same convention applies to dicts (`dict-X` / `X-dict`), sets (`set-X` / `X-set`), bytes (`bytes-X` / `X-bytes`), and vectors (`vector-X` / `X-vector`).
 """

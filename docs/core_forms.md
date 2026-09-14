@@ -285,10 +285,22 @@ shorthand for `(quote ...)`.
 ## error — raise a runtime error
 
 `error` raises a runtime error immediately. It never returns a value. The argument
-must be a string expression.
+can be any Menai value. When the argument is a string, it becomes the error
+message directly. When it is any other value, its string representation becomes
+the error message, and the structured value is also attached to the resulting
+exception as `error_value` for callers that need richer context.
 
 ```menai
 (error "something went wrong")
+```
+
+Structured error values are useful for providing machine-readable context:
+
+```menai
+(error (dict "type" "arity-error"
+             "function" "integer+"
+             "expected" 2
+             "received" n))
 ```
 
 `error` can appear in any expression position:
@@ -308,7 +320,7 @@ The message can be a computed string:
 ### Syntax
 
 ```menai
-(error string-expr)
+(error value-expr)
 ```
 
 ## import — load a module

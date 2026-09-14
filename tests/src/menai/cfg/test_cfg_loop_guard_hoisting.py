@@ -1,11 +1,12 @@
 """
-Tests for loop-invariant guard hoisting in the type propagation pass.
+Tests for loop-invariant guard hoisting via the LICM pass.
 
 When a function contains a self-loop, loop-invariant guards (redundant on all
-iterations after the first) from any block in the function are hoisted into a
-preamble block.  The self-loop's jump target is set to the loop-entry block
-(skipping the preamble), so the hoisted guards execute once on function entry
-rather than on every iteration.
+iterations after the first) are hoisted into a preamble block by the LICM
+pass.  Guards are hoisted from blocks that dominate the back-edge (the block
+containing the SelfLoopTerm).  The self-loop's jump target is set to the
+loop-entry block (skipping the preamble), so the hoisted guards execute once
+on function entry rather than on every iteration.
 
 These tests compile Menai source and inspect the resulting bytecode to verify
 that:
@@ -240,14 +241,14 @@ class TestLoopInvariantGuardHoisting:
 
 
 class TestGuardHoistingFromNonEntryBlocks:
-    """Loop-invariant guards in non-entry blocks should also be hoisted."""
+    """Loop-invariant guards in dominating non-entry blocks should be hoisted."""
 
     def test_free_var_guard_in_loop_body_hoisted(self):
         """
         A self-recursive function where a free var is first used inside a
         conditional branch (not the entry block).  The guard on that free var
         is loop-invariant and should be hoisted to the preamble even though it
-        is not in the entry block.
+        is not in the entry block, because the block dominates the back-edge.
 
         (letrec ((scan
                   (lambda (i)
@@ -262,7 +263,9 @@ class TestGuardHoistingFromNonEntryBlocks:
 
         's' is a free var (captured), never reassigned.  Its ASSERT_STRING
         guard is inserted in the loop body (after the branch), not in the
-        entry block.  It should still be hoisted.
+        entry block.  The block containing the guard dominates the back-edge
+        (both self-loop blocks are reached through it), so it should be
+        hoisted.
         """
         src = """
         (letrec ((scan

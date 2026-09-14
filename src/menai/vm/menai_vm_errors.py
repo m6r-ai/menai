@@ -1,19 +1,59 @@
 """
-VM error codes and the mapping from structured codes to Python exceptions.
+VM error codes and the mapping from structured codes to MenaiError exceptions.
 
-The C VM reports errors via a MenaiVMError struct containing a granular
-integer code plus diagnostic context (opcode, ip, call_depth).  The C bridge
-packages this into a _MenaiVMRuntimeError sentinel exception.  This module
-provides the Python-side table that maps each error code to the appropriate
-exception class, message, and optional suggestion/context.
+The C VM reports two categories of error:
+
+- Runtime errors via a MenaiVMError struct containing a granular integer code
+  plus diagnostic context (opcode, ip, call_depth).  The C bridge packages this
+  into a _MenaiVMRuntimeError sentinel exception.  This module provides the
+  Python-side table that maps each error code to the appropriate exception
+  class, message, and optional suggestion/context.
+- Bytecode validation errors via a MenaiValidationError struct.  The bridge
+  constructs a ValidationError exception from this.
 
 This is the single source of truth for error-code-to-message mapping.
 The C bridge no longer contains any string formatting logic.
 """
 
-from enum import IntEnum
+from dataclasses import dataclass
+from enum import Enum, IntEnum
 
-from menai.menai_error import MenaiCancelledException, MenaiEvalError
+from menai.bytecode.menai_bytecode import Opcode
+from menai.menai_error import MenaiCancelledException, MenaiError, MenaiEvalError
+from menai.menai_value import MenaiString, MenaiValue
+
+
+class ValidationErrorType(Enum):
+    """Types of bytecode validation errors."""
+    INVALID_JUMP_TARGET = "invalid_jump_target"
+    INDEX_OUT_OF_BOUNDS = "index_out_of_bounds"
+    MISSING_RETURN = "missing_return"
+    INVALID_OPCODE = "invalid_opcode"
+    INVALID_VARIABLE_ACCESS = "invalid_variable_access"
+    UNINITIALIZED_VARIABLE = "uninitialized_variable"
+
+
+@dataclass
+class ValidationError(Exception):
+    """Bytecode validation error with detailed context."""
+    error_type: ValidationErrorType
+    message: str
+    instruction_index: int | None = None
+    opcode: int | None = None
+    context: str | None = None
+
+    def __str__(self) -> str:
+        parts = [f"Bytecode validation error: {self.message}"]
+        if self.instruction_index is not None:
+            parts.append(f"  at instruction {self.instruction_index}")
+
+        if self.opcode is not None:
+            parts.append(f"  opcode: {Opcode(self.opcode).name}")
+
+        if self.context:
+            parts.append(f"  context: {self.context}")
+
+        return "\n".join(parts)
 
 
 class VMErrorCode(IntEnum):
@@ -100,7 +140,10 @@ class _MenaiVMRuntimeError(Exception):
         opcode: Opcode that was executing (0 if unknown).
         ip: Instruction pointer at time of error (0 if unknown).
         call_depth: Call stack depth at time of error.
-        user_message: Supplementary error string (for USER_ERROR and UNDEFINED_VARIABLE).
+        user_value: MenaiValue raised by (error ...) or variable name string
+            for UNDEFINED_VARIABLE.
+        backtrace: List of (name, source_line, source_file) tuples capturing
+            the call stack at error time, or empty list if none.
     """
 
     def __init__(
@@ -109,13 +152,15 @@ class _MenaiVMRuntimeError(Exception):
         opcode: int = 0,
         ip: int = 0,
         call_depth: int = 0,
-        user_message: str | None = None
+        user_value: MenaiValue | None = None,
+        backtrace: list[tuple[str | None, int, str | None]] | None = None,
     ) -> None:
         self.code = code
         self.opcode = opcode
         self.ip = ip
         self.call_depth = call_depth
-        self.user_message = user_message
+        self.user_value = user_value
+        self.backtrace = backtrace or []
         super().__init__(f"VM error {code}")
 
 
@@ -124,7 +169,7 @@ class _MenaiVMRuntimeError(Exception):
 #   exception_class: The exception class to raise
 #   message: The error message string
 #   suggestion: Optional suggestion string
-_ErrorTableEntry = tuple[type[Exception], str, str | None]
+_ErrorTableEntry = tuple[type[MenaiError], str, str | None]
 
 
 def _eval_error_entry(message: str, suggestion: str | None = None) -> _ErrorTableEntry:
@@ -133,19 +178,18 @@ def _eval_error_entry(message: str, suggestion: str | None = None) -> _ErrorTabl
 
 
 # The error table.  Each VMErrorCode maps to (exception_class, message, suggestion).
-# USER_ERROR is handled specially — its message comes from user_message, not the table.
+# USER_ERROR is handled specially — its message comes from user_value, not the table.
 _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
-    VMErrorCode.NOMEM: (MemoryError, "out of memory", None),
-    VMErrorCode.OVERFLOW: (OverflowError, "integer overflow", None),
-    VMErrorCode.VALUE: (ValueError, "invalid value", None),
-    VMErrorCode.TYPE: (TypeError, "type error", None),
+    VMErrorCode.NOMEM: _eval_error_entry("out of memory"),
+    VMErrorCode.OVERFLOW: _eval_error_entry("integer overflow"),
+    VMErrorCode.VALUE: _eval_error_entry("invalid value"),
+    VMErrorCode.TYPE: _eval_error_entry("type error"),
     VMErrorCode.CANCELLED: _eval_error_entry("Execution was cancelled"),
 
     VMErrorCode.TYPE_MISMATCH: _eval_error_entry("type mismatch"),
     VMErrorCode.NOT_SYMBOL: _eval_error_entry("argument must be a symbol"),
     VMErrorCode.NOT_SYMBOL_PAIR: _eval_error_entry("arguments must be symbols"),
     VMErrorCode.IF_NOT_BOOLEAN: _eval_error_entry("if condition must be boolean"),
-    VMErrorCode.ERROR_MSG_NOT_STRING: _eval_error_entry("error: message must be a string"),
     VMErrorCode.NOT_CALLABLE: _eval_error_entry("cannot call non-function value"),
     VMErrorCode.APPLY_SECOND_NOT_LIST: _eval_error_entry("apply: second argument must be a list"),
     VMErrorCode.APPLY_FIRST_NOT_FUNCTION: _eval_error_entry("apply: first argument must be a function"),
@@ -166,8 +210,8 @@ _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
     VMErrorCode.SLICE_START_OUT_OF_RANGE: _eval_error_entry("slice start index out of range"),
     VMErrorCode.SLICE_END_OUT_OF_RANGE: _eval_error_entry("slice end index out of range"),
     VMErrorCode.OFFSET_OUT_OF_BOUNDS: _eval_error_entry("offset out of bounds"),
-    VMErrorCode.DIVISION_BY_ZERO: (ZeroDivisionError, "division by zero", None),
-    VMErrorCode.MODULO_BY_ZERO: (ZeroDivisionError, "modulo by zero", None),
+    VMErrorCode.DIVISION_BY_ZERO: _eval_error_entry("division by zero"),
+    VMErrorCode.MODULO_BY_ZERO: _eval_error_entry("modulo by zero"),
     VMErrorCode.INVALID_RADIX: _eval_error_entry("radix must be 2, 8, 10, or 16"),
     VMErrorCode.VALUE_OUT_OF_RANGE: _eval_error_entry("value out of range"),
     VMErrorCode.INVALID_CODEPOINT: _eval_error_entry("invalid Unicode scalar value"),
@@ -207,10 +251,11 @@ def translate_vm_error(
     opcode: int = 0,
     ip: int = 0,
     call_depth: int = 0,
-    user_message: str | None = None
+    user_value: MenaiValue | None = None,
+    backtrace: list[tuple[str | None, int, str | None]] | None = None,
 ) -> Exception:
     """
-    Translate a structured VM error into the appropriate Python exception.
+    Translate a structured VM error into the appropriate MenaiError exception.
 
     This is called by MenaiVM.execute when it catches a _MenaiVMRuntimeError.
     It looks up the error code in the table and constructs the appropriate
@@ -224,20 +269,33 @@ def translate_vm_error(
         opcode: The opcode that was executing.
         ip: The instruction pointer at time of error.
         call_depth: The call stack depth at time of error.
-        user_message: User-supplied error string (only for USER_ERROR).
+        user_value: MenaiValue raised by (error ...) for USER_ERROR, or
+            MenaiString containing the variable name for UNDEFINED_VARIABLE.
+        backtrace: List of (name, source_line, source_file) tuples from the
+            C VM call stack at error time, or None if unavailable.
 
     Returns:
         An exception instance ready to be raised.
     """
-    # USER_ERROR is special — the message comes from the user's code.
+    # USER_ERROR is special — the message comes from the raised value.
     if code == VMErrorCode.USER_ERROR:
-        msg = user_message if user_message is not None else "user error"
+        if isinstance(user_value, MenaiString):
+            msg = user_value.to_python()
+
+        elif user_value is not None:
+            msg = user_value.describe()
+
+        else:
+            msg = "user error"
+
         return MenaiEvalError(
             msg,
             error_code=code,
+            error_value=user_value,
             vm_opcode=opcode,
             vm_ip=ip,
             vm_call_depth=call_depth,
+            backtrace=backtrace,
         )
 
     # CANCELLED maps to MenaiCancelledException.
@@ -247,6 +305,7 @@ def translate_vm_error(
             vm_opcode=opcode,
             vm_ip=ip,
             vm_call_depth=call_depth,
+            backtrace=backtrace,
         )
 
     # Look up in the error table.
@@ -262,28 +321,15 @@ def translate_vm_error(
 
     exc_class, message, suggestion = entry
 
-    if user_message is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
-        message = f"undefined variable: {user_message}"
+    if user_value is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
+        message = f"undefined variable: {user_value.to_python()}"
 
-    if issubclass(exc_class, MenaiEvalError):
-        exc: Exception = exc_class(
-            message,
-            suggestion=suggestion,
-            error_code=code,
-            vm_opcode=opcode,
-            vm_ip=ip,
-            vm_call_depth=call_depth,
-        )
-
-    else:
-        # Python built-in exceptions (OverflowError, ZeroDivisionError, etc.)
-        exc = exc_class(message)
-
-        # Attach structured diagnostic fields as attributes for built-in
-        # exception types that don't accept them in the constructor.
-        exc.error_code = code  # type: ignore[attr-defined]
-        exc.vm_opcode = opcode  # type: ignore[attr-defined]
-        exc.vm_ip = ip  # type: ignore[attr-defined]
-        exc.vm_call_depth = call_depth  # type: ignore[attr-defined]
-
-    return exc
+    return exc_class(
+        message,
+        suggestion=suggestion,
+        error_code=code,
+        vm_opcode=opcode,
+        vm_ip=ip,
+        vm_call_depth=call_depth,
+        backtrace=backtrace,
+    )

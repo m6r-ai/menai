@@ -630,7 +630,7 @@ static MenaiValue *
 execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
 {
     int vm_err = MENAI_OK;
-    const char *vm_user_message = NULL;
+    MenaiValue *vm_user_value = NULL;
 
     MenaiValue **regs = vs->regs;
 
@@ -665,11 +665,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 vm_err = MENAI_ERR_CANCELLED;
                 goto error;
             }
-        }
-
-        if (frame->ip >= frame->code_len) {
-            vm_err = MENAI_ERR_MISSING_RETURN;
-            goto error;
         }
 
         /* Fetch and decode instruction */
@@ -754,7 +749,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (val == NULL) {
-                vm_user_message = strdup(name_str);
+                MenaiString *name = alloc_menai_string_from_utf8(vs, name_str, (ssize_t)strlen(name_str));
+                if (name == NULL) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+                vm_user_value = (MenaiValue *)name;
                 vm_err = MENAI_ERR_UNDEFINED_VARIABLE;
                 goto error;
             }
@@ -798,16 +798,35 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             break;
         }
 
-        case OP_RAISE_ERROR: {
-            MenaiString *msg = (MenaiString *)frame_regs[src0];
-            char *cstr = alloc_utf8_from_menai_string(msg, NULL);
-            if (cstr == NULL) {
-                vm_err = MENAI_ERR_NOMEM;
-                goto error;
+        case OP_SWITCH_INTEGER: {
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            const MenaiJumpTable *t = &frame->code_obj->jump_tables[src1];
+            MenaiInteger *index = (MenaiInteger *)frame_regs[src0];
+
+            if (!index->is_big) {
+                long long target = (long long)index->fixed - t->min;
+                if (target >= 0 && target < (long long)t->count) {
+                    frame->ip = t->targets[target];
+                    break;
+                }
+
             }
 
+            frame->ip = t->default_target;
+            break;
+        }
+
+        case OP_RAISE_ERROR: {
+            MenaiValue *val = frame_regs[src0];
+
+            /*
+             * Retain the value so it survives frame cleanup, and store it
+             * in the error struct for the bridge to convert to a Python
+             * MenaiValue.  The bridge releases it after conversion.
+             */
+            menai_value_retain(val);
             vm_err = MENAI_ERR_USER_ERROR;
-            vm_user_message = cstr;
+            vm_user_value = val;
             goto error;
         }
 
@@ -4207,15 +4226,28 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             if (start < 0) {
-                start = 0;
+                vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
+                goto error;
+            }
+
+            if (end < 0) {
+                vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
+                goto error;
+            }
+
+            if (start > blen) {
+                vm_err = MENAI_ERR_SLICE_START_OUT_OF_RANGE;
+                goto error;
             }
 
             if (end > blen) {
-                end = blen;
+                vm_err = MENAI_ERR_SLICE_END_OUT_OF_RANGE;
+                goto error;
             }
 
             if (start > end) {
-                start = end;
+                vm_err = MENAI_ERR_SLICE_START_AFTER_END;
+                goto error;
             }
 
             MenaiBytes *r = alloc_menai_bytes_from_slice(vs, b, start, end);
@@ -5204,6 +5236,311 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             break;
         }
 
+        case OP_LOAD_EMPTY_VECTOR: {
+            MenaiValue *val = (MenaiValue *)vs->empty_vector;
+            menai_value_retain(val);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = val;
+            break;
+        }
+
+        case OP_MAKE_VECTOR: {
+            /*
+             * MAKE_VECTOR src0, src1:
+             * src0 = base slot of outgoing zone (absolute slot index).
+             * src1 = element count.
+             * Elements are in slots src0..src0+n-1.
+             */
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            int n = src1;
+            MenaiVector *r = alloc_menai_vector(vs, n);
+            if (!r) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            for (int i = 0; i < n; i++) {
+                menai_value_retain(frame_regs[src0 + i]);
+                r->inline_data[i] = frame_regs[src0 + i];
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_VECTOR_P: {
+            bool_store(vs, frame_regs, dest, IS_MENAI_VECTOR(frame_regs[src0]));
+            break;
+        }
+
+        case OP_VECTOR_EQ_P: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiVector *b = (MenaiVector *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, menai_vector_equal(a, b));
+            break;
+        }
+
+        case OP_VECTOR_NEQ_P: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiVector *b = (MenaiVector *)frame_regs[src1];
+            bool_store(vs, frame_regs, dest, !menai_vector_equal(a, b));
+            break;
+        }
+
+        case OP_VECTOR_LENGTH: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, a->length);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_VECTOR_REF: {
+            MenaiVector *v = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
+            ssize_t idx;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(idx_val, &idx) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            ssize_t vlen = v->length;
+            if (idx < 0 || idx >= vlen) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            MenaiValue *val = v->data[idx];
+            menai_value_retain(val);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = val;
+            break;
+        }
+
+        case OP_VECTOR_SET: {
+            MenaiVector *v = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
+            int src2 = (int)(word & FIELD_MASK);
+            MenaiValue *val = frame_regs[src2];
+            ssize_t idx;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(idx_val, &idx) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            ssize_t vlen = v->length;
+            if (idx < 0 || idx >= vlen) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            MenaiVector *r = alloc_menai_vector_from_set(vs, v, idx, val);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            for (ssize_t i = 0; i < vlen; i++) {
+                menai_value_retain(r->inline_data[i]);
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_VECTOR_SLICE: {
+            MenaiVector *v = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiInteger *start_val = (MenaiInteger *)frame_regs[src1];
+            int src2 = (int)(word & FIELD_MASK);
+            MenaiInteger *end_val = (MenaiInteger *)frame_regs[src2];
+            ssize_t vlen = v->length;
+
+            ssize_t start;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(start_val, &start) < 0)) {
+                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
+                goto error;
+            }
+
+            ssize_t end;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(end_val, &end) < 0)) {
+                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
+                goto error;
+            }
+
+            if (start < 0) {
+                vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
+                goto error;
+            }
+
+            if (end < 0) {
+                vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
+                goto error;
+            }
+
+            if (start > vlen) {
+                vm_err = MENAI_ERR_SLICE_START_OUT_OF_RANGE;
+                goto error;
+            }
+
+            if (end > vlen) {
+                vm_err = MENAI_ERR_SLICE_END_OUT_OF_RANGE;
+                goto error;
+            }
+
+            if (start > end) {
+                vm_err = MENAI_ERR_SLICE_START_AFTER_END;
+                goto error;
+            }
+
+            MenaiVector *r = alloc_menai_vector_from_slice(vs, v, start, end);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_VECTOR_CONCAT: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiVector *b = (MenaiVector *)frame_regs[src1];
+            MenaiVector *r = alloc_menai_vector_from_concat(vs, a, b);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            ssize_t la = a->length;
+            ssize_t lb = b->length;
+            for (ssize_t i = 0; i < la; i++) {
+                menai_value_retain(r->inline_data[i]);
+            }
+
+            for (ssize_t i = 0; i < lb; i++) {
+                menai_value_retain(r->inline_data[la + i]);
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_VECTOR_EMPTY_P: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            bool_store(vs, frame_regs, dest, a->length == 0);
+            break;
+        }
+
+        case OP_VECTOR_MEMBER_P: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiValue *item = frame_regs[src1];
+            int found = 0;
+            for (ssize_t i = 0; i < a->length; i++) {
+                if (menai_value_equal(a->data[i], item)) {
+                    found = 1;
+                    break;
+                }
+            }
+
+            bool_store(vs, frame_regs, dest, found);
+            break;
+        }
+
+        case OP_VECTOR_INDEX: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiValue *item = frame_regs[src1];
+            ssize_t found = -1;
+            for (ssize_t i = 0; i < a->length; i++) {
+                if (menai_value_equal(a->data[i], item)) {
+                    found = i;
+                    break;
+                }
+            }
+
+            if (found == -1) {
+                MenaiValue *val = (MenaiValue *)menai_none(vs);
+                menai_value_retain(val);
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = val;
+                break;
+            }
+
+            MenaiInteger *r = alloc_menai_integer_from_ssize_t(vs, found);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_VECTOR_TO_LIST: {
+            MenaiVector *a = (MenaiVector *)frame_regs[src0];
+            ssize_t n = a->length;
+            MenaiList *r = menai_empty_list(vs);
+            menai_value_retain((MenaiValue *)r);
+            for (ssize_t i = n - 1; i >= 0; i--) {
+                MenaiList *cell = alloc_menai_list(vs);
+                if (!cell) {
+                    menai_value_release(vs, (MenaiValue *)r);
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_retain(a->data[i]);
+                cell->head = a->data[i];
+                cell->tail = r;
+                cell->length = r->length + 1;
+                r = cell;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_LIST_TO_VECTOR: {
+            MenaiList *lst = (MenaiList *)frame_regs[src0];
+            ssize_t n = lst->length;
+            MenaiVector *r = alloc_menai_vector(vs, n);
+            if (!r) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiList *cur = lst;
+            ssize_t i = 0;
+            while (cur->head) {
+                menai_value_retain(cur->head);
+                r->inline_data[i] = cur->head;
+                i++;
+                cur = cur->tail;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
         case OP_LIST_P: {
             bool_store(vs, frame_regs, dest, IS_MENAI_LIST(frame_regs[src0]));
             break;
@@ -5283,7 +5620,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             }
 
             MenaiList *cur = a;
-            while (cur->tail->head) {
+            while (--n) {
                 cur = cur->tail;
             }
 
@@ -5365,6 +5702,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     if (first) {
                         menai_value_release(vs, (MenaiValue *)first);
                     }
+
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
@@ -5377,6 +5715,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 } else {
                     first = cell;
                 }
+
                 prev = cell;
                 cur = cur->tail;
                 remaining--;
@@ -5387,6 +5726,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 if (first) {
                     menai_value_release(vs, (MenaiValue *)first);
                 }
+
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
@@ -6984,6 +7324,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         DEFINE_ASSERT_OP(BYTES, IS_MENAI_BYTES(v))
         DEFINE_ASSERT_OP(STRUCT, IS_MENAI_STRUCT(v))
         DEFINE_ASSERT_OP(STRUCTTYPE, IS_MENAI_STRUCTTYPE(v))
+        DEFINE_ASSERT_OP(VECTOR, IS_MENAI_VECTOR(v))
 
         #undef DEFINE_ASSERT_OP
 
@@ -6995,6 +7336,27 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         continue;
 
 error:
+        /*
+         * Capture the call stack backtrace before releasing frames.
+         * Walk from the current (deepest) frame up to the sentinel,
+         * recording function name, source line, and source file from
+         * each frame's code object.  We strdup the strings because the
+         * code objects are released below and the bridge runs after
+         * execute_loop returns.  The bridge frees the strdup'd strings
+         * after converting them to Python objects.
+         */
+        vs->error.backtrace_count = 0;
+        for (int d = frame_depth; d >= 1 && vs->error.backtrace_count < MENAI_MAX_BACKTRACE; d--) {
+            MenaiCodeObject *co = frames[d].code_obj;
+            if (co) {
+                int bt_idx = vs->error.backtrace_count;
+                vs->error.backtrace_names[bt_idx] = co->name ? strdup(co->name) : NULL;
+                vs->error.backtrace_lines[bt_idx] = co->source_line;
+                vs->error.backtrace_files[bt_idx] = co->source_file ? strdup(co->source_file) : NULL;
+                vs->error.backtrace_count++;
+            }
+        }
+
         /* Release all live frames above the sentinel. */
         for (int d = frame_depth; d >= 1; d--) {
             if (frames[d].code_obj) {
@@ -7006,7 +7368,7 @@ error:
         vs->error.opcode = opcode;
         vs->error.ip = cur_ip;
         vs->error.call_depth = frame_depth;
-        vs->error.user_message = vm_user_message;
+        vs->error.user_value = vm_user_value;
         return NULL;
     }
 }
@@ -7036,7 +7398,8 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->error.opcode = 0;
     vs->error.ip = 0;
     vs->error.call_depth = 0;
-    vs->error.user_message = NULL;
+    vs->error.user_value = NULL;
+    vs->error.backtrace_count = 0;
 
     size_t needed = (size_t)code->local_count + code->outgoing_arg_slots;
     size_t num_regs = INITIAL_REG_CAPACITY;

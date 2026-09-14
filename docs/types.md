@@ -208,6 +208,32 @@ Type predicate:
 See [Builtins — list operations](builtins.md#list-operations) for the full list of
 list functions.
 
+## vector
+
+Immutable, contiguous-array-backed sequences with O(1) random access. Vectors are
+a distinct type from lists — there is no coercion between them. Vectors are designed
+for index-heavy code where lists' O(n) random access is a bottleneck.
+
+```menai
+(vector 1 2 3)          ; #vector(1 2 3)
+(vector)                ; empty vector
+(vector "a" 42 #t)      ; mixed types
+```
+
+There is no literal syntax for vectors — they are created via `(vector ...)`
+construction, like bytes.
+
+Type predicate:
+
+```menai
+(vector? (vector 1 2))  → #t
+(vector? (list 1 2))    → #f
+```
+
+Vectors are NOT pattern-matchable and NOT hashable (they cannot be set members or
+dict keys). See [Builtins — vector operations](builtins.md#vector-operations) for
+the full list of vector functions.
+
 ## dict
 
 Immutable key-value mappings with O(1) lookup. Dicts maintain insertion order.

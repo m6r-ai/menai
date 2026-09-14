@@ -197,27 +197,27 @@ class TestErrors:
 
     def test_division_by_zero_eval_error(self, menai):
         """Test that division by zero causes evaluation errors."""
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer/ 1 0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer/ 5 0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(float// 1.0 0.0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer% 1 0)")
 
         assert exc_info.value.error_code == VMErrorCode.MODULO_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(float% 1.0 0.0)")
 
         assert exc_info.value.error_code == VMErrorCode.MODULO_BY_ZERO
@@ -495,7 +495,7 @@ class TestErrors:
     def test_nested_error_propagation(self, menai):
         """Test that errors in nested expressions are properly propagated."""
         # Error in nested arithmetic
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer+ (integer* 2 3) (integer/ 1 0))")
 
         # Error in nested function call
@@ -503,13 +503,13 @@ class TestErrors:
             menai.evaluate("(string-length (integer+ 1 2))")
 
         # Error in conditional branch (should still be caught despite lazy evaluation)
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(if #t (integer/ 1 0) 42)")
 
     def test_error_in_higher_order_functions(self, menai):
         """Test error handling in higher-order function contexts."""
         # Error in map function
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(map-list (lambda (x) (integer/ x 0)) (list 1 2 3))")
 
         # Error in filter predicate
@@ -517,13 +517,13 @@ class TestErrors:
             menai.evaluate("(filter-list (lambda (x) (integer+ x \"hello\")) (list 1 2 3))")
 
         # Error in fold function
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(fold-list (lambda (acc x) (integer/ acc x)) 1 (list 1 0 2))")
 
     def test_error_in_let_binding_evaluation(self, menai):
         """Test error handling in let binding evaluation."""
         # Error in binding expression
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(let ((x (integer/ 1 0))) x)")
 
         # let bindings are parallel, so y's binding cannot see x from the same let
@@ -543,6 +543,82 @@ class TestErrors:
         # Type error in closure
         with pytest.raises(MenaiEvalError):
             menai.evaluate('(let ((f (lambda (x) (integer+ x "hello")))) (f 5))')
+
+    # ========== Structured Error Value Tests ==========
+
+    def test_error_with_string_message(self, menai):
+        """String error messages work as before — message is the string content."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error "something went wrong")')
+
+        assert str(exc_info.value.message) == "something went wrong"
+        assert exc_info.value.error_value is not None
+
+    def test_error_with_integer_value(self, menai):
+        """Raising a non-string integer value produces a MenaiEvalError with error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error 42)')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() == 42
+        assert "42" in exc_info.value.message
+
+    def test_error_with_dict_value(self, menai):
+        """Raising a dict value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error (dict "type" "arity-error" "expected" 2))')
+
+        assert exc_info.value.error_value is not None
+        py_val = exc_info.value.error_value.to_python()
+        assert py_val["type"] == "arity-error"
+        assert py_val["expected"] == 2
+
+    def test_error_with_list_value(self, menai):
+        """Raising a list value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error (list 1 2 3))')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() == [1, 2, 3]
+
+    def test_error_with_boolean_value(self, menai):
+        """Raising a boolean value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error #t)')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() is True
+
+    def test_error_with_none_value(self, menai):
+        """Raising #none carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error #none)')
+
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() is None
+
+    def test_error_value_not_set_for_non_user_errors(self, menai):
+        """error_value is not set for VM-generated errors (e.g. division by zero)."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(integer/ 1 0)')
+
+        assert not hasattr(exc_info.value, 'error_value') or exc_info.value.error_value is None
+
+    def test_error_with_computed_string(self, menai):
+        """Computed string error messages work and carry the string as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(error (string-concat "value: " (integer->string 99)))')
+
+        assert exc_info.value.message == "value: 99"
+        assert exc_info.value.error_value is not None
+        assert exc_info.value.error_value.to_python() == "value: 99"
+
+    def test_error_with_struct_value(self, menai):
+        """Raising a struct value carries the structured value as error_value."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(let ((point (struct (x y)))) (error (point 1 2)))')
+
+        assert exc_info.value.error_value is not None
 
     # ========== Exception Hierarchy Tests ==========
 
@@ -569,8 +645,8 @@ class TestErrors:
         with pytest.raises(MenaiError):
             menai.evaluate("(integer+ 1 2")
 
-        # Eval error (division by zero is reported as a builtin ZeroDivisionError)
-        with pytest.raises(ZeroDivisionError):
+        # Eval error (division by zero is reported as a builtin MenaiEvalError)
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer/ 1 0)")
 
     def test_specific_exception_catching(self, menai):
@@ -583,8 +659,8 @@ class TestErrors:
         with pytest.raises(MenaiASTBuildError):
             menai.evaluate("(integer+ 1 2")
 
-        # Catch specific eval error (division by zero is a builtin ZeroDivisionError)
-        with pytest.raises(ZeroDivisionError):
+        # Catch specific eval error (division by zero is a builtin MenaiEvalError)
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer/ 1 0)")
 
     def test_exception_chaining_preservation(self, menai):
@@ -599,7 +675,7 @@ class TestErrors:
     def test_error_recovery_not_possible(self, menai):
         """Test that errors properly terminate evaluation."""
         # After an error, the evaluator should be in a clean state for next evaluation
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate("(integer/ 1 0)")
 
         # Next evaluation should work normally
@@ -618,7 +694,7 @@ class TestErrors:
             (f 5)))
         '''
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(complex_expr)
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
@@ -631,5 +707,134 @@ class TestErrors:
                            (list 1 2 3))))
         '''
 
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(MenaiEvalError):
             menai.evaluate(nested_functional)
+
+class TestBacktrace:
+    """Test call stack backtrace in runtime errors."""
+
+    def test_top_level_error_has_module_frame(self, menai):
+        """A top-level runtime error has a single <module> frame in the backtrace."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("(list-ref (list 1 2 3) 10)")
+
+        err = exc_info.value
+        assert len(err.backtrace) == 1
+        name, src_line, src_file = err.backtrace[0]
+        assert name == "<module>"
+
+    def test_backtrace_shows_recursive_function(self, menai):
+        """A runtime error inside a recursive function shows the function name in the backtrace."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 1
+        name, src_line, src_file = err.backtrace[0]
+        assert "recurse" in name
+
+    def test_backtrace_shows_multiple_frames(self, menai):
+        """A non-tail recursive error shows multiple frames in the backtrace."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((check-all (lambda (lst)
+                                  (if (list-null? lst)
+                                      0
+                                     (integer+ (if (integer<? (list-length lst) 2)
+                                                   (list-ref lst 100)
+                                                   0)
+                                                (check-all (list-rest lst)))))))
+             (check-all (list 1 2 3)))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 2
+        for name, src_line, src_file in err.backtrace:
+            assert "check-all" in name
+
+    def test_backtrace_shows_anonymous_lambda(self, menai):
+        """An anonymous lambda in the backtrace is identified by its source location."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((wrapper (lambda (f x)
+                                (if (integer<=? x 0)
+                                    (f (list 1 2 3))
+                                    (wrapper f (integer- x 1))))))
+              (wrapper (lambda (lst) (list-ref lst 10)) 2))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 1
+        name, src_line, src_file = err.backtrace[0]
+        assert "<lambda" in name
+
+    def test_backtrace_includes_source_line(self, menai):
+        """The backtrace includes the source line where each function is defined."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        err = exc_info.value
+        assert len(err.backtrace) >= 1
+        _, src_line, _ = err.backtrace[0]
+        assert src_line > 0
+
+    def test_backtrace_user_error_shows_call_stack(self, menai):
+        """A user-raised error (error ...) captures the call stack."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((validate (lambda (x)
+                                 (if (integer<? x 0)
+                                     (error "negative value not allowed")
+                                     x)))
+                     (check-all (lambda (lst)
+                                  (if (list-null? lst)
+                                      0
+                                      (integer+ (validate (list-first lst))
+                                                (check-all (list-rest lst)))))))
+              (check-all (list 1 -2 3)))
+            """)
+
+        err = exc_info.value
+        assert "negative value not allowed" in str(err)
+        assert len(err.backtrace) >= 1
+
+    def test_backtrace_formatted_in_error_message(self, menai):
+        """The backtrace is formatted in the error message string."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        msg = str(exc_info.value)
+        assert "Call stack:" in msg
+        assert "recurse" in msg
+
+    def test_backtrace_strips_params_suffix(self, menai):
+        """The formatted backtrace strips the (N params) suffix from function names."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("""
+            (letrec ((recurse (lambda (n lst)
+                                (if (integer<=? n 0)
+                                    (list-ref lst 100)
+                                    (recurse (integer- n 1) lst)))))
+              (recurse 3 (list 1 2 3)))
+            """)
+
+        msg = str(exc_info.value)
+        assert "(2 params)" not in msg

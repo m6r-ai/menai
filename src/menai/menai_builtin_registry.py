@@ -302,6 +302,20 @@ class MenaiBuiltinRegistry:
         'bytes-append-uleb128': (2, 2),
         'bytes-read-sleb128': (2, 2),
         'bytes-append-sleb128': (2, 2),
+        'vector': (0, None),
+        'vector?': (1, 1),
+        'vector=?': (2, 2),
+        'vector!=?': (2, 2),
+        'vector-ref': (2, 2),
+        'vector-length': (1, 1),
+        'vector-set': (3, 3),
+        'vector-slice': (2, 3),
+        'vector-concat': (2, 2),
+        'vector-empty?': (1, 1),
+        'vector-member?': (2, 2),
+        'vector-index': (2, 2),
+        'vector->list': (1, 1),
+        'list->vector': (1, 1),
     }
 
     @staticmethod

@@ -269,7 +269,7 @@ class TestEvaluatorMissingCoverage:
                                   (error-func (integer- n 1))))))
           (error-func 3))
         """
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(error_code)
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 

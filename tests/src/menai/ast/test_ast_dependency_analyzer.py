@@ -433,7 +433,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
     def test_dependency_analysis_with_error_propagation(self, menai):
         """Test dependency analysis with error propagation."""
         # Error in dependency chain
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
             (let* ((a 5)
                    (b (integer/ a 0))

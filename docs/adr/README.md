@@ -85,3 +85,5 @@ What costs, risks, or constraints does this decision impose?
 | [0015](0015-desugar-to-small-core.md) | Desugar to a small core before IR | Accepted |
 | [0016](0016-reference-counting-with-closure-cycle-collection.md) | Reference counting with closure cycle collection in the C VM | Accepted |
 | [0017](0017-cons-cell-internal-representation.md) | Cons-cell internal representation for lists | Accepted |
+| [0018](0018-vector-type.md) | Vector type | Accepted |
+| [0019](0019-slice-out-of-bounds-raises-error.md) | Slice operations raise errors on out-of-bounds indices | Accepted |

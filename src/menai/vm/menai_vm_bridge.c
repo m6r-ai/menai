@@ -41,11 +41,19 @@ perf_counter_ns(void)
 
 static MenaiValue *slow_value_to_menai_value(MenaiVMState *vs, PyObject *src);
 static PyObject *menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val);
+static void bridge_raise_validation_error(const MenaiValidationError *err);
 
 /*
  * Module-level state fetched at init
  */
 static PyObject *_VMRuntimeError_type = NULL;
+
+/*
+ * ValidationError and ValidationErrorType from menai.vm.menai_vm_errors.
+ * Fetched once during bridge init for raising validation errors from C.
+ */
+static PyObject *_ValidationError_type = NULL;
+static PyObject *_ValidationErrorType_enum = NULL;
 
 /*
  * The CodeObject type from menai.menai_bytecode — used to identify prelude
@@ -72,6 +80,7 @@ static PyTypeObject *Slow_FunctionType = NULL;
 static PyTypeObject *Slow_StructTypeType = NULL;
 static PyTypeObject *Slow_StructType = NULL;
 static PyTypeObject *Slow_BytesType = NULL;
+static PyTypeObject *Slow_VectorType = NULL;
 
 /*
  * Conversion helpers — Python boundary only.
@@ -190,6 +199,26 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
         }
 
         Py_DECREF(py_name);
+    } else {
+        PyErr_Clear();
+    }
+
+    /* source_line — optional, used for error backtraces */
+    if (_read_int(py_code, "source_line", &co->source_line) < 0) {
+        goto fail;
+    }
+
+    /* source_file — optional, used for error backtraces */
+    PyObject *py_source_file = PyObject_GetAttrString(py_code, "source_file");
+    if (py_source_file) {
+        if (py_source_file != Py_None) {
+            const char *sf = PyUnicode_AsUTF8(py_source_file);
+            if (sf) {
+                co->source_file = strdup(sf);
+            }
+        }
+
+        Py_DECREF(py_source_file);
     } else {
         PyErr_Clear();
     }
@@ -371,6 +400,75 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
     }
 
     Py_DECREF(py_constants);
+
+    /* jump_tables — list of (min, default_target, targets) for SWITCH_INTEGER */
+    PyObject *py_jt = PyObject_GetAttrString(py_code, "jump_tables");
+    if (!py_jt) {
+        PyErr_Clear();
+        return co;
+    }
+
+    if (py_jt != Py_None && PyList_Check(py_jt) && PyList_GET_SIZE(py_jt) > 0) {
+        co->njt = (int)PyList_GET_SIZE(py_jt);
+        co->jump_tables = (MenaiJumpTable *)calloc(
+            (size_t)co->njt, sizeof(MenaiJumpTable));
+        if (!co->jump_tables) {
+            Py_DECREF(py_jt);
+            PyErr_NoMemory();
+            goto fail;
+        }
+
+        for (int i = 0; i < co->njt; i++) {
+            PyObject *entry = PyList_GET_ITEM(py_jt, i);
+            if (!PyTuple_Check(entry) || PyTuple_GET_SIZE(entry) != 3) {
+                Py_DECREF(py_jt);
+                PyErr_SetString(PyExc_TypeError, "jump_tables entries must be 3-tuples");
+                goto fail;
+            }
+
+            long long t_min = PyLong_AsLongLong(PyTuple_GET_ITEM(entry, 0));
+            long t_default = PyLong_AsLong(PyTuple_GET_ITEM(entry, 1));
+            PyObject *targets = PyTuple_GET_ITEM(entry, 2);
+            if (PyErr_Occurred() || !PySequence_Check(targets)) {
+                Py_DECREF(py_jt);
+                if (!PyErr_Occurred()) {
+                    PyErr_SetString(PyExc_TypeError, "jump table targets must be a sequence");
+                }
+                goto fail;
+            }
+
+            Py_ssize_t count = PySequence_Size(targets);
+            co->jump_tables[i].min = t_min;
+            co->jump_tables[i].default_target = (int)t_default;
+            co->jump_tables[i].count = (int)count;
+            co->jump_tables[i].targets = (int *)malloc(
+                (size_t)count * sizeof(int));
+            if (!co->jump_tables[i].targets) {
+                Py_DECREF(py_jt);
+                PyErr_NoMemory();
+                goto fail;
+            }
+
+            for (Py_ssize_t j = 0; j < count; j++) {
+                PyObject *t = PySequence_GetItem(targets, j);
+                if (!t) {
+                    Py_DECREF(py_jt);
+                    goto fail;
+                }
+
+                long v = PyLong_AsLong(t);
+                Py_DECREF(t);
+                if (PyErr_Occurred()) {
+                    Py_DECREF(py_jt);
+                    goto fail;
+                }
+
+                co->jump_tables[i].targets[j] = (int)v;
+            }
+        }
+    }
+
+    Py_DECREF(py_jt);
 
     return co;
 
@@ -582,6 +680,37 @@ slow_bytes_to_fast(MenaiVMState *vs, PyObject *src)
 
     MenaiBytes *r = alloc_menai_bytes_from_raw(vs, (const uint8_t *)buf, (ssize_t)n);
     Py_DECREF(v);
+    return (MenaiValue *)r;
+}
+
+static inline MenaiValue *
+slow_vector_to_fast(MenaiVMState *vs, PyObject *src)
+{
+    PyObject *elems = PyObject_GetAttrString(src, "elements");
+    if (!elems) {
+        return NULL;
+    }
+
+    Py_ssize_t n = PyTuple_GET_SIZE(elems);
+    MenaiVector *r = alloc_menai_vector(vs, (ssize_t)n);
+    if (!r) {
+        Py_DECREF(elems);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    for (Py_ssize_t i = 0; i < n; i++) {
+        MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
+        if (!item) {
+            menai_value_release(vs, (MenaiValue *)r);
+            Py_DECREF(elems);
+            return NULL;
+        }
+
+        r->inline_data[i] = item;
+    }
+
+    Py_DECREF(elems);
     return (MenaiValue *)r;
 }
 
@@ -1012,6 +1141,10 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
         return slow_bytes_to_fast(vs, src);
     }
 
+    if (t == Slow_VectorType) {
+        return slow_vector_to_fast(vs, src);
+    }
+
     if (t == Slow_SymbolType) {
         return slow_symbol_to_fast(vs, src);
     }
@@ -1168,6 +1301,31 @@ fast_bytes_to_slow(MenaiVMState *vs, MenaiValue *val)
 
     PyObject *result = PyObject_CallOneArg((PyObject *)Slow_BytesType, py_bytes);
     Py_DECREF(py_bytes);
+    return result;
+}
+
+static inline PyObject *
+fast_vector_to_slow(MenaiVMState *vs, MenaiValue *val)
+{
+    MenaiVector *mv = (MenaiVector *)val;
+    Py_ssize_t n = mv->length;
+    PyObject *py_tuple = PyTuple_New(n);
+    if (!py_tuple) {
+        return NULL;
+    }
+
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *elem = menai_value_to_slow_value(vs, mv->data[i]);
+        if (!elem) {
+            Py_DECREF(py_tuple);
+            return NULL;
+        }
+
+        PyTuple_SET_ITEM(py_tuple, i, elem);
+    }
+
+    PyObject *result = PyObject_CallOneArg((PyObject *)Slow_VectorType, py_tuple);
+    Py_DECREF(py_tuple);
     return result;
 }
 
@@ -1434,6 +1592,10 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
         return fast_bytes_to_slow(vs, val);
     }
 
+    if (t == MENAITYPE_VECTOR) {
+        return fast_vector_to_slow(vs, val);
+    }
+
     if (t == MENAITYPE_SYMBOL) {
         return fast_symbol_to_slow(vs, val);
     }
@@ -1481,45 +1643,82 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
  * final user-facing exception using the error table in
  * menai_vm_errors.py.
  *
- * For MENAI_ERR_USER_ERROR, the user-supplied message is carried in
- * err->user_message (a malloc'd C string).  This function frees it
- * after packaging it into the Python exception.
+ * For MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE, the relevant
+ * value is carried in err->user_value (a retained MenaiValue *).  This
+ * function converts it to a Python object and releases it after packaging.
  */
 static void
-bridge_translate_error(const MenaiVMError *err)
+bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
 {
     /*
-     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth,
-     * user_message).
+     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth, user_value, backtrace).
      */
-    PyObject *py_user_msg;
+    PyObject *py_user_val;
     PyObject *args;
     PyObject *exc;
 
-    if (err->user_message) {
-        py_user_msg = PyUnicode_FromString(err->user_message);
-        free((void *)err->user_message);
-        if (!py_user_msg) {
-            return;
-        }
-    } else {
-        py_user_msg = Py_None;
-        Py_INCREF(py_user_msg);
+    /* Build backtrace as a list of (name, source_line, source_file) tuples. */
+    PyObject *py_backtrace = PyList_New(0);
+    if (!py_backtrace) {
+        goto cleanup_bt_strings;
     }
 
-    args = Py_BuildValue("(iiiiN)", err->code, err->opcode, err->ip, err->call_depth, py_user_msg);
+    for (int i = 0; i < err->backtrace_count; i++) {
+        PyObject *entry = PyTuple_New(3);
+        if (!entry) {
+            Py_DECREF(py_backtrace);
+            goto cleanup_bt_strings;
+        }
+
+        PyTuple_SET_ITEM(entry, 0, err->backtrace_names[i]
+            ? PyUnicode_FromString(err->backtrace_names[i])
+            : (Py_INCREF(Py_None), Py_None));
+        PyTuple_SET_ITEM(entry, 1, PyLong_FromLong(err->backtrace_lines[i]));
+        PyTuple_SET_ITEM(entry, 2, err->backtrace_files[i]
+            ? PyUnicode_FromString(err->backtrace_files[i])
+            : (Py_INCREF(Py_None), Py_None));
+
+        if (PyList_Append(py_backtrace, entry) < 0) {
+            Py_DECREF(entry);
+            Py_DECREF(py_backtrace);
+            goto cleanup_bt_strings;
+        }
+
+        Py_DECREF(entry);
+    }
+
+    if (err->user_value) {
+        py_user_val = menai_value_to_slow_value(vs, err->user_value);
+        menai_value_release(vs, err->user_value);
+        if (!py_user_val) {
+            Py_DECREF(py_backtrace);
+            goto cleanup_bt_strings;
+        }
+    } else {
+        py_user_val = Py_None;
+        Py_INCREF(py_user_val);
+    }
+
+    args = Py_BuildValue("(iiiiNN)", err->code, err->opcode, err->ip, err->call_depth, py_user_val, py_backtrace);
     if (!args) {
-        return;
+        goto cleanup_bt_strings;
     }
 
     exc = PyObject_CallObject(_VMRuntimeError_type, args);
     Py_DECREF(args);
     if (!exc) {
-        return;
+        goto cleanup_bt_strings;
     }
 
     PyErr_SetObject((PyObject *)Py_TYPE(exc), exc);
     Py_DECREF(exc);
+
+cleanup_bt_strings:
+    /* Free the strdup'd backtrace strings owned by the error struct. */
+    for (int i = 0; i < err->backtrace_count; i++) {
+        free((char *)err->backtrace_names[i]);
+        free((char *)err->backtrace_files[i]);
+    }
 }
 
 /*
@@ -1544,11 +1743,18 @@ bridge_set_prelude(MenaiVMState *vs, PyObject *prelude_code)
         return -1;
     }
 
+    MenaiValidationError verr;
+    if (menai_validate(prelude_co, &verr) != MENAI_OK) {
+        menai_code_object_release(vs, prelude_co);
+        bridge_raise_validation_error(&verr);
+        return -1;
+    }
+
     MenaiValue *result = menai_vm_execute_native(vs, prelude_co, NULL);
     menai_code_object_release(vs, prelude_co);
     if (!result) {
         if (!PyErr_Occurred()) {
-            bridge_translate_error(&vs->error);
+            bridge_translate_error(vs, &vs->error);
         }
 
         return -1;
@@ -1647,6 +1853,134 @@ fail:
 }
 
 /*
+ * bridge_raise_validation_error — raise a Python ValidationError from a
+ * MenaiValidationError struct produced by menai_validate.
+ *
+ * Maps the C MenaiValidationErrorType enum to the Python ValidationErrorType
+ * enum, constructs a ValidationError dataclass instance, and sets it as the
+ * current Python exception.  Frees the malloc'd message string in err.
+ *
+ * Must only be called when no Python exception is already set.
+ */
+static void
+bridge_raise_validation_error(const MenaiValidationError *err)
+{
+    if (!err || !err->message) {
+        PyErr_SetString(PyExc_RuntimeError, "bytecode validation failed (no detail)");
+        return;
+    }
+
+    /*
+     * Map C error type enum to Python ValidationErrorType enum value.
+     * The C enum (MenaiValidationErrorType) and Python enum (ValidationErrorType)
+     * have the same ordering.
+     */
+    static const char *const err_type_names[] = {
+        "INVALID_JUMP_TARGET",
+        "INDEX_OUT_OF_BOUNDS",
+        "MISSING_RETURN",
+        "INVALID_OPCODE",
+        "INVALID_VARIABLE_ACCESS",
+        "UNINITIALIZED_VARIABLE",
+    };
+
+    int type_idx = err->error_type;
+    if (type_idx < 0 || type_idx >= (int)(sizeof(err_type_names) / sizeof(err_type_names[0]))) {
+        free((void *)err->message);
+        PyErr_SetString(PyExc_RuntimeError, "bytecode validation failed (unknown error type)");
+        return;
+    }
+
+    PyObject *py_type_enum = PyObject_GetAttrString(_ValidationErrorType_enum, err_type_names[type_idx]);
+    if (!py_type_enum) {
+        free((void *)err->message);
+        return;
+    }
+
+    PyObject *py_msg = PyUnicode_FromString(err->message);
+    free((void *)err->message);
+    if (!py_msg) {
+        Py_DECREF(py_type_enum);
+        return;
+    }
+
+    PyObject *py_instr_idx;
+    if (err->instruction_index >= 0) {
+        py_instr_idx = PyLong_FromLong(err->instruction_index);
+    } else {
+        py_instr_idx = Py_None;
+        Py_INCREF(py_instr_idx);
+    }
+
+    PyObject *py_opcode;
+    if (err->opcode >= 0) {
+        py_opcode = PyLong_FromLong(err->opcode);
+    } else {
+        py_opcode = Py_None;
+        Py_INCREF(py_opcode);
+    }
+
+    /*
+     * Construct ValidationError(error_type=..., message=...,
+     * instruction_index=..., opcode=..., context=None).
+     */
+    PyObject *kwargs = PyDict_New();
+    if (!kwargs) {
+        Py_DECREF(py_type_enum);
+        Py_DECREF(py_msg);
+        Py_DECREF(py_instr_idx);
+        Py_DECREF(py_opcode);
+        return;
+    }
+
+    PyDict_SetItemString(kwargs, "error_type", py_type_enum);
+    PyDict_SetItemString(kwargs, "message", py_msg);
+    PyDict_SetItemString(kwargs, "instruction_index", py_instr_idx);
+    PyDict_SetItemString(kwargs, "opcode", py_opcode);
+
+    Py_DECREF(py_type_enum);
+    Py_DECREF(py_msg);
+    Py_DECREF(py_instr_idx);
+    Py_DECREF(py_opcode);
+
+    PyObject *exc = PyObject_Call(_ValidationError_type, PyTuple_New(0), kwargs);
+    Py_DECREF(kwargs);
+    if (!exc) {
+        return;
+    }
+
+    PyErr_SetObject((PyObject *)Py_TYPE(exc), exc);
+    Py_DECREF(exc);
+}
+
+/*
+ * bridge_validate — convert a Python CodeObject to native, run menai_validate,
+ * and raise ValidationError on failure.  Returns 0 on success, -1 on error
+ * (with a Python exception set).
+ */
+static int
+bridge_validate(MenaiVMState *vs, PyObject *py_code)
+{
+    MenaiCodeObject *native_code = menai_code_object_from_python(vs, py_code);
+    if (!native_code) {
+        return -1;
+    }
+
+    MenaiValidationError verr;
+    int rc = menai_validate(native_code, &verr);
+    menai_code_object_release(vs, native_code);
+
+    if (rc != MENAI_OK) {
+        if (!PyErr_Occurred()) {
+            bridge_raise_validation_error(&verr);
+        }
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
  * menai_vm_c_execute — the Python-callable entry point.
  *
  * Parses arguments (code, extra_bindings, state_capsule),
@@ -1687,6 +2021,18 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     _t1 = perf_counter_ns();
     vs->_convert_time_ns = (uint64_t)(_t1 - _t0);
 
+    /*
+     * Validate bytecode before execution.  The C validator is the trust
+     * boundary — this guarantees well-formedness regardless of how the
+     * CodeObject was produced (compiler, deserialization, etc.).
+     */
+    MenaiValidationError verr;
+    if (menai_validate(native_code, &verr) != MENAI_OK) {
+        menai_code_object_release(vs, native_code);
+        bridge_raise_validation_error(&verr);
+        return NULL;
+    }
+
     GlobalsTable extra_globals;
     int has_extra = 0;
     if (extra_bindings && extra_bindings != Py_None) {
@@ -1724,7 +2070,7 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
 
     if (result == NULL) {
         if (!PyErr_Occurred()) {
-            bridge_translate_error(&vs->error);
+            bridge_translate_error(vs, &vs->error);
         }
 
         return NULL;
@@ -1844,6 +2190,13 @@ menai_vm_bridge_init(void)
     }
 
     Slow_BytesType = (PyTypeObject *)bytes_type;
+
+    PyObject *vector_type = PyObject_GetAttrString(slow_mod, "MenaiVector");
+    if (!vector_type) {
+        goto fail;
+    }
+
+    Slow_VectorType = (PyTypeObject *)vector_type;
 
     Py_DECREF(slow_mod);
     slow_mod = NULL;
@@ -2249,6 +2602,34 @@ menai_vm_c_fold_trim_right(PyObject *self, PyObject *args)
 }
 
 /*
+ * menai_vm_c_validate — Python-callable bytecode validator.
+ *
+ * validate(state_capsule, code) validates a CodeObject without executing it.
+ * Returns None on success, raises ValidationError on failure.
+ */
+static PyObject *
+menai_vm_c_validate(PyObject *self, PyObject *args)
+{
+    PyObject *state_capsule;
+    PyObject *code;
+
+    if (!PyArg_ParseTuple(args, "OO", &state_capsule, &code)) {
+        return NULL;
+    }
+
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(state_capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    if (bridge_validate(vs, code) < 0) {
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+/*
  * Module definition
  */
 static PyMethodDef menai_vm_c_methods[] = {
@@ -2257,6 +2638,12 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_execute,
         METH_VARARGS,
         "Execute a Menai CodeObject and return the result."
+    },
+    {
+        "validate",
+        menai_vm_c_validate,
+        METH_VARARGS,
+        "Validate a Menai CodeObject without executing it."
     },
     {
         "cancel",
@@ -2357,6 +2744,20 @@ menai_vm_shim_init(void)
     Py_DECREF(err_mod);
     if (_VMRuntimeError_type == NULL) {
         Py_XDECREF(_VMRuntimeError_type);
+        return -1;
+    }
+
+    PyObject *val_mod = PyImport_ImportModule("menai.vm.menai_vm_errors");
+    if (val_mod == NULL) {
+        return -1;
+    }
+
+    _ValidationError_type = PyObject_GetAttrString(val_mod, "ValidationError");
+    _ValidationErrorType_enum = PyObject_GetAttrString(val_mod, "ValidationErrorType");
+    Py_DECREF(val_mod);
+    if (!_ValidationError_type || !_ValidationErrorType_enum) {
+        Py_XDECREF(_ValidationError_type);
+        Py_XDECREF(_ValidationErrorType_enum);
         return -1;
     }
 

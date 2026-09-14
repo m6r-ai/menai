@@ -52,7 +52,6 @@ If you need to use an API read the source code to understand it first.
 - If you open a terminal it will automatically be in the root of the mindspace directory.  Don't change directory unless
   you want to be somewhere else.
 - Terminals will not open with a python virtual environment by default.  The venv is at `venv/` in the mindspace root.
-- If you send a command to a terminal, don't forget the newline or carriage return required (Unix, or Windows specific).
 - Do not pipe pytest output through `grep` or other filtering tools.  pytest interleaves progress dots on stderr with
   summary lines on stdout, so filtering mangles the output and hides the pass/fail counts.  Run pytest with no flags
   and pipe through `tail` only if the output is too long to read in full:
@@ -255,11 +254,26 @@ not a cons-cell type.
 See [ADR-0017](docs/adr/0017-cons-cell-internal-representation.md) (supersedes
 [ADR-0003](docs/adr/0003-proper-lists-only.md)).
 
+### Vector type
+
+Vectors are immutable, contiguous-array-backed sequences with O(1) random
+access — a distinct type from lists, with no coercion. They complement lists
+for index-heavy code where lists' O(n) random access is a bottleneck (e.g.
+Sudoku, Rubik's Cube). Vectors are not pattern-matchable and not hashable.
+There is no literal syntax; vectors are created via `(vector ...)`.
+See [ADR-0018](docs/adr/0018-vector-type.md).
+
 ### Strict numeric typing
 
 There is no implicit coercion between `integer`, `float`, and `complex`. All arithmetic
 operators are type-specific (e.g. `integer+`, `float*`). This is intentional.
 See [ADR-0004](docs/adr/0004-strict-numeric-typing.md).
+
+### Slice operations raise errors on out-of-bounds indices
+All four slice operations (`string-slice`, `list-slice`, `vector-slice`,
+`bytes-slice`) raise a runtime error on negative, out-of-range, or
+start-after-end indices. They do not silently clamp.
+See [ADR-0019](docs/adr/0019-slice-out-of-bounds-raises-error.md).
 
 ## VM implementation
 

@@ -309,6 +309,34 @@ class MenaiBytes(MenaiValue):
 
 
 @dataclass(slots=True, unsafe_hash=True)
+class MenaiVector(MenaiValue):
+    """Represents immutable vectors — contiguous arrays with O(1) random access."""
+    elements: tuple[MenaiValue, ...] = ()
+
+    def to_python(self) -> list[Any]:
+        """Convert to Python list with Python values."""
+        return [elem.to_python() for elem in self.elements]
+
+    def type_name(self) -> str:
+        return "vector"
+
+    def describe(self) -> str:
+        """Format as a Lisp-style vector."""
+        if not self.elements:
+            return "#vector()"
+
+        parts = " ".join(elem.describe() for elem in self.elements)
+        return f"#vector({parts})"
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare vectors element-wise."""
+        if not isinstance(other, MenaiVector):
+            return False
+
+        return self.elements == other.elements
+
+
+@dataclass(slots=True, unsafe_hash=True)
 class MenaiList(MenaiValue):
     """Represents lists of Menai values."""
     elements: tuple[MenaiValue, ...] = ()
@@ -638,3 +666,4 @@ Menai_BOOLEAN_FALSE = MenaiBoolean(False)  # pylint: disable=invalid-name
 Menai_LIST_EMPTY = MenaiList(())  # pylint: disable=invalid-name
 Menai_DICT_EMPTY = MenaiDict(())  # pylint: disable=invalid-name
 Menai_SET_EMPTY = MenaiSet(())  # pylint: disable=invalid-name
+Menai_VECTOR_EMPTY = MenaiVector(())  # pylint: disable=invalid-name

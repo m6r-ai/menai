@@ -171,6 +171,19 @@ class MenaiVCodeMakeList:
 
 
 @dataclass
+class MenaiVCodeMakeVector:
+    """
+    dst = make_vector(args...)
+
+    Constructs a new MenaiVector from N element values.  The bytecode emitter
+    stages element values into the outgoing zone and emits MAKE_VECTOR, which
+    allocates the vector in a single call.
+    """
+    dst: MenaiVCodeReg
+    args: list[MenaiVCodeReg]
+
+
+@dataclass
 class MenaiVCodeMakeSet:
     """
     dst = make_set(args...)
@@ -230,6 +243,19 @@ class MenaiVCodeJumpIfFalse:
 
 
 @dataclass
+class MenaiVCodeSwitch:
+    """
+    Dense integer switch: jump to labels[i - min] when src holds the integer
+    min + i, else to default_label.  Entries for absent arms point at
+    default_label.  Lowered to SWITCH_INTEGER with a jump-table index.
+    """
+    src: MenaiVCodeReg
+    min: int
+    labels: list[str]
+    default_label: str
+
+
+@dataclass
 class MenaiVCodeReturn:
     """Return value from the current function."""
     value: MenaiVCodeReg
@@ -237,7 +263,7 @@ class MenaiVCodeReturn:
 
 @dataclass
 class MenaiVCodeRaise:
-    """Raise a runtime error with a message string from a register."""
+    """Raise a runtime error with a value from a register."""
     message: MenaiVCodeReg
 
 
@@ -267,11 +293,13 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodePatchClosure
     | MenaiVCodeMakeStruct
     | MenaiVCodeMakeList
+    | MenaiVCodeMakeVector
     | MenaiVCodeMakeSet
     | MenaiVCodeMakeDict
     | MenaiVCodeJump
     | MenaiVCodeJumpIfTrue
     | MenaiVCodeJumpIfFalse
+    | MenaiVCodeSwitch
     | MenaiVCodeReturn
     | MenaiVCodeRaise
     | MenaiVCodeGuard
@@ -297,12 +325,19 @@ class MenaiVCodeFunction:
 
     `reg_count` is the number of virtual registers allocated during lowering,
     used by the slot allocator as the upper bound on register IDs.
+
+    `hoisted_reg_ids` records the virtual register IDs of values that LICM
+    has hoisted into a loop preamble.  Like params and free vars, these are
+    permanently live for the entire function body (they survive across the
+    self-loop back-edge), so the slot allocator assigns them fixed slots that
+    are never reused for loop-body temporaries.
     """
     instrs: list[MenaiVCodeInstr] = field(default_factory=list)
     params: list[str] = field(default_factory=list)
     free_vars: list[str] = field(default_factory=list)
     param_reg_ids: list[int] = field(default_factory=list)
     free_var_reg_ids: list[int] = field(default_factory=list)
+    hoisted_reg_ids: list[int] = field(default_factory=list)
     is_variadic: bool = False
     binding_name: str | None = None
     reg_count: int = 0
@@ -373,6 +408,9 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
     if isinstance(instr, MenaiVCodeMakeList):
         return f"{instr.dst} = MAKE_LIST {_fmt_regs(instr.args)}"
 
+    if isinstance(instr, MenaiVCodeMakeVector):
+        return f"{instr.dst} = MAKE_VECTOR {_fmt_regs(instr.args)}"
+
     if isinstance(instr, MenaiVCodeMakeSet):
         return f"{instr.dst} = MAKE_SET {_fmt_regs(instr.args)}"
 
@@ -387,6 +425,9 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
 
     if isinstance(instr, MenaiVCodeJumpIfFalse):
         return f"JUMP_IF_FALSE {instr.cond} {instr.label}"
+
+    if isinstance(instr, MenaiVCodeSwitch):
+        return f"SWITCH {instr.src} min={instr.min} {instr.labels} default {instr.default_label}"
 
     if isinstance(instr, MenaiVCodeReturn):
         return f"RETURN {instr.value}"

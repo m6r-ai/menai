@@ -136,12 +136,12 @@ class TestArithmetic:
 
     def test_division_by_zero(self, menai):
         """Test that division by zero raises appropriate error."""
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer/ 1 0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
 
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(float/ 1.0 0.0)")
 
         assert exc_info.value.error_code == VMErrorCode.DIVISION_BY_ZERO
@@ -163,7 +163,7 @@ class TestArithmetic:
 
     def test_modulo_by_zero(self, menai):
         """Test that modulo by zero raises error."""
-        with pytest.raises(ZeroDivisionError) as exc_info:
+        with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer% 1 0)")
 
         assert exc_info.value.error_code == VMErrorCode.MODULO_BY_ZERO

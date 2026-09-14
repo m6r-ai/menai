@@ -116,6 +116,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeClosureInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGMakeListInstr,
+    MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeStructInstr,
     MenaiCFGPhiInstr,
@@ -141,6 +142,7 @@ from menai.menai_value import (
     MenaiList,
     MenaiNone,
     MenaiSet,
+    MenaiVector,
     MenaiString,
     MenaiStruct,
     MenaiStructType,
@@ -590,6 +592,7 @@ _TYPE_PREDICATES: dict[str, tuple[type[MenaiValue], ...]] = {
     'list?': (MenaiList,),
     'dict?': (MenaiDict,),
     'set?': (MenaiSet,),
+    'vector?': (MenaiVector,),
     'symbol?': (MenaiSymbol,),
     'function?': (MenaiFunction,),
     'struct?': (MenaiStruct,),
@@ -739,6 +742,9 @@ def _instr_args(instr: MenaiCFGInstr) -> list[MenaiCFGValue]:
         return list(instr.captures)
 
     if isinstance(instr, MenaiCFGMakeListInstr):
+        return list(instr.args)
+
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
         return list(instr.args)
 
     if isinstance(instr, MenaiCFGMakeSetInstr):

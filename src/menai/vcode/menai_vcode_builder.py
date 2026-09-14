@@ -60,15 +60,19 @@ from menai.cfg.menai_cfg import (
     MenaiCFGPatchClosureInstr,
     MenaiCFGMakeStructInstr,
     MenaiCFGMakeListInstr,
+    MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGPhiInstr,
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
+    MenaiCFGSwitchTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
+    value_ids_in_instr,
+    value_ids_in_term,
 )
 from menai.vcode.menai_vcode import (
     MenaiVCodeApply,
@@ -87,9 +91,11 @@ from menai.vcode.menai_vcode import (
     MenaiVCodePatchClosure,
     MenaiVCodeMakeStruct,
     MenaiVCodeMakeList,
+    MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
     MenaiVCodeRaise,
+    MenaiVCodeSwitch,
     MenaiVCodeGuard,
     MenaiVCodeReg,
     MenaiVCodeReturn,
@@ -139,10 +145,10 @@ class MenaiVCodeBuilder:
         # places (phi-move pre-computation and terminator emission).
         labels: dict[int, str] = {block.id: self._label(block) for block in rpo}
 
-        # When a SelfLoopTerm has an explicit target (set by the type
-        # propagation pass's loop-invariant guard hoisting), the target
-        # block's label is "__entry__" so that the slot allocator and bytecode
-        # builder still recognise the self-loop jump pattern.
+        # When a SelfLoopTerm has an explicit target (set by the LICM pass
+        # when it hoists loop-invariant instructions into a preamble), the
+        # target block's label is "__entry__" so that the slot allocator and
+        # bytecode builder still recognise the self-loop jump pattern.
         for block in rpo:
             term = block.terminator
             if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
@@ -163,6 +169,18 @@ class MenaiVCodeBuilder:
                 freevar_regs[instr.var_name] = self._reg(instr.result)
                 free_var_reg_ids.append(self._reg(instr.result).id)
 
+        # Collect register IDs of values hoisted into the preamble by LICM.
+        # When a SelfLoopTerm has an explicit target, the entry block is a
+        # preamble containing loop-invariant instructions.  Values defined
+        # there that are used in the loop body must survive across the
+        # back-edge, so the slot allocator treats them as permanently live.
+        hoisted_reg_ids: list[int] = []
+        for block in func.blocks:
+            term = block.terminator
+            if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                hoisted_reg_ids = self._hoisted_value_ids(func)
+                break
+
         for block in rpo:
             term = block.terminator
             successors: list[MenaiCFGBlock] = []
@@ -171,6 +189,10 @@ class MenaiVCodeBuilder:
 
             elif isinstance(term, MenaiCFGBranchTerm):
                 successors = [term.true_block, term.false_block]
+
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                successors = [t for t in term.targets if t is not None]
+                successors.append(term.default_block)
 
             for succ in successors:
                 for instr in succ.instrs:
@@ -306,6 +328,17 @@ class MenaiVCodeBuilder:
                 instrs.append(MenaiVCodeRaise(message=msg_reg))
                 max_reg_id = max(max_reg_id, term.message.id)
 
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                src_reg = self._reg(term.value)
+                default = labels[term.default_block.id]
+                instrs.append(MenaiVCodeSwitch(
+                    src=src_reg,
+                    min=term.min,
+                    labels=[labels[t.id] if t is not None else default for t in term.targets],
+                    default_label=default,
+                ))
+                max_reg_id = max(max_reg_id, term.value.id)
+
             else:
                 raise TypeError(
                     f"MenaiVCodeBuilder: unhandled terminator {type(term).__name__}"
@@ -317,6 +350,7 @@ class MenaiVCodeBuilder:
             free_vars=list(func.free_vars),
             param_reg_ids=param_reg_ids,
             free_var_reg_ids=free_var_reg_ids,
+            hoisted_reg_ids=hoisted_reg_ids,
             is_variadic=func.is_variadic,
             binding_name=func.binding_name,
             reg_count=max_reg_id + 1,
@@ -397,6 +431,12 @@ class MenaiVCodeBuilder:
             instrs.append(MenaiVCodeMakeList(dst=dst, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
 
+        if isinstance(instr, MenaiCFGMakeVectorInstr):
+            dst = self._reg(instr.result)
+            args = [self._reg(a) for a in instr.args]
+            instrs.append(MenaiVCodeMakeVector(dst=dst, args=args))
+            return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
+
         if isinstance(instr, MenaiCFGMakeSetInstr):
             dst = self._reg(instr.result)
             args = [self._reg(a) for a in instr.args]
@@ -455,8 +495,61 @@ class MenaiVCodeBuilder:
                 dfs(term.true_block)
                 dfs(term.false_block)
 
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                for t in term.targets:
+                    if t is not None:
+                        dfs(t)
+
+                dfs(term.default_block)
+
             post_order.append(block)
 
         dfs(func.entry())
         post_order.reverse()
         return post_order
+
+    def _hoisted_value_ids(
+        self,
+        func: MenaiCFGFunction,
+    ) -> list[int]:
+        """
+        Return the SSA value ids of instructions hoisted into the preamble
+        (entry block) that are used in the loop body.  These values are
+        defined in the preamble but not reassigned by the self-loop, so
+        their slots must survive the back-edge — like free vars.
+
+        Only non-param/non-free-var instructions in the entry block that
+        produce a result are considered.  Param and free-var self-moves are
+        already emitted separately.
+        """
+        # Collect value ids defined in the preamble (entry block).
+        preamble_ids: set[int] = set()
+        for instr in func.blocks[0].instrs:
+            result = getattr(instr, 'result', None)
+            if result is not None:
+                # Skip params and free vars — they are handled separately.
+                if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr)):
+                    continue
+
+                preamble_ids.add(result.id)
+
+        if not preamble_ids:
+            return []
+
+        # Collect value ids used in the loop body (all blocks except the
+        # entry/preamble block).
+        used_ids: set[int] = set()
+        for block in func.blocks:
+            if block.id == func.blocks[0].id:
+                continue
+
+            for instr in block.instrs:
+                used_ids.update(value_ids_in_instr(instr))
+
+            # Check terminator args.
+            term = block.terminator
+            if term is not None:
+                used_ids.update(value_ids_in_term(term))
+
+        # Return preamble-defined ids that are used in the loop body.
+        return sorted(preamble_ids & used_ids)

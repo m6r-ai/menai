@@ -110,6 +110,9 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
 
     case MENAITYPE_SYMBOL:
         return menai_symbol_equal((MenaiSymbol *)a, (MenaiSymbol *)b);
+
+    case MENAITYPE_VECTOR:
+        return menai_vector_equal((MenaiVector *)a, (MenaiVector *)b);
     }
 
     return 0;

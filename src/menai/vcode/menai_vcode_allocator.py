@@ -70,10 +70,12 @@ from menai.vcode.menai_vcode import (
     MenaiVCodePatchClosure,
     MenaiVCodeMakeStruct,
     MenaiVCodeMakeList,
+    MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
     MenaiVCodeReg,
     MenaiVCodeReturn,
+    MenaiVCodeSwitch,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
 )
@@ -151,8 +153,14 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     # Pre-assign fixed slots for params and free vars.
     # The register IDs come from the VCode builder, which records them
     # explicitly from the CFG entry block's ParamInstr and FreeVarInstr.
-    fixed_reg_ids: list[int] = list(func.param_reg_ids) + list(func.free_var_reg_ids)
-    fixed_reg_id_set: set[int] = set(fixed_reg_ids)
+    fixed_reg_ids: list[int] = (
+        list(func.param_reg_ids) + list(func.free_var_reg_ids)
+    )
+
+    # Hoisted registers are permanently live (they survive across the
+    # self-loop back-edge) but are not pre-assigned slots — the linear
+    # scan allocates them when their defining instruction is reached.
+    fixed_reg_id_set: set[int] = set(fixed_reg_ids) | set(func.hoisted_reg_ids)
     for slot_idx, reg_id in enumerate(fixed_reg_ids):
         slots[reg_id] = slot_idx
 
@@ -271,6 +279,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         MenaiVCodeCall, MenaiVCodeApply,
         MenaiVCodeTailCall, MenaiVCodeTailApply,
         MenaiVCodeMakeStruct, MenaiVCodeMakeList,
+        MenaiVCodeMakeVector,
         MenaiVCodeMakeSet, MenaiVCodeMakeDict,
     )
 
@@ -280,6 +289,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     consuming_types = (
         MenaiVCodeCall, MenaiVCodeTailCall,
         MenaiVCodeMakeList, MenaiVCodeMakeSet,
+        MenaiVCodeMakeVector,
         MenaiVCodeMakeStruct, MenaiVCodeMakeDict,
     )
 
@@ -419,6 +429,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, MenaiVCodeMakeList):
         return [instr.dst.id], [r.id for r in instr.args]
 
+    if isinstance(instr, MenaiVCodeMakeVector):
+        return [instr.dst.id], [r.id for r in instr.args]
+
     if isinstance(instr, MenaiVCodeMakeSet):
         return [instr.dst.id], [r.id for r in instr.args]
 
@@ -430,6 +443,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, MenaiVCodeJumpIfFalse):
         return [], [instr.cond.id]
+
+    if isinstance(instr, MenaiVCodeSwitch):
+        return [], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeReturn):
         return [], [instr.value.id]
@@ -477,12 +493,11 @@ def _outgoing_args(instr: MenaiVCodeInstr) -> list[tuple[MenaiVCodeReg, int]]:
     in menai_bytecode_builder._emit_vcode:
 
       Call / TailCall:  args[j]           -> local_count + j
-      MakeList / Set:   args[j]           -> local_count + j
+      MakeList / Vector / Set: args[j]    -> local_count + j
       MakeStruct:       args[j]           -> local_count + 1 + j  (slot 0 = type)
       MakeDict:         pairs[j] = (k,v)  -> local_count + j*2, local_count + j*2 + 1
     """
-    if isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall,
-                          MenaiVCodeMakeList, MenaiVCodeMakeSet)):
+    if isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall, MenaiVCodeMakeList, MenaiVCodeMakeVector, MenaiVCodeMakeSet)):
         return [(arg, j) for j, arg in enumerate(instr.args)]
 
     if isinstance(instr, MenaiVCodeMakeStruct):

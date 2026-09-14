@@ -8,6 +8,7 @@ This is the final pass of the VM backend pipeline:
 
     MenaiVCodeFunction
         → schedule_self_loop_moves (reorder instructions before self-loop moves)
+        → coalesce_constants   (deduplicate LOAD_CONST of the same value)
         → allocate_slots      (assign virtual registers to slots)
         → peephole            (eliminate redundant moves and jumps)
         → MenaiBytecodeBuilder (emit CodeObject)  ← this file
@@ -38,6 +39,7 @@ from menai.menai_value import (
     MenaiInteger,
     MenaiList,
     MenaiNone,
+    MenaiVector,
     MenaiSet,
     MenaiString,
     MenaiValue,
@@ -57,11 +59,13 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeClosure,
     MenaiVCodeMakeDict,
     MenaiVCodeMakeList,
+    MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeStruct,
     MenaiVCodeMove,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
+    MenaiVCodeSwitch,
     MenaiVCodeReg,
     MenaiVCodeReturn,
     MenaiVCodeTailApply,
@@ -69,6 +73,7 @@ from menai.vcode.menai_vcode import (
 )
 from menai.vcode.menai_vcode_allocator import SlotMap, allocate_slots
 from menai.vcode.menai_vcode_peephole import peephole
+from menai.vcode.menai_vcode_peephole import coalesce_constants
 from menai.vcode.menai_vcode_peephole import schedule_self_loop_moves
 
 from menai.bytecode.menai_bytecode import (
@@ -100,6 +105,7 @@ _GUARD_OPCODES: dict[str, Opcode] = {
     'bytes': Opcode.ASSERT_BYTES,
     'struct': Opcode.ASSERT_STRUCT,
     'structtype': Opcode.ASSERT_STRUCTTYPE,
+    'vector': Opcode.ASSERT_VECTOR,
 }
 
 _FIELD_NAMES = ('opcode', 'dest', 'src0', 'src1', 'src2')
@@ -135,6 +141,7 @@ class _EmitContext:
     constants: list[MenaiValue] = field(default_factory=list)
     names: list[str] = field(default_factory=list)
     code_objects: list[CodeObject] = field(default_factory=list)
+    jump_tables: list[tuple[int, int, list[int]]] = field(default_factory=list)
     constant_map: dict[tuple, int] = field(default_factory=dict)
     name_map: dict[str, int] = field(default_factory=dict)
     slot_map: SlotMap = field(default_factory=lambda: SlotMap(slots={}, slot_count=0))
@@ -178,6 +185,10 @@ class _EmitContext:
 
         if isinstance(value, MenaiSet) and len(value.elements) == 0:
             self.emit(Opcode.LOAD_EMPTY_SET, dest=dest)
+            return
+
+        if isinstance(value, MenaiVector) and len(value.elements) == 0:
+            self.emit(Opcode.LOAD_EMPTY_VECTOR, dest=dest)
             return
 
         const_idx = self.add_constant(value)
@@ -239,6 +250,24 @@ class _EmitContext:
         self.code_objects.append(code_obj)
         return idx
 
+    def add_jump_table(self, table_min: int, default_target: int, targets: list[int]) -> int:
+        """
+        Add a jump table entry and return its index.
+
+        `targets` entries are instruction indices; the caller back-patches
+        them after all labels are resolved by mutating the list in place.
+        """
+        idx = len(self.jump_tables)
+        if idx > self._MAX_INDEX:
+            raise MenaiCodegenError(
+                f"Jump table pool overflow: cannot add jump table at index {idx} "
+                f"(maximum is {self._MAX_INDEX}). "
+                f"Expression contains too many switch dispatches."
+            )
+
+        self.jump_tables.append((table_min, default_target, targets))
+        return idx
+
 
 class MenaiBytecodeBuilder:
     """
@@ -246,9 +275,10 @@ class MenaiBytecodeBuilder:
 
     Runs the VM-specific backend passes:
       1. Schedule self-loop moves (schedule_self_loop_moves)
-      2. Allocate slots (allocate_slots)
-      3. Peephole optimise (peephole)
-      4. Emit bytecode (this class)
+      2. Coalesce duplicate constants (coalesce_constants)
+      3. Allocate slots (allocate_slots)
+      4. Peephole optimise (peephole)
+      5. Emit bytecode (this class)
 
     Usage::
 
@@ -270,6 +300,7 @@ class MenaiBytecodeBuilder:
             A CodeObject ready for execution by the Menai VM.
         """
         func = schedule_self_loop_moves(func)
+        func = coalesce_constants(func)
         slot_map = allocate_slots(func)
         func = peephole(func, slot_map)
 
@@ -279,6 +310,10 @@ class MenaiBytecodeBuilder:
             instructions=ctx.instructions,
             constants=ctx.constants,
             names=ctx.names,
+            jump_tables=[
+                (t_min, t_default, array.array('Q', targets))
+                for t_min, t_default, targets in ctx.jump_tables
+            ],
             code_objects=ctx.code_objects,
             param_count=0,
             local_count=slot_map.local_count,
@@ -296,6 +331,7 @@ class MenaiBytecodeBuilder:
         """
         label_index: dict[str, int] = {}
         forward_jumps: list[tuple[int, str, str]] = []  # (instr_idx, label, field)
+        forward_table_entries: list[tuple[int, int, str]] = []  # (table_idx, entry_idx, label)
 
         # The self-loop sentinel label resolves to instruction index 0 — the
         # start of the function body (after ENTER, which is emitted before
@@ -373,6 +409,21 @@ class MenaiBytecodeBuilder:
 
                 ctx.max_outgoing_args = max(ctx.max_outgoing_args, n_elems)
                 ctx.emit(Opcode.MAKE_LIST, local_count, n_elems, dest=ctx.slot_of(instr.dst))
+                i += 1
+                continue
+
+            if isinstance(instr, MenaiVCodeMakeVector):
+                local_count = ctx.slot_map.local_count
+                n_elems = len(instr.args)
+                # Stage each element value into outgoing zone slots 0..n_elems-1.
+                for j, arg in enumerate(instr.args):
+                    src = ctx.slot_of(arg)
+                    dst_slot = local_count + j
+                    if src != dst_slot:
+                        ctx.emit(Opcode.MOVE, src, dest=dst_slot)
+
+                ctx.max_outgoing_args = max(ctx.max_outgoing_args, n_elems)
+                ctx.emit(Opcode.MAKE_VECTOR, local_count, n_elems, dest=ctx.slot_of(instr.dst))
                 i += 1
                 continue
 
@@ -511,6 +562,25 @@ class MenaiBytecodeBuilder:
                 i += 1
                 continue
 
+            if isinstance(instr, MenaiVCodeSwitch):
+                src_slot = ctx.slot_of(instr.src)
+                table_targets: list[int] = [0] * len(instr.labels)
+                default_target = label_index.get(instr.default_label, 0)
+                table_idx = ctx.add_jump_table(instr.min, default_target, table_targets)
+                ctx.emit(Opcode.SWITCH_INTEGER, src_slot, table_idx)
+                if instr.default_label not in label_index:
+                    forward_table_entries.append((table_idx, -1, instr.default_label))
+
+                for slot_i, label in enumerate(instr.labels):
+                    if label in label_index:
+                        table_targets[slot_i] = label_index[label]
+
+                    else:
+                        forward_table_entries.append((table_idx, slot_i, label))
+
+                i += 1
+                continue
+
             raise TypeError(
                 f"MenaiBytecodeBuilder: unhandled VCode instruction {type(instr).__name__}"
             )
@@ -521,6 +591,18 @@ class MenaiBytecodeBuilder:
                 f"MenaiBytecodeBuilder: undefined label {label!r}"
             )
             ctx.patch(instr_idx, field_name, label_index[label])
+
+        # Phase 2b: back-patch forward jump-table entries.
+        for table_idx, entry_idx, label in forward_table_entries:
+            assert label in label_index, (
+                f"MenaiBytecodeBuilder: undefined label {label!r}"
+            )
+            if entry_idx < 0:
+                t_min, _, targets = ctx.jump_tables[table_idx]
+                ctx.jump_tables[table_idx] = (t_min, label_index[label], targets)
+
+            else:
+                ctx.jump_tables[table_idx][2][entry_idx] = label_index[label]
 
     def _emit_builtin(self, instr: MenaiVCodeBuiltin, ctx: _EmitContext) -> None:
         """Emit bytecode for a builtin operation, dispatching by arity."""
@@ -584,6 +666,7 @@ class MenaiBytecodeBuilder:
     def _emit_lambda(self, func: MenaiVCodeFunction) -> CodeObject:
         """Recursively emit a nested lambda MenaiVCodeFunction to a CodeObject."""
         func = schedule_self_loop_moves(func)
+        func = coalesce_constants(func)
         slot_map = allocate_slots(func)
         func = peephole(func, slot_map)
 
@@ -606,6 +689,10 @@ class MenaiBytecodeBuilder:
             instructions=child_ctx.instructions,
             constants=child_ctx.constants,
             names=child_ctx.names,
+            jump_tables=[
+                (t_min, t_default, array.array('Q', targets))
+                for t_min, t_default, targets in child_ctx.jump_tables
+            ],
             code_objects=child_ctx.code_objects,
             free_vars=func.free_vars,
             param_names=func.params,

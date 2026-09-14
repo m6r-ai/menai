@@ -134,11 +134,25 @@ typedef struct {
 #define MENAITYPE_BYTES 0x000e
 #define MENAITYPE_DICT_ELEMENT 0x000f
 #define MENAITYPE_SET_ELEMENT 0x0010
+#define MENAITYPE_VECTOR 0x0011
 
 typedef struct MenaiBigInt MenaiBigInt;
 typedef struct MenaiBoolean MenaiBoolean;
 typedef struct MenaiBytes MenaiBytes;
 typedef struct MenaiCodeObject MenaiCodeObject;
+typedef struct MenaiJumpTable MenaiJumpTable;
+
+/*
+ * One dense integer jump table (SWITCH_INTEGER).  targets[i] is the instruction
+ * index jumped to when the scrutinee equals min + i; values outside
+ * [min, min + count) or bignums dispatch to default_target.
+ */
+struct MenaiJumpTable {
+    long long min;
+    int default_target;
+    int count;
+    int *targets;
+};
 typedef struct MenaiComplex MenaiComplex;
 typedef struct MenaiDict MenaiDict;
 typedef struct MenaiDictElement MenaiDictElement;
@@ -154,6 +168,7 @@ typedef struct MenaiStruct MenaiStruct;
 typedef struct MenaiStructType MenaiStructType;
 typedef struct MenaiSymbol MenaiSymbol;
 typedef struct MenaiValue MenaiValue;
+typedef struct MenaiVector MenaiVector;
 
 typedef int64_t hash_t;
 typedef uint64_t uhash_t;
@@ -192,6 +207,9 @@ struct MenaiCodeObject {
     MenaiValue **constants;              /* fast constant pool */
     ssize_t nconst;
 
+    MenaiJumpTable *jump_tables;         /* dense integer switch tables (SWITCH_INTEGER) */
+    int njt;                             /* number of jump tables */
+
     const char **names;                  /* global name strings for OP_LOAD_NAME */
     hash_t *name_hashes;                 /* precomputed FNV-1a hash of each name */
     ssize_t nnames;
@@ -209,6 +227,8 @@ struct MenaiCodeObject {
     ssize_t nparam_names;                /* number of elements in param_names */
 
     char *name;                          /* function name for error messages, or NULL */
+    int source_line;                     /* source line where this function is defined, or 0 */
+    char *source_file;                   /* source file name, or NULL */
 };
 
 /*
@@ -382,6 +402,21 @@ struct MenaiValue {
 };
 
 /*
+ * MenaiVector — immutable contiguous array of MenaiValue pointers with
+ * O(1) random access.  Owners store element pointers inline via a flexible
+ * array member.  Slice views allocate only the header (sizeof(MenaiVector)),
+ * point data into the owner's inline buffer at an offset, and retain the
+ * owner — exactly the same structural sharing pattern as MenaiBytes.
+ */
+struct MenaiVector {
+    MENAI_MAGIC_FIELD
+    ssize_t length;                     /* logical element count */
+    MenaiVector *owner;                 /* non-NULL when this is a slice view */
+    MenaiValue **data;                  /* points to inline_data for owners, into owner for views */
+    MenaiValue *inline_data[];          /* FAM — storage for owning vectors */
+};
+
+/*
  * Menai VM error codes — returned as negative values by leaf modules
  * (bigint, string, hashtable, etc.) and propagated by the VM to the bridge.
  * The bridge translates them into the appropriate Python exception.
@@ -464,16 +499,64 @@ struct MenaiValue {
  * depth).  The bridge reads it after execution returns and translates
  * it into a Python exception.
  *
- * user_message is set for MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE;
- * it is a malloc'd C string that the bridge must free after use.
+ * user_value is set for MENAI_ERR_USER_ERROR and MENAI_ERR_UNDEFINED_VARIABLE.
+ * It is a retained MenaiValue * that the bridge must release after
+ * converting it to a Python object.
+ *
+ * backtrace_names, backtrace_lines, and backtrace_files capture the call
+ * stack at error time.  backtrace_count is the number of valid entries
+ * (0..MENAI_MAX_BACKTRACE).  The strings are borrowed from the frame
+ * code objects and are valid only until the bridge reads them — they are
+ * NOT retained and must be copied (strdup) by the bridge if it needs them
+ * to survive beyond the immediate translation.
  */
+#define MENAI_MAX_BACKTRACE 64
+
 typedef struct {
     int code;               /* MENAI_ERR_* code */
     int opcode;             /* opcode that was executing (0 if unknown) */
     int ip;                 /* instruction pointer (0 if unknown) */
     int call_depth;         /* call stack depth at time of error */
-    const char *user_message; /* only for MENAI_ERR_USER_ERROR */
+    MenaiValue *user_value;    /* retained MenaiValue *; bridge releases */
+
+    /* Call stack backtrace (borrowed strings, valid only during translation). */
+    int backtrace_count;
+    const char *backtrace_names[MENAI_MAX_BACKTRACE];    /* function names */
+    int backtrace_lines[MENAI_MAX_BACKTRACE];            /* source lines (0 if unknown) */
+    const char *backtrace_files[MENAI_MAX_BACKTRACE];    /* source files (NULL if unknown) */
 } MenaiVMError;
+
+/*
+ * MenaiValidationError — structured validation error record produced by
+ * menai_validate.  Matches the Python ValidationErrorType enum.
+ *
+ * error_type is one of the MenaiValidationErrorType constants below.
+ * message is a malloc'd C string that the caller must free.
+ * instruction_index is the 0-based instruction index, or -1 if N/A.
+ * opcode is the decoded opcode value, or -1 if N/A.
+ */
+typedef enum {
+    MENAI_VERR_INVALID_JUMP_TARGET = 0,
+    MENAI_VERR_INDEX_OUT_OF_BOUNDS,
+    MENAI_VERR_MISSING_RETURN,
+    MENAI_VERR_INVALID_OPCODE,
+    MENAI_VERR_INVALID_VARIABLE_ACCESS,
+    MENAI_VERR_UNINITIALIZED_VARIABLE
+} MenaiValidationErrorType;
+
+typedef struct {
+    int error_type;            /* MenaiValidationErrorType */
+    const char *message;       /* malloc'd, caller frees */
+    int instruction_index;     /* 0-based, or -1 */
+    int opcode;                /* decoded opcode, or -1 */
+} MenaiValidationError;
+
+/*
+ * menai_validate — validate a code object and all its children recursively.
+ * Returns MENAI_OK (0) if valid, or a negative error code if invalid.
+ * On error, out_err (if non-NULL) is filled with details.
+ */
+int menai_validate(MenaiCodeObject *co, MenaiValidationError *out_err);
 
 /*
  * Fast type-check macros
@@ -492,6 +575,7 @@ typedef struct {
 #define IS_MENAI_STRUCTTYPE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCTTYPE)
 #define IS_MENAI_STRUCT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCT)
 #define IS_MENAI_BYTES(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_BYTES)
+#define IS_MENAI_VECTOR(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_VECTOR)
 
 /*
  * Pool allocator constants.
@@ -600,6 +684,7 @@ typedef struct MenaiVMState {
     MenaiList *empty_list;
     MenaiDict *empty_dict;
     MenaiSet *empty_set;
+    MenaiVector *empty_vector;
 
     volatile int _cancel_flag;
 
@@ -1304,6 +1389,47 @@ static inline hash_t
 menai_symbol_hash(MenaiSymbol *sym)
 {
     return menai_string_hash(sym->name);
+}
+
+MenaiVector *alloc_menai_vector(MenaiVMState *vs, ssize_t n);
+
+static inline void
+menai_vector_final(MenaiVMState *vs, MenaiVector *self)
+{
+    if (self->owner) {
+        /* View — release the backing owner; do not touch the element array. */
+        menai_value_release(vs, (MenaiValue *)self->owner);
+        return;
+    }
+
+    /* Owner — release all element references. */
+    for (ssize_t i = 0; i < self->length; i++) {
+        if (self->data[i]) {
+            menai_value_release(vs, self->data[i]);
+        }
+    }
+}
+
+MenaiVector *alloc_menai_vector_from_slice(MenaiVMState *vs, MenaiVector *v, ssize_t start, ssize_t end);
+MenaiVector *alloc_menai_vector_from_concat(MenaiVMState *vs, MenaiVector *a, MenaiVector *b);
+MenaiVector *alloc_menai_vector_from_set(MenaiVMState *vs, MenaiVector *v, ssize_t index, MenaiValue *val);
+MenaiValue *menai_vector_ref(MenaiVMState *vs, MenaiVector *v, ssize_t i);
+
+static inline int
+menai_vector_equal(MenaiVector *a, MenaiVector *b)
+{
+    ssize_t la = a->length;
+    if (la != b->length) {
+        return 0;
+    }
+
+    for (ssize_t i = 0; i < la; i++) {
+        if (!menai_value_equal(a->data[i], b->data[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 int menai_vm_bridge_init(void);

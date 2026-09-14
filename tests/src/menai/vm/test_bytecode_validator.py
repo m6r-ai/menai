@@ -48,8 +48,20 @@ Minimal valid "load and return" sequence:
 import pytest
 
 from menai.bytecode.menai_bytecode import CodeObject, Instruction, Opcode
-from menai.vm.menai_vm_bytecode_validator import ValidationError, ValidationErrorType, validate_bytecode
 from menai.menai_value import MenaiInteger
+from menai.vm.menai_vm_errors import ValidationError, ValidationErrorType
+from menai.vm.menai_vm_c import state_alloc as _c_vm_state_alloc
+from menai.vm.menai_vm_c import state_free as _c_vm_state_free
+from menai.vm.menai_vm_c import validate as _c_vm_validate
+
+
+def validate_bytecode(code):
+    """Validate via the C validator (the production path)."""
+    state = _c_vm_state_alloc()
+    try:
+        _c_vm_validate(state, code)
+    finally:
+        _c_vm_state_free(state)
 
 
 class TestBytecodeValidator:

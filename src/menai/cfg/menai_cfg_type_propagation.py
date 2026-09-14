@@ -40,19 +40,17 @@ guard is needed.  If its type is unknown but the builtin expects a specific
 type, insert a guard before the builtin call.  For branch terminators, guard
 the condition as a boolean.  After a guard, the value's type becomes known for
 subsequent uses, so multiple builtins (or branches) using the same
-unknown-typed value only need one guard.
+unknown-typed value only need one guard.  For switch terminators, guard the
+scrutinee as an integer — the SWITCH_INTEGER opcode requires an integer
+operand, just as the `integer=?` calls it replaced did.
+
+Type refinement through branch conditions: when a branch tests the result of a
+type predicate (e.g. `integer?`), the true-edge successor inherits the refined
+type of the predicate's argument.  This allows guards to be skipped when a
+prior type predicate has already established the type at runtime.
 
 The pass mutates the CFG in place — it inserts MenaiCFGGuardInstr instructions
 into block.instrs lists and returns the same MenaiCFGFunction.
-
-Phase 3 — Loop-invariant guard hoisting.  When a function contains a
-SelfLoopTerm, loop-invariant guards from any block in the function are
-hoisted into a preamble block.  A guard is loop-invariant if it guards a
-free var (which never changes) or a param whose type is preserved through
-the loop body (the back-edge type matches the guard's expected type).
-The SelfLoopTerm's target is set to the loop-entry block (the original entry
-minus the hoisted guards), so the self-loop skips the preamble on every
-iteration after the first.
 """
 
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
@@ -68,15 +66,15 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFunction,
     MenaiCFGGlobalInstr,
     MenaiCFGGuardInstr,
-    MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGMakeListInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeStructInstr,
+    MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
-    MenaiCFGSelfLoopTerm,
     MenaiCFGPhiInstr,
+    MenaiCFGSwitchTerm,
 )
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
 from menai.menai_value import (
@@ -94,6 +92,7 @@ from menai.menai_value import (
     MenaiStruct,
     MenaiStructType,
     MenaiSymbol,
+    MenaiVector,
 )
 
 # Map from Python value class to Menai type name string.
@@ -108,10 +107,32 @@ _VALUE_TYPE_MAP = {
     MenaiList: 'list',
     MenaiDict: 'dict',
     MenaiSet: 'set',
+    MenaiVector: 'vector',
     MenaiFunction: 'function',
     MenaiBytes: 'bytes',
     MenaiStruct: 'struct',
     MenaiStructType: 'structtype',
+}
+
+# Map from type-predicate builtin name to the Menai type name it tests for.
+# When a branch condition is the result of one of these predicates, the
+# true-edge successor inherits the refined type of the predicate's argument.
+_TYPE_PREDICATES: dict[str, str] = {
+    'none?': 'none',
+    'boolean?': 'boolean',
+    'integer?': 'integer',
+    'float?': 'float',
+    'complex?': 'complex',
+    'string?': 'string',
+    'bytes?': 'bytes',
+    'list?': 'list',
+    'dict?': 'dict',
+    'set?': 'set',
+    'vector?': 'vector',
+    'symbol?': 'symbol',
+    'function?': 'function',
+    'struct?': 'struct',
+    'structtype?': 'structtype',
 }
 
 
@@ -139,9 +160,6 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
         # Phase 2: insert guards where needed.
         changed = self._insert_guards(func, types)
 
-        # Phase 3: hoist loop-invariant guards out of self-loops.
-        changed = self._hoist_loop_invariant_guards(func, types) or changed
-
         return func, changed
 
     def _propagate_types(self, func: MenaiCFGFunction) -> dict[int, str | None]:
@@ -163,6 +181,7 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
                                           MenaiCFGBuiltinInstr, MenaiCFGCallInstr,
                                           MenaiCFGApplyInstr, MenaiCFGMakeClosureInstr,
                                           MenaiCFGMakeStructInstr, MenaiCFGMakeListInstr,
+                                          MenaiCFGMakeVectorInstr,
                                           MenaiCFGMakeSetInstr, MenaiCFGMakeDictInstr,
                                           MenaiCFGPhiInstr)):
                         new_type = self._instr_type(instr, types)
@@ -193,6 +212,9 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
 
         if isinstance(instr, MenaiCFGMakeListInstr):
             return 'list'
+
+        if isinstance(instr, MenaiCFGMakeVectorInstr):
+            return 'vector'
 
         if isinstance(instr, MenaiCFGMakeSetInstr):
             return 'set'
@@ -264,11 +286,22 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
         changed = False
 
         outgoing_types: dict[int, dict[int, str | None]] = {}
+        branch_true_types: dict[int, dict[int, str | None]] = {}
 
         for block in func.blocks:
             preds = block.predecessors
             if len(preds) == 1:
-                block_types = dict(outgoing_types.get(preds[0].id, types))
+                pred = preds[0]
+                term = pred.terminator
+                if (
+                    pred.id in branch_true_types
+                    and isinstance(term, MenaiCFGBranchTerm)
+                    and block.id == term.true_block.id
+                ):
+                    block_types = dict(branch_true_types[pred.id])
+
+                else:
+                    block_types = dict(outgoing_types.get(pred.id, types))
 
             elif len(preds) > 1:
                 block_types = self._meet_outgoing_types(preds, outgoing_types, types)
@@ -284,6 +317,9 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
                 new_instrs.append(instr)
 
             self._guard_branch(block, block_types, new_instrs)
+            self._guard_switch(block, block_types, new_instrs)
+
+            self._refine_branch_types(block, block_types, branch_true_types)
 
             outgoing_types[block.id] = block_types
 
@@ -406,202 +442,78 @@ class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
         ))
         types[term.cond.id] = 'boolean'
 
-    def _hoist_loop_invariant_guards(
+    def _guard_switch(
         self,
-        func: MenaiCFGFunction,
+        block: MenaiCFGBlock,
         types: dict[int, str | None],
-    ) -> bool:
+        new_instrs: list[MenaiCFGInstr],
+    ) -> None:
         """
-        Hoist loop-invariant guards from all blocks into a preamble
-        block so they execute once on function entry rather than on every
-        self-loop iteration.
+        Insert an integer guard on a switch terminator's scrutinee if its
+        type is not statically known to be integer.
 
-        A guard in any block is loop-invariant if it guards a value
-        whose type is known to be preserved across the self-loop back-edge:
-
-          - Free var guards: always loop-invariant (free vars are never
-            reassigned).
-          - Param guards: loop-invariant when the type of the corresponding
-            SelfLoopTerm arg (the new value assigned to that param) matches
-            the guard's expected type.  The arg's type comes from the Phase 1
-            types dict.
-
-        When loop-invariant guards are found, the entry block is split:
-          - Preamble: ParamInstr/FreeVarInstr instructions plus the
-            loop-invariant guards, terminated by a JumpTerm to the loop-entry.
-          - Loop-entry: remaining instructions (including non-loop-invariant
-            guards), with the original terminator.
-
-        The SelfLoopTerm's target is set to the loop-entry block.
-        Guards hoisted from non-entry blocks are removed from those blocks.
-
-        Returns True if the entry block was split.
+        Appends a guard to new_instrs if needed and updates the types dict.
         """
-        self_loop = self._find_self_loop(func)
-        if self_loop is None:
-            return False
+        term = block.terminator
+        if not isinstance(term, MenaiCFGSwitchTerm):
+            return
 
-        entry = func.entry()
-        param_ids = self._param_ids_by_index(entry)
-        free_var_ids = self._free_var_ids(entry)
+        val_type = types.get(term.value.id)
+        if val_type == 'integer':
+            return
 
-        # Params not reassigned by the self-loop (their index is beyond
-        # the self-loop args) are loop-invariant, just like free vars.
-        unchanged_param_ids = self._unchanged_param_ids(self_loop, param_ids)
+        new_instrs.append(MenaiCFGGuardInstr(
+            value=term.value,
+            expected_type='integer',
+        ))
+        types[term.value.id] = 'integer'
 
-        back_edge_types = self._back_edge_types(self_loop, param_ids, types)
+    def _refine_branch_types(
+        self,
+        block: MenaiCFGBlock,
+        types: dict[int, str | None],
+        branch_true_types: dict[int, dict[int, str | None]],
+    ) -> None:
+        """
+        If the block's terminator is a branch whose condition is the result
+        of a type-predicate builtin, record the refined type for the true
+        edge in branch_true_types.
 
-        preamble_instrs: list[MenaiCFGInstr] = []
+        The true-edge successor inherits the predicate's argument type.
+        The false edge does not refine the argument's type (the predicate
+        returning #f only tells us the value is *not* that type, which is
+        not useful for guard suppression).
+        """
+        term = block.terminator
+        if not isinstance(term, MenaiCFGBranchTerm):
+            return
 
-        seen_guards: set[tuple[int, str]] = set()
-        for block in func.blocks:
-            remaining: list[MenaiCFGInstr] = []
-            for instr in block.instrs:
-                if isinstance(instr, MenaiCFGGuardInstr):
-                    if self._is_loop_invariant_guard(
-                        instr, free_var_ids, unchanged_param_ids, back_edge_types,
-                    ):
-                        key = (instr.value.id, instr.expected_type)
-                        if key not in seen_guards:
-                            seen_guards.add(key)
-                            preamble_instrs.append(instr)
+        refinement = self._branch_type_refinement(block, term)
+        if refinement is None:
+            return
 
-                        continue
+        val_id, refined_type = refinement
+        true_types = dict(types)
+        true_types[val_id] = refined_type
+        branch_true_types[block.id] = true_types
 
-                remaining.append(instr)
-
-            block.instrs = remaining
-
-        if not preamble_instrs:
-            return False
-
-        # The preamble needs the ParamInstr/FreeVarInstr that
-        # define the SSA values the guards reference.  These are at
-        # the top of the original entry block, before any guards.
-        def_instrs: list[MenaiCFGInstr] = [
-            instr for instr in entry.instrs
-            if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
-        ]
-
-        loop_instrs: list[MenaiCFGInstr] = [
-            instr for instr in entry.instrs
-            if not isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
-        ]
-
-        # Preamble: param/free-var definitions, then hoisted guards.
-        entry.instrs = def_instrs + preamble_instrs
-        loop_entry = MenaiCFGBlock(
-            id=self._next_block_id(func),
-            label="loop_entry",
-            instrs=loop_instrs,
-            terminator=entry.terminator,
-        )
-
-        entry.terminator = MenaiCFGJumpTerm(target=loop_entry)
-
-        func.blocks.append(loop_entry)
-
-        self_loop.target = loop_entry
-
-        return True
-
-    def _next_block_id(self, func: MenaiCFGFunction) -> int:
-        """Return the next available block id in func."""
-        return max(b.id for b in func.blocks) + 1
-
-    def _find_self_loop(
-        self, func: MenaiCFGFunction,
-    ) -> MenaiCFGSelfLoopTerm | None:
-        """Return the SelfLoopTerm in func, or None if there is none."""
-        for block in func.blocks:
-            if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
-                return block.terminator
+    @staticmethod
+    def _branch_type_refinement(
+        block: MenaiCFGBlock,
+        term: MenaiCFGBranchTerm,
+    ) -> tuple[int, str] | None:
+        """
+        Check whether a branch condition is the result of a type-predicate
+        builtin call in the same block.  If so, return (arg_value_id, type_name)
+        for the predicate's argument.  Otherwise return None.
+        """
+        for instr in block.instrs:
+            if (
+                isinstance(instr, MenaiCFGBuiltinInstr)
+                and instr.result.id == term.cond.id
+                and instr.op in _TYPE_PREDICATES
+                and len(instr.args) == 1
+            ):
+                return instr.args[0].id, _TYPE_PREDICATES[instr.op]
 
         return None
-
-    def _param_ids_by_index(
-        self, entry: MenaiCFGBlock,
-    ) -> dict[int, int]:
-        """Map param index → SSA value id, from ParamInstr in the entry block."""
-        result: dict[int, int] = {}
-        for instr in entry.instrs:
-            if isinstance(instr, MenaiCFGParamInstr):
-                result[instr.index] = instr.result.id
-
-        return result
-
-    def _free_var_ids(
-        self, entry: MenaiCFGBlock,
-    ) -> set[int]:
-        """Return the set of SSA value ids for free vars in the entry block."""
-        result: set[int] = set()
-        for instr in entry.instrs:
-            if isinstance(instr, MenaiCFGFreeVarInstr):
-                result.add(instr.result.id)
-
-        return result
-
-    def _back_edge_types(
-        self,
-        self_loop: MenaiCFGSelfLoopTerm,
-        param_ids: dict[int, int],
-        types: dict[int, str | None],
-    ) -> dict[int, str | None]:
-        """
-        Map param SSA value id → type at the self-loop back-edge.
-
-        For each param, the back-edge type is the type of the corresponding
-        SelfLoopTerm arg (the new value assigned to that param on the
-        back-edge).  The arg's type comes from the Phase 1 types dict.
-        """
-        result: dict[int, str | None] = {}
-        for param_index, arg_val in enumerate(self_loop.args):
-            param_id = param_ids.get(param_index)
-            if param_id is not None:
-                result[param_id] = types.get(arg_val.id)
-
-        return result
-
-    def _unchanged_param_ids(
-        self,
-        self_loop: MenaiCFGSelfLoopTerm,
-        param_ids: dict[int, int],
-    ) -> set[int]:
-        """
-        Return the set of SSA value ids for params that are not reassigned
-        by the self-loop (their index is beyond the length of self_loop.args).
-        These params are loop-invariant, just like free vars.
-        """
-        n_args = len(self_loop.args)
-        return {
-            param_id for index, param_id in param_ids.items()
-            if index >= n_args
-        }
-
-    def _is_loop_invariant_guard(
-        self,
-        guard: MenaiCFGGuardInstr,
-        free_var_ids: set[int],
-        unchanged_param_ids: set[int],
-        back_edge_types: dict[int, str | None],
-    ) -> bool:
-        """
-        Return True if a guard is loop-invariant (redundant on all
-        self-loop iterations after the first).
-
-        A guard on a free var or an unchanged param is always loop-invariant
-        — these values are never reassigned across the self-loop back-edge.
-
-        A guard on a param is loop-invariant when the back-edge type (the
-        type of the value assigned to that param by the SelfLoopTerm)
-        matches the guard's expected type.
-        """
-        val_id = guard.value.id
-
-        if val_id in free_var_ids or val_id in unchanged_param_ids:
-            return True
-
-        if val_id in back_edge_types:
-            return back_edge_types[val_id] == guard.expected_type
-
-        return False

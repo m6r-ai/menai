@@ -42,6 +42,7 @@ from menai.ir.menai_ir import (
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
+    MenaiIRBuildVector,
     MenaiIREmptyList,
     MenaiIRError,
     MenaiIRIf,
@@ -133,6 +134,11 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         if isinstance(ir, MenaiIRBuildSet):
             return MenaiIRBuildSet(
+                element_plans=[self._opt(e, scope_stack, letrec_names) for e in ir.element_plans],
+            )
+
+        if isinstance(ir, MenaiIRBuildVector):
+            return MenaiIRBuildVector(
                 element_plans=[self._opt(e, scope_stack, letrec_names) for e in ir.element_plans],
             )
 
@@ -408,6 +414,9 @@ def _contains_letrec(ir: MenaiIRExpr) -> bool:
     if isinstance(ir, MenaiIRBuildSet):
         return any(_contains_letrec(e) for e in ir.element_plans)
 
+    if isinstance(ir, MenaiIRBuildVector):
+        return any(_contains_letrec(e) for e in ir.element_plans)
+
     if isinstance(ir, MenaiIRBuildStruct):
         return any(_contains_letrec(f) for f in ir.field_plans)
 
@@ -465,6 +474,9 @@ def _has_captures_of_params(ir: MenaiIRExpr, params: set[str]) -> bool:
     if isinstance(ir, MenaiIRBuildSet):
         return any(_has_captures_of_params(e, params) for e in ir.element_plans)
 
+    if isinstance(ir, MenaiIRBuildVector):
+        return any(_has_captures_of_params(e, params) for e in ir.element_plans)
+
     if isinstance(ir, MenaiIRBuildStruct):
         return any(_has_captures_of_params(f, params) for f in ir.field_plans)
 
@@ -515,6 +527,9 @@ def _count_nodes(ir: MenaiIRExpr) -> int:
     if isinstance(ir, MenaiIRBuildSet):
         return 1 + sum(_count_nodes(e) for e in ir.element_plans)
 
+    if isinstance(ir, MenaiIRBuildVector):
+        return 1 + sum(_count_nodes(e) for e in ir.element_plans)
+
     if isinstance(ir, MenaiIRBuildStruct):
         return 1 + sum(_count_nodes(f) for f in ir.field_plans)
 
@@ -561,6 +576,9 @@ def _name_in_tree(ir: MenaiIRExpr, name: str) -> bool:
         return any(_name_in_tree(k, name) or _name_in_tree(v, name) for k, v in ir.pair_plans)
 
     if isinstance(ir, MenaiIRBuildSet):
+        return any(_name_in_tree(e, name) for e in ir.element_plans)
+
+    if isinstance(ir, MenaiIRBuildVector):
         return any(_name_in_tree(e, name) for e in ir.element_plans)
 
     if isinstance(ir, MenaiIRBuildStruct):
@@ -649,6 +667,11 @@ def _substitute(
 
     if isinstance(ir, MenaiIRBuildSet):
         return MenaiIRBuildSet(
+            element_plans=[_substitute(e, param_map, shadowed) for e in ir.element_plans],
+        )
+
+    if isinstance(ir, MenaiIRBuildVector):
+        return MenaiIRBuildVector(
             element_plans=[_substitute(e, param_map, shadowed) for e in ir.element_plans],
         )
 
