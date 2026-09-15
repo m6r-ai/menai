@@ -11,6 +11,15 @@ New features:
 - Removed `menai-profile` as `menai-eval` does everything it did and more.
 - Added an approach for implementing negative tests in `menai-test`.
 - Added a preliminary BMP parser.
+- Added an `inflate` module: a raw DEFLATE (RFC 1951) decompressor supporting
+  stored, fixed Huffman, and dynamic Huffman blocks.
+
+Bug fixes:
+
+- Fixed a VM crash when `apply` is used with a large argument list.  The
+  register file was sized from the callee's static local count rather than the
+  runtime argument count, so applying a function to a list larger than the
+  reserved slots corrupted memory.
 
 ## v0.5.0 (2026-09-14)
 

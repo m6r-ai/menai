@@ -134,5 +134,8 @@ includes:
 - `bmp_parser.menai` — a BMP parser that converts uncompressed 24-bit and 32-bit
   BMP files (as bytes) to a dict containing the decoded header, a normalised
   top-down pixel grid, and parser metadata
+- `inflate.menai` — a raw DEFLATE decompressor (RFC 1951) that converts a bytes
+  value containing a raw DEFLATE stream to the decompressed bytes; supports
+  stored, fixed Huffman, and dynamic Huffman blocks
 
 See [Examples](examples.md) for a walkthrough of the JSON parser.

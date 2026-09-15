@@ -1,0 +1,93 @@
+; Tests for inflate.menai
+
+(let ((inflate-mod (import "inflate"))
+      (t (import "menai_test")))
+  (let ((inflate (dict-get inflate-mod "inflate"))
+        (assert-equal (dict-get t "assert-equal"))
+        (test (dict-get t "test"))
+        (test-error (dict-get t "test-error")))
+    (dict "tests" (list
+        (list "stored blocks" (list
+          (test "empty stream"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "010000ffff"))
+                                (string->bytes ""))))
+          (test "single byte"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "010100feff41"))
+                                (string->bytes "A"))))
+          (test "hello"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "010500faff68656c6c6f"))
+                                (string->bytes "hello"))))
+          (test "abc"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "010300fcff616263"))
+                                (string->bytes "abc"))))
+          (test "run of repeated bytes"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "010a00f5ff61616161616161616161"))
+                                (string->bytes "aaaaaaaaaa"))))
+          (test "multiple stored blocks with an empty sync-flush block"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes
+                                  "000500faff68656c6c6f000000ffff010500faff776f726c64"))
+                                (string->bytes "helloworld"))))))
+
+        (list "fixed Huffman blocks" (list
+          (test "single literal"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "730400"))
+                                (string->bytes "A"))))
+          (test "literal run with back-reference"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "cb48cdc9c957c8409000"))
+                                (string->bytes "hello hello hello"))))
+          (test "repeated pattern"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "4b4c4a4e042300"))
+                                (string->bytes "abcabcabc"))))
+          (test "overlapping back-reference replicates a run"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "abaaa23d0000"))
+                                (string->bytes "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"))))
+          (test "overlapping back-reference replicates a two-byte pattern"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes "4b4c4aa4390400"))
+                                (string->bytes "abababababababababababababababababababababababababababababababababababababababababababababababababab"))))
+          (test "text with several back-references"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes
+                                  "2bc94855282ccd4cce56482aca2fcf5348cbaf50c82acd2d2856c82f4b2d5228014ae72456552aa4e4a70300"))
+                                (string->bytes "the quick brown fox jumps over the lazy dog"))))))
+
+        (list "dynamic Huffman blocks" (list
+          (test "skewed alphabet"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes
+                                  "0dcc090e80200c04c0b76eb70710a18209515faff38011a307d0455eed1a88b456d09c48ad59170fbd1290ad4123dd6759e329187b7a95ee82f1e050484b042af3b69770c87f21b94faa7d"))
+                                (string->bytes "becfgaambbzdmdgagoejhajfcaodioircldsoaabvdgceccffqhrnyhanvqfibmfbanyaldabjoagaicoxezcafabdgaaocvpcde"))))
+          (test "zero runs exercise repeat codes"
+                (lambda ()
+                  (assert-equal (inflate (string-hex->bytes
+                                  "158fd99684300805cbb8f4b82519a3edb8b5c636faff7f38e481732e055c4095675ad4147a02e68e3bd8165e9290265b6172ab789ed54530b21136f0e90dfa4f4818239f2813064cd461e680cdf040eca0a64185acfac8dc02ef2fd7dec4461c8b881ecaade51494485470dcb6ab457a17d0d9204e3f831fdc74d2f99de95369ea16f3ec03439dacbc69325cde468b5f19b3c9819567ce5d9693af5b7f8192a2ce596f113bae92a385ad9126dacea123958fe5185cd18e4c9e6f8fd29e6a9f2e65e817d3ff03"))
+                                (string-hex->bytes
+                                  "02092203060b00060e190000001a12002625100d0000070000000003011d060f0510020027271c130000000017001d00251d000021032600000e18000000251700000000190009010015000f00000000251a002000001d0f0027000018000000000b000c000225040a1e0000211b0000162300241f0c000000250013001b0c0000140000091d0d0022000000010000000a0000202610120b000000211325000e0415002700081521151319220012211f00191e0a0e000b0d000f271f1500150b011c0016000c040013050d2200000011000021100120001000001a221f000b0000051c1d14240000020000000e05001c260200001f00130a0019000002001c0000000e010e101a251200030000031400000013060d1700192100231400020e21000a1f1924020f00141b0f14"))))))
+
+        (list "errors" (list
+          (test-error "rejects non-bytes argument"
+                (lambda ()
+                  (inflate "not bytes"))
+                "expects a bytes value")
+          (test-error "rejects truncated input"
+                (lambda ()
+                  (inflate (string-hex->bytes "000500faff6865")))
+                "unexpected end of input")
+          (test-error "rejects stored block with mismatched LEN and NLEN"
+                (lambda ()
+                  (inflate (string-hex->bytes "010500000068656c6c6f")))
+                "LEN does not match NLEN")
+          (test-error "rejects invalid block type"
+                (lambda ()
+                  (inflate (string-hex->bytes "07")))
+                "invalid block type")))))))
