@@ -321,7 +321,7 @@ _gc_sweep(MenaiVMState *vs)
      *
      * Non-closure captures that reach refcnt == 0 are collected into the
      * orphans array for Phase 5.  They cannot be freed here because a
-     * cascading finalizer (e.g. menai_list_final releasing its elements)
+     * cascading finalizer (e.g. a list releasing its elements)
      * could free a dead closure that is still referenced by the dead array,
      * causing a use-after-free in Phase 4.
      */

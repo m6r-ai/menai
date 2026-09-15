@@ -624,3 +624,35 @@ class TestLists:
             f'(list-concat (list) {test_list})',
             '(1 2 3 4 5)'
         )
+
+
+class TestLongListFree:
+    """Freeing a long list must not recurse one C stack frame per element.
+
+    A list is a chain of cons cells linked by tail pointers.  If the finalizer
+    releases the tail recursively, freeing a list of N elements recurses N deep
+    and overflows the C stack for large N.  These tests build and discard lists
+    large enough to overflow a recursive finalizer.
+    """
+
+    def test_free_long_list(self, menai):
+        result = menai.evaluate(
+            "(list-length (map-list (lambda (i) i) (range 0 200000)))"
+        )
+        assert result == 200000
+
+    def test_free_long_list_of_lists(self, menai):
+        result = menai.evaluate(
+            "(list-length (map-list (lambda (i) (list i i)) (range 0 100000)))"
+        )
+        assert result == 100000
+
+    def test_free_shared_tail(self, menai):
+        # list-rest shares the tail of the original list; freeing both must
+        # correctly account for the shared cells.
+        result = menai.evaluate(
+            "(let* ((xs (map-list (lambda (i) i) (range 0 100000)))"
+            "       (ys (list-rest xs)))"
+            "  (list (list-length xs) (list-length ys)))"
+        )
+        assert result == [100000, 99999]

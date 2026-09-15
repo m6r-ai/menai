@@ -20,6 +20,10 @@ Bug fixes:
   register file was sized from the callee's static local count rather than the
   runtime argument count, so applying a function to a list larger than the
   reserved slots corrupted memory.
+- Fixed a VM stack overflow when freeing a long list.  The list finalizer
+  released the tail recursively, using one C stack frame per element, so freeing
+  a list of a few hundred thousand elements overflowed the C stack.  Long lists
+  are now freed iteratively.
 
 ## v0.5.0 (2026-09-14)
 

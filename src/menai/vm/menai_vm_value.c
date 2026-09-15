@@ -6,6 +6,15 @@
 
 #include "menai_vm_c.h"
 
+/*
+ * menai_value_free — free a value whose refcount has reached zero.
+ *
+ * Each case runs the type's finalizer to release the value's contents, then
+ * returns the cell to the pool.  The list case is the exception: a list's
+ * contents include further cells (the tail chain), so menai_list_final frees
+ * the whole chain itself — including the cell passed in — and this function
+ * must not free it again.
+ */
 void
 menai_value_free(MenaiVMState *vs, MenaiValue *v)
 {
@@ -46,7 +55,7 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
 
     case MENAITYPE_LIST:
         menai_list_final(vs, (MenaiList *)v);
-        break;
+        return;
 
     case MENAITYPE_NONE:
         menai_none_final(vs, (MenaiNone *)v);
@@ -84,11 +93,5 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         assert(0);
     }
 
-    MENAI_CLEAR_MAGIC(v);
-
-#ifdef MENAI_DEBUG_LEAKS
-    menai_leak_set_remove(&vs->_leak_set, v);
-#endif
-
-    menai_pool_free(vs, v);
+    menai_value_free_cell(vs, v);
 }

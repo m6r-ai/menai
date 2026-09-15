@@ -767,6 +767,26 @@ menai_value_alloc(MenaiVMState *vs, MenaiType type, size_t size)
 void menai_value_free(MenaiVMState *vs, MenaiValue *v);
 
 /*
+ * menai_value_free_cell — return a value's cell to the pool.
+ *
+ * Runs the debug bookkeeping and frees the cell.  The caller must already have
+ * released the cell's contents (via the type's finalizer).  This is shared by
+ * menai_value_free and by finalizers that free additional cells, such as
+ * menai_list_final freeing the cells of a list's tail chain.
+ */
+static inline void
+menai_value_free_cell(MenaiVMState *vs, MenaiValue *v)
+{
+    MENAI_CLEAR_MAGIC(v);
+
+#ifdef MENAI_DEBUG_LEAKS
+    menai_leak_set_remove(&vs->_leak_set, v);
+#endif
+
+    menai_pool_free(vs, v);
+}
+
+/*
  * menai_value_retain — claim an interest in val.
  */
 static inline void
@@ -1168,15 +1188,57 @@ menai_empty_list(MenaiVMState *vs)
     return vs->empty_list;
 }
 
+/*
+ * menai_list_final — free a list and the cells of its tail chain.
+ *
+ * Unlike the other finalizers, which release a value's contents and leave the
+ * cell itself to menai_value_free, a list's contents include further cells: the
+ * tail is the next cons cell.  Releasing the tail would re-enter the finalizer
+ * once per element, so freeing a long list would recurse one C stack frame per
+ * element and overflow the stack.  This finalizer therefore walks the chain
+ * iteratively and frees every cell it solely owns, including the cell it was
+ * given.  menai_value_free must not free a list cell after calling this.
+ *
+ * A tail with other owners is released normally; that may recurse, but only
+ * through sharing, so the depth is bounded by the amount of sharing rather than
+ * by list length.  Releasing a head may recurse through nesting, not length.
+ */
 static inline void
 menai_list_final(MenaiVMState *vs, MenaiList *self)
 {
-    if (self->head) {
-        menai_value_release(vs, self->head);
-    }
+    MenaiList *cell = self;
 
-    if (self->tail) {
-        menai_value_release(vs, (MenaiValue *)self->tail);
+    while (cell != NULL) {
+        MenaiValue *head = cell->head;
+        MenaiList *tail = cell->tail;
+
+        /*
+         * Detach the cell's references before freeing it so that nothing can
+         * observe them again and so this cell is not released a second time.
+         */
+        cell->head = NULL;
+        cell->tail = NULL;
+
+        if (head != NULL) {
+            menai_value_release(vs, head);
+        }
+
+        if (tail == NULL) {
+            menai_value_free_cell(vs, (MenaiValue *)cell);
+            return;
+        }
+
+        MenaiPoolHeader *tph = menai_get_pool_header((void *)tail);
+        if (tph->ob_refcnt != 1) {
+            /* Shared tail — release it (recursion bounded by sharing). */
+            menai_value_free_cell(vs, (MenaiValue *)cell);
+            menai_value_release(vs, (MenaiValue *)tail);
+            return;
+        }
+
+        /* Sole owner — free this cell and adopt the tail. */
+        menai_value_free_cell(vs, (MenaiValue *)cell);
+        cell = tail;
     }
 }
 
