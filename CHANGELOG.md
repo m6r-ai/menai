@@ -10,9 +10,11 @@ New features:
   both may be combined.
 - Removed `menai-profile` as `menai-eval` does everything it did and more.
 - Added an approach for implementing negative tests in `menai-test`.
-- Added a preliminary BMP parser.
-- Added an `inflate` module: a raw DEFLATE (RFC 1951) decompressor supporting
+- Added a preliminary BMP parser.  This reads BMP image files.
+- Added an `inflate` module.  This is a raw DEFLATE (RFC 1951) decompressor supporting
   stored, fixed Huffman, and dynamic Huffman blocks.
+- Added a `zip_parser` module.  This reads a ZIP archive's central directory and can
+  extract stored and deflate entries.
 
 Bug fixes:
 

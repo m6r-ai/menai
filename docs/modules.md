@@ -137,5 +137,9 @@ includes:
 - `inflate.menai` — a raw DEFLATE decompressor (RFC 1951) that converts a bytes
   value containing a raw DEFLATE stream to the decompressed bytes; supports
   stored, fixed Huffman, and dynamic Huffman blocks
+- `zip_parser.menai` — a ZIP archive parser that reads a ZIP file (as bytes) and
+  returns its central directory as a list of entry dicts, with `parse` (metadata
+  only) and `extract` (decompressed contents) entry points; supports stored and
+  deflate entries
 
 See [Examples](examples.md) for a walkthrough of the JSON parser.
