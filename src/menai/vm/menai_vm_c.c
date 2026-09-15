@@ -1037,6 +1037,19 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 MenaiFunction *fraw = (MenaiFunction *)raw_func;
                 MenaiCodeObject *callee_co = fraw->bytecode;
                 size_t needed_regs = (size_t)callee_base + callee_co->local_count + callee_co->outgoing_arg_slots;
+
+                /*
+                 * APPLY scatters `arity` arguments into the callee window at
+                 * callee_base, so the register file must have room for
+                 * callee_base + arity slots regardless of the callee's own
+                 * local_count.  The callee's local_count only covers its
+                 * internal slots, not the incoming argument slots, and for a
+                 * variadic callee the incoming count is not known statically.
+                 */
+                if ((size_t)(callee_base + arity) > needed_regs) {
+                    needed_regs = (size_t)(callee_base + arity);
+                }
+
                 if (needed_regs > vs->num_regs) {
                     vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
@@ -1044,6 +1057,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     }
 
                     regs = vs->regs;
+                    frame_regs = frame->frame_regs;
                 }
 
                 /* Scatter list elements into the callee window */
@@ -1122,22 +1136,21 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 /* Own raw_func before the scatter loop which may overwrite its slot. */
                 menai_value_retain(raw_func);
 
-                /* Scatter args into base+0..arity-1 (reusing current frame's base) */
-                for (int i = 0; i < arity; i++) {
-                    MenaiValue *val = apply_elems[i];
-                    menai_value_retain(val);
-                    menai_value_release(vs, frame_regs[i]);
-                    frame_regs[i] = val;
-                }
-
-                /* Release old code_obj and instructions, reuse frame. */
-                menai_code_object_release(vs, frame->code_obj);
-                frame->code_obj = NULL;
-
-                int saved_return_dest = frame->return_dest;
+                /*
+                 * TAIL_APPLY scatters `arity` arguments into the current frame
+                 * window at frame->base, so the register file must have room for
+                 * frame->base + arity slots before the scatter runs.  The
+                 * callee's own local_count only covers its internal slots, not
+                 * the incoming argument slots, and for a variadic callee the
+                 * incoming count is not known statically.
+                 */
                 MenaiFunction *fraw = (MenaiFunction *)raw_func;
                 MenaiCodeObject *callee_co = fraw->bytecode;
                 size_t needed_regs = (size_t)frame->base + callee_co->local_count + callee_co->outgoing_arg_slots;
+                if ((size_t)(frame->base + arity) > needed_regs) {
+                    needed_regs = (size_t)(frame->base + arity);
+                }
+
                 if (needed_regs > vs->num_regs) {
                     vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
@@ -1146,8 +1159,32 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                     }
 
                     regs = vs->regs;
+                    frame_regs = frame->frame_regs;
                 }
 
+                /*
+                 * Scatter args into base+0..arity-1 (reusing current frame's
+                 * base).  Retain every argument before releasing any slot, so
+                 * that releasing the arg-list slot cannot free the cells whose
+                 * heads are still referenced by apply_elems.  The register file
+                 * has already been grown to cover frame->base + arity, so every
+                 * slot released here is a valid, initialised slot.
+                 */
+                for (int i = 0; i < arity; i++) {
+                    menai_value_retain(apply_elems[i]);
+                }
+                for (int i = 0; i < arity; i++) {
+                    menai_value_release(vs, frame_regs[i]);
+                }
+                for (int i = 0; i < arity; i++) {
+                    frame_regs[i] = apply_elems[i];
+                }
+
+                /* Release old code_obj and instructions, reuse frame. */
+                menai_code_object_release(vs, frame->code_obj);
+                frame->code_obj = NULL;
+
+                int saved_return_dest = frame->return_dest;
                 vm_err = call_setup(vs, frame, callee_co, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     menai_value_release(vs, raw_func);

@@ -108,6 +108,55 @@ class TestApplyTailCall:
 
 
 # ---------------------------------------------------------------------------
+# apply — large argument lists (dynamic arity)
+# ---------------------------------------------------------------------------
+
+
+class TestApplyLargeArity:
+    """The register file must grow to cover the dynamic argument count of apply.
+
+    The argument count is only known at runtime, so it can exceed the slots the
+    caller reserved.  A previous implementation sized the register file from the
+    callee's static local_count, which overflowed for large lists.
+    """
+
+    def test_tail_apply_large_variadic_list(self, menai):
+        result = menai.evaluate(
+            "(apply (lambda (. xs) (list-length xs))"
+            "  (map-list (lambda (i) i) (range 0 1000)))"
+        )
+        assert result == 1000
+
+    def test_tail_apply_large_list_values_correct(self, menai):
+        result = menai.evaluate(
+            "(apply (lambda (. xs) (fold-list integer+ 0 xs))"
+            "  (map-list (lambda (i) i) (range 0 1000)))"
+        )
+        assert result == 499500
+
+    def test_non_tail_apply_large_variadic_list(self, menai):
+        result = menai.evaluate(
+            "(integer+ 0 (apply (lambda (. xs) (list-length xs))"
+            "  (map-list (lambda (i) i) (range 0 1000))))"
+        )
+        assert result == 1000
+
+    def test_tail_apply_large_list_of_builtin(self, menai):
+        result = menai.evaluate(
+            "(apply integer+ (map-list (lambda (i) 1) (range 0 1000)))"
+        )
+        assert result == 1000
+
+    def test_apply_arity_just_above_initial_capacity(self, menai):
+        # The register file starts at 256 slots; 257 crosses the growth boundary.
+        result = menai.evaluate(
+            "(apply (lambda (. xs) (list-length xs))"
+            "  (map-list (lambda (i) i) (range 0 257)))"
+        )
+        assert result == 257
+
+
+# ---------------------------------------------------------------------------
 # apply — error cases
 # ---------------------------------------------------------------------------
 
