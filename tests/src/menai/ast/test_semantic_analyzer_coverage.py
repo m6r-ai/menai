@@ -6,23 +6,45 @@ import pytest
 
 from menai import MenaiASTBuildError, MenaiEvalError
 
-class TestLetStarTooManyElements:
-    """let* expression with more than one body expression is caught by the parser."""
+class TestBindingFormMultipleBodyExpressions:
+    """A binding form accepts exactly one body expression."""
+
+    def test_let_extra_body_expression(self, menai):
+        """(let ((x 1)) expr1 expr2) — the second body expression is rejected."""
+        with pytest.raises(MenaiASTBuildError, match="let body must be a single expression"):
+            menai.evaluate("(let ((x 1)) x x)")
 
     def test_let_star_extra_body_expression(self, menai):
-        """(let* ((x 1)) expr1 expr2) — parser catches the extra body expression."""
-        with pytest.raises(MenaiASTBuildError, match="Premature closing parenthesis"):
+        """(let* ((x 1)) expr1 expr2) — the second body expression is rejected."""
+        with pytest.raises(MenaiASTBuildError, match="let\\* body must be a single expression"):
             menai.evaluate("(let* ((x 1)) x x)")
 
+    def test_letrec_extra_body_expression(self, menai):
+        """(letrec ((f (lambda () 1))) expr1 expr2) — the second body expression is rejected."""
+        with pytest.raises(MenaiASTBuildError, match="letrec body must be a single expression"):
+            menai.evaluate("(letrec ((f (lambda () 1))) (f) (f))")
+
     def test_let_star_multiple_extra_elements(self, menai):
-        """(let* ((x 1)) a b c) — parser catches the extra body expressions."""
-        with pytest.raises(MenaiASTBuildError, match="Premature closing parenthesis"):
+        """(let* ((x 1)) a b c) — the first extra body expression is reported."""
+        with pytest.raises(MenaiASTBuildError, match="let\\* body must be a single expression"):
             menai.evaluate("(let* ((x 1)) x x x)")
 
     def test_let_star_no_bindings_two_bodies(self, menai):
-        """(let* () expr1 expr2) — parser catches the extra body expression."""
-        with pytest.raises(MenaiASTBuildError, match="Premature closing parenthesis"):
+        """(let* () expr1 expr2) — the second body expression is rejected."""
+        with pytest.raises(MenaiASTBuildError, match="let\\* body must be a single expression"):
             menai.evaluate("(let* () 1 2)")
+
+    def test_error_points_at_extra_body_expression(self, menai):
+        """The error location is the extra body expression, not the enclosing form."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 1))\n  x\n  x)")
+
+        assert exc_info.value.line == 3
+        assert exc_info.value.column == 3
+
+    def test_single_body_expression_is_accepted(self, menai):
+        """(let ((x 1)) (integer+ x 1)) — a single body expression evaluates."""
+        assert menai.evaluate("(let ((x 1)) (integer+ x 1))") == 2
 
 
 class TestLetStarBindingWrongCount:

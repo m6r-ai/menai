@@ -273,18 +273,12 @@ class MenaiASTSemanticAnalyzer:
                 source=self.source
             )
 
-        if len(expr.elements) > 3:
-            raise MenaiEvalError(
-                message="Let* expression has too many elements",
-                received=f"Got {len(expr.elements)} elements",
-                expected="Exactly 3 elements: (let* ((bindings...)) body)",
-                example="(let* ((x 5) (y (* x 2))) (+ x y))",
-                suggestion="Let* takes only bindings and one body expression. "
-                    "Use (let* (...) (begin expr1 expr2)) for multiple expressions",
-                line=expr.line,
-                column=expr.column,
-                source=self.source
-            )
+        # _parse_let_with_tracking hard-caps 'let*' at exactly 3 elements
+        # (keyword + bindings + body) before consuming ')' — no loop after body.
+        assert len(expr.elements) <= 3, (
+            f"Parser invariant violated: 'let*' produced {len(expr.elements)} elements "
+            f"(expected \u2264 3); _parse_let_with_tracking should cap at 3"
+        )
 
         _, bindings_list, body = expr.elements
 

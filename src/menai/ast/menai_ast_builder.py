@@ -463,6 +463,45 @@ class MenaiASTBuilder:
             source_file=self.source_file,
         )
 
+    def _create_multiple_body_error(
+        self, keyword: str, start_line: int, start_col: int
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a binding form with more than one body expression.
+
+        Menai binding forms accept exactly one body expression and have no
+        sequencing form, so a second expression in body position is an error.
+        The error points at the first unexpected expression.
+
+        Args:
+            keyword: The binding form keyword ('let', 'let*', or 'letrec')
+            start_line: Line where the binding form started
+            start_col: Column where the binding form started
+
+        Returns:
+            MenaiASTBuildError describing the extra body expression
+        """
+        token = cast(MenaiToken, self.current_token)
+
+        return MenaiASTBuildError(
+            message=f"{keyword} body must be a single expression",
+            line=token.line,
+            column=token.column,
+            received=f"Additional expression starting at line {token.line}, column {token.column}",
+            expected=f"Exactly one body expression: ({keyword} ((bindings...)) body)",
+            context=(
+                f"The {keyword} starting at line {start_line}, column {start_col} "
+                f"already has a body expression, and Menai has no sequencing form."
+            ),
+            suggestion=(
+                "Nest the extra expressions in a single body, for example "
+                f"({keyword} (...) (let* () expr1 expr2))"
+            ),
+            example=f"Correct: ({keyword} ((x 5)) (integer+ x 1))\nIncorrect: ({keyword} ((x 5)) (integer+ x 1) (integer+ x 2))",
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
     def _parse_list(self) -> MenaiASTList:
         """Parse (element1 element2 ...) with enhanced error tracking."""
         # Push opening paren onto tracking stack
@@ -558,9 +597,15 @@ class MenaiASTBuilder:
             elements.append(self._parse_expression())
             self._update_frame_after_element()
 
-        # Expect closing paren
+        # A binding form accepts exactly one body expression.  Anything other
+        # than the closing paren here is a second body expression, which the
+        # language does not support.  Report it at the offending form rather
+        # than blindly consuming a token that is not ')'.
         if self.current_token is None:
             raise self._create_enhanced_unterminated_error(start_line, start_col)
+
+        if self.current_token.type != MenaiTokenType.RPAREN:
+            raise self._create_multiple_body_error(keyword, start_line, start_col)
 
         # Pop from stack when successfully closed
         self._pop_paren_frame()
