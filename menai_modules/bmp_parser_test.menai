@@ -6,109 +6,114 @@
         (assert-equal (dict-get t "assert-equal"))
         (test (dict-get t "test"))
         (test-error (dict-get t "test-error")))
-    (dict "tests" (list
-        (list "header" (list
-          (test "file and dib fields"
-                (lambda ()
-                  (let ((h (dict-get (parse (string-hex->bytes
-                              "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
-                            "header")))
-                    (assert-equal h (dict
-                                      "file-size" 70
-                                      "data-offset" 54
-                                      "dib-size" 40
-                                      "width" 2
-                                      "height" 2
-                                      "planes" 1
-                                      "bpp" 24
-                                      "compression" 0
-                                      "image-size" 16
-                                      "x-ppm" 2835
-                                      "y-ppm" 2835
-                                      "colours-used" 0
-                                      "colours-important" 0)))))))
+    (dict "tests"
+      (list
+        (list "header"
+          (list
+            (test "file and dib fields"
+                  (lambda ()
+                    (let ((h (dict-get (parse (string-hex->bytes
+                                "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+                              "header")))
+                      (assert-equal h (dict
+                                        "file-size" 70
+                                        "data-offset" 54
+                                        "dib-size" 40
+                                        "width" 2
+                                        "height" 2
+                                        "planes" 1
+                                        "bpp" 24
+                                        "compression" 0
+                                        "image-size" 16
+                                        "x-ppm" 2835
+                                        "y-ppm" 2835
+                                        "colours-used" 0
+                                        "colours-important" 0)))))))
 
-        (list "pixels" (list
-          (test "24-bit bottom-up rows are normalised top-down"
-                (lambda ()
-                  (let ((p (dict-get (parse (string-hex->bytes
-                              "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
-                            "pixels")))
-                    (assert-equal p
-                      (vector
-                        (vector (vector 255 0 0) (vector 0 255 0))
-                        (vector (vector 0 0 255) (vector 255 255 255)))))))
-          (test "24-bit top-down rows keep file order"
-                (lambda ()
-                  (let ((p (dict-get (parse (string-hex->bytes
-                              "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
-                            "pixels")))
-                    (assert-equal p
-                      (vector
-                        (vector (vector 255 0 0) (vector 0 255 0))
-                        (vector (vector 0 0 255) (vector 255 255 255)))))))
-          (test "row padding is stripped"
-                (lambda ()
-                  (let ((p (dict-get (parse (string-hex->bytes
-                              "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
-                            "pixels")))
-                    (assert-equal p
-                      (vector
-                        (vector (vector 10 20 30) (vector 40 50 60) (vector 70 80 90))
-                        (vector (vector 1 2 3) (vector 4 5 6) (vector 7 8 9)))))))
-          (test "32-bit pixels include alpha"
-                (lambda ()
-                  (let ((p (dict-get (parse (string-hex->bytes
-                              "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))
-                            "pixels")))
-                    (assert-equal p
-                      (vector
-                        (vector (vector 255 0 0 255) (vector 0 255 0 128))
-                        (vector (vector 0 0 255 64) (vector 255 255 255 0)))))))
-          (test "single pixel"
-                (lambda ()
-                  (let ((p (dict-get (parse (string-hex->bytes
-                              "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
-                            "pixels")))
-                    (assert-equal p (vector (vector (vector 18 52 86)))))))))
+        (list "pixels"
+          (list
+            (test "24-bit bottom-up rows are normalised top-down"
+                  (lambda ()
+                    (let ((p (dict-get (parse (string-hex->bytes
+                                "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+                              "pixels")))
+                      (assert-equal p
+                        (vector
+                          (vector (vector 255 0 0) (vector 0 255 0))
+                          (vector (vector 0 0 255) (vector 255 255 255)))))))
+            (test "24-bit top-down rows keep file order"
+                  (lambda ()
+                    (let ((p (dict-get (parse (string-hex->bytes
+                                "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
+                              "pixels")))
+                      (assert-equal p
+                        (vector
+                          (vector (vector 255 0 0) (vector 0 255 0))
+                          (vector (vector 0 0 255) (vector 255 255 255)))))))
+            (test "row padding is stripped"
+                  (lambda ()
+                    (let ((p (dict-get (parse (string-hex->bytes
+                                "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
+                              "pixels")))
+                      (assert-equal p
+                        (vector
+                          (vector (vector 10 20 30) (vector 40 50 60) (vector 70 80 90))
+                          (vector (vector 1 2 3) (vector 4 5 6) (vector 7 8 9)))))))
+            (test "32-bit pixels include alpha"
+                  (lambda ()
+                    (let ((p (dict-get (parse (string-hex->bytes
+                                "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))
+                              "pixels")))
+                      (assert-equal p
+                        (vector
+                          (vector (vector 255 0 0 255) (vector 0 255 0 128))
+                          (vector (vector 0 0 255 64) (vector 255 255 255 0)))))))
+            (test "single pixel"
+                  (lambda ()
+                    (let ((p (dict-get (parse (string-hex->bytes
+                                "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
+                              "pixels")))
+                      (assert-equal p (vector (vector (vector 18 52 86)))))))))
 
-        (list "meta" (list
-          (test "bottom-up file reports padding and orientation"
-                (lambda ()
-                  (let ((m (dict-get (parse (string-hex->bytes
-                              "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
-                            "meta")))
-                    (assert-equal m (dict
-                                      "format" "bmp"
-                                      "row-padding" 3
-                                      "bottom-up" #t)))))
-          (test "top-down file reports bottom-up false"
-                (lambda ()
-                  (let ((m (dict-get (parse (string-hex->bytes
-                              "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
-                            "meta")))
-                    (assert-equal (dict-get m "bottom-up") #f))))))
+        (list "meta"
+          (list
+            (test "bottom-up file reports padding and orientation"
+                  (lambda ()
+                    (let ((m (dict-get (parse (string-hex->bytes
+                                "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
+                              "meta")))
+                      (assert-equal m (dict
+                                        "format" "bmp"
+                                        "row-padding" 3
+                                        "bottom-up" #t)))))
+            (test "top-down file reports bottom-up false"
+                  (lambda ()
+                    (let ((m (dict-get (parse (string-hex->bytes
+                                "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
+                              "meta")))
+                      (assert-equal (dict-get m "bottom-up") #f))))))
 
-        (list "errors" (list
-          (test-error "rejects non-BMP signature"
-                (lambda ()
-                  (parse (string-hex->bytes "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")))
-                "missing BM signature")
-          (test-error "rejects truncated header"
-                (lambda ()
-                  (parse (string-hex->bytes "424d00")))
-                "too short")
-          (test-error "rejects unsupported bit depth"
-                (lambda ()
-                  (parse (string-hex->bytes
-                    "424d460000000000000036000000280000000200000002000000010008000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000")))
-                "8 bits per pixel")
-          (test-error "rejects compressed files"
-                (lambda ()
-                  (parse (string-hex->bytes
-                    "424d460000000000000036000000280000000200000002000000010018000100000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000")))
-                "compression 1")
-          (test-error "rejects non-bytes argument"
-                (lambda ()
-                  (parse "not bytes"))
-                "expects a bytes value")))))))
+        (list "errors"
+          (list
+            (test-error "rejects non-BMP signature"
+                  (lambda ()
+                    (parse (string-hex->bytes "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")))
+                  "missing BM signature")
+            (test-error "rejects truncated header"
+                  (lambda ()
+                    (parse (string-hex->bytes "424d00")))
+                  "too short")
+            (test-error "rejects unsupported bit depth"
+                  (lambda ()
+                    (parse (string-hex->bytes
+                      "424d460000000000000036000000280000000200000002000000010008000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000")))
+                  "8 bits per pixel")
+            (test-error "rejects compressed files"
+                  (lambda ()
+                    (parse (string-hex->bytes
+                      "424d460000000000000036000000280000000200000002000000010018000100000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000")))
+                  "compression 1")
+            (test-error "rejects non-bytes argument"
+                  (lambda ()
+                    (parse "not bytes"))
+                  "expects a bytes value")))))))
