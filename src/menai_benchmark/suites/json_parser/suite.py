@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from menai import Menai
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
-from menai_benchmark.suites.json_parser.json_parser import parse as _parse_functional
 
 _LONG_STRING = '"' + ("abcdefghij" * 200) + '"'
 _DEEP_ARRAY = ("[" * 500) + "0" + ("]" * 500)
@@ -66,7 +64,7 @@ def _to_menai_expr(json_str: str) -> str:
 
 
 class Suite(BenchmarkSuite):
-    """Benchmark suite comparing Menai, idiomatic Python, and functional Python JSON parsers."""
+    """Benchmark suite for the Menai JSON parser."""
 
     name = "json_parser"
     description = "Parse JSON strings of varying structure and size."
@@ -78,8 +76,8 @@ class Suite(BenchmarkSuite):
             for name, json_str, iters in _CASES
         ]
 
-    def implementations(self, menai: Menai) -> list[Implementation]:
-        """Return Menai, idiomatic Python, and functional Python parser implementations."""
+    def implementation(self, menai: Menai) -> Implementation:
+        """Return the Menai JSON parser implementation."""
         def prepare_menai(json_str: str) -> Any:
             """Build expression string and compile to bytecode (untimed)."""
             return menai.compile(_to_menai_expr(json_str))
@@ -88,20 +86,4 @@ class Suite(BenchmarkSuite):
             """Execute pre-compiled bytecode (timed)."""
             return menai.execute_raw(code)
 
-        def run_python_idiomatic(json_str: str) -> Any:
-            """Parse using Python's stdlib json.loads()."""
-            return json.loads(json_str)
-
-        def run_python_functional(json_str: str) -> Any:
-            """Parse using the pure-functional explicit-stack Python parser."""
-            return _parse_functional(json_str)
-
-        return [
-            Implementation(name="Menai",               run=run_menai, prepare=prepare_menai),
-            Implementation(name="Python (idiomatic)",  run=run_python_idiomatic),
-            Implementation(name="Python (functional)", run=run_python_functional),
-        ]
-
-    def results_equal(self, a: Any, b: Any) -> bool:
-        """Return True if both results are equal parsed values."""
-        return a == b
+        return Implementation(run=run_menai, prepare=prepare_menai)

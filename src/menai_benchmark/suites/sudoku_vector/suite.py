@@ -9,16 +9,13 @@ from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
 from menai_benchmark.suites.sudoku.suite import (
     PUZZLES,
     _ITERATIONS,
-    _is_valid_board,
-    _solve_python_functional,
-    _solve_python_idiomatic,
 )
 
 _SUITE_DIR = Path(__file__).resolve().parent
 
-# The puzzles, iteration counts, Python reference solvers, and validator are
-# shared with the list-based sudoku suite so the two suites measure exactly
-# the same work: only the board representation differs.
+# The puzzles and iteration counts are shared with the list-based sudoku suite
+# so the two suites measure exactly the same work: only the board
+# representation differs.
 
 
 def _board_to_menai(flat: list[int]) -> str:
@@ -48,8 +45,8 @@ class Suite(BenchmarkSuite):
             for label, difficulty, flat in PUZZLES
         ]
 
-    def implementations(self, menai: Menai) -> list[Implementation]:
-        """Return the vector-board Menai solver plus the shared Python references."""
+    def implementation(self, menai: Menai) -> Implementation:
+        """Return the vector-board Menai solver implementation."""
         def prepare_menai(flat: list[int]) -> Any:
             """Build expression string and compile to bytecode (untimed)."""
             board_expr = _board_to_menai(flat)
@@ -64,20 +61,4 @@ class Suite(BenchmarkSuite):
             """Execute pre-compiled bytecode (timed)."""
             return menai.execute_raw(code)
 
-        def run_python_idiomatic(flat: list[int]) -> list[list[int]]:
-            """Solve the puzzle using mutable backtracking."""
-            return _solve_python_idiomatic(flat)
-
-        def run_python_functional(flat: list[int]) -> list[list[int]]:
-            """Solve the puzzle using pure-functional backtracking."""
-            return _solve_python_functional(flat)
-
-        return [
-            Implementation(name="Menai (vector)", run=run_menai, prepare=prepare_menai),
-            Implementation(name="Python (idiomatic)", run=run_python_idiomatic),
-            Implementation(name="Python (functional)", run=run_python_functional),
-        ]
-
-    def results_equal(self, a: Any, b: Any) -> bool:
-        """Return True if both *a* and *b* are independently valid solved sudoku boards."""
-        return _is_valid_board(a) and _is_valid_board(b)
+        return Implementation(run=run_menai, prepare=prepare_menai)

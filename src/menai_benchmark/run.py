@@ -96,7 +96,6 @@ def build_parser() -> argparse.ArgumentParser:
             "python run.py --suite sort                # run only the sort suite\n"
             "python run.py --suite sort sudoku         # run multiple\n"
             "python run.py --iterations 5              # override iteration count\n"
-            "python run.py --no-validate               # skip correctness checks\n"
             "python run.py --profile                   # opcode profiling (Menai only)\n"
             "python run.py --profile --profile-top 20  # limit opcode output"
         ),
@@ -119,15 +118,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Override the iteration count on every BenchmarkCase.",
-    )
-    parser.add_argument(
-        "--no-validate",
-        action="store_true",
-        dest="no_validate",
-        help=(
-            "Skip result validation: mark all results as valid and suppress "
-            "results_equal calls.  Useful when you only care about timing."
-        ),
     )
     parser.add_argument(
         "--profile",
@@ -154,7 +144,6 @@ def run_suite(
     suite_dir: Path,
     suite_class: type[BenchmarkSuite],
     iterations: int | None,
-    no_validate: bool,
     profile: bool,
     profile_top: int,
 ) -> None:
@@ -167,8 +156,6 @@ def run_suite(
         suite_class:  The ``Suite`` subclass to instantiate.
         iterations:   If given, override ``BenchmarkCase.iterations`` on every
                       case before running.
-        no_validate:  If ``True``, patch all ``CaseResult`` objects so that
-                      ``valid=True`` and ``error=None`` before reporting.
         profile:      If ``True``, enable opcode profiling during timed runs.
         profile_top:  Number of top opcodes to show in the profile output.
     """
@@ -184,19 +171,13 @@ def run_suite(
     runner = BenchmarkRunner(suite, menai, profile=profile)
     results, profile_results = runner.run()
 
-    if no_validate:
-        for result in results:
-            result.valid = True
-            result.error = None
-
     reporter = BenchmarkReporter()
-    reporter.report(suite.name, results, suite.implementations(menai))
+    reporter.report(suite.name, results)
 
     if profile:
         reporter.report_profile(
             suite.name,
             profile_results,
-            suite.implementations(menai),
             top_n=profile_top,
         )
 
@@ -231,7 +212,6 @@ def main() -> None:
             suite_dir=suite_dir,
             suite_class=suite_class,
             iterations=args.iterations,
-            no_validate=args.no_validate,
             profile=args.profile,
             profile_top=args.profile_top,
         )

@@ -1,4 +1,4 @@
-"""Benchmark framework for comparing Menai implementations against Python references."""
+"""Benchmark framework for timing Menai implementations."""
 
 from .benchmark import (
     BenchmarkCase,
