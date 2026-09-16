@@ -301,27 +301,53 @@ def _print_results(
     return stats
 
 
+def run_file(
+    test_file: Path,
+    name_filter: str | None,
+) -> list[TestResult]:
+    """
+    Execute all tests in a single *_test.menai file and return their results.
+
+    This is the programmatic entry point used by callers that want the raw
+    outcomes (for example a pytest driver) rather than printed output.
+
+    Args:
+        test_file: Path to the *_test.menai file to run
+        name_filter: Only run tests whose full path contains this text
+            (case-insensitive), or None to run everything
+
+    Returns:
+        A list of TestResult, one per leaf test executed.
+
+    Raises:
+        MenaiError: If the test module fails to load.
+        ValueError: If the test module structure is invalid.
+    """
+    module_name = test_file.stem
+    test_file_dir = str(test_file.parent.resolve())
+
+    menai = _make_menai(test_file_dir)
+    nodes = _load_test_module(menai, module_name)
+
+    results: list[TestResult] = []
+    _run_tree(nodes, module_name, test_file_dir, name_filter, results)
+    return results
+
+
 def _run_file(
     test_file: Path,
     name_filter: str | None,
     verbose: bool,
 ) -> RunStats:
     """Discover, execute, and report all tests in a single test file."""
-    module_name = test_file.stem
-    test_file_dir = str(test_file.parent.resolve())
-
     print(f"\n{test_file}")
 
-    menai = _make_menai(test_file_dir)
     try:
-        nodes = _load_test_module(menai, module_name)
+        results = run_file(test_file, name_filter)
 
     except (MenaiError, ValueError) as exc:
         print(f"  ERROR loading module: {exc}")
         return RunStats(failed=1)
-
-    results: list[TestResult] = []
-    _run_tree(nodes, module_name, test_file_dir, name_filter, results)
 
     if not results:
         print("  (no tests matched)")
