@@ -636,15 +636,29 @@ class MenaiASTBuilder:
         bindings: list[MenaiASTNode] = []
         binding_index = 0
 
+        # Track the previous binding's name and the position of its closing
+        # paren.  If the bindings list is missing its own close paren, the next
+        # group (the form's body) is misread as a binding, and the missing ')'
+        # belongs immediately after this previous binding.
+        prev_binding_name: str | None = None
+        prev_binding_end_line: int | None = None
+        prev_binding_end_column: int | None = None
+
         while self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
             binding_index += 1
 
             # Each binding should start with '('
             self._mark_element_start()
             if self.current_token.type == MenaiTokenType.LPAREN:
-                binding = self._parse_single_binding(binding_index)
+                binding = self._parse_single_binding(
+                    binding_index, prev_binding_name, prev_binding_end_line, prev_binding_end_column
+                )
                 bindings.append(binding)
                 self._update_frame_after_element()
+
+                prev_binding_name = self._binding_name(binding)
+                prev_binding_end_line = self.last_close_line
+                prev_binding_end_column = self.last_close_column
 
             else:
                 # Not a binding structure - just parse it and let evaluator complain
@@ -662,12 +676,30 @@ class MenaiASTBuilder:
 
         return MenaiASTList(tuple(bindings), line=bindings_start_line, column=bindings_start_col, source_file=self.source_file)
 
-    def _parse_single_binding(self, binding_index: int) -> MenaiASTList:
+    def _binding_name(self, binding: MenaiASTNode) -> str | None:
+        """Return the binding's name symbol if it has one, else None."""
+        if isinstance(binding, MenaiASTList) and binding.elements:
+            first = binding.elements[0]
+            if isinstance(first, MenaiASTSymbol):
+                return first.name
+
+        return None
+
+    def _parse_single_binding(
+        self,
+        binding_index: int,
+        prev_binding_name: str | None,
+        prev_binding_end_line: int | None,
+        prev_binding_end_column: int | None,
+    ) -> MenaiASTList:
         """
         Parse a single let, let*, or letrec binding with tracking.
 
         Args:
             binding_index: The index of this binding (1-based)
+            prev_binding_name: Name of the preceding binding, if any
+            prev_binding_end_line: Line of the preceding binding's closing ')', if any
+            prev_binding_end_column: Column of the preceding binding's closing ')', if any
 
         Returns:
             MenaiASTList representing the binding
@@ -722,29 +754,14 @@ class MenaiASTBuilder:
                     form_name = tokens[peek_pos].value
 
             var_name = binding_frame.related_symbol or f"#{binding_index}"
-            raise MenaiASTBuildError(
-                message=(
-                    f"Missing closing parenthesis inside binding '{var_name}' "
-                    f"(opened at line {binding_start_line}, column {binding_start_col}) "
-                    f"— form '{form_name}' at line {self.current_token.line}, "
-                    f"column {self.current_token.column} appears where a close paren was expected"
-                ),
-                line=self.current_token.line,
-                column=self.current_token.column,
-                expected="')' to close the binding",
-                suggestion=(
-                    f"Check the value expression of binding '{var_name}' — "
-                    f"it is missing a closing parenthesis"
-                ),
-                context=(
-                    f"The binding '{var_name}' has parsed its name and value (2 elements), "
-                    f"but '{form_name}' at line {self.current_token.line}, "
-                    f"column {self.current_token.column} appears as a third element. "
-                    f"This means the value expression is missing a ')' — its close paren "
-                    f"was consumed by the binding instead."
-                ),
-                source=self.expression,
-                source_file=self.source_file,
+            raise self._create_third_element_error(
+                var_name=var_name,
+                form_name=form_name,
+                binding_start_line=binding_start_line,
+                binding_start_col=binding_start_col,
+                prev_binding_name=prev_binding_name,
+                prev_binding_end_line=prev_binding_end_line,
+                prev_binding_end_column=prev_binding_end_column,
             )
 
         if self.current_token is None:
@@ -757,6 +774,101 @@ class MenaiASTBuilder:
         self._advance()  # consume ')'
 
         return MenaiASTList(tuple(elements), line=binding_start_line, column=binding_start_col, source_file=self.source_file)
+
+    def _create_third_element_error(
+        self,
+        var_name: str,
+        form_name: str,
+        binding_start_line: int,
+        binding_start_col: int,
+        prev_binding_name: str | None,
+        prev_binding_end_line: int | None,
+        prev_binding_end_column: int | None,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a binding that has a third element where ')' was expected.
+
+        A binding has exactly two elements: a name and a value.  When a third
+        element appears, there are two possible causes and the parser cannot
+        distinguish them locally:
+
+          1. The value expression is missing its closing ')'.
+          2. The enclosing bindings list is missing its closing ')' after the
+             previous binding, so the form's body was misread as a binding.
+
+        Case 2 is only possible when a previous binding exists.  When it does,
+        the error names both possibilities and points at the previous binding's
+        closing paren, which is where the missing ')' belongs.
+
+        Args:
+            var_name: The name of the binding being parsed
+            form_name: The name of the form appearing where ')' was expected
+            binding_start_line: Line where this binding started
+            binding_start_col: Column where this binding started
+            prev_binding_name: Name of the preceding binding, if any
+            prev_binding_end_line: Line of the preceding binding's closing ')', if any
+            prev_binding_end_column: Column of the preceding binding's closing ')', if any
+
+        Returns:
+            MenaiASTBuildError describing the malformed binding
+        """
+        token = cast(MenaiToken, self.current_token)
+
+        if prev_binding_name is None:
+            # No preceding binding — case 2 is impossible, so the value's close
+            # paren must be the one that is missing.
+            return MenaiASTBuildError(
+                message=(
+                    f"Missing closing parenthesis inside binding '{var_name}' "
+                    f"(opened at line {binding_start_line}, column {binding_start_col}) "
+                    f"— form '{form_name}' at line {token.line}, "
+                    f"column {token.column} appears where a close paren was expected"
+                ),
+                line=token.line,
+                column=token.column,
+                expected="')' to close the binding",
+                suggestion=(
+                    f"Check the value expression of binding '{var_name}' — "
+                    f"it is missing a closing parenthesis"
+                ),
+                context=(
+                    f"The binding '{var_name}' has parsed its name and value (2 elements), "
+                    f"but '{form_name}' at line {token.line}, "
+                    f"column {token.column} appears as a third element. "
+                    f"This means the value expression is missing a ')' — its close paren "
+                    f"was consumed by the binding instead."
+                ),
+                source=self.expression,
+                source_file=self.source_file,
+            )
+
+        return MenaiASTBuildError(
+            message=(
+                f"Malformed binding '{var_name}' — unexpected element '{form_name}' "
+                f"at line {token.line}, column {token.column}"
+            ),
+            line=token.line,
+            column=token.column,
+            expected="')' to close the binding",
+            suggestion=(
+                f"Check the value expression of binding '{var_name}', and the ')' that "
+                f"should close the bindings list immediately after binding "
+                f"'{prev_binding_name}' (line {prev_binding_end_line}, "
+                f"column {prev_binding_end_column})"
+            ),
+            context=(
+                f"Binding '{var_name}' at line {binding_start_line}, "
+                f"column {binding_start_col} already has its name and value, but "
+                f"'{form_name}' at line {token.line}, column {token.column} appears as "
+                f"a third element. This is usually one of two things:\n"
+                f"  1. The value expression of binding '{var_name}' is missing a ')'.\n"
+                f"  2. The enclosing bindings list is missing its ')' after binding "
+                f"'{prev_binding_name}' (line {prev_binding_end_line}, "
+                f"column {prev_binding_end_column}), so the body was read as a binding."
+            ),
+            source=self.expression,
+            source_file=self.source_file,
+        )
 
     def _create_incomplete_bindings_error(
         self,

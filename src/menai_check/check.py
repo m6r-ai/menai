@@ -53,7 +53,8 @@ class FormStackFrame:
     open_column: int  # 1-indexed column of the opening paren
     depth_when_opened: int  # Depth after the opening paren
     form_type: str  # The symbol after the opening paren, or '(' for nested groups
-    child_count: int = 0  # Number of direct child forms seen so far
+    child_count: int = 0  # Number of direct child paren forms seen so far
+    element_count: int = 0  # Number of direct child elements (paren forms and atoms) seen so far
     is_binding: bool = False  # True if this form is a binding in a let/let*/letrec bindings list
     error_reported: bool = False  # True if a binding_not_closed error has already been reported for this frame
 
@@ -251,30 +252,20 @@ class ParenChecker:
 
                     if is_direct_child:
                         parent.child_count += 1
+                        parent.element_count += 1
 
                         # Syntax-aware check: a binding (name value) has exactly
-                        # 2 children — a name (symbol, not a paren form) and a value
-                        # (a paren form). So child_count should be at most 1 (only
-                        # the value is a paren form). If a second paren-form child
-                        # appears, the binding has a missing close paren — the new
-                        # form was supposed to be a sibling in the bindings list,
-                        # not a child of this binding.
-                        if parent.is_binding and parent.child_count > 1 and not parent.error_reported:
-                            parent.error_reported = True
-                            excess = current_depth - parent.depth_when_opened
-                            self.errors.append(ParenError(
-                                line_num=token.line,
-                                depth=current_depth,
-                                error_type="binding_not_closed",
-                                message=(
-                                    f"Missing {excess} closing parenthes"
-                                    f"{'is' if excess == 1 else 'es'} inside "
-                                    f"binding '{parent.form_type}' (opened at "
-                                    f"line {parent.open_line}, col {parent.open_column}) "
-                                    f"— form '{form_type}' at line {token.line} "
-                                    f"appears where a close paren was expected"
-                                )
-                            ))
+                        # 2 elements. If a third element appears, the binding has
+                        # a missing close paren — the new form was supposed to be
+                        # a sibling in the bindings list, not a child of this
+                        # binding. A form nested deeper than the binding's own
+                        # contents means that many closes are missing.
+                        self._check_binding_arity(
+                            parent,
+                            element_desc=f"form '{form_type}'",
+                            excess=current_depth - parent.depth_when_opened,
+                            line=token.line,
+                        )
 
                 # Determine if this form is a binding (direct child of a
                 # let/let*/letrec bindings list)
@@ -331,6 +322,23 @@ class ParenChecker:
                         message="Extra closing parenthesis (depth went negative)"
                     ))
 
+            else:
+                # A non-paren token (symbol, number, string, ...) is a direct
+                # child of the enclosing form when it sits at that form's own
+                # contents depth. Count it as an element of a binding so that a
+                # third element (e.g. a stray symbol) is detected as a missing
+                # close paren, just as a third paren form would be.
+                if self.form_stack:
+                    parent = self.form_stack[-1]
+                    if parent.is_binding and parent.depth_when_opened == current_depth:
+                        parent.element_count += 1
+                        self._check_binding_arity(
+                            parent,
+                            element_desc=f"'{token.value}'",
+                            excess=1,
+                            line=token.line,
+                        )
+
             # Update depth for this line
             if line_idx < len(self.line_info):
                 self.line_info[line_idx].depth = current_depth
@@ -375,6 +383,44 @@ class ParenChecker:
             # (already initialized correctly)
 
         return len(self.errors) == 0
+
+    def _check_binding_arity(
+        self,
+        binding: FormStackFrame,
+        element_desc: str,
+        excess: int,
+        line: int,
+    ) -> None:
+        """
+        Report an error when a binding has more than its two elements.
+
+        A binding (name value) has exactly two elements. When a third element
+        appears, the binding is missing its closing paren: the extra element
+        was meant to be a sibling in the bindings list, or the form's body.
+
+        Args:
+            binding: The binding frame that has gained an extra element
+            element_desc: Description of the unexpected element (e.g. "form 'foo'")
+            excess: Number of closing parens missing from the binding
+            line: Line where the unexpected element appears
+        """
+        if not binding.is_binding or binding.element_count <= 2 or binding.error_reported:
+            return
+
+        binding.error_reported = True
+        self.errors.append(ParenError(
+            line_num=line,
+            depth=binding.depth_when_opened,
+            error_type="binding_not_closed",
+            message=(
+                f"Missing {excess} closing parenthes"
+                f"{'is' if excess == 1 else 'es'} inside "
+                f"binding '{binding.form_type}' (opened at "
+                f"line {binding.open_line}, col {binding.open_column}) "
+                f"— {element_desc} at line {line} "
+                f"appears where a close paren was expected"
+            )
+        ))
 
     def get_error_context_lines(self, context_size: int = 5) -> list[int]:
         """
@@ -519,15 +565,31 @@ class ParenChecker:
         imbalance = self.total_opens - self.total_closes
         if imbalance > 0:
             detail = f"Missing {imbalance} closing parenthes{'is' if imbalance == 1 else 'es'}"
+            headline = f"✗ Parentheses UNBALANCED in {self.filepath.name}"
 
         elif imbalance < 0:
             detail = f"Extra {-imbalance} closing parenthes{'is' if imbalance == -1 else 'es'}"
+            headline = f"✗ Parentheses UNBALANCED in {self.filepath.name}"
 
         else:
-            detail = "Depth errors (parens in wrong order)"
+            # Parens balance in count, but the structure is invalid: a binding
+            # is missing its close paren, which the parser detects even though
+            # the file's overall paren count is even.
+            structural = sum(1 for e in self.errors if e.error_type == "binding_not_closed")
+            if structural:
+                detail = (
+                    f"{structural} binding{'s' if structural != 1 else ''} "
+                    f"missing a close paren (parens balance in count but the "
+                    f"structure is invalid)"
+                )
+                headline = f"✗ Parentheses balanced but structure invalid in {self.filepath.name}"
+
+            else:
+                detail = "Depth errors (parens in wrong order)"
+                headline = f"✗ Parentheses UNBALANCED in {self.filepath.name}"
 
         return (
-            f"✗ Parentheses UNBALANCED in {self.filepath.name}\n"
+            f"{headline}\n"
             f"  Total: {self.total_opens} opens, {self.total_closes} closes\n"
             f"  {detail}"
         )

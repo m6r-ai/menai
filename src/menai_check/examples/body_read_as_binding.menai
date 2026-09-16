@@ -1,0 +1,7 @@
+; Parens balance in count, but the bindings list is missing its close paren
+; after binding 'b', so the body (dict "x" x) is misread as a binding. The
+; stray ')' at the end keeps the overall count even.
+(letrec
+  ((a 1)
+   (b 2)
+  (dict "x" x)))
