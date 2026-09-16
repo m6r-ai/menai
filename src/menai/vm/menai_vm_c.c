@@ -120,6 +120,8 @@ mc_logn(mc_t a, mc_t b)
  *
  * _menai_add_overflow(a, b, &result) returns 1 if a+b overflows long, 0 otherwise.
  * _menai_sub_overflow and _menai_mul_overflow follow the same convention.
+ * _menai_shl_overflow(a, shift, &result) returns 1 if a<<shift overflows long.
+ * The caller must ensure 0 <= shift < (long)(sizeof(long) * 8).
  */
 #if defined(__GNUC__) || defined(__clang__)
 #define _menai_add_overflow(a, b, rp) __builtin_add_overflow((a), (b), (rp))
@@ -151,6 +153,28 @@ _menai_mul_overflow(long a, long b, long *r) {
 }
 
 #endif
+
+/*
+ * Left-shift overflow detection is implemented portably rather than with a
+ * compiler builtin: __builtin_shift_left_overflow is only available in recent
+ * GCC and Clang, and the CI toolchain is not guaranteed to provide it.
+ *
+ * The caller guarantees 0 <= shift < bit width, so the shift itself is well
+ * defined. Overflow is detected in two ways: bits shifted out of the top of
+ * the unsigned bit pattern (which the shift-back check catches), and a change
+ * of sign (which occurs when a non-zero value shifts into the sign bit).
+ */
+static inline int
+_menai_shl_overflow(long a, long shift, long *r) {
+    unsigned long ua = (unsigned long)a;
+    unsigned long ur = ua << shift;
+    *r = (long)ur;
+    if ((ur >> shift) != ua) {
+        return 1;
+    }
+
+    return a != 0 && ((a < 0) != (*r < 0));
+}
 
 /*
  * Limits
@@ -1656,6 +1680,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
         case OP_INTEGER_BIT_NOT: {
             MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
 
+            if (MENAI_LIKELY(!a->is_big)) {
+                MenaiInteger *r = alloc_menai_integer_from_long(vs, ~a->fixed);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
+            }
+
             MenaiBigInt tmp;
             menai_bigint_init(&tmp);
             vm_err = menai_integer_to_menai_bigint(vs, a, &tmp);
@@ -2051,6 +2087,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
 
+            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
+                MenaiInteger *r = alloc_menai_integer_from_long(vs, a->fixed | b->fixed);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
+            }
+
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(vs, a, &av);
@@ -2091,6 +2139,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+
+            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
+                MenaiInteger *r = alloc_menai_integer_from_long(vs, a->fixed & b->fixed);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
+            }
 
             MenaiBigInt av;
             menai_bigint_init(&av);
@@ -2133,6 +2193,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+
+            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
+                MenaiInteger *r = alloc_menai_integer_from_long(vs, a->fixed ^ b->fixed);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
+            }
 
             MenaiBigInt av;
             menai_bigint_init(&av);
@@ -2196,6 +2268,22 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
+            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
+                long lr;
+                if (shift < (long)(sizeof(long) * 8) &&
+                        !_menai_shl_overflow(a->fixed, shift, &lr)) {
+                    MenaiInteger *r = alloc_menai_integer_from_long(vs, lr);
+                    if (!r) {
+                        vm_err = MENAI_ERR_NOMEM;
+                        goto error;
+                    }
+
+                    menai_value_release(vs, frame_regs[dest]);
+                    frame_regs[dest] = (MenaiValue *)r;
+                    break;
+                }
+            }
+
             MenaiBigInt av;
             menai_bigint_init(&av);
             vm_err = menai_integer_to_menai_bigint(vs, a, &av);
@@ -2246,6 +2334,33 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
             if (shift < 0) {
                 vm_err = MENAI_ERR_NEGATIVE_SHIFT;
                 goto error;
+            }
+
+            if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
+                long la = a->fixed;
+                long lr;
+                if (shift >= (long)(sizeof(long) * 8)) {
+                    /* Arithmetic shift saturates: 0 for non-negative, -1 for negative. */
+                    lr = la < 0 ? -1L : 0L;
+                } else if (la >= 0) {
+                    lr = la >> shift;
+                } else {
+                    /*
+                     * Floor toward negative infinity without relying on the
+                     * implementation-defined behaviour of >> on signed values.
+                     */
+                    lr = (long)~((~(unsigned long)la) >> shift);
+                }
+
+                MenaiInteger *r = alloc_menai_integer_from_long(vs, lr);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
             }
 
             MenaiBigInt av;

@@ -636,3 +636,159 @@ class TestBigintArithmetic:
     def test_bigint_bit_not(self, menai, expr, expected):
         """Bitwise NOT on bigint operands (exercises add_mag and sub_mag paths)."""
         assert menai.evaluate_and_format(expr) == expected
+
+
+class TestSmallIntegerBitOperations:
+    """Bit operations on operands that fit in an inline C long.
+
+    These exercise the fix-num fast paths, which must agree with the bigint
+    path for every value and must fall through to the bigint path only when a
+    left shift would overflow a C long.
+
+    Operands are routed through a lambda parameter so the constant folder
+    cannot evaluate the expression at compile time, guaranteeing that the
+    operation is executed by the VM and actually exercises the fast paths.
+    """
+
+    LONG_MAX = 9223372036854775807  # 2^63 - 1
+    LONG_MIN = -9223372036854775808  # -2^63
+    LONG_BITS = 64
+
+    @staticmethod
+    def _unary(op, a):
+        """Build an expression evaluating (op a) through a lambda parameter."""
+        return f"((lambda (x) ({op} x)) {a})"
+
+    @staticmethod
+    def _binary(op, a, b):
+        """Build an expression evaluating (op a b) through lambda parameters."""
+        return f"((lambda (x y) ({op} x y)) {a} {b})"
+
+    @pytest.mark.parametrize("value,expected", [
+        (0, -1),
+        (-1, 0),
+        (5, -6),
+        (-6, 5),
+        ("LONG_MAX", -(9223372036854775807 + 1)),
+        ("LONG_MIN", 9223372036854775807),
+    ])
+    def test_bit_not_fixnum(self, menai, value, expected):
+        """Bitwise NOT of a fix-num is always representable as a fix-num."""
+        if value == "LONG_MAX":
+            value = self.LONG_MAX
+        elif value == "LONG_MIN":
+            value = self.LONG_MIN
+
+        assert menai.evaluate_and_format(self._unary("integer-bit-not", value)) == str(expected)
+
+    @pytest.mark.parametrize("op,a,b,expected", [
+        ("integer-bit-or", 5, 3, 7),
+        ("integer-bit-or", -1, 0, -1),
+        ("integer-bit-or", -8, 3, -5),
+        ("integer-bit-or", "LONG_MAX", "LONG_MIN", -1),
+        ("integer-bit-and", 5, 3, 1),
+        ("integer-bit-and", -1, 5, 5),
+        ("integer-bit-and", -8, 7, 0),
+        ("integer-bit-and", "LONG_MAX", "LONG_MIN", 0),
+        ("integer-bit-xor", 5, 3, 6),
+        ("integer-bit-xor", -1, 0, -1),
+        ("integer-bit-xor", -1, -1, 0),
+        ("integer-bit-xor", "LONG_MAX", "LONG_MIN", -1),
+    ])
+    def test_bit_or_and_xor_fixnum(self, menai, op, a, b, expected):
+        """OR, AND and XOR of two fix-nums are always representable as fix-nums."""
+        if a == "LONG_MAX":
+            a = self.LONG_MAX
+        elif a == "LONG_MIN":
+            a = self.LONG_MIN
+
+        if b == "LONG_MAX":
+            b = self.LONG_MAX
+        elif b == "LONG_MIN":
+            b = self.LONG_MIN
+
+        assert menai.evaluate_and_format(self._binary(op, a, b)) == str(expected)
+
+    @pytest.mark.parametrize("a,shift,expected", [
+        (1, 3, 8),
+        (5, 2, 20),
+        (0, 5, 0),
+        (-1, 1, -2),
+        (1, 62, 1 << 62),
+    ])
+    def test_bit_shift_left_fixnum(self, menai, a, shift, expected):
+        """Left shifts whose result fits in a fix-num stay on the fast path."""
+        expr = self._binary("integer-bit-shift-left", a, shift)
+        assert menai.evaluate_and_format(expr) == str(expected)
+
+    @pytest.mark.parametrize("a,shift,expected", [
+        (1, 63, 1 << 63),
+        (1, 64, 1 << 64),
+        (1, 65, 1 << 65),
+        ("LONG_MAX", 1, 9223372036854775807 << 1),
+        (-1, 64, -(1 << 64)),
+    ])
+    def test_bit_shift_left_overflow_falls_through(self, menai, a, shift, expected):
+        """Left shifts that overflow a fix-num fall through to the bigint path."""
+        if a == "LONG_MAX":
+            a = self.LONG_MAX
+
+        expr = self._binary("integer-bit-shift-left", a, shift)
+        assert menai.evaluate_and_format(expr) == str(expected)
+
+    @pytest.mark.parametrize("a,shift,expected", [
+        (8, 3, 1),
+        (20, 2, 5),
+        (0, 5, 0),
+        (-8, 2, -2),
+        (-1, 1, -1),
+        (-5, 1, -3),
+        ("LONG_MAX", 1, 9223372036854775807 >> 1),
+    ])
+    def test_bit_shift_right_fixnum(self, menai, a, shift, expected):
+        """Right shifts of fix-nums are arithmetic and floor toward negative infinity."""
+        if a == "LONG_MAX":
+            a = self.LONG_MAX
+
+        expr = self._binary("integer-bit-shift-right", a, shift)
+        assert menai.evaluate_and_format(expr) == str(expected)
+
+    @pytest.mark.parametrize("a,shift,expected", [
+        (1, 64, 0),
+        (0, 64, 0),
+        (-1, 64, -1),
+        (-5, 64, -1),
+        ("LONG_MAX", 74, 0),
+        ("LONG_MIN", 74, -1),
+    ])
+    def test_bit_shift_right_saturates(self, menai, a, shift, expected):
+        """Right shifts by at least the bit width saturate to 0 or -1."""
+        if a == "LONG_MAX":
+            a = self.LONG_MAX
+        elif a == "LONG_MIN":
+            a = self.LONG_MIN
+
+        expr = self._binary("integer-bit-shift-right", a, shift)
+        assert menai.evaluate_and_format(expr) == str(expected)
+
+    @pytest.mark.parametrize("expr", [
+        "((lambda (n) (integer-bit-shift-left 1 n)) -1)",
+        "((lambda (n) (integer-bit-shift-right 1 n)) -1)",
+    ])
+    def test_shift_negative_amount_errors(self, menai, expr):
+        """Shift amounts must be non-negative."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate(expr)
+
+        assert exc_info.value.error_code == VMErrorCode.NEGATIVE_SHIFT
+
+    @pytest.mark.parametrize("expr", [
+        f"((lambda (n) (integer-bit-shift-left 1 n)) {LONG_MAX + 1})",
+        f"((lambda (n) (integer-bit-shift-right 1 n)) {LONG_MAX + 1})",
+    ])
+    def test_shift_amount_too_large_errors(self, menai, expr):
+        """Shift amounts that do not fit in a C long are rejected."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate(expr)
+
+        assert exc_info.value.error_code == VMErrorCode.SHIFT_TOO_LARGE
