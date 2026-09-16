@@ -1568,3 +1568,128 @@ class TestPredicateBranchEndToEnd:
             (parse-esc "x")))
         """)
         assert result == ["\\", "\n", "\t", "none"]
+
+
+# ---------------------------------------------------------------------------
+# 13. Predicate-branch, sole remaining arm non-constant, phi used downstream
+# ---------------------------------------------------------------------------
+
+class TestPredicateBranchSoleNonConstantArm:
+    """When a predicate-branch phi has one constant arm re-wired away and the
+    sole remaining arm is non-constant, the phi must be retained if any branch
+    target still uses its result.
+
+    The predicate cannot be statically evaluated (the remaining value is not
+    a known constant), so the branch stays and both targets remain reachable.
+    Removing the phi in that situation leaves the downstream use undefined.
+    """
+
+    def test_phi_retained_when_target_uses_it(self):
+        """
+        phi [#none←A, %r←B] → none? → branch true/false
+        false_block uses the phi result; %r is non-constant.
+
+        #none → none? True → true_block (safe).
+        %r → not a constant, so the predicate cannot be evaluated at compile
+        time and the branch must stay.  false_block uses the phi result, so
+        the phi must be retained with its reduced incoming list.
+        """
+        vnone = v("none"); vr = v("r"); vphi = v("phi"); vpred = v("pred")
+        vuse = v("use")
+
+        false_block = block(
+            11,
+            MenaiCFGBuiltinInstr(result=vuse, op="list-prepend", args=[v("other"), vphi]),
+            terminator=MenaiCFGReturnTerm(value=vuse),
+            label="false",
+        )
+        true_block = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="true")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vr, block_b)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, true_block, false_block)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert changed
+
+        # #none arm → true_block.
+        a_new = next(b for b in new_f.blocks if b.id == 1)
+        assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
+        assert a_new.terminator.target.id == true_block.id
+
+        # Join block must retain the phi (false_block still uses its result),
+        # with only the non-constant arm remaining.  The predicate and branch
+        # must also be retained — the predicate cannot be evaluated at compile
+        # time, so the branch direction is not statically known.
+        join_new = next(b for b in new_f.blocks if b.id == 3)
+        phi_new = next(i for i in join_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        assert len(phi_new.incoming) == 1
+        assert phi_new.incoming[0][0].id == vr.id
+        assert isinstance(join_new.terminator, MenaiCFGBranchTerm)
+
+    def test_phi_retained_when_true_target_uses_it(self):
+        """
+        phi [#none←A, %r←B] → none? → branch true/false
+        true_block uses the phi result; %r is non-constant.
+
+        #none → none? True → true_block (NOT safe, true_block uses phi).
+        %r → non-constant, so the branch must stay.  Because true_block uses
+        the phi result, that arm cannot be re-wired.  Nothing can be
+        re-wired, so the pass makes no change and the phi is retained intact.
+        """
+        vnone = v("none"); vr = v("r"); vphi = v("phi"); vpred = v("pred")
+        vuse = v("use")
+
+        true_block = block(
+            10,
+            MenaiCFGBuiltinInstr(result=vuse, op="list-prepend", args=[v("other"), vphi]),
+            terminator=MenaiCFGReturnTerm(value=vuse),
+            label="true",
+        )
+        false_block = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="false")
+
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vr, block_b)]),
+            MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            label="join",
+        )
+        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
+
+        block_a.terminator = MenaiCFGJumpTerm(target=join)
+        block_b.terminator = MenaiCFGJumpTerm(target=join)
+
+        vcond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, true_block, false_block)
+
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        assert not changed
+        assert new_f is f

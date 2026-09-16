@@ -32,6 +32,7 @@ Bug fixes:
   released the tail recursively, using one C stack frame per element, so freeing
   a list of a few hundred thousand elements overflowed the C stack.  Long lists
   are now freed iteratively.
+- Resolve a CFG bug in the compiler from phi nodes being optimized away incorrectly.
 
 ## v0.5.0 (2026-09-14)
 

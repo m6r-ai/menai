@@ -367,6 +367,21 @@ class MenaiCFGBranchConstProp(MenaiCFGOptimizationPass):
                                 )
 
                     else:
+                        # The sole remaining value is not a statically-known
+                        # constant, so the predicate cannot be evaluated at
+                        # compile time and the branch must stay.  The phi can
+                        # only be removed if its result is not used by the
+                        # code reachable from either branch target; otherwise
+                        # downstream code still needs the merged value and the
+                        # phi must be retained with its reduced incoming list.
+                        if phi_used_outside:
+                            block.instrs[block.instrs.index(phi)] = MenaiCFGPhiInstr(
+                                result=phi.result,
+                                incoming=keep,
+                            )
+                            changed = True
+                            continue
+
                         block.instrs.remove(phi)
                         if pred_instr is not None:
                             block.instrs[block.instrs.index(pred_instr)] = (
