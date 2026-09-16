@@ -141,5 +141,11 @@ includes:
   returns its central directory as a list of entry dicts, with `parse` (metadata
   only) and `extract` (decompressed contents) entry points; supports stored and
   deflate entries
+- `zlib_parser.menai` — a zlib stream decompressor (RFC 1950) that strips the
+  2-byte header, delegates the DEFLATE data to `inflate`, and verifies the
+  Adler-32 trailer
+- `png_parser.menai` — a PNG parser that converts non-interlaced 8-bit
+  truecolour PNG files (as bytes) to a dict containing the decoded header, a
+  top-down pixel grid, and parser metadata
 
 See [Examples](examples.md) for a walkthrough of the JSON parser.

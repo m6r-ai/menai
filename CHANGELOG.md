@@ -15,6 +15,10 @@ New features:
   stored, fixed Huffman, and dynamic Huffman blocks.
 - Added a `zip_parser` module.  This reads a ZIP archive's central directory and can
   extract stored and deflate entries.
+- Added a `zlib_parser` module.  This decompresses a zlib stream (RFC 1950),
+  verifying the header check and the Adler-32 trailer.
+- Added a `png_parser` module.  This reads non-interlaced 8-bit truecolour PNG
+  image files (RGB and RGBA), reversing the per-scanline filters.
 
 Bug fixes:
 

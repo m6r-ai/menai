@@ -1,0 +1,51 @@
+; Tests for zlib_parser.menai
+
+(let ((zlib-mod (import "zlib_parser"))
+      (t (import "menai_test")))
+  (let ((decompress (dict-get zlib-mod "decompress"))
+        (assert-equal (dict-get t "assert-equal"))
+        (test (dict-get t "test"))
+        (test-error (dict-get t "test-error")))
+    (dict "tests"
+      (list
+        (list "decompress"
+          (list
+            (test "decompresses a deflate stream"
+                  (lambda ()
+                    (let ((r (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b045d"))))
+                      (assert-equal (bytes->string r) "hello world"))))
+            (test "decompresses an empty stream"
+                  (lambda ()
+                    (let ((r (decompress (string-hex->bytes "789c030000000001"))))
+                      (assert-equal (bytes-length r) 0))))
+            (test "decompresses a stored stream"
+                  (lambda ()
+                    (let ((r (decompress (string-hex->bytes "7801010800f7ff61626364656667680e000325"))))
+                      (assert-equal (bytes->string r) "abcdefgh"))))
+          ))
+        (list "errors"
+          (list
+            (test-error "rejects non-bytes argument"
+                  (lambda ()
+                    (decompress "not bytes"))
+                  "expects a bytes value")
+            (test-error "rejects too-short input"
+                  (lambda ()
+                    (decompress (string-hex->bytes "789c")))
+                  "too short")
+            (test-error "rejects non-DEFLATE compression method"
+                  (lambda ()
+                    (decompress (string-hex->bytes "7709cbc80400013b00d2")))
+                  "not DEFLATE")
+            (test-error "rejects a failed header check"
+                  (lambda ()
+                    (decompress (string-hex->bytes "789dcbc80400013b00d2")))
+                  "header check failed")
+            (test-error "rejects preset dictionaries"
+                  (lambda ()
+                    (decompress (string-hex->bytes "7820cbc80400013b00d2")))
+                  "preset dictionaries")
+            (test-error "rejects a checksum mismatch"
+                  (lambda ()
+                    (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b04a2")))
+                  "checksum mismatch")))))))
