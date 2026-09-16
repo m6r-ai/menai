@@ -13,6 +13,10 @@ New features:
 - Added a preliminary BMP parser.  This reads BMP image files.
 - Added an `inflate` module.  This is a raw DEFLATE (RFC 1951) decompressor supporting
   stored, fixed Huffman, and dynamic Huffman blocks.
+- Added a `deflate` module.  This is a raw DEFLATE (RFC 1951) compressor supporting
+  stored, fixed Huffman, and dynamic Huffman blocks, with an optional mode argument
+  selecting the encoding (defaulting to the smallest of the three).  It is the
+  counterpart to the `inflate` module.
 - Added a `zip_parser` module.  This reads a ZIP archive's central directory and can
   extract stored and deflate entries.
 - Added a `zlib_parser` module.  This decompresses a zlib stream (RFC 1950),
@@ -32,7 +36,17 @@ Bug fixes:
   released the tail recursively, using one C stack frame per element, so freeing
   a list of a few hundred thousand elements overflowed the C stack.  Long lists
   are now freed iteratively.
-- Resolve a CFG bug in the compiler from phi nodes being optimized away incorrectly.
+- Fixed a CFG bug where branch constant propagation could remove a phi node whose
+  result was still used by a branch target.  When a phi feeding a type-predicate
+  branch had one constant arm re-wired away and the sole remaining arm was
+  non-constant, the phi was deleted even though a branch target still referenced
+  it, leaving a use with no definition.
+- Fixed a CFG bug where dead capture elimination failed to remove orphaned
+  `PATCH_CLOSURE` instructions.  The set of dead captures was tracked per block,
+  but a closure's `MAKE_CLOSURE` and its `PATCH_CLOSURE` can live in different
+  blocks, so patches in later blocks were left behind.  When all sibling captures
+  were dead the closure became a shared constant, and the leftover patch then
+  mutated that constant.
 
 ## v0.5.0 (2026-09-14)
 
