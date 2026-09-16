@@ -197,11 +197,7 @@
     (lambda (b i)
       (if (integer>? (integer+ i 3) (bytes-length b))
           #none
-          (integer-bit-or
-            (integer-bit-shift-left (bytes-ref b i) 16)
-            (integer-bit-or
-              (integer-bit-shift-left (bytes-ref b (integer+ i 1)) 8)
-              (bytes-ref b (integer+ i 2)))))))
+          (bytes-read-u24-be b i))))
 
    ; Find the longest match for the window starting at `i`, searching the
    ; candidate positions recorded in `table` under the 3-byte key at `i`.
