@@ -21,8 +21,8 @@
             (test "meta reports four channels for rgba"
                   (lambda ()
                     (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000274524e53ff80080fb36a0000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
-                      (assert-equal (dict-get r "meta") (dict "format" "png" "channels" 4)))))
-          ))
+                      (assert-equal (dict-get r "meta") (dict "format" "png" "channels" 4)))))))
+
         (list "pixels"
           (list
             (test "greyscale pixels normalise to RGB"
@@ -40,8 +40,8 @@
             (test "palette with tRNS adds alpha"
                   (lambda ()
                     (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000274524e53ff80080fb36a0000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
-                      (assert-equal (dict-get r "pixels") (vector (vector (vector 255 0 0) (vector 0 255 0 128)) (vector (vector 0 0 255) (vector 255 255 255)))))))
-          ))
+                      (assert-equal (dict-get r "pixels") (vector (vector (vector 255 0 0) (vector 0 255 0 128)) (vector (vector 0 0 255) (vector 255 255 255)))))))))
+
         (list "errors"
           (list
             (test-error "rejects non-bytes argument"
