@@ -1,4 +1,4 @@
-; PNG parser module — decodes non-interlaced 8-bit truecolour PNG files.
+; PNG parser module — decodes non-interlaced 8-bit PNG files.
 ;
 ; Exports: "parse" — takes a bytes value containing a PNG file and returns a
 ; dict describing it:
@@ -10,17 +10,23 @@
 ;               each pixel is a vector of channels)
 ;     "meta" (dict "format" "png" "channels" ...))
 ;
-; Pixels are (vector r g b) for colour type 2 (truecolour) and
-; (vector r g b a) for colour type 6 (truecolour with alpha).
+; Pixels are normalised to RGB or RGBA regardless of the source colour type:
+;   - colour type 0 (greyscale)          -> (vector g g g)
+;   - colour type 2 (truecolour)         -> (vector r g b)
+;   - colour type 3 (palette)            -> (vector r g b) or (vector r g b a)
+;   - colour type 4 (greyscale + alpha)  -> (vector g g g a)
+;   - colour type 6 (truecolour + alpha) -> (vector r g b a)
+; The original colour type is preserved in the "header" dict.
 ;
 ; A PNG file is a signature followed by a sequence of chunks.  IHDR carries the
-; image dimensions and format; IDAT chunks (which may be split across several)
+; image dimensions and format; PLTE carries the palette (colour type 3); tRNS
+; carries palette transparency; IDAT chunks (which may be split across several)
 ; carry the zlib-compressed, filtered scanline data; IEND marks the end.  The
 ; filtered scanlines are inflated via zlib_parser, then each scanline's filter
 ; is reversed to recover the raw pixel bytes.
 ;
-; Only bit depth 8, colour types 2 (RGB) and 6 (RGBA), and non-interlaced files
-; are supported.  Anything else raises a runtime error.
+; Only bit depth 8 and non-interlaced files are supported.  tRNS transparency is
+; supported for palette images only.  Anything else raises a runtime error.
 
 (letrec
   ((signature (string-hex->bytes "89504e470d0a1a0a"))
@@ -36,45 +42,62 @@
                 (bytes-slice b data-start data-end)
                 (integer+ data-end 4))))))
 
-   ; Walk all chunks, returning a dict with the IHDR fields and the concatenated
-   ; IDAT data.  Chunk order is not assumed beyond IHDR coming first.
+   ; Walk all chunks, returning a dict with the IHDR fields, the concatenated
+   ; IDAT data, and the PLTE / tRNS payloads when present.  Chunk order is not
+   ; assumed beyond IHDR coming first.
    (read-chunks
     (lambda (b)
-      (letrec ((loop (lambda (pos header idat-chunks)
-                       (let ((result (read-chunk b pos)))
-                         (let ((typ (list-first result))
-                               (data (list-ref result 1))
-                               (next (list-ref result 2)))
-                           (if (string=? typ "IEND")
-                               (dict "header" header
-                                     "idat" (apply bytes-concat (list-reverse idat-chunks)))
-                               (if (string=? typ "IHDR")
-                                   (loop next
-                                         (dict
-                                           "width" (bytes-read-u32-be data 0)
-                                           "height" (bytes-read-u32-be data 4)
-                                           "bit-depth" (bytes-ref data 8)
-                                           "colour-type" (bytes-ref data 9)
-                                           "compression" (bytes-ref data 10)
-                                           "filter" (bytes-ref data 11)
-                                           "interlace" (bytes-ref data 12))
-                                         idat-chunks)
-                                   (if (string=? typ "IDAT")
-                                       (loop next header (list-prepend idat-chunks data))
-                                       (loop next header idat-chunks)))))))))
-        (loop 8 #none (list)))))
+      (letrec
+        ((loop
+          (lambda (pos header idat-chunks palette transparency)
+            (let ((result (read-chunk b pos)))
+              (let ((typ (list-first result))
+                    (data (list-ref result 1))
+                    (next (list-ref result 2)))
+                (if (string=? typ "IEND")
+                    (dict "header" header
+                          "idat" (apply bytes-concat (list-reverse idat-chunks))
+                          "palette" palette
+                          "transparency" transparency)
+                    (if (string=? typ "IHDR")
+                        (loop next
+                              (dict
+                                "width" (bytes-read-u32-be data 0)
+                                "height" (bytes-read-u32-be data 4)
+                                "bit-depth" (bytes-ref data 8)
+                                "colour-type" (bytes-ref data 9)
+                                "compression" (bytes-ref data 10)
+                                "filter" (bytes-ref data 11)
+                                "interlace" (bytes-ref data 12))
+                              idat-chunks palette transparency)
+                        (if (string=? typ "IDAT")
+                            (loop next header (list-prepend idat-chunks data)
+                                  palette transparency)
+                            (if (string=? typ "PLTE")
+                                (loop next header idat-chunks data transparency)
+                                (if (string=? typ "tRNS")
+                                    (loop next header idat-chunks palette data)
+                                    (loop next header idat-chunks palette transparency)))))))))))
+        (loop 8 #none (list) #none #none))))
 
-   ; Number of channels for a colour type (2 = RGB, 6 = RGBA).
+   ; Number of channels stored per pixel for a colour type.  This is the count
+   ; in the raw scanline data, not the count in the normalised output.
    (channels-for
     (lambda (colour-type)
-      (if (integer=? colour-type 2)
-          3
-          (if (integer=? colour-type 6)
-              4
-              (error (string-concat
-                       "Unsupported PNG: colour type "
-                       (integer->string colour-type)
-                       " is not supported (only 2 = RGB and 6 = RGBA)"))))))
+      (if (integer=? colour-type 0)
+          1
+          (if (integer=? colour-type 2)
+              3
+              (if (integer=? colour-type 3)
+                  1
+                  (if (integer=? colour-type 4)
+                      2
+                      (if (integer=? colour-type 6)
+                          4
+                          (error (string-concat
+                                   "Unsupported PNG: colour type "
+                                   (integer->string colour-type)
+                                   " is not supported")))))))))
 
    ; The Paeth predictor (PNG spec §9.4): returns whichever of a (left),
    ; b (above), c (upper-left) is closest to p = a + b - c.
@@ -96,35 +119,37 @@
    ; complete pixel.  Returns the un-filtered row as a bytes value.
    (unfilter-row
     (lambda (filter-type filtered prev bpp)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer>=? i (bytes-length filtered))
-                           acc
-                           (let ((x (bytes-ref filtered i))
-                                 (a (if (integer>=? i bpp)
-                                        (bytes-ref acc (integer- i bpp))
-                                        0))
-                                 (b (if (integer<? i (bytes-length prev)) (bytes-ref prev i) 0))
-                                 (c (if (and (integer>=? i bpp) (integer<? (integer- i bpp) (bytes-length prev)))
-                                        (bytes-ref prev (integer- i bpp))
-                                        0)))
-                             (let ((value
-                                    (if (integer=? filter-type 0)
-                                        x
-                                        (if (integer=? filter-type 1)
-                                            (integer-bit-and (integer+ x a) #xff)
-                                            (if (integer=? filter-type 2)
-                                                (integer-bit-and (integer+ x b) #xff)
-                                                (if (integer=? filter-type 3)
-                                                    (integer-bit-and
-                                                      (integer+ x (integer/ (integer+ a b) 2))
-                                                      #xff)
-                                                    (if (integer=? filter-type 4)
-                                                        (integer-bit-and (integer+ x (paeth a b c)) #xff)
-                                                        (error (string-concat
-                                                                 "Unsupported PNG: filter type "
-                                                                 (integer->string filter-type)
-                                                                 " is not valid")))))))))
-                               (loop (integer+ i 1) (bytes-append-u8 acc value))))))))
+      (letrec
+        ((loop
+          (lambda (i acc)
+            (if (integer>=? i (bytes-length filtered))
+                acc
+                (let ((x (bytes-ref filtered i))
+                      (a (if (integer>=? i bpp)
+                             (bytes-ref acc (integer- i bpp))
+                             0))
+                      (b (if (integer<? i (bytes-length prev)) (bytes-ref prev i) 0))
+                      (c (if (and (integer>=? i bpp) (integer<? (integer- i bpp) (bytes-length prev)))
+                             (bytes-ref prev (integer- i bpp))
+                             0)))
+                  (let ((value
+                         (if (integer=? filter-type 0)
+                             x
+                             (if (integer=? filter-type 1)
+                                 (integer-bit-and (integer+ x a) #xff)
+                                 (if (integer=? filter-type 2)
+                                     (integer-bit-and (integer+ x b) #xff)
+                                     (if (integer=? filter-type 3)
+                                         (integer-bit-and
+                                           (integer+ x (integer/ (integer+ a b) 2))
+                                           #xff)
+                                         (if (integer=? filter-type 4)
+                                             (integer-bit-and (integer+ x (paeth a b c)) #xff)
+                                             (error (string-concat
+                                                      "Unsupported PNG: filter type "
+                                                      (integer->string filter-type)
+                                                      " is not valid")))))))))
+                    (loop (integer+ i 1) (bytes-append-u8 acc value))))))))
         (loop 0 (string->bytes "")))))
 
    ; Un-filter all scanlines.  Returns a list of rows, each a bytes value.
@@ -132,31 +157,93 @@
     (lambda (raw width height channels)
       (let ((bpp channels)
             (row-bytes (integer* width channels)))
-        (letrec ((loop (lambda (y pos prev rows)
-                         (if (integer>=? y height)
-                             (list-reverse rows)
-                             (let ((filter-type (bytes-ref raw pos))
-                                   (row-start (integer+ pos 1)))
-                               (let ((filtered (bytes-slice raw row-start (integer+ row-start row-bytes))))
-                                 (let ((row (unfilter-row filter-type filtered prev bpp)))
-                                   (loop (integer+ y 1)
-                                         (integer+ row-start row-bytes)
-                                         row
-                                         (list-prepend rows row)))))))))
+        (letrec
+          ((loop
+            (lambda (y pos prev rows)
+              (if (integer>=? y height)
+                  (list-reverse rows)
+                  (let ((filter-type (bytes-ref raw pos))
+                        (row-start (integer+ pos 1)))
+                    (let ((filtered (bytes-slice raw row-start (integer+ row-start row-bytes))))
+                      (let ((row (unfilter-row filter-type filtered prev bpp)))
+                        (loop (integer+ y 1)
+                              (integer+ row-start row-bytes)
+                              row
+                              (list-prepend rows row)))))))))
           (loop 0 0 (string->bytes "") (list))))))
 
-   ; Group a row's channel values into pixels (vectors of `channels`).
+   ; Look up a palette entry.  `palette` is the raw PLTE payload (3 bytes per
+   ; entry).  Returns (vector r g b).
+   (palette-entry
+    (lambda (palette index)
+      (if (integer>=? (integer* index 3) (bytes-length palette))
+          (error (string-concat
+                   "Malformed PNG: palette index "
+                   (integer->string index)
+                   " is out of range"))
+          (let ((base (integer* index 3)))
+            (vector (bytes-ref palette base)
+                    (bytes-ref palette (integer+ base 1))
+                    (bytes-ref palette (integer+ base 2)))))))
+
+   ; Alpha for a palette index from the tRNS payload, or 255 when absent or
+   ; beyond the tRNS length.
+   (palette-alpha
+    (lambda (transparency index)
+      (if (none? transparency)
+          255
+          (if (integer<? index (bytes-length transparency))
+              (bytes-ref transparency index)
+              255))))
+
+   ; Convert one raw pixel (a list of `channels` byte values) into a normalised
+   ; RGB or RGBA vector.  `palette` and `transparency` are used for colour type 3.
+   (normalise-pixel
+    (lambda (colour-type pixel-bytes palette transparency)
+      (if (integer=? colour-type 0)
+          (let ((g (list-ref pixel-bytes 0)))
+            (vector g g g))
+          (if (integer=? colour-type 2)
+              (vector (list-ref pixel-bytes 0) (list-ref pixel-bytes 1) (list-ref pixel-bytes 2))
+              (if (integer=? colour-type 3)
+                  (let* ((index (list-ref pixel-bytes 0))
+                         (rgb (palette-entry palette index))
+                         (alpha (palette-alpha transparency index)))
+                    (if (integer=? alpha 255)
+                        rgb
+                        (vector (vector-ref rgb 0) (vector-ref rgb 1) (vector-ref rgb 2) alpha)))
+                  (if (integer=? colour-type 4)
+                      (let ((g (list-ref pixel-bytes 0)))
+                        (vector g g g (list-ref pixel-bytes 1)))
+                      (vector (list-ref pixel-bytes 0) (list-ref pixel-bytes 1)
+                              (list-ref pixel-bytes 2) (list-ref pixel-bytes 3))))))))
+
+   ; Group a row's channel values into normalised pixels.
    (to-pixels
-    (lambda (row channels)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer>=? i (bytes-length row))
-                           (list->vector (list-reverse acc))
-                           (let ((pixel
-                                  (list->vector
-                                    (map-list (lambda (c) (bytes-ref row (integer+ i c)))
-                                              (range 0 channels)))))
-                             (loop (integer+ i channels) (list-prepend acc pixel)))))))
+    (lambda (row channels colour-type palette transparency)
+      (letrec
+        ((loop
+          (lambda (i acc)
+            (if (integer>=? i (bytes-length row))
+                (list->vector (list-reverse acc))
+                (let ((pixel-bytes
+                       (map-list (lambda (c) (bytes-ref row (integer+ i c)))
+                                 (range 0 channels))))
+                  (loop (integer+ i channels)
+                        (list-prepend acc
+                          (normalise-pixel colour-type pixel-bytes palette transparency))))))))
         (loop 0 (list)))))
+
+   ; The number of channels in the normalised output (3 for RGB, 4 for RGBA).
+   (output-channels
+    (lambda (colour-type transparency)
+      (if (integer=? colour-type 6)
+          4
+          (if (integer=? colour-type 4)
+              4
+              (if (and (integer=? colour-type 3) (boolean-not (none? transparency)))
+                  4
+                  3)))))
 
    (parse
     (lambda (b)
@@ -171,7 +258,9 @@
                             (height (dict-get header "height"))
                             (bit-depth (dict-get header "bit-depth"))
                             (colour-type (dict-get header "colour-type"))
-                            (interlace (dict-get header "interlace")))
+                            (interlace (dict-get header "interlace"))
+                            (palette (dict-get chunks "palette"))
+                            (transparency (dict-get chunks "transparency")))
                         (if (integer!=? bit-depth 8)
                             (error (string-concat
                                      "Unsupported PNG: bit depth "
@@ -179,18 +268,26 @@
                                      " is not supported (only 8)"))
                             (if (integer!=? interlace 0)
                                 (error "Unsupported PNG: interlaced images are not supported")
-                                (let ((channels (channels-for colour-type)))
-                                  (let ((inflate (dict-get (import "zlib_parser") "decompress")))
-                                    (let ((raw (inflate (dict-get chunks "idat"))))
-                                      (let ((rows (unfilter-all raw width height channels)))
-                                        (dict
-                                          "header" header
-                                          "pixels" (list->vector
-                                                     (map-list (lambda (row) (to-pixels row channels))
+                                (if (and (integer!=? colour-type 3)
+                                         (boolean-not (none? transparency)))
+                                    (error "Unsupported PNG: tRNS transparency is only supported for palette images")
+                                    (if (and (integer=? colour-type 3) (none? palette))
+                                        (error "Malformed PNG: palette image is missing its PLTE chunk")
+                                        (let ((channels (channels-for colour-type)))
+                                          (let ((inflate (dict-get (import "zlib_parser") "decompress")))
+                                            (let ((raw (inflate (dict-get chunks "idat"))))
+                                              (let ((rows (unfilter-all raw width height channels)))
+                                                (dict
+                                                  "header" header
+                                                  "pixels" (list->vector
+                                                             (map-list
+                                                               (lambda (row)
+                                                                 (to-pixels row channels colour-type
+                                                                            palette transparency))
                                                                rows))
-                                          "meta" (dict
-                                                   "format" "png"
-                                                   "channels" channels)))))))))))))
+                                                  "meta" (dict
+                                                           "format" "png"
+                                                           "channels" (output-channels colour-type transparency))))))))))))))))
           (error "png_parser: parse expects a bytes value")))))
 
   (dict "parse" parse))

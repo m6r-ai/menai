@@ -144,8 +144,9 @@ includes:
 - `zlib_parser.menai` — a zlib stream decompressor (RFC 1950) that strips the
   2-byte header, delegates the DEFLATE data to `inflate`, and verifies the
   Adler-32 trailer
-- `png_parser.menai` — a PNG parser that converts non-interlaced 8-bit
-  truecolour PNG files (as bytes) to a dict containing the decoded header, a
-  top-down pixel grid, and parser metadata
+- `png_parser.menai` — a PNG parser that converts non-interlaced 8-bit PNG files
+  (as bytes) to a dict containing the decoded header, a top-down pixel grid, and
+  parser metadata.  All colour types are supported (greyscale, truecolour,
+  palette, and the alpha variants), normalised to RGB or RGBA pixels
 
 See [Examples](examples.md) for a walkthrough of the JSON parser.

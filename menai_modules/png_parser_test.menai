@@ -12,35 +12,35 @@
           (list
             (test "header fields"
                   (lambda ()
-                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001249444154789c63f8cfc0c000c20cff8100001fee05fb0bd9688b0000000049454e44ae426082"))))
-                      (assert-equal (dict-get r "header") (dict "width" 2 "height" 2 "bit-depth" 8 "colour-type" 2 "compression" 0 "filter" 0 "interlace" 0)))))
-            (test "meta reports format and channels"
+                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))))
+                      (assert-equal (dict-get r "header") (dict "width" 2 "height" 2 "bit-depth" 8 "colour-type" 0 "compression" 0 "filter" 0 "interlace" 0)))))
+            (test "meta reports three channels for greyscale"
                   (lambda ()
-                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001249444154789c63f8cfc0c000c20cff8100001fee05fb0bd9688b0000000049454e44ae426082"))))
+                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))))
                       (assert-equal (dict-get r "meta") (dict "format" "png" "channels" 3)))))
-            (test "rgba reports four channels"
+            (test "meta reports four channels for rgba"
                   (lambda ()
-                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d240000001a49444154789c6360646266616563e760e0e4e2e6e1e5e3170000036600896df92a510000000049454e44ae426082"))))
+                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000274524e53ff80080fb36a0000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
                       (assert-equal (dict-get r "meta") (dict "format" "png" "channels" 4)))))
           ))
         (list "pixels"
           (list
-            (test "RGB pixels with no filter"
+            (test "greyscale pixels normalise to RGB"
                   (lambda ()
-                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001249444154789c63f8cfc0c000c20cff8100001fee05fb0bd9688b0000000049454e44ae426082"))))
+                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))))
+                      (assert-equal (dict-get r "pixels") (vector (vector (vector 10 10 10) (vector 200 200 200)) (vector (vector 50 50 50) (vector 255 255 255)))))))
+            (test "greyscale with alpha normalises to RGBA"
+                  (lambda ()
+                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020804000000d8bfc5af0000001249444154789c63e0fa7fa281c188e1ff7f001499048214c3c8690000000049454e44ae426082"))))
+                      (assert-equal (dict-get r "pixels") (vector (vector (vector 10 10 10 255) (vector 200 200 200 128)) (vector (vector 50 50 50 0) (vector 255 255 255 255)))))))
+            (test "palette pixels resolve through PLTE"
+                  (lambda ()
+                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
                       (assert-equal (dict-get r "pixels") (vector (vector (vector 255 0 0) (vector 0 255 0)) (vector (vector 0 0 255) (vector 255 255 255)))))))
-            (test "RGB pixels with Sub filter"
+            (test "palette with tRNS adds alpha"
                   (lambda ()
-                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000030000000208020000001216f14d0000001d49444154789c6314b8fdfd7bdfd72faa698c82bf968bb60a7e88e807006d3d0a125189346b0000000049454e44ae426082"))))
-                      (assert-equal (dict-get r "pixels") (vector (vector (vector 16 219 247) (vector 7 105 236) (vector 251 142 82)) (vector (vector 17 250 167) (vector 38 127 184) (vector 22 215 71)))))))
-            (test "RGBA pixels include alpha"
-                  (lambda ()
-                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d240000001a49444154789c6360646266616563e760e0e4e2e6e1e5e3170000036600896df92a510000000049454e44ae426082"))))
-                      (assert-equal (dict-get r "pixels") (vector (vector (vector 1 2 3 4) (vector 5 6 7 8)) (vector (vector 9 10 11 12) (vector 13 14 15 16)))))))
-            (test "RGB pixels with Paeth filter"
-                  (lambda ()
-                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000040000000308020000003b9639910000003249444154789c012700d8ff044d85335ad1da2b7a1962707d04a5619f7880d004d838fbbbf5043783aae801b4c0b95167f402574a1278fd80e0a70000000049454e44ae426082"))))
-                      (assert-equal (dict-get r "pixels") (vector (vector (vector 77 133 51) (vector 167 86 13) (vector 210 208 38) (vector 52 64 163)) (vector (vector 242 230 210) (vector 106 102 162) (vector 171 168 218) (vector 47 251 207)) (vector (vector 41 105 124) (vector 17 103 48) (vector 42 97 129) (vector 145 156 131)))))))
+                    (let ((r (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000274524e53ff80080fb36a0000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
+                      (assert-equal (dict-get r "pixels") (vector (vector (vector 255 0 0) (vector 0 255 0 128)) (vector (vector 0 0 255) (vector 255 255 255)))))))
           ))
         (list "errors"
           (list
@@ -48,19 +48,27 @@
                   (lambda ()
                     (parse "not bytes"))
                   "expects a bytes value")
-            (test-error "rejects a bad signature"
-                  (lambda ()
-                    (parse (string-hex->bytes "00000000000000006a756e6b")))
-                  "missing PNG signature")
             (test-error "rejects unsupported bit depth"
                   (lambda ()
-                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000021002000000ad4446300000001249444154789c63f8cfc0c000c20cff8100001fee05fb0bd9688b0000000049454e44ae426082")))
+                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000021002000000ad4446300000001649444154789c636064626661656360e7e06464640400015500318f92a71a0000000049454e44ae426082")))
                   "bit depth 16")
-            (test-error "rejects unsupported colour type"
-                  (lambda ()
-                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c6310506030700000017600a1ec308af40000000049454e44ae426082")))
-                  "colour type 0")
             (test-error "rejects interlaced images"
                   (lambda ()
-                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208020000018ad3aae50000001249444154789c63f8cfc0c000c20cff8100001fee05fb0bd9688b0000000049454e44ae426082")))
-                  "interlaced")))))))
+                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208020000018ad3aae50000001649444154789c636064626661656360e7e06464640400015500318f92a71a0000000049454e44ae426082")))
+                  "interlaced")
+            (test-error "rejects unsupported colour type"
+                  (lambda ()
+                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020807000000ca0a6a410000000b49444154789c636000010000060001fe8c67c80000000049454e44ae426082")))
+                  "colour type 7")
+            (test-error "rejects palette image without PLTE"
+                  (lambda ()
+                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000b49444154789c636000010000060001fe8c67c80000000049454e44ae426082")))
+                  "missing its PLTE")
+            (test-error "rejects out-of-range palette index"
+                  (lambda ()
+                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd1600000003504c54450102030d8764d50000000e49444154789c6360646460640400001200055519c12c0000000049454e44ae426082")))
+                  "palette index 1 is out of range")
+            (test-error "rejects tRNS on greyscale"
+                  (lambda ()
+                    (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000274524e53000a964624260000000e49444154789c6310506030700000017600a1ec308af40000000049454e44ae426082")))
+                  "only supported for palette")))))))

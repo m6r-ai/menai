@@ -17,8 +17,10 @@ New features:
   extract stored and deflate entries.
 - Added a `zlib_parser` module.  This decompresses a zlib stream (RFC 1950),
   verifying the header check and the Adler-32 trailer.
-- Added a `png_parser` module.  This reads non-interlaced 8-bit truecolour PNG
-  image files (RGB and RGBA), reversing the per-scanline filters.
+- Added a `png_parser` module.  This reads non-interlaced 8-bit PNG image files,
+  reversing the per-scanline filters.  All colour types are supported
+  (greyscale, truecolour, palette, and the alpha variants), normalised to RGB
+  or RGBA pixels.
 
 Bug fixes:
 
