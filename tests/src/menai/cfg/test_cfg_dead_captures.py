@@ -17,9 +17,11 @@ Tests cover:
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
+    MenaiCFGBuiltinInstr,
     MenaiCFGConstInstr,
     MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
+    MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
     MenaiCFGParamInstr,
     MenaiCFGPatchClosureInstr,
@@ -147,7 +149,6 @@ class TestSelfCaptureElimination:
             MenaiCFGFreeVarInstr(result=fv_outer, index=1, var_name="limit"),
         ]
         # Body uses fv_outer (limit) in a builtin but not fv_self.
-        from menai.cfg.menai_cfg import MenaiCFGBuiltinInstr
         cmp_result = v("cmp")
         child_entry.instrs.append(MenaiCFGBuiltinInstr(
             result=cmp_result, op="integer>=?", args=[param, fv_outer],
@@ -274,6 +275,146 @@ class TestSelfCaptureElimination:
         new_parent, changed = _pass._optimize_function(parent)
 
         assert not changed
+
+
+class TestCrossBlockPatchRemoval:
+    """A closure's MakeClosureInstr and its PatchClosureInstrs may live in
+    different blocks.  When dead capture elimination removes all sibling
+    captures, every patch for that closure must be removed regardless of which
+    block it is in.  Leaving a patch behind targets a closure that the bytecode
+    builder now emits as a shared constant, mutating it at runtime."""
+
+    def test_patch_in_later_block_removed(self):
+        """
+        MakeClosureInstr in the entry block, PatchClosureInstr in a later
+        block.  The dead self-capture must cause the patch to be removed even
+        though it is not in the same block as the closure.
+        """
+        param = v("n")
+        fv_self = v("self")
+        child = MenaiCFGFunction(
+            params=["n"],
+            free_vars=["self"],
+            binding_name="loop",
+        )
+        child_entry = MenaiCFGBlock(id=0, label="entry")
+        child_entry.instrs = [
+            MenaiCFGParamInstr(result=param, index=0, param_name="n"),
+            MenaiCFGFreeVarInstr(result=fv_self, index=0, var_name="self"),
+        ]
+        child_entry.terminator = MenaiCFGSelfLoopTerm(args=[param])
+        child.blocks = [child_entry]
+
+        closure_val = v("loop")
+        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
+        entry = MenaiCFGBlock(id=0, label="entry")
+        entry.instrs = [
+            MenaiCFGMakeClosureInstr(
+                result=closure_val,
+                function=child,
+                captures=[],
+                needs_patching=True,
+            ),
+        ]
+        entry.terminator = MenaiCFGJumpTerm(target=MenaiCFGBlock(id=1, label="tail"))
+
+        tail = MenaiCFGBlock(id=1, label="tail")
+        tail.instrs = [
+            MenaiCFGPatchClosureInstr(
+                closure=closure_val,
+                capture_index=0,
+                value=closure_val,
+            ),
+        ]
+        tail.terminator = MenaiCFGReturnTerm(value=closure_val)
+        entry.terminator.target = tail
+        parent.blocks = [entry, tail]
+
+        new_parent, changed = _pass._optimize_function(parent)
+
+        assert changed
+        mc = _find_make_closure(new_parent)
+        assert mc is not None
+        assert mc.needs_patching is False
+        assert mc.function.free_vars == []
+
+        # The patch in the later block must be gone.
+        patches = [
+            instr
+            for block in new_parent.blocks
+            for instr in block.instrs
+            if isinstance(instr, MenaiCFGPatchClosureInstr)
+        ]
+        assert len(patches) == 0
+
+    def test_live_sibling_patch_in_later_block_renumbered(self):
+        """
+        A live sibling capture's patch in a later block must survive and be
+        renumbered to the surviving capture's new index.
+        """
+        param = v("n")
+        fv_self = v("self")
+        fv_sibling = v("other")
+        child = MenaiCFGFunction(
+            params=["n"],
+            free_vars=["self", "other"],
+            binding_name="loop",
+        )
+        child_entry = MenaiCFGBlock(id=0, label="entry")
+        child_entry.instrs = [
+            MenaiCFGParamInstr(result=param, index=0, param_name="n"),
+            MenaiCFGFreeVarInstr(result=fv_self, index=0, var_name="self"),
+            MenaiCFGFreeVarInstr(result=fv_sibling, index=1, var_name="other"),
+        ]
+        child_entry.instrs.append(MenaiCFGBuiltinInstr(
+            result=v("cmp"), op="integer>=?", args=[param, fv_sibling],
+        ))
+        child_entry.terminator = MenaiCFGSelfLoopTerm(args=[param])
+        child.blocks = [child_entry]
+
+        other_val = v("other_val")
+        closure_val = v("loop")
+        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
+        entry = MenaiCFGBlock(id=0, label="entry")
+        entry.instrs = [
+            MenaiCFGMakeClosureInstr(
+                result=closure_val,
+                function=child,
+                captures=[],
+                needs_patching=True,
+            ),
+        ]
+        tail = MenaiCFGBlock(id=1, label="tail")
+        tail.instrs = [
+            MenaiCFGPatchClosureInstr(
+                closure=closure_val,
+                capture_index=0,
+                value=closure_val,
+            ),
+            MenaiCFGPatchClosureInstr(
+                closure=closure_val,
+                capture_index=1,
+                value=other_val,
+            ),
+        ]
+        tail.terminator = MenaiCFGReturnTerm(value=closure_val)
+        entry.terminator = MenaiCFGJumpTerm(target=tail)
+        parent.blocks = [entry, tail]
+
+        new_parent, changed = _pass._optimize_function(parent)
+
+        assert changed
+        # The dead self-capture's patch is removed; the live sibling's patch
+        # survives and is renumbered to index 0.
+        patches = [
+            instr
+            for block in new_parent.blocks
+            for instr in block.instrs
+            if isinstance(instr, MenaiCFGPatchClosureInstr)
+        ]
+        assert len(patches) == 1
+        assert patches[0].capture_index == 0
+        assert patches[0].value is other_val
 
 
 class TestIntegration:

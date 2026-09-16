@@ -49,15 +49,18 @@ class MenaiCFGDeadCaptures(MenaiCFGOptimizationPass):
     def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         changed = False
 
+        # Track dead capture indices per closure, and the old-to-new index
+        # mapping for survivors.  These are function-scoped: a MakeClosureInstr
+        # and its PatchClosureInstrs may live in different blocks, so the
+        # information gathered from a closure in one block must remain
+        # available when filtering its patch instructions in a later block.
+        dead_patches: dict[int, set[int]] = {}
+        old_to_new_map: dict[int, dict[int, int]] = {}
+
         for block in func.blocks:
             # Build the new instruction list, processing MakeClosureInstrs
             # and filtering/renumbering PatchClosureInstrs in a single pass.
             new_instrs: list[MenaiCFGInstr] = []
-            # Track dead capture indices per closure, accumulated as we
-            # encounter MakeClosureInstrs.  PatchClosureInstrs come after
-            # their corresponding MakeClosureInstr in the same block.
-            dead_patches: dict[int, set[int]] = {}
-            old_to_new_map: dict[int, dict[int, int]] = {}
 
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGMakeClosureInstr):
