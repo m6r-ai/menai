@@ -69,6 +69,40 @@ class TestDictConstructionErrors:
             tool.evaluate('(dict (list 1 2) "value")')
 
 
+class TestDictDuplicateKeys:
+    """Duplicate keys in a dict literal are rejected at compile time."""
+
+    def test_duplicate_string_keys_rejected(self, tool):
+        """A dict literal with a repeated string key is a compile-time error."""
+        with pytest.raises(MenaiEvalError, match="Duplicate key in dict literal"):
+            tool.evaluate('(dict "a" 1 "b" 2 "a" 3)')
+
+    def test_duplicate_integer_keys_rejected(self, tool):
+        """A dict literal with a repeated integer key is a compile-time error."""
+        with pytest.raises(MenaiEvalError, match="Duplicate key in dict literal"):
+            tool.evaluate('(dict 1 "a" 2 "b" 1 "c")')
+
+    def test_duplicate_boolean_keys_rejected(self, tool):
+        """A dict literal with a repeated boolean key is a compile-time error."""
+        with pytest.raises(MenaiEvalError, match="Duplicate key in dict literal"):
+            tool.evaluate('(dict #t 1 #f 2 #t 3)')
+
+    def test_different_types_with_equal_values_are_distinct(self, tool):
+        """Keys of different types with equal values are not duplicates."""
+        result = tool.evaluate('(dict 1 "integer" 1.0 "float")')
+        assert result == {"1": "integer", "1.0": "float"}
+
+    def test_non_constant_duplicate_keys_collapse_last_wins(self, tool):
+        """Duplicate keys that are not constant collapse at runtime, last wins."""
+        result = tool.evaluate('(dict-get (dict (string-concat "k" "") 1 "k" 2) "k")')
+        assert result == 2
+
+    def test_non_constant_duplicate_keys_collapse_in_key_list(self, tool):
+        """A collapsed runtime dict has no duplicate keys."""
+        result = tool.evaluate('(dict-keys (dict (string-concat "a" "") 1 "a" 2 "b" 3))')
+        assert result == ["a", "b"]
+
+
 class TestDictGet:
     """Test dict-get operation."""
 
