@@ -23,7 +23,16 @@
 ; back-reference can reach.
 
 (letrec
-  ((make-reader
+  ((tables (import "deflate_tables"))
+   (length-base (dict-get tables "length-base"))
+   (length-extra (dict-get tables "length-extra"))
+   (distance-base (dict-get tables "distance-base"))
+   (distance-extra (dict-get tables "distance-extra"))
+   (code-length-order (dict-get tables "code-length-order"))
+   (fixed-lit-lengths (dict-get tables "fixed-lit-lengths"))
+   (fixed-dist-lengths (dict-get tables "fixed-dist-lengths"))
+
+   (make-reader
     (lambda (b)
       (dict "bytes" b "pos" 0 "bit" 0)))
 
@@ -215,21 +224,6 @@
                                          (list sym next)))))))))))
         (loop state 0 0))))
 
-   ; Length code base values and extra bits (RFC 1951 §3.2.5, codes 257-285).
-   ; Index i (0-based) corresponds to length symbol 257+i.
-   (length-base
-    (vector 3 4 5 6 7 8 9 10 11 13 15 17 19 23 27 31 35 43 51 59 67 83 99 115
-            131 163 195 227 258))
-   (length-extra
-    (vector 0 0 0 0 0 0 0 0 1 1 1 1 2 2 2 2 3 3 3 3 4 4 4 4 5 5 5 5 0))
-
-   ; Distance code base values and extra bits (RFC 1951 §3.2.5, codes 0-29).
-   (distance-base
-    (vector 1 2 3 4 5 7 9 13 17 25 33 49 65 97 129 193 257 385 513 769 1025
-            1537 2049 3073 4097 6145 8193 12289 16385 24577))
-   (distance-extra
-    (vector 0 0 0 0 1 1 2 2 3 3 4 4 5 5 6 6 7 7 8 8 9 9 10 10 11 11 12 12 13 13))
-
    ; Read `n` extra bits and return (list <integer> <new-state>).
    (read-extra
     (lambda (state n)
@@ -314,23 +308,6 @@
                                                (loop st5 (copy-back-reference acc distance length)))))))))))))))
         (loop state out))))
 
-   ; Build the fixed literal/length code lengths (RFC 1951 §3.2.6).
-   ; Symbols 0-143: 8 bits; 144-255: 9 bits; 256-279: 7 bits; 280-287: 8 bits.
-   (fixed-lit-lengths
-    (lambda ()
-      (list-concat
-        (map-list (lambda (i) 8) (range 0 144))
-        (list-concat
-          (map-list (lambda (i) 9) (range 144 256))
-          (list-concat
-            (map-list (lambda (i) 7) (range 256 280))
-            (map-list (lambda (i) 8) (range 280 288)))))))
-
-   ; Build the fixed distance code lengths: all 30 symbols are 5 bits.
-   (fixed-dist-lengths
-    (lambda ()
-      (map-list (lambda (i) 5) (range 0 30))))
-
    ; Decode one stored block (BTYPE = 00).  The reader is positioned just after
    ; the 3 header bits; stored blocks byte-align, then carry LEN and NLEN
    ; (little-endian u16 each) followed by LEN literal bytes.  Returns
@@ -353,19 +330,14 @@
    ; The fixed Huffman decoding tables (RFC 1951 §3.2.6).  These are constant,
    ; so they are built once here rather than per block.  Building them per block
    ; dominates the cost of archives with many small fixed-Huffman entries.
-   (fixed-lit-table (build-huffman-table (fixed-lit-lengths)))
-   (fixed-dist-table (build-huffman-table (fixed-dist-lengths)))
+   (fixed-lit-table (build-huffman-table fixed-lit-lengths))
+   (fixed-dist-table (build-huffman-table fixed-dist-lengths))
 
    ; Decode one fixed Huffman block (BTYPE = 01).  Returns
    ; (list <output-state> <new-state>).
    (decode-fixed-block
     (lambda (state out)
       (decode-huffman-block state fixed-lit-table fixed-dist-table out)))
-
-   ; The order in which the code-length code lengths are stored
-   ; (RFC 1951 §3.2.7).
-   (code-length-order
-    (vector 16 17 18 0 8 7 9 6 10 5 11 4 12 3 13 2 14 1 15))
 
    ; Read the code-length code lengths and build the code-length Huffman table.
    ; Reads HCLEN + 4 three-bit lengths in the special order.  Returns
