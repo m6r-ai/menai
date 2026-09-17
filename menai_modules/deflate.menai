@@ -199,6 +199,27 @@
           #none
           (bytes-read-u24-be b i))))
 
+   ; Return the number of leading bytes that match between the span at `c` and
+   ; the span at `i` of `b`, up to a maximum of `limit`.  The whole span is
+   ; compared first with a single bytes=? (which uses memcmp and exits at the
+   ; first differing byte); when that fails, a binary search narrows down the
+   ; exact divergence point.  `limit` must be at least 1 and both spans must lie
+   ; within `b`.  `c` must be less than `i`.
+   (common-prefix
+    (lambda (b c i limit)
+      (if (bytes=? (bytes-slice b c (integer+ c limit))
+                   (bytes-slice b i (integer+ i limit)))
+          limit
+          (letrec ((search (lambda (lo hi)
+                             (if (integer<=? (integer- hi lo) 1)
+                                 lo
+                                 (let ((mid (integer+ lo (integer/ (integer- hi lo) 2))))
+                                   (if (bytes=? (bytes-slice b c (integer+ c mid))
+                                                (bytes-slice b i (integer+ i mid)))
+                                       (search mid hi)
+                                       (search lo mid)))))))
+            (search 0 limit)))))
+
    ; Find the longest match for the window starting at `i`, searching the
    ; candidate positions recorded in `table` under the 3-byte key at `i`.
    ; Returns (list <length> <distance>) with length 0 when no match of at least
@@ -220,17 +241,10 @@
                                    (list best-len best-dist)
                                    (let ((limit (integer-min max-match
                                                              (integer- (bytes-length b) i))))
-                                     (letrec ((extend (lambda (len)
-                                                        (if (integer>=? len limit)
-                                                            len
-                                                            (if (integer=? (bytes-ref b (integer+ c len))
-                                                                           (bytes-ref b (integer+ i len)))
-                                                                (extend (integer+ len 1))
-                                                                len)))))
-                                       (let ((len (extend 0)))
-                                         (if (integer>? len best-len)
-                                             (loop (list-rest cands) len (integer- i c))
-                                             (loop (list-rest cands) best-len best-dist)))))))))))
+                                     (let ((len (common-prefix b c i limit)))
+                                       (if (integer>? len best-len)
+                                           (loop (list-rest cands) len (integer- i c))
+                                           (loop (list-rest cands) best-len best-dist))))))))))
                   (loop candidates 0 0)))))))
 
    ; Build the LZ77 token list for `b`.  Each token is either
