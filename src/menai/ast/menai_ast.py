@@ -13,7 +13,7 @@ from typing import Any
 from menai.menai_value import (
     MenaiValue, MenaiInteger, MenaiFloat, MenaiComplex,
     MenaiString, MenaiBoolean, MenaiSymbol, MenaiList, MenaiDict, MenaiSet, MenaiNone, Menai_NONE,
-    MenaiStructType, MenaiBytes,
+    MenaiStructType, MenaiBytes, MenaiVector,
 )
 
 
@@ -327,18 +327,40 @@ class MenaiASTSet(MenaiASTNode):
 
 
 @dataclass(frozen=True)
+class MenaiASTVector(MenaiASTNode):
+    """
+    A fully-constant vector literal produced by the constant folder.
+
+    Distinct from a (vector ...) call so the IR builder can treat it as a
+    single constant rather than a runtime construction.  All elements must be
+    compile-time constants.
+    """
+    elements: tuple[MenaiASTNode, ...] = ()
+
+    def to_runtime_value(self) -> MenaiVector:
+        """Convert to a MenaiVector constant."""
+        return MenaiVector(tuple(elem.to_runtime_value() for elem in self.elements))
+
+    def type_name(self) -> str:
+        return "vector"
+
+    def describe(self) -> str:
+        return "#vector(" + " ".join(e.describe() for e in self.elements) + ")"
+
+
+@dataclass(frozen=True)
 class MenaiASTDict(MenaiASTNode):
     """
     Represents a dict literal in the AST.
 
-    Carries key-value pairs as parallel tuples of already-converted
-    MenaiValue objects (not AST nodes), mirroring MenaiASTList's approach
-    of storing runtime-ready elements.
+    Produced by the constant folder when every key and value in a (dict ...)
+    call is a compile-time constant.  Carries key-value pairs as tuples of AST
+    nodes, mirroring MenaiASTListLiteral's approach of storing the elements to
+    be converted by to_runtime_value.
 
-    Currently only the empty case (pairs=()) is synthesised by the desugarer,
-    as the seed accumulator for a (dict (list k v) ...) literal fold and for
-    zero-argument (dict) calls.  Non-empty dict literals are handled by the
-    desugarer as a fold of $dict-set calls over an empty seed.
+    Distinct from a (dict ...) call so the IR builder can treat it as a single
+    constant rather than a runtime construction.  When any key or value is not
+    a constant, the call is left as-is and lowered to a runtime build instead.
     """
     pairs: tuple[tuple['MenaiASTNode', 'MenaiASTNode'], ...] = ()
 

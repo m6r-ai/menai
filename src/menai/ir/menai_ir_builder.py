@@ -14,7 +14,7 @@ from menai.ir.menai_ir import (
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex,
     MenaiASTString, MenaiASTBoolean, MenaiASTNone, MenaiASTSymbol, MenaiASTList, MenaiASTListLiteral,
-    MenaiASTDict, MenaiASTSet, MenaiASTStruct, MenaiASTBytes,
+    MenaiASTDict, MenaiASTSet, MenaiASTVector, MenaiASTStruct, MenaiASTBytes,
 )
 
 
@@ -165,6 +165,9 @@ class MenaiIRBuilder:
 
         if expr_type is MenaiASTListLiteral:
             return MenaiIRConstant(value=cast(MenaiASTListLiteral, expr).to_runtime_value())
+
+        if expr_type is MenaiASTVector:
+            return MenaiIRConstant(value=cast(MenaiASTVector, expr).to_runtime_value())
 
         if expr_type is MenaiASTSet:
             return MenaiIRConstant(value=cast(MenaiASTSet, expr).to_runtime_value())

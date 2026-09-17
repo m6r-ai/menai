@@ -248,3 +248,44 @@ class TestConstantFolding:
         # The if-elimination path is distinct from the builtin-fold path.
         assert menai.evaluate("(if #t 42 0)") == 42
         _assert_folded_to_constant(menai, "(if #t 42 0)")
+
+
+class TestVectorFolding:
+    """Constant (vector ...) calls fold to a single constant load."""
+
+    def test_vector_all_constant(self, menai):
+        assert menai.evaluate_and_format("(vector 1 2 3)") == "#vector(1 2 3)"
+        _assert_folded_to_constant(menai, "(vector 1 2 3)")
+
+    def test_vector_single_element(self, menai):
+        assert menai.evaluate_and_format("(vector 1)") == "#vector(1)"
+        _assert_folded_to_constant(menai, "(vector 1)")
+
+    def test_vector_mixed_element_types(self, menai):
+        assert menai.evaluate_and_format('(vector 1 "hello" #t)') == '#vector(1 "hello" #t)'
+        _assert_folded_to_constant(menai, '(vector 1 "hello" #t)')
+
+    def test_empty_vector_folds_to_empty_vector_load(self, menai):
+        # The empty vector has a dedicated singleton load rather than LOAD_CONST.
+        code = menai.compile("(vector)")
+        opcodes = [unpack_instruction(w).opcode for w in code.instructions]
+        assert opcodes == [Opcode.LOAD_EMPTY_VECTOR, Opcode.RETURN], (
+            f"Expected [LOAD_EMPTY_VECTOR, RETURN], got {[Opcode(o).name for o in opcodes]}"
+        )
+
+    def test_nested_constant_vectors(self, menai):
+        assert menai.evaluate_and_format("(vector (vector 1 2) (vector 3 4))") == "#vector(#vector(1 2) #vector(3 4))"
+        _assert_folded_to_constant(menai, "(vector (vector 1 2) (vector 3 4))")
+
+    def test_constant_vector_inside_constant_list(self, menai):
+        assert menai.evaluate_and_format("(list (vector 1 2) 3)") == "(#vector(1 2) 3)"
+        _assert_folded_to_constant(menai, "(list (vector 1 2) 3)")
+
+    def test_non_constant_vector_not_folded(self, menai):
+        # A vector with a non-constant element must remain a runtime build.
+        code = menai.compile("(let ((x 1)) (vector x 2 3))")
+        opcodes = [unpack_instruction(w).opcode for w in code.instructions]
+        assert Opcode.MAKE_VECTOR in opcodes, (
+            f"Expected a runtime MAKE_VECTOR, got {[Opcode(o).name for o in opcodes]}"
+        )
+        assert menai.evaluate_and_format("(let ((x 1)) (vector x 2 3))") == "#vector(1 2 3)"

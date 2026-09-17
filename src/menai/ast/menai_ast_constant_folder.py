@@ -12,7 +12,7 @@ import math
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex,
     MenaiASTBoolean, MenaiASTSymbol, MenaiASTList, MenaiASTListLiteral, MenaiASTString,
-    MenaiASTDict, MenaiASTSet, MenaiASTBytes, MenaiASTNone,
+    MenaiASTDict, MenaiASTSet, MenaiASTVector, MenaiASTBytes, MenaiASTNone,
 )
 from menai.ast.menai_ast_optimization_pass import MenaiASTOptimizationPass
 
@@ -327,6 +327,10 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             if op_name == 'set':
                 return self._try_fold_set(list(expr.elements[1:]), expr)
 
+            # Fold (vector e1 ... en) where all args are constants into a vector literal.
+            if op_name == 'vector':
+                return self._try_fold_vector(list(expr.elements[1:]), expr)
+
             # Check if it's a foldable builtin
             if op_name in self.FOLDABLE_BUILTINS:
                 return self._try_fold_builtin(op_name, list(expr.elements[1:]), expr)
@@ -439,7 +443,7 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         if isinstance(node, MenaiASTListLiteral):
             return True
 
-        if isinstance(node, (MenaiASTDict, MenaiASTSet)):
+        if isinstance(node, (MenaiASTDict, MenaiASTSet, MenaiASTVector)):
             return True
 
         return True
@@ -507,6 +511,26 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
 
         return MenaiASTList(
             (MenaiASTSymbol('set'),) + tuple(opt_args),
+            line=source_expr.line, column=source_expr.column, source_file=source_expr.source_file,
+        )
+
+    def _try_fold_vector(self, args: list[MenaiASTNode], source_expr: MenaiASTList) -> MenaiASTNode:
+        """
+        Try to fold (vector e1 ... en) into a single MenaiASTVector node.
+
+        Folds only when every element is a compile-time constant.  Falls back
+        to optimising arguments individually otherwise.
+        """
+        opt_args = [self.optimize(arg) for arg in args]
+
+        if all(self._is_constant(a) for a in opt_args):
+            return MenaiASTVector(
+                tuple(opt_args),
+                line=source_expr.line, column=source_expr.column, source_file=source_expr.source_file,
+            )
+
+        return MenaiASTList(
+            (MenaiASTSymbol('vector'),) + tuple(opt_args),
             line=source_expr.line, column=source_expr.column, source_file=source_expr.source_file,
         )
 
