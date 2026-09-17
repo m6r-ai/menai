@@ -103,7 +103,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGValue,
     value_ids_in_instr,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
 from menai.menai_value import (
     MenaiBoolean,
     MenaiBytes,
@@ -169,7 +169,7 @@ def _value_type(value: object) -> str | None:
     return None
 
 
-class MenaiCFGLICM(MenaiCFGOptimizationPass):
+class MenaiCFGLICM(MenaiCFGPerFunctionPass):
     """
     CFG optimization pass that hoists loop-invariant instructions out of
     self-loops into a preamble block.

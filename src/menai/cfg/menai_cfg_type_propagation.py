@@ -76,7 +76,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGPhiInstr,
     MenaiCFGSwitchTerm,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
 from menai.menai_value import (
     MenaiBoolean,
     MenaiBytes,
@@ -145,7 +145,7 @@ def _value_type(value: object) -> str | None:
     return None
 
 
-class MenaiCFGTypePropagation(MenaiCFGOptimizationPass):
+class MenaiCFGTypePropagation(MenaiCFGPerFunctionPass):
     """
     CFG optimization pass that propagates types and inserts guards.
 

@@ -479,6 +479,11 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | `(dict-set d key val)` | Return new dict with key set to val |
 | `(dict-remove d key)` | Return new dict with key removed |
 
+Keys in a dict are unique. A dict literal with a duplicate constant key is a
+compile-time error. Duplicate keys that are not compile-time constants are
+collapsed at runtime, with the last value winning (the key keeps its first
+position).
+
 ```menai
 (dict-get (dict "a" 1 "b" 2) "a")         → 1
 (dict-get (dict "a" 1) "missing")         → #none

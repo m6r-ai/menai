@@ -213,6 +213,7 @@ Syntax: (operator arg1 arg2 ...)
 - Equality: (dict=? a1 a2), (dict!=? a1 a2)
 - Output format: dicts display with curly braces: {("name" "Alice") ("age" 30)} — this is display-only; construction always uses (dict ...)
 - Construction: (dict "name" "Alice" "age" 30)
+- Keys are unique: a dict literal with a duplicate constant key is a compile-time error; duplicate keys that are not compile-time constants are collapsed at runtime, last value winning (the key keeps its first position)
 - Access: (dict-get my-dict "key") → value or #none if missing, (dict-get my-dict "key" "default") → value or "default" if missing
 - Note: if the default is #none, a missing key is indistinguishable from a key whose value is #none; use (dict-has? my-dict "key") to differentiate
 - Modification: (dict-set my-dict "key" value), (dict-remove my-dict "key")

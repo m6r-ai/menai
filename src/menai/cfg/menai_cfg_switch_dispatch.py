@@ -52,7 +52,7 @@ from menai.cfg.menai_cfg import (
     value_ids_in_term,
     relink_predecessors,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
 from menai.menai_value import MenaiInteger
 
 
@@ -67,7 +67,7 @@ _ChainMatch = tuple[  # pylint: disable=invalid-name
 ]
 
 
-class MenaiCFGSwitchDispatch(MenaiCFGOptimizationPass):
+class MenaiCFGSwitchDispatch(MenaiCFGPerFunctionPass):
     """
     Rewrite integer-equality branch chains into dense switch terminators.
     """

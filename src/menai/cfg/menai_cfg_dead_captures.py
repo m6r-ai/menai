@@ -34,10 +34,10 @@ from menai.cfg.menai_cfg import (
     value_ids_in_instr,
     value_ids_in_term,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
 
 
-class MenaiCFGDeadCaptures(MenaiCFGOptimizationPass):
+class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
     """
     Eliminate dead captures from CFG functions.
 

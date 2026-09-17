@@ -149,6 +149,40 @@ The reason: immutability makes passes composable and makes bugs easier to isolat
 that mutates its input can corrupt the tree in ways that only manifest later in an
 unrelated pass.
 
+### CFG passes declare their scope via their base class
+
+CFG optimisation passes operate at module scope: a pass is handed the root
+`MenaiCFGFunction` and returns the (possibly new) root plus a changed flag. There is
+no separate module object — the module is the root function plus every function
+reachable through `MenaiCFGMakeClosureInstr` instructions, enumerated by
+`collect_functions`.
+
+A pass declares whether it is intraprocedural or whole-program by its base class:
+
+- `MenaiCFGPerFunctionPass` — implement `_optimize_function`; the base class handles
+  traversal of the function tree and write-back of replaced nested functions.
+- `MenaiCFGWholeProgramPass` — implement `_optimize_module`; the pass owns its own
+  traversal and write-back.
+
+Do not write a whole-program pass against the per-function contract (or vice versa).
+The base class is how a pass's scope is made visible at its declaration site.
+
+See [ADR-0020](docs/adr/0020-cfg-pass-scope-contracts.md).
+
+### Type facts distinguish "no information" from "conflicting information"
+
+The interprocedural type analysis (`menai_cfg_interproc_type_analysis.py`) uses a
+three-level fact lattice: BOTTOM (no information), a known kind, and ANY (conflicting
+kinds). These must stay distinct. If both "no information" and "conflicting
+information" mapped to a single unknown element, joining two different known kinds
+would move down the lattice and the parameter-fact fixed point would oscillate instead
+of converging.
+
+The analysis is a pure optimisation: where a type cannot be proven, the existing
+runtime path is used. It never changes observable behaviour.
+
+See [ADR-0021](docs/adr/0021-interprocedural-type-analysis.md).
+
 ### Menai is pure — dead code elimination is always safe
 
 Because Menai has no side effects, any expression whose result is never used can be

@@ -87,3 +87,5 @@ What costs, risks, or constraints does this decision impose?
 | [0017](0017-cons-cell-internal-representation.md) | Cons-cell internal representation for lists | Accepted |
 | [0018](0018-vector-type.md) | Vector type | Accepted |
 | [0019](0019-slice-out-of-bounds-raises-error.md) | Slice operations raise errors on out-of-bounds indices | Accepted |
+| [0020](0020-cfg-pass-scope-contracts.md) | CFG pass scope contracts — per-function and whole-program | Accepted |
+| [0021](0021-interprocedural-type-analysis.md) | Interprocedural flow-based type analysis | Accepted |

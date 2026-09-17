@@ -130,7 +130,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTerminator,
     relink_predecessors,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
 from menai.menai_value import (
     MenaiBoolean,
     MenaiBytes,
@@ -151,7 +151,7 @@ from menai.menai_value import (
 )
 
 
-class MenaiCFGBranchConstProp(MenaiCFGOptimizationPass):
+class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
     """
     Re-wire the defining blocks of phi incoming values that are
     statically-known constants, when the phi feeds a branch or return.

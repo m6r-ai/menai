@@ -421,13 +421,22 @@ class MenaiDict(MenaiValue):
     __slots__ = ('pairs', 'lookup')
 
     def __init__(self, pairs: tuple[tuple[MenaiValue, MenaiValue], ...] = ()) -> None:
-        self.pairs = pairs
-        lookup = {}
+        collapsed: list[tuple[MenaiValue, MenaiValue]] = []
+        positions: dict[object, int] = {}
         for key, value in pairs:
             hashable_key = self.to_hashable_key(key)
-            lookup[hashable_key] = (key, value)
+            if hashable_key in positions:
+                collapsed[positions[hashable_key]] = (key, value)
 
-        self.lookup = lookup
+            else:
+                positions[hashable_key] = len(collapsed)
+                collapsed.append((key, value))
+
+        self.pairs = tuple(collapsed)
+        self.lookup = {
+            self.to_hashable_key(key): (key, value)
+            for key, value in collapsed
+        }
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, MenaiDict):
