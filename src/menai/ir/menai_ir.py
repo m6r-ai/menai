@@ -128,16 +128,13 @@ class MenaiIRReturn:
 @dataclass
 class MenaiIRBuildDict:
     """
-    Plan for compiling a (dict (list k1 v1) (list k2 v2) ...) literal.
+    Plan for compiling a (dict k1 v1 k2 v2 ...) call.
 
-    Carries a flat list of (key_plan, value_plan) pairs.  The constant folder
-    can evaluate this to a MenaiIRConstant when all keys and values are
-    compile-time constants.  The VM codegen lowers it to LOAD_EMPTY_DICT
-    followed by N DICT_SET register ops, accumulating the result in a single
-    register slot.
-
-    Only emitted when every argument is a literal (list key value) form.
-    Non-literal arguments fall through to the runtime prelude lambda instead.
+    Carries a flat list of (key_plan, value_plan) pairs.  Emitted only when at
+    least one key or value is not a compile-time constant; a fully-constant
+    dict is folded to a MenaiIRConstant upstream by the AST constant folder
+    (via MenaiASTDict).  The VM codegen lowers it to MAKE_DICT, staging the
+    pairs into the outgoing zone and allocating the dict in a single call.
     """
     pair_plans: list[tuple['MenaiIRExpr', 'MenaiIRExpr']]
 
@@ -147,10 +144,12 @@ class MenaiIRBuildSet:
     """
     Plan for compiling a (set e1 e2 ... eN) literal.
 
-    Carries a flat list of element plans.  The VM codegen lowers it to
-    LOAD_EMPTY_SET followed by N SET_ADD register ops, accumulating the
-    result in a single register slot.  Duplicate elements are resolved at
-    runtime by SET_ADD (which is a no-op for already-present members).
+    Carries a flat list of element plans.  Emitted only when at least one
+    element is not a compile-time constant; a fully-constant set is folded to
+    a MenaiIRConstant upstream by the AST constant folder (via MenaiASTSet).
+    The VM codegen lowers it to MAKE_SET, staging the elements into the
+    outgoing zone and allocating the set in a single call.  Duplicate elements
+    are resolved at runtime by MAKE_SET.
     """
     element_plans: list['MenaiIRExpr']
 
