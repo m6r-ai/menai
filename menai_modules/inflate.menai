@@ -150,18 +150,18 @@
             (fold-list (lambda (acc len) (integer-max acc len)) 0 lst)))
          ; Compute the first canonical code for each length 1..maxlen.
          ; bl_count[len] = number of codes of that length.
-         ; next_code[len] = first code assigned to that length.
+         ; Returns a dict mapping length to the first code assigned to it.
          (first-codes
           (lambda (bl-count maxlen)
             (letrec ((loop (lambda (len code acc)
                              (if (integer>? len maxlen)
-                                 (list-reverse acc)
+                                 acc
                                  (let ((next (integer-bit-shift-left
                                                (integer+ code (dict-get bl-count len 0))
                                                1)))
                                    (loop (integer+ len 1) next
-                                         (list-prepend acc (list len code))))))))
-              (loop 1 0 (list))))))
+                                         (dict-set acc len code)))))))
+              (loop 1 0 (dict))))))
         (let ((maxlen (max-length lengths)))
           (letrec
             ((count-lengths
@@ -174,26 +174,21 @@
              ; Walk symbols in order, assigning each its canonical code.
              ; Returns a table dict keyed by (1 << length) + code.
              (assign
-              (lambda (symbols lens firsts table)
+              (lambda (symbols lens codes table)
                 (if (list-null? symbols)
                     table
                     (let ((len (list-first lens))
                           (sym (list-first symbols)))
                       (if (integer=? len 0)
-                          (assign (list-rest symbols) (list-rest lens) firsts table)
-                          (let ((entry (find-list (lambda (f) (integer=? (list-first f) len)) firsts)))
-                            (if (none? entry)
+                          (assign (list-rest symbols) (list-rest lens) codes table)
+                          (let ((code (dict-get codes len)))
+                            (if (none? code)
                                 (error "inflate: internal error building Huffman table")
-                                (let ((code (list-ref entry 1)))
-                                  (let ((key (integer+ (integer-bit-shift-left 1 len) code)))
-                                    (assign (list-rest symbols)
-                                            (list-rest lens)
-                                            (map-list (lambda (f)
-                                                        (if (integer=? (list-first f) len)
-                                                            (list (list-first f) (integer+ (list-ref f 1) 1))
-                                                            f))
-                                                      firsts)
-                                            (dict-set table key sym))))))))))))
+                                (let ((key (integer+ (integer-bit-shift-left 1 len) code)))
+                                  (assign (list-rest symbols)
+                                          (list-rest lens)
+                                          (dict-set codes len (integer+ code 1))
+                                          (dict-set table key sym)))))))))))
             (let ((symbols (range 0 (list-length lengths))))
               (assign symbols lengths (first-codes (count-lengths lengths (dict)) maxlen) (dict))))))))
 
@@ -355,14 +350,17 @@
                       (read-raw-bytes state3 len)
                       (error "inflate: stored block LEN does not match NLEN"))))))))))
 
+   ; The fixed Huffman decoding tables (RFC 1951 §3.2.6).  These are constant,
+   ; so they are built once here rather than per block.  Building them per block
+   ; dominates the cost of archives with many small fixed-Huffman entries.
+   (fixed-lit-table (build-huffman-table (fixed-lit-lengths)))
+   (fixed-dist-table (build-huffman-table (fixed-dist-lengths)))
+
    ; Decode one fixed Huffman block (BTYPE = 01).  Returns
    ; (list <output-state> <new-state>).
    (decode-fixed-block
     (lambda (state out)
-      (decode-huffman-block state
-                            (build-huffman-table (fixed-lit-lengths))
-                            (build-huffman-table (fixed-dist-lengths))
-                            out)))
+      (decode-huffman-block state fixed-lit-table fixed-dist-table out)))
 
    ; The order in which the code-length code lengths are stored
    ; (RFC 1951 §3.2.7).
