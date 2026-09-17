@@ -14,13 +14,17 @@
 ;
 ; Decompressed output is carried as an output state value threaded through the
 ; decode:
-;   (dict "chunks" <reversed list of bytes> "window" <bytes>)
-; `window` holds the most recent output and is kept bounded in size; when it
-; exceeds the flush threshold its older portion is moved into `chunks`.  This
-; keeps every append O(window-size) rather than O(total-output-size), so the
-; decode is linear rather than quadratic.  `window` always retains at least the
-; maximum DEFLATE back-reference distance (32768 bytes), which is all a
-; back-reference can reach.
+;   (dict "chunks" <reversed list of every appended bytes value>
+;         "pending" <reversed list of bytes appended since the window was last refreshed>
+;         "window" <bytes: the most recent output, coalesced>
+;         "total" <integer: total bytes produced>)
+; Appending only prepends to `chunks` and `pending`, so it is O(1) regardless
+; of how much output has already been produced.  `window` is a coalesced
+; contiguous view of the most recent output and is refreshed lazily, only when
+; a back-reference needs to read from it.  A back-reference can reach back at
+; most the maximum DEFLATE distance, so refreshing keeps only the most recent
+; `window-cap` bytes; `chunks` retains everything for the final concatenation.
+; This makes the decode linear in the output size rather than quadratic.
 
 (letrec
   ((tables (import "deflate_tables"))
@@ -41,55 +45,60 @@
    ; back-reference can be resolved.
    (window-cap 32768)
 
-   ; The window is allowed to grow to this size before being flushed.  It must
-   ; be at least window-cap (so back-references can always be resolved) and the
-   ; gap above window-cap determines how often a flush happens.  A larger gap
-   ; means fewer, larger flushes; a smaller gap means more frequent small ones.
-   (window-flush-threshold 65536)
-
    ; Create an empty output state.
    (make-output
     (lambda ()
-      (dict "chunks" (list) "window" (string->bytes ""))))
+      (dict "chunks" (list)
+            "pending" (list)
+            "window" (string->bytes "")
+            "total" 0)))
 
-   ; Move the older portion of the window into the chunk list when it reaches
-   ; the flush threshold, keeping the most recent `window-cap` bytes in the
-   ; window.  This bounds the cost of subsequent appends.
-   (output-flush
-    (lambda (out)
-      (let ((win (dict-get out "window")))
-        (if (integer<? (bytes-length win) window-flush-threshold)
-            out
-            (let ((split (integer- (bytes-length win) window-cap)))
-              (dict "chunks" (list-prepend (dict-get out "chunks")
-                                           (bytes-slice win 0 split))
-                    "window" (bytes-slice win split (bytes-length win))))))))
-
-   ; Append one byte to the output, flushing first if the window has reached the
-   ; flush threshold.
-   (output-append-byte
-    (lambda (out byte)
-      (let ((flushed (if (integer>=? (bytes-length (dict-get out "window")) window-flush-threshold)
-                         (output-flush out)
-                         out)))
-        (dict "chunks" (dict-get flushed "chunks")
-              "window" (bytes-append-u8 (dict-get flushed "window") byte)))))
-
-   ; Append a bytes value to the output, flushing first if the window has
-   ; reached the flush threshold so the concatenation stays bounded.
+   ; Append a bytes value to the output.  O(1): the value is prepended to the
+   ; chunk list (for the final concatenation) and to the pending list (for the
+   ; next window refresh).
    (output-append-bytes
     (lambda (out bs)
-      (let ((flushed (if (integer>=? (bytes-length (dict-get out "window")) window-flush-threshold)
-                         (output-flush out)
-                         out)))
-        (dict "chunks" (dict-get flushed "chunks")
-              "window" (bytes-concat (dict-get flushed "window") bs)))))
+      (dict "chunks" (list-prepend (dict-get out "chunks") bs)
+            "pending" (list-prepend (dict-get out "pending") bs)
+            "window" (dict-get out "window")
+            "total" (integer+ (dict-get out "total") (bytes-length bs)))))
 
-   ; Flatten the output state into a single bytes value.
+   ; Coalesce the pending appends onto the window, keeping only the most recent
+   ; `window-cap` bytes (all a back-reference can reach).  Returns the output
+   ; state with an empty pending list.  O(window-cap + pending).  A no-op when
+   ; there is nothing pending, so it is cheap to call before every read.
+   (output-refresh-window
+    (lambda (out)
+      (let ((pending (dict-get out "pending")))
+        (if (list-null? pending)
+            out
+            (let ((win (bytes-concat (dict-get out "window")
+                                     (apply bytes-concat (list-reverse pending)))))
+              (dict "chunks" (dict-get out "chunks")
+                    "pending" (list)
+                    "window" (if (integer>? (bytes-length win) window-cap)
+                                 (bytes-slice win (integer- (bytes-length win) window-cap)
+                                              (bytes-length win))
+                                 win)
+                    "total" (dict-get out "total")))))))
+
+   ; Concatenate a list of bytes values in a balanced tree rather than a left
+   ; fold.  A left fold copies the growing prefix once per element, which is
+   ; O(total * n); merging pairs instead copies each byte O(log n) times.
+   (concat-chunks
+    (lambda (chunks)
+      (if (list-null? chunks)
+          (string->bytes "")
+          (if (list-null? (list-rest chunks))
+              (list-first chunks)
+              (let ((half (integer/ (list-length chunks) 2)))
+                (bytes-concat (concat-chunks (list-slice chunks 0 half))
+                              (concat-chunks (list-slice chunks half))))))))
+
+   ; Flatten the output state into a single bytes value.  O(total * log n).
    (output-finalize
     (lambda (out)
-      (bytes-concat (apply bytes-concat (list-reverse (dict-get out "chunks")))
-                    (dict-get out "window"))))
+      (concat-chunks (list-reverse (dict-get out "chunks")))))
 
    ; Read a single bit, returning (list <0-or-1> <new-state>).
    (read-bit
@@ -262,16 +271,20 @@
    ; copy and is repeated to fill it, which reproduces the byte-at-a-time
    ; overlap replication.  Appending in one operation keeps the cost
    ; proportional to `length` rather than to the window size.
+   ;
+   ; The window is refreshed first so it covers the most recent output, which
+   ; is all a back-reference can reach.
    (copy-back-reference
     (lambda (out distance length)
-      (if (integer>? distance (bytes-length (dict-get out "window")))
+      (if (integer>? distance (dict-get out "total"))
           (error "inflate: back-reference distance exceeds output produced so far")
-          (let ((win (dict-get out "window"))
-                (wlen (bytes-length (dict-get out "window"))))
-            (let ((block-len (integer-min distance length)))
-              (let ((block (bytes-slice win (integer- wlen distance)
-                                        (integer+ (integer- wlen distance) block-len))))
-                (output-append-bytes out (repeat-to-length block block-len length))))))))
+          (let ((out (output-refresh-window out)))
+            (let ((win (dict-get out "window"))
+                  (wlen (bytes-length (dict-get out "window"))))
+              (let ((block-len (integer-min distance length)))
+                (let ((block (bytes-slice win (integer- wlen distance)
+                                          (integer+ (integer- wlen distance) block-len))))
+                  (output-append-bytes out (repeat-to-length block block-len length)))))))))
 
    ; Return a bytes value of exactly `length` bytes formed by repeating `block`
    ; (which has `block-len` bytes) until it is long enough, then truncating.
@@ -286,27 +299,40 @@
 
    ; Decode the symbols of a Huffman-coded block (fixed or dynamic) until the
    ; end-of-block symbol (256).  Returns (list <output-state> <new-state>).
+   ;
+   ; Consecutive literals are gathered into a pending list and appended in one
+   ; operation when a match or the end of the block is reached.  Appending each
+   ; literal individually would allocate a one-byte value per literal, which
+   ; dominates the cost on literal-heavy streams.
    (decode-huffman-block
     (lambda (state lit-table dist-table out)
-      (letrec ((loop (lambda (st acc)
-                       (let ((sym-result (decode-symbol st lit-table)))
-                         (let ((sym (list-first sym-result))
-                               (st2 (list-ref sym-result 1)))
-                           (if (integer=? sym 256)
-                               (list acc st2)
-                               (if (integer<? sym 256)
-                                   (loop st2 (output-append-byte acc sym))
-                                   (let ((length-result (decode-length st2 sym)))
-                                     (let ((length (list-first length-result))
-                                           (st3 (list-ref length-result 1)))
-                                       (let ((dist-sym-result (decode-symbol st3 dist-table)))
-                                         (let ((dist-sym (list-first dist-sym-result))
-                                               (st4 (list-ref dist-sym-result 1)))
-                                           (let ((dist-result (decode-distance st4 dist-sym)))
-                                             (let ((distance (list-first dist-result))
-                                                   (st5 (list-ref dist-result 1)))
-                                               (loop st5 (copy-back-reference acc distance length)))))))))))))))
-        (loop state out))))
+      (letrec
+        ((flush-literals (lambda (acc pending)
+                           (if (list-null? pending)
+                               acc
+                               (output-append-bytes acc (list->bytes (list-reverse pending))))))
+         (loop (lambda (st acc pending)
+                 (let ((sym-result (decode-symbol st lit-table)))
+                   (let ((sym (list-first sym-result))
+                         (st2 (list-ref sym-result 1)))
+                     (if (integer=? sym 256)
+                         (list (flush-literals acc pending) st2)
+                         (if (integer<? sym 256)
+                             (loop st2 acc (list-prepend pending sym))
+                             (let ((length-result (decode-length st2 sym)))
+                               (let ((length (list-first length-result))
+                                     (st3 (list-ref length-result 1)))
+                                 (let ((dist-sym-result (decode-symbol st3 dist-table)))
+                                   (let ((dist-sym (list-first dist-sym-result))
+                                         (st4 (list-ref dist-sym-result 1)))
+                                     (let ((dist-result (decode-distance st4 dist-sym)))
+                                       (let ((distance (list-first dist-result))
+                                             (st5 (list-ref dist-result 1)))
+                                         (loop st5
+                                               (copy-back-reference (flush-literals acc pending)
+                                                                    distance length)
+                                               (list)))))))))))))))
+        (loop state out (list)))))
 
    ; Decode one stored block (BTYPE = 00).  The reader is positioned just after
    ; the 3 header bits; stored blocks byte-align, then carry LEN and NLEN
