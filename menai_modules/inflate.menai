@@ -136,10 +136,12 @@
 
    ; Build a canonical Huffman decoding table from a list of code lengths.
    ; `lengths` is a list where element i is the code length of symbol i
-   ; (0 means the symbol is unused).  Returns a dict mapping a key string
-   ; "<length>:<code>" to the symbol index, following the canonical code
-   ; assignment of RFC 1951 §3.2.2 (shorter codes first; within a length,
-   ; codes assigned in symbol order).
+   ; (0 means the symbol is unused).  Returns a dict mapping an integer key to
+   ; the symbol index, following the canonical code assignment of RFC 1951
+   ; §3.2.2 (shorter codes first; within a length, codes assigned in symbol
+   ; order).  A code of length L with value `code` is keyed by (1 << L) + code;
+   ; because a code of length L is always less than 2^L, keys for different
+   ; lengths occupy disjoint ranges.
    (build-huffman-table
     (lambda (lengths)
       (letrec
@@ -170,7 +172,7 @@
                                     (dict-set acc (list-first lst)
                                               (integer+ (dict-get acc (list-first lst) 0) 1))))))
              ; Walk symbols in order, assigning each its canonical code.
-             ; Returns a table dict keyed by "<length>:<code>".
+             ; Returns a table dict keyed by (1 << length) + code.
              (assign
               (lambda (symbols lens firsts table)
                 (if (list-null? symbols)
@@ -183,9 +185,7 @@
                             (if (none? entry)
                                 (error "inflate: internal error building Huffman table")
                                 (let ((code (list-ref entry 1)))
-                                  (let ((key (string-concat (integer->string len)
-                                                            ":"
-                                                            (integer->string code))))
+                                  (let ((key (integer+ (integer-bit-shift-left 1 len) code)))
                                     (assign (list-rest symbols)
                                             (list-rest lens)
                                             (map-list (lambda (f)
@@ -198,7 +198,9 @@
               (assign symbols lengths (first-codes (count-lengths lengths (dict)) maxlen) (dict))))))))
 
    ; Decode one symbol using a canonical Huffman table, reading bits one at a
-   ; time until a code matches.  Returns (list <symbol> <new-state>).
+   ; time until a code matches.  The table is keyed by (1 << length) + code, so
+   ; the lookup key is built with integer arithmetic.  Returns
+   ; (list <symbol> <new-state>).
    (decode-symbol
     (lambda (state table)
       (letrec ((loop (lambda (st length code)
@@ -210,9 +212,8 @@
                                (let ((new-code (integer-bit-or
                                                  (integer-bit-shift-left code 1)
                                                  bit)))
-                                 (let ((key (string-concat (integer->string (integer+ length 1))
-                                                           ":"
-                                                           (integer->string new-code))))
+                                 (let ((key (integer+ (integer-bit-shift-left 1 (integer+ length 1))
+                                                      new-code)))
                                    (let ((sym (dict-get table key)))
                                      (if (none? sym)
                                          (loop next (integer+ length 1) new-code)
@@ -263,19 +264,36 @@
                 (list-ref extra-result 1))))))
 
    ; Copy `length` bytes from `distance` bytes back in the output, appending to
-   ; it.  Copies one byte at a time so that overlapping copies (where
-   ; distance < length) replicate correctly.  Returns the new output state.
+   ; it.  Returns the new output state.
+   ;
+   ; The source is the block of `min(distance, length)` bytes ending at the end
+   ; of the window; the copied bytes are that block repeated.  When
+   ; `distance >= length` the block is already `length` bytes, so a single
+   ; slice is appended.  When `distance < length` the block is shorter than the
+   ; copy and is repeated to fill it, which reproduces the byte-at-a-time
+   ; overlap replication.  Appending in one operation keeps the cost
+   ; proportional to `length` rather than to the window size.
    (copy-back-reference
     (lambda (out distance length)
       (if (integer>? distance (bytes-length (dict-get out "window")))
           (error "inflate: back-reference distance exceeds output produced so far")
-          (letrec ((loop (lambda (i acc)
-                           (if (integer>=? i length)
-                               acc
-                               (let ((src (integer- (bytes-length (dict-get acc "window")) distance)))
-                                 (loop (integer+ i 1)
-                                       (output-append-byte acc (bytes-ref (dict-get acc "window") src))))))))
-            (loop 0 out)))))
+          (let ((win (dict-get out "window"))
+                (wlen (bytes-length (dict-get out "window"))))
+            (let ((block-len (integer-min distance length)))
+              (let ((block (bytes-slice win (integer- wlen distance)
+                                        (integer+ (integer- wlen distance) block-len))))
+                (output-append-bytes out (repeat-to-length block block-len length))))))))
+
+   ; Return a bytes value of exactly `length` bytes formed by repeating `block`
+   ; (which has `block-len` bytes) until it is long enough, then truncating.
+   ; `block-len` must be at least 1 and at most `length`.
+   (repeat-to-length
+    (lambda (block block-len length)
+      (letrec ((loop (lambda (acc)
+                       (if (integer>=? (bytes-length acc) length)
+                           (bytes-slice acc 0 length)
+                           (loop (bytes-concat acc block))))))
+        (loop block))))
 
    ; Decode the symbols of a Huffman-coded block (fixed or dynamic) until the
    ; end-of-block symbol (256).  Returns (list <output-state> <new-state>).
