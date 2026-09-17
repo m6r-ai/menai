@@ -47,6 +47,9 @@ Bug fixes:
   blocks, so patches in later blocks were left behind.  When all sibling captures
   were dead the closure became a shared constant, and the leftover patch then
   mutated that constant.
+- Dictionaries created with duplicate keys retained the first value, but should have
+  retained the last one.
+- Sets created with dynamic duplicate elements must not contain duplicates!
 
 ## v0.5.0 (2026-09-14)
 

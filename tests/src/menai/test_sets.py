@@ -58,6 +58,28 @@ class TestSetConstruction:
         result = tool.evaluate_and_format("(set 5 5 5 5)")
         assert result == "#{5}"
 
+    def test_runtime_set_deduplicates(self, tool):
+        """Duplicate elements are dropped when the set is built at runtime."""
+        expr = """
+        (letrec ((f (lambda (x n)
+                      (if (integer<=? n 0)
+                          (set x 2 x)
+                          (f x (integer- n 1))))))
+          (set->list (f 1 1)))
+        """
+        assert tool.evaluate_and_format(expr) == "(1 2)"
+
+    def test_runtime_set_length_reflects_deduplication(self, tool):
+        """A runtime set's length counts unique elements only."""
+        expr = """
+        (letrec ((f (lambda (x n)
+                      (if (integer<=? n 0)
+                          (set x 2 x)
+                          (f x (integer- n 1))))))
+          (set-length (f 1 1)))
+        """
+        assert tool.evaluate(expr) == 2
+
 
 class TestSetConstructionErrors:
     """Test set construction error cases."""

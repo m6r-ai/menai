@@ -7100,6 +7100,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              * src0 = base slot of outgoing zone (absolute slot index).
              * src1 = element count.
              * Elements are in slots src0..src0+n-1.
+             *
+             * Duplicate elements are silently dropped, keeping the first
+             * occurrence, matching the documented set semantics.
              */
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             int n = src1;
@@ -7109,40 +7112,47 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 goto error;
             }
 
+            if (n > 0) {
+                vm_err = menai_ht_init(vs, &r->ht, n);
+                if (MENAI_UNLIKELY(vm_err < 0)) {
+                    r->length = 0;
+                    menai_value_release(vs, (MenaiValue *)r);
+                    goto error;
+                }
+            }
+
+            ssize_t out = 0;
             for (int i = 0; i < n; i++) {
                 MenaiValue *elem = frame_regs[src0 + i];
                 hash_t h = menai_value_hash(elem);
                 if (h == -1) {
                     vm_err = MENAI_ERR_UNHASHABLE_KEY;
+                    r->length = out;
                     menai_value_release(vs, (MenaiValue *)r);
                     goto error;
+                }
+
+                if (menai_ht_lookup(&r->ht, elem, h) >= 0) {
+                    /* Duplicate element — keep the first occurrence only. */
+                    continue;
                 }
 
                 menai_value_retain(elem);
                 MenaiSetElement *se = alloc_menai_set_element(vs, elem, h);
                 if (!se) {
                     menai_value_release(vs, elem);
+                    r->length = out;
                     menai_value_release(vs, (MenaiValue *)r);
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
 
-                r->elements[i] = se;
+                r->elements[out] = se;
+                menai_ht_insert(&r->ht, elem, h, out);
+                out++;
             }
 
-            r->length = n;
-            if (n > 0) {
-                vm_err = menai_ht_init(vs, &r->ht, n);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    menai_value_release(vs, (MenaiValue *)r);
-                    goto error;
-                }
-
-                for (ssize_t i = 0; i < n; i++) {
-                    MenaiSetElement *elem = r->elements[i];
-                    menai_ht_insert(&r->ht, elem->value, elem->hash, i);
-                }
-            }
+            r->length = out;
 
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)r;
