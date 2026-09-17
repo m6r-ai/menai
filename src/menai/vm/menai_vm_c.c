@@ -7155,6 +7155,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
              * src0 = base slot of outgoing zone (absolute slot index).
              * src1 = pair count.
              * Pairs are interleaved as k0, v0, k1, v1, ... in slots src0..src0+n*2-1.
+             *
+             * Duplicate keys are collapsed last-wins: a later pair with a key
+             * already present replaces the earlier value but keeps the earlier
+             * position.  Duplicate constant keys are rejected at compile time;
+             * this is the runtime backstop for keys that are not constant.
              */
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             int n = src1;
@@ -7166,13 +7171,21 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
             MenaiDictElement **elems = r->elements;
 
+            if (menai_ht_init(vs, &r->ht, (ssize_t)n) < 0) {
+                r->length = 0;
+                menai_value_release(vs, (MenaiValue *)r);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            ssize_t out = 0;
             for (int i = 0; i < n; i++) {
                 MenaiValue *k = frame_regs[src0 + i * 2];
                 MenaiValue *v = frame_regs[src0 + i * 2 + 1];
                 hash_t h = menai_value_hash(k);
                 if (h == -1) {
                     vm_err = MENAI_ERR_UNHASHABLE_KEY;
-                    r->length = (ssize_t)i;
+                    r->length = out;
                     menai_value_release(vs, (MenaiValue *)r);
                     goto error;
                 }
@@ -7183,27 +7196,25 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 if (!elem) {
                     menai_value_release(vs, k);
                     menai_value_release(vs, v);
-                    r->length = (ssize_t)i;
+                    r->length = out;
                     menai_value_release(vs, (MenaiValue *)r);
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
 
-                elems[i] = elem;
+                ssize_t existing = menai_ht_lookup(&r->ht, k, h);
+                if (existing >= 0) {
+                    /* Key already present — replace its value, keep its position. */
+                    menai_value_release(vs, (MenaiValue *)elems[existing]);
+                    elems[existing] = elem;
+                } else {
+                    elems[out] = elem;
+                    menai_ht_insert(&r->ht, elem->key, elem->hash, out);
+                    out++;
+                }
             }
 
-            if (menai_ht_init(vs, &r->ht, (ssize_t)n) < 0) {
-                r->length = (ssize_t)n;
-                menai_value_release(vs, (MenaiValue *)r);
-                vm_err = MENAI_ERR_NOMEM;
-                goto error;
-            }
-
-            for (int i = 0; i < n; i++) {
-                menai_ht_insert(&r->ht, elems[i]->key, elems[i]->hash, (ssize_t)i);
-            }
-
-            r->length = (ssize_t)n;
+            r->length = out;
 
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)r;

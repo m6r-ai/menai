@@ -15,7 +15,16 @@ before any transformations occur.
 
 from typing import cast
 
-from menai.ast.menai_ast import MenaiASTNode, MenaiASTSymbol, MenaiASTList, MenaiASTString
+from menai.ast.menai_ast import (
+    MenaiASTBoolean,
+    MenaiASTComplex,
+    MenaiASTFloat,
+    MenaiASTInteger,
+    MenaiASTList,
+    MenaiASTNode,
+    MenaiASTString,
+    MenaiASTSymbol,
+)
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
 from menai.ast.menai_ast import MenaiASTStruct
@@ -979,11 +988,44 @@ class MenaiASTSemanticAnalyzer:
                     source=self.source
                 )
 
+            self._check_duplicate_dict_keys(expr)
+
         # Recursively analyze all elements (function and arguments)
         for elem in expr.elements:
             self.analyze(elem, self.source)
 
         return expr
+
+    def _check_duplicate_dict_keys(self, expr: MenaiASTList) -> None:
+        """
+        Reject a (dict ...) literal with duplicate constant keys.
+
+        A dict cannot contain duplicate keys.  This is caught at compile time
+        when both keys are constant literals.  Keys that are not constant
+        literals cannot be compared statically; duplicates among them are
+        collapsed at runtime (last value wins).
+        """
+        seen: set[tuple[str, object]] = set()
+        elements = expr.elements[1:]
+        for i in range(0, len(elements), 2):
+            key = elements[i]
+            key_id = _constant_key_id(key)
+            if key_id is None:
+                continue
+
+            if key_id in seen:
+                raise MenaiEvalError(
+                    message="Duplicate key in dict literal",
+                    received=f"Key {key.describe()} appears more than once",
+                    expected="Each key in a dict literal must be unique",
+                    example='(dict "name" "Alice" "age" 30)',
+                    suggestion="Remove or rename the duplicate key",
+                    line=expr.line,
+                    column=expr.column,
+                    source=self.source
+                )
+
+            seen.add(key_id)
 
     def _analyze_struct(self, expr: MenaiASTList, binding_name: str) -> MenaiASTStruct:
         """
@@ -1077,3 +1119,30 @@ class MenaiASTSemanticAnalyzer:
             column=expr.column,
             source=self.source
         )
+
+
+def _constant_key_id(node: MenaiASTNode) -> tuple[str, object] | None:
+    """
+    Return a comparable identity for a constant dict key, or None.
+
+    The identity pairs the key's type name with its value, so that keys of
+    different types with equal values (e.g. 1 and 1.0) are distinct, matching
+    Menai's strict typing.  Non-literal keys return None and are not compared
+    statically.
+    """
+    if isinstance(node, MenaiASTString):
+        return ('string', node.value)
+
+    if isinstance(node, MenaiASTBoolean):
+        return ('boolean', node.value)
+
+    if isinstance(node, MenaiASTInteger):
+        return ('integer', node.value)
+
+    if isinstance(node, MenaiASTFloat):
+        return ('float', node.value)
+
+    if isinstance(node, MenaiASTComplex):
+        return ('complex', node.value)
+
+    return None
