@@ -241,7 +241,7 @@ class MenaiVCodeBuilder:
             # Emit phi-elimination moves before the terminator.
             for dst, src in phi_moves[block.id]:
                 if dst.id != src.id:
-                    instrs.append(MenaiVCodeMove(dst=dst, src=src))
+                    instrs.append(MenaiVCodeMove(dst=dst, src=src, is_phi_move=True))
 
                 max_reg_id = max(max_reg_id, dst.id, src.id)
 

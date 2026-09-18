@@ -64,9 +64,14 @@ class MenaiVCodeMove:
     Explicit register-to-register copy.  Produced by phi elimination to
     materialise phi node semantics.  The slot allocator may eliminate moves
     where src and dst are assigned the same slot.
+
+    `is_phi_move` is True when this move was emitted by phi elimination (one
+    move per phi arm).  The slot allocator uses it to coalesce a single-use
+    arm value directly into the phi result's slot.
     """
     dst: MenaiVCodeReg
     src: MenaiVCodeReg
+    is_phi_move: bool = False
 
 
 @dataclass

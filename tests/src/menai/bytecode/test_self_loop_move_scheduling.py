@@ -241,3 +241,97 @@ class TestSelfLoopMoveSchedulingCorrectness:
           (loop (list 1 2 3 4 5) 0))
         """
         assert m.evaluate(src) == 5
+
+
+class TestLoopCarriedParamCoalescing:
+    """Loop-carried param updates are coalesced even across a call barrier."""
+
+    def test_move_eliminated_across_call(self):
+        """
+        A loop-carried temp computed before a predicate call is written
+        straight into the loop parameter, so no back-edge MOVE remains.
+
+        (let ((my-filter (lambda (pred v)
+                           (letrec ((loop (lambda (i acc)
+                                            (if ($integer<? i 0)
+                                                ($list->vector acc)
+                                                (loop ($integer- i 1)
+                                                      (if (pred ($vector-ref v i))
+                                                          ($list-prepend acc ($vector-ref v i))
+                                                          acc))))))
+                             (loop ($integer- ($vector-length v) 1) (list))))))
+          (my-filter (lambda (x) ($integer>? x 0)) (vector -1 2 -3 4)))
+
+        The temp `($integer- i 1)` is defined before the `pred` call and
+        moved into `i` at the back edge.  The call no longer blocks the
+        coalescing, so the MOVE is eliminated.
+        """
+        src = """
+        (let ((my-filter (lambda (pred v)
+                           (letrec ((loop (lambda (i acc)
+                                            (if ($integer<? i 0)
+                                                ($list->vector acc)
+                                                (loop ($integer- i 1)
+                                                      (if (pred ($vector-ref v i))
+                                                          ($list-prepend acc ($vector-ref v i))
+                                                          acc))))))
+                             (loop ($integer- ($vector-length v) 1) (list))))))
+          (my-filter (lambda (x) ($integer>? x 0)) (vector -1 2 -3 4)))
+        """
+        code = _compile(src)
+        loop = _find_lambda(code, "loop")
+        assert loop is not None, "loop lambda not found"
+        # The back-edge MOVE for `i` is gone; the only remaining MOVE is the
+        # list-prepend staging for the call argument.
+        assert _count_op(loop, Opcode.MOVE) <= 1
+
+    def test_result_correct(self):
+        """The coalesced loop produces the correct filtered vector."""
+        from menai import Menai
+        m = Menai()
+        src = """
+        (let ((my-filter (lambda (pred v)
+                           (letrec ((loop (lambda (i acc)
+                                            (if ($integer<? i 0)
+                                                ($list->vector acc)
+                                                (loop ($integer- i 1)
+                                                      (if (pred ($vector-ref v i))
+                                                          ($list-prepend acc ($vector-ref v i))
+                                                          acc))))))
+                             (loop ($integer- ($vector-length v) 1) (list))))))
+          (list (my-filter (lambda (x) ($integer>? x 0)) (vector -1 2 -3 4))
+                (my-filter (lambda (x) ($integer>? x 100)) (vector 1 2 3))
+                (my-filter (lambda (x) ($integer>? x -100)) (vector 1 2 3))
+                (my-filter (lambda (x) ($integer>? x 0)) (vector))))
+        """
+        result = m.evaluate(src)
+        assert result == [[2, 4], [], [1, 2, 3], []]
+
+
+class TestPhiArgumentCoalescing:
+    """Single-use phi arm values are coalesced into the phi result's slot."""
+
+    def test_prepend_result_written_into_acc(self):
+        """
+        The `list-prepend` result feeding the `if` join phi is written
+        directly into the accumulator parameter, eliminating the residual
+        phi-elimination MOVE.
+        """
+        src = """
+        (let ((my-filter (lambda (pred v)
+                           (letrec ((loop (lambda (i acc)
+                                            (if ($integer<? i 0)
+                                                ($list->vector acc)
+                                                (loop ($integer- i 1)
+                                                      (if (pred ($vector-ref v i))
+                                                          ($list-prepend acc ($vector-ref v i))
+                                                          acc))))))
+                             (loop ($integer- ($vector-length v) 1) (list))))))
+          (my-filter (lambda (x) ($integer>? x 0)) (vector -1 2 -3 4)))
+        """
+        code = _compile(src)
+        loop = _find_lambda(code, "loop")
+        assert loop is not None, "loop lambda not found"
+        # The list-prepend result is written straight into the accumulator
+        # slot, so the only MOVE left is the call-argument staging.
+        assert _count_op(loop, Opcode.MOVE) == 1

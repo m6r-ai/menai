@@ -439,6 +439,57 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
 
             slots[reg_id] = param_slot
 
+    # Phase 4: coalesce single-use sources of phi-elimination moves.
+    # Phi elimination emits one move per phi arm, copying the arm's incoming
+    # value into the phi result register.  When an arm's incoming value is
+    # produced solely to feed that arm (single definition, single use), the
+    # producing instruction can write the phi result's slot directly, making
+    # the move a same-slot no-op.
+    #
+    # This is what removes the residual move in a loop like filter-vector's,
+    # where one phi arm feeds the phi from a computation (`list-prepend`) and
+    # the phi result is itself coalesced into the loop parameter by Phase 3b.
+    #
+    # Safety conditions (parallel to Phase 3b):
+    #   1. Not a fixed register (param or free var).
+    #   2. The phi move is the last use of the register's current definition.
+    #   3. No call/apply/make barrier between the definition and this move.
+    #   4. No instruction between the definition and this move reads from the
+    #      phi result's slot.
+    for move_idx, move in enumerate(func.instrs):
+        if not isinstance(move, MenaiVCodeMove) or not move.is_phi_move:
+            continue
+
+        reg_id = move.src.id
+        dst_slot = slots.get(move.dst.id)
+
+        if dst_slot is None:
+            continue
+
+        if reg_id in fixed_reg_id_set:
+            continue
+
+        reg_def = _active_def(reg_defs, reg_id, move_idx)
+        if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
+            continue
+
+        barrier = False
+        for scan_idx in range(reg_def + 1, move_idx):
+            scan_instr = func.instrs[scan_idx]
+            if isinstance(scan_instr, barrier_types):
+                barrier = True
+                break
+
+            _, scan_uses = _defs_uses(scan_instr)
+            if any(slots.get(u, -1) == dst_slot for u in scan_uses):
+                barrier = True
+                break
+
+        if barrier:
+            continue
+
+        slots[reg_id] = dst_slot
+
     return SlotMap(slots=slots, slot_count=slot_count, local_count=local_count)
 
 
