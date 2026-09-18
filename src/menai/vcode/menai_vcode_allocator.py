@@ -379,6 +379,66 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
 
             slots[reg_id] = param_slot
 
+    # Phase 3c: back-propagate param slot assignments across call barriers.
+    # Phase 3b treats any call/apply as a barrier because those instructions
+    # clobber the outgoing zone.  A param slot, however, is never part of the
+    # outgoing zone (which lives at local_count + offset, strictly above every
+    # param, capture, and local slot), so a call cannot read or write the
+    # caller's param slot.  The only way a param slot's value can be observed
+    # between a temp's definition and the back-edge move is by an instruction
+    # in this same function that reads it — which is exactly what condition 4
+    # below checks.
+    #
+    # This lets a loop-carried temp whose definition is separated from the
+    # back-edge move by a call (e.g. a predicate call in the loop body) still
+    # be written straight into the param slot, eliminating the temp and the
+    # move.  Example: filter-vector's loop computes `i - 1`, calls the
+    # predicate, then moves the result back into `i`.
+    #
+    # Safety conditions:
+    #   1. Not a fixed register (param or free var).
+    #   2. The self-loop move is the last use of the register's current definition.
+    #   3. No instruction between the definition and this move reads from
+    #      param_slot (condition 4 of Phase 3b; the barrier check is dropped).
+    for jump_idx, instr in enumerate(func.instrs):
+        if not isinstance(instr, MenaiVCodeJump) or instr.label != "__entry__":
+            continue
+
+        move_start = jump_idx - 1
+        while move_start >= 0 and isinstance(func.instrs[move_start], MenaiVCodeMove):
+            move_start -= 1
+
+        move_start += 1
+
+        for move_idx in range(move_start, jump_idx):
+            move = func.instrs[move_idx]
+            assert isinstance(move, MenaiVCodeMove)
+            reg_id = move.src.id
+            param_slot = slots[move.dst.id]
+
+            if reg_id in fixed_reg_id_set:
+                continue
+
+            if param_slot >= len(func.params):
+                continue
+
+            reg_def = _active_def(reg_defs, reg_id, move_idx)
+            if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
+                continue
+
+            reads_param = False
+            for scan_idx in range(reg_def + 1, move_idx):
+                scan_instr = func.instrs[scan_idx]
+                _, scan_uses = _defs_uses(scan_instr)
+                if any(slots.get(u, -1) == param_slot for u in scan_uses):
+                    reads_param = True
+                    break
+
+            if reads_param:
+                continue
+
+            slots[reg_id] = param_slot
+
     return SlotMap(slots=slots, slot_count=slot_count, local_count=local_count)
 
 
