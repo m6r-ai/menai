@@ -82,12 +82,7 @@ class MenaiCompiler:
         self.vcode_builder = MenaiVCodeBuilder()
         self.bytecode_builder = MenaiBytecodeBuilder()
 
-    def compile_to_resolved_ast(
-        self,
-        source: str,
-        source_file: str = "",
-        inject_prelude: bool = False,
-    ) -> MenaiASTNode:
+    def compile_to_resolved_ast(self, source: str, source_file: str = "") -> MenaiASTNode:
         """
         Compile source to fully resolved AST.
 
@@ -95,7 +90,6 @@ class MenaiCompiler:
         - Lexing
         - Parsing
         - Semantic analysis
-        - Prelude injection (top-level compilations only)
         - Module resolution (including recursive module compilation)
 
         The result is a fully resolved AST ready for desugaring and backend compilation.
@@ -103,23 +97,13 @@ class MenaiCompiler:
         Args:
             source: Menai source code as a string
             source_file: Source file name for tracking origin of AST nodes
-            inject_prelude: True to wrap the program in the prelude's lexical
-                bindings.  Only the top-level compilation sets this: the prelude
-                is spliced once, and module ASTs are inlined inside it by module
-                resolution.  Injecting into modules would give every module its
-                own copy of the prelude.
 
         Returns:
-            Fully resolved AST (prelude spliced in and imports replaced with
-            module ASTs, if injection was requested)
+            Fully resolved AST (all imports replaced with module ASTs)
         """
         tokens = self.lexer.lex(source)
         ast = self.ast_builder.build(tokens, source, source_file)
         checked_ast = self.ast_semantic_analyzer.analyze(ast, source)
-
-        if inject_prelude:
-            checked_ast = self.ast_prelude_injector.inject(checked_ast)
-
         resolved_ast = self.ast_module_resolver.resolve(checked_ast)
         return resolved_ast
 
@@ -136,8 +120,16 @@ class MenaiCompiler:
         Returns:
             Compiled bytecode ready for execution
         """
-        resolved_ast = self.compile_to_resolved_ast(source, name, inject_prelude=True)
-        desugared_ast = self.ast_desugarer.desugar(resolved_ast)
+        resolved_ast = self.compile_to_resolved_ast(source, name)
+
+        # The user program is desugared on its own and then wrapped in the
+        # prelude's cached desugared bindings.  The prelude is identical for
+        # every compilation, so desugaring it once and reusing the result
+        # avoids re-desugaring it on every compile.  The program's temporary
+        # counter starts above the prelude's so generated names cannot collide.
+        self.ast_desugarer.temp_counter = MenaiASTPreludeInjector.prelude_temp_count()
+        desugared_program = self.ast_desugarer.desugar(resolved_ast)
+        desugared_ast = MenaiASTPreludeInjector.wrap(desugared_program)
 
         for ast_pass in self.ast_passes:
             desugared_ast = ast_pass.optimize(desugared_ast)

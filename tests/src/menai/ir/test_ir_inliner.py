@@ -27,7 +27,9 @@ def _build_ir(source: str, inject_prelude: bool = False) -> MenaiIRReturn:
     """Compile source string to IR (stopping before IR optimization passes).
 
     When inject_prelude is True the program is wrapped in the prelude's lexical
-    bindings, matching how the compiler compiles a top-level program.
+    bindings, matching how the compiler compiles a top-level program: the
+    program is desugared first, then wrapped in the prelude's cached desugared
+    bindings.
     """
     lexer = MenaiLexer()
     ast_builder = MenaiASTBuilder()
@@ -40,10 +42,12 @@ def _build_ir(source: str, inject_prelude: bool = False) -> MenaiIRReturn:
     ast = ast_builder.build(tokens, source, "<test>")
     checked = semantic.analyze(ast, source)
 
-    if inject_prelude:
-        checked = MenaiASTPreludeInjector().inject(checked)
-
+    desugarer.temp_counter = MenaiASTPreludeInjector.prelude_temp_count()
     desugared = desugarer.desugar(checked)
+
+    if inject_prelude:
+        desugared = MenaiASTPreludeInjector.wrap(desugared)
+
     desugared = constant_folder.optimize(desugared)
     return ir_builder.build(desugared)
 

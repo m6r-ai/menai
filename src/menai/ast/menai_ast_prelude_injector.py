@@ -27,12 +27,20 @@ The prelude is loaded through lexing, parsing, and semantic analysis but not
 module resolution: it must not import anything, because an import would be
 resolved against the wrong search path and would reintroduce the duplication
 this pass exists to avoid.
+
+The prelude is desugared once and cached as a list of wrapper forms.  Because
+the prelude is identical for every compilation, re-desugaring it on every
+compile is pure overhead; instead the prelude's desugared ``let``/``letrec``
+wrappers are cached and folded around the already-desugared user program.  The
+desugared wrappers are immutable, so they are safely shared across
+compilations.
 """
 
 from importlib.resources import files
 
 from menai.ast.menai_ast import MenaiASTList, MenaiASTNode, MenaiASTSymbol
 from menai.ast.menai_ast_builder import MenaiASTBuilder
+from menai.ast.menai_ast_desugarer import MenaiASTDesugarer
 from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
 from menai.ast.menai_lexer import MenaiLexer
 from menai.menai_error import MenaiCodegenError
@@ -42,39 +50,52 @@ class MenaiASTPreludeInjector:
     """
     Wraps a program in the prelude's lexical bindings.
 
-    The prelude is loaded and compiled to an analysed AST once and cached on
-    the class, since every compilation injects the same prelude.
+    The prelude is loaded, analysed, and desugared once and cached on the class,
+    since every compilation injects the same prelude.
     """
 
-    _prelude_bindings: MenaiASTList | None = None
+    _prelude_wrappers: list[tuple[MenaiASTSymbol, MenaiASTList]] = []
+    _prelude_temp_count: int = 0
+    _prelude_loaded: bool = False
 
     @classmethod
     def prelude_source(cls) -> str:
         """Return the prelude's source text."""
         return (files("menai") / "prelude.menai").read_text()
 
-    def inject(self, program: MenaiASTNode) -> MenaiASTNode:
+    @classmethod
+    def wrap(cls, program: MenaiASTNode) -> MenaiASTNode:
         """
-        Return the program wrapped in the prelude's lexical bindings.
+        Return the program wrapped in the prelude's desugared lexical bindings.
 
         Args:
-            program: The user program's AST (lexed, parsed, and analysed).
+            program: The user program's desugared AST.
 
         Returns:
-            A ``letrec`` whose bindings are the prelude's and whose body is the
-            program.
+            The prelude's desugared wrappers folded around the program.
         """
-        bindings = self._load_prelude_bindings()
-        return MenaiASTList((
-            MenaiASTSymbol('letrec'),
-            bindings,
-            program,
-        ))
+        wrappers = cls._load_prelude_wrappers()
+        result = program
+        for kind, bindings in wrappers[::-1]:
+            result = MenaiASTList((kind, bindings, result))
+
+        return result
 
     @classmethod
-    def _load_prelude_bindings(cls) -> MenaiASTList:
+    def prelude_temp_count(cls) -> int:
         """
-        Load the prelude and return its top-level ``letrec`` binding list.
+        Return the number of temporary names the prelude's desugaring consumed.
+
+        The user program's desugaring must start its temporary counter above
+        this so its generated names cannot collide with the prelude's.
+        """
+        cls._load_prelude_wrappers()
+        return cls._prelude_temp_count
+
+    @classmethod
+    def _load_prelude_wrappers(cls) -> list[tuple[MenaiASTSymbol, MenaiASTList]]:
+        """
+        Load the prelude and return its desugared ``let``/``letrec`` wrappers.
 
         The prelude's AST is cached on the class: it is identical for every
         compilation.
@@ -85,7 +106,7 @@ class MenaiASTPreludeInjector:
                 this pass depends on, so they fail loudly rather than producing
                 a silently broken program.
         """
-        if cls._prelude_bindings is None:
+        if not cls._prelude_loaded:
             source = (files("menai") / "prelude.menai").read_text()
             tokens = MenaiLexer().lex(source)
             ast = MenaiASTBuilder().build(tokens, source, "<prelude>")
@@ -109,9 +130,37 @@ class MenaiASTPreludeInjector:
                     suggestion="Remove the import from prelude.menai, or resolve it before injection",
                 )
 
-            cls._prelude_bindings = bindings
+            desugarer = MenaiASTDesugarer()
+            desugared = desugarer.desugar(analysed)
+            cls._prelude_temp_count = desugarer.temp_counter
+            cls._prelude_wrappers = cls._collect_wrappers(desugared)
+            cls._prelude_loaded = True
 
-        return cls._prelude_bindings
+        return cls._prelude_wrappers
+
+    @staticmethod
+    def _collect_wrappers(desugared: MenaiASTNode) -> list[tuple[MenaiASTSymbol, MenaiASTList]]:
+        """
+        Collect the desugared prelude's ``let``/``letrec`` wrappers.
+
+        Desugaring the prelude's top-level ``letrec`` produces a chain of
+        ``let``/``letrec`` forms whose innermost body is the (discarded) export
+        dict.  The wrappers are returned outermost first; each is a
+        ``(kind-symbol, bindings-list)`` pair.
+        """
+        wrappers: list[tuple[MenaiASTSymbol, MenaiASTList]] = []
+        node = desugared
+        while (
+            isinstance(node, MenaiASTList)
+            and len(node.elements) == 3
+            and isinstance(node.elements[0], MenaiASTSymbol)
+            and node.elements[0].name in ('let', 'letrec')
+            and isinstance(node.elements[1], MenaiASTList)
+        ):
+            wrappers.append((node.elements[0], node.elements[1]))
+            node = node.elements[2]
+
+        return wrappers
 
     @staticmethod
     def _is_letrec(expr: MenaiASTNode) -> bool:
