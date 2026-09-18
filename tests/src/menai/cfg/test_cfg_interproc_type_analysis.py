@@ -13,8 +13,13 @@ Covers:
   6. The type fact lattice join rules.
   7. Guards are eliminated for parameters whose types are proven, and kept
      for parameters whose call-site types are ambiguous.
+  8. A parameter reached only by calls inside a recursion cycle is not proven
+     from those calls, so its guard is retained.
 """
 
+import pytest
+
+from menai import MenaiError
 from menai.cfg.menai_cfg import MenaiCFGBuiltinInstr, MenaiCFGGuardInstr
 from menai.cfg.menai_cfg_optimization_pass import collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, BOTTOM, TypeFact, join
@@ -372,3 +377,101 @@ class TestGuardElimination:
 
     def test_unprovable_param_result_correct(self, menai):
         assert menai.evaluate_and_format(UNPROVABLE_PARAM_SRC) == "0"
+
+
+SELF_RECURSIVE_NO_CALLER_SRC = """
+(letrec ((walk (lambda (lst)
+                 (if (list-null? lst)
+                     (list)
+                     (walk (list-rest lst))))))
+  (list walk))
+"""
+
+
+MUTUAL_RECURSIVE_NO_CALLER_SRC = """
+(letrec ((ping (lambda (lst)
+                 (if (list-null? lst) (list) (pong (list-rest lst)))))
+         (pong (lambda (lst)
+                 (if (list-null? lst) (list) (ping (list-rest lst))))))
+  (list ping pong))
+"""
+
+
+SELF_RECURSIVE_CONSTANT_BACK_EDGE_SRC = """
+(letrec ((f (lambda (x)
+              (if (list-null? x) x (f (list 1))))))
+  (list f))
+"""
+
+
+class TestRecursiveParameterNotProvenFromCycle:
+    """
+    A parameter reached only by calls inside a recursion cycle is not proven
+    from those calls.
+
+    The arguments of a call inside a cycle are computed from the parameters
+    the call is used to infer, so they describe a later iteration rather than
+    the first invocation.  With no call site outside the cycle the first
+    invocation's argument is unconstrained and the guard must be retained.
+    """
+
+    def test_self_recursive_no_caller_keeps_guard(self):
+        cfg = _build_cfg(SELF_RECURSIVE_NO_CALLER_SRC)
+        assert _guard_count(cfg) > 0
+
+    def test_mutual_recursive_no_caller_keeps_guard(self):
+        cfg = _build_cfg(MUTUAL_RECURSIVE_NO_CALLER_SRC)
+        assert _guard_count(cfg) > 0
+
+    def test_self_recursive_constant_back_edge_keeps_guard(self):
+        cfg = _build_cfg(SELF_RECURSIVE_CONSTANT_BACK_EDGE_SRC)
+        assert _guard_count(cfg) > 0
+
+    def test_self_recursive_no_caller_rejects_non_list(self, menai):
+        with pytest.raises(MenaiError):
+            menai.evaluate(SELF_RECURSIVE_NO_CALLER_SRC.replace("(list walk)", '(walk "abc")'))
+
+    def test_self_recursive_no_caller_accepts_list(self, menai):
+        assert menai.evaluate_and_format(SELF_RECURSIVE_NO_CALLER_SRC.replace("(list walk)", "(walk (list 1 2 3))")) == "()"
+
+
+GROUNDED_RECURSIVE_SRC = """
+(letrec ((walk (lambda (lst)
+                 (if (list-null? lst)
+                     (list)
+                     (walk (list-rest lst))))))
+  (walk (list 1 2 3)))
+"""
+
+
+DEGRADED_RECURSIVE_SRC = """
+(letrec ((result-type (struct (value)))
+         (make-result (lambda (v) (result-type v)))
+         (search-loop
+          (lambda (bound)
+            (if (integer>? bound 100)
+                (list 1)
+                (search-loop (struct-get (make-result (integer+ bound 1)) 'value))))))
+  (search-loop 0))
+"""
+
+
+class TestRecursiveParameterGrounding:
+    """
+    An external call site grounds a parameter; a cycle call site can then
+    degrade it but cannot ground it.
+    """
+
+    def test_grounded_parameter_guard_eliminated(self):
+        cfg = _build_cfg(GROUNDED_RECURSIVE_SRC)
+        assert _guard_count(cfg) == 0
+
+    def test_grounded_parameter_result_correct(self, menai):
+        assert menai.evaluate_and_format(GROUNDED_RECURSIVE_SRC) == "()"
+
+    def test_cycle_degrading_grounded_parameter_keeps_guard(self):
+        cfg = _build_cfg(DEGRADED_RECURSIVE_SRC)
+        assert _guard_count(cfg) > 0
+
+    def test_cycle_degrading_grounded_parameter_result_correct(self, menai):
+        assert menai.evaluate_and_format(DEGRADED_RECURSIVE_SRC) == "(1)"

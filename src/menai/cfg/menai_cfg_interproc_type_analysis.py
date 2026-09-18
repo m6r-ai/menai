@@ -20,10 +20,23 @@ depend on the caller's parameter facts, which depend on the callers of the
 caller, this is iterated to a fixed point.  The fact lattice is finite and the
 join is monotone, so the fixed point is reached.
 
-Recursion is handled by the monotone join: a self-recursive call contributes
-the function's own parameter facts back into itself, which stabilises.  A
-direct self-recursive tail call is a MenaiCFGSelfLoopTerm; other calls are
-MenaiCFGCallInstr or MenaiCFGTailCallTerm.
+Call sites within a recursion cycle are handled specially.  A call inside a
+cycle has its arguments computed from the very parameters the call would be
+used to infer, so its argument facts describe a later iteration, not the first
+invocation.  They may degrade an externally-grounded parameter but must not
+ground one on their own: otherwise a parameter could be "proven" by a value
+derived from itself even though the value the function is first called with is
+unconstrained.  The pass therefore tracks, per parameter, the join over call
+sites outside the function's recursion component (the external facts) and the
+join over call sites inside it (the internal facts).  The effective parameter
+fact is the external join degraded by the internal join, but only where an
+external call site grounds it; with no external grounding the parameter stays
+at BOTTOM and its runtime guards are retained.  A direct self-recursive tail
+call is a MenaiCFGSelfLoopTerm; a call between mutually-recursive functions is
+an ordinary call.  Both are internal when caller and callee share a
+strongly-connected component of the call graph.  Return facts are still
+propagated through cycles: a function's return value genuinely is the join
+over every return path, recursive ones included.
 
 Callee resolution
 -----------------
@@ -117,13 +130,35 @@ class _FunctionInfo:
     Per-function analysis state: the resolved callee of each call, the SSA
     value that denotes each function, the current parameter facts, and the
     current return fact.
+
+    Parameter facts are tracked from two sources.  `external_param_facts` is
+    the join over call sites outside the function's recursion component; these
+    describe the first invocation's arguments.  `internal_param_facts` is the
+    join over call sites inside the component; these describe the arguments of
+    later iterations.  `param_facts` is the effective fact: the external join,
+    degraded by the internal join, but only when an external call site grounds
+    it.  Without external grounding the first invocation's argument is
+    unconstrained, so a recursive call site cannot prove the parameter's type.
     """
 
     def __init__(self, func: MenaiCFGFunction) -> None:
         self.func = func
         self.callee_of_value: dict[int, MenaiCFGFunction] = {}
+        self.external_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
+        self.internal_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.return_fact: TypeFact = BOTTOM
+
+    def recompute_param_facts(self) -> None:
+        """
+        Derive the effective parameter facts from the external and internal
+        joins.  A parameter with no external grounding stays BOTTOM: a
+        recursive call site describes a later iteration, not the first.
+        """
+        self.param_facts = [
+            external if external.is_bottom() else join(external, internal)
+            for external, internal in zip(self.external_param_facts, self.internal_param_facts)
+        ]
 
 
 class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
@@ -133,6 +168,10 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     See the module docstring for the algorithm.
     """
 
+    def __init__(self) -> None:
+        """Initialise the per-compilation strongly-connected-component map."""
+        self._scc_of: dict[int, int] = {}
+
     def _optimize_module(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         """Run the interprocedural analysis and rewrite struct field access."""
         functions = collect_functions(root)
@@ -140,6 +179,8 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         infos = list(info_of.values())
 
         self._resolve_all_callees(root, functions, info_of)
+
+        self._scc_of = _call_graph_sccs(infos)
 
         self._propagate_to_fixed_point(infos, info_of)
 
@@ -385,12 +426,18 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         """
         Join the fact of each call argument into the callee's parameter facts.
 
+        External call sites (outside the callee's recursion component) update
+        the callee's external facts; intra-component call sites update its
+        internal facts.  The callee's effective parameter facts are then
+        recomputed from the two.
+
         Returns True if any parameter fact changed.
         """
         changed = False
-        for callee_func, args in self._call_sites(info):
+        for callee_func, args, internal in self._call_sites(info):
             callee = info_of[id(callee_func)]
-            if self._join_arg_facts(callee, args, facts):
+            if self._join_arg_facts(callee, args, facts, internal):
+                callee.recompute_param_facts()
                 changed = True
 
         return changed
@@ -400,26 +447,29 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         callee: _FunctionInfo,
         args: list,
         facts: dict[int, TypeFact],
+        internal: bool,
     ) -> bool:
         """
-        Join a call's argument facts into the callee's parameter facts.
+        Join a call's argument facts into the callee's external or internal
+        parameter facts.
 
         For a variadic callee the fixed parameters receive the corresponding
         argument facts and the rest parameter receives a list fact, since the
         VM packs the remaining arguments into a list.
         """
         changed = False
-        param_count = len(callee.param_facts)
+        target = callee.internal_param_facts if internal else callee.external_param_facts
+        param_count = len(target)
         if param_count == 0:
             return False
 
         fixed = param_count - 1 if callee.func.is_variadic else param_count
         for i in range(min(fixed, len(args))):
-            if _join_param(callee, i, facts.get(args[i].id, BOTTOM)):
+            if _join_param(target, i, facts.get(args[i].id, BOTTOM)):
                 changed = True
 
         if callee.func.is_variadic:
-            if _join_param(callee, param_count - 1, TypeFact(kind='list')):
+            if _join_param(target, param_count - 1, TypeFact(kind='list')):
                 changed = True
 
         return changed
@@ -427,30 +477,41 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     def _call_sites(
         self,
         info: _FunctionInfo,
-    ) -> list[tuple[MenaiCFGFunction, list]]:
+    ) -> list[tuple[MenaiCFGFunction, list, bool]]:
         """
-        Enumerate the resolvable call sites in a function as
-        (callee_function, argument_values) pairs.
+        Enumerate the call sites that contribute to a callee's parameter facts,
+        as (callee_function, argument_values, internal) triples.
 
         A direct self-recursive tail call (MenaiCFGSelfLoopTerm) targets the
         enclosing function itself.
+
+        `internal` is True for a call site within the caller's own
+        strongly-connected component of the call graph, i.e. inside a recursion
+        cycle.  Such a call's arguments are computed from the very parameters
+        the call would be used to infer, so its argument facts describe a later
+        iteration, not the first invocation.  They may degrade an
+        externally-grounded parameter but must not ground one on their own; the
+        caller routes them to the callee's internal facts accordingly.
+        Return-fact propagation is unaffected: a function's return value
+        genuinely is the join over every path, recursive ones included.
         """
-        result: list[tuple[MenaiCFGFunction, list]] = []
+        result: list[tuple[MenaiCFGFunction, list, bool]] = []
+        caller_scc = self._scc_of[id(info.func)]
         for block in info.func.blocks:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGCallInstr):
                     callee = info.callee_of_value.get(instr.func.id)
                     if callee is not None:
-                        result.append((callee, instr.args))
+                        result.append((callee, instr.args, self._scc_of[id(callee)] == caller_scc))
 
             term = block.terminator
             if isinstance(term, MenaiCFGTailCallTerm):
                 callee = info.callee_of_value.get(term.func.id)
                 if callee is not None:
-                    result.append((callee, term.args))
+                    result.append((callee, term.args, self._scc_of[id(callee)] == caller_scc))
 
             elif isinstance(term, MenaiCFGSelfLoopTerm):
-                result.append((info.func, term.args))
+                result.append((info.func, term.args, True))
 
         return result
 
@@ -802,11 +863,11 @@ def _const_string(instr: object) -> str | None:
     return None
 
 
-def _join_param(callee: _FunctionInfo, index: int, fact: TypeFact) -> bool:
-    """Join a fact into one of a callee's parameter facts; return True if changed."""
-    new_fact = join(callee.param_facts[index], fact)
-    if new_fact != callee.param_facts[index]:
-        callee.param_facts[index] = new_fact
+def _join_param(target: list[TypeFact], index: int, fact: TypeFact) -> bool:
+    """Join a fact into one of a parameter-fact list's entries; True if changed."""
+    new_fact = join(target[index], fact)
+    if new_fact != target[index]:
+        target[index] = new_fact
         return True
 
     return False
@@ -832,3 +893,71 @@ def _max_value_id(func: MenaiCFGFunction) -> int:
                 largest = instr.result.id
 
     return largest
+
+
+def _call_graph_sccs(infos: list[_FunctionInfo]) -> dict[int, int]:
+    """
+    Map each function id to the id of its strongly-connected component in the
+    call graph.
+
+    The call graph's edges are the resolved callees of each function.  Two
+    functions share an SCC exactly when each can reach the other through calls,
+    which is the condition under which parameter-fact propagation between them
+    would be circular.  Tarjan's algorithm is used, iteratively so that a deep
+    call graph cannot exhaust the Python recursion limit.
+    """
+    graph: dict[int, list[int]] = {
+        id(info.func): [id(callee) for callee in info.callee_of_value.values()]
+        for info in infos
+    }
+
+    index_counter = 0
+    stack: list[int] = []
+    on_stack: set[int] = set()
+    index: dict[int, int] = {}
+    lowlink: dict[int, int] = {}
+    scc_of: dict[int, int] = {}
+    scc_id = 0
+
+    for root in graph:
+        if root in index:
+            continue
+
+        work: list[tuple[int, int]] = [(root, 0)]
+        while work:
+            node, child_index = work[-1]
+            if child_index == 0:
+                index[node] = index_counter
+                lowlink[node] = index_counter
+                index_counter += 1
+                stack.append(node)
+                on_stack.add(node)
+
+            successors = graph[node]
+            if child_index < len(successors):
+                work[-1] = (node, child_index + 1)
+                successor = successors[child_index]
+                if successor not in index:
+                    work.append((successor, 0))
+
+                elif successor in on_stack:
+                    lowlink[node] = min(lowlink[node], index[successor])
+
+                continue
+
+            work.pop()
+            if lowlink[node] == index[node]:
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    scc_of[member] = scc_id
+                    if member == node:
+                        break
+
+                scc_id += 1
+
+            if work:
+                parent = work[-1][0]
+                lowlink[parent] = min(lowlink[parent], lowlink[node])
+
+    return scc_of

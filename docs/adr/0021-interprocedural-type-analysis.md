@@ -68,7 +68,20 @@ The fixed point propagates three kinds of fact, all of which are required for th
 analysis to fire on real code:
 
 - Argument facts into parameters: A call's argument facts join into the callee's
-  parameter facts.
+  parameter facts, but call sites inside a recursion cycle are treated
+  separately.  The arguments of a call inside a cycle are computed from the very
+  parameters the call would be used to infer, so they describe a later iteration,
+  not the first invocation.  The analysis therefore tracks, per parameter, the
+  join over call sites outside the function's recursion component (the external
+  facts) and the join over call sites inside it (the internal facts).  The
+  effective parameter fact is the external join degraded by the internal join,
+  but only where an external call site grounds it.  A parameter with no external
+  grounding stays at BOTTOM, so its runtime guards are retained: a recursive
+  call site cannot prove the type of the value the function is first called with.
+  Without this split a parameter could be "proven" by a value derived from
+  itself, and a direct or mutual recursion whose only call site is inside the
+  cycle would drop its guards and allow the unguarded opcodes to receive a value
+  of the wrong type.
 - Return facts out of calls: Each function has a return fact, the join over its
   return points; a call's result fact is the callee's return fact. This is essential
   because a struct type usually enters a call chain through a function's return value
