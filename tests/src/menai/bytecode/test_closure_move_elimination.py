@@ -20,18 +20,37 @@ def _compile(src: str):
     return MenaiCompiler().compile(src)
 
 
+def _user_code_objects(code):
+    """Return the code objects the top-level program creates itself.
+
+    Every compilation carries the prelude, whose functions become code objects
+    alongside the program's own.  The program's own closures are exactly those
+    named by a MAKE_CLOSURE instruction in the top-level code object; prelude
+    functions are created by the prelude's own bindings and are not reachable
+    that way.
+    """
+    result = []
+    for instruction in code.instructions:
+        unpacked = unpack_instruction(instruction)
+        if unpacked.opcode == Opcode.MAKE_CLOSURE:
+            result.append(code.code_objects[unpacked.src0])
+
+    return result
+
+
 def _count_op(code, opcode) -> int:
-    """Count occurrences of `opcode` in `code` and all nested code objects."""
+    """Count occurrences of `opcode` in `code` and the program's own nested code objects."""
     n = sum(1 for i in code.instructions if unpack_instruction(i).opcode == opcode)
-    for nested in code.code_objects:
+    for nested in _user_code_objects(code):
         n += _count_op(nested, opcode)
     return n
 
 
 def _find_lambda(code):
-    """Return the first nested code object (the compiled lambda body)."""
-    assert code.code_objects, "expected at least one nested code object"
-    return code.code_objects[0]
+    """Return the program's own lambda body code object."""
+    user_objects = _user_code_objects(code)
+    assert user_objects, "expected at least one nested code object"
+    return user_objects[0]
 
 
 @pytest.fixture

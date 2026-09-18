@@ -25,6 +25,7 @@ import sys
 import traceback
 
 from menai import Menai, MenaiError
+from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
 from menai.menai_compiler import MenaiCompiler
 from menai.menai_value import MenaiValue
 from menai.bytecode.menai_bytecode import Opcode, CodeObject, Instruction, reg_name, unpack_instruction
@@ -478,8 +479,13 @@ def main() -> int:
 
     if args.prelude:
         print("Compiling: <prelude>", file=sys.stderr)
-        menai = Menai()
-        prelude_code = menai.prelude_code()
+        # The prelude is compiled as an ordinary program.  That wraps it in its
+        # own bindings, but the inner copy shadows the outer one and the outer
+        # copy is unused, so dead code elimination leaves exactly the prelude's
+        # own functions.
+        prelude_code = MenaiCompiler().compile(
+            MenaiASTPreludeInjector.prelude_source(), name="<prelude>"
+        )
         output_lines.extend(disassemble_with_nested(prelude_code, name="<prelude>", color=color))
         total_code_objects += len(prelude_code.code_objects) + 1
 

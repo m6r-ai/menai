@@ -133,35 +133,11 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     See the module docstring for the algorithm.
     """
 
-    def __init__(self) -> None:
-        self._externally_reachable = False
-
-    def set_externally_reachable(self, externally_reachable: bool) -> None:
-        """
-        Set whether the functions in this compilation may be called from
-        outside it.
-
-        The prelude is compiled this way: its functions are called by name from
-        user code, which this compilation cannot see.  When True, parameter
-        inference is disabled — a function's visible call sites here are not
-        its only call sites, so a parameter's type cannot be proven from them.
-        """
-        self._externally_reachable = externally_reachable
-
     def _optimize_module(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         """Run the interprocedural analysis and rewrite struct field access."""
         functions = collect_functions(root)
         info_of: dict[int, _FunctionInfo] = {id(func): _FunctionInfo(func) for func in functions}
         infos = list(info_of.values())
-
-        # The flag applies to one compilation only; reset it so a stale value
-        # cannot leak into a later compilation that does not set it.
-        externally_reachable = self._externally_reachable
-        self._externally_reachable = False
-
-        if externally_reachable:
-            for info in infos:
-                info.param_facts = [ANY] * info.func.param_count()
 
         self._resolve_all_callees(root, functions, info_of)
 
@@ -193,7 +169,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         the make_closure instruction in the parent.
         """
         parent_of = _parent_map(root)
-        by_name = _functions_by_name(functions)
         for func in functions:
             parent_entry = parent_of.get(id(func))
             parent_callees = (
@@ -205,7 +180,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 info_of[id(func)],
                 parent_entry[1] if parent_entry is not None else None,
                 parent_callees,
-                by_name,
             )
 
     def _resolve_callees(
@@ -213,7 +187,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         info: _FunctionInfo,
         parent_closure: MenaiCFGMakeClosureInstr | None,
         parent_callees: dict[int, MenaiCFGFunction],
-        by_name: dict[str, MenaiCFGFunction],
     ) -> None:
         """
         Determine which function each SSA value denotes, where it can be
@@ -231,9 +204,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             capture denotes in the parent function.  This is how a function
             reaches a letrec sibling: the sibling is captured, not created
             locally;
-          - a global whose name matches a known function's binding name
-            denotes that function.  This is how a prelude function called by
-            name from user code is reached.
         """
         func = info.func
         callee_of_value = info.callee_of_value
@@ -243,11 +213,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGMakeClosureInstr):
                     callee_of_value[instr.result.id] = instr.function
-
-                elif isinstance(instr, MenaiCFGGlobalInstr):
-                    resolved = by_name.get(instr.name)
-                    if resolved is not None:
-                        callee_of_value[instr.result.id] = resolved
 
         if parent_closure is not None:
             for block in func.blocks:
@@ -776,31 +741,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         except KeyError:
             return None
-
-
-def _functions_by_name(functions: list[MenaiCFGFunction]) -> dict[str, MenaiCFGFunction]:
-    """
-    Map each named function to its binding name.
-
-    A global call is resolved to a function by name; if two functions share a
-    binding name the name is ambiguous and maps to nothing.
-    """
-    by_name: dict[str, MenaiCFGFunction] = {}
-    ambiguous: set[str] = set()
-    for func in functions:
-        name = func.binding_name
-        if name is None:
-            continue
-
-        if name in by_name:
-            ambiguous.add(name)
-
-        by_name[name] = func
-
-    for name in ambiguous:
-        del by_name[name]
-
-    return by_name
 
 
 def _parent_map(

@@ -56,12 +56,6 @@ static PyObject *_ValidationError_type = NULL;
 static PyObject *_ValidationErrorType_enum = NULL;
 
 /*
- * The CodeObject type from menai.menai_bytecode — used to identify prelude
- * CodeObjects in bridge_set_prelude.  Fetched once during bridge init.
- */
-static PyTypeObject *_py_code_object_type = NULL;
-
-/*
  * Slow-world type objects — fetched once at module init.
  * Used by slow_value_to_menai_value to identify slow objects by type.
  * Will be removed in Phase 2 when the compiler emits fast types directly.
@@ -1722,61 +1716,6 @@ cleanup_bt_strings:
 }
 
 /*
- * bridge_set_prelude — execute a prelude CodeObject and store the resulting
- * GlobalsTable permanently in the VM state.
- *
- * The prelude is executed once via menai_vm_execute_native to produce a
- * MenaiDict, which is unpacked into vs->_globals.  The table persists for
- * the lifetime of the VM state and is never rebuilt.
- * Returns 0 on success, -1 on error with a Python exception set.
- */
-static int
-bridge_set_prelude(MenaiVMState *vs, PyObject *prelude_code)
-{
-    if (!_py_code_object_type || Py_TYPE(prelude_code) != _py_code_object_type) {
-        PyErr_SetString(PyExc_TypeError, "Prelude must be a CodeObject");
-        return -1;
-    }
-
-    MenaiCodeObject *prelude_co = menai_code_object_from_python(vs, prelude_code);
-    if (!prelude_co) {
-        return -1;
-    }
-
-    MenaiValidationError verr;
-    if (menai_validate(prelude_co, &verr) != MENAI_OK) {
-        menai_code_object_release(vs, prelude_co);
-        bridge_raise_validation_error(&verr);
-        return -1;
-    }
-
-    MenaiValue *result = menai_vm_execute_native(vs, prelude_co, NULL);
-    menai_code_object_release(vs, prelude_co);
-    if (!result) {
-        if (!PyErr_Occurred()) {
-            bridge_translate_error(vs, &vs->error);
-        }
-
-        return -1;
-    }
-
-    if (!IS_MENAI_DICT(result)) {
-        menai_value_release(vs, result);
-        PyErr_SetString(PyExc_TypeError, "Prelude must evaluate to a dict");
-        return -1;
-    }
-
-    int rc = globals_build_from_dict(vs, &vs->_globals, (MenaiDict *)result);
-    menai_value_release(vs, result);
-    if (rc < 0) {
-        return -1;
-    }
-
-    vs->_globals_valid = 1;
-    return 0;
-}
-
-/*
  * menai_dict_from_pydict — convert a Python dict of (str, MenaiValue) pairs
  * to a native MenaiDict.  Keys are converted to MenaiString, values via
  * slow_value_to_menai_value.  Returns a new reference, or NULL on error.
@@ -1984,9 +1923,8 @@ bridge_validate(MenaiVMState *vs, PyObject *py_code)
  * menai_vm_c_execute — the Python-callable entry point.
  *
  * Parses arguments (code, extra_bindings, state_capsule),
- * converts the code tree, uses the prelude globals already stored in the VM
- * state, and calls menai_vm_execute_native to run the VM.  The result is
- * converted back to a slow Python MenaiValue before returning.
+ * converts the code tree, and calls menai_vm_execute_native to run the VM.
+ * The result is converted back to a slow Python MenaiValue before returning.
  */
 static PyObject *
 menai_vm_c_execute(PyObject *self, PyObject *args)
@@ -2201,21 +2139,6 @@ menai_vm_bridge_init(void)
     Py_DECREF(slow_mod);
     slow_mod = NULL;
 
-    /* Fetch the CodeObject type — used by bridge_set_prelude to identify
-     * prelude CodeObjects. */
-    PyObject *bytecode_mod = PyImport_ImportModule("menai.bytecode.menai_bytecode");
-    if (!bytecode_mod) {
-        return 0;
-    }
-
-    PyObject *co_type = PyObject_GetAttrString(bytecode_mod, "CodeObject");
-    Py_DECREF(bytecode_mod);
-    if (!co_type) {
-        return 0;
-    }
-
-    _py_code_object_type = (PyTypeObject *)co_type;
-
     return 1;
 
 fail:
@@ -2270,34 +2193,6 @@ menai_vm_c_state_free(PyObject *self, PyObject *capsule)
     }
 
     menai_vm_state_free(vs);
-    Py_RETURN_NONE;
-}
-
-/*
- * menai_vm_c_set_prelude — Python-callable wrapper for bridge_set_prelude.
- *
- * set_prelude(state_capsule, prelude_code) executes the prelude CodeObject
- * once and stores the resulting GlobalsTable permanently in the VM state.
- */
-static PyObject *
-menai_vm_c_set_prelude(PyObject *self, PyObject *args)
-{
-    PyObject *state_capsule;
-    PyObject *prelude_code;
-
-    if (!PyArg_ParseTuple(args, "OO", &state_capsule, &prelude_code)) {
-        return NULL;
-    }
-
-    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(state_capsule, "menai_vm_state");
-    if (!vs) {
-        return NULL;
-    }
-
-    if (bridge_set_prelude(vs, prelude_code) < 0) {
-        return NULL;
-    }
-
     Py_RETURN_NONE;
 }
 
@@ -2662,12 +2557,6 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_state_free,
         METH_O,
         "Free a VM state allocated by state_alloc."
-    },
-    {
-        "set_prelude",
-        menai_vm_c_set_prelude,
-        METH_VARARGS,
-        "Execute a prelude CodeObject and store its globals in the VM state."
     },
     {
         "enable_profiling",

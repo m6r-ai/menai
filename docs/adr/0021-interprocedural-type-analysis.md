@@ -59,22 +59,22 @@ The analysis pass stores its per-value facts on each function and a separate gua
 insertion pass consumes them. Guard insertion needs only the coarse type name, so it
 reads `fact.kind`. Splitting the two keeps a single source of facts and lets the
 interprocedural analysis run before guards are inserted, so guards can be suppressed
-where the interprocedural facts prove a type. The prelude is compiled with an
-`externally_reachable` flag that disables parameter inference: its functions are called
-by name from user code the prelude compilation cannot see, so their visible call sites
-are not their only call sites.
+where the interprocedural facts prove a type. The prelude is spliced into every
+program as ordinary lexical bindings, so its functions are analysed like any other
+function: every call site is present in the compilation and parameter inference
+applies to them.
 
 The fixed point propagates three kinds of fact, all of which are required for the
 analysis to fire on real code:
 
-- **Argument facts into parameters.** A call's argument facts join into the callee's
+- Argument facts into parameters: A call's argument facts join into the callee's
   parameter facts.
-- **Return facts out of calls.** Each function has a return fact, the join over its
+- Return facts out of calls: Each function has a return fact, the join over its
   return points; a call's result fact is the callee's return fact. This is essential
   because a struct type usually enters a call chain through a function's return value
   rather than a constructor at the call site: a recursive search passes its cube
   parameter through functions that each return a cube.
-- **Callee resolution.** A call's callee is an SSA value, resolved from four sources:
+- Callee resolution: A call's callee is an SSA value, resolved from four sources:
   a `make_closure` result; a phi joining such results; a `dict-get` of a constant key
   from a dict whose matching value denotes a function (this is how a module's exported
   functions are reached, since a module is a dict of functions); and a free variable,
@@ -82,23 +82,6 @@ analysis to fire on real code:
   is how a function reaches a letrec sibling, which is captured rather than created
   locally). Calls through function-valued parameters are not resolved. There is no
   function cloning or specialisation.
-
-The free-variable mapping is non-obvious. A function's `free_vars` list is ordered
-sibling free vars first, then outer free vars. The `make_closure` instruction's
-`captures` are the outer captures only, and the codegen places them in the tail of the
-slot range, so `captures[i]` corresponds to
-`free_vars[len(free_vars) - len(captures) + i]`. Sibling free vars are installed by
-`PATCH_CLOSURE` after all sibling closures exist and are resolved by name against the
-parent's known closures.
-
-The dict-get resolution is sound only because the runtime dict is last-wins for
-duplicate keys. A dict-get is resolved only when the matched pair is the last pair
-whose key could equal the lookup key at runtime: every following pair must have a
-constant string key that differs from the lookup key. If any following key is not a
-constant string it could equal the lookup key at runtime, and the resolution is
-abandoned. Without this check, a dict such as
-`(dict "k" f (string-concat "k" suffix) g)` could wrongly resolve to `f` when the
-runtime returns `g`.
 
 ## Alternatives considered
 

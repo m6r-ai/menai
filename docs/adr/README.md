@@ -76,7 +76,7 @@ What costs, risks, or constraints does this decision impose?
 | [0006](0006-no-process-global-mutable-state-in-c-vm.md) | No process-global mutable state in the C VM | Accepted |
 | [0007](0007-dead-code-elimination-always-safe.md) | Dead code elimination is always safe | Accepted |
 | [0008](0008-letrec-is-genuine-mutual-recursion.md) | `letrec` reaching the IR builder is always genuine mutual recursion | Accepted |
-| [0009](0009-prelude-and-builtin-registry-consistency.md) | Prelude and builtin registry must stay consistent | Accepted |
+| [0009](0009-prelude-and-builtin-registry-consistency.md) | Prelude and builtin registry must stay consistent | Superseded by ADR-0022 |
 | [0010](0010-register-based-vm-instead-of-stack-based-vm.md) | Register-based VM instead of stack-based VM | Accepted |
 | [0011](0011-s-expression-syntax.md) | S-expression syntax | Accepted |
 | [0012](0012-distinct-none-type-for-absence.md) | Distinct `#none` type for absence | Accepted |
@@ -89,3 +89,4 @@ What costs, risks, or constraints does this decision impose?
 | [0019](0019-slice-out-of-bounds-raises-error.md) | Slice operations raise errors on out-of-bounds indices | Accepted |
 | [0020](0020-cfg-pass-scope-contracts.md) | CFG pass scope contracts — per-function and whole-program | Accepted |
 | [0021](0021-interprocedural-type-analysis.md) | Interprocedural flow-based type analysis | Accepted |
+| [0022](0022-prelude-is-a-module.md) | The prelude is a module | Accepted |

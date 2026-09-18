@@ -2,7 +2,6 @@
 
 from collections.abc import Iterator
 import hashlib
-from importlib.resources import files
 from pathlib import Path
 import os
 
@@ -11,7 +10,6 @@ from contextlib import contextmanager
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_compiler import MenaiCompiler
 from menai.ast.menai_ast import MenaiASTNode
-from menai.ir.menai_ir import MenaiIRLambda
 from menai.menai_value import MenaiFunction, MenaiValue
 from menai.vm.menai_vm import MenaiVM
 from menai.menai_error import MenaiModuleNotFoundError, MenaiModuleError, MenaiCircularImportError
@@ -36,18 +34,6 @@ class Menai:
     - High performance through bytecode compilation and optimized VM
     """
 
-    @classmethod
-    def _load_prelude_source(cls) -> str:
-        """Load the prelude source from the bundled prelude.menai file."""
-        if cls._prelude_source is None:
-            cls._prelude_source = (files("menai") / "prelude.menai").read_text()
-
-        return cls._prelude_source
-
-    _prelude_source: str | None = None
-    _prelude_code: CodeObject | None = None
-    _prelude_lambdas: dict[str, MenaiIRLambda] | None = None
-
     def __init__(self, module_path: list[str] | None = None):
         """
         Initialize Menai calculator.
@@ -65,32 +51,6 @@ class Menai:
         # Compiler and VM
         self.compiler = MenaiCompiler(module_loader=self)
         self.vm = MenaiVM()
-
-        prelude_source = Menai._load_prelude_source()
-
-        if Menai._prelude_code is None:
-            Menai._prelude_code = self.compiler.compile(
-                prelude_source, name="<prelude>", externally_reachable=True
-            )
-
-        if Menai._prelude_lambdas is None:
-            prelude_ir = self.compiler.compile_to_ir(prelude_source, name="<prelude>")
-            Menai._prelude_lambdas = MenaiCompiler._extract_prelude_lambdas(prelude_ir)
-
-        self.compiler.set_prelude_lambdas(Menai._prelude_lambdas)
-
-        self.vm.set_prelude(Menai._prelude_code)
-
-    def prelude_code(self) -> CodeObject:
-        """
-        Return the compiled prelude CodeObject.
-
-        The prelude is compiled once on first instantiation and shared across
-        all Menai instances.  This accessor exposes it for tools (e.g. the
-        disassembler) that need to inspect the prelude bytecode.
-        """
-        assert Menai._prelude_code is not None
-        return Menai._prelude_code
 
     def compile(self, expression: str) -> CodeObject:
         """
@@ -184,9 +144,8 @@ class Menai:
         """
         Evaluate a Menai expression with additional pre-bound name bindings.
 
-        The bindings are merged with the prelude globals so the expression can
-        reference both prelude functions and the injected names.  Bindings shadow
-        prelude names on collision.
+        The bindings are available to the expression alongside the prelude's
+        functions.  Bindings shadow prelude names on collision.
 
         This is the primary engine entry point for the transform harness.  The
         caller reads file content, constructs MenaiValue bindings (e.g.
@@ -196,7 +155,7 @@ class Menai:
         Args:
             expression: Menai source expression to compile and evaluate.
             bindings: Extra name-to-value bindings available to the expression
-                      as top-level globals alongside the prelude.
+                      as top-level globals.
 
         Returns:
             The raw MenaiValue result (caller inspects type and extracts value).
@@ -219,7 +178,7 @@ class Menai:
         Args:
             expression: Menai source expression to compile and evaluate.
             bindings: Extra name-to-value bindings available to the expression
-                      as top-level globals alongside the prelude.
+                      as top-level globals.
 
         Returns:
             String representation of the result using Menai describe() conventions.

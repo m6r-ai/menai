@@ -25,6 +25,12 @@ New features:
   reversing the per-scanline filters.  All colour types are supported
   (greyscale, truecolour, palette, and the alpha variants), normalised to RGB
   or RGBA pixels.
+- Reworked the type propagation optimizations.  Removed the old implementation and added
+  a new one based on interprocedural analysis.  This allows return types to be back
+  propagated to callers and to remove type guards that are provably not necessary.
+- Replaced the concept of the "prelude" functions being special global symbols and
+  instead made them a letrec around the user's program.  This removes a number of
+  idiosyncracies in the internal design.
 
 Bug fixes:
 
@@ -50,6 +56,12 @@ Bug fixes:
 - Dictionaries created with duplicate keys retained the first value, but should have
   retained the last one.
 - Sets created with dynamic duplicate elements must not contain duplicates!
+- Fixed a crash in the closure cycle collector when a dead closure was destroyed
+  twice in one sweep.  Destroying one dead closure can destroy another, because a
+  code object's constant pool can hold a closure and destroying that code object
+  releases it.  The sweep then reached the already-destroyed closure's own entry and
+  destroyed it again, releasing a freed code object.  A closure is now tagged as
+  freed at its single destruction point, and the sweep skips entries already tagged.
 
 ## v0.5.0 (2026-09-14)
 

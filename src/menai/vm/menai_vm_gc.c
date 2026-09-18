@@ -52,7 +52,7 @@ gc_mark_value(MenaiValue *val)
             return;
         }
 
-        fn->gc_mark = 1;
+        fn->gc_mark = MENAI_GC_MARK_MARKED;
         for (ssize_t i = 0; i < fn->ncap; i++) {
             if (fn->captures[i] != NULL) {
                 gc_mark_value(fn->captures[i]);
@@ -157,7 +157,7 @@ static int
 _gc_is_dead(MenaiValue *val)
 {
     MenaiPoolHeader *ph = menai_get_pool_header(val);
-    return val != NULL && ph->ob_type == MENAITYPE_FUNCTION && ((MenaiFunction *)val)->gc_mark == 2;
+    return val != NULL && ph->ob_type == MENAITYPE_FUNCTION && ((MenaiFunction *)val)->gc_mark == MENAI_GC_MARK_DEAD;
 }
 
 /*
@@ -305,7 +305,7 @@ _gc_sweep(MenaiVMState *vs)
             fn->registry_index = live_count;
             vs->_closure_registry[live_count++] = fn;
         } else {
-            fn->gc_mark = 2;
+            fn->gc_mark = MENAI_GC_MARK_DEAD;
             fn->registry_index = -1;
             dead[dead_count++] = fn;
         }
@@ -415,7 +415,18 @@ _gc_sweep(MenaiVMState *vs)
 
     for (ssize_t i = 0; i < dead_count; i++) {
         MenaiFunction *fn = dead[i];
-        fn->gc_mark = 0;
+        /*
+         * A closure in the dead array may already have been destroyed when an
+         * earlier entry's finalizer released a reference to it: a code
+         * object's constant pool can hold a closure, and destroying that code
+         * object releases it.  The freed closure is tagged so its own dead
+         * entry is skipped rather than destroyed a second time.
+         */
+        if (fn->gc_mark == MENAI_GC_MARK_FREED) {
+            continue;
+        }
+
+        fn->gc_mark = MENAI_GC_MARK_UNMARKED;
         MenaiPoolHeader *ph = menai_get_pool_header(fn);
         if (ph->ob_refcnt == 0) {
             menai_value_free(vs, (MenaiValue *)fn);
@@ -456,24 +467,17 @@ _gc_sweep(MenaiVMState *vs)
  * menai_closure_gc_collect — run the closure cycle collector at the end of
  * an execute call or at VM teardown.
  *
- * Phase 1: Mark all closures reachable from globals and the execute result.
+ * Phase 1: Mark all closures reachable from the execute result.
  * Phases 2–5: delegated to _gc_sweep.
  *
- * extra_root is the execute result (or NULL at teardown).  When
- * _globals_valid is set, all globals entries are also roots.
+ * extra_root is the execute result (or NULL at teardown).
  */
 void
 menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
 {
     /*
-     * Phase 1 — Mark from globals and the execute result.
+     * Phase 1 — Mark from the execute result.
      */
-    if (vs->_globals_valid) {
-        for (ssize_t i = 0; i < vs->_globals.count; i++) {
-            gc_mark_value(vs->_globals.entries[i].value);
-        }
-    }
-
     if (extra_root != NULL) {
         gc_mark_value(extra_root);
     }
@@ -484,7 +488,7 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
 /*
  * menai_closure_gc_collect_during — run the collector mid-execution.
  *
- * Phase 1: Mark all closures reachable from globals and the live registers.
+ * Phase 1: Mark all closures reachable from the live registers.
  * Phases 2–5: delegated to _gc_sweep.
  *
  * vs->regs[0..vs->num_regs-1] are traced as roots.  Unused slots hold the
@@ -494,14 +498,8 @@ void
 menai_closure_gc_collect_during(MenaiVMState *vs)
 {
     /*
-     * Phase 1 — Mark from globals and live registers.
+     * Phase 1 — Mark from live registers.
      */
-    if (vs->_globals_valid) {
-        for (ssize_t i = 0; i < vs->_globals.count; i++) {
-            gc_mark_value(vs->_globals.entries[i].value);
-        }
-    }
-
     if (vs->regs != NULL) {
         for (size_t i = 0; i < vs->num_regs; i++) {
             gc_mark_value(vs->regs[i]);

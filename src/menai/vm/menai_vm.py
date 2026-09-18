@@ -12,7 +12,6 @@ from menai.vm.menai_vm_errors import _MenaiVMRuntimeError, translate_vm_error
 from menai.vm.menai_vm_c import execute as _c_vm_execute  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import state_alloc as _c_vm_state_alloc  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import state_free as _c_vm_state_free  # type: ignore[import-not-found]
-from menai.vm.menai_vm_c import set_prelude as _c_vm_set_prelude  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import cancel as _c_vm_cancel  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import enable_profiling as _c_vm_enable_profiling  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import get_profile_data as _c_vm_get_profile_data  # type: ignore[import-not-found]
@@ -28,10 +27,6 @@ class MenaiVM:
     def __del__(self) -> None:
         if hasattr(self, '_state'):
             _c_vm_state_free(self._state)
-
-    def set_prelude(self, prelude: CodeObject) -> None:
-        """Execute a prelude CodeObject and store its globals in the VM state."""
-        _c_vm_set_prelude(self._state, prelude)
 
     def execute(
         self,

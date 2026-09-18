@@ -35,7 +35,7 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
     MENAI_SET_MAGIC((MenaiValue *)self);
     self->ncap = ncap;
     self->registry_index = -1;
-    self->gc_mark = 0;
+    self->gc_mark = MENAI_GC_MARK_UNMARKED;
     menai_code_object_retain(co);
     self->bytecode = co;
 

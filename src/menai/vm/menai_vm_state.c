@@ -7,8 +7,7 @@
  * this instance's pool so they participate in the same allocator lifecycle
  * as every other value.
  *
- * menai_vm_state_free tears down the globals, drains the pool free-lists, and
- * frees the struct itself.
+ * menai_vm_state_free drains the pool free-lists and frees the struct itself.
  */
 #include <stdlib.h>
 
@@ -101,15 +100,11 @@ menai_vm_state_free(MenaiVMState *vs)
 {
     /*
      * Final collection — reclaim any remaining cyclic closures before
-     * globals are freed so they are not misreported as leaks.  With the
-     * execute-time collection working, this should find nothing.
+     * teardown so they are not misreported as leaks.  With the execute-time
+     * collection working, this should find nothing.
      */
     menai_closure_gc_collect(vs, NULL);
     menai_closure_registry_free(vs);
-
-    if (vs->_globals_valid) {
-        globals_free(vs, &vs->_globals);
-    }
 
     if (vs->empty_vector) {
         menai_value_free(vs, (MenaiValue *)vs->empty_vector);

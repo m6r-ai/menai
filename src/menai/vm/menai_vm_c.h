@@ -298,6 +298,21 @@ struct MenaiFloat {
     double value;
 };
 
+/*
+ * gc_mark values on a MenaiFunction.
+ *
+ * A closure is UNMARKED (0) until the trace reaches it, when it becomes
+ * MARKED (1).  Phase 2 of the collector tags the closures the trace did not
+ * reach as DEAD (2) so the edge-breaking and orphan-detachment passes can
+ * recognise them.  FREED (3) is set by the closure finalizer immediately
+ * before the closure is destroyed, so that a dead entry already destroyed by
+ * an earlier finalizer is skipped rather than destroyed a second time.
+ */
+#define MENAI_GC_MARK_UNMARKED 0
+#define MENAI_GC_MARK_MARKED 1
+#define MENAI_GC_MARK_DEAD 2
+#define MENAI_GC_MARK_FREED 3
+
 struct MenaiFunction {
     MENAI_MAGIC_FIELD
     ssize_t ncap;                       /* number of captured values */
@@ -618,9 +633,9 @@ typedef struct {
 /*
  * GlobalsTable — open-addressing hash table for O(1) name lookup.
  *
- * Built once by the bridge and cached.  The cached table is a complete
- * lookup table with hash slots.  It is never copied per-call — the
- * execute loop reads from it directly.  Values and names are owned.
+ * Built by the bridge from the extra bindings passed to execute().  The table
+ * is a complete lookup table with hash slots.  It is never copied per-call —
+ * the execute loop reads from it directly.  Values and names are owned.
  */
 typedef struct {
     const char *name;
@@ -657,8 +672,8 @@ typedef struct {
  * MenaiVMState — per-instance VM state.
  *
  * Owns all mutable state that must not be shared across VM instances:
- * the pool allocator free-lists, singleton values, and the prelude globals.
- * Each MenaiVM Python object allocates one MenaiVMState and passes it
+ * the pool allocator free-lists and singleton values.  Each MenaiVM Python
+ * object allocates one MenaiVMState and passes it
  * explicitly to every function that needs it.
  */
 typedef struct MenaiVMState {
@@ -687,12 +702,6 @@ typedef struct MenaiVMState {
     MenaiVector *empty_vector;
 
     volatile int _cancel_flag;
-
-    /*
-     * Prelude globals — per-instance, set once via menai_vm_set_prelude
-     */
-    GlobalsTable _globals;
-    int _globals_valid;
 
     /*
      * Closure cycle collector registry — tracks all live MenaiFunction pointers.
@@ -1120,6 +1129,14 @@ menai_function_final(MenaiVMState *vs, MenaiFunction *self)
             moved->registry_index = idx;
         }
     }
+
+    /*
+     * Tag the closure as freed before destroying it.  A closure in the
+     * collector's dead array can be destroyed here — recursively, when an
+     * earlier entry's finalizer releases a reference to it — and the sweep
+     * must skip its own dead entry rather than destroy it a second time.
+     */
+    self->gc_mark = MENAI_GC_MARK_FREED;
 
     menai_code_object_release(vs, self->bytecode);
     ssize_t ncap = self->ncap;

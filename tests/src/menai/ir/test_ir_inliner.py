@@ -2,8 +2,6 @@
 
 from typing import cast
 
-import pytest
-
 from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
@@ -20,12 +18,17 @@ from menai.ast.menai_ast_constant_folder import MenaiASTConstantFolder
 from menai.ast.menai_ast_builder import MenaiASTBuilder
 from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
 from menai.ast.menai_lexer import MenaiLexer
+from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
 from menai.ir.menai_ir_inliner import MenaiIRInliner
 from menai.menai_value import MenaiInteger
 
 
-def _build_ir(source: str) -> MenaiIRReturn:
-    """Compile source string to IR (stopping before IR optimization passes)."""
+def _build_ir(source: str, inject_prelude: bool = False) -> MenaiIRReturn:
+    """Compile source string to IR (stopping before IR optimization passes).
+
+    When inject_prelude is True the program is wrapped in the prelude's lexical
+    bindings, matching how the compiler compiles a top-level program.
+    """
     lexer = MenaiLexer()
     ast_builder = MenaiASTBuilder()
     semantic = MenaiASTSemanticAnalyzer()
@@ -36,14 +39,18 @@ def _build_ir(source: str) -> MenaiIRReturn:
     tokens = lexer.lex(source)
     ast = ast_builder.build(tokens, source, "<test>")
     checked = semantic.analyze(ast, source)
+
+    if inject_prelude:
+        checked = MenaiASTPreludeInjector().inject(checked)
+
     desugared = desugarer.desugar(checked)
     desugared = constant_folder.optimize(desugared)
     return ir_builder.build(desugared)
 
 
-def _inline(ir, prelude_lambdas=None):
+def _inline(ir):
     """Run the inliner on an IR tree."""
-    inliner = MenaiIRInliner(prelude_lambdas=prelude_lambdas or {})
+    inliner = MenaiIRInliner()
     return inliner.optimize(ir)
 
 
@@ -146,41 +153,31 @@ class TestLocalLambdaInlining:
 class TestPreludeInlining:
     """Tests for inlining prelude functions."""
 
-    @pytest.fixture
-    def prelude_lambdas(self):
-        """Build prelude lambdas from the prelude source."""
-        from menai.menai import Menai
-        from menai.menai_compiler import MenaiCompiler
-
-        compiler = MenaiCompiler()
-        prelude_ir = compiler.compile_to_ir(Menai._load_prelude_source(), name="<prelude>")
-        return MenaiCompiler._extract_prelude_lambdas(prelude_ir)
-
-    def test_map_list_inlined(self, prelude_lambdas):
+    def test_map_list_not_inlined(self):
         """map-list should not be inlined (contains recursive helper)."""
-        ir = _build_ir("(map-list (lambda (x) (integer+ x 1)) (list 1 2 3))")
-        new_ir, changed = _inline(ir, prelude_lambdas)
+        ir = _build_ir("(map-list (lambda (x) (integer+ x 1)) (list 1 2 3))", inject_prelude=True)
+        new_ir, changed = _inline(ir)
 
         assert not changed
 
-    def test_filter_list_inlined(self, prelude_lambdas):
+    def test_filter_list_not_inlined(self):
         """filter-list should not be inlined (contains recursive helper)."""
-        ir = _build_ir("(filter-list (lambda (x) (integer>? x 2)) (list 1 2 3 4 5))")
-        new_ir, changed = _inline(ir, prelude_lambdas)
+        ir = _build_ir("(filter-list (lambda (x) (integer>? x 2)) (list 1 2 3 4 5))", inject_prelude=True)
+        new_ir, changed = _inline(ir)
 
         assert not changed
 
-    def test_fold_list_inlined(self, prelude_lambdas):
+    def test_fold_list_not_inlined(self):
         """fold-list should not be inlined (contains recursive helper)."""
-        ir = _build_ir("(fold-list integer+ 0 (list 1 2 3))")
-        new_ir, changed = _inline(ir, prelude_lambdas)
+        ir = _build_ir("(fold-list integer+ 0 (list 1 2 3))", inject_prelude=True)
+        new_ir, changed = _inline(ir)
 
         assert not changed
 
-    def test_recursive_prelude_not_inlined(self, prelude_lambdas):
+    def test_recursive_prelude_not_inlined(self):
         """A recursive prelude function should not be inlined."""
-        ir = _build_ir("(sort-list integer<? (list 3 1 2))")
-        new_ir, changed = _inline(ir, prelude_lambdas)
+        ir = _build_ir("(sort-list integer<? (list 3 1 2))", inject_prelude=True)
+        new_ir, changed = _inline(ir)
 
         assert not changed
 

@@ -5,15 +5,11 @@ Walks the IR tree and substitutes lambda bodies at call sites where the
 call target can be resolved to a known lambda.  Inlining is always safe in
 Menai because the language is pure — there are no side effects to reorder.
 
-The pass resolves two categories of call target:
-
-1. Local lambdas bound in an enclosing let/letrec whose value is a
-   MenaiIRLambda.  The scope stack maps binding names to lambda nodes as
-   the tree is walked.
-
-2. Prelude lambdas — functions compiled from the prelude source and made
-   available via set_prelude_lambdas.  These are looked up by name when the
-   call's func_plan is a global variable.
+The pass resolves call targets to lambdas bound in an enclosing let/letrec
+whose value is a MenaiIRLambda.  The scope stack maps binding names to lambda
+nodes as the tree is walked.  Prelude functions are ordinary bindings in that
+scope stack: the prelude is spliced into every program as a letrec, so its
+functions are resolved the same way as any other local lambda.
 
 A lambda is only inlined when:
 
@@ -70,17 +66,12 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
     Usage::
 
-        inliner = MenaiIRInliner(prelude_lambdas=lambdas)
+        inliner = MenaiIRInliner()
         new_ir, changed = inliner.optimize(ir)
     """
 
-    def __init__(self, prelude_lambdas: dict[str, MenaiIRLambda] | None = None) -> None:
-        self._prelude_lambdas: dict[str, MenaiIRLambda] = prelude_lambdas or {}
+    def __init__(self) -> None:
         self._inlined = 0
-
-    def set_prelude_lambdas(self, lambdas: dict[str, MenaiIRLambda]) -> None:
-        """Update the prelude lambda map (called after prelude compilation)."""
-        self._prelude_lambdas = lambdas
 
     def optimize(self, ir: MenaiIRExpr) -> tuple[MenaiIRExpr, bool]:
         """Return an inlined IR tree and a boolean indicating whether any changes were made."""
@@ -278,9 +269,6 @@ class MenaiIRInliner(MenaiIROptimizationPass):
                     return scope[func_plan.name]
 
             return None
-
-        if func_plan.var_type == 'global':
-            return self._prelude_lambdas.get(func_plan.name)
 
         return None
 

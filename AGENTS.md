@@ -221,11 +221,12 @@ There are two categories of builtin that must not be confused:
 - Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
   as Menai lambdas in `prelude.menai`. They MUST NOT be added to `BUILTIN_OPCODE_ARITIES`.
 
-See [ADR-0009](docs/adr/0009-prelude-and-builtin-registry-consistency.md).
+The prelude is a module that is auto-imported, not a separate compilation unit. See
+[ADR-0022](docs/adr/0022-prelude-is-a-module.md).
 
 ### The C VM has no process-global mutable state
 
-All mutable VM state (pool allocator free-lists, singletons, prelude globals) is
+All mutable VM state (pool allocator free-lists, singletons, the closure registry) is
 owned by `MenaiVMState`, a per-instance struct allocated by the Python `MenaiVM`
 wrapper. A `MenaiVMState *` pointer is passed explicitly as the first argument
 to every C function that allocates, frees, or touches singletons. There are no

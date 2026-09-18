@@ -768,10 +768,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
                 val = globals_lookup(extra_globals, name_str, name_hash);
             }
 
-            if (val == NULL && vs->_globals_valid) {
-                val = globals_lookup(&vs->_globals, name_str, name_hash);
-            }
-
             if (val == NULL) {
                 MenaiString *name = alloc_menai_string_from_utf8(vs, name_str, (ssize_t)strlen(name_str));
                 if (name == NULL) {
@@ -7560,9 +7556,9 @@ menai_vm_cancel(MenaiVMState *vs)
 /*
  * menai_vm_execute_native — native VM entry point.
  *
- * Executes code using the prelude globals stored in the VM state and an
- * optional extra globals table (or NULL).  Returns a new reference to the
- * result, or NULL on error.  On error, *out_error is filled in.
+ * Executes code using an optional extra globals table (or NULL) for the
+ * bindings passed to execute().  Returns a new reference to the result, or
+ * NULL on error.  On error, *out_error is filled in.
  */
 MenaiValue *
 menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
