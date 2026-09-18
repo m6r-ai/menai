@@ -4,7 +4,7 @@ Tests for MenaiCFGSwitchDispatch.
 Covers:
   1. Cascading integer=? if-chain becomes a single dense switch terminator
   2. The integer guard for the switch scrutinee is inserted by
-     MenaiCFGTypePropagation (not by switch dispatch), and is skipped when
+     MenaiCFGGuardInsertion (not by switch dispatch), and is skipped when
      the type is already established — either by a prior integer=? guard or
      by an integer? type predicate on the branch true edge
   3. Sparse chains are left as branches (density heuristic)

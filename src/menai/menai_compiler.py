@@ -22,8 +22,8 @@ from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
 from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
-from menai.cfg.menai_cfg_type_propagation import MenaiCFGTypePropagation
 from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAnalysis
+from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
 from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 from menai.ir.menai_ir_builder import MenaiIRBuilder
@@ -69,13 +69,14 @@ class MenaiCompiler:
             MenaiIROptimizer(),
         ]
         self.cfg_builder = MenaiCFGBuilder()
+        self._interproc_type_analysis = MenaiCFGInterprocTypeAnalysis()
         self.cfg_passes: list[MenaiCFGOptimizationPass] = [
             MenaiCFGCollapsePhiChains(),
             MenaiCFGBranchConstProp(),
             MenaiCFGSimplifyBlocks(),
             MenaiCFGSwitchDispatch(),
-            MenaiCFGTypePropagation(),
-            MenaiCFGInterprocTypeAnalysis(),
+            self._interproc_type_analysis,
+            MenaiCFGGuardInsertion(),
             MenaiCFGLICM(),
             MenaiCFGDeadCaptures(),
         ]
@@ -170,7 +171,7 @@ class MenaiCompiler:
         resolved_ast = self.ast_module_resolver.resolve(checked_ast)
         return resolved_ast
 
-    def compile(self, source: str, name: str = "<module>") -> CodeObject:
+    def compile(self, source: str, name: str = "<module>", externally_reachable: bool = False) -> CodeObject:
         """
         Compile Menai source code to bytecode.
 
@@ -179,6 +180,12 @@ class MenaiCompiler:
         Args:
             source: Menai source code as a string
             name: Optional name for the code object (e.g. filename)
+            externally_reachable: True when the compiled functions may be called
+                from outside this compilation unit.  The prelude is compiled
+                this way: its functions are called by name from user code, which
+                this compilation cannot see.  When True, interprocedural
+                parameter inference is disabled, because a function's call sites
+                here are not its only call sites.
 
         Returns:
             Compiled bytecode ready for execution
@@ -194,6 +201,7 @@ class MenaiCompiler:
         for ir_pass in self.ir_passes:
             ir, _ = ir_pass.optimize(ir)
 
+        self._interproc_type_analysis.set_externally_reachable(externally_reachable)
         cfg = self.cfg_builder.build(ir)
         for cfg_pass in self.cfg_passes:
             cfg, _ = cfg_pass.optimize(cfg)

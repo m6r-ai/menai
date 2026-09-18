@@ -45,6 +45,25 @@ is essential: if both mapped to a single unknown element, joining two different 
 kinds would move *down* the lattice and the parameter-fact fixed point would oscillate
 rather than converge.
 
+The distinction also governs soundness. A value whose type is genuinely unknown — a
+builtin result whose signature does not fix the result type (struct-ref, dict-get,
+list-first), or an unresolvable call result — is ANY, because it could be anything and
+a guard or an index resolution must not rely on it. BOTTOM is only the fixed-point
+identity: it is the initial value and the join identity, not a claim that a value is
+untyped. Free variables and globals are left at BOTTOM: making them ANY would poison
+the return-fact fixed point, because a function that returns a captured value creates a
+cycle through its own parameter, and ANY in that cycle never resolves back to the
+precise type the real call sites establish.
+
+The analysis pass stores its per-value facts on each function and a separate guard
+insertion pass consumes them. Guard insertion needs only the coarse type name, so it
+reads `fact.kind`. Splitting the two keeps a single source of facts and lets the
+interprocedural analysis run before guards are inserted, so guards can be suppressed
+where the interprocedural facts prove a type. The prelude is compiled with an
+`externally_reachable` flag that disables parameter inference: its functions are called
+by name from user code the prelude compilation cannot see, so their visible call sites
+are not their only call sites.
+
 The fixed point propagates three kinds of fact, all of which are required for the
 analysis to fire on real code:
 

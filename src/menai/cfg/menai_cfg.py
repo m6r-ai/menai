@@ -9,6 +9,7 @@ consume this representation.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from menai.cfg.menai_cfg_type_fact import TypeFact
 from menai.menai_value import MenaiValue, MenaiStructType
 
 
@@ -338,7 +339,7 @@ class MenaiCFGSwitchTerm:
     Lowered to the SWITCH_INTEGER opcode by the VM codegen.  `targets[i]` is the
     block jumped to when the scrutinee equals `min + i`; entries may be None,
     meaning that value falls through to `default_block`.  The scrutinee is
-    guaranteed integer (an integer guard is inserted by MenaiCFGTypePropagation
+    guaranteed integer (an integer guard is inserted by MenaiCFGGuardInsertion
     when the type is not statically known), so no runtime type dispatch is needed.
     """
     value: MenaiCFGValue
@@ -473,6 +474,9 @@ class MenaiCFGFunction:
                    detection and debug names)
     source_line  : source line where the lambda is defined
     source_file  : source file where the lambda is defined
+    type_facts   : per-value type facts computed by the interprocedural type
+                   analysis pass and consumed by the guard insertion pass.
+                   Transient analysis output, not part of the program structure.
     """
     blocks: list[MenaiCFGBlock] = field(default_factory=list)
     params: list[str] = field(default_factory=list)
@@ -481,6 +485,7 @@ class MenaiCFGFunction:
     binding_name: str | None = None
     source_line: int = 0
     source_file: str = ""
+    type_facts: dict[int, TypeFact] = field(default_factory=dict)
 
     def entry(self) -> MenaiCFGBlock:
         """The entry block (always the first block)."""

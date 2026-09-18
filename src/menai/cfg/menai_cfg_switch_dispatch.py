@@ -23,7 +23,7 @@ Safety: every test block after the first must have exactly one predecessor
 (the preceding test block), no other block may reference the SSA values the
 transformation deletes (the eq results and literal consts), and no arm target
 may itself be a test block.  The integer guard for the scrutinee is inserted
-by MenaiCFGTypePropagation (which runs after this pass), preserving the type
+by MenaiCFGGuardInsertion (which runs after this pass), preserving the type
 error behaviour of the original `integer=?` chain — `integer=?` raises on
 non-integer operands, and the guard raises before any arm is tested.
 
@@ -33,9 +33,9 @@ branches.
 
 This pass runs after MenaiCFGSimplifyBlocks (so empty indirection blocks are
 already gone and the chain is in its canonical shape) and before
-MenaiCFGTypePropagation (so the eq builtins it removes have not yet had
+MenaiCFGGuardInsertion (so the eq builtins it removes have not yet had
 guards inserted for them).  The integer guard for the switch scrutinee is
-also handled by type propagation.
+also handled by guard insertion.
 """
 
 

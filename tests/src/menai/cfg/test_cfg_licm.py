@@ -296,6 +296,10 @@ class TestGuardHoisting:
         """
         A guard on a param whose back-edge type matches is loop-invariant
         and should be hoisted.
+
+        'moves' is fed by 'flip', whose return type is ambiguous (it can
+        return an integer or a list), so the parameter's type is not provable
+        and the ASSERT_LIST guard is inserted.
         """
         src = """
         (letrec ((apply-moves
@@ -304,8 +308,10 @@ class TestGuardHoisting:
                         cube
                         (apply-moves (apply-move cube (list-first moves))
                                      (list-rest moves)))))
-                 (apply-move (lambda (cube move) move)))
-          (apply-moves 0 (list 1 2 3)))
+                 (apply-move (lambda (cube move) move))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
+          (apply-moves 0 (flip 3)))
         """
         code = _compile(src)
         am = _find_lambda(code, "apply-moves")
@@ -349,14 +355,20 @@ class TestGuardHoisting:
     def test_free_var_guard_hoisted(self):
         """
         A guard on a free var (never reassigned) is always loop-invariant.
+
+        Both params are fed by 'flip', whose return type is ambiguous, so
+        their types are not provable and the ASSERT_INTEGER guards are
+        inserted.
         """
         src = """
         (letrec ((search-loop
                   (lambda (bound max-depth)
                     (if (integer>? bound max-depth)
                         (list 1)
-                        (search-loop (integer+ bound 1))))))
-          (search-loop 0 100))
+                        (search-loop (integer+ bound 1) max-depth))))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
+          (search-loop (flip 3) (flip 4)))
         """
         code = _compile(src)
         sl = _find_lambda(code, "search-loop")
@@ -465,6 +477,9 @@ class TestGuardHoisting:
         check handles this: assuming acc is 'list', both phi incoming values
         are 'list', so the back-edge preserves 'list', and the guard is
         loop-invariant.
+
+        'acc' is fed by 'flip', whose return type is ambiguous, so acc's type
+        is not provable and the ASSERT_LIST guard is inserted.
         """
         src = """
         (letrec ((loop
@@ -476,8 +491,10 @@ class TestGuardHoisting:
                                 (if (integer=? (integer% i 2) 0)
                                     (list-prepend acc elem)
                                     acc))))))
-                 (v (vector 10 20 30 40 50)))
-          (loop (integer- (vector-length v) 1) (list)))
+                 (v (vector 10 20 30 40 50))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
+          (loop (integer- (vector-length v) 1) (flip 3)))
         """
         code = _compile(src)
         loop_fn = _find_lambda(code, "loop")

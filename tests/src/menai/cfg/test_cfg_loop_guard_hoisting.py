@@ -88,6 +88,9 @@ class TestLoopInvariantGuardHoisting:
         The 'moves' param is reassigned via list-rest (list -> list), so the
         ASSERT_LIST guard is loop-invariant.  It should be hoisted to the
         preamble, and the self-loop should skip it.
+
+        'moves' is fed by 'flip', whose return type is ambiguous, so the
+        parameter's type is not provable and the guard is inserted.
         """
         src = """
         (letrec ((apply-moves
@@ -96,8 +99,10 @@ class TestLoopInvariantGuardHoisting:
                         cube
                         (apply-moves (apply-move cube (list-first moves))
                                      (list-rest moves)))))
-                 (apply-move (lambda (cube move) move)))
-          (apply-moves 0 (list 1 2 3)))
+                 (apply-move (lambda (cube move) move))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
+          (apply-moves 0 (flip 3)))
         """
         code = _compile(src)
         am = _find_lambda(code, "apply-moves")
@@ -120,27 +125,25 @@ class TestLoopInvariantGuardHoisting:
         'max-depth' is a param not reassigned by the self-loop (the self-loop
         only provides one arg for 'bound').  Its ASSERT_INTEGER guard is
         loop-invariant and should be hoisted.
+
+        Both params are fed by 'flip', whose return type is ambiguous, so
+        their types are not provable and the guards are inserted.
         """
         src = """
         (letrec ((search-loop
                   (lambda (bound max-depth)
                     (if (integer>? bound max-depth)
                         (list 1)
-                        (search-loop (integer+ bound 1))))))
-          (search-loop 0 100))
+                        (search-loop (integer+ bound 1) max-depth))))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
+          (search-loop (flip 3) (flip 4)))
         """
         code = _compile(src)
         sl = _find_lambda(code, "search-loop")
         assert _count_op(sl, Opcode.ASSERT_INTEGER) == 2
         target = _self_loop_target(sl)
         assert target is not None
-        # max-depth is slot 1 (param 0 = bound, param 1 = max-depth, free var = slot 2)
-        # Actually: params get slots 0..P-1, free vars get P..P+F-1
-        # search-loop has 2 params (bound=slot0, max-depth=slot1) and 1 free var (slot2)
-        # The self-loop provides 1 arg (for bound), so max-depth is unchanged.
-        # Both guards should be hoisted: max-depth (unchanged param) and
-        # bound (back-edge type is integer from integer+).
-        # The self-loop should skip both guards.
         guard0 = _find_assert(sl, Opcode.ASSERT_INTEGER, 0)
         guard1 = _find_assert(sl, Opcode.ASSERT_INTEGER, 1)
         assert guard0 is not None
@@ -192,11 +195,16 @@ class TestLoopInvariantGuardHoisting:
         Uses a mutually recursive letrec so that the functions cannot be
         inlined and survive to the CFG stage.  'even?' calls 'odd?' (not
         itself), so it has no self-loop.
+
+        'n' is fed by 'flip', whose return type is ambiguous, so the guard
+        is inserted.
         """
         src = """
         (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
-                 (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
-          (even? 10))
+                 (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
+          (even? (flip 10)))
         """
         code = _compile(src)
         even_fn = _find_lambda(code, "even?")

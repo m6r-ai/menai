@@ -11,9 +11,11 @@ Covers:
   4. struct-set through a parameter is rewritten to struct-set-ref.
   5. The rewritten and non-rewritten forms produce identical results.
   6. The type fact lattice join rules.
+  7. Guards are eliminated for parameters whose types are proven, and kept
+     for parameters whose call-site types are ambiguous.
 """
 
-from menai.cfg.menai_cfg import MenaiCFGBuiltinInstr
+from menai.cfg.menai_cfg import MenaiCFGBuiltinInstr, MenaiCFGGuardInstr
 from menai.cfg.menai_cfg_optimization_pass import collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, BOTTOM, TypeFact, join
 from menai.menai_compiler import MenaiCompiler
@@ -315,3 +317,58 @@ class TestDictGetShadowedKey:
         cfg = _build_cfg(SHADOWED_DICT_SRC)
         assert 'struct-ref' in _ops(cfg)
         assert 'struct-get' not in _ops(cfg)
+
+
+def _guard_count(cfg) -> int:
+    """Count guard instructions across all functions in the module."""
+    n = 0
+    for func in collect_functions(cfg):
+        for block in func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGGuardInstr):
+                    n += 1
+
+    return n
+
+
+PROVABLE_PARAM_SRC = """
+(letrec ((add (lambda (a b n)
+                (if (integer<=? n 0)
+                    (integer+ a b)
+                    (add a b (integer- n 1))))))
+  (add 1 2 3))
+"""
+
+
+UNPROVABLE_PARAM_SRC = """
+(letrec ((add (lambda (a b n)
+                (if (integer<=? n 0)
+                    (integer+ a b)
+                    (add a b (integer- n 1)))))
+         (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+         (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
+  (add (flip 0) (flip 0) (flip 0)))
+"""
+
+
+class TestGuardElimination:
+    """
+    Guards are eliminated for parameters whose types the interprocedural
+    analysis proves.
+    """
+
+    def test_provable_param_guards_eliminated(self):
+        """Every call site passes an integer, so no integer guards are needed."""
+        cfg = _build_cfg(PROVABLE_PARAM_SRC)
+        assert _guard_count(cfg) == 0
+
+    def test_unprovable_param_guards_inserted(self):
+        """Ambiguous call-site types leave the parameters unprovable, so guards remain."""
+        cfg = _build_cfg(UNPROVABLE_PARAM_SRC)
+        assert _guard_count(cfg) > 0
+
+    def test_provable_param_result_correct(self, menai):
+        assert menai.evaluate_and_format(PROVABLE_PARAM_SRC) == "3"
+
+    def test_unprovable_param_result_correct(self, menai):
+        assert menai.evaluate_and_format(UNPROVABLE_PARAM_SRC) == "0"

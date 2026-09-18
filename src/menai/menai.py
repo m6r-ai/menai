@@ -69,7 +69,9 @@ class Menai:
         prelude_source = Menai._load_prelude_source()
 
         if Menai._prelude_code is None:
-            Menai._prelude_code = self.compiler.compile(prelude_source, name="<prelude>")
+            Menai._prelude_code = self.compiler.compile(
+                prelude_source, name="<prelude>", externally_reachable=True
+            )
 
         if Menai._prelude_lambdas is None:
             prelude_ir = self.compiler.compile_to_ir(prelude_source, name="<prelude>")
