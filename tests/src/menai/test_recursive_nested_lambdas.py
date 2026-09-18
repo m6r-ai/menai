@@ -431,7 +431,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda () x)))) x)',
-            '(<lambda ()>)'  # Returns a list containing the lambda
+            '(<x ()>)'  # Returns a list containing the lambda
         )
 
     def test_lambda_in_list_called_once(self, menai, helpers):
@@ -440,7 +440,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda () x)))) ((list-first x)))',
-            '(<lambda ()>)'  # Calling lambda returns x (the list)
+            '(<x ()>)'  # Calling lambda returns x (the list)
         )
 
     def test_lambda_in_list_called_multiple_times(self, menai, helpers):
@@ -449,7 +449,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda () x)))) (list-first ((list-first x))))',
-            '<lambda ()>'  # Returns the lambda itself
+            '<x ()>'  # Returns the lambda itself
         )
 
     def test_lambda_in_list_deep_recursion(self, menai, helpers):
@@ -458,7 +458,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda () x)))) ((list-first ((list-first ((list-first ((list-first x)))))))))',
-            '(<lambda ()>)'  # Returns x after multiple recursive calls
+            '(<x ()>)'  # Returns x after multiple recursive calls
         )
 
     def test_lambda_in_cons(self, menai, helpers):
@@ -467,7 +467,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list-prepend (list) (lambda () x)))) (list-first x))',
-            '<lambda ()>'  # Returns the lambda
+            '<x ()>'  # Returns the lambda
         )
 
     def test_lambda_in_cons_called(self, menai, helpers):
@@ -475,7 +475,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list-prepend (list) (lambda () x)))) ((list-first x)))',
-            '(<lambda ()>)'  # Returns x (the cons cell)
+            '(<x ()>)'  # Returns x (the cons cell)
         )
 
     def test_lambda_from_if_true_branch(self, menai, helpers):
@@ -484,7 +484,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (if #t (lambda () x) (lambda () 42)))) (x))',
-            '<lambda ()>'  # Calling lambda returns itself
+            '<x ()>'  # Calling lambda returns itself
         )
 
     def test_lambda_from_if_false_branch(self, menai, helpers):
@@ -493,7 +493,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (if #f (lambda () 42) (lambda () x)))) (x))',
-            '<lambda ()>'  # Calling lambda returns itself
+            '<x ()>'  # Calling lambda returns itself
         )
 
     def test_lambda_in_nested_list(self, menai, helpers):
@@ -502,7 +502,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (list (lambda () x))))) (list-first (list-first x)))',
-            '<lambda ()>'  # Returns the lambda
+            '<x ()>'  # Returns the lambda
         )
 
     def test_lambda_in_nested_list_called(self, menai, helpers):
@@ -510,7 +510,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (list (lambda () x))))) ((list-first (list-first x))))',
-            '((<lambda ()>))'  # Calling lambda returns x
+            '((<x ()>))'  # Calling lambda returns x
         )
 
     def test_multiple_lambdas_in_list(self, menai, helpers):
@@ -544,7 +544,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda (n) (if (integer<=? n 0) x (list n)))))) ((list-first x) 0))',
-            '(<lambda (n)>)'  # Calling with 0 returns x; param name is now correctly 'n'
+            '(<x (n)>)'  # Calling with 0 returns x; param name is now correctly 'n'
         )
 
         helpers.assert_evaluates_to(
@@ -569,7 +569,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (dict "func" (lambda () x)))) (dict-get x "func"))',
-            '<lambda ()>'  # Returns the lambda
+            '<x ()>'  # Returns the lambda
         )
 
     def test_lambda_in_dict_called(self, menai, helpers):
@@ -577,7 +577,7 @@ class TestLetrecLambdasInDataStructures:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (dict "func" (lambda () x)))) ((dict-get x "func")))',
-            '{("func" <lambda ()>)}'  # Calling lambda returns x (the dict)
+            '{("func" <x ()>)}'  # Calling lambda returns x (the dict)
         )
 
     def test_non_self_referential_lambda_in_list(self, menai, helpers):
@@ -607,7 +607,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda () x)))) x)',
-            '(<lambda ()>)'
+            '(<x ()>)'
         )
 
     def test_bytecode_lambda_in_list_called(self, menai, helpers):
@@ -615,7 +615,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda () x)))) ((list-first x)))',
-            '(<lambda ()>)'
+            '(<x ()>)'
         )
 
     def test_bytecode_deep_recursion(self, menai, helpers):
@@ -623,7 +623,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (list (lambda () x)))) ((list-first ((list-first ((list-first ((list-first x)))))))))',
-            '(<lambda ()>)'
+            '(<x ()>)'
         )
 
     def test_bytecode_lambda_from_if(self, menai, helpers):
@@ -631,7 +631,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (if #t (lambda () x) (lambda () 42)))) (x))',
-            '<lambda ()>'
+            '<x ()>'
         )
 
     def test_bytecode_multiple_lambdas(self, menai, helpers):
@@ -657,5 +657,5 @@ class TestLetrecLambdasInDataStructuresBytecode:
         helpers.assert_evaluates_to(
             menai,
             '(letrec ((x (dict "func" (lambda () x)))) ((dict-get x "func")))',
-            '{("func" <lambda ()>)}'
+            '{("func" <x ()>)}'
         )

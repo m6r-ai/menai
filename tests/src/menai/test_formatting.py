@@ -254,6 +254,28 @@ class TestFormatting:
         formatted = menai.evaluate_and_format(lambda_expr)
         assert "lambda" in formatted.lower() or "<" in formatted
 
+    def test_anonymous_function_shows_lambda(self, menai):
+        """An anonymous function is displayed as a lambda with its parameters."""
+        assert menai.evaluate_and_format('(lambda (x) (integer* x 2))') == "<lambda (x)>"
+
+    def test_named_function_shows_its_name(self, menai):
+        """A named function is displayed by its name, not as a lambda."""
+        assert menai.evaluate_and_format('(let ((sq (lambda (x) (integer* x x)))) sq)') == "<sq (x)>"
+
+    def test_named_function_omits_compiler_arity_suffix(self, menai):
+        """The compiler's "(N param[s])" label suffix does not leak into the display."""
+        formatted = menai.evaluate_and_format('(let ((sq (lambda (x) (integer* x x)))) sq)')
+        assert "param" not in formatted
+
+    def test_builtin_function_shows_its_name(self, menai):
+        """A builtin function is displayed by its name."""
+        assert menai.evaluate_and_format('integer+') == "<integer+ (args)>"
+
+    def test_variadic_function_shows_rest_parameter(self, menai):
+        """A variadic function's display shows its rest parameter."""
+        formatted = menai.evaluate_and_format('(let ((f (lambda (a . rest) a))) f)')
+        assert formatted == "<f (a . rest)>"
+
     def test_let_expression_result_formatting(self, menai, helpers):
         """Test that let expressions produce properly formatted results."""
         # Let expressions should format their body result

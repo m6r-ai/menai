@@ -64,18 +64,29 @@ def _instructions(code: CodeObject) -> Iterator[Instruction]:
         yield unpack_instruction(word)
 
 
+_MAX_CONSTANT_LENGTH = 64
+
+
 def format_constant(const: object) -> str:
-    """Format a constant for display."""
+    """
+    Format a constant for display.
+
+    Menai values are shown as their Menai type name followed by the value's
+    canonical Menai display form (its describe() form).  This keeps every
+    constant self-identifying: a symbol is shown as a symbol rather than as a
+    bare name, and a struct type is shown with its name and fields.  Long values
+    are truncated.
+    """
     if isinstance(const, str):
-        if len(const) > 50:
-            return f'"{const[:47]}..."'
+        if len(const) > _MAX_CONSTANT_LENGTH:
+            return f'"{const[:_MAX_CONSTANT_LENGTH - 3]}..."'
 
         return f'"{const}"'
 
     if isinstance(const, MenaiValue):
-        val_str = str(const)
-        if len(val_str) > 50:
-            return f'{val_str[:47]}...'
+        val_str = f"{const.type_name()} {const.describe()}"
+        if len(val_str) > _MAX_CONSTANT_LENGTH:
+            return f'{val_str[:_MAX_CONSTANT_LENGTH - 3]}...'
 
         return val_str
 

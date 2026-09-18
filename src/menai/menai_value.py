@@ -13,6 +13,29 @@ from typing import Any
 from menai.menai_error import MenaiEvalError
 
 
+def _function_display_name(name: str | None) -> str | None:
+    """
+    Return the display name for a function, or None if it is anonymous.
+
+    The compiler labels a function's code object with its binding name plus a
+    "(N param[s])" suffix describing its arity, and that label becomes the
+    function value's name.  The suffix duplicates the parameter list that the
+    display already shows, so it is stripped here.  A compiler-generated
+    placeholder name (e.g. "<lambda-0>") denotes an anonymous function and
+    yields None.
+    """
+    if not name:
+        return None
+
+    if "(" in name:
+        name = name[:name.index("(")].strip()
+
+    if not name or name.startswith("<lambda-"):
+        return None
+
+    return name
+
+
 @dataclass(slots=True, unsafe_hash=True)
 class MenaiValue(ABC):
     """
@@ -90,7 +113,17 @@ class MenaiFunction(MenaiValue):
             rest_param = self.parameters[-1]
             param_str = f"{regular_params} . {rest_param}".strip(' .')
 
-        return f"<lambda ({param_str})>"
+        name = _function_display_name(self.name)
+        if name is None:
+            return f"<lambda ({param_str})>"
+
+        return f"<{name} ({param_str})>"
+
+    def __repr__(self) -> str:
+        return (
+            f"MenaiFunction(name={self.name!r}, parameters={self.parameters!r}, "
+            f"is_variadic={self.is_variadic!r})"
+        )
 
 
 @dataclass(slots=True, unsafe_hash=True)
@@ -480,6 +513,9 @@ class MenaiDict(MenaiValue):
         pairs_str = ' '.join(formatted_pairs)
         return f"{{{pairs_str}}}"
 
+    def __repr__(self) -> str:
+        return f"MenaiDict(pairs={self.pairs!r})"
+
     @staticmethod
     def to_hashable_key(key: MenaiValue) -> tuple[str, Any]:
         """Convert Menai key to hashable Python value."""
@@ -583,6 +619,9 @@ class MenaiSet(MenaiValue):
 
         return "#{" + " ".join(e.describe() for e in self.elements) + "}"
 
+    def __repr__(self) -> str:
+        return f"MenaiSet(elements={self.elements!r})"
+
 
 class MenaiStructType(MenaiValue):
     """
@@ -627,6 +666,9 @@ class MenaiStructType(MenaiValue):
         fields = " ".join(self.field_names)
         return f"<structtype {self.name} ({fields})>"
 
+    def __repr__(self) -> str:
+        return f"MenaiStructType(name={self.name!r}, tag={self.tag!r}, field_names={self.field_names!r})"
+
 
 class MenaiStruct(MenaiValue):
     """
@@ -666,6 +708,9 @@ class MenaiStruct(MenaiValue):
     def describe(self) -> str:
         parts = " ".join(f.describe() for f in self.fields)
         return f"({self.struct_type.name} {parts})" if parts else f"({self.struct_type.name})"
+
+    def __repr__(self) -> str:
+        return f"MenaiStruct(struct_type={self.struct_type!r}, fields={self.fields!r})"
 
 
 # Module-level singletons — there is only one #none value.

@@ -31,6 +31,7 @@ New features:
 - Replaced the concept of the "prelude" functions being special global symbols and
   instead made them a letrec around the user's program.  This removes a number of
   idiosyncracies in the internal design.
+- Improved the constant type annotations in the disassembler.
 
 Bug fixes:
 
