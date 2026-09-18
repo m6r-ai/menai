@@ -20,11 +20,11 @@ Covers:
 import pytest
 
 from menai import MenaiError
-from menai.cfg.menai_cfg import MenaiCFGBuiltinInstr, MenaiCFGGuardInstr
+from menai.cfg.menai_cfg import MenaiCFGBuiltinInstr, MenaiCFGConstInstr, MenaiCFGGuardInstr
 from menai.cfg.menai_cfg_optimization_pass import collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, BOTTOM, TypeFact, join
 from menai.menai_compiler import MenaiCompiler
-from menai.menai_value import MenaiStructType
+from menai.menai_value import MenaiStructType, MenaiSymbol
 
 
 def _build_cfg(source: str):
@@ -72,6 +72,18 @@ def _defining_instr(cfg, value_id: int):
                     return instr
 
     raise AssertionError(f"no defining instruction for value {value_id}")
+
+
+def _symbol_const_count(cfg) -> int:
+    """Count constant instructions defining a quoted symbol across the module."""
+    n = 0
+    for func in collect_functions(cfg):
+        for block in func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGConstInstr) and isinstance(instr.value, MenaiSymbol):
+                    n += 1
+
+    return n
 
 
 MONOMORPHIC_SRC = """
@@ -147,6 +159,29 @@ class TestStructSetThroughParameter:
         cfg = _build_cfg(STRUCT_SET_SRC)
         assert 'struct-set-ref' in _ops(cfg)
         assert 'struct-set' not in _ops(cfg)
+
+
+class TestOrphanedSymbolConstantsRemoved:
+    """
+    The symbol constant that fed a rewritten field access is removed.
+
+    Once struct-get/struct-set is rewritten to its index-based form the field
+    symbol argument is no longer read by any instruction, so the constant that
+    defined it is dead and must not survive into the backend.
+    """
+
+    def test_struct_get_symbol_constant_removed(self):
+        cfg = _build_cfg(MONOMORPHIC_SRC)
+        assert _symbol_const_count(cfg) == 0
+
+    def test_struct_set_symbol_constant_removed(self):
+        cfg = _build_cfg(STRUCT_SET_SRC)
+        assert _symbol_const_count(cfg) == 0
+
+    def test_unresolved_field_access_keeps_symbol_constant(self):
+        cfg = _build_cfg(POLYMORPHIC_SRC)
+        assert 'struct-get' in _ops(cfg)
+        assert _symbol_const_count(cfg) > 0
 
 
 RETURN_CHAIN_SRC = """

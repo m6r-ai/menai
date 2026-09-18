@@ -75,6 +75,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
     MenaiCFGGlobalInstr,
+    MenaiCFGGuardInstr,
     MenaiCFGMakeClosureInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGMakeListInstr,
@@ -83,8 +84,11 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
     MenaiCFGPhiInstr,
+    MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
+    MenaiCFGSwitchTerm,
+    MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
 )
@@ -742,6 +746,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         changed = False
         next_value_id = _max_value_id(func) + 1
         value_defs = _value_defs(func)
+        orphaned_symbols: set[int] = set()
         for block in func.blocks:
             new_instrs: list = []
             for instr in block.instrs:
@@ -758,6 +763,10 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                     new_instrs.append(instr)
                     continue
 
+                # The symbol argument is replaced by the resolved index, so the
+                # constant instruction that defined it may become dead.  Record
+                # it; it is removed below if no other instruction still uses it.
+                orphaned_symbols.add(instr.args[1].id)
                 index_value = MenaiCFGValue(id=next_value_id, hint="field_index")
                 next_value_id += 1
                 new_instrs.append(MenaiCFGConstInstr(result=index_value, value=MenaiInteger(index)))
@@ -774,7 +783,35 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
             block.instrs = new_instrs
 
+        if orphaned_symbols:
+            self._remove_dead_consts(func, orphaned_symbols)
+
         return changed
+
+    @staticmethod
+    def _remove_dead_consts(func: MenaiCFGFunction, candidates: set[int]) -> None:
+        """
+        Remove constant instructions defining an orphaned value that has no
+        remaining uses anywhere in the function.
+
+        A candidate is only removed when nothing else references its value id,
+        so a constant that is still live (or shared) is left in place.  This is
+        a pure optimisation: the removed instructions are constant loads whose
+        result is never observed.
+        """
+        referenced = _referenced_value_ids(func)
+        dead = candidates - referenced
+        if not dead:
+            return
+
+        for block in func.blocks:
+            block.instrs = [
+                instr for instr in block.instrs
+                if not (
+                    isinstance(instr, MenaiCFGConstInstr)
+                    and instr.result.id in dead
+                )
+            ]
 
     @staticmethod
     def _resolve_field_index(
@@ -882,6 +919,96 @@ def _value_defs(func: MenaiCFGFunction) -> dict[int, object]:
                 result[instr.result.id] = instr
 
     return result
+
+
+def _referenced_value_ids(func: MenaiCFGFunction) -> set[int]:
+    """
+    Return the set of every SSA value id referenced (used) anywhere in a
+    function.
+
+    This covers instruction operands, patch_closure operands, and terminator
+    operands.  A value's defining instruction is not itself a reference.
+    """
+    referenced: set[int] = set()
+    for block in func.blocks:
+        for instr in block.instrs:
+            referenced.update(_instr_value_uses(instr))
+
+        for patch in block.patch_instrs:
+            referenced.add(patch.closure.id)
+            referenced.add(patch.value.id)
+
+        if block.terminator is not None:
+            referenced.update(_term_value_uses(block.terminator))
+
+    return referenced
+
+
+def _instr_value_uses(instr: object) -> list[int]:
+    """Return the ids of every SSA value used as an operand by instr."""
+    if isinstance(instr, MenaiCFGConstInstr):
+        return []
+
+    if isinstance(instr, MenaiCFGBuiltinInstr):
+        return [arg.id for arg in instr.args]
+
+    if isinstance(instr, MenaiCFGCallInstr):
+        return [instr.func.id] + [arg.id for arg in instr.args]
+
+    if isinstance(instr, MenaiCFGApplyInstr):
+        return [instr.func.id, instr.arg_list.id]
+
+    if isinstance(instr, MenaiCFGMakeClosureInstr):
+        return [capture.id for capture in instr.captures]
+
+    if isinstance(instr, MenaiCFGMakeStructInstr):
+        return [arg.id for arg in instr.args]
+
+    if isinstance(instr, MenaiCFGMakeListInstr):
+        return [arg.id for arg in instr.args]
+
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
+        return [arg.id for arg in instr.args]
+
+    if isinstance(instr, MenaiCFGMakeSetInstr):
+        return [arg.id for arg in instr.args]
+
+    if isinstance(instr, MenaiCFGMakeDictInstr):
+        return [val.id for pair in instr.pairs for val in pair]
+
+    if isinstance(instr, MenaiCFGGuardInstr):
+        return [instr.value.id]
+
+    if isinstance(instr, MenaiCFGPhiInstr):
+        return [val.id for val, _ in instr.incoming]
+
+    return []
+
+
+def _term_value_uses(term: object) -> list[int]:
+    """Return the ids of every SSA value used as an operand by a terminator."""
+    if isinstance(term, MenaiCFGBranchTerm):
+        return [term.cond.id]
+
+    if isinstance(term, MenaiCFGSwitchTerm):
+        return [term.value.id]
+
+    if isinstance(term, MenaiCFGReturnTerm):
+        return [term.value.id]
+
+    if isinstance(term, MenaiCFGTailCallTerm):
+        return [term.func.id] + [arg.id for arg in term.args]
+
+    if isinstance(term, MenaiCFGTailApplyTerm):
+        return [term.func.id, term.arg_list.id]
+
+    if isinstance(term, MenaiCFGSelfLoopTerm):
+        return [arg.id for arg in term.args]
+
+    if isinstance(term, MenaiCFGRaiseTerm):
+        return [term.message.id]
+
+    return []
 
 
 def _max_value_id(func: MenaiCFGFunction) -> int:
