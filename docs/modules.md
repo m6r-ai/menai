@@ -97,9 +97,11 @@ The importer cannot access `secret-key`:
 
 ## Struct types in modules
 
-When a module exports a struct type, importers can use it for construction, pattern
-matching, and type checks. Use `letrec` to define the struct type alongside its
-associated functions:
+When a module exports a struct type, importers can use it for construction and type
+checks. Struct destructuring patterns are resolved against the struct types declared
+in the enclosing lexical scope, so an imported struct type is not available as a
+pattern head; read its fields with `struct-get` or `struct-ref` instead. Use `letrec`
+to define the struct type alongside its associated functions:
 
 ```menai
 ; shapes.menai

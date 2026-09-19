@@ -259,7 +259,7 @@ Syntax: (operator arg1 arg2 ...)
 - Indexed functional update: (struct-set-ref p 0 10) → new point with field 0 set to 10
 - Equality: (struct=? p1 p2) → #t if same type tag and all fields equal; (struct!=? p1 p2) → negation
 - Display format: (point 1 2) — this is display-only; construction always uses (TypeName field1 field2 ...)
-- Pattern matching destructuring form: (match p ((point x y) (integer+ x y)) (_ 0)) — compiler resolves field bindings at compile time
+- Pattern matching destructuring form: (match p ((point x y) (integer+ x y)) (_ 0)) — binds each field positionally to the pattern variables
 - Hashability: structs are hashable (usable as set members or dict keys) if all their fields are hashable scalars
 - Structs are nominal: (let ((point (struct (x y))) (Vec (struct (x y)))) ...) — point and Vec are distinct types even with identical fields
 

@@ -544,3 +544,121 @@ class TestDesugarerIntegration:
 
         assert isinstance(result, MenaiASTList)
         assert result.first().name == 'let'
+
+
+class TestDesugarerShadowing:
+    """Test that a local binding shadows a builtin the desugarer would rewrite."""
+
+    def test_shadowed_fixed_arity_primitive_is_not_rewritten(self, menai):
+        """A local binding of a fixed-arity builtin is called instead of the primitive."""
+        result = menai.evaluate(
+            '(let ((list-length (lambda (x) 42))) (list-length (list 1 2 3)))'
+        )
+        assert result == 42
+
+    def test_shadowed_variadic_arithmetic_is_not_rewritten(self, menai):
+        """A local binding of a variadic arithmetic builtin is called instead of the primitive."""
+        result = menai.evaluate(
+            '(let ((integer+ (lambda (a b) 999))) (integer+ 1 2))'
+        )
+        assert result == 999
+
+    def test_shadowed_variadic_arithmetic_with_three_args_is_not_rewritten(self, menai):
+        """A three-argument call to a shadowed variadic builtin calls the local binding."""
+        result = menai.evaluate(
+            '(let ((integer+ (lambda (a b c) 999))) (integer+ 1 2 3))'
+        )
+        assert result == 999
+
+    def test_shadowed_comparison_chain_is_not_rewritten(self, menai):
+        """A local binding of a comparison builtin is called instead of the primitive."""
+        result = menai.evaluate(
+            '(let ((integer<? (lambda (a b) #f))) (integer<? 1 2))'
+        )
+        assert result is False
+
+    def test_shadowed_equality_is_not_rewritten(self, menai):
+        """A local binding of an equality builtin is called instead of the primitive."""
+        result = menai.evaluate(
+            '(let ((integer=? (lambda (a b) #f))) (integer=? 1 1))'
+        )
+        assert result is False
+
+    def test_shadowed_fold_variadic_is_not_rewritten(self, menai):
+        """A local binding of a fold-reducible builtin is called instead of the primitive."""
+        result = menai.evaluate(
+            '(let ((integer-min (lambda (a b c) 999))) (integer-min 1 2 3))'
+        )
+        assert result == 999
+
+    def test_shadowed_computed_default_slice_is_not_rewritten(self, menai):
+        """A local binding of a slice builtin is called instead of the primitive."""
+        result = menai.evaluate(
+            '(let ((string-slice (lambda (s a) 999))) (string-slice "hello" 1))'
+        )
+        assert result == 999
+
+    def test_shadowed_constant_default_conversion_is_not_rewritten(self, menai):
+        """A local binding of a conversion builtin is called instead of the primitive."""
+        result = menai.evaluate(
+            '(let ((integer->string (lambda (n) "shadowed"))) (integer->string 42))'
+        )
+        assert result == "shadowed"
+
+    def test_builtin_usable_after_shadowing_scope_ends(self, menai):
+        """The builtin is rewritten again once the shadowing binding is out of scope."""
+        result = menai.evaluate(
+            '(let ((integer+ (lambda (a b) 999))) (integer+ 1 2))'
+        )
+        assert result == 999
+        result = menai.evaluate('(integer+ 1 2)')
+        assert result == 3
+
+    def test_shadowing_lambda_parameter_is_not_rewritten(self, menai):
+        """A lambda parameter shadows a builtin within the lambda body."""
+        result = menai.evaluate(
+            '((lambda (integer+) (integer+ 1 2)) (lambda (a b) 999))'
+        )
+        assert result == 999
+
+    def test_shadowing_let_star_binding_is_not_rewritten(self, menai):
+        """A let* binding shadows a builtin for subsequent bindings and the body."""
+        result = menai.evaluate(
+            '(let* ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
+        )
+        assert result == 999
+
+    def test_shadowing_letrec_binding_is_not_rewritten(self, menai):
+        """A letrec binding shadows a builtin for sibling values and the body."""
+        result = menai.evaluate(
+            '(letrec ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
+        )
+        assert result == 999
+
+    def test_shadowing_match_pattern_variable_is_not_rewritten(self, menai):
+        """A match pattern variable shadows a builtin within the clause result."""
+        result = menai.evaluate(
+            '(match (lambda (a b) 999) ((? function? integer+) (integer+ 1 2)))'
+        )
+        assert result == 999
+
+    def test_shadowed_builtin_arity_is_not_validated(self, menai):
+        """A shadowed fixed-arity builtin accepts the local binding's arity."""
+        result = menai.evaluate(
+            '(let ((integer% (lambda (a b c) 999))) (integer% 1 2 3))'
+        )
+        assert result == 999
+
+    def test_shadowed_builtin_with_wrong_builtin_arity_is_not_validated(self, menai):
+        """A shadowed fixed-arity builtin accepts an arity the builtin would reject."""
+        result = menai.evaluate(
+            '(let ((integer-neg (lambda (a b) 999))) (integer-neg 1 2))'
+        )
+        assert result == 999
+
+    def test_dollar_prefixed_call_bypasses_shadowing(self, menai):
+        """An explicit $-prefixed primitive call is unaffected by a shadowing binding."""
+        result = menai.evaluate(
+            '(let ((integer+ (lambda (a b) 999))) ($integer+ 1 2))'
+        )
+        assert result == 3

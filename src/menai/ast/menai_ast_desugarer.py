@@ -30,7 +30,42 @@ class MenaiASTDesugarer:
 
     def __init__(self) -> None:
         self.temp_counter = 0  # For generating unique temp variable names
-        self._struct_registry: dict[str, MenaiASTStruct] = {}  # name -> MenaiASTStruct
+
+        # Lexical scope for ordinary variable bindings, innermost frame last.
+        # Each frame is the set of names bound by one binder (let/let*/letrec/
+        # lambda/match).  A name-based builtin rewrite must not fire when the
+        # name is bound by any enclosing frame, because the binding shadows the
+        # builtin/prelude function the rewrite assumes.
+        self._scope_stack: list[set[str]] = []
+
+        # Struct type names in lexical scope, innermost frame last, parallel to
+        # _scope_stack.  A struct name is a constructor/pattern head only within
+        # the scope that binds it.  Struct recognition is keyed by name within
+        # that scope; a struct type is never visible outside the binder that
+        # declared it.
+        self._struct_scope_stack: list[dict[str, MenaiASTStruct]] = []
+
+    def _push_scope(self, names: set[str], structs: dict[str, MenaiASTStruct] | None = None) -> None:
+        """Push a lexical scope frame binding the given names and struct types."""
+        self._scope_stack.append(names)
+        self._struct_scope_stack.append(structs if structs is not None else {})
+
+    def _pop_scope(self) -> None:
+        """Pop the innermost lexical scope frame."""
+        self._scope_stack.pop()
+        self._struct_scope_stack.pop()
+
+    def _is_shadowed(self, name: str) -> bool:
+        """Return True if name is bound by any enclosing lexical scope frame."""
+        return any(name in frame for frame in self._scope_stack)
+
+    def _lookup_struct(self, name: str) -> MenaiASTStruct | None:
+        """Return the struct type bound to name in scope, or None."""
+        for frame in reversed(self._struct_scope_stack):
+            if name in frame:
+                return frame[name]
+
+        return None
 
     def _make_symbol(self, name: str, source_node: MenaiASTNode) -> MenaiASTSymbol:
         """Create a symbol with source location from another node."""
@@ -180,10 +215,9 @@ class MenaiASTDesugarer:
         """
         # Lists need inspection - anything else does not
         if not isinstance(expr, MenaiASTList):
-            # MenaiASTStruct nodes are already fully resolved — pass through as-is
-            if isinstance(expr, MenaiASTStruct):
-                self._struct_registry[expr.name] = expr
-
+            # MenaiASTStruct nodes are already fully resolved — pass through as-is.
+            # A struct node only ever appears as a let/let*/letrec binding value,
+            # and the binder registers its type name in the scope it introduces.
             return expr
 
         if expr.is_empty():
@@ -255,7 +289,10 @@ class MenaiASTDesugarer:
             # The computed-default cases bind the collection argument to a temp
             # to avoid evaluating it twice.
             primitive_arity = MenaiBuiltinRegistry.get_primitive_arity(name)
-            if primitive_arity is not None:
+
+            # A name bound by an enclosing lexical binding shadows the builtin,
+            # so no rewrite may fire: the call must resolve to the local binding.
+            if primitive_arity is not None and not self._is_shadowed(name):
                 n_args = len(expr.elements) - 1
                 if n_args == primitive_arity:
                     dollar_name = '$' + name
@@ -319,7 +356,7 @@ class MenaiASTDesugarer:
                 'integer+', 'integer-', 'integer*', 'integer/',
                 'float+', 'float-', 'float*', 'float/',
                 'complex+', 'complex-', 'complex*', 'complex/',
-            ]:
+            ] and not self._is_shadowed(name):
                 return self._desugar_variadic_arithmetic(expr)
 
             # Fold-reducible variadic operations
@@ -330,7 +367,7 @@ class MenaiASTDesugarer:
                 'list-concat',
                 'string-concat',
                 'bytes-concat',
-            ]:
+            ] and not self._is_shadowed(name):
                 return self._desugar_fold_variadic(expr)
 
             # Variadic comparison chains (short-circuit with 'and' is correct)
@@ -339,25 +376,26 @@ class MenaiASTDesugarer:
                 'float<?',   'float>?',   'float<=?',   'float>=?',
                 'string<?',  'string>?',  'string<=?',  'string>=?',
                 'bytes<?',   'bytes>?',   'bytes<=?',   'bytes>=?',
-            ]:
+            ] and not self._is_shadowed(name):
                 return self._desugar_comparison_chain(expr)
 
             # Strict equality predicates
             if name in [
                 'boolean=?', 'integer=?', 'float=?', 'complex=?', 'string=?', 'list=?', 'dict=?', 'bytes=?'
-            ]:
+            ] and not self._is_shadowed(name):
                 return self._desugar_strict_equality(expr)
 
             # Strict inequality predicates
             if name in [
                 'boolean!=?', 'integer!=?', 'float!=?', 'complex!=?', 'string!=?', 'list!=?', 'dict!=?', 'bytes!=?'
-            ]:
+            ] and not self._is_shadowed(name):
                 return self._desugar_strict_inequality(expr)
 
             # Struct constructor call: (TypeName field1 field2 ...)
-            # Detected when the function position is a known struct type name
-            if name in self._struct_registry:
-                return self._desugar_struct_constructor(expr, self._struct_registry[name])
+            # Detected when the function position names a struct type in scope.
+            struct_node = self._lookup_struct(name)
+            if struct_node is not None:
+                return self._desugar_struct_constructor(expr, struct_node)
 
         # Regular function call - desugar all elements
         return self._desugar_call(expr)
@@ -390,27 +428,42 @@ class MenaiASTDesugarer:
 
         assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list (validated by semantic analyzer)"
 
-        # Pre-register any struct type bindings so that the body (and sibling
-        # bindings, since let is parallel) can reference them by name.
+        # let is parallel: each binding value is desugared in the enclosing
+        # scope and cannot see its siblings.  Struct declarations are the one
+        # exception: they are hoisted so that sibling binding values and the body
+        # can use them as constructors and pattern heads.
+        struct_bindings: dict[str, MenaiASTStruct] = {}
         for binding in bindings_list.elements:
             assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
             var_name, value_expr = binding.elements
             assert isinstance(var_name, MenaiASTSymbol)
             if isinstance(value_expr, MenaiASTStruct):
-                self._struct_registry[var_name.name] = value_expr
+                struct_bindings[var_name.name] = value_expr
 
-        # Desugar each binding value
         desugared_bindings = []
-        for i, binding in enumerate(bindings_list.elements):
-            assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2, \
-                f"Binding {i+1} should be a list with 2 elements (validated by semantic analyzer)"
+        bound_names: set[str] = set()
+        self._push_scope(set(struct_bindings), struct_bindings)
+        try:
+            for i, binding in enumerate(bindings_list.elements):
+                assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2, \
+                    f"Binding {i+1} should be a list with 2 elements (validated by semantic analyzer)"
 
-            var_name, value_expr = binding.elements
-            desugared_value = self.desugar(value_expr)
-            desugared_bindings.append(self._make_list((var_name, desugared_value), binding))
+                var_name, value_expr = binding.elements
+                assert isinstance(var_name, MenaiASTSymbol)
+                desugared_value = self.desugar(value_expr)
+                desugared_bindings.append(self._make_list((var_name, desugared_value), binding))
+                bound_names.add(var_name.name)
 
-        # Desugar body
-        desugared_body = self.desugar(body)
+            # The body sees every binding name in addition to the struct types.
+            self._push_scope(bound_names)
+            try:
+                desugared_body = self.desugar(body)
+
+            finally:
+                self._pop_scope()
+
+        finally:
+            self._pop_scope()
 
         return self._make_list((
             let_symbol, self._make_list(tuple(desugared_bindings), bindings_list), desugared_body
@@ -450,8 +503,6 @@ class MenaiASTDesugarer:
         assert len(expr.elements) == 3, "Letrec expression should have exactly 3 elements (validated by semantic analyzer)"
 
         bindings_list = expr.elements[1]
-        body = expr.elements[2]
-
         assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list (validated by semantic analyzer)"
 
         # Extract raw (name, value_expr) pairs for dependency analysis.
@@ -463,16 +514,39 @@ class MenaiASTDesugarer:
             assert isinstance(name_expr, MenaiASTSymbol)
             raw_pairs.append((name_expr.name, value_expr))
 
-        # Pre-register any struct type bindings so constructor calls and match
-        # patterns in sibling bindings and the body are resolved correctly.
-        for name, value_expr in raw_pairs:
-            if isinstance(value_expr, MenaiASTStruct):
-                self._struct_registry[name] = value_expr
-
         raw_dict = dict(raw_pairs)
 
         # Compute topological binding groups (already in dependency order).
         binding_groups = MenaiASTDependencyAnalyzer().analyze_letrec_bindings(raw_pairs)
+
+        # Every letrec binding (and any struct type it declares) is visible to
+        # every sibling value and to the body, so all names are in scope
+        # throughout.
+        letrec_names = {name for name, _ in raw_pairs}
+        letrec_structs = {name: value for name, value in raw_pairs if isinstance(value, MenaiASTStruct)}
+        self._push_scope(letrec_names, letrec_structs)
+        try:
+            result = self._desugar_letrec_body(expr, raw_dict, binding_groups)
+
+        finally:
+            self._pop_scope()
+
+        return result
+
+    def _desugar_letrec_body(
+        self,
+        expr: MenaiASTList,
+        raw_dict: dict[str, MenaiASTNode],
+        binding_groups: list,
+    ) -> MenaiASTNode:
+        """
+        Desugar a letrec body and binding values into nested let/letrec forms.
+
+        Called with the letrec's binding names already pushed onto the scope
+        stack, so binding values and the body resolve those names as ordinary
+        lexical references.
+        """
+        body = expr.elements[2]
 
         # Desugar the body, then wrap it in binding forms from innermost outward
         # (i.e. process groups in reverse topological order so each group's body
@@ -559,39 +633,33 @@ class MenaiASTDesugarer:
         _, bindings_list, body = expr.elements
         assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list (validated by semantic analyzer)"
 
-        # Pre-scan bindings in forward order to register any struct type definitions
-        # before desugaring the body or any subsequent binding values.  This is
-        # necessary because let* has sequential semantics: later bindings can
-        # reference struct types defined earlier, and the body can reference all
-        # of them.  Without the pre-scan, struct types would only be registered
-        # as their binding values are desugared (in reverse order), causing
-        # constructor calls in later bindings or the body to be missed.
+        # let* has sequential semantics: binding i's value sees bindings 0..i-1,
+        # and the body sees all of them.  Desugar in forward order, pushing each
+        # binding's name before the next value.
+        desugared_bindings: list[tuple[MenaiASTNode, MenaiASTNode, MenaiASTList]] = []
         for binding in bindings_list.elements:
-            assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
-            var_name, value_expr = binding.elements
-            assert isinstance(var_name, MenaiASTSymbol)
-            if isinstance(value_expr, MenaiASTStruct):
-                self._struct_registry[var_name.name] = value_expr
-
-        # If no bindings, just return the body
-        if len(bindings_list.elements) == 0:
-            return self.desugar(body)
-
-        # Build nested lets from the inside out
-        # Start with the body
-        result = self.desugar(body)
-
-        # Wrap in nested lets, processing bindings in reverse order
-        for binding in reversed(bindings_list.elements):
             assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2, \
                 "Binding should be a list with 2 elements (validated by semantic analyzer)"
 
             var_name, value_expr = binding.elements
+            assert isinstance(var_name, MenaiASTSymbol)
 
-            # Desugar the value expression
             desugared_value = self.desugar(value_expr)
+            desugared_bindings.append((var_name, desugared_value, binding))
 
-            # Wrap result in a let with this binding
+            structs = {var_name.name: value_expr} if isinstance(value_expr, MenaiASTStruct) else {}
+            self._push_scope({var_name.name}, structs)
+
+        try:
+            result = self.desugar(body)
+
+        finally:
+            for _ in desugared_bindings:
+                self._pop_scope()
+
+        # Wrap in nested lets, processing bindings in reverse order so the
+        # outermost let is the first binding.
+        for var_name, desugared_value, binding in reversed(desugared_bindings):
             result = self._make_list((
                 self._make_symbol('let', expr),
                 self._make_list((self._make_list((var_name, desugared_value), binding),), binding),
@@ -607,8 +675,20 @@ class MenaiASTDesugarer:
 
         lambda_symbol, params_list, body = expr.elements
 
-        # Desugar body
-        desugared_body = self.desugar(body)
+        # The parameter names (including any rest parameter) are in scope in the
+        # body; the '.' marker that introduces a rest parameter is not a name.
+        assert isinstance(params_list, MenaiASTList), "Lambda params should be a list (validated by semantic analyzer)"
+        param_names = {
+            param.name for param in params_list.elements
+            if isinstance(param, MenaiASTSymbol) and param.name != '.'
+        }
+
+        self._push_scope(param_names)
+        try:
+            desugared_body = self.desugar(body)
+
+        finally:
+            self._pop_scope()
 
         return self._make_list((lambda_symbol, params_list, desugared_body), expr)
 
@@ -1006,7 +1086,11 @@ class MenaiASTDesugarer:
                 clause = group_clauses[0]
                 assert isinstance(clause, MenaiASTList)
                 pattern = clause.elements[0]
-                desugared_result = self.desugar(clause.elements[1])
+
+                # The result is left undesugared here: the whole generated
+                # structure is desugared once by _desugar_match, at which point
+                # the pattern's bindings are in scope for the result expression.
+                desugared_result = clause.elements[1]
                 test_expr, bindings = self._desugar_pattern(pattern, temp_var)
                 result = self._build_clause_with_bindings(
                     test_expr, bindings, desugared_result, result
@@ -1054,12 +1138,12 @@ class MenaiASTDesugarer:
         """
         # Map AST literal class → (type-predicate name, equality-op name)
         _type_info: dict[type, tuple[str, str]] = {
-            MenaiASTBoolean: ('boolean?', 'boolean=?'),
-            MenaiASTInteger: ('integer?', 'integer=?'),
-            MenaiASTFloat: ('float?', 'float=?'),
-            MenaiASTComplex: ('complex?', 'complex=?'),
-            MenaiASTString: ('string?', 'string=?'),
-            MenaiASTBytes: ('bytes?', 'bytes=?'),
+            MenaiASTBoolean: ('$boolean?', '$boolean=?'),
+            MenaiASTInteger: ('$integer?', '$integer=?'),
+            MenaiASTFloat: ('$float?', '$float=?'),
+            MenaiASTComplex: ('$complex?', '$complex=?'),
+            MenaiASTString: ('$string?', '$string=?'),
+            MenaiASTBytes: ('$bytes?', '$bytes=?'),
         }
         type_pred, eq_op = _type_info[lit_type]
         tmp_sym = MenaiASTSymbol(temp_var)
@@ -1069,7 +1153,10 @@ class MenaiASTDesugarer:
         for clause in reversed(clauses):
             assert isinstance(clause, MenaiASTList)
             pattern = clause.elements[0]
-            desugared_result = self.desugar(clause.elements[1])
+
+            # Left undesugared: the generated structure is desugared once by
+            # _desugar_match, with the pattern's bindings in scope.
+            desugared_result = clause.elements[1]
             eq_test = MenaiASTList((MenaiASTSymbol(eq_op), tmp_sym, pattern))
             inner = MenaiASTList((MenaiASTSymbol('if'), eq_test, desugared_result, inner))
 
@@ -1190,58 +1277,58 @@ class MenaiASTDesugarer:
         # is needed.
 
         if isinstance(pattern, MenaiASTNone):
-            # (none? tmp) — singleton predicate, inherently type-safe
+            # ($none? tmp) — singleton predicate, inherently type-safe
             test_expr: MenaiASTNode = MenaiASTList((
-                MenaiASTSymbol('none?'),
+                MenaiASTSymbol('$none?'),
                 MenaiASTSymbol(temp_var),
             ))
             return (test_expr, [])
 
         if isinstance(pattern, MenaiASTBoolean):
-            # (and (boolean? tmp) (boolean=? tmp literal))
+            # (and ($boolean? tmp) ($boolean=? tmp literal))
             test_expr = self._make_and([
-                MenaiASTList((MenaiASTSymbol('boolean?'), MenaiASTSymbol(temp_var))),
-                MenaiASTList((MenaiASTSymbol('boolean=?'), MenaiASTSymbol(temp_var), pattern)),
+                MenaiASTList((MenaiASTSymbol('$boolean?'), MenaiASTSymbol(temp_var))),
+                MenaiASTList((MenaiASTSymbol('$boolean=?'), MenaiASTSymbol(temp_var), pattern)),
             ], pattern)
             return (test_expr, [])
 
         if isinstance(pattern, MenaiASTInteger):
-            # (and (integer? tmp) (integer=? tmp literal))
+            # (and ($integer? tmp) ($integer=? tmp literal))
             test_expr = self._make_and([
-                MenaiASTList((MenaiASTSymbol('integer?'), MenaiASTSymbol(temp_var))),
-                MenaiASTList((MenaiASTSymbol('integer=?'), MenaiASTSymbol(temp_var), pattern)),
+                MenaiASTList((MenaiASTSymbol('$integer?'), MenaiASTSymbol(temp_var))),
+                MenaiASTList((MenaiASTSymbol('$integer=?'), MenaiASTSymbol(temp_var), pattern)),
             ], pattern)
             return (test_expr, [])
 
         if isinstance(pattern, MenaiASTFloat):
-            # (and (float? tmp) (float=? tmp literal))
+            # (and ($float? tmp) ($float=? tmp literal))
             test_expr = self._make_and([
-                MenaiASTList((MenaiASTSymbol('float?'), MenaiASTSymbol(temp_var))),
-                MenaiASTList((MenaiASTSymbol('float=?'), MenaiASTSymbol(temp_var), pattern)),
+                MenaiASTList((MenaiASTSymbol('$float?'), MenaiASTSymbol(temp_var))),
+                MenaiASTList((MenaiASTSymbol('$float=?'), MenaiASTSymbol(temp_var), pattern)),
             ], pattern)
             return (test_expr, [])
 
         if isinstance(pattern, MenaiASTComplex):
-            # (and (complex? tmp) (complex=? tmp literal))
+            # (and ($complex? tmp) ($complex=? tmp literal))
             test_expr = self._make_and([
-                MenaiASTList((MenaiASTSymbol('complex?'), MenaiASTSymbol(temp_var))),
-                MenaiASTList((MenaiASTSymbol('complex=?'), MenaiASTSymbol(temp_var), pattern)),
+                MenaiASTList((MenaiASTSymbol('$complex?'), MenaiASTSymbol(temp_var))),
+                MenaiASTList((MenaiASTSymbol('$complex=?'), MenaiASTSymbol(temp_var), pattern)),
             ], pattern)
             return (test_expr, [])
 
         if isinstance(pattern, MenaiASTString):
-            # (and (string? tmp) (string=? tmp literal))
+            # (and ($string? tmp) ($string=? tmp literal))
             test_expr = self._make_and([
-                MenaiASTList((MenaiASTSymbol('string?'), MenaiASTSymbol(temp_var))),
-                MenaiASTList((MenaiASTSymbol('string=?'), MenaiASTSymbol(temp_var), pattern)),
+                MenaiASTList((MenaiASTSymbol('$string?'), MenaiASTSymbol(temp_var))),
+                MenaiASTList((MenaiASTSymbol('$string=?'), MenaiASTSymbol(temp_var), pattern)),
             ], pattern)
             return (test_expr, [])
 
         if isinstance(pattern, MenaiASTBytes):
-            # (and (bytes? tmp) (bytes=? tmp literal))
+            # (and ($bytes? tmp) ($bytes=? tmp literal))
             test_expr = self._make_and([
-                MenaiASTList((MenaiASTSymbol('bytes?'), MenaiASTSymbol(temp_var))),
-                MenaiASTList((MenaiASTSymbol('bytes=?'), MenaiASTSymbol(temp_var), pattern)),
+                MenaiASTList((MenaiASTSymbol('$bytes?'), MenaiASTSymbol(temp_var))),
+                MenaiASTList((MenaiASTSymbol('$bytes=?'), MenaiASTSymbol(temp_var), pattern)),
             ], pattern)
             return (test_expr, [])
 
@@ -1280,21 +1367,21 @@ class MenaiASTDesugarer:
             (test_expression, bindings)
         """
         # Struct destructuring pattern: (TypeName field1 field2 ...)
-        # Detected when the first element is a symbol naming a known struct type
-        if (not pattern.is_empty() and
-                isinstance(pattern.elements[0], MenaiASTSymbol) and
-                pattern.elements[0].name in self._struct_registry):
-            struct_node = self._struct_registry[pattern.elements[0].name]
-            n_patterns = len(pattern.elements) - 1
-            n_fields = len(struct_node.field_names)
-            if n_patterns == n_fields:
-                return self._desugar_struct_pattern(pattern, temp_var, struct_node)
+        # Detected when the first element names a struct type in scope.
+        if not pattern.is_empty() and isinstance(pattern.elements[0], MenaiASTSymbol):
+            head_name = pattern.elements[0].name
+            struct_node = self._lookup_struct(head_name)
+            if struct_node is not None:
+                n_patterns = len(pattern.elements) - 1
+                n_fields = len(struct_node.field_names)
+                if n_patterns == n_fields:
+                    return self._desugar_struct_pattern(pattern, temp_var, struct_node)
 
         # Empty list pattern: ()
         if pattern.is_empty():
-            # Test: (null? temp_var)
+            # Test: ($list-null? temp_var)
             test_expr = MenaiASTList((
-                MenaiASTSymbol('list-null?'),
+                MenaiASTSymbol('$list-null?'),
                 MenaiASTSymbol(temp_var)
             ))
             return (test_expr, [])
@@ -1362,15 +1449,15 @@ class MenaiASTDesugarer:
 
         # First test: (list? temp_var)
         list_test = MenaiASTList((
-            MenaiASTSymbol('list?'),
+            MenaiASTSymbol('$list?'),
             MenaiASTSymbol(temp_var)
         ))
 
         # Second test: (= (length temp_var) num_elements)
         length_test = MenaiASTList((
-            MenaiASTSymbol('integer=?'),
+            MenaiASTSymbol('$integer=?'),
             MenaiASTList((
-                MenaiASTSymbol('list-length'),
+                MenaiASTSymbol('$list-length'),
                 MenaiASTSymbol(temp_var)
             )),
             MenaiASTInteger(num_elements)
@@ -1401,7 +1488,7 @@ class MenaiASTDesugarer:
 
             # Extract element: (list-ref temp_var i)
             elem_value = MenaiASTList((
-                MenaiASTSymbol('list-ref'),
+                MenaiASTSymbol('$list-ref'),
                 MenaiASTSymbol(temp_var),
                 MenaiASTInteger(i)
             ))
@@ -1608,14 +1695,14 @@ class MenaiASTDesugarer:
 
         # Test: (and (list? temp_var) (>= (length temp_var) dot_position))
         list_test = MenaiASTList((
-            MenaiASTSymbol('list?'),
+            MenaiASTSymbol('$list?'),
             MenaiASTSymbol(temp_var)
         ))
 
         length_test = MenaiASTList((
-            MenaiASTSymbol('integer>=?'),
+            MenaiASTSymbol('$integer>=?'),
             MenaiASTList((
-                MenaiASTSymbol('list-length'),
+                MenaiASTSymbol('$list-length'),
                 MenaiASTSymbol(temp_var)
             )),
             MenaiASTInteger(dot_position)
@@ -1631,7 +1718,7 @@ class MenaiASTDesugarer:
 
             # Extract element: (list-ref temp_var i)
             elem_value = MenaiASTList((
-                MenaiASTSymbol('list-ref'),
+                MenaiASTSymbol('$list-ref'),
                 MenaiASTSymbol(temp_var),
                 MenaiASTInteger(i)
             ))
@@ -1644,9 +1731,13 @@ class MenaiASTDesugarer:
 
         # Extract tail: (list-slice temp-var dot_position)
         tail_value = MenaiASTList((
-            MenaiASTSymbol('list-slice'),
+            MenaiASTSymbol('$list-slice'),
             MenaiASTSymbol(temp_var),
-            MenaiASTInteger(dot_position)
+            MenaiASTInteger(dot_position),
+            MenaiASTList((
+                MenaiASTSymbol('$list-length'),
+                MenaiASTSymbol(temp_var)
+            ))
         ))
 
         # Add tail to element info

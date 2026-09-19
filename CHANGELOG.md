@@ -70,6 +70,12 @@ Bug fixes:
   releases it.  The sweep then reached the already-destroyed closure's own entry and
   destroyed it again, releasing a freed code object.  A closure is now tagged as
   freed at its single destruction point, and the sweep skips entries already tagged.
+- Fixed a problem where desugaring did not correctly honour shadowing of operation names.
+- Struct type recognition is now lexically scoped.  Two struct types with the same
+  name in different scopes are distinct, and a struct type is not visible outside the
+  binder that declares it.  A struct type exported from a module and rebound by the
+  importer is no longer usable as a destructuring pattern head; read its fields with
+  `struct-get` or `struct-ref` instead.
 
 ## v0.5.0 (2026-09-14)
 

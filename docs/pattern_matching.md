@@ -149,8 +149,7 @@ given type and binds each field by position:
 → 7
 ```
 
-The type name in the pattern must be a structtype value that is in scope. The
-compiler resolves field bindings at compile time.
+The type name in the pattern must be a structtype value that is in scope.
 
 There is also a predicate form for matching a specific struct type without
 destructuring:

@@ -726,6 +726,27 @@ class TestStructScoping:
         ''')
         assert result == '11'
 
+    def test_same_name_structs_in_different_scopes_are_distinct(self, menai):
+        """A struct pattern resolves against the type in scope where it is written."""
+        result = menai.evaluate_and_format('''
+        (let ((Point (struct (x y))))
+          (let ((f (lambda (p) (match p ((Point a b) (integer+ a b)) (_ 0)))))
+            (let ((Point (struct (a b c))))
+              (f (Point 10 20 30)))))
+        ''')
+        assert result == '0'
+
+    def test_inner_struct_shadows_outer_struct_within_inner_scope(self, menai):
+        """Within an inner scope, a struct type of the same name shadows the outer one."""
+        result = menai.evaluate_and_format('''
+        (let ((Point (struct (x y)))
+              (outer (Point 1 2)))
+          (let ((Point (struct (p q r)))
+                (inner (Point 1 2 3)))
+            (list (struct-get outer 'x) (struct-get inner 'r))))
+        ''')
+        assert result == '(1 3)'
+
 
 # ---------------------------------------------------------------------------
 # 10. Module export
@@ -761,8 +782,8 @@ class TestStructModuleExport:
         ''')
         assert result == '7'
 
-    def test_pattern_matching_on_imported_struct(self, tmp_path):
-        """Pattern matching works on instances of an imported struct type."""
+    def test_field_access_on_imported_struct(self, tmp_path):
+        """Fields of an imported struct instance are read via the accessor functions."""
         (tmp_path / "shapes.menai").write_text(
             '(let ((Point (struct (x y)))) (dict "Point" Point))'
         )
@@ -771,9 +792,7 @@ class TestStructModuleExport:
         (let ((shapes (import "shapes")))
           (let ((Point (dict-get shapes "Point"))
                 (p (let ((Point (dict-get shapes "Point"))) (Point 3 4))))
-            (match p
-              ((Point a b) (integer+ a b))
-              (_ 0))))
+            (integer+ (struct-get p 'x) (struct-get p 'y))))
         ''')
         assert result == '7'
 
@@ -816,8 +835,8 @@ class TestStructModuleExport:
 """)
         assert result == '(Point 5 6)'
 
-    def test_pattern_matching_on_struct_from_letrec_module(self, tmp_path):
-        """Pattern matching works on instances of a struct type exported from a letrec module."""
+    def test_field_access_on_struct_from_letrec_module(self, tmp_path):
+        """Fields of a struct instance from a letrec module are read via the accessors."""
         (tmp_path / "shapes.menai").write_text("""
 (letrec ((Point (struct (x y))))
   (dict "Point" Point))
@@ -827,9 +846,7 @@ class TestStructModuleExport:
 (let ((shapes (import "shapes")))
   (let ((Point (dict-get shapes "Point")))
     (let ((p (Point 10 20)))
-      (match p
-        ((Point a b) (integer+ a b))
-        (_ 0)))))
+      (integer+ (struct-get p 'x) (struct-get p 'y)))))
 """)
         assert result == 30
 

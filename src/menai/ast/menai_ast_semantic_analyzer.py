@@ -43,6 +43,24 @@ class MenaiASTSemanticAnalyzer:
         self.source = ""
         self._next_struct_tag: int = 0
 
+        # Lexical scope for ordinary variable bindings, innermost frame last.
+        # Used to suppress builtin-specific validation (e.g. call arity checks
+        # against BUILTIN_FUNCTION_ARITIES) when the name is bound by an
+        # enclosing binder and therefore refers to the user's binding.
+        self._scope_stack: list[set[str]] = []
+
+    def _push_scope(self, names: set[str]) -> None:
+        """Push a lexical scope frame binding the given names."""
+        self._scope_stack.append(names)
+
+    def _pop_scope(self) -> None:
+        """Pop the innermost lexical scope frame."""
+        self._scope_stack.pop()
+
+    def _is_shadowed(self, name: str) -> bool:
+        """Return True if name is bound by any enclosing lexical scope frame."""
+        return any(name in frame for frame in self._scope_stack)
+
     def analyze(self, expr: MenaiASTNode, source: str = "") -> MenaiASTNode:
         """
         Analyze an expression recursively, validating all special forms.
@@ -256,7 +274,14 @@ class MenaiASTSemanticAnalyzer:
             )
 
         # Analyze body
-        analyzed_body = self.analyze(body, self.source)
+        # let is parallel: binding values were analyzed above in the enclosing
+        # scope; only the body sees the binding names.
+        self._push_scope(set(var_names))
+        try:
+            analyzed_body = self.analyze(body, self.source)
+
+        finally:
+            self._pop_scope()
 
         new_bindings_list = MenaiASTList(
             elements=tuple(new_bindings),
@@ -346,6 +371,7 @@ class MenaiASTSemanticAnalyzer:
                     line=binding.line, column=binding.column, source_file=binding.source_file
                 ))
                 var_names.append(name_expr.name)
+                self._push_scope({name_expr.name})
                 continue
 
             if not isinstance(name_expr, MenaiASTSymbol):
@@ -369,13 +395,22 @@ class MenaiASTSemanticAnalyzer:
                 line=binding.line, column=binding.column, source_file=binding.source_file
             ))
 
+            # let* is sequential: this binding's name is in scope for every
+            # subsequent binding value and for the body.
+            self._push_scope({name_expr.name})
+
         # Note: Unlike 'let', we allow duplicate binding names (shadowing) in let*.
         # This is because let* has sequential semantics where later bindings
         # can shadow earlier ones, and we also don't check if later bindings reference earlier ones.
         # That's the whole point of let* - sequential bindings are allowed and expected.
 
         # Analyze body
-        analyzed_body = self.analyze(body, self.source)
+        try:
+            analyzed_body = self.analyze(body, self.source)
+
+        finally:
+            for _ in var_names:
+                self._pop_scope()
 
         new_bindings_list = MenaiASTList(
             elements=tuple(new_bindings),
@@ -424,6 +459,16 @@ class MenaiASTSemanticAnalyzer:
         # Validate each binding
         var_names: list[str] = []
         new_bindings: list[MenaiASTNode] = []
+
+        # Every letrec binding is visible to every sibling value and to the body,
+        # so all names are in scope for the whole form.
+        letrec_names = {
+            binding.elements[0].name for binding in bindings_list.elements
+            if isinstance(binding, MenaiASTList)
+            and len(binding.elements) == 2
+            and isinstance(binding.elements[0], MenaiASTSymbol)
+        }
+        self._push_scope(letrec_names)
         for i, binding in enumerate(bindings_list.elements):
             if not isinstance(binding, MenaiASTList):
                 raise MenaiEvalError(
@@ -488,21 +533,25 @@ class MenaiASTSemanticAnalyzer:
             ))
 
         # Check for duplicate binding names
-        if len(var_names) != len(set(var_names)):
-            duplicates = [name for name in var_names if var_names.count(name) > 1]
-            raise MenaiEvalError(
-                message="Letrec binding variables must be unique",
-                received=f"Duplicate variables: {duplicates}",
-                expected="All variable names should be different",
-                example='Correct: (letrec ((x 1) (y 2)) ...)\nIncorrect: (letrec ((x 1) (x 2)) ...)',
-                suggestion="Use different names for each variable",
-                line=expr.line,
-                column=expr.column,
-                source=self.source
-            )
+        try:
+            if len(var_names) != len(set(var_names)):
+                duplicates = [name for name in var_names if var_names.count(name) > 1]
+                raise MenaiEvalError(
+                    message="Letrec binding variables must be unique",
+                    received=f"Duplicate variables: {duplicates}",
+                    expected="All variable names should be different",
+                    example='Correct: (letrec ((x 1) (y 2)) ...)\nIncorrect: (letrec ((x 1) (x 2)) ...)',
+                    suggestion="Use different names for each variable",
+                    line=expr.line,
+                    column=expr.column,
+                    source=self.source
+                )
 
-        # Analyze body
-        analyzed_body = self.analyze(body, self.source)
+            # Analyze body
+            analyzed_body = self.analyze(body, self.source)
+
+        finally:
+            self._pop_scope()
 
         new_bindings_list = MenaiASTList(
             elements=tuple(new_bindings),
@@ -612,7 +661,12 @@ class MenaiASTSemanticAnalyzer:
             )
 
         # Analyze body
-        self.analyze(body, self.source)
+        self._push_scope(set(param_names))
+        try:
+            self.analyze(body, self.source)
+
+        finally:
+            self._pop_scope()
 
         return expr
 
@@ -685,10 +739,42 @@ class MenaiASTSemanticAnalyzer:
             # Validate the pattern
             self._analyze_match_pattern(pattern, i + 1)
 
-            # Analyze the result expression
-            self.analyze(result_expr, self.source)
+            # The result expression sees every name the pattern binds.
+            self._push_scope(self._collect_pattern_names(pattern))
+            try:
+                self.analyze(result_expr, self.source)
+
+            finally:
+                self._pop_scope()
 
         return expr
+
+    def _collect_pattern_names(self, pattern: MenaiASTNode) -> set[str]:
+        """Return the set of variable names a match pattern binds."""
+        if isinstance(pattern, MenaiASTSymbol):
+            return set() if pattern.name == '_' else {pattern.name}
+
+        if not isinstance(pattern, MenaiASTList) or pattern.is_empty():
+            return set()
+
+        # Predicate pattern (? pred var) binds only var.
+        if (isinstance(pattern.elements[0], MenaiASTSymbol)
+                and pattern.elements[0].name == '?'
+                and len(pattern.elements) == 3):
+            var_pattern = pattern.elements[2]
+            if isinstance(var_pattern, MenaiASTSymbol) and var_pattern.name != '_':
+                return {var_pattern.name}
+
+            return set()
+
+        names: set[str] = set()
+        for elem in pattern.elements:
+            if isinstance(elem, MenaiASTSymbol) and elem.name == '.':
+                continue
+
+            names |= self._collect_pattern_names(elem)
+
+        return names
 
     def _analyze_match_pattern(self, pattern: MenaiASTNode, clause_num: int) -> None:
         """
@@ -938,7 +1024,10 @@ class MenaiASTSemanticAnalyzer:
                 return expr
 
             arity = MenaiBuiltinRegistry.get_function_arity(name)
-            if arity is not None:
+
+            # A name bound by an enclosing lexical binding shadows the builtin,
+            # so its call arity must not be validated against the builtin table.
+            if arity is not None and not self._is_shadowed(name):
                 min_args, max_args = arity
                 n_args = len(expr.elements) - 1
 
@@ -974,7 +1063,7 @@ class MenaiASTSemanticAnalyzer:
                         source=self.source
                     )
 
-        if isinstance(first, MenaiASTSymbol) and first.name == 'dict':
+        if isinstance(first, MenaiASTSymbol) and first.name == 'dict' and not self._is_shadowed('dict'):
             n_args = len(expr.elements) - 1
             if n_args % 2 != 0:
                 raise MenaiEvalError(

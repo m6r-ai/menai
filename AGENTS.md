@@ -223,6 +223,41 @@ There are two categories of builtin that must not be confused:
 
 See [ADR-0009](docs/adr/0009-prelude-and-builtin-registry-consistency.md).
 
+### Name-based lowering must respect lexical shadowing
+
+The desugarer lowers a call by name: `(integer+ a b)` becomes `($integer+ a b)`,
+`(list-length x)` becomes `($list-length x)`, and so on. The semantic analyser
+likewise validates call arity against `BUILTIN_FUNCTION_ARITIES` by name. Both
+must first check whether the name is bound by an enclosing lexical binder
+(`let`/`let*`/`letrec`/`lambda`/`match`); if it is, the call refers to the user's
+binding and neither the rewrite nor the arity check may fire. Both passes track
+this with a scope stack.
+
+The prelude is desugared as an ordinary program, so its own top-level `letrec`
+bindings shadow the builtins. The prelude must therefore write every call to an
+opcode-backed builtin in explicit `$`-prefixed form; it must not rely on the
+desugarer's name-based rewrites. Prelude-only functions (which have no primitive
+form) are called unprefixed, as normal.
+
+### Struct type recognition is lexically scoped
+
+Struct recognition in the desugarer (constructor calls `(Point 1 2)` and
+destructuring patterns `(Point x y)`) resolves the type name against the struct
+types declared by the enclosing lexical binders, exactly like any other name.
+A struct type is not visible outside the binder that declares it, and two
+struct types with the same name in different scopes are distinct.
+
+Struct declarations are the one exception to `let` being parallel: a struct
+binding is hoisted so that sibling binding values and the body can use it as a
+constructor or pattern head. Ordinary `let` bindings are not hoisted.
+
+Consequence: a struct type exported from a module and rebound by the importer
+(e.g. fetched from the module's export dict) is *not* recognised as a struct by
+name, because the declaration is not in the importer's lexical scope. Imported
+struct instances are read with `struct-get`/`struct-ref` rather than a
+destructuring pattern. Struct patterns require the type to be declared
+lexically at the pattern site.
+
 ### The C VM has no process-global mutable state
 
 All mutable VM state (pool allocator free-lists, singletons, the closure registry) is
