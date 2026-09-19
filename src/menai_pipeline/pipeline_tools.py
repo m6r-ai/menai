@@ -636,6 +636,19 @@ class ClockTool:
         return self._format_time(self._get_current_time(tz), fmt)
 
 
+def _ensure_trailing_newline(content: str) -> str:
+    """
+    Return content with a trailing newline, adding one only if needed.
+
+    Empty content is returned unchanged so that writing nothing does not
+    emit a spurious blank line.
+    """
+    if content and not content.endswith("\n"):
+        return content + "\n"
+
+    return content
+
+
 class ConsoleTool:
     """
     Console tool for writing pipeline output to stdout or stderr.
@@ -674,7 +687,7 @@ class ConsoleTool:
         if not isinstance(content, str):
             raise PipelineToolError("'content' must be a string")
 
-        print(content, end="")
+        print(_ensure_trailing_newline(content), end="")
         return "Written to stdout"
 
     def _write_stderr(self, arguments: dict[str, Any]) -> str:
@@ -683,5 +696,5 @@ class ConsoleTool:
         if not isinstance(content, str):
             raise PipelineToolError("'content' must be a string")
 
-        print(content, end="", file=sys.stderr)
+        print(_ensure_trailing_newline(content), end="", file=sys.stderr)
         return "Written to stderr"
