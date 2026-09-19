@@ -124,6 +124,4 @@
     (string-concat "+-------+-------+-------+\n"
                    (list->string (format-rows board 0 (list)) "\n")))))
 
-  (dict
-    "solve" solve
-    "display-board" display-board))
+  (export solve display-board))

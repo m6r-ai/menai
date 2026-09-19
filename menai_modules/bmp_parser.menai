@@ -122,4 +122,4 @@
                              "bottom-up" (integer>? height 0)))))))
           (error "bmp_parser: parse expects a bytes value")))))
 
-  (dict "parse" parse))
+  (export parse))

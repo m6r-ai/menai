@@ -758,12 +758,12 @@ class TestStructModuleExport:
     def test_struct_type_exported_and_constructor_usable(self, tmp_path):
         """A struct type exported from a module can be constructed in the importer."""
         (tmp_path / "shapes.menai").write_text(
-            '(let ((Point (struct (x y)))) (dict "Point" Point))'
+            '(let ((Point (struct (x y)))) (export Point))'
         )
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format('''
         (let ((shapes (import "shapes")))
-          (let ((Point (dict-get shapes "Point")))
+          (let ((Point (shapes Point)))
             (Point 3 4)))
         ''')
         assert result == '(Point 3 4)'
@@ -771,13 +771,13 @@ class TestStructModuleExport:
     def test_struct_get_on_imported_struct(self, tmp_path):
         """struct-get works on instances of an imported struct type."""
         (tmp_path / "shapes.menai").write_text(
-            '(let ((Point (struct (x y)))) (dict "Point" Point))'
+            '(let ((Point (struct (x y)))) (export Point))'
         )
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format('''
         (let ((shapes (import "shapes")))
-          (let ((Point (dict-get shapes "Point"))
-                (p (let ((Point (dict-get shapes "Point"))) (Point 7 8))))
+          (let ((Point (shapes Point))
+                (p (let ((Point (shapes Point))) (Point 7 8))))
             (struct-get p 'x)))
         ''')
         assert result == '7'
@@ -785,13 +785,13 @@ class TestStructModuleExport:
     def test_field_access_on_imported_struct(self, tmp_path):
         """Fields of an imported struct instance are read via the accessor functions."""
         (tmp_path / "shapes.menai").write_text(
-            '(let ((Point (struct (x y)))) (dict "Point" Point))'
+            '(let ((Point (struct (x y)))) (export Point))'
         )
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format('''
         (let ((shapes (import "shapes")))
-          (let ((Point (dict-get shapes "Point"))
-                (p (let ((Point (dict-get shapes "Point"))) (Point 3 4))))
+          (let ((Point (shapes Point))
+                (p (let ((Point (shapes Point))) (Point 3 4))))
             (integer+ (struct-get p 'x) (struct-get p 'y))))
         ''')
         assert result == '7'
@@ -804,18 +804,14 @@ class TestStructModuleExport:
          (make-point (lambda (a b) (Point a b)))
          (point-x (lambda (p) (match p ((Point x _) x))))
          (point-y (lambda (p) (match p ((Point _ y) y)))))
-  (dict
-    "Point" Point
-    "make-point" make-point
-    "point-x" point-x
-    "point-y" point-y))
+  (export Point make-point point-x point-y))
 """)
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate("""
 (let ((shapes (import "shapes")))
-  (let ((make-point (dict-get shapes "make-point"))
-        (point-x    (dict-get shapes "point-x"))
-        (point-y    (dict-get shapes "point-y")))
+  (let ((make-point (shapes make-point))
+        (point-x    (shapes point-x))
+        (point-y    (shapes point-y)))
     (let ((p (make-point 3 4)))
       (integer+ (point-x p) (point-y p)))))
 """)
@@ -825,12 +821,12 @@ class TestStructModuleExport:
         """The exported struct type itself can be used as a constructor by the importer."""
         (tmp_path / "shapes.menai").write_text("""
 (letrec ((Point (struct (x y))))
-  (dict "Point" Point))
+  (export Point))
 """)
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format("""
 (let ((shapes (import "shapes")))
-  (let ((Point (dict-get shapes "Point")))
+  (let ((Point (shapes Point)))
     (Point 5 6)))
 """)
         assert result == '(Point 5 6)'
@@ -839,12 +835,12 @@ class TestStructModuleExport:
         """Fields of a struct instance from a letrec module are read via the accessors."""
         (tmp_path / "shapes.menai").write_text("""
 (letrec ((Point (struct (x y))))
-  (dict "Point" Point))
+  (export Point))
 """)
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate("""
 (let ((shapes (import "shapes")))
-  (let ((Point (dict-get shapes "Point")))
+  (let ((Point (shapes Point)))
     (let ((p (Point 10 20)))
       (integer+ (struct-get p 'x) (struct-get p 'y)))))
 """)

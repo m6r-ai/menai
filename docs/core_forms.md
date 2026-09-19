@@ -325,12 +325,14 @@ The message can be a computed string:
 
 ## import — load a module
 
-`import` loads and returns a module. It is a compile-time operation — the module is
-compiled once and cached. See [Modules](modules.md) for full details.
+`import` loads a module as a namespace. It is a compile-time operation — the module
+is compiled once and cached. It is only valid as the value of a `let`/`let*`/`letrec`
+binding; access an export with member access. See [Modules](modules.md) for full
+details.
 
 ```menai
 (let ((math (import "math_utils")))
-  ((dict-get math "square") 5))
+  ((math square) 5))
 → 25
 ```
 

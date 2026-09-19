@@ -90,3 +90,4 @@ What costs, risks, or constraints does this decision impose?
 | [0020](0020-cfg-pass-scope-contracts.md) | CFG pass scope contracts — per-function and whole-program | Accepted |
 | [0021](0021-interprocedural-type-analysis.md) | Interprocedural flow-based type analysis | Accepted |
 | [0022](0022-no-runtime-globals.md) | No runtime globals | Accepted |
+| [0023](0023-second-class-module-namespaces.md) | Second-class module namespaces | Accepted |

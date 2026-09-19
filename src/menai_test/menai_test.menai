@@ -99,9 +99,8 @@
   ; A leaf is either a function (plain test) or a dict with a "thunk" key
   ; (expect-error test).
   (test-find
-   (lambda (module path)
-     (let ((nodes (dict-get module "tests")))
-       (letrec ((walk (lambda (node-list remaining-path)
+   (lambda (nodes path)
+     (letrec ((walk (lambda (node-list remaining-path)
                         (if (list-null? remaining-path)
                             (error "test-find: path exhausted before reaching a leaf")
                             (let ((segment (list-first remaining-path))
@@ -125,10 +124,6 @@
                                                                          (walk thing rest)))))
                                                            (search (list-rest lst))))))))
                                 (search node-list)))))))
-         (walk nodes path))))))
+       (walk nodes path)))))
 
-(dict
-  "assert-equal"  assert-equal
-  "test"          test
-  "test-error"    test-error
-  "test-find"     test-find))
+(export assert-equal test test-error test-find))

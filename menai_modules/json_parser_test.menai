@@ -2,65 +2,67 @@
 
 (let ((json (import "json_parser"))
       (t (import "menai_test")))
-  (let ((parse (dict-get json "parse"))
-        (assert-equal (dict-get t "assert-equal"))
-        (test (dict-get t "test")))
-    (dict "tests"
+  (let ((parse (json parse))
+        (assert-equal (t assert-equal))
+        (expect-pass (t test)))
+    (let ((tests
       (list
         ; Tests for objects
         (list "objects"
           (list
-            (test "empty object"
-                  (lambda () (assert-equal (parse "{}") (dict))))
-            (test "single key"
-                  (lambda () (assert-equal (parse "{\"a\": 1}") (dict "a" 1))))
-            (test "nested object"
-                  (lambda () (assert-equal (parse "{\"a\": {\"b\": 2}}")
-                                           (dict "a" (dict "b" 2)))))))
+            (expect-pass "empty object"
+                         (lambda () (assert-equal (parse "{}") (dict))))
+            (expect-pass "single key"
+                         (lambda () (assert-equal (parse "{\"a\": 1}") (dict "a" 1))))
+            (expect-pass "nested object"
+                         (lambda () (assert-equal (parse "{\"a\": {\"b\": 2}}")
+                                                  (dict "a" (dict "b" 2)))))))
 
         ; Tests for arrays
         (list "arrays"
           (list
-            (test "empty array"
-                  (lambda () (assert-equal (parse "[]") (list))))
-            (test "integer array"
-                  (lambda () (assert-equal (parse "[1, 2, 3]") (list 1 2 3))))
-            (test "nested array"
-                  (lambda () (assert-equal (parse "[[1, 2], [3, 4]]")
-                                           (list (list 1 2) (list 3 4)))))))
+            (expect-pass "empty array"
+                         (lambda () (assert-equal (parse "[]") (list))))
+            (expect-pass "integer array"
+                         (lambda () (assert-equal (parse "[1, 2, 3]") (list 1 2 3))))
+            (expect-pass "nested array"
+                         (lambda () (assert-equal (parse "[[1, 2], [3, 4]]")
+                                                  (list (list 1 2) (list 3 4)))))))
 
         ; Tests for strings
         (list "strings"
           (list
-            (test "empty string"
-                  (lambda () (assert-equal (parse "\"\"") "")))
-            (test "simple string"
-                  (lambda () (assert-equal (parse "\"hello\"") "hello")))
+            (expect-pass "empty string"
+                         (lambda () (assert-equal (parse "\"\"") "")))
+            (expect-pass "simple string"
+                         (lambda () (assert-equal (parse "\"hello\"") "hello")))
             (list "escapes"
               (list
-                (test "newline"
-                      (lambda () (assert-equal (parse "\"\\n\"") "\n")))
-                (test "tab"
-                      (lambda () (assert-equal (parse "\"\\t\"") "\t")))
-                (test "unicode"
-                      (lambda () (assert-equal (parse "\"\\u0041\"") "A")))))))
+                (expect-pass "newline"
+                             (lambda () (assert-equal (parse "\"\\n\"") "\n")))
+                (expect-pass "tab"
+                             (lambda () (assert-equal (parse "\"\\t\"") "\t")))
+                (expect-pass "unicode"
+                             (lambda () (assert-equal (parse "\"\\u0041\"") "A")))))))
 
         ; Tests for numbers
         (list "numbers"
           (list
-            (test "integer"
-                  (lambda () (assert-equal (parse "42") 42)))
-            (test "negative integer"
-                  (lambda () (assert-equal (parse "-7") -7)))
-            (test "float"
-                  (lambda () (assert-equal (parse "3.14") 3.14)))))
+            (expect-pass "integer"
+                         (lambda () (assert-equal (parse "42") 42)))
+            (expect-pass "negative integer"
+                         (lambda () (assert-equal (parse "-7") -7)))
+            (expect-pass "float"
+                         (lambda () (assert-equal (parse "3.14") 3.14)))))
 
         ; Tests for literals
         (list "literals"
           (list
-            (test "true"
-                  (lambda () (assert-equal (parse "true") #t)))
-            (test "false"
-                  (lambda () (assert-equal (parse "false") #f)))
-            (test "null"
-                  (lambda () (assert-equal (parse "null") #none)))))))))
+            (expect-pass "true"
+                         (lambda () (assert-equal (parse "true") #t)))
+            (expect-pass "false"
+                         (lambda () (assert-equal (parse "false") #f)))
+            (expect-pass "null"
+                         (lambda () (assert-equal (parse "null") #none))))))))
+
+      (export tests))))

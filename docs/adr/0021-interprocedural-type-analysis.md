@@ -87,14 +87,12 @@ analysis to fire on real code:
   because a struct type usually enters a call chain through a function's return value
   rather than a constructor at the call site: a recursive search passes its cube
   parameter through functions that each return a cube.
-- Callee resolution: A call's callee is an SSA value, resolved from four sources:
-  a `make_closure` result; a phi joining such results; a `dict-get` of a constant key
-  from a dict whose matching value denotes a function (this is how a module's exported
-  functions are reached, since a module is a dict of functions); and a free variable,
-  resolved to whatever the corresponding capture denotes in the parent function (this
-  is how a function reaches a letrec sibling, which is captured rather than created
-  locally). Calls through function-valued parameters are not resolved. There is no
-  function cloning or specialisation.
+- Callee resolution: A call's callee is an SSA value, resolved from three sources:
+  a `make_closure` result; a phi joining such results; and a free variable, resolved
+  to whatever the corresponding capture denotes in the parent function (this is how a
+  function reaches a letrec sibling, which is captured rather than created locally).
+  Calls through function-valued parameters are not resolved. There is no function
+  cloning or specialisation.
 
 ## Alternatives considered
 

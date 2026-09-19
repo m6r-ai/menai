@@ -13,16 +13,43 @@ into a core AST containing only:
 This simplifies the compiler and enables better optimization.
 """
 
+from dataclasses import dataclass
 from typing import Any, cast
 
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTSymbol, MenaiASTList, MenaiASTInteger,
     MenaiASTFloat, MenaiASTComplex, MenaiASTString, MenaiASTBoolean, MenaiASTNone,
-    MenaiASTStruct, MenaiASTBytes,
+    MenaiASTStruct, MenaiASTBytes, MenaiASTNamespace,
 )
 from menai.ast.menai_ast_dependency_analyzer import MenaiASTDependencyAnalyzer
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
+
+
+@dataclass(frozen=True)
+class _NamespaceBinding:
+    """
+    A namespace in the desugarer's scope.
+
+    members maps each export key to the renamed binding name it resolves to.
+    declarations maps each renamed binding name to its declaration node, so a
+    member whose declaration is a struct type can be recognised as one.
+    bindings is the module's full set of renamed (name, value) pairs, emitted
+    once as a letrec so the module's declarations can reference their siblings.
+    """
+    members: dict[str, str]
+    declarations: dict[str, MenaiASTNode]
+    bindings: tuple[tuple[str, MenaiASTNode], ...]
+
+
+def _namespace_binding(namespace: MenaiASTNamespace) -> _NamespaceBinding:
+    """Build a desugarer namespace binding from a resolved namespace node."""
+    declarations = dict(namespace.bindings)
+    return _NamespaceBinding(
+        members=dict(namespace.members),
+        declarations=declarations,
+        bindings=namespace.bindings,
+    )
 
 
 class MenaiASTDesugarer:
@@ -45,6 +72,13 @@ class MenaiASTDesugarer:
         # declared it.
         self._struct_scope_stack: list[dict[str, MenaiASTStruct]] = []
 
+        # Namespace names in lexical scope, innermost frame last.  Each frame
+        # maps a namespace name to its export map (export key -> renamed binding
+        # name).  A namespace is compile-time only: the binding that introduces
+        # it is replaced by the module's renamed letrec, and member access
+        # resolves to the renamed binding.
+        self._namespace_stack: list[dict[str, _NamespaceBinding]] = []
+
     def _push_scope(self, names: set[str], structs: dict[str, MenaiASTStruct] | None = None) -> None:
         """Push a lexical scope frame binding the given names and struct types."""
         self._scope_stack.append(names)
@@ -62,6 +96,48 @@ class MenaiASTDesugarer:
     def _lookup_struct(self, name: str) -> MenaiASTStruct | None:
         """Return the struct type bound to name in scope, or None."""
         for frame in reversed(self._struct_scope_stack):
+            if name in frame:
+                return frame[name]
+
+        return None
+
+    def _struct_from_value(self, value_expr: MenaiASTNode) -> MenaiASTStruct | None:
+        """
+        Return the struct declaration a binding value denotes, if any.
+
+        A binding value denotes a struct when it is a struct declaration
+        directly, or a namespace member access whose member declaration is a
+        struct type.  Used to hoist struct declarations, including imported
+        ones, so they are available as constructors and pattern heads.
+        """
+        if isinstance(value_expr, MenaiASTStruct):
+            return value_expr
+
+        if (isinstance(value_expr, MenaiASTList) and len(value_expr.elements) == 2
+                and isinstance(value_expr.elements[0], MenaiASTSymbol)
+                and isinstance(value_expr.elements[1], MenaiASTSymbol)):
+            namespace = self._lookup_namespace(value_expr.elements[0].name)
+            if namespace is not None:
+                renamed = namespace.members.get(value_expr.elements[1].name)
+                declaration = namespace.declarations.get(renamed) if renamed is not None else None
+                if isinstance(declaration, MenaiASTStruct):
+                    return declaration
+
+        return None
+
+    def _push_namespace_scope(
+        self, namespaces: dict[str, "_NamespaceBinding"]
+    ) -> None:
+        """Push a lexical scope frame binding the given namespace member maps."""
+        self._namespace_stack.append(namespaces)
+
+    def _pop_namespace_scope(self) -> None:
+        """Pop the innermost namespace scope frame."""
+        self._namespace_stack.pop()
+
+    def _lookup_namespace(self, name: str) -> "_NamespaceBinding | None":
+        """Return the binding bound to a namespace name in scope, or None."""
+        for frame in reversed(self._namespace_stack):
             if name in frame:
                 return frame[name]
 
@@ -227,6 +303,12 @@ class MenaiASTDesugarer:
         if isinstance(first, MenaiASTSymbol):
             name = first.name
 
+            # Namespace member access: (namespace member).  Resolves to the
+            # declaration the member denotes, so struct types, function
+            # identities, and result types all cross the module boundary.
+            if self._lookup_namespace(name) is not None:
+                return self._desugar_namespace_access(expr, name)
+
             # Match expression - desugar it!
             if name == 'match':
                 return self._desugar_match(expr)
@@ -251,6 +333,11 @@ class MenaiASTDesugarer:
             if name == 'quote':
                 # Quote: don't desugar the quoted expression
                 return expr
+
+            if name == 'export':
+                # The module resolver consumes a module's export form before
+                # desugaring, so an export reaching here is not a module body.
+                return self._reject_stray_export(expr)
 
             if name == 'and':
                 return self._desugar_and(expr)
@@ -433,16 +520,28 @@ class MenaiASTDesugarer:
         # exception: they are hoisted so that sibling binding values and the body
         # can use them as constructors and pattern heads.
         struct_bindings: dict[str, MenaiASTStruct] = {}
+        namespace_bindings: dict[str, _NamespaceBinding] = {}
+        namespace_modules: list[tuple[tuple[str, MenaiASTNode], ...]] = []
         for binding in bindings_list.elements:
             assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
             var_name, value_expr = binding.elements
             assert isinstance(var_name, MenaiASTSymbol)
-            if isinstance(value_expr, MenaiASTStruct):
-                struct_bindings[var_name.name] = value_expr
+
+            # A binding whose value is a struct declaration — written directly
+            # or accessed through a namespace — is hoisted so sibling values and
+            # the body can use it as a constructor and pattern head.
+            struct_node = self._struct_from_value(value_expr)
+            if struct_node is not None:
+                struct_bindings[var_name.name] = struct_node
+
+            elif isinstance(value_expr, MenaiASTNamespace):
+                namespace_bindings[var_name.name] = _namespace_binding(value_expr)
+                namespace_modules.append(value_expr.bindings)
 
         desugared_bindings = []
         bound_names: set[str] = set()
         self._push_scope(set(struct_bindings), struct_bindings)
+        self._push_namespace_scope(namespace_bindings)
         try:
             for i, binding in enumerate(bindings_list.elements):
                 assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2, \
@@ -450,6 +549,14 @@ class MenaiASTDesugarer:
 
                 var_name, value_expr = binding.elements
                 assert isinstance(var_name, MenaiASTSymbol)
+
+                # A namespace binding is compile-time only: it introduces no
+                # runtime binding of its own, so it is dropped from the emitted
+                # bindings.  The module's renamed bindings are emitted around
+                # the body below.
+                if isinstance(value_expr, MenaiASTNamespace):
+                    continue
+
                 desugared_value = self.desugar(value_expr)
                 desugared_bindings.append(self._make_list((var_name, desugared_value), binding))
                 bound_names.add(var_name.name)
@@ -463,7 +570,10 @@ class MenaiASTDesugarer:
                 self._pop_scope()
 
         finally:
+            self._pop_namespace_scope()
             self._pop_scope()
+
+        desugared_body = self._wrap_namespace_modules(namespace_modules, desugared_body, expr)
 
         return self._make_list((
             let_symbol, self._make_list(tuple(desugared_bindings), bindings_list), desugared_body
@@ -508,10 +618,20 @@ class MenaiASTDesugarer:
         # Extract raw (name, value_expr) pairs for dependency analysis.
         # The analyzer only inspects symbol names, so raw (pre-desugared) AST is correct here.
         raw_pairs: list[tuple[str, MenaiASTNode]] = []
+        namespace_bindings: dict[str, _NamespaceBinding] = {}
+        namespace_modules: list[tuple[tuple[str, MenaiASTNode], ...]] = []
         for binding in bindings_list.elements:
             assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
             name_expr, value_expr = binding.elements
             assert isinstance(name_expr, MenaiASTSymbol)
+
+            # A namespace binding is compile-time only: it introduces no
+            # runtime binding and is not part of the recursive binding graph.
+            if isinstance(value_expr, MenaiASTNamespace):
+                namespace_bindings[name_expr.name] = _namespace_binding(value_expr)
+                namespace_modules.append(value_expr.bindings)
+                continue
+
             raw_pairs.append((name_expr.name, value_expr))
 
         raw_dict = dict(raw_pairs)
@@ -525,13 +645,15 @@ class MenaiASTDesugarer:
         letrec_names = {name for name, _ in raw_pairs}
         letrec_structs = {name: value for name, value in raw_pairs if isinstance(value, MenaiASTStruct)}
         self._push_scope(letrec_names, letrec_structs)
+        self._push_namespace_scope(namespace_bindings)
         try:
             result = self._desugar_letrec_body(expr, raw_dict, binding_groups)
 
         finally:
+            self._pop_namespace_scope()
             self._pop_scope()
 
-        return result
+        return self._wrap_namespace_modules(namespace_modules, result, expr)
 
     def _desugar_letrec_body(
         self,
@@ -637,12 +759,23 @@ class MenaiASTDesugarer:
         # and the body sees all of them.  Desugar in forward order, pushing each
         # binding's name before the next value.
         desugared_bindings: list[tuple[MenaiASTNode, MenaiASTNode, MenaiASTList]] = []
+        namespace_count = 0
+        namespace_modules: list[tuple[tuple[str, MenaiASTNode], ...]] = []
         for binding in bindings_list.elements:
             assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2, \
                 "Binding should be a list with 2 elements (validated by semantic analyzer)"
 
             var_name, value_expr = binding.elements
             assert isinstance(var_name, MenaiASTSymbol)
+
+            # A namespace binding is compile-time only: it introduces a
+            # namespace scope frame but no runtime binding of its own.  The
+            # module's renamed bindings are emitted around the body below.
+            if isinstance(value_expr, MenaiASTNamespace):
+                self._push_namespace_scope({var_name.name: _namespace_binding(value_expr)})
+                namespace_modules.append(value_expr.bindings)
+                namespace_count += 1
+                continue
 
             desugared_value = self.desugar(value_expr)
             desugared_bindings.append((var_name, desugared_value, binding))
@@ -654,8 +787,13 @@ class MenaiASTDesugarer:
             result = self.desugar(body)
 
         finally:
+            for _ in range(namespace_count):
+                self._pop_namespace_scope()
+
             for _ in desugared_bindings:
                 self._pop_scope()
+
+        result = self._wrap_namespace_modules(namespace_modules, result, expr)
 
         # Wrap in nested lets, processing bindings in reverse order so the
         # outermost let is the first binding.
@@ -699,6 +837,95 @@ class MenaiASTDesugarer:
             desugared_elements.append(self.desugar(elem))
 
         return self._make_list(tuple(desugared_elements), expr)
+
+    def _reject_stray_export(self, expr: MenaiASTList) -> MenaiASTNode:
+        """Reject an export form outside a module body."""
+        raise MenaiEvalError(
+            message="export is only valid as a module body",
+            received=f"export used in: {expr.describe()}",
+            expected="A module ends with (export name1 name2 ...)",
+            example="(letrec ((f (lambda (x) x))) (export f))",
+            suggestion="Move the export form to the end of a module body",
+            line=expr.line,
+            column=expr.column,
+            source_file=expr.source_file,
+        )
+
+    def _desugar_namespace_access(self, expr: MenaiASTList, namespace_name: str) -> MenaiASTNode:
+        """
+        Resolve a namespace member access (namespace member) to its binding.
+
+        The member key is looked up in the namespace's export map, which maps
+        it to the renamed name under which the module's binding was emitted.
+        A member whose declaration is a struct type resolves to that struct
+        node, so binding it to a local name makes it available as a constructor
+        and pattern head (struct recognition is lexical).  Every other member
+        resolves to a reference to its renamed binding, so a function keeps its
+        identity and result types flow across the boundary.
+        """
+        binding = self._lookup_namespace(namespace_name)
+        assert binding is not None, "Namespace access reached without a bound namespace"
+
+        member_expr = expr.elements[1]
+        assert isinstance(member_expr, MenaiASTSymbol), "Member should be a symbol (validated by semantic analyzer)"
+        member_key = member_expr.name
+
+        renamed = binding.members.get(member_key)
+        if renamed is None:
+            raise MenaiEvalError(
+                message=f"Namespace '{namespace_name}' has no member '{member_key}'",
+                received=f"Member: {member_key}",
+                expected="A name the module exports",
+                example=f"({namespace_name} some-exported-name)",
+                suggestion="Check the module's export form for the member name",
+                line=expr.line,
+                column=expr.column,
+                source_file=expr.source_file,
+            )
+
+        declaration = binding.declarations[renamed]
+        if isinstance(declaration, MenaiASTStruct):
+            return declaration
+
+        return MenaiASTSymbol(
+            renamed, line=expr.line, column=expr.column, source_file=expr.source_file,
+        )
+
+    def _wrap_namespace_modules(
+        self,
+        modules: list[tuple[tuple[str, MenaiASTNode], ...]],
+        body: MenaiASTNode,
+        source_node: MenaiASTNode,
+    ) -> MenaiASTNode:
+        """
+        Wrap a body in the renamed bindings of each imported module.
+
+        Each module's bindings are emitted once as a letrec, named with the
+        module's rename prefix, so the module's exported declarations can
+        reference their siblings.  Modules are wrapped innermost-first so that
+        an earlier module's bindings are visible to a later module's body.
+
+        The letrec is desugared through the ordinary path, so a module binding
+        whose value is itself an import (a nested namespace) is handled the
+        same way as any other namespace binding.
+        """
+        result = body
+        for bindings in reversed(modules):
+            binding_forms = [
+                self._make_list(
+                    (self._make_symbol(name, source_node), value),
+                    source_node,
+                )
+                for name, value in bindings
+            ]
+            letrec = self._make_list((
+                self._make_symbol('letrec', source_node),
+                self._make_list(tuple(binding_forms), source_node),
+                result,
+            ), source_node)
+            result = self.desugar(letrec)
+
+        return result
 
     def _desugar_variadic_arithmetic(self, expr: MenaiASTList) -> MenaiASTNode:
         """
@@ -1375,7 +1602,7 @@ class MenaiASTDesugarer:
                 n_patterns = len(pattern.elements) - 1
                 n_fields = len(struct_node.field_names)
                 if n_patterns == n_fields:
-                    return self._desugar_struct_pattern(pattern, temp_var, struct_node)
+                    return self._desugar_struct_pattern(pattern, temp_var)
 
         # Empty list pattern: ()
         if pattern.is_empty():
@@ -1796,7 +2023,6 @@ class MenaiASTDesugarer:
         self,
         pattern: MenaiASTList,
         temp_var: str,
-        struct_node: MenaiASTStruct
     ) -> tuple[MenaiASTNode, list[tuple[str, Any]]]:
         """
         Desugar a struct destructuring pattern (TypeName field1 field2 ...).
@@ -1808,12 +2034,16 @@ class MenaiASTDesugarer:
         Args:
             pattern: The struct pattern, e.g. (Point x y)
             temp_var: Name of temp variable holding the match value
-            struct_node: The MenaiASTStruct for this type
 
         Returns:
             (test_expression, bindings) using the list-pattern marker convention
         """
-        type_sym = self._make_symbol(struct_node.name, pattern)
+        # The type test references the name the struct is in scope under, which
+        # is the pattern head (a local name, possibly an imported struct bound
+        # to a local name), not the struct's original declaration name.
+        head = pattern.elements[0]
+        assert isinstance(head, MenaiASTSymbol)
+        type_sym = self._make_symbol(head.name, pattern)
 
         # Guard: check tmp is a struct before checking its type
         struct_test = MenaiASTList((

@@ -21,7 +21,7 @@ _FIXTURE_NAMES = [
 
 _ITERATIONS = 5
 
-_EXPR = '(let ((deflate (import "deflate"))) ((dict-get deflate "deflate") (dict-get inputs "input-data")))'
+_EXPR = '(let ((deflate (import "deflate"))) ((deflate deflate) (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):

@@ -97,6 +97,4 @@
       (string-concat "+-------+-------+-------+\n"
                      (list->string rows "\n"))))))
 
-  (dict
-    "solve" solve
-    "display-board" display-board))
+  (export solve display-board))

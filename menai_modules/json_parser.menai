@@ -205,8 +205,11 @@
                                              (if (or (string=? ch "-") (is-digit? ch))
                                                  (parse-number s pos2)
                                                 (error "Unexpected character in JSON"))))))))
-                         (resume (list-first scalar-result) (list-ref scalar-result 1) stack))))))))))
+                         (resume (list-first scalar-result) (list-ref scalar-result 1) stack)))))))))
+
+   (parse
+    (lambda (json-string)
+      (dispatch json-string 0 (list)))))
 
   ; letrec body:
-  (dict "parse" (lambda (json-string)
-                  (dispatch json-string 0 (list)))))
+  (export parse))

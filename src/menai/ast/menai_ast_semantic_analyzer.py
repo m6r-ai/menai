@@ -13,7 +13,7 @@ All validation happens in a single pass to provide clear, precise error messages
 before any transformations occur.
 """
 
-from typing import cast
+from typing import cast, TypeGuard
 
 from menai.ast.menai_ast import (
     MenaiASTBoolean,
@@ -49,6 +49,12 @@ class MenaiASTSemanticAnalyzer:
         # enclosing binder and therefore refers to the user's binding.
         self._scope_stack: list[set[str]] = []
 
+        # Names bound to a module namespace, innermost frame last.  A name here
+        # is a namespace name: it may only be used as the head of a member
+        # access (name member).  Namespaces are second-class, so a namespace
+        # name may not be used as an ordinary value.
+        self._namespace_stack: list[set[str]] = []
+
     def _push_scope(self, names: set[str]) -> None:
         """Push a lexical scope frame binding the given names."""
         self._scope_stack.append(names)
@@ -60,6 +66,18 @@ class MenaiASTSemanticAnalyzer:
     def _is_shadowed(self, name: str) -> bool:
         """Return True if name is bound by any enclosing lexical scope frame."""
         return any(name in frame for frame in self._scope_stack)
+
+    def _push_namespace_scope(self, names: set[str]) -> None:
+        """Push a lexical scope frame binding the given namespace names."""
+        self._namespace_stack.append(names)
+
+    def _pop_namespace_scope(self) -> None:
+        """Pop the innermost namespace scope frame."""
+        self._namespace_stack.pop()
+
+    def _is_namespace(self, name: str) -> bool:
+        """Return True if name is bound to a module namespace in scope."""
+        return any(name in frame for frame in self._namespace_stack)
 
     def analyze(self, expr: MenaiASTNode, source: str = "") -> MenaiASTNode:
         """
@@ -82,6 +100,12 @@ class MenaiASTSemanticAnalyzer:
         if isinstance(expr, MenaiASTList):
             return self._analyze_list(expr)
 
+        # A bare namespace name is a namespace used as a value, which is not
+        # allowed: namespaces are second-class.  (A namespace name in member
+        # access position is the head of a list, handled above.)
+        if isinstance(expr, MenaiASTSymbol):
+            self._reject_namespace_as_value(expr, "a value position")
+
         # Self-evaluating values need no validation
         return expr
 
@@ -96,6 +120,12 @@ class MenaiASTSemanticAnalyzer:
         # Check for special forms
         if isinstance(first, MenaiASTSymbol):
             name = first.name
+
+            # Member access: (namespace member) where namespace is a bound
+            # namespace name.  Checked before the special forms so a namespace
+            # name is never mistaken for a special form or builtin call.
+            if self._is_namespace(name):
+                return self._analyze_namespace_access(expr)
 
             if name == 'if':
                 return self._analyze_if(expr)
@@ -125,10 +155,16 @@ class MenaiASTSemanticAnalyzer:
                 return self._analyze_or(expr)
 
             if name == 'import':
-                return self._analyze_import(expr)
+                # import is only valid as the value of a let/let*/letrec
+                # binding.  The binding forms validate it directly, so
+                # reaching here means it is used in any other position.
+                return self._reject_import_outside_binding(expr)
 
             if name == 'struct':
                 return self._reject_struct_outside_let(expr)
+
+            if name == 'export':
+                return self._analyze_export(expr)
 
             if name == 'apply':
                 return self._analyze_apply(expr)
@@ -195,6 +231,7 @@ class MenaiASTSemanticAnalyzer:
 
         # Validate each binding
         var_names: list[str] = []
+        namespace_names: set[str] = set()
         new_bindings: list[MenaiASTNode] = []
         for i, binding in enumerate(bindings_list.elements):
             if not isinstance(binding, MenaiASTList):
@@ -238,6 +275,17 @@ class MenaiASTSemanticAnalyzer:
                 var_names.append(name_expr.name)
                 continue
 
+            # A binding whose value is an import binds a namespace name.
+            if isinstance(name_expr, MenaiASTSymbol) and self._is_import_expr(value_expr):
+                self._analyze_import(value_expr)
+                new_bindings.append(MenaiASTList(
+                    elements=(name_expr, value_expr),
+                    line=binding.line, column=binding.column, source_file=binding.source_file
+                ))
+                var_names.append(name_expr.name)
+                namespace_names.add(name_expr.name)
+                continue
+
             if not isinstance(name_expr, MenaiASTSymbol):
                 raise MenaiEvalError(
                     message=f"Let binding {i+1} variable must be a symbol",
@@ -277,10 +325,12 @@ class MenaiASTSemanticAnalyzer:
         # let is parallel: binding values were analyzed above in the enclosing
         # scope; only the body sees the binding names.
         self._push_scope(set(var_names))
+        self._push_namespace_scope(namespace_names)
         try:
             analyzed_body = self.analyze(body, self.source)
 
         finally:
+            self._pop_namespace_scope()
             self._pop_scope()
 
         new_bindings_list = MenaiASTList(
@@ -330,6 +380,7 @@ class MenaiASTSemanticAnalyzer:
 
         # Validate each binding
         var_names: list[str] = []
+        namespace_count = 0
         new_bindings: list[MenaiASTNode] = []
         for i, binding in enumerate(bindings_list.elements):
             if not isinstance(binding, MenaiASTList):
@@ -374,6 +425,19 @@ class MenaiASTSemanticAnalyzer:
                 self._push_scope({name_expr.name})
                 continue
 
+            # A binding whose value is an import binds a namespace name.
+            if isinstance(name_expr, MenaiASTSymbol) and self._is_import_expr(value_expr):
+                self._analyze_import(value_expr)
+                new_bindings.append(MenaiASTList(
+                    elements=(name_expr, value_expr),
+                    line=binding.line, column=binding.column, source_file=binding.source_file
+                ))
+                var_names.append(name_expr.name)
+                self._push_scope({name_expr.name})
+                self._push_namespace_scope({name_expr.name})
+                namespace_count += 1
+                continue
+
             if not isinstance(name_expr, MenaiASTSymbol):
                 raise MenaiEvalError(
                     message=f"Let* binding {i+1} variable must be a symbol",
@@ -409,6 +473,9 @@ class MenaiASTSemanticAnalyzer:
             analyzed_body = self.analyze(body, self.source)
 
         finally:
+            for _ in range(namespace_count):
+                self._pop_namespace_scope()
+
             for _ in var_names:
                 self._pop_scope()
 
@@ -469,6 +536,14 @@ class MenaiASTSemanticAnalyzer:
             and isinstance(binding.elements[0], MenaiASTSymbol)
         }
         self._push_scope(letrec_names)
+        letrec_namespaces = {
+            binding.elements[0].name for binding in bindings_list.elements
+            if isinstance(binding, MenaiASTList)
+            and len(binding.elements) == 2
+            and isinstance(binding.elements[0], MenaiASTSymbol)
+            and self._is_import_expr(binding.elements[1])
+        }
+        self._push_namespace_scope(letrec_namespaces)
         for i, binding in enumerate(bindings_list.elements):
             if not isinstance(binding, MenaiASTList):
                 raise MenaiEvalError(
@@ -506,6 +581,16 @@ class MenaiASTSemanticAnalyzer:
                 struct_node = self._analyze_struct(value_expr, name_expr.name)
                 new_bindings.append(MenaiASTList(
                     elements=(name_expr, struct_node),
+                    line=binding.line, column=binding.column, source_file=binding.source_file
+                ))
+                var_names.append(name_expr.name)
+                continue
+
+            # A binding whose value is an import binds a namespace name.
+            if isinstance(name_expr, MenaiASTSymbol) and self._is_import_expr(value_expr):
+                self._analyze_import(value_expr)
+                new_bindings.append(MenaiASTList(
+                    elements=(name_expr, value_expr),
                     line=binding.line, column=binding.column, source_file=binding.source_file
                 ))
                 var_names.append(name_expr.name)
@@ -551,6 +636,7 @@ class MenaiASTSemanticAnalyzer:
             analyzed_body = self.analyze(body, self.source)
 
         finally:
+            self._pop_namespace_scope()
             self._pop_scope()
 
         new_bindings_list = MenaiASTList(
@@ -915,6 +1001,107 @@ class MenaiASTSemanticAnalyzer:
         # Just recursively analyze all arguments
         for arg in expr.elements[1:]:
             self.analyze(arg, self.source)
+
+        return expr
+
+    def _analyze_namespace_access(self, expr: MenaiASTList) -> MenaiASTList:
+        """
+        Validate member access on a namespace: (namespace member).
+
+        The head is a bound namespace name and the sole argument is the member
+        symbol to resolve.  The member is validated for shape only; whether it
+        names an actual export is checked by the module resolver, which has the
+        module's export map.
+        """
+        if len(expr.elements) != 2:
+            raise MenaiEvalError(
+                message="Namespace member access has wrong number of arguments",
+                received=f"Got {len(expr.elements) - 1} arguments: {expr.describe()}",
+                expected="Exactly 1 argument: (namespace member)",
+                example="(shapes point-distance)",
+                suggestion="Access a single member of the namespace by name",
+                line=expr.line,
+                column=expr.column,
+                source=self.source
+            )
+
+        member_expr = expr.elements[1]
+        if not isinstance(member_expr, MenaiASTSymbol):
+            raise MenaiEvalError(
+                message="Namespace member must be a symbol",
+                received=f"Member: {member_expr.type_name()}",
+                expected="Unquoted member name",
+                example="(shapes point-distance) not (shapes \"point-distance\")",
+                suggestion="Use an unquoted name to access a namespace member",
+                line=member_expr.line,
+                column=member_expr.column,
+                source=self.source
+            )
+
+        return expr
+
+    @staticmethod
+    def _is_import_expr(expr: MenaiASTNode) -> TypeGuard[MenaiASTList]:
+        """Return True if expr is an (import "name") expression."""
+        if not (isinstance(expr, MenaiASTList) and not expr.is_empty()):
+            return False
+
+        head = expr.first()
+        return isinstance(head, MenaiASTSymbol) and head.name == 'import'
+
+    def _reject_namespace_as_value(self, node: MenaiASTNode, context: str) -> None:
+        """
+        Reject a namespace name used anywhere other than a member-access head.
+
+        Namespaces are second-class: a namespace name may only be bound and
+        then accessed through member access.  Using it as an ordinary value
+        (passing it, storing it, returning it) is an error.
+        """
+        if isinstance(node, MenaiASTSymbol) and self._is_namespace(node.name):
+            raise MenaiEvalError(
+                message=f"Namespace '{node.name}' cannot be used as a value",
+                received=f"Namespace '{node.name}' used in {context}",
+                expected="Member access on the namespace: (namespace member)",
+                example=f"({node.name} some-member)",
+                suggestion="Namespaces are second-class; access a member instead of the namespace itself",
+                line=node.line,
+                column=node.column,
+                source=self.source
+            )
+
+    def _reject_import_outside_binding(self, expr: MenaiASTList) -> MenaiASTList:
+        """Reject (import ...) used anywhere other than a let/let*/letrec binding value."""
+        raise MenaiEvalError(
+            message="import is only valid as a binding value",
+            received=f"import used in: {expr.describe()}",
+            expected="(let ((name (import \"module-name\"))) body)",
+            example='(let ((shapes (import "shapes"))) (shapes point-distance))',
+            suggestion="Bind the import to a name and access its members",
+            line=expr.line,
+            column=expr.column,
+            source=self.source
+        )
+
+    def _analyze_export(self, expr: MenaiASTList) -> MenaiASTList:
+        """
+        Validate an export form: (export name ...).
+
+        Each argument must be a symbol naming a binding in the module.  The
+        form is only meaningful as the final form of a module body; the module
+        resolver enforces that placement.
+        """
+        for i, name_expr in enumerate(expr.elements[1:]):
+            if not isinstance(name_expr, MenaiASTSymbol):
+                raise MenaiEvalError(
+                    message=f"Export name {i+1} must be a symbol",
+                    received=f"Got {name_expr.type_name()}",
+                    expected="Unquoted binding name",
+                    example="(export point make-point)",
+                    suggestion="Export names must be unquoted symbols naming module bindings",
+                    line=name_expr.line,
+                    column=name_expr.column,
+                    source=self.source
+                )
 
         return expr
 

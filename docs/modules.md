@@ -7,33 +7,67 @@ cross-module optimizations.
 
 ## What is a module?
 
-A module is a `.menai` file containing a single expression that evaluates to a
-value — typically a dict of exported functions. The file name (without the `.menai`
-extension) is the module name.
+A module is a `.menai` file containing a single expression. The file name (without
+the `.menai` extension) is the module name.
+
+A module declares the bindings it makes available to importers with an `export`
+form, which must be the final form of the module body:
+
+```menai
+(export name1 name2 ...)
+```
+
+Each name must be a binding the module defines (by an enclosing `let`, `let*`, or
+`letrec`). A binding not named in the `export` form is private to the module.
 
 ### Example module: `math_utils.menai`
 
 ```menai
 (let ((square (lambda (x) (integer* x x)))
       (cube   (lambda (x) (integer* x (integer* x x)))))
-  (dict "square" square "cube" cube))
+  (export square cube))
 ```
 
 This module exports two functions: `square` and `cube`.
 
 ## Importing a module
 
-`(import "module-name")` loads a module and returns its value. Import is a
-compile-time operation.
+`(import "module-name")` loads a module as a **namespace**. Import is a
+compile-time operation, and it is only valid as the value of a `let`, `let*`, or
+`letrec` binding:
 
 ```menai
 (let ((math (import "math_utils")))
-  ((dict-get math "square") 5))
+  ((math square) 5))
 → 25
 ```
 
-The returned value is whatever the module's expression evaluates to — in this case,
-a dict. You access individual exports with `dict-get`.
+You access an exported binding with member access: `(namespace member)`. The
+member is resolved at compile time to the declaration that produced it, so the
+compiler keeps full static knowledge of it.
+
+## Namespaces are second-class
+
+A namespace is a compile-time construct, not an ordinary value. A namespace name
+may only be:
+
+- bound directly by a `let`/`let*`/`letrec` binding whose value is an `import`, and
+- used as the head of a member access, `(namespace member)`.
+
+Using a namespace name anywhere else — passing it to a function, storing it in a
+list, or returning it — is a compile-time error. This restriction is what lets the
+compiler resolve every member access statically.
+
+## Renaming on import
+
+A module exports each binding under its own name. To use a different local name,
+bind the member to a local name in the importer:
+
+```menai
+(let ((shapes (import "shapes")))
+  (let ((Point (shapes point)))
+    (Point 1 2)))
+```
 
 ## Module search path
 
@@ -58,8 +92,7 @@ This searches for `lib/helpers.menai` in each directory on the module search pat
 
 Modules are compiled once and cached. If the same module is imported multiple times
 (in the same program or transitively by different modules), the cached result is
-used. This means module-level side effects — if there were any — would only execute
-once. Since Menai is pure, this is purely a performance consideration.
+used. Since Menai is pure, this is purely a performance consideration.
 
 ## Circular imports
 
@@ -73,35 +106,32 @@ Modules can import other modules. If module A imports module B, and module B
 imports module C, then module A transitively depends on module C. All transitive
 dependencies are resolved and compiled before the importing module is optimized.
 
-## Private functions
+## Private bindings
 
-A module is just an expression that evaluates to a value (typically a dict).
-Functions that are not included in the exported dict are private to the module —
-they are in scope during the module's own evaluation but are not accessible to
-importers.
+A binding that is not named in the module's `export` form is private to the module —
+it is in scope during the module's own evaluation but is not accessible to importers.
 
 ```menai
 ; secret.menai
 (let ((secret-key 42)                          ; private
-      (validate (lambda (x) (integer=? x secret-key))))  ; private
-  (dict "validate" validate))                  ; only validate is exported
+      (validate (lambda (x) (integer=? x secret-key))))  ; exported
+  (export validate))
 ```
 
 The importer cannot access `secret-key`:
 
 ```menai
 (let ((secret (import "secret")))
-  (dict-get secret "validate"))   ; works — returns the validate function
-  ; (dict-get secret "secret-key") would return #none — it's not exported
+  (secret validate))   ; works — returns the validate function
+  ; (secret secret-key) would be a compile-time error — it is not exported
 ```
 
 ## Struct types in modules
 
-When a module exports a struct type, importers can use it for construction and type
-checks. Struct destructuring patterns are resolved against the struct types declared
-in the enclosing lexical scope, so an imported struct type is not available as a
-pattern head; read its fields with `struct-get` or `struct-ref` instead. Use `letrec`
-to define the struct type alongside its associated functions:
+When a module exports a struct type, importers can bring it into scope by binding it
+to a local name. Struct destructuring patterns are resolved against the struct types
+declared in the enclosing lexical scope, so the local binding makes the imported
+struct available as a constructor and pattern head:
 
 ```menai
 ; shapes.menai
@@ -110,21 +140,33 @@ to define the struct type alongside its associated functions:
          (point-distance (lambda (p1 p2)
                            (let ((dx (integer- (struct-get p1 'x) (struct-get p2 'x)))
                                  (dy (integer- (struct-get p1 'y) (struct-get p2 'y))))
-                             (integer+ (integer* dx dx) (integer* dy dy)))))
-  (dict "point" point "make-point" make-point "point-distance" point-distance))
+                             (integer+ (integer* dx dx) (integer* dy dy))))))
+  (export point make-point point-distance))
 ```
 
 Using it:
 
 ```menai
 (let ((shapes (import "shapes")))
-  (let ((point (dict-get shapes "point"))
-        (make-point (dict-get shapes "make-point"))
-        (distance (dict-get shapes "point-distance")))
+  (let ((Point (shapes point))
+        (make-point (shapes make-point))
+        (distance (shapes point-distance)))
     (let ((p1 (make-point 0 0))
           (p2 (make-point 3 4)))
       (distance p1 p2))))
 → 25
+```
+
+Because `Point` is bound to the imported struct type, it can also be used as a
+destructuring pattern head:
+
+```menai
+(let ((shapes (import "shapes")))
+  (let ((Point (shapes point))
+        (make-point (shapes make-point)))
+    (match (make-point 3 4)
+      ((Point x y) (integer+ x y)))))
+→ 7
 ```
 
 ## Standard library modules

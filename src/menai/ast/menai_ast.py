@@ -421,6 +421,48 @@ class MenaiASTStruct(MenaiASTNode):
 
 
 @dataclass(frozen=True)
+class MenaiASTNamespace(MenaiASTNode):
+    """
+    Represents a resolved module namespace in the AST.
+
+    Produced by the module resolver when it resolves an (import "name")
+    expression.  A namespace is a compile-time construct that carries the
+    module's bindings under fresh, collision-free names and an export map
+    pairing each export key with the renamed binding that produced it.
+
+    The module's bindings are alpha-renamed with a prefix derived from the
+    module name, so that importing two modules that both bind the same private
+    name does not collide.  ``bindings`` holds the renamed (name, value) pairs;
+    ``members`` maps each export key to its renamed binding name.
+
+    Because member access resolves to a specific binding, the compiler keeps
+    full static knowledge of it — a struct type stays a struct type, a function
+    keeps its identity, and result types flow across the boundary.
+
+    A namespace is second-class: it may only be bound directly by a
+    let/let*/letrec binding and accessed through member access on that bound
+    name.  The desugarer emits the module's renamed bindings once as a letrec
+    and resolves each member access to the corresponding renamed name.  A
+    namespace node therefore never reaches the IR builder.
+    """
+    bindings: tuple[tuple[str, MenaiASTNode], ...] = ()
+    members: tuple[tuple[str, str], ...] = ()
+
+    def to_runtime_value(self) -> MenaiValue:
+        raise AssertionError(
+            "A namespace has no runtime representation and must be resolved "
+            "by the desugarer before reaching code generation"
+        )
+
+    def type_name(self) -> str:
+        return "namespace"
+
+    def describe(self) -> str:
+        keys = " ".join(key for key, _ in self.members)
+        return f"(namespace {keys})"
+
+
+@dataclass(frozen=True)
 class MenaiASTConstant(MenaiASTNode):
     """
     An AST leaf wrapping an already-constructed runtime value.

@@ -344,19 +344,12 @@ class TestDictGetShadowedKey:
     A dict-get whose constant key shadows an earlier computed key.
 
     The dict is last-wins, so the later constant "k" determines the result,
-    not the earlier computed key.  The analysis may resolve the call to the
-    function paired with the constant key, because no later pair could also
-    equal "k".  The field read must produce the value from the second
-    function's struct.
+    not the earlier computed key.  The field read produces the value from the
+    second function's struct.
     """
 
     def test_result_is_from_last_pair(self, menai):
         assert menai.evaluate_and_format(SHADOWED_DICT_SRC) == "40"
-
-    def test_field_access_resolved_to_last_pair_index(self):
-        cfg = _build_cfg(SHADOWED_DICT_SRC)
-        assert 'struct-ref' in _ops(cfg)
-        assert 'struct-get' not in _ops(cfg)
 
 
 def _guard_count(cfg) -> int:

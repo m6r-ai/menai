@@ -24,13 +24,13 @@
 
 (letrec
   ((tables (import "deflate_tables"))
-   (length-base (dict-get tables "length-base"))
-   (length-extra (dict-get tables "length-extra"))
-   (distance-base (dict-get tables "distance-base"))
-   (distance-extra (dict-get tables "distance-extra"))
-   (code-length-order (dict-get tables "code-length-order"))
-   (fixed-lit-lengths (dict-get tables "fixed-lit-lengths"))
-   (fixed-dist-lengths (dict-get tables "fixed-dist-lengths"))
+   (length-base (tables length-base))
+   (length-extra (tables length-extra))
+   (distance-base (tables distance-base))
+   (distance-extra (tables distance-extra))
+   (code-length-order (tables code-length-order))
+   (fixed-lit-lengths (tables fixed-lit-lengths))
+   (fixed-dist-lengths (tables fixed-dist-lengths))
 
    (make-writer
     (lambda ()
@@ -647,4 +647,4 @@
                 (error "deflate: mode must be a string")))
           (error "deflate: deflate expects a bytes value")))))
 
-  (dict "deflate" deflate))
+  (export deflate))

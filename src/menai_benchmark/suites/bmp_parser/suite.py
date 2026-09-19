@@ -22,7 +22,7 @@ _FIXTURE_NAMES = [
 
 _ITERATIONS = 5
 
-_EXPR = '(let ((bmp (import "bmp_parser"))) ((dict-get bmp "parse") (dict-get inputs "input-data")))'
+_EXPR = '(let ((bmp (import "bmp_parser"))) ((bmp parse) (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):

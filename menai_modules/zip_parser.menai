@@ -35,7 +35,8 @@
 ; Filenames are decoded as UTF-8.
 
 (letrec
-  ((signature-eocd (string-hex->bytes "504b0506"))
+  ((inflate-lib (import "inflate"))
+   (signature-eocd (string-hex->bytes "504b0506"))
    (signature-central (string-hex->bytes "504b0102"))
    (signature-local (string-hex->bytes "504b0304"))
 
@@ -176,7 +177,7 @@
                                          (dict-get header "central-offset")
                                          (dict-get header "entry-count")))))
                 (if want-content
-                    (let ((inflate (dict-get (import "inflate") "inflate")))
+                    (let ((inflate (inflate-lib inflate)))
                       (build-result
                         (map-list (lambda (e)
                                     (dict-set e "content"
@@ -198,4 +199,4 @@
     (lambda (b)
       (parse-impl b #t))))
 
-  (dict "parse" parse "extract" extract))
+  (export parse extract))

@@ -419,23 +419,25 @@ Syntax: (operator arg1 arg2 ...)
 
 ## Module system
 
-- (import "module-name") → load and return a module (compile-time operation)
-- Modules are just .menai files that return a value (typically a dict of functions)
-- Modules are cached after first load for performance
-- Circular imports are detected and prevented with clear error messages
+- (import "module-name") → load a module as a namespace (compile-time operation)
+- A module is a .menai file whose body ends with (export name1 name2 ...), naming the bindings it exports
+- import is only valid as the value of a let/let*/letrec binding; bind it to a name and access its members
+- Member access: (namespace member) → the value of that export, resolved at compile time
+- Namespaces are second-class: a namespace name may only be bound and then accessed by member; it cannot be passed, stored, or returned as a value
 - Example module (math_utils.menai):
   ```menai
   (let ((square (lambda (x) (integer* x x)))
         (cube (lambda (x) (integer* x (integer* x x)))))
-    (dict "square" square "cube" cube))
+    (export square cube))
   ```
 - Using a module:
   ```menai
   (let ((math (import "math_utils")))
-    ((dict-get math "square") 5))  → 25
+    ((math square) 5))  → 25
   ```
+- Renaming: bind a member to a local name, e.g. (let ((Point (shapes point))) ...)
 - Modules can import other modules (transitive dependencies)
-- Private functions: functions not in the exported dict are private to the module
+- Private functions: bindings not named in the export form are private to the module
 - Module names can include subdirectories: (e.g. import "lib/helpers")
 - Available modules can be found in the module search path directories
 

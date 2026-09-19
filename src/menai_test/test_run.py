@@ -170,22 +170,14 @@ def _load_test_module(menai: Menai, module_name: str) -> list[NodeTree]:
         MenaiError: If the module fails to evaluate.
         ValueError: If the module structure is invalid.
     """
-    result = menai.evaluate_raw(f'(import "{module_name}")')
+    result = menai.evaluate_raw(f'(let ((m (import "{module_name}"))) (m tests))')
 
-    if not isinstance(result, MenaiDict):
-        raise ValueError(f"Test module must export a dict, got: {result.type_name()}")
-
-    tests_entry = result.lookup.get(MenaiDict.to_hashable_key(MenaiString("tests")))
-    tests_val = tests_entry[1] if tests_entry is not None else None
-    if tests_val is None:
-        raise ValueError('Test module dict must have a "tests" key')
-
-    if not isinstance(tests_val, MenaiList):
+    if not isinstance(result, MenaiList):
         raise ValueError(
-            f'"tests" value must be a list of nodes, got: {tests_val.type_name()}'
+            f"Test module must export a 'tests' list of nodes, got: {result.type_name()}"
         )
 
-    return _parse_node_list(tests_val, [])
+    return _parse_node_list(result, [])
 
 
 def _menai_path_literal(path: list[str]) -> str:
@@ -215,8 +207,9 @@ def _run_leaf(
     path_literal = _menai_path_literal(path)
     expression = (
         f'(let ((t (import "menai_test")))'
-        f'  (let ((thunk ((dict-get t "test-find") (import "{module_name}") {path_literal})))'
-        f'    (thunk)))'
+        f'    (let ((m (import "{module_name}")))'
+        f'      (let ((thunk ((t test-find) (m tests) {path_literal})))'
+        f'        (thunk))))'
     )
 
     menai = _make_menai(test_file_dir)

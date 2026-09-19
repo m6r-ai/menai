@@ -18,7 +18,8 @@
 ; Preset dictionaries (FDICT set) are not supported and raise an error.
 
 (letrec
-  ((adler32
+  ((inflate-lib (import "inflate"))
+   (adler32
     (lambda (b)
       (let ((modulus 65521))
         (letrec ((loop (lambda (i a bb)
@@ -50,7 +51,7 @@
           (if (integer<? (bytes-length b) 6)
               (error "Not a zlib stream: too short")
               (if (check-header b)
-                  (let ((inflate (dict-get (import "inflate") "inflate")))
+                  (let ((inflate (inflate-lib inflate)))
                     (let ((data (inflate (bytes-slice b 2 (integer- (bytes-length b) 4)))))
                       (let ((expected (bytes-read-u32-be b (integer- (bytes-length b) 4)))
                             (actual (adler32 data)))
@@ -64,4 +65,4 @@
                   (error "Malformed zlib stream: header check failed")))
           (error "zlib_parser: decompress expects a bytes value")))))
 
-  (dict "decompress" decompress))
+  (export decompress))

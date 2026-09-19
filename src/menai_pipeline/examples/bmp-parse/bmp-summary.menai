@@ -20,9 +20,9 @@
                (lambda (pixels)
                  (list->string (map-list row->string (vector->list pixels)) "\n"))))
              (let* ((content (dict-get inputs "content"))
-                    (parsed  ((dict-get bmp-parser "parse") content))
-                    (header  (dict-get parsed "header"))
-                    (meta    (dict-get parsed "meta")))
+                    (parsed ((bmp-parser parse) content))
+                    (header (dict-get parsed "header"))
+                    (meta (dict-get parsed "meta")))
                (dict
                  "result"
                  (string-concat
@@ -32,4 +32,4 @@
                    " (padding " (integer->string (dict-get meta "row-padding"))
                    ", bottom-up " (if (dict-get meta "bottom-up") "#t" "#f") ")\n"
                    (grid->string (dict-get parsed "pixels")))))))))
-    (dict "run" run)))
+    (export run)))

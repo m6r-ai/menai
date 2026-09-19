@@ -1,6 +1,6 @@
 (let ((sudoku (import "sudoku-solver")))
-  (let ((solve-fn (dict-get sudoku "solve"))
-        (display-board-fn (dict-get sudoku "display-board")))
+  (let ((solve-fn (sudoku solve))
+        (display-board-fn (sudoku display-board)))
     (let ((puzzle (list
             (list 5 3 0 0 7 0 0 0 0)
             (list 6 0 0 1 9 5 0 0 0)

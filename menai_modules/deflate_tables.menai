@@ -41,11 +41,5 @@
    (fixed-dist-lengths
     (map-list (lambda (i) 5) (range 0 30))))
 
-  (dict
-    "length-base" length-base
-    "length-extra" length-extra
-    "distance-base" distance-base
-    "distance-extra" distance-extra
-    "code-length-order" code-length-order
-    "fixed-lit-lengths" fixed-lit-lengths
-    "fixed-dist-lengths" fixed-dist-lengths))
+  (export length-base length-extra distance-base distance-extra
+          code-length-order fixed-lit-lengths fixed-dist-lengths))

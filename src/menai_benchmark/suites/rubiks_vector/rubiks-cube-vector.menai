@@ -353,14 +353,5 @@
      (lambda (u d f b l r)
        (cube-repr u d f b l r))))
 
-  (dict
-    "solved-cube"     solved-cube
-    "apply-move"      apply-move
-    "apply-moves"     apply-moves
-    "cube-solved?"    cube-solved?
-    "heuristic"       heuristic
-    "ida-star"        ida-star
-    "print-cube"      print-cube
-    "format-solution" format-solution
-    "make-cube"       make-cube
-    "all-moves"       all-moves))
+  (export solved-cube apply-move apply-moves cube-solved? heuristic
+          ida-star print-cube format-solution make-cube all-moves))

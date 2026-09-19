@@ -142,7 +142,7 @@ Using it:
 
 ```menai
 (let ((json (import "json_parser")))
-  (let ((parse (dict-get json "parse")))
+  (let ((parse (json parse)))
     (parse "{\"name\": \"Alice\", \"scores\": [95, 87, 92]}")))
 → {("name" "Alice") ("scores" (95 87 92))}
 ```
@@ -152,8 +152,8 @@ JSON. Each stack frame describes what to do when a sub-value is returned. This i
 good example of how to handle iterative parsing in a pure functional language.
 
 The parser is also a good example of module structure: it uses `letrec` to define
-mutually recursive helper functions, exports a single `parse` function in a dict,
-and keeps all helpers private.
+mutually recursive helper functions, exports a single `parse` function with an
+`export` form, and keeps all helpers private.
 
 ## Writing a test module
 
@@ -162,11 +162,15 @@ Here is the structure of a test module:
 
 ```menai
 (let ((t (import "menai_test")))
-  (let ((assert-equal (dict-get t "assert-equal")))
-    (dict "tests" (list
-      (list "addition" (lambda () (assert-equal (integer+ 1 2) 3)))
-      (list "concatenation" (lambda () (assert-equal (string-concat "a" "b") "ab")))))))
+  (let ((assert-equal (t assert-equal)))
+    (let ((tests (list
+                   (list "addition" (lambda () (assert-equal (integer+ 1 2) 3)))
+                   (list "concatenation" (lambda () (assert-equal (string-concat "a" "b") "ab"))))))
+      (export tests))))
 ```
+
+The test module exports a `tests` binding whose value is the list of `(name function)`
+pairs. The `menai-test` runner imports the module and reads its `tests` member.
 
 Each test is a `(name function)` pair. The function is called with no arguments;
 `assert-equal` raises an error if the expected and actual values differ.

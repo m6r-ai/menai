@@ -18,7 +18,7 @@ def _hex_of(menai: Menai, text: str, mode: str) -> str:
     """Return the hex of deflate(text, mode) for the given mode."""
     expr = (
         '(let ((d (import "deflate")))'
-        '  (let ((deflate (dict-get d "deflate")))'
+        '  (let ((deflate (d deflate)))'
         f'    (bytes->string-hex (deflate (string->bytes "{text}") "{mode}"))))'
     )
     return menai.evaluate_raw(expr).value
@@ -28,7 +28,7 @@ def _bytes_of(menai: Menai, hex_str: str, mode: str) -> str:
     """Return the hex of deflate(list->bytes(0..255), mode)."""
     expr = (
         '(let ((d (import "deflate")))'
-        '  (let ((deflate (dict-get d "deflate")))'
+        '  (let ((deflate (d deflate)))'
         f'    (bytes->string-hex (deflate (string-hex->bytes "{hex_str}") "{mode}"))))'
     )
     return menai.evaluate_raw(expr).value

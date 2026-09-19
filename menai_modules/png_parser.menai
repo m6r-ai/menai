@@ -29,7 +29,8 @@
 ; supported for palette images only.  Anything else raises a runtime error.
 
 (letrec
-  ((signature (string-hex->bytes "89504e470d0a1a0a"))
+  ((zlib-lib (import "zlib_parser"))
+   (signature (string-hex->bytes "89504e470d0a1a0a"))
 
    ; Read one chunk at `pos`.  Returns (list <type-string> <data-bytes> <next-pos>).
    (read-chunk
@@ -274,7 +275,7 @@
                                     (if (and (integer=? colour-type 3) (none? palette))
                                         (error "Malformed PNG: palette image is missing its PLTE chunk")
                                         (let ((channels (channels-for colour-type)))
-                                          (let ((inflate (dict-get (import "zlib_parser") "decompress")))
+                                          (let ((inflate (zlib-lib decompress)))
                                             (let ((raw (inflate (dict-get chunks "idat"))))
                                               (let ((rows (unfilter-all raw width height channels)))
                                                 (dict
@@ -290,4 +291,4 @@
                                                            "channels" (output-channels colour-type transparency))))))))))))))))
           (error "png_parser: parse expects a bytes value")))))
 
-  (dict "parse" parse))
+  (export parse))

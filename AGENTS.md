@@ -252,11 +252,27 @@ binding is hoisted so that sibling binding values and the body can use it as a
 constructor or pattern head. Ordinary `let` bindings are not hoisted.
 
 Consequence: a struct type exported from a module and rebound by the importer
-(e.g. fetched from the module's export dict) is *not* recognised as a struct by
-name, because the declaration is not in the importer's lexical scope. Imported
-struct instances are read with `struct-get`/`struct-ref` rather than a
-destructuring pattern. Struct patterns require the type to be declared
-lexically at the pattern site.
+(e.g. bound from a namespace member) *is* recognised as a struct by name, because
+binding it to a local name puts the declaration in the importer's lexical scope.
+An imported struct is used as a constructor and pattern head exactly like a locally
+declared one; the importer binds the member to a local name first (see ADR-0023).
+
+### Modules export named bindings; namespaces are second-class
+
+A module's body ends with an `(export name ...)` form naming the bindings it
+exports. `(import "name")` loads a module as a namespace, and `(namespace member)`
+resolves at compile time to the declaration that produced the member.
+
+A namespace is second-class: it may only be bound directly by a `let`/`let*`/`letrec`
+binding and used as a member-access head. It cannot be passed, stored, or returned.
+This restriction is what guarantees every member access is statically resolvable.
+
+The module resolver alpha-renames a module's bindings with a per-import prefix so
+that importing two modules that share a private name does not collide. The renamer
+must not rename a namespace member name (it is a key, not a variable reference) nor
+a struct pattern head's member name — see `_ModuleRenamer`.
+
+See [ADR-0023](docs/adr/0023-second-class-module-namespaces.md).
 
 ### The C VM has no process-global mutable state
 

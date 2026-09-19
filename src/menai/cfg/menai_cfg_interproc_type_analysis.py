@@ -94,7 +94,7 @@ from menai.cfg.menai_cfg import (
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGWholeProgramPass, collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, TypeFact, BOTTOM, fact_for_value, join
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
-from menai.menai_value import MenaiInteger, MenaiString, MenaiStructType, MenaiSymbol
+from menai.menai_value import MenaiInteger, MenaiStructType, MenaiSymbol
 
 # Builtins whose result is a struct of the same type as their first argument.
 _STRUCT_PRESERVING_OPS = {'struct-set', 'struct-set-ref'}
@@ -235,14 +235,10 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Determine which function each SSA value denotes, where it can be
         resolved.
 
-        Four sources are followed:
+        Three sources are followed:
           - a make_closure result denotes its function;
           - a phi whose incoming values all denote the same function denotes
             that function;
-          - a dict-get of a constant key from a dict whose matching value
-            denotes a function denotes that function.  This is how a module's
-            exported functions are reached: a module is a dict of functions
-            and callers fetch them with dict-get;
           - a free variable denotes whatever function the corresponding
             capture denotes in the parent function.  This is how a function
             reaches a letrec sibling: the sibling is captured, not created
@@ -250,7 +246,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         """
         func = info.func
         callee_of_value = info.callee_of_value
-        value_defs = _value_defs(func)
 
         for block in func.blocks:
             for instr in block.instrs:
@@ -273,7 +268,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                     if not isinstance(instr, _VALUE_INSTR_TYPES):
                         continue
 
-                    resolved = self._instr_callee(instr, callee_of_value, value_defs)
+                    resolved = self._instr_callee(instr, callee_of_value)
                     if resolved is not None and callee_of_value.get(instr.result.id) is not resolved:
                         callee_of_value[instr.result.id] = resolved
                         changed = True
@@ -282,56 +277,12 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self,
         instr: object,
         callee_of_value: dict[int, MenaiCFGFunction],
-        value_defs: dict[int, object],
     ) -> MenaiCFGFunction | None:
         """Resolve the function an instruction's result denotes, if any."""
         if isinstance(instr, MenaiCFGPhiInstr):
             return self._phi_callee(instr, callee_of_value)
 
-        if isinstance(instr, MenaiCFGBuiltinInstr) and instr.op == 'dict-get':
-            return self._dict_get_callee(instr, callee_of_value, value_defs)
-
         return None
-
-    @staticmethod
-    def _dict_get_callee(
-        instr: MenaiCFGBuiltinInstr,
-        callee_of_value: dict[int, MenaiCFGFunction],
-        value_defs: dict[int, object],
-    ) -> MenaiCFGFunction | None:
-        """
-        Resolve (dict-get <dict> <key>) where the dict is a make_dict with a
-        constant string key whose value denotes a function.
-
-        The dict is last-wins for duplicate keys, so the resolved pair must be
-        the last pair whose key could equal the lookup key at runtime.  Every
-        following pair must therefore have a constant string key that differs
-        from the lookup key; if any following key is not a constant string it
-        could equal the lookup key at runtime, and the result is not resolved.
-        """
-        if len(instr.args) < 2:
-            return None
-
-        dict_instr = value_defs.get(instr.args[0].id)
-        if not isinstance(dict_instr, MenaiCFGMakeDictInstr):
-            return None
-
-        key_name = _const_string(value_defs.get(instr.args[1].id))
-        if key_name is None:
-            return None
-
-        resolved = None
-        for key_val, entry_val in dict_instr.pairs:
-            pair_key = _const_string(value_defs.get(key_val.id))
-            if pair_key is None:
-                # A non-constant key could equal the lookup key at runtime and,
-                # being later, would override any match found so far.
-                resolved = None
-
-            elif pair_key == key_name:
-                resolved = callee_of_value.get(entry_val.id)
-
-        return resolved
 
     @staticmethod
     def _phi_callee(
@@ -886,14 +837,6 @@ def _free_var_callee(
     for func in parent_callees.values():
         if func.binding_name == instr.var_name:
             return func
-
-    return None
-
-
-def _const_string(instr: object) -> str | None:
-    """Return the string value of a constant-string instruction, if it is one."""
-    if isinstance(instr, MenaiCFGConstInstr) and isinstance(instr.value, MenaiString):
-        return instr.value.value
 
     return None
 

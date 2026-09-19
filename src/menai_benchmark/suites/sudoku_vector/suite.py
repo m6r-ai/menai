@@ -52,7 +52,7 @@ class Suite(BenchmarkSuite):
             board_expr = _board_to_menai(flat)
             expr = (
                 '(let ((sudoku (import "sudoku-vector-solver")))'
-                ' (let ((solve-fn (dict-get sudoku "solve")))'
+                ' (let ((solve-fn (sudoku solve)))'
                 f' (solve-fn {board_expr})))'
             )
             return menai.compile(expr)
