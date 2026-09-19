@@ -17,7 +17,6 @@ An SSA value is loop-invariant if it is defined by an instruction whose
 operands are all loop-invariant.  The base cases are:
 
   - Constants (MenaiCFGConstInstr) — always invariant.
-  - Globals (MenaiCFGGlobalInstr) — always invariant (globals don't change).
   - Free vars (MenaiCFGFreeVarInstr) — always invariant (captures don't change).
   - Params (MenaiCFGParamInstr) — invariant when the param is not reassigned
     by the self-loop (its index is beyond the length of SelfLoopTerm.args).
@@ -87,7 +86,6 @@ from menai.cfg.menai_cfg import (
     MenaiCFGConstInstr,
     MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
-    MenaiCFGGlobalInstr,
     MenaiCFGGuardInstr,
     MenaiCFGInstr,
     MenaiCFGJumpTerm,
@@ -128,7 +126,6 @@ from menai.menai_value import (
 # mutation (closure initialisation), stored in patch_instrs not instrs.
 _HOISTABLE_TYPES = (
     MenaiCFGConstInstr,
-    MenaiCFGGlobalInstr,
     MenaiCFGBuiltinInstr,
     MenaiCFGCallInstr,
     MenaiCFGApplyInstr,
@@ -288,9 +285,6 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         for block in func.blocks:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGConstInstr):
-                    invariant.add(instr.result.id)
-
-                elif isinstance(instr, MenaiCFGGlobalInstr):
                     invariant.add(instr.result.id)
 
                 elif isinstance(instr, MenaiCFGFreeVarInstr):

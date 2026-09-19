@@ -14,7 +14,6 @@ from menai.cfg.menai_cfg import (
     MenaiCFGBuiltinInstr,
     MenaiCFGConstInstr,
     MenaiCFGFunction,
-    MenaiCFGGlobalInstr,
     MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
     MenaiCFGPatchClosureInstr,
@@ -340,7 +339,7 @@ class TestFixedPoint:
         then_b = block(1, label="then")
         else_b = block(
             2,
-            MenaiCFGGlobalInstr(result=v_f, name="f"),
+            MenaiCFGConstInstr(result=v_f, value=MenaiInteger(0)),
             terminator=MenaiCFGTailCallTerm(func=v_f, args=[]),
             label="else",
         )

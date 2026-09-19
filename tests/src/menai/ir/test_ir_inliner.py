@@ -59,10 +59,10 @@ def _inline(ir):
 
 
 def _count_calls_to(ir, name: str) -> int:
-    """Count direct calls to a named local variable in the IR tree."""
+    """Count direct calls to a named variable in the IR tree."""
     if isinstance(ir, MenaiIRCall):
         func = ir.func_plan
-        own = 1 if (isinstance(func, MenaiIRVariable) and func.name == name and func.var_type == 'local') else 0
+        own = 1 if (isinstance(func, MenaiIRVariable) and func.name == name) else 0
         return own + sum(_count_calls_to(a, name) for a in ir.arg_plans) + _count_calls_to(ir.func_plan, name)
 
     if isinstance(ir, MenaiIRReturn):

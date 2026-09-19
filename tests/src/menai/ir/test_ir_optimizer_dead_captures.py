@@ -45,16 +45,17 @@ def _bool_const(b: bool) -> MenaiIRConstant:
 
 
 def _local(name: str) -> MenaiIRVariable:
-    return MenaiIRVariable(name=name, var_type='local')
+    return MenaiIRVariable(name=name)
 
 
-def _global(name: str) -> MenaiIRVariable:
-    return MenaiIRVariable(name=name, var_type='global')
+def _builtin(name: str) -> MenaiIRVariable:
+    """A builtin function reference used as a call's func_plan."""
+    return MenaiIRVariable(name=name)
 
 
 def _builtin_call(name: str, args: list, tail: bool = False) -> MenaiIRCall:
     return MenaiIRCall(
-        func_plan=_global('$' + name),
+        func_plan=_builtin('$' + name),
         arg_plans=args,
         is_tail_call=tail,
         is_builtin=True,

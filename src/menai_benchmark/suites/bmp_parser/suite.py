@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from menai import Menai, MenaiBytes, MenaiValue
+from menai import Menai, MenaiBytes, MenaiDict, MenaiString
 
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
 
@@ -22,7 +22,7 @@ _FIXTURE_NAMES = [
 
 _ITERATIONS = 5
 
-_EXPR = '(let ((bmp (import "bmp_parser"))) ((dict-get bmp "parse") input-data))'
+_EXPR = '(let ((bmp (import "bmp_parser"))) ((dict-get bmp "parse") (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):
@@ -45,14 +45,12 @@ class Suite(BenchmarkSuite):
     def implementation(self, menai: Menai) -> Implementation:
         """Return the Menai BMP parser implementation."""
         def prepare_menai(fixture_path: Path) -> Any:
-            """Compile the parse expression and bind the fixture bytes (untimed)."""
-            code = menai.compile(_EXPR)
-            bindings: dict[str, MenaiValue] = {"input-data": MenaiBytes(fixture_path.read_bytes())}
-            return (code, bindings)
+            """Compile the parse expression with the fixture bytes bound (untimed)."""
+            inputs = MenaiDict(((MenaiString("input-data"), MenaiBytes(fixture_path.read_bytes())),))
+            return menai.compile(_EXPR, inject=("inputs", inputs))
 
-        def run_menai(prepared: tuple[Any, dict[str, MenaiValue]]) -> Any:
-            """Execute the pre-compiled bytecode with the fixture binding (timed)."""
-            code, bindings = prepared
-            return menai.vm.execute(code, bindings)
+        def run_menai(code: Any) -> Any:
+            """Execute the pre-compiled bytecode (timed)."""
+            return menai.vm.execute(code)
 
         return Implementation(run=run_menai, prepare=prepare_menai)

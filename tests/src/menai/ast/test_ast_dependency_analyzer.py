@@ -165,7 +165,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
                    (y (integer+ x 1)))
               y)
             """)
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         # Circular dependency (if detected)
         try:

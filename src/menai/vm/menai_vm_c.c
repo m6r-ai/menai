@@ -497,9 +497,6 @@ parse_complex_string(const char *s, double *out_real, double *out_imag)
 typedef struct {
     MenaiCodeObject *code_obj;       /* retained — owns all frame metadata */
     MenaiValue **constants_items;    /* borrowed from code_obj->constants */
-    const char **names_items;        /* borrowed from code_obj->names */
-    hash_t *name_hashes;             /* borrowed from code_obj->name_hashes */
-    ssize_t nnames;                  /* borrowed from code_obj->nnames */
     MenaiCodeObject **children;      /* borrowed from code_obj->children */
     ssize_t nchildren;               /* borrowed from code_obj->nchildren */
     uint64_t *instrs;                /* borrowed from code_obj->instrs */
@@ -631,9 +628,6 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
     menai_code_object_retain(co);
     new_frame->code_obj = co;
     new_frame->constants_items = co->constants;
-    new_frame->names_items = co->names;
-    new_frame->name_hashes = co->name_hashes;
-    new_frame->nnames = co->nnames;
     new_frame->children = co->children;
     new_frame->nchildren = co->nchildren;
     new_frame->instrs = co->instrs;
@@ -651,7 +645,7 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
  * Returns the result value (new reference) or NULL on error.
  */
 static MenaiValue *
-execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
+execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 {
     int vm_err = MENAI_OK;
     MenaiValue *vm_user_value = NULL;
@@ -754,31 +748,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_
 
         case OP_LOAD_CONST: {
             MenaiValue *val = frame->constants_items[src0];
-            menai_value_retain(val);
-            menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = val;
-            break;
-        }
-
-        case OP_LOAD_NAME: {
-            const char *name_str = frame->names_items[src0];
-            hash_t name_hash = frame->name_hashes[src0];
-            MenaiValue *val = NULL;
-            if (extra_globals) {
-                val = globals_lookup(extra_globals, name_str, name_hash);
-            }
-
-            if (val == NULL) {
-                MenaiString *name = alloc_menai_string_from_utf8(vs, name_str, (ssize_t)strlen(name_str));
-                if (name == NULL) {
-                    vm_err = MENAI_ERR_NOMEM;
-                    goto error;
-                }
-                vm_user_value = (MenaiValue *)name;
-                vm_err = MENAI_ERR_UNDEFINED_VARIABLE;
-                goto error;
-            }
-
             menai_value_retain(val);
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = val;
@@ -7556,12 +7525,11 @@ menai_vm_cancel(MenaiVMState *vs)
 /*
  * menai_vm_execute_native — native VM entry point.
  *
- * Executes code using an optional extra globals table (or NULL) for the
- * bindings passed to execute().  Returns a new reference to the result, or
- * NULL on error.  On error, *out_error is filled in.
+ * Executes code.  Returns a new reference to the result, or NULL on error.
+ * On error, vs->error is filled in.
  */
 MenaiValue *
-menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals)
+menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code)
 {
     vs->error.code = MENAI_OK;
     vs->error.opcode = 0;
@@ -7595,7 +7563,7 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTa
     vs->regs = regs;
     vs->num_regs = num_regs;
 
-    MenaiValue *result = execute_loop(vs, code, extra_globals);
+    MenaiValue *result = execute_loop(vs, code);
 
     regs = vs->regs;
     num_regs = vs->num_regs;

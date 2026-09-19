@@ -127,10 +127,6 @@ def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
     elif opcode == Opcode.LOAD_EMPTY_LIST:
         annotation = "  ; []"
 
-    elif opcode == Opcode.LOAD_NAME:
-        if src0 < len(code.names):
-            annotation = f"  ; '{code.names[src0]}'"
-
     elif opcode == Opcode.MAKE_CLOSURE:
         if instr.src0 < len(code.code_objects):
             nested = code.code_objects[instr.src0]
@@ -249,16 +245,6 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
             const_str = format_constant(const)
             cid = f"k{i}"
             output.append(f"{indent}{_cyan(f'{cid:>6}: {const_str}', color)}")
-
-        output.append(_grey(f"{indent}{'-'*70}", color))
-
-    # Show names table
-    if code.names:
-        output.append(f"{indent}{_green('Names: ' + str(len(code.names)), color)}")
-        output.append(_grey(f"{indent}{'-'*70}", color))
-        for i, gname in enumerate(code.names):
-            nid = f"n{i}"
-            output.append(f"{indent}{_cyan(f'{nid:>6}: {gname}', color)}")
 
         output.append(_grey(f"{indent}{'-'*70}", color))
 

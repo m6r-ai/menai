@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_compiler import MenaiCompiler
 from menai.ast.menai_ast import MenaiASTNode
-from menai.menai_value import MenaiFunction, MenaiValue
+from menai.menai_value import MenaiDict, MenaiFunction, MenaiValue
 from menai.vm.menai_vm import MenaiVM
 from menai.menai_error import MenaiModuleNotFoundError, MenaiModuleError, MenaiCircularImportError
 
@@ -52,7 +52,11 @@ class Menai:
         self.compiler = MenaiCompiler(module_loader=self)
         self.vm = MenaiVM()
 
-    def compile(self, expression: str) -> CodeObject:
+    def compile(
+        self,
+        expression: str,
+        inject: tuple[str, MenaiValue] | None = None,
+    ) -> CodeObject:
         """
         Compile a Menai expression to bytecode without executing it.
 
@@ -62,11 +66,14 @@ class Menai:
 
         Args:
             expression: Menai expression string to compile
+            inject: Optional (binding name, value) pair.  When given, the
+                expression is wrapped in a single lexical binding of that name
+                holding the value.
 
         Returns:
             Compiled bytecode ready for execution
         """
-        return self.compiler.compile(expression)
+        return self.compiler.compile(expression, inject=inject)
 
     def execute_raw(self, code: CodeObject) -> 'MenaiValue':
         """
@@ -136,54 +143,62 @@ class Menai:
         result = self.evaluate_raw(expression)
         return result.describe()
 
-    def evaluate_raw_with_bindings(
+    def evaluate_raw_with_dict(
         self,
         expression: str,
-        bindings: dict[str, MenaiValue]
+        name: str,
+        value: MenaiDict
     ) -> MenaiValue:
         """
-        Evaluate a Menai expression with additional pre-bound name bindings.
+        Evaluate a Menai expression with a single dict bound to a chosen name.
 
-        The bindings are available to the expression alongside the prelude's
-        functions.  Bindings shadow prelude names on collision.
+        The dict is spliced into the program as one lexical binding, one layer
+        above the prelude and one layer below the expression, so the expression
+        reads it by name and unpacks it with dict-get::
+
+            (dict-get <name> "key")
+
+        The name is chosen by the caller.  It must not begin with '$' (reserved
+        for opcode-backed primitives) and must not be a prelude name.
 
         This is the primary engine entry point for the transform harness.  The
-        caller reads file content, constructs MenaiValue bindings (e.g.
-        MenaiString for 'input-text', MenaiList of MenaiString for
-        'input-lines'), then passes a Menai expression that transforms them.
+        caller reads file content, builds a MenaiDict of the values (e.g. a
+        MenaiString for "input-text", a MenaiList of MenaiString for
+        "input-lines"), then passes a Menai expression that transforms them.
 
         Args:
             expression: Menai source expression to compile and evaluate.
-            bindings: Extra name-to-value bindings available to the expression
-                      as top-level globals.
+            name: The binding name the expression reads the dict by.
+            value: The dict of inputs available to the expression.
 
         Returns:
             The raw MenaiValue result (caller inspects type and extracts value).
         """
-        code = self.compiler.compile(expression)
-        return self.vm.execute(code, bindings)
+        code = self.compile(expression, inject=(name, value))
+        return self.vm.execute(code)
 
-    def evaluate_and_format_with_bindings(
+    def evaluate_and_format_with_dict(
         self,
         expression: str,
-        bindings: dict[str, MenaiValue]
+        name: str,
+        value: MenaiDict
     ) -> str:
         """
-        Evaluate a Menai expression with pre-bound bindings, returning a formatted string.
+        Evaluate a Menai expression with a dict binding, returning a formatted string.
 
-        Equivalent to evaluate_raw_with_bindings but returns the Menai describe()
+        Equivalent to evaluate_raw_with_dict but returns the Menai describe()
         string representation of the result, matching the format returned by
         evaluate_and_format.
 
         Args:
             expression: Menai source expression to compile and evaluate.
-            bindings: Extra name-to-value bindings available to the expression
-                      as top-level globals.
+            name: The binding name the expression reads the dict by.
+            value: The dict of inputs available to the expression.
 
         Returns:
             String representation of the result using Menai describe() conventions.
         """
-        return self.evaluate_raw_with_bindings(expression, bindings).describe()
+        return self.evaluate_raw_with_dict(expression, name, value).describe()
 
     # Module System Implementation (MenaiASTModuleLoader interface)
 

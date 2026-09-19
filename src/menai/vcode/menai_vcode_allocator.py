@@ -64,7 +64,6 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeJumpIfTrue,
     MenaiVCodeLabel,
     MenaiVCodeLoadConst,
-    MenaiVCodeLoadName,
     MenaiVCodeMakeClosure,
     MenaiVCodeMove,
     MenaiVCodePatchClosure,
@@ -508,9 +507,6 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeLoadConst):
-        return [instr.dst.id], []
-
-    if isinstance(instr, MenaiVCodeLoadName):
         return [instr.dst.id], []
 
     if isinstance(instr, MenaiVCodeBuiltin):

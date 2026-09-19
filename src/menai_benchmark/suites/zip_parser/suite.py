@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from menai import Menai, MenaiBytes, MenaiValue
+from menai import Menai, MenaiBytes, MenaiDict, MenaiString
 
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
 
@@ -29,7 +29,7 @@ _OPERATIONS = ["parse", "extract"]
 
 def _expr(operation: str) -> str:
     """Return the Menai expression that runs the given operation on the bound fixture."""
-    return f'(let ((zip (import "zip_parser"))) ((dict-get zip "{operation}") input-data))'
+    return f'(let ((zip (import "zip_parser"))) ((dict-get zip "{operation}") (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):
@@ -53,15 +53,13 @@ class Suite(BenchmarkSuite):
     def implementation(self, menai: Menai) -> Implementation:
         """Return the Menai ZIP parser implementation."""
         def prepare_menai(case_input: tuple[str, str]) -> Any:
-            """Compile the operation expression and bind the fixture bytes (untimed)."""
+            """Compile the operation expression with the fixture bytes bound (untimed)."""
             name, operation = case_input
-            code = menai.compile(_expr(operation))
-            bindings: dict[str, MenaiValue] = {"input-data": MenaiBytes((_FIXTURES_DIR / name).read_bytes())}
-            return (code, bindings)
+            inputs = MenaiDict(((MenaiString("input-data"), MenaiBytes((_FIXTURES_DIR / name).read_bytes())),))
+            return menai.compile(_expr(operation), inject=("inputs", inputs))
 
-        def run_menai(prepared: tuple[Any, dict[str, MenaiValue]]) -> Any:
-            """Execute the pre-compiled bytecode with the fixture binding (timed)."""
-            code, bindings = prepared
-            return menai.vm.execute(code, bindings)
+        def run_menai(code: Any) -> Any:
+            """Execute the pre-compiled bytecode (timed)."""
+            return menai.vm.execute(code)
 
         return Implementation(run=run_menai, prepare=prepare_menai)

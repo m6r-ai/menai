@@ -732,19 +732,20 @@ class TestEndToEnd:
         return None
 
     SKIP_WS = r"""
-    (define skip-ws
-      (lambda (s pos)
-        (letrec ((loop (lambda (i)
-                         (if (integer>=? i (string-length s))
-                             i
-                             (let ((ch (string-ref s i)))
-                               (if (or (string=? ch " ")
-                                   (or (string=? ch "\t")
-                                   (or (string=? ch "\n")
-                                       (string=? ch "\r"))))
-                                   (loop (integer+ i 1))
-                                   i))))))
-          (loop pos))))
+    (let ((skip-ws
+           (lambda (s pos)
+             (letrec ((loop (lambda (i)
+                              (if (integer>=? i (string-length s))
+                                  i
+                                  (let ((ch (string-ref s i)))
+                                    (if (or (string=? ch " ")
+                                        (or (string=? ch "\t")
+                                        (or (string=? ch "\n")
+                                            (string=? ch "\r"))))
+                                        (loop (integer+ i 1))
+                                        i))))))
+               (loop pos)))))
+      skip-ws)
     """
 
     def test_skip_ws_const_true_blocks_bypass_join(self):
@@ -860,19 +861,20 @@ class TestEndToEnd:
 
         # A loop that advances while all four predicates hold — uses `and`.
         source = r"""
-        (define scan
-          (lambda (s pos)
-            (letrec ((loop (lambda (i)
-                             (if (integer>=? i (string-length s))
-                                 i
-                                 (let ((ch (string-ref s i)))
-                                   (if (and (string!=? ch " ")
-                                       (and (string!=? ch "\t")
-                                       (and (string!=? ch "\n")
-                                            (string!=? ch "\r"))))
-                                       (loop (integer+ i 1))
-                                       i))))))
-              (loop pos))))
+        (let ((scan
+               (lambda (s pos)
+                 (letrec ((loop (lambda (i)
+                                  (if (integer>=? i (string-length s))
+                                      i
+                                      (let ((ch (string-ref s i)))
+                                        (if (and (string!=? ch " ")
+                                            (and (string!=? ch "\t")
+                                            (and (string!=? ch "\n")
+                                                 (string!=? ch "\r"))))
+                                            (loop (integer+ i 1))
+                                            i))))))
+                   (loop pos)))))
+          scan)
         """
 
         cfg_without = self._compile_cfg(source, passes_without)
@@ -967,9 +969,10 @@ class TestEndToEnd:
         ]
 
         source = r"""
-        (define is-digit?
-          (lambda (ch)
-            (and (string>=? ch "0") (string<=? ch "9"))))
+        (let ((is-digit?
+               (lambda (ch)
+                 (and (string>=? ch "0") (string<=? ch "9")))))
+          is-digit?)
         """
         cfg = self._compile_cfg(source, passes_with)
 

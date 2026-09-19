@@ -82,13 +82,6 @@ class MenaiVCodeLoadConst:
 
 
 @dataclass
-class MenaiVCodeLoadName:
-    """dst = globals[name]"""
-    dst: MenaiVCodeReg
-    name: str
-
-
-@dataclass
 class MenaiVCodeBuiltin:
     """
     dst = <builtin_op>(args...)
@@ -288,7 +281,6 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     MenaiVCodeLabel
     | MenaiVCodeMove
     | MenaiVCodeLoadConst
-    | MenaiVCodeLoadName
     | MenaiVCodeBuiltin
     | MenaiVCodeCall
     | MenaiVCodeTailCall
@@ -381,9 +373,6 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
 
     if isinstance(instr, MenaiVCodeLoadConst):
         return f"{instr.dst} = LOAD_CONST {instr.value!r}"
-
-    if isinstance(instr, MenaiVCodeLoadName):
-        return f"{instr.dst} = LOAD_NAME {instr.name!r}"
 
     if isinstance(instr, MenaiVCodeBuiltin):
         return f"{instr.dst} = {instr.op} {_fmt_regs(instr.args)}"

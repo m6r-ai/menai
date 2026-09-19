@@ -55,7 +55,6 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeJumpIfTrue,
     MenaiVCodeLabel,
     MenaiVCodeLoadConst,
-    MenaiVCodeLoadName,
     MenaiVCodeMakeClosure,
     MenaiVCodeMakeDict,
     MenaiVCodeMakeList,
@@ -139,11 +138,9 @@ class _EmitContext:
     """Mutable state for emitting one MenaiVCodeFunction into a CodeObject."""
     instructions: 'array.array[int]' = field(default_factory=make_instructions_array)
     constants: list[MenaiValue] = field(default_factory=list)
-    names: list[str] = field(default_factory=list)
     code_objects: list[CodeObject] = field(default_factory=list)
     jump_tables: list[tuple[int, int, list[int]]] = field(default_factory=list)
     constant_map: dict[tuple, int] = field(default_factory=dict)
-    name_map: dict[str, int] = field(default_factory=dict)
     slot_map: SlotMap = field(default_factory=lambda: SlotMap(slots={}, slot_count=0))
     max_outgoing_args: int = 0
 
@@ -220,23 +217,6 @@ class _EmitContext:
         self.constant_map[key] = idx
         return idx
 
-    def add_name(self, name: str) -> int:
-        """Add a name to the name pool if not already present, and return its index."""
-        if name in self.name_map:
-            return self.name_map[name]
-
-        idx = len(self.names)
-        if idx > self._MAX_INDEX:
-            raise MenaiCodegenError(
-                f"Name pool overflow: cannot add name '{name}' at index {idx} "
-                f"(maximum is {self._MAX_INDEX}). "
-                f"Expression references too many distinct global names."
-            )
-
-        self.names.append(name)
-        self.name_map[name] = idx
-        return idx
-
     def add_code_object(self, code_obj: CodeObject) -> int:
         """Add a code object to the code object pool and return its index."""
         idx = len(self.code_objects)
@@ -309,7 +289,6 @@ class MenaiBytecodeBuilder:
         return CodeObject(
             instructions=ctx.instructions,
             constants=ctx.constants,
-            names=ctx.names,
             jump_tables=[
                 (t_min, t_default, array.array('Q', targets))
                 for t_min, t_default, targets in ctx.jump_tables
@@ -365,12 +344,6 @@ class MenaiBytecodeBuilder:
 
             if isinstance(instr, MenaiVCodeLoadConst):
                 ctx.emit_constant(instr.value, dest=ctx.slot_of(instr.dst))
-                i += 1
-                continue
-
-            if isinstance(instr, MenaiVCodeLoadName):
-                name_idx = ctx.add_name(instr.name)
-                ctx.emit(Opcode.LOAD_NAME, name_idx, dest=ctx.slot_of(instr.dst))
                 i += 1
                 continue
 
@@ -688,7 +661,6 @@ class MenaiBytecodeBuilder:
         return CodeObject(
             instructions=child_ctx.instructions,
             constants=child_ctx.constants,
-            names=child_ctx.names,
             jump_tables=[
                 (t_min, t_default, array.array('Q', targets))
                 for t_min, t_default, targets in child_ctx.jump_tables

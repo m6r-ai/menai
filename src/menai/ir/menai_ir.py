@@ -3,8 +3,8 @@ Compilation plan data structures for the Menai compiler.
 
 These IR nodes are produced by MenaiIRBuilder from a desugared AST and
 consumed by the CFG backend (MenaiCFGBuilder).  All variable references
-remain symbolic throughout — MenaiIRVariable carries only a name and
-var_type; slot allocation is handled by MenaiCFGBuilder.
+remain symbolic throughout — MenaiIRVariable carries only a name; slot
+allocation is handled by MenaiCFGBuilder.
 """
 
 from dataclasses import dataclass
@@ -22,7 +22,6 @@ class MenaiIRConstant:
 class MenaiIRVariable:
     """Plan for compiling a variable reference."""
     name: str
-    var_type: str       # 'local' or 'global'
 
 
 @dataclass

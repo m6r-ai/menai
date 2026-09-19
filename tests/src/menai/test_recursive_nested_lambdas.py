@@ -6,7 +6,7 @@ themselves from within nested lambdas (e.g., inside map/filter/fold).
 
 The bug was fixed by:
 1. Making closures store a reference to their parent environment
-2. Making LOAD_NAME traverse the environment chain to find recursive bindings
+2. Making variable lookup traverse the environment chain to find recursive bindings
 
 These tests ensure that recursive bindings are properly accessible from nested
 lambda contexts, which is essential for patterns like recursive graph traversal.
@@ -418,7 +418,7 @@ class TestLetrecLambdasInDataStructures:
     2. Making _compile_lambda check context when binding_name not provided
     3. Adding local_names dict to Frame to map variable names to local indices
     4. Making PATCH_CLOSURE_SELF register names in frame.local_names
-    5. Making LOAD_NAME check parent frame local_names before failing
+    5. Making variable lookup check parent frame local_names before failing
 
     These tests ensure that self-referential lambdas work correctly even when
     nested inside data structures, which is essential for patterns like creating

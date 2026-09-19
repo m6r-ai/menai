@@ -22,13 +22,6 @@ menai_code_object_final(MenaiVMState *vs, MenaiCodeObject *co)
 
     free(co->jump_tables);
 
-    for (ssize_t i = 0; i < co->nnames; i++) {
-        free((char *)co->names[i]);
-    }
-
-    free(co->names);
-    free(co->name_hashes);
-
     for (ssize_t i = 0; i < co->nparam_names; i++) {
         free(co->param_names[i]);
     }

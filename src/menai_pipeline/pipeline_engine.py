@@ -85,63 +85,52 @@ def _menai_value_to_python(value: MenaiValue) -> Any:
     )
 
 
-def _python_to_menai_literal(value: Any) -> str:
+def _python_to_menai_value(value: Any) -> MenaiValue:
     """
-    Convert a plain Python value to a Menai literal expression string.
+    Convert a plain Python value to a MenaiValue.
 
-    Strings are escaped for safe embedding in Menai source.  Numbers and
-    booleans are rendered directly.  Lists and dicts are rendered recursively.
+    Strings, numbers, booleans, bytes, lists, and dicts are converted
+    recursively.  The value is handed to the engine directly rather than being
+    rendered into source text.
 
     Args:
         value: Python value to convert
 
     Returns:
-        Menai source string representing the value
+        Equivalent MenaiValue
 
     Raises:
-        PipelineExecutionError: If the value type cannot be represented
+        PipelineExecutionError: If the value type cannot be converted
     """
     if value is None:
-        return "#none"
+        return MenaiNone()
 
     if isinstance(value, bool):
-        return "#t" if value else "#f"
+        return MenaiBoolean(value)
 
     if isinstance(value, int):
-        return str(value)
+        return MenaiInteger(value)
 
     if isinstance(value, float):
-        return repr(value)
+        return MenaiFloat(value)
 
     if isinstance(value, str):
-        escaped = (
-            value
-            .replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\t", "\\t")
-        )
-        return f'"{escaped}"'
+        return MenaiString(value)
 
     if isinstance(value, bytes):
-        return f'(string-hex->bytes "{value.hex()}")'
+        return MenaiBytes(value)
 
     if isinstance(value, list):
-        items = " ".join(_python_to_menai_literal(item) for item in value)
-        return f"(list {items})" if items else "(list)"
+        return MenaiList(tuple(_python_to_menai_value(item) for item in value))
 
     if isinstance(value, dict):
-        if not value:
-            return "(dict)"
-
-        pairs = " ".join(
-            f"{_python_to_menai_literal(k)} {_python_to_menai_literal(v)}"
+        return MenaiDict(tuple(
+            (_python_to_menai_value(k), _python_to_menai_value(v))
             for k, v in value.items()
-        )
-        return f"(dict {pairs})"
+        ))
 
     raise PipelineExecutionError(
-        f"Cannot convert Python value of type '{type(value).__name__}' to a Menai literal"
+        f"Cannot convert Python value of type '{type(value).__name__}' to a Menai value"
     )
 
 
@@ -164,31 +153,25 @@ def _format_step_value(value: str | bytes) -> str:
     return value
 
 
-def _build_menai_expression(step: MenaiStep, step_outputs: dict[str, str | bytes]) -> str:
+def _resolve_step_inputs(step: MenaiStep, step_outputs: dict[str, str | bytes]) -> MenaiDict:
     """
-    Build the complete Menai expression for a step by wrapping the step's
-    expression body in a let binding that injects all named inputs.
+    Build the inputs dict for a step from named upstream step outputs.
 
     For tool step sources, the output is stored directly under the step ID.
     For Menai step sources, the output is stored as 'step_id.input_name',
     so we try both forms.
 
     Args:
-        step: The Menai step to build an expression for
+        step: The Menai step to resolve inputs for
         step_outputs: Map of step_id or step_id.key -> string output from prior steps
 
     Returns:
-        Complete Menai expression string ready for evaluation
+        MenaiDict mapping each input name to its value
 
     Raises:
         PipelineExecutionError: If a required input step output is missing
     """
-    expression = resolve_step_expression(step)
-
-    if not step.inputs:
-        return expression
-
-    bindings: list[str] = []
+    pairs: list[tuple[MenaiValue, MenaiValue]] = []
     for input_name, source_step_id in step.inputs.items():
         composite_key = f"{source_step_id}.{input_name}"
         if composite_key in step_outputs:
@@ -203,11 +186,9 @@ def _build_menai_expression(step: MenaiStep, step_outputs: dict[str, str | bytes
                 f"from step '{source_step_id}' which has not been executed"
             )
 
-        literal = _python_to_menai_literal(value)
-        bindings.append(f'"{input_name}" {literal}')
+        pairs.append((MenaiString(input_name), _python_to_menai_value(value)))
 
-    inputs_expr = f"(dict {' '.join(bindings)})"
-    return f"(let ((inputs {inputs_expr})) {expression})"
+    return MenaiDict(tuple(pairs))
 
 
 def _execute_menai_step(
@@ -233,10 +214,11 @@ def _execute_menai_step(
     Raises:
         PipelineExecutionError: If evaluation fails or result is not a dict
     """
-    expression = _build_menai_expression(step, step_outputs)
+    expression = resolve_step_expression(step)
+    inputs = _resolve_step_inputs(step, step_outputs)
 
     try:
-        result = menai.evaluate_raw(expression)
+        result = menai.evaluate_raw_with_dict(expression, "inputs", inputs)
 
     except MenaiError as e:
         raise PipelineExecutionError(

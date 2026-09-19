@@ -246,7 +246,7 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
                 self._eliminations += 1
                 not_call = MenaiIRCall(
                     func_plan=MenaiIRVariable(
-                            name='boolean-not', var_type='global'
+                            name='boolean-not'
                     ),
                     arg_plans=[opt_condition],
                     is_tail_call=ir.in_tail_position,
@@ -323,7 +323,7 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         """
         refs: set[str] = set()
         if isinstance(ir, MenaiIRVariable):
-            if ir.var_type == 'local' and ir.name not in bound:
+            if ir.name not in bound:
                 refs.add(ir.name)
 
         elif isinstance(ir, MenaiIRLambda):

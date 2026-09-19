@@ -171,19 +171,6 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
             }
         }
 
-        /* LOAD_NAME: src0 must be < nnames */
-        if (opcode == OP_LOAD_NAME) {
-            if (src0 < 0 || src0 >= (int)co->nnames) {
-                char buf[256];
-                snprintf(buf, sizeof(buf),
-                         "Name index %d out of bounds (pool size: %zd)",
-                         src0, co->nnames);
-                set_error(err, VERR_INDEX_OUT_OF_BOUNDS,
-                          buf, i, opcode);
-                return MENAI_ERR_INDEX_OUT_OF_RANGE;
-            }
-        }
-
         /* MAKE_CLOSURE: src0 must be < nchildren */
         if (opcode == OP_MAKE_CLOSURE) {
             if (src0 < 0 || src0 >= (int)co->nchildren) {

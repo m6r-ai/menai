@@ -184,14 +184,14 @@ class TestEvaluatorMissingCoverage:
         """Test undefined variable error in tail call context."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("((lambda () undefined_var))")
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_symbol_lookup_error_context(self, menai):
         """Test that symbol lookup errors include context."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("nonexistent_symbol")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     # ========== Environment Creation Edge Case ==========
 

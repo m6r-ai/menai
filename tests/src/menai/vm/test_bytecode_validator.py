@@ -10,7 +10,6 @@ ISA summary (register-window calling convention):
     LOAD_FALSE dest             — frame.locals[dest] = #f
     LOAD_EMPTY_LIST dest        — frame.locals[dest] = []
     LOAD_CONST dest, src0       — frame.locals[dest] = constants[src0]
-    LOAD_NAME  dest, src0       — frame.locals[dest] = globals[names[src0]]
 
   Register transfer:
     MOVE dest, src0             — frame.locals[dest] = frame.locals[src0]
@@ -80,7 +79,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),               # return r0 (terminal)
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -97,7 +95,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -106,27 +103,6 @@ class TestBytecodeValidator:
 
         assert exc_info.value.error_type == ValidationErrorType.INDEX_OUT_OF_BOUNDS
         assert "Constant index" in exc_info.value.message
-
-    def test_invalid_name_index(self):
-        """Test that LOAD_NAME with an out-of-bounds src0 is caught.
-
-        LOAD_NAME dest=0, src0=3 — src0=3 is out of bounds (only 1 name).
-        """
-        code = CodeObject(
-            instructions=[
-                Instruction(Opcode.LOAD_NAME, dest=0, src0=3),  # src0=3 out of bounds
-                Instruction(Opcode.RETURN, src0=0),
-            ],
-            constants=[],
-            names=["x"],
-            code_objects=[],
-            local_count=1,
-        )
-        with pytest.raises(ValidationError) as exc_info:
-            validate_bytecode(code)
-
-        assert exc_info.value.error_type == ValidationErrorType.INDEX_OUT_OF_BOUNDS
-        assert "Name index" in exc_info.value.message
 
     def test_invalid_jump_target(self):
         """Test that a JUMP to a non-existent instruction is caught.
@@ -138,7 +114,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.JUMP, src0=100),  # target 100 out of bounds
             ],
             constants=[],
-            names=[],
             code_objects=[],
             local_count=0,
         )
@@ -158,7 +133,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),  # r0 never initialized
             ],
             constants=[],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -194,7 +168,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),                 # 5: terminal ✓
             ],
             constants=[MenaiInteger(1), MenaiInteger(2)],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -220,7 +193,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),                 # 4: terminal ✓
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -247,7 +219,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),  # 0: return r0 (param) ✓
             ],
             constants=[],
-            names=[],
             code_objects=[],
             param_count=1,
             local_count=1,
@@ -259,7 +230,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),                        # 1: terminal ✓
             ],
             constants=[],
-            names=[],
             code_objects=[lambda_code],
             local_count=1,
         )
@@ -270,7 +240,6 @@ class TestBytecodeValidator:
         code = CodeObject(
             instructions=[],
             constants=[],
-            names=[],
             code_objects=[],
             local_count=0,
         )
@@ -293,7 +262,6 @@ class TestBytecodeValidator:
                 # Missing RETURN
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -305,8 +273,8 @@ class TestBytecodeValidator:
     def test_tail_call_is_terminal(self):
         """Test that TAIL_CALL is treated as terminal (no successors needed).
 
-        Sequence (local_count=2, outgoing_arg_slots=1, names=["f"], constants=[42]):
-          0: LOAD_NAME dest=0, src0=0    — r0=f
+        Sequence (local_count=2, outgoing_arg_slots=1, constants=[42]):
+          0: LOAD_CONST dest=0, src0=0   — r0=42
           1: LOAD_CONST dest=1, src0=0   — r1=42
           2: MOVE dest=2, src0=1         — slot 2 (outgoing zone) = r1 (one arg)
           3: TAIL_CALL src0=0, src1=1    — func=r0, arity=1; terminal ✓
@@ -315,7 +283,7 @@ class TestBytecodeValidator:
         """
         code = CodeObject(
             instructions=[
-                Instruction(Opcode.LOAD_NAME, dest=0, src0=0),    # 0: r0=f
+                Instruction(Opcode.LOAD_CONST, dest=0, src0=0),   # 0: r0=42
                 Instruction(Opcode.LOAD_CONST, dest=1, src0=0),   # 1: r1=42
                 Instruction(Opcode.MOVE, dest=2, src0=1),         # 2: slot 2 = r1 (outgoing arg)
                 Instruction(Opcode.TAIL_CALL, src0=0, src1=1),    # 3: func=r0, arity=1; terminal ✓
@@ -323,7 +291,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),                # 5: unreachable
             ],
             constants=[MenaiInteger(42)],
-            names=["f"],
             code_objects=[],
             local_count=2,
             outgoing_arg_slots=1,
@@ -342,7 +309,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),
             ],
             constants=[],   # empty — src0=99 is invalid
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -353,7 +319,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),                        # terminal ✓
             ],
             constants=[],
-            names=[],
             code_objects=[invalid_lambda],
             local_count=1,
         )
@@ -375,7 +340,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),               # r0 initialized ✓; terminal
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -394,7 +358,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=1),
             ],
             constants=[],
-            names=[],
             code_objects=[],
             local_count=2,
         )
@@ -431,7 +394,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=1),                 # 5: r1 initialized ✓
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=2,
         )
@@ -468,7 +430,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),                 # 5: r0 may be uninit → error
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=2,
         )
@@ -499,7 +460,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),                 # 4: terminal ✓
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
         )
@@ -523,7 +483,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),               # terminal ✓
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
             outgoing_arg_slots=1,
@@ -543,7 +502,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
             outgoing_arg_slots=1,
@@ -566,7 +524,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
             outgoing_arg_slots=0,
@@ -588,7 +545,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=0),
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[],
             local_count=1,
             outgoing_arg_slots=1,
@@ -601,21 +557,20 @@ class TestBytecodeValidator:
     def test_valid_apply(self):
         """Test that APPLY with valid func and arg_list registers passes.
 
-        Sequence (local_count=2):
-          0: LOAD_NAME dest=0, src0=0    — r0=f (function)
+        Sequence (local_count=2, constants=[42]):
+          0: LOAD_CONST dest=0, src0=0   — r0=42
           1: LOAD_EMPTY_LIST dest=1      — r1=[] (arg list)
           2: APPLY dest=0, src0=0, src1=1 — r0 = apply(r0, r1) ✓
           3: RETURN src0=0               — terminal ✓
         """
         code = CodeObject(
             instructions=[
-                Instruction(Opcode.LOAD_NAME, dest=0, src0=0),      # r0=f
+                Instruction(Opcode.LOAD_CONST, dest=0, src0=0),     # r0=42
                 Instruction(Opcode.LOAD_EMPTY_LIST, dest=1),         # r1=[]
                 Instruction(Opcode.APPLY, dest=0, src0=0, src1=1),   # r0 = apply(r0, r1) ✓
                 Instruction(Opcode.RETURN, src0=0),                  # terminal ✓
             ],
-            constants=[],
-            names=["f"],
+            constants=[MenaiInteger(42)],
             code_objects=[],
             local_count=2,
         )
@@ -624,19 +579,18 @@ class TestBytecodeValidator:
     def test_apply_uninitialized_arg_list(self):
         """Test that APPLY with an uninitialized arg_list register is caught.
 
-        Sequence (local_count=2):
-          0: LOAD_NAME dest=0, src0=0     — r0=f (function); r1 never written
+        Sequence (local_count=2, constants=[42]):
+          0: LOAD_CONST dest=0, src0=0    — r0=42; r1 never written
           1: APPLY dest=0, src0=0, src1=1 — r1 uninitialized → UNINITIALIZED_VARIABLE
           2: RETURN src0=0
         """
         code = CodeObject(
             instructions=[
-                Instruction(Opcode.LOAD_NAME, dest=0, src0=0),      # r0=f; r1 never written
+                Instruction(Opcode.LOAD_CONST, dest=0, src0=0),     # r0=42; r1 never written
                 Instruction(Opcode.APPLY, dest=0, src0=0, src1=1),   # r1 uninit → error
                 Instruction(Opcode.RETURN, src0=0),
             ],
-            constants=[],
-            names=["f"],
+            constants=[MenaiInteger(42)],
             code_objects=[],
             local_count=2,
         )
@@ -649,19 +603,18 @@ class TestBytecodeValidator:
     def test_apply_arg_list_out_of_bounds(self):
         """Test that APPLY with arg_list register >= local_count is caught.
 
-        Sequence (local_count=1):
-          0: LOAD_NAME dest=0, src0=0     — r0=f
+        Sequence (local_count=1, constants=[42]):
+          0: LOAD_CONST dest=0, src0=0    — r0=42
           1: APPLY dest=0, src0=0, src1=5 — src1=5 >= local_count=1 → INVALID_VARIABLE_ACCESS
           2: RETURN src0=0
         """
         code = CodeObject(
             instructions=[
-                Instruction(Opcode.LOAD_NAME, dest=0, src0=0),      # r0=f
+                Instruction(Opcode.LOAD_CONST, dest=0, src0=0),     # r0=42
                 Instruction(Opcode.APPLY, dest=0, src0=0, src1=5),   # src1=5 out of bounds
                 Instruction(Opcode.RETURN, src0=0),
             ],
-            constants=[],
-            names=["f"],
+            constants=[MenaiInteger(42)],
             code_objects=[],
             local_count=1,
         )
@@ -674,8 +627,8 @@ class TestBytecodeValidator:
     def test_valid_call_with_outgoing_args(self):
         """Test that a CALL with args moved into the outgoing zone passes.
 
-        Caller (local_count=2, outgoing_arg_slots=1):
-          0: LOAD_NAME dest=0, src0=0    — r0=f (function)
+        Caller (local_count=2, outgoing_arg_slots=1, constants=[42]):
+          0: LOAD_CONST dest=0, src0=0   — r0=42
           1: LOAD_CONST dest=1, src0=0   — r1=42 (arg value)
           2: MOVE dest=2, src0=1         — slot 2 (outgoing zone) = r1
           3: CALL dest=1, src0=0, src1=1 — r1 = call(r0, arity=1)
@@ -683,14 +636,13 @@ class TestBytecodeValidator:
         """
         code = CodeObject(
             instructions=[
-                Instruction(Opcode.LOAD_NAME, dest=0, src0=0),    # r0=f
+                Instruction(Opcode.LOAD_CONST, dest=0, src0=0),   # r0=42
                 Instruction(Opcode.LOAD_CONST, dest=1, src0=0),   # r1=42
                 Instruction(Opcode.MOVE, dest=2, src0=1),         # slot 2 = r1 (outgoing arg)
                 Instruction(Opcode.CALL, dest=1, src0=0, src1=1), # r1 = call(r0, 1)
                 Instruction(Opcode.RETURN, src0=1),               # terminal ✓
             ],
             constants=[MenaiInteger(42)],
-            names=["f"],
             code_objects=[],
             local_count=2,
             outgoing_arg_slots=1,
@@ -709,7 +661,6 @@ class TestBytecodeValidator:
                 Instruction(Opcode.RETURN, src0=1),  # r1 is a param, pre-initialized ✓
             ],
             constants=[],
-            names=[],
             code_objects=[],
             param_count=2,
             local_count=2,
@@ -732,7 +683,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=0),  # return r0 (param) ✓
             ],
             constants=[],
-            names=[],
             code_objects=[],
             param_count=1,
             local_count=1 + n_free_vars,
@@ -765,7 +715,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=0),                          # 5: terminal ✓
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )
@@ -789,7 +738,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=0),                         # 3: terminal ✓
             ],
             constants=[MenaiInteger(1)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )
@@ -813,7 +761,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=1),                         # 2
             ],
             constants=[MenaiInteger(1)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )
@@ -858,7 +805,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=1),                  # 7
             ],
             constants=[MenaiInteger(1)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )
@@ -887,7 +833,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=1),                         # 3
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )
@@ -909,7 +854,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=1),                         # 4
             ],
             constants=[MenaiInteger(42)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )
@@ -957,7 +901,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=1),                  # 8
             ],
             constants=[MenaiInteger(1)],
-            names=[],
             code_objects=[inner_a, inner_b],
             local_count=2,
         )
@@ -987,7 +930,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=1),                         # 3
             ],
             constants=[MenaiInteger(1)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )
@@ -1017,7 +959,6 @@ class TestPatchClosureValidation:
                 Instruction(Opcode.RETURN, src0=1),                         # 3
             ],
             constants=[MenaiInteger(1)],
-            names=[],
             code_objects=[inner],
             local_count=2,
         )

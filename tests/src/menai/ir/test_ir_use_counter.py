@@ -50,27 +50,22 @@ def _const(n: int) -> MenaiIRConstant:
 
 
 def _local(index: int) -> MenaiIRVariable:
-    return MenaiIRVariable(
-        name=f"v{index}",
-        var_type='local',
-    )
+    return MenaiIRVariable(name=f"v{index}")
 
 
 def _local_named(name: str) -> MenaiIRVariable:
-    return MenaiIRVariable(
-        name=name,
-        var_type='local',
-    )
+    return MenaiIRVariable(name=name)
 
 
-def _global(name: str) -> MenaiIRVariable:
-    return MenaiIRVariable(name=name, var_type='global')
+def _builtin(name: str) -> MenaiIRVariable:
+    """A builtin function reference used as a call's func_plan."""
+    return MenaiIRVariable(name=name)
 
 
 def _add_call(a: MenaiIRVariable, b: MenaiIRVariable) -> MenaiIRCall:
     """Emit (integer+ a b) as a builtin call."""
     return MenaiIRCall(
-        func_plan=_global('integer+'),
+        func_plan=_builtin('integer+'),
         arg_plans=[a, b],
         is_tail_call=False,
         is_builtin=True,
@@ -147,13 +142,6 @@ class TestIRUseCounterBasic:
         counts = MenaiIRUseCounter().count(ir)
         assert counts.total_count(0, id(b_x)) == 2   # x used twice
         assert counts.total_count(0, id(b_y)) == 0   # y never used
-
-    def test_global_not_counted(self):
-        """Global / builtin variable references are not counted."""
-        ir = MenaiIRReturn(value_plan=_global('integer+'))
-        counts = MenaiIRUseCounter().count(ir)
-        assert counts.frames[0].counts == {}
-
 
 class TestIRUseCounterLambda:
     """Use counting across lambda frame boundaries."""

@@ -263,12 +263,9 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         if not isinstance(func_plan, MenaiIRVariable):
             return None
 
-        if func_plan.var_type == 'local':
-            for scope in reversed(scope_stack):
-                if func_plan.name in scope:
-                    return scope[func_plan.name]
-
-            return None
+        for scope in reversed(scope_stack):
+            if func_plan.name in scope:
+                return scope[func_plan.name]
 
         return None
 
@@ -307,19 +304,8 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         if target.sibling_free_vars or target.outer_free_vars:
             return False
 
-        if isinstance(func_plan, MenaiIRVariable) and func_plan.var_type == 'local':
+        if isinstance(func_plan, MenaiIRVariable):
             if target.binding_name is not None and target.binding_name in letrec_names:
-                return False
-
-        if isinstance(func_plan, MenaiIRVariable) and func_plan.var_type == 'global':
-            name = func_plan.name
-            try:
-                found = _name_in_tree(target.body_plan, name)
-
-            except RecursionError:
-                return False
-
-            if found:
                 return False
 
         return True
@@ -524,57 +510,6 @@ def _count_nodes(ir: MenaiIRExpr) -> int:
     raise TypeError(f"_count_nodes: unhandled IR node type {type(ir).__name__}")
 
 
-def _name_in_tree(ir: MenaiIRExpr, name: str) -> bool:
-    """Check whether a variable name appears anywhere in the IR tree."""
-    if isinstance(ir, MenaiIRVariable):
-        return ir.name == name
-
-    if isinstance(ir, (MenaiIRConstant, MenaiIRQuote, MenaiIREmptyList)):
-        return False
-
-    if isinstance(ir, MenaiIRError):
-        return _name_in_tree(ir.message, name)
-
-    if isinstance(ir, MenaiIRIf):
-        return (_name_in_tree(ir.condition_plan, name)
-                or _name_in_tree(ir.then_plan, name)
-                or _name_in_tree(ir.else_plan, name))
-
-    if isinstance(ir, MenaiIRLet):
-        return (any(_name_in_tree(v, name) for _, v in ir.bindings)
-                or _name_in_tree(ir.body_plan, name))
-
-    if isinstance(ir, MenaiIRLetrec):
-        return (any(_name_in_tree(v, name) for _, v in ir.bindings)
-                or _name_in_tree(ir.body_plan, name))
-
-    if isinstance(ir, MenaiIRLambda):
-        return _name_in_tree(ir.body_plan, name)
-
-    if isinstance(ir, MenaiIRCall):
-        return _name_in_tree(ir.func_plan, name) or any(_name_in_tree(a, name) for a in ir.arg_plans)
-
-    if isinstance(ir, MenaiIRReturn):
-        return _name_in_tree(ir.value_plan, name)
-
-    if isinstance(ir, MenaiIRBuildList):
-        return any(_name_in_tree(e, name) for e in ir.element_plans)
-
-    if isinstance(ir, MenaiIRBuildDict):
-        return any(_name_in_tree(k, name) or _name_in_tree(v, name) for k, v in ir.pair_plans)
-
-    if isinstance(ir, MenaiIRBuildSet):
-        return any(_name_in_tree(e, name) for e in ir.element_plans)
-
-    if isinstance(ir, MenaiIRBuildVector):
-        return any(_name_in_tree(e, name) for e in ir.element_plans)
-
-    if isinstance(ir, MenaiIRBuildStruct):
-        return any(_name_in_tree(f, name) for f in ir.field_plans)
-
-    return False
-
-
 def _substitute(
     ir: MenaiIRExpr,
     param_map: dict[str, MenaiIRExpr],
@@ -587,7 +522,7 @@ def _substitute(
     should not be substituted.
     """
     if isinstance(ir, MenaiIRVariable):
-        if ir.var_type == 'local' and ir.name in param_map and ir.name not in shadowed:
+        if ir.name in param_map and ir.name not in shadowed:
             return param_map[ir.name]
 
         return ir

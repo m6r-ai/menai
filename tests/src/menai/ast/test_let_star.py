@@ -2,7 +2,7 @@
 
 import pytest
 
-from menai import MenaiEvalError, VMErrorCode
+from menai import MenaiEvalError
 
 
 class TestLetStarSemantics:
@@ -79,7 +79,7 @@ class TestLetStarSemantics:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(let ((x 5) (y (integer* x 2))) (integer+ x y))")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_let_parallel_bindings_all_use_outer_scope(self, menai, helpers):
         """Test that parallel let bindings all use the outer scope."""

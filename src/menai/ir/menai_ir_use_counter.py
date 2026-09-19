@@ -189,9 +189,6 @@ class MenaiIRUseCounter:
         scope_stack: list[dict[str, tuple[int, int]]],
     ) -> None:
         """Count a variable reference."""
-        if ir.var_type != 'local':
-            return  # Globals have no binding to count.
-
         resolved = self._resolve_name(ir.name, scope_stack)
         if resolved is not None:
             frame_id, binding_id = resolved

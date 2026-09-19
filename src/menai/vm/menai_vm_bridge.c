@@ -287,52 +287,6 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
     PyBuffer_Release(&view);
     Py_DECREF(instrs_obj);
 
-    /* names — strdup each global name string */
-    PyObject *py_names = PyObject_GetAttrString(py_code, "names");
-    if (!py_names) {
-        goto fail;
-    }
-
-    co->nnames = PyList_GET_SIZE(py_names);
-    if (co->nnames > 0) {
-        co->names = (const char **)calloc((size_t)co->nnames, sizeof(char *));
-        if (!co->names) {
-            Py_DECREF(py_names);
-            PyErr_NoMemory();
-            goto fail;
-        }
-
-        for (ssize_t i = 0; i < co->nnames; i++) {
-            const char *s = PyUnicode_AsUTF8(PyList_GET_ITEM(py_names, i));
-            if (!s) {
-                Py_DECREF(py_names);
-                goto fail;
-            }
-
-            co->names[i] = strdup(s);
-            if (!co->names[i]) {
-                Py_DECREF(py_names);
-                PyErr_NoMemory();
-                goto fail;
-            }
-        }
-    }
-
-    Py_DECREF(py_names);
-
-    /* name_hashes — precompute FNV-1a hash of each global name string */
-    if (co->nnames > 0) {
-        co->name_hashes = (hash_t *)malloc((size_t)co->nnames * sizeof(hash_t));
-        if (!co->name_hashes) {
-            PyErr_NoMemory();
-            goto fail;
-        }
-
-        for (ssize_t i = 0; i < co->nnames; i++) {
-            co->name_hashes[i] = menai_name_str_hash(co->names[i]);
-        }
-    }
-
     /*
      * children — recurse first so that when we convert constants that are
      * functions, their children already exist and can be referenced.
@@ -1716,82 +1670,6 @@ cleanup_bt_strings:
 }
 
 /*
- * menai_dict_from_pydict — convert a Python dict of (str, MenaiValue) pairs
- * to a native MenaiDict.  Keys are converted to MenaiString, values via
- * slow_value_to_menai_value.  Returns a new reference, or NULL on error.
- */
-static MenaiDict *
-menai_dict_from_pydict(MenaiVMState *vs, PyObject *pydict)
-{
-    Py_ssize_t n = PyDict_Size(pydict);
-    if (n == 0) {
-        return alloc_menai_dict(vs, 0);
-    }
-
-    MenaiDict *r = alloc_menai_dict(vs, (ssize_t)n);
-    if (!r) {
-        PyErr_NoMemory();
-        return NULL;
-    }
-
-    MenaiDictElement **elems = r->elements;
-
-    Py_ssize_t i = 0;
-    PyObject *key, *val;
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(pydict, &pos, &key, &val)) {
-        MenaiValue *fk = (MenaiValue *)alloc_menai_string_from_pyunicode(vs, key);
-        if (!fk) {
-            goto fail;
-        }
-
-        MenaiValue *fv = slow_value_to_menai_value(vs, val);
-        if (!fv) {
-            menai_value_release(vs, fk);
-            goto fail;
-        }
-
-        hash_t h = menai_value_hash(fk);
-        if (h == -1) {
-            menai_value_release(vs, fk);
-            menai_value_release(vs, fv);
-            goto fail;
-        }
-
-        MenaiDictElement *elem = alloc_menai_dict_element(vs, fk, fv, h);
-        if (!elem) {
-            menai_value_release(vs, fk);
-            menai_value_release(vs, fv);
-            PyErr_NoMemory();
-            goto fail;
-        }
-
-        elems[i] = elem;
-        i++;
-    }
-
-    if (menai_ht_init(vs, &r->ht, (ssize_t)n) < 0) {
-        menai_value_free(vs, (MenaiValue *)r);
-        PyErr_NoMemory();
-        goto fail;
-    }
-
-    for (Py_ssize_t j = 0; j < n; j++) {
-        menai_ht_insert(&r->ht, elems[j]->key, elems[j]->hash, (ssize_t)j);
-    }
-
-    r->length = (ssize_t)n;
-
-    return r;
-
-fail:
-    for (Py_ssize_t j = 0; j < i; j++) {
-        menai_value_release(vs, (MenaiValue *)elems[j]);
-    }
-    return NULL;
-}
-
-/*
  * bridge_raise_validation_error — raise a Python ValidationError from a
  * MenaiValidationError struct produced by menai_validate.
  *
@@ -1922,7 +1800,7 @@ bridge_validate(MenaiVMState *vs, PyObject *py_code)
 /*
  * menai_vm_c_execute — the Python-callable entry point.
  *
- * Parses arguments (code, extra_bindings, state_capsule),
+ * Parses arguments (code, state_capsule),
  * converts the code tree, and calls menai_vm_execute_native to run the VM.
  * The result is converted back to a slow Python MenaiValue before returning.
  */
@@ -1930,10 +1808,9 @@ static PyObject *
 menai_vm_c_execute(PyObject *self, PyObject *args)
 {
     PyObject *code;
-    PyObject *extra_bindings = NULL;
     PyObject *state_capsule = NULL;
 
-    if (!PyArg_ParseTuple(args, "O|OO", &code, &extra_bindings, &state_capsule)) {
+    if (!PyArg_ParseTuple(args, "O|O", &code, &state_capsule)) {
         return NULL;
     }
 
@@ -1971,30 +1848,11 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    GlobalsTable extra_globals;
-    int has_extra = 0;
-    if (extra_bindings && extra_bindings != Py_None) {
-        MenaiDict *native_extra = menai_dict_from_pydict(vs, extra_bindings);
-        if (!native_extra) {
-            menai_code_object_release(vs, native_code);
-            return NULL;
-        }
-
-        int gerr = globals_build_from_dict(vs, &extra_globals, native_extra);
-        menai_value_release(vs, (MenaiValue *)native_extra);
-        if (gerr < 0) {
-            menai_code_object_release(vs, native_code);
-            return NULL;
-        }
-
-        has_extra = 1;
-    }
-
     MenaiValue *result;
 
     _t0 = perf_counter_ns();
     Py_BEGIN_ALLOW_THREADS
-    result = menai_vm_execute_native(vs, native_code, has_extra ? &extra_globals : NULL);
+    result = menai_vm_execute_native(vs, native_code);
     Py_END_ALLOW_THREADS
     _t1 = perf_counter_ns();
     vs->_execute_time_ns = (uint64_t)(_t1 - _t0);
@@ -2002,9 +1860,6 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
     _t0 = perf_counter_ns();
 
     menai_code_object_release(vs, native_code);
-    if (has_extra) {
-        globals_free(vs, &extra_globals);
-    }
 
     if (result == NULL) {
         if (!PyErr_Occurred()) {

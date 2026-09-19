@@ -2,7 +2,7 @@
 
 import pytest
 
-from menai import MenaiEvalError, VMErrorCode
+from menai import MenaiEvalError
 
 
 class TestMenaiEnvironmentEdgeCases:
@@ -153,19 +153,19 @@ class TestMenaiEnvironmentEdgeCases:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("undefined-var")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         # Undefined variable in expression
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer+ 1 undefined-var)")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         # Undefined variable in let binding
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(let ((x undefined-var)) x)")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_environment_isolation_between_evaluations(self, menai):
         """Test that environments are isolated between evaluations."""
@@ -176,7 +176,7 @@ class TestMenaiEnvironmentEdgeCases:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("x")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         # Each evaluation starts with clean environment
         result1 = menai.evaluate("(let ((x 10)) x)")
@@ -232,7 +232,7 @@ class TestMenaiEnvironmentEdgeCases:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("y")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_environment_with_recursive_bindings(self, menai):
         """Test environment with recursive bindings (if supported)."""
@@ -255,7 +255,7 @@ class TestMenaiEnvironmentEdgeCases:
         try:
             menai.evaluate("nonexistent-variable")
         except MenaiEvalError as e:
-            assert e.error_code == VMErrorCode.UNDEFINED_VARIABLE
+            assert "Unbound variable" in e.message
 
     def test_environment_with_complex_closures(self, menai):
         """Test environment with complex closure scenarios."""

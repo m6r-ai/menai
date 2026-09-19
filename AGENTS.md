@@ -221,8 +221,7 @@ There are two categories of builtin that must not be confused:
 - Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
   as Menai lambdas in `prelude.menai`. They MUST NOT be added to `BUILTIN_OPCODE_ARITIES`.
 
-The prelude is a module that is auto-imported, not a separate compilation unit. See
-[ADR-0022](docs/adr/0022-prelude-is-a-module.md).
+See [ADR-0009](docs/adr/0009-prelude-and-builtin-registry-consistency.md).
 
 ### The C VM has no process-global mutable state
 

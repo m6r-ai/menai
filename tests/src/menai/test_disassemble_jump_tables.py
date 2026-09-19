@@ -22,7 +22,6 @@ def _code_with_table(min_value: int, default_target: int, targets: list[int]) ->
     return CodeObject(
         instructions=instrs,
         constants=[],
-        names=[],
         code_objects=[],
         jump_tables=[table],
         name="<test>",
@@ -58,7 +57,6 @@ class TestJumpTableDump:
         code = CodeObject(
             instructions=[Instruction(opcode=Opcode.RETURN, src0=0)],
             constants=[],
-            names=[],
             code_objects=[],
             name="<test>",
         )

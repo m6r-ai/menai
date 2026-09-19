@@ -28,15 +28,11 @@ class MenaiVM:
         if hasattr(self, '_state'):
             _c_vm_state_free(self._state)
 
-    def execute(
-        self,
-        code: CodeObject,
-        extra_bindings: dict[str, MenaiValue] | None = None,
-    ) -> MenaiValue:
+    def execute(self, code: CodeObject) -> MenaiValue:
         """Execute a code object and return the result."""
         try:
             return cast(Callable[..., MenaiValue], _c_vm_execute)(
-                code, extra_bindings or {}, self._state
+                code, self._state
             )
 
         except _MenaiVMRuntimeError as exc:

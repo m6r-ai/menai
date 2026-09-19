@@ -13,7 +13,9 @@ from menai.ast.menai_ast_desugarer import MenaiASTDesugarer
 from menai.ast.menai_ast_module_resolver import MenaiASTModuleResolver, MenaiASTModuleLoader
 from menai.ast.menai_ast_optimization_pass import MenaiASTOptimizationPass
 from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
+from menai.ast.menai_ast_binding_injector import MenaiASTBindingInjector
 from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
+from menai.ast.menai_lexer import MenaiLexer
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.bytecode.menai_bytecode_builder import MenaiBytecodeBuilder
 from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
@@ -26,12 +28,12 @@ from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
 from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAnalysis
 from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
-from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 from menai.ir.menai_ir_builder import MenaiIRBuilder
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 from menai.ir.menai_ir_optimizer import MenaiIROptimizer
 from menai.ir.menai_ir_inliner import MenaiIRInliner
-from menai.ast.menai_lexer import MenaiLexer
+from menai.menai_value import MenaiValue
+from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 
 
 class MenaiCompiler:
@@ -107,7 +109,12 @@ class MenaiCompiler:
         resolved_ast = self.ast_module_resolver.resolve(checked_ast)
         return resolved_ast
 
-    def compile(self, source: str, name: str = "<module>") -> CodeObject:
+    def compile(
+        self,
+        source: str,
+        name: str = "<module>",
+        inject: tuple[str, MenaiValue] | None = None,
+    ) -> CodeObject:
         """
         Compile Menai source code to bytecode.
 
@@ -116,6 +123,10 @@ class MenaiCompiler:
         Args:
             source: Menai source code as a string
             name: Optional name for the code object (e.g. filename)
+            inject: Optional (binding name, value) pair.  When given, the
+                program is wrapped in a single lexical binding of that name
+                holding the value, one layer above the prelude and one layer
+                below the program.
 
         Returns:
             Compiled bytecode ready for execution
@@ -129,6 +140,12 @@ class MenaiCompiler:
         # counter starts above the prelude's so generated names cannot collide.
         self.ast_desugarer.temp_counter = MenaiASTPreludeInjector.prelude_temp_count()
         desugared_program = self.ast_desugarer.desugar(resolved_ast)
+
+        # The host binding sits above the prelude and below the program, so the
+        # program sees both and the host binding shadows nothing in the prelude.
+        if inject is not None:
+            desugared_program = MenaiASTBindingInjector.wrap(desugared_program, *inject)
+
         desugared_ast = MenaiASTPreludeInjector.wrap(desugared_program)
 
         for ast_pass in self.ast_passes:

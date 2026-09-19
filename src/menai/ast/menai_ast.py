@@ -418,3 +418,26 @@ class MenaiASTStruct(MenaiASTNode):
             return False
 
         return self.tag == other.tag
+
+
+@dataclass(frozen=True)
+class MenaiASTConstant(MenaiASTNode):
+    """
+    An AST leaf wrapping an already-constructed runtime value.
+
+    Every other literal node reconstructs its runtime value from Python
+    primitives via to_runtime_value().  This node instead carries a MenaiValue
+    that was built by the host, so values that have no source representation
+    (a host-supplied dict, a closure) can enter the compilation as constants.
+    """
+    value: MenaiValue
+
+    def to_runtime_value(self) -> MenaiValue:
+        """Return the wrapped runtime value."""
+        return self.value
+
+    def type_name(self) -> str:
+        return self.value.type_name()
+
+    def describe(self) -> str:
+        return self.value.describe()

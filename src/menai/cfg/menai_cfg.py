@@ -58,18 +58,6 @@ class MenaiCFGConstInstr:
 
 
 @dataclass
-class MenaiCFGGlobalInstr:
-    """
-    %result = load_global <name>
-
-    Loads a global name (builtin, prelude function, or module-level binding
-    looked up at runtime via LOAD_NAME).
-    """
-    result: MenaiCFGValue
-    name: str
-
-
-@dataclass
 class MenaiCFGParamInstr:
     """
     %result = param <index>
@@ -294,7 +282,6 @@ class MenaiCFGPhiInstr:
 # is stored in MenaiCFGBlock.patch_instrs rather than MenaiCFGBlock.instrs.
 MenaiCFGInstr = (  # pylint: disable=invalid-name
     MenaiCFGConstInstr
-    | MenaiCFGGlobalInstr
     | MenaiCFGParamInstr
     | MenaiCFGFreeVarInstr
     | MenaiCFGBuiltinInstr
@@ -517,9 +504,6 @@ def _fmt_instr(instr: MenaiCFGInstr) -> str:
     if isinstance(instr, MenaiCFGConstInstr):
         return f"{instr.result} = const {instr.value!r}"
 
-    if isinstance(instr, MenaiCFGGlobalInstr):
-        return f"{instr.result} = global {instr.name!r}"
-
     if isinstance(instr, MenaiCFGParamInstr):
         return f"{instr.result} = param {instr.index} ({instr.param_name!r})"
 
@@ -731,8 +715,8 @@ def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
     if isinstance(instr, MenaiCFGPhiInstr):
         return [val.id for val, _ in instr.incoming]
 
-    # MenaiCFGConstInstr, MenaiCFGGlobalInstr, MenaiCFGParamInstr,
-    # MenaiCFGFreeVarInstr: no input value references here.
+    # MenaiCFGConstInstr, MenaiCFGParamInstr, MenaiCFGFreeVarInstr: no input
+    # value references here.
     return []
 
 

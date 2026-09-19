@@ -93,6 +93,25 @@ class MenaiASTPreludeInjector:
         return cls._prelude_temp_count
 
     @classmethod
+    def prelude_names(cls) -> frozenset[str]:
+        """
+        Return the set of names the prelude binds.
+
+        These are the names every program can call without importing anything.
+        A host-injected binding must not use one of them, because it would
+        shadow the prelude binding and break every prelude call in the program.
+        """
+        names: set[str] = set()
+        for _, bindings in cls._load_prelude_wrappers():
+            for binding in bindings.elements:
+                assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
+                name_expr = binding.elements[0]
+                assert isinstance(name_expr, MenaiASTSymbol)
+                names.add(name_expr.name)
+
+        return frozenset(names)
+
+    @classmethod
     def _load_prelude_wrappers(cls) -> list[tuple[MenaiASTSymbol, MenaiASTList]]:
         """
         Load the prelude and return its desugared ``let``/``letrec`` wrappers.

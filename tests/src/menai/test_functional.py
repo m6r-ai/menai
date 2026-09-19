@@ -565,7 +565,7 @@ class TestFunctional:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('((lambda (x) (integer+ x undefined-var)) 5)')
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         # Type error in lambda body
         with pytest.raises(MenaiEvalError):
@@ -585,7 +585,7 @@ class TestFunctional:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('(let ((x undefined-var)) x)')
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         # Error in let body
         with pytest.raises(MenaiEvalError):

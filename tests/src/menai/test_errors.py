@@ -176,24 +176,24 @@ class TestErrors:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("undefined-var")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(integer+ 1 undefined-var)")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_undefined_function_eval_error(self, menai):
         """Test that undefined functions cause evaluation errors."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(unknown-op 1 2)")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(invalid-function)")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_division_by_zero_eval_error(self, menai):
         """Test that division by zero causes evaluation errors."""
@@ -464,11 +464,11 @@ class TestErrors:
 
     def test_error_message_context_information(self, menai):
         """Test that error messages provide helpful context."""
-        # Undefined variable error should be reported with the correct error code
+        # Undefined variable error should be reported with a helpful message
         try:
             menai.evaluate("undefined-var")
         except MenaiEvalError as e:
-            assert e.error_code == VMErrorCode.UNDEFINED_VARIABLE
+            assert "Unbound variable" in e.message
 
     def test_function_call_error_context(self, menai):
         """Test that function call errors provide parameter context."""
@@ -530,7 +530,7 @@ class TestErrors:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(let ((x 5) (y (integer/ x 0))) y)")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_error_in_lambda_closure_context(self, menai):
         """Test error handling in lambda closure contexts."""
@@ -538,7 +538,7 @@ class TestErrors:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(let ((f (lambda (x) (integer+ x undefined-var)))) (f 5))")
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
         # Type error in closure
         with pytest.raises(MenaiEvalError):

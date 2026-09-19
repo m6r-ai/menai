@@ -15,7 +15,6 @@ from menai.cfg.menai_cfg import (
     MenaiCFGConstInstr,
     MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
-    MenaiCFGGlobalInstr,
     MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
     MenaiCFGPatchClosureInstr,
@@ -206,7 +205,7 @@ class MenaiCFGBuilder:
             return self._build_quote(ir, block, state)
 
         if isinstance(ir, MenaiIRVariable):
-            return self._build_variable(ir, block, scope, state)
+            return self._build_variable(ir, block, scope)
 
         if isinstance(ir, MenaiIRIf):
             return self._build_if(ir, block, scope, state, tail)
@@ -273,18 +272,12 @@ class MenaiCFGBuilder:
         return result, block
 
     def _build_variable(
-        self, ir: MenaiIRVariable, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState
+        self, ir: MenaiIRVariable, block: MenaiCFGBlock, scope: MenaiCFGScope
     ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
-        """Resolve a variable reference (global or local) to a CFG value."""
-        if ir.var_type == 'global':
-            result = state.new_value(ir.name)
-            block.instrs.append(MenaiCFGGlobalInstr(result=result, name=ir.name))
-            return result, block
-
-        # Local variable — must be in scope.
+        """Resolve a variable reference to a CFG value."""
         val = scope.lookup(ir.name)
         assert val is not None, (
-            f"MenaiCFGBuilder: unresolved local variable {ir.name!r}"
+            f"MenaiCFGBuilder: unresolved variable {ir.name!r}"
         )
         return val, block
 
@@ -675,7 +668,6 @@ class MenaiCFGBuilder:
         if tail:
             # Detect direct self-recursive tail call.
             if (isinstance(ir.func_plan, MenaiIRVariable)
-                    and ir.func_plan.var_type == 'local'
                     and ir.func_plan.name == state.function.binding_name
                     and state.self_value is not None
                     and func_val is state.self_value):

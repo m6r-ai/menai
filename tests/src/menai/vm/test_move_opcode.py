@@ -11,12 +11,11 @@ from menai.vm.menai_vm_c import validate as c_vm_validate
 from menai.vm.menai_vm_errors import ValidationError, ValidationErrorType
 
 
-def _make_code(instructions, local_count, constants=None, names=None, code_objects=None):
+def _make_code(instructions, local_count, constants=None, code_objects=None):
     """Build a minimal CodeObject for VM / validator tests."""
     return CodeObject(
         instructions=instructions,
         constants=constants or [],
-        names=names or [],
         code_objects=code_objects or [],
         param_count=0,
         local_count=local_count,
@@ -33,7 +32,7 @@ class TestMoveOpcode:
     def _run(self, code):
         state = c_vm_state_alloc()
         try:
-            result = c_vm_execute(code, {}, state)
+            result = c_vm_execute(code, state)
         finally:
             c_vm_state_free(state)
         return result.describe()

@@ -14,7 +14,7 @@ from menai.ir.menai_ir import (
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex,
     MenaiASTString, MenaiASTBoolean, MenaiASTNone, MenaiASTSymbol, MenaiASTList, MenaiASTListLiteral,
-    MenaiASTDict, MenaiASTSet, MenaiASTVector, MenaiASTStruct, MenaiASTBytes,
+    MenaiASTDict, MenaiASTSet, MenaiASTVector, MenaiASTStruct, MenaiASTBytes, MenaiASTConstant,
 )
 
 
@@ -41,15 +41,15 @@ class AnalysisContext:
     """
     Analysis context for IR building — tracks scopes for variable resolution.
 
-    The scope chain is used only to determine var_type ('local' vs 'global')
-    for each variable reference.
+    Every variable reference must resolve to a binding in an enclosing scope.
+    A name that resolves to no binding is a compile-time error: there is no
+    runtime environment to fall back to.
     """
     scopes: list[CompilationScope] = field(default_factory=list)
     parent_ctx: 'AnalysisContext | None' = None
     current_binding_name: str | None = None  # Name of the binding currently being analysed.
     current_letrec_names: set[str] = field(default_factory=set)  # Names in the immediately enclosing
                                                                    # letrec group only.
-    names: set[str] = field(default_factory=set)
     free_vars: list[str] = field(default_factory=list)   # Free variables discovered during analysis,
                                                           # in order of first encounter.
     free_vars_seen: set[str] = field(default_factory=set) # Companion set for O(1) duplicate checks.
@@ -70,33 +70,37 @@ class AnalysisContext:
         """
         Add a name to the current scope with a placeholder index of 0.
 
-        We only need the name to be present so that resolve_variable() can classify it as
-        'local' rather than 'global'.
+        We only need the name to be present so that resolve_variable() can find it.
         """
         self.scopes[-1].add_binding(name, 0)
 
-    def resolve_variable(self, name: str) -> str:
+    def resolve_variable(self, name: str) -> None:
         """
-        Resolve variable name to its type: 'local' or 'global'.
+        Verify that a variable name is bound in an enclosing scope.
 
-        Returns:
-            'local' if the name is bound in any enclosing scope.
-            'global' if not found locally (resolved at runtime from the environment).
+        A name bound in an enclosing lambda is recorded as a free variable so
+        the closure can capture it.
+
+        Raises:
+            MenaiEvalError: If the name is not bound in any enclosing scope.
         """
         for scope in reversed(self.scopes):
             if scope.get_binding(name) is not None:
-                return 'local'
+                return
 
         if self.parent_ctx is not None:
-            result = self.parent_ctx.resolve_variable(name)
-            if result == 'local' and name not in self.free_vars_seen:
+            self.parent_ctx.resolve_variable(name)
+            if name not in self.free_vars_seen:
                 self.free_vars.append(name)
                 self.free_vars_seen.add(name)
 
-            return result
+            return
 
-        self.names.add(name)
-        return 'global'
+        raise MenaiEvalError(
+            message=f"Unbound variable '{name}'",
+            context="The name is not bound in any enclosing scope",
+            suggestion="Check the spelling, or bind the name before using it",
+        )
 
     def create_child_context(self) -> 'AnalysisContext':
         """Create a child context for nested lambda analysis."""
@@ -109,8 +113,8 @@ class MenaiIRBuilder:
     """
     Builds intermediate representation (IR) from AST.
 
-    Emits MenaiIRVariable nodes carrying only name and var_type ('local' or
-    'global').  Slot allocation is handled downstream by MenaiCFGBuilder.
+    Emits MenaiIRVariable nodes carrying only a name.  Slot allocation is
+    handled downstream by MenaiCFGBuilder.
     """
 
     def __init__(self) -> None:
@@ -178,6 +182,9 @@ class MenaiIRBuilder:
         if expr_type is MenaiASTStruct:
             return MenaiIRConstant(value=cast(MenaiASTStruct, expr).to_runtime_value())
 
+        if expr_type is MenaiASTConstant:
+            return MenaiIRConstant(value=cast(MenaiASTConstant, expr).value)
+
         raise MenaiEvalError(
             message=f"Cannot analyze expression of type {type(expr).__name__}",
             received=str(expr)
@@ -185,7 +192,8 @@ class MenaiIRBuilder:
 
     def _analyze_variable(self, name: str, ctx: AnalysisContext) -> MenaiIRVariable:
         """Analyze a variable reference."""
-        return MenaiIRVariable(name=name, var_type=ctx.resolve_variable(name))
+        ctx.resolve_variable(name)
+        return MenaiIRVariable(name=name)
 
     def _analyze_list(self, expr: MenaiASTList, ctx: AnalysisContext, in_tail_position: bool) -> MenaiIRExpr:
         """Analyze a list expression (function call or special form)."""
@@ -428,11 +436,11 @@ class MenaiIRBuilder:
         outer_free_vars:   list[str] = [fv for fv in free_vars if fv not in sibling_names]
 
         sibling_free_var_plans: list[MenaiIRExpr] = [
-            MenaiIRVariable(name=fv, var_type='local')
+            MenaiIRVariable(name=fv)
             for fv in sibling_free_vars
         ]
         outer_free_var_plans: list[MenaiIRExpr] = [
-            MenaiIRVariable(name=fv, var_type='local')
+            MenaiIRVariable(name=fv)
             for fv in outer_free_vars
         ]
 
@@ -501,7 +509,7 @@ class MenaiIRBuilder:
             builtin_name = dollar_name[1:] if dollar_name.startswith('$') else dollar_name
             arg_plans = [self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs]
             return MenaiIRCall(
-                func_plan=MenaiIRVariable(name=dollar_name, var_type='global'),
+                func_plan=MenaiIRVariable(name=dollar_name),
                 arg_plans=arg_plans,
                 is_tail_call=False,
                 is_builtin=True,

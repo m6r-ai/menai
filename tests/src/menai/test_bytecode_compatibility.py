@@ -179,7 +179,7 @@ class TestErrors:
     def test_undefined_variable(self, menai):
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("undefined_var")
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_wrong_arity(self, menai):
         with pytest.raises(MenaiEvalError) as exc_info:

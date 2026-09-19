@@ -210,10 +210,6 @@ struct MenaiCodeObject {
     MenaiJumpTable *jump_tables;         /* dense integer switch tables (SWITCH_INTEGER) */
     int njt;                             /* number of jump tables */
 
-    const char **names;                  /* global name strings for OP_LOAD_NAME */
-    hash_t *name_hashes;                 /* precomputed FNV-1a hash of each name */
-    ssize_t nnames;
-
     MenaiCodeObject **children;          /* child code objects, one per closure */
     ssize_t nchildren;
 
@@ -631,31 +627,6 @@ typedef struct {
 } MenaiProfileData;
 
 /*
- * GlobalsTable — open-addressing hash table for O(1) name lookup.
- *
- * Built by the bridge from the extra bindings passed to execute().  The table
- * is a complete lookup table with hash slots.  It is never copied per-call —
- * the execute loop reads from it directly.  Values and names are owned.
- */
-typedef struct {
-    const char *name;
-    hash_t hash;
-    MenaiValue *value;
-} GlobalsSlot;
-
-typedef struct {
-    const char *name;
-    MenaiValue *value;
-} GlobalsEntry;
-
-typedef struct {
-    GlobalsSlot *slots;
-    GlobalsEntry *entries;
-    ssize_t slot_count;
-    ssize_t count;
-} GlobalsTable;
-
-/*
  * Threshold at which we start to run the garbage collector.
  */
 #define GC_THRESHOLD 4096
@@ -820,28 +791,6 @@ menai_value_release(MenaiVMState *vs, MenaiValue *val)
         menai_value_free(vs, val);
     }
 }
-
-/*
- * menai_name_str_hash — FNV-1a hash of a UTF-8 C string.
- *
- * Used to precompute hashes for global name strings stored in
- * MenaiCodeObject name_hashes, and to hash entries when building
- * GlobalsTable slots.  Returns a value in [0, PTRDIFF_MAX]; never -1.
- */
-static inline hash_t
-menai_name_str_hash(const char *s)
-{
-    uhash_t h = 14695981039346656037ULL;  /* FNV offset basis */
-    const unsigned char *p = (const unsigned char *)s;
-    while (*p) {
-        h ^= (uhash_t)*p++;
-        h *= 1099511628211ULL;              /* FNV prime */
-    }
-
-    hash_t r = (hash_t)(h & (uhash_t)PTRDIFF_MAX);
-    return r == -1 ? -2 : r;
-}
-
 /*
  * menai_hash_double — hash a C double without any Python API calls.
  *
@@ -1513,11 +1462,7 @@ menai_vector_equal(MenaiVector *a, MenaiVector *b)
 
 int menai_vm_bridge_init(void);
 
-void globals_free(MenaiVMState *vs, GlobalsTable *gt);
-int globals_build_from_dict(MenaiVMState *vs, GlobalsTable *gt, MenaiDict *d);
-MenaiValue *globals_lookup(const GlobalsTable *gt, const char *name, hash_t h);
-
-MenaiValue *menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code, const GlobalsTable *extra_globals);
+MenaiValue *menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code);
 
 void menai_vm_cancel(MenaiVMState *vs);
 

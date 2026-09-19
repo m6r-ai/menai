@@ -139,7 +139,6 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeJumpIfTrue,
     MenaiVCodeLabel,
     MenaiVCodeLoadConst,
-    MenaiVCodeLoadName,
     MenaiVCodeMove,
     MenaiVCodeReg,
     MenaiVCodeReturn,
@@ -209,9 +208,6 @@ def _replace_reg(
         )
 
     if isinstance(instr, MenaiVCodeLoadConst):
-        return instr
-
-    if isinstance(instr, MenaiVCodeLoadName):
         return instr
 
     if isinstance(instr, MenaiVCodeBuiltin):
@@ -640,10 +636,6 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, MenaiVCodeMakeDict):
         return [instr.dst.id], [r.id for k, v in instr.pairs for r in (k, v)]
-
-    # MenaiVCodeJump, MenaiVCodeLoadName: no register references or defs only.
-    if isinstance(instr, MenaiVCodeLoadName):
-        return [instr.dst.id], []
 
     # MenaiVCodeJump: no register references.
     return [], []

@@ -52,7 +52,6 @@ from menai.cfg.menai_cfg import (
     MenaiCFGConstInstr,
     MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
-    MenaiCFGGlobalInstr,
     MenaiCFGGuardInstr,
     MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
@@ -85,7 +84,6 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeJumpIfTrue,
     MenaiVCodeLabel,
     MenaiVCodeLoadConst,
-    MenaiVCodeLoadName,
     MenaiVCodeMakeClosure,
     MenaiVCodeMove,
     MenaiVCodePatchClosure,
@@ -377,11 +375,6 @@ class MenaiVCodeBuilder:
         if isinstance(instr, MenaiCFGConstInstr):
             dst = self._reg(instr.result)
             instrs.append(MenaiVCodeLoadConst(dst=dst, value=instr.value))
-            return max(max_reg_id, dst.id)
-
-        if isinstance(instr, MenaiCFGGlobalInstr):
-            dst = self._reg(instr.result)
-            instrs.append(MenaiVCodeLoadName(dst=dst, name=instr.name))
             return max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGBuiltinInstr):

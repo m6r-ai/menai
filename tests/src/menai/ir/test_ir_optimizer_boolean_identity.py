@@ -45,14 +45,15 @@ def _int_const(n: int) -> MenaiIRConstant:
     return MenaiIRConstant(value=MenaiInteger(n))
 
 
-def _global(name: str) -> MenaiIRVariable:
-    return MenaiIRVariable(name=name, var_type='global')
+def _builtin(name: str) -> MenaiIRVariable:
+    """A builtin function reference used as a call's func_plan."""
+    return MenaiIRVariable(name=name)
 
 
 def _bool_p_call(arg: MenaiIRVariable) -> MenaiIRCall:
     """Emit (boolean? arg) as a builtin call."""
     return MenaiIRCall(
-        func_plan=_global('boolean?'),
+        func_plan=_builtin('boolean?'),
         arg_plans=[arg],
         is_tail_call=False,
         is_builtin=True,
@@ -61,9 +62,7 @@ def _bool_p_call(arg: MenaiIRVariable) -> MenaiIRCall:
 
 
 def _local(index: int) -> MenaiIRVariable:
-    return MenaiIRVariable(
-        name=f"v{index}", var_type='local'
-    )
+    return MenaiIRVariable(name=f"v{index}")
 
 
 def _run(ir):
@@ -323,7 +322,7 @@ class TestReturnWrappedBranches:
         with the condition would bypass the VM's boolean type check.
         """
         non_pred_cond = MenaiIRCall(
-            func_plan=_global('$integer+'),
+            func_plan=_builtin('$integer+'),
             arg_plans=[_local(0), _local(1)],
             is_tail_call=False,
             is_builtin=True,

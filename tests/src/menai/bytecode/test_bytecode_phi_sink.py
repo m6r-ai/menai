@@ -85,14 +85,14 @@ class TestPhiSinkAllConstArms:
 
 
 class TestPhiSinkGlobalArm:
-    """A global load (LOAD_NAME) used only as a phi incoming is coalesced."""
+    """A variable load used only as a phi incoming is coalesced."""
 
     def test_global_arm_emits_no_move(self):
         """
         (lambda (x) (if (boolean? x) integer+ x))
 
-        `integer+` is a global name.  Its load should go directly into the
-        phi slot with no intermediate MOVE.
+        `integer+` is a prelude binding.  Its load should go directly into
+        the phi slot with no intermediate MOVE.
         """
         src = '(lambda (x) (if (boolean? x) integer+ x))'
         code = _find_lambda(_compile(src))

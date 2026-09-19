@@ -7,7 +7,7 @@ list structure patterns, nested patterns, and error cases.
 
 import pytest
 
-from menai import MenaiEvalError, VMErrorCode
+from menai import MenaiEvalError
 
 
 class TestPatternMatching:
@@ -88,7 +88,7 @@ class TestPatternMatching:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('(let ((result (match 42 (x (integer* x 2))))) (integer+ result x))')
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     def test_variable_binding_shadowing(self, menai, helpers):
         """Test that pattern variables can shadow outer bindings."""
@@ -130,7 +130,7 @@ class TestPatternMatching:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('(match 42 (_ (integer+ _ 1)))')
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     # ========== Type Pattern Matching ==========
 
@@ -529,7 +529,7 @@ class TestPatternMatching:
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('(match 42 (x (integer+ x undefined-var)) (_ "other"))')
 
-        assert exc_info.value.error_code == VMErrorCode.UNDEFINED_VARIABLE
+        assert "Unbound variable" in exc_info.value.message
 
     # ========== Practical Examples and Real-World Usage ==========
 
