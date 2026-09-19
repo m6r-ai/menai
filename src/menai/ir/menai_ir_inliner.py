@@ -5,11 +5,18 @@ Walks the IR tree and substitutes lambda bodies at call sites where the
 call target can be resolved to a known lambda.  Inlining is always safe in
 Menai because the language is pure — there are no side effects to reorder.
 
-The pass resolves call targets to lambdas bound in an enclosing let/letrec
-whose value is a MenaiIRLambda.  The scope stack maps binding names to lambda
-nodes as the tree is walked.  Prelude functions are ordinary bindings in that
-scope stack: the prelude is spliced into every program as a letrec, so its
-functions are resolved the same way as any other local lambda.
+The pass resolves two kinds of call target:
+
+- A lambda bound in an enclosing let/letrec whose value is a MenaiIRLambda.
+  The scope stack maps binding names to lambda nodes as the tree is walked.
+  Prelude functions are ordinary bindings in that scope stack: the prelude is
+  spliced into every program as a letrec, so its functions are resolved the
+  same way as any other local lambda.
+
+- A direct lambda application, where the function position is itself a lambda
+  (e.g. ((lambda (x) ...) arg)).  The lambda is written at the call site, so
+  inlining it there removes a closure allocation and an indirect call without
+  changing any scope.
 
 A lambda is only inlined when:
 
@@ -21,6 +28,9 @@ A lambda is only inlined when:
   internal bindings are safe because those bindings travel with the inlined
   body.
 - The argument count matches the parameter count (arity must be exact).
+- A lambda bound elsewhere has no captures.  A direct lambda application is
+  exempt from this: it is inlined at its own definition site, so its captures
+  remain in scope after substitution.
 
 The pass iterates to a fixed point: after each round of inlining, the
 tree is walked again.  Inlining can expose new inlineable call sites (e.g.
@@ -259,7 +269,18 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         func_plan: MenaiIRExpr,
         scope_stack: list[dict[str, MenaiIRLambda]],
     ) -> MenaiIRLambda | None:
-        """Resolve a call target to a MenaiIRLambda, or None if not resolvable."""
+        """
+        Resolve a call target to a MenaiIRLambda, or None if not resolvable.
+
+        A direct lambda application — a call whose function position is itself a
+        lambda, as in ((lambda (x) ...) arg) — resolves to that lambda.  The
+        lambda is written at the call site, so inlining it there changes no
+        scoping: its captures are resolved against the enclosing scope at that
+        exact position and remain in scope after substitution.
+        """
+        if isinstance(func_plan, MenaiIRLambda):
+            return func_plan
+
         if not isinstance(func_plan, MenaiIRVariable):
             return None
 
@@ -288,8 +309,14 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             if arg_count != target.param_count:
                 return False
 
-        if target.sibling_free_vars or target.outer_free_vars:
-            return False
+        # A lambda bound elsewhere is inlined at a call site that may be in a
+        # different scope from where it was defined, so a capture could become
+        # stale after substitution; reject those.  A direct lambda application
+        # is inlined at its own definition site, so its captures stay in scope
+        # and the check does not apply.
+        if not isinstance(func_plan, MenaiIRLambda):
+            if target.sibling_free_vars or target.outer_free_vars:
+                return False
 
         if isinstance(func_plan, MenaiIRVariable):
             if target.binding_name is not None and target.binding_name in letrec_names:

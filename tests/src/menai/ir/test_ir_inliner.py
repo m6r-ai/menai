@@ -88,6 +88,30 @@ def _count_calls_to(ir, name: str) -> int:
     return 0
 
 
+def _count_direct_lambda_calls(ir) -> int:
+    """Count calls whose function position is itself a lambda."""
+    if isinstance(ir, MenaiIRCall):
+        own = 1 if isinstance(ir.func_plan, MenaiIRLambda) else 0
+        return own + sum(_count_direct_lambda_calls(a) for a in ir.arg_plans) + _count_direct_lambda_calls(ir.func_plan)
+
+    if isinstance(ir, MenaiIRReturn):
+        return _count_direct_lambda_calls(ir.value_plan)
+
+    if isinstance(ir, MenaiIRIf):
+        return (_count_direct_lambda_calls(ir.condition_plan)
+                + _count_direct_lambda_calls(ir.then_plan)
+                + _count_direct_lambda_calls(ir.else_plan))
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        return (sum(_count_direct_lambda_calls(v) for _, v in ir.bindings)
+                + _count_direct_lambda_calls(ir.body_plan))
+
+    if isinstance(ir, MenaiIRLambda):
+        return _count_direct_lambda_calls(ir.body_plan)
+
+    return 0
+
+
 class TestLocalLambdaInlining:
     """Tests for inlining locally-bound lambdas."""
 
@@ -149,6 +173,64 @@ class TestLocalLambdaInlining:
     def test_variadic_lambda_under_arity_not_inlined(self):
         """A variadic lambda called with too few args should not be inlined."""
         ir = _build_ir("(let ((f (lambda (x y . rest) (integer+ x y)))) (f 1))")
+        new_ir, changed = _inline(ir)
+
+        assert not changed
+
+
+class TestDirectLambdaApplicationInlining:
+    """Tests for inlining calls whose function position is itself a lambda."""
+
+    def test_direct_lambda_application_inlined(self):
+        """A call to a lambda written at the call site should be inlined."""
+        ir = _build_ir("((lambda (x) (integer+ x 1)) 5)")
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_direct_lambda_calls(new_ir) == 0
+
+    def test_direct_lambda_application_with_capture_inlined(self):
+        """A direct lambda application whose lambda captures an outer variable is inlined."""
+        ir = _build_ir("(let ((y 10)) ((lambda (x) (integer+ x y)) 5))")
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_direct_lambda_calls(new_ir) == 0
+
+    def test_nested_direct_lambda_applications_inlined(self):
+        """A direct lambda application whose body is another direct application is inlined at both."""
+        ir = _build_ir("((lambda (x) ((lambda (y) (integer+ x y)) 10)) 5)")
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_direct_lambda_calls(new_ir) == 0
+
+    def test_variadic_direct_lambda_application_inlined(self):
+        """A variadic direct lambda application is inlined with rest args packed into a list."""
+        ir = _build_ir("((lambda (. args) args) 1 2 3)")
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_direct_lambda_calls(new_ir) == 0
+
+    def test_nested_lambda_capturing_param_not_inlined(self):
+        """A direct lambda application whose body captures a parameter is not inlined."""
+        ir = _build_ir("((lambda (x) (lambda () x)) 5)")
+        new_ir, changed = _inline(ir)
+
+        assert not changed
+
+    def test_direct_lambda_application_arity_mismatch_not_inlined(self):
+        """A direct lambda application with the wrong argument count is not inlined."""
+        ir = _build_ir("((lambda (x) x) 1 2)")
+        new_ir, changed = _inline(ir)
+
+        assert not changed
+
+    def test_large_direct_lambda_application_not_inlined(self):
+        """A direct lambda application whose body exceeds the node threshold is not inlined."""
+        deep = "(integer+ x " * 25 + "0" + ")" * 25
+        ir = _build_ir(f"((lambda (x) {deep}) 5)")
         new_ir, changed = _inline(ir)
 
         assert not changed

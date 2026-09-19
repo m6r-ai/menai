@@ -326,8 +326,8 @@ class TestConstantCoalescingNestedFunctions:
         src = """
         (lambda (x)
           (list
-            ((lambda (y) (integer+ (integer+ y 1) 1)) x)
-            ((lambda (z) (integer+ (integer+ z 1) 1)) x)))
+            (lambda (y) (integer+ (integer+ y 1) 1))
+            (lambda (z) (integer+ (integer+ z 1) 1))))
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
