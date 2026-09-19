@@ -45,8 +45,7 @@ benchmark/
     │   ├── generate_fixtures.py
     │   └── fixtures/         # committed raw DEFLATE inputs
     ├── json_parser/
-    │   ├── suite.py          # JSON parser benchmark suite
-    │   └── json_parser.menai
+    │   └── suite.py          # JSON parser benchmark suite
     ├── png_parser/
     │   ├── suite.py          # PNG parser benchmark suite
     │   ├── generate_fixtures.py
@@ -185,7 +184,9 @@ incompressible data, and long runs.  Inputs are committed fixtures
 1. Create `suites/<name>/suite.py` containing a class named `Suite` that
    subclasses `BenchmarkSuite` from `benchmark`.
 2. Implement `cases()` and `implementation()`.
-3. Place any required `.menai` files in the same directory.
+3. Non-standard `.menai` modules go in the suite directory.  Standard-library
+   modules are resolved from `menai_modules/` and must not be copied into the
+   suite, so that the benchmark always exercises the reference implementation.
 4. For binary inputs, add a `generate_fixtures.py` script and a `fixtures/`
    directory, and commit the generated files (see [Fixtures](#fixtures)).
 
