@@ -170,7 +170,7 @@ def _load_test_module(menai: Menai, module_name: str) -> list[NodeTree]:
         MenaiError: If the module fails to evaluate.
         ValueError: If the module structure is invalid.
     """
-    result = menai.evaluate_raw(f'(let ((m (import "{module_name}"))) (m tests))')
+    result = menai.evaluate_raw(f'(let ((m (import "{module_name}"))) (:: m tests))')
 
     if not isinstance(result, MenaiList):
         raise ValueError(
@@ -208,7 +208,7 @@ def _run_leaf(
     expression = (
         f'(let ((t (import "menai_test")))'
         f'    (let ((m (import "{module_name}")))'
-        f'      (let ((thunk ((t test-find) (m tests) {path_literal})))'
+        f'      (let ((thunk ((:: t test-find) (:: m tests) {path_literal})))'
         f'        (thunk))))'
     )
 

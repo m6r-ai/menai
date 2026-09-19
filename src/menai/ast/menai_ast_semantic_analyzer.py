@@ -121,10 +121,10 @@ class MenaiASTSemanticAnalyzer:
         if isinstance(first, MenaiASTSymbol):
             name = first.name
 
-            # Member access: (namespace member) where namespace is a bound
-            # namespace name.  Checked before the special forms so a namespace
-            # name is never mistaken for a special form or builtin call.
-            if self._is_namespace(name):
+            # Member access: (:: namespace member).  The form head decides the
+            # meaning, so a namespace name is never mistaken for a special form
+            # or builtin call.
+            if name == '::':
                 return self._analyze_namespace_access(expr)
 
             if name == 'if':
@@ -1006,32 +1006,57 @@ class MenaiASTSemanticAnalyzer:
 
     def _analyze_namespace_access(self, expr: MenaiASTList) -> MenaiASTList:
         """
-        Validate member access on a namespace: (namespace member).
+        Validate member access on a namespace: (:: namespace member).
 
-        The head is a bound namespace name and the sole argument is the member
-        symbol to resolve.  The member is validated for shape only; whether it
-        names an actual export is checked by the module resolver, which has the
-        module's export map.
+        The first argument must be a namespace in scope and the second the
+        member symbol to resolve.  The member is validated for shape only;
+        whether it names an actual export is checked by the module resolver,
+        which has the module's export map.
         """
-        if len(expr.elements) != 2:
+        if len(expr.elements) != 3:
             raise MenaiEvalError(
                 message="Namespace member access has wrong number of arguments",
                 received=f"Got {len(expr.elements) - 1} arguments: {expr.describe()}",
-                expected="Exactly 1 argument: (namespace member)",
-                example="(shapes point-distance)",
+                expected="Exactly 2 arguments: (:: namespace member)",
+                example="(:: shapes point-distance)",
                 suggestion="Access a single member of the namespace by name",
                 line=expr.line,
                 column=expr.column,
                 source=self.source
             )
 
-        member_expr = expr.elements[1]
+        namespace_expr = expr.elements[1]
+        if not isinstance(namespace_expr, MenaiASTSymbol):
+            raise MenaiEvalError(
+                message="Namespace member access requires a namespace name",
+                received=f"Namespace: {namespace_expr.type_name()}",
+                expected="Unquoted namespace name",
+                example="(:: shapes point-distance) not (:: \"shapes\" point-distance)",
+                suggestion="Use the name of a namespace bound by an import",
+                line=namespace_expr.line,
+                column=namespace_expr.column,
+                source=self.source
+            )
+
+        if not self._is_namespace(namespace_expr.name):
+            raise MenaiEvalError(
+                message=f"'{namespace_expr.name}' is not a namespace",
+                received=f"Name: {namespace_expr.name}",
+                expected="The name of a namespace bound by an import",
+                example='(let ((shapes (import "shapes"))) (:: shapes point-distance))',
+                suggestion="Bind the import to a name and access its members",
+                line=namespace_expr.line,
+                column=namespace_expr.column,
+                source=self.source
+            )
+
+        member_expr = expr.elements[2]
         if not isinstance(member_expr, MenaiASTSymbol):
             raise MenaiEvalError(
                 message="Namespace member must be a symbol",
                 received=f"Member: {member_expr.type_name()}",
                 expected="Unquoted member name",
-                example="(shapes point-distance) not (shapes \"point-distance\")",
+                example="(:: shapes point-distance) not (:: shapes \"point-distance\")",
                 suggestion="Use an unquoted name to access a namespace member",
                 line=member_expr.line,
                 column=member_expr.column,
@@ -1051,7 +1076,7 @@ class MenaiASTSemanticAnalyzer:
 
     def _reject_namespace_as_value(self, node: MenaiASTNode, context: str) -> None:
         """
-        Reject a namespace name used anywhere other than a member-access head.
+        Reject a namespace name used anywhere other than the first argument of ::.
 
         Namespaces are second-class: a namespace name may only be bound and
         then accessed through member access.  Using it as an ordinary value
@@ -1061,13 +1086,26 @@ class MenaiASTSemanticAnalyzer:
             raise MenaiEvalError(
                 message=f"Namespace '{node.name}' cannot be used as a value",
                 received=f"Namespace '{node.name}' used in {context}",
-                expected="Member access on the namespace: (namespace member)",
-                example=f"({node.name} some-member)",
+                expected="Member access on the namespace: (:: namespace member)",
+                example=f"(:: {node.name} some-member)",
                 suggestion="Namespaces are second-class; access a member instead of the namespace itself",
                 line=node.line,
                 column=node.column,
                 source=self.source
             )
+
+    def _reject_namespace_as_function(self, expr: MenaiASTList, name: str) -> None:
+        """Reject a namespace name used as a call head."""
+        raise MenaiEvalError(
+            message=f"Namespace '{name}' cannot be used as a function",
+            received=f"Namespace '{name}' used as a call head: {expr.describe()}",
+            expected=f"Member access on the namespace: (:: {name} member)",
+            example=f"(:: {name} some-member)",
+            suggestion="Namespaces are second-class; access a member instead of calling the namespace",
+            line=expr.line,
+            column=expr.column,
+            source=self.source
+        )
 
     def _reject_import_outside_binding(self, expr: MenaiASTList) -> MenaiASTList:
         """Reject (import ...) used anywhere other than a let/let*/letrec binding value."""
@@ -1075,7 +1113,7 @@ class MenaiASTSemanticAnalyzer:
             message="import is only valid as a binding value",
             received=f"import used in: {expr.describe()}",
             expected="(let ((name (import \"module-name\"))) body)",
-            example='(let ((shapes (import "shapes"))) (shapes point-distance))',
+            example='(let ((shapes (import "shapes"))) (:: shapes point-distance))',
             suggestion="Bind the import to a name and access its members",
             line=expr.line,
             column=expr.column,
@@ -1173,6 +1211,11 @@ class MenaiASTSemanticAnalyzer:
         first = expr.first()
         if isinstance(first, MenaiASTSymbol):
             name = first.name
+
+            # A namespace name is not callable: member access is the only way
+            # to reach a namespace's members, and it is written (:: ns member).
+            if self._is_namespace(name):
+                self._reject_namespace_as_function(expr, name)
 
             # $-prefixed names are opcode-backed primitives written explicitly
             # (e.g. inside prelude bodies or emitted by the desugarer).

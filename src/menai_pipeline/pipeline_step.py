@@ -51,6 +51,6 @@ def resolve_step_expression(step: MenaiStep) -> str:
     """
     if step.module is not None:
         escaped = step.module.replace("\\", "\\\\").replace('"', '\\"')
-        return f'(let ((mod (import "{escaped}"))) ((mod run) inputs))'
+        return f'(let ((mod (import "{escaped}"))) ((:: mod run) inputs))'
 
     return step.expression

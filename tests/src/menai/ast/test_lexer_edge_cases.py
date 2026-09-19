@@ -538,7 +538,7 @@ class TestMenaiLexerEdgeCases:
         assert result == 42
 
         # Multiple errors in sequence
-        invalid_inputs = ["@", "±", "#", ":"]
+        invalid_inputs = ["@", "±", "#", "["]
         for invalid in invalid_inputs:
             with pytest.raises(MenaiTokenError):
                 menai.evaluate(invalid)

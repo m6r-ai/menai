@@ -142,7 +142,7 @@ Using it:
 
 ```menai
 (let ((json (import "json_parser")))
-  (let ((parse (json parse)))
+  (let ((parse (:: json parse)))
     (parse "{\"name\": \"Alice\", \"scores\": [95, 87, 92]}")))
 → {("name" "Alice") ("scores" (95 87 92))}
 ```
@@ -162,7 +162,7 @@ Here is the structure of a test module:
 
 ```menai
 (let ((t (import "menai_test")))
-  (let ((assert-equal (t assert-equal)))
+  (let ((assert-equal (:: t assert-equal)))
     (let ((tests (list
                    (list "addition" (lambda () (assert-equal (integer+ 1 2) 3)))
                    (list "concatenation" (lambda () (assert-equal (string-concat "a" "b") "ab"))))))

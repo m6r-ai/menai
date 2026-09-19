@@ -24,7 +24,7 @@
                       (string-concat "{" (list->string pair-strings ", ") "}")))
                    (_ "?unknown?")))))
              (let* ((content (dict-get inputs "content"))
-                    (parsed ((json-parser parse) content))
+                    (parsed ((:: json-parser parse) content))
                     (result (value->string parsed)))
                (dict "result" result))))))
     (export run)))

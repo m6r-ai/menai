@@ -21,7 +21,7 @@ _FIXTURE_NAMES = [
 
 _ITERATIONS = 5
 
-_EXPR = '(let ((zlib (import "zlib_parser"))) ((zlib decompress) (dict-get inputs "input-data")))'
+_EXPR = '(let ((zlib (import "zlib_parser"))) ((:: zlib decompress) (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):

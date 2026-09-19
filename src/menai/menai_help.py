@@ -422,8 +422,8 @@ Syntax: (operator arg1 arg2 ...)
 - (import "module-name") → load a module as a namespace (compile-time operation)
 - A module is a .menai file whose body ends with (export name1 name2 ...), naming the bindings it exports
 - import is only valid as the value of a let/let*/letrec binding; bind it to a name and access its members
-- Member access: (namespace member) → the value of that export, resolved at compile time
-- Namespaces are second-class: a namespace name may only be bound and then accessed by member; it cannot be passed, stored, or returned as a value
+- Member access: (:: namespace member) → the value of that export, resolved at compile time
+- Namespaces are second-class: a namespace name may only be bound and then used as the first argument of ::; it cannot be passed, stored, returned, or called as a function
 - Example module (math_utils.menai):
   ```menai
   (let ((square (lambda (x) (integer* x x)))
@@ -433,9 +433,9 @@ Syntax: (operator arg1 arg2 ...)
 - Using a module:
   ```menai
   (let ((math (import "math_utils")))
-    ((math square) 5))  → 25
+    ((:: math square) 5))  → 25
   ```
-- Renaming: bind a member to a local name, e.g. (let ((Point (shapes point))) ...)
+- Renaming: bind a member to a local name, e.g. (let ((Point (:: shapes point))) ...)
 - Modules can import other modules (transitive dependencies)
 - Private functions: bindings not named in the export form are private to the module
 - Module names can include subdirectories: (e.g. import "lib/helpers")

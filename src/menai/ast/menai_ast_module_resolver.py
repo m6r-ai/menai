@@ -331,7 +331,7 @@ class _ModuleRenamer:
                 pattern head names a type, not a bound variable, so it is
                 renamed like any other reference to a module binding.
             namespace_names: Names of the module's namespace bindings (imports).
-                In a member access (namespace member), the namespace name is
+                In a member access (:: namespace member), the namespace name is
                 renamed but the member name is a key, not a variable reference,
                 so it is left alone.
         """
@@ -364,17 +364,20 @@ class _ModuleRenamer:
         if head_name == 'quote':
             return expr
 
-        # Namespace member access: (namespace member).  Rename the namespace
+        # Namespace member access: (:: namespace member).  Rename the namespace
         # name but leave the member name, which is a key into the namespace's
         # export map rather than a reference to a module binding.
-        if (head_name in self._namespace_names and head_name not in shadowed
-                and len(expr.elements) == 2):
-            new_head = MenaiASTSymbol(
-                self._renaming[head_name],
-                line=head.line, column=head.column, source_file=head.source_file,
+        if (head_name == '::' and len(expr.elements) == 3
+                and isinstance(expr.elements[1], MenaiASTSymbol)
+                and expr.elements[1].name in self._namespace_names
+                and expr.elements[1].name not in shadowed):
+            namespace_expr = expr.elements[1]
+            new_namespace = MenaiASTSymbol(
+                self._renaming[namespace_expr.name],
+                line=namespace_expr.line, column=namespace_expr.column, source_file=namespace_expr.source_file,
             )
             return MenaiASTList(
-                (new_head, expr.elements[1]),
+                (head, new_namespace, expr.elements[2]),
                 line=expr.line, column=expr.column, source_file=expr.source_file,
             )
 

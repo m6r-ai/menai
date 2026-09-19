@@ -40,10 +40,10 @@ bound name:
 
 ```menai
 (let ((shapes (import "shapes")))
-  (shapes point-distance))
+  (:: shapes point-distance))
 ```
 
-`(shapes point-distance)` is a resolved reference to the declaration that produced the
+`(:: shapes point-distance)` is a resolved reference to the declaration that produced the
 member, not a runtime dict lookup. The compiler therefore knows which declaration each
 member denotes, so struct types, function identities, and result types all cross the
 module boundary intact.
@@ -112,6 +112,7 @@ the lexical grain the language has moved firmly toward.
   stored it in a container, or returned it must be rewritten to bind the members it needs.
 - A module that returns a non-dict value has no namespace members; only dict exports are
   addressable.
-- Member access is a new form the semantic analyser and desugarer must recognise, and
-  both must enforce the second-class restriction (rejecting a namespace used anywhere
-  other than a direct binding or a member-access head).
+- Member access is a new form, `(:: namespace member)`, that the semantic analyser and
+  desugarer must recognise, and both must enforce the second-class restriction
+  (rejecting a namespace used anywhere other than a direct binding or the first
+  argument of `::`).

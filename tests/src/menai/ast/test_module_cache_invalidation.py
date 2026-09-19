@@ -24,13 +24,13 @@ class TestCacheInvalidation:
         menai = Menai(module_path=[str(tmp_path)])
 
         # First load
-        menai.evaluate('(let ((m (import "stable"))) (m value))')
+        menai.evaluate('(let ((m (import "stable"))) (:: m value))')
         assert "stable" in menai.module_cache
         assert "stable" in menai.module_hashes
         hash1 = menai.module_hashes["stable"]
 
         # Second load - should use cache
-        menai.evaluate('(let ((m (import "stable"))) (m value))')
+        menai.evaluate('(let ((m (import "stable"))) (:: m value))')
         assert "stable" in menai.module_cache
         hash2 = menai.module_hashes["stable"]
 
@@ -47,7 +47,7 @@ class TestCacheInvalidation:
         # First load
         result1 = menai.evaluate('''
 (let ((mod (import "changing")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result1 == 1
         hash1 = menai.module_hashes["changing"]
@@ -58,7 +58,7 @@ class TestCacheInvalidation:
         # Second load - should detect change and reload
         result2 = menai.evaluate('''
 (let ((mod (import "changing")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result2 == 2
         hash2 = menai.module_hashes["changing"]
@@ -74,14 +74,14 @@ class TestCacheInvalidation:
         menai = Menai(module_path=[str(tmp_path)])
 
         # First load
-        menai.evaluate('(let ((m (import "whitespace"))) (m x))')
+        menai.evaluate('(let ((m (import "whitespace"))) (:: m x))')
         hash1 = menai.module_hashes["whitespace"]
 
         # Change only whitespace
         module_file.write_text("(let  ((x 1))  (export x))")
 
         # Second load - should detect change (different hash)
-        menai.evaluate('(let ((m (import "whitespace"))) (m x))')
+        menai.evaluate('(let ((m (import "whitespace"))) (:: m x))')
         hash2 = menai.module_hashes["whitespace"]
 
         # Hash should be different (content changed)
@@ -95,14 +95,14 @@ class TestCacheInvalidation:
         menai = Menai(module_path=[str(tmp_path)])
 
         # First load
-        menai.evaluate('(let ((m (import "commented"))) (m x))')
+        menai.evaluate('(let ((m (import "commented"))) (:: m x))')
         hash1 = menai.module_hashes["commented"]
 
         # Change comment
         module_file.write_text("; Comment v2\n(let ((x 1)) (export x))")
 
         # Second load - should detect change
-        menai.evaluate('(let ((m (import "commented"))) (m x))')
+        menai.evaluate('(let ((m (import "commented"))) (:: m x))')
         hash2 = menai.module_hashes["commented"]
 
         # Hash should be different
@@ -116,8 +116,8 @@ class TestCacheInvalidation:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Load both modules
-        menai.evaluate('(let ((m (import "module_a"))) (m a))')
-        menai.evaluate('(let ((m (import "module_b"))) (m b))')
+        menai.evaluate('(let ((m (import "module_a"))) (:: m a))')
+        menai.evaluate('(let ((m (import "module_b"))) (:: m b))')
         hash_a1 = menai.module_hashes["module_a"]
         hash_b1 = menai.module_hashes["module_b"]
 
@@ -125,8 +125,8 @@ class TestCacheInvalidation:
         (tmp_path / "module_a.menai").write_text("(let ((a 99)) (export a))")
 
         # Reload both
-        menai.evaluate('(let ((m (import "module_a"))) (m a))')
-        menai.evaluate('(let ((m (import "module_b"))) (m b))')
+        menai.evaluate('(let ((m (import "module_a"))) (:: m a))')
+        menai.evaluate('(let ((m (import "module_b"))) (:: m b))')
         hash_a2 = menai.module_hashes["module_a"]
         hash_b2 = menai.module_hashes["module_b"]
 
@@ -145,7 +145,7 @@ class TestCacheInvalidation:
         # Wrapper imports base
         (tmp_path / "wrapper.menai").write_text("""
 (let ((base (import "base")))
-  (let ((get-value (lambda () (base value))))
+  (let ((get-value (lambda () (:: base value))))
     (export get-value)))
 """)
 
@@ -154,7 +154,7 @@ class TestCacheInvalidation:
         # Load wrapper (which loads base)
         result1 = menai.evaluate('''
 (let ((w (import "wrapper")))
-  ((w get-value)))
+  ((:: w get-value)))
 ''')
         assert result1 == 10
 
@@ -170,7 +170,7 @@ class TestCacheInvalidation:
         # Reload wrapper - should get new base value
         result2 = menai.evaluate('''
 (let ((w (import "wrapper")))
-  ((w get-value)))
+  ((:: w get-value)))
 ''')
         assert result2 == 20
 
@@ -184,7 +184,7 @@ class TestHashComputation:
         module_file.write_text("(let ((x 1)) (export x))")
 
         menai = Menai(module_path=[str(tmp_path)])
-        menai.evaluate('(let ((m (import "hashtest"))) (m x))')
+        menai.evaluate('(let ((m (import "hashtest"))) (:: m x))')
 
         hash_value = menai.module_hashes["hashtest"]
 
@@ -200,8 +200,8 @@ class TestHashComputation:
 
         menai = Menai(module_path=[str(tmp_path)])
 
-        menai.evaluate('(let ((m (import "file1"))) (m x))')
-        menai.evaluate('(let ((m (import "file2"))) (m x))')
+        menai.evaluate('(let ((m (import "file1"))) (:: m x))')
+        menai.evaluate('(let ((m (import "file2"))) (:: m x))')
 
         # Same content should produce same hash
         assert menai.module_hashes["file1"] == menai.module_hashes["file2"]
@@ -213,8 +213,8 @@ class TestHashComputation:
 
         menai = Menai(module_path=[str(tmp_path)])
 
-        menai.evaluate('(let ((m (import "diff1"))) (m x))')
-        menai.evaluate('(let ((m (import "diff2"))) (m x))')
+        menai.evaluate('(let ((m (import "diff1"))) (:: m x))')
+        menai.evaluate('(let ((m (import "diff2"))) (:: m x))')
 
         # Different content should produce different hashes
         assert menai.module_hashes["diff1"] != menai.module_hashes["diff2"]
@@ -237,7 +237,7 @@ class TestHashComputation:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Should successfully hash and load
-        menai.evaluate('(let ((m (import "large"))) (m func0))')
+        menai.evaluate('(let ((m (import "large"))) (:: m func0))')
         assert "large" in menai.module_hashes
 
         # Verify it's actually large
@@ -255,7 +255,7 @@ class TestManualCacheControl:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Load module
-        menai.evaluate('(let ((m (import "removable"))) (m x))')
+        menai.evaluate('(let ((m (import "removable"))) (:: m x))')
         assert "removable" in menai.module_cache
         assert "removable" in menai.module_hashes
 
@@ -281,7 +281,7 @@ class TestManualCacheControl:
         # Initial load
         result1 = menai.evaluate('''
 (let ((mod (import "reloadable")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result1 == 1
 
@@ -294,7 +294,7 @@ class TestManualCacheControl:
         # Next import should get new value
         result2 = menai.evaluate('''
 (let ((mod (import "reloadable")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result2 == 2
 
@@ -306,8 +306,8 @@ class TestManualCacheControl:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Load modules
-        menai.evaluate('(let ((m (import "test1"))) (m x))')
-        menai.evaluate('(let ((m (import "test2"))) (m x))')
+        menai.evaluate('(let ((m (import "test1"))) (:: m x))')
+        menai.evaluate('(let ((m (import "test2"))) (:: m x))')
         assert len(menai.module_cache) == 2
         assert len(menai.module_hashes) == 2
 
@@ -328,7 +328,7 @@ class TestManualCacheControl:
         menai = Menai(module_path=[str(dir1)])
 
         # Load module
-        menai.evaluate('(let ((m (import "test"))) (m x))')
+        menai.evaluate('(let ((m (import "test"))) (:: m x))')
         assert len(menai.module_cache) == 1
         assert len(menai.module_hashes) == 1
 
@@ -349,7 +349,7 @@ class TestCacheInvalidationEdgeCases:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Load and cache
-        menai.evaluate('(let ((m (import "deletable"))) (m x))')
+        menai.evaluate('(let ((m (import "deletable"))) (:: m x))')
         assert "deletable" in menai.module_cache
 
         # Delete file
@@ -358,7 +358,7 @@ class TestCacheInvalidationEdgeCases:
         # Try to load again - should fail with module not found
         from menai.menai_error import MenaiModuleNotFoundError
         with pytest.raises(MenaiModuleNotFoundError):
-            menai.evaluate('(let ((m (import "deletable"))) (m x))')
+            menai.evaluate('(let ((m (import "deletable"))) (:: m x))')
 
         # Cache should be cleaned up
         assert "deletable" not in menai.module_cache
@@ -374,7 +374,7 @@ class TestCacheInvalidationEdgeCases:
         # Load original
         result1 = menai.evaluate('''
 (let ((mod (import "recreated")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result1 == 1
 
@@ -385,7 +385,7 @@ class TestCacheInvalidationEdgeCases:
         # Load again - should get new content
         result2 = menai.evaluate('''
 (let ((mod (import "recreated")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result2 == 2
 
@@ -399,7 +399,7 @@ class TestCacheInvalidationEdgeCases:
 
         # Should handle gracefully (though lexer might reject some chars)
         try:
-            menai.evaluate('(let ((m (import "special"))) (m x))')
+            menai.evaluate('(let ((m (import "special"))) (:: m x))')
             # If it loads, hash should exist
             assert "special" in menai.module_hashes
         except Exception:
@@ -429,7 +429,7 @@ class TestCacheInvalidationEdgeCases:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Should load and hash correctly
-        menai.evaluate('(let ((m (import "unicode"))) (m greeting))')
+        menai.evaluate('(let ((m (import "unicode"))) (:: m greeting))')
         assert "unicode" in menai.module_hashes
 
         # Modify Unicode content
@@ -437,7 +437,7 @@ class TestCacheInvalidationEdgeCases:
 
         # Should detect change
         hash1 = menai.module_hashes["unicode"]
-        menai.evaluate('(let ((m (import "unicode"))) (m greeting))')
+        menai.evaluate('(let ((m (import "unicode"))) (:: m greeting))')
         hash2 = menai.module_hashes["unicode"]
 
         assert hash1 != hash2

@@ -60,7 +60,7 @@ _CASES: list[tuple[str, str, int]] = [
 def _to_menai_expr(json_str: str) -> str:
     """Wrap a JSON string in a Menai parse call, escaping for Menai string syntax."""
     escaped = json_str.replace("\\", "\\\\").replace('"', '\\"')
-    return f'(let ((json (import "json_parser"))) ((json parse) "{escaped}"))'
+    return f'(let ((json (import "json_parser"))) ((:: json parse) "{escaped}"))'
 
 
 class Suite(BenchmarkSuite):

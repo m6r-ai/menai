@@ -29,7 +29,7 @@ _OPERATIONS = ["parse", "extract"]
 
 def _expr(operation: str) -> str:
     """Return the Menai expression that runs the given operation on the bound fixture."""
-    return f'(let ((zip (import "zip_parser"))) ((zip {operation}) (dict-get inputs "input-data")))'
+    return f'(let ((zip (import "zip_parser"))) ((:: zip {operation}) (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):

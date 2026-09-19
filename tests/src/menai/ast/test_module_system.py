@@ -37,7 +37,7 @@ class TestModuleSystemBasics:
 
         result = menai.evaluate('''
 (let ((math (import "math_utils")))
-  ((math square) 5))
+  ((:: math square) 5))
 ''')
 
         assert result == 25
@@ -56,9 +56,9 @@ class TestModuleSystemBasics:
 
         result = menai.evaluate('''
 (let ((utils (import "utils")))
-  (integer+ ((utils add-one) 10)
-     ((utils double) 5)
-     ((utils negate) 3)))
+  (integer+ ((:: utils add-one) 10)
+     ((:: utils double) 5)
+     ((:: utils negate) 3)))
 ''')
 
         # add-one(10) = 11, double(5) = 10, negate(3) = -3
@@ -80,7 +80,7 @@ class TestModuleSystemBasics:
         # Can call public function
         result = menai.evaluate('''
 (let ((mod (import "private_test")))
-  ((mod public-fn) 5))
+  ((:: mod public-fn) 5))
 ''')
         assert result == 10
 
@@ -88,7 +88,7 @@ class TestModuleSystemBasics:
         with pytest.raises(MenaiEvalError):
             menai.evaluate('''
 (let ((mod (import "private_test")))
-  (mod helper))
+  (:: mod helper))
 ''')
 
 
@@ -105,7 +105,7 @@ class TestModuleCaching:
 
         menai = Menai(module_path=[str(tmp_path)])
 
-        menai.evaluate('(let ((m (import "cached"))) (m value))')
+        menai.evaluate('(let ((m (import "cached"))) (:: m value))')
 
         # Check cache
         assert "cached" in menai.module_cache
@@ -123,8 +123,8 @@ class TestModuleCaching:
         result = menai.evaluate('''
 (let ((m1 (import "multi"))
       (m2 (import "multi")))
-  (integer+ ((m1 fn) 3)
-     ((m2 fn) 4)))
+  (integer+ ((:: m1 fn) 3)
+     ((:: m2 fn) 4)))
 ''')
 
         # Should work correctly: 9 + 16 = 25
@@ -143,7 +143,7 @@ class TestModuleCaching:
 
         menai = Menai(module_path=[str(tmp_path)])
 
-        menai.evaluate('(let ((m (import "clearable"))) (m x))')
+        menai.evaluate('(let ((m (import "clearable"))) (:: m x))')
         assert "clearable" in menai.module_cache
 
         menai.clear_module_cache()
@@ -159,7 +159,7 @@ class TestModuleSearchPath:
         module_file.write_text('(let ((val 1)) (export val))')
 
         menai = Menai(module_path=[str(tmp_path)])
-        result = menai.evaluate('(let ((m (import "single"))) (m val))')
+        result = menai.evaluate('(let ((m (import "single"))) (:: m val))')
 
         # Should successfully load
         assert result == 1
@@ -180,8 +180,8 @@ class TestModuleSearchPath:
         menai = Menai(module_path=[str(dir1), str(dir2)])
 
         # Can import from both
-        menai.evaluate('(let ((m (import "first"))) (m val))')
-        menai.evaluate('(let ((m (import "second"))) (m val))')
+        menai.evaluate('(let ((m (import "first"))) (:: m val))')
+        menai.evaluate('(let ((m (import "second"))) (:: m val))')
 
     def test_first_match_wins_in_search_path(self, tmp_path):
         """Test that first matching module in search path is used."""
@@ -199,7 +199,7 @@ class TestModuleSearchPath:
 
         result = menai.evaluate('''
 (let ((mod (import "duplicate")))
-  (mod val))
+  (:: mod val))
 ''')
 
         # Should get value from dir1 (list-first in search path)
@@ -216,7 +216,7 @@ class TestModuleSearchPath:
 
         result = menai.evaluate('''
 (let ((mod (import "lib/helper")))
-  (mod val))
+  (:: mod val))
 ''')
 
         assert result == 42
@@ -230,7 +230,7 @@ class TestModuleErrors:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(MenaiModuleNotFoundError) as exc_info:
-            menai.evaluate('(let ((m (import "nonexistent"))) (m x))')
+            menai.evaluate('(let ((m (import "nonexistent"))) (:: m x))')
 
         error_msg = str(exc_info.value)
         assert "not found" in error_msg.lower()
@@ -246,7 +246,7 @@ class TestModuleErrors:
         menai = Menai(module_path=[str(dir1), str(dir2)])
 
         with pytest.raises(MenaiModuleNotFoundError) as exc_info:
-            menai.evaluate('(let ((m (import "missing"))) (m x))')
+            menai.evaluate('(let ((m (import "missing"))) (:: m x))')
 
         error_msg = str(exc_info.value)
         assert str(dir1) in error_msg or "dir1" in error_msg
@@ -258,12 +258,12 @@ class TestModuleErrors:
 
         # No arguments
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate('(let ((m (import))) (m x))')
+            menai.evaluate('(let ((m (import))) (:: m x))')
         assert "wrong number of arguments" in str(exc_info.value).lower()
 
         # Too many arguments
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate('(let ((m (import "mod1" "mod2"))) (m x))')
+            menai.evaluate('(let ((m (import "mod1" "mod2"))) (:: m x))')
         assert "wrong number of arguments" in str(exc_info.value).lower()
 
     def test_import_requires_string_literal(self):
@@ -271,7 +271,7 @@ class TestModuleErrors:
         menai = Menai()
 
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate('(let ((m (import 42))) (m x))')
+            menai.evaluate('(let ((m (import 42))) (:: m x))')
         assert "string literal" in str(exc_info.value).lower()
 
     def test_import_empty_string_error(self):
@@ -279,7 +279,7 @@ class TestModuleErrors:
         menai = Menai()
 
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate('(let ((m (import ""))) (m x))')
+            menai.evaluate('(let ((m (import ""))) (:: m x))')
         assert "empty" in str(exc_info.value).lower()
 
     def test_module_with_syntax_error(self, tmp_path):
@@ -290,7 +290,7 @@ class TestModuleErrors:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(Exception):  # Will be a parse error
-            menai.evaluate('(let ((m (import "broken"))) (m x))')
+            menai.evaluate('(let ((m (import "broken"))) (:: m x))')
 
     def test_module_without_export_rejected(self, tmp_path):
         """A module whose body is not an export form is rejected."""
@@ -300,7 +300,7 @@ class TestModuleErrors:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(Exception):
-            menai.evaluate('(let ((m (import "noexport"))) (m x))')
+            menai.evaluate('(let ((m (import "noexport"))) (:: m x))')
 
     def test_module_exporting_unbound_name_rejected(self, tmp_path):
         """A module exporting a name it does not bind is rejected."""
@@ -310,7 +310,7 @@ class TestModuleErrors:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(Exception):
-            menai.evaluate('(let ((m (import "bad_export"))) (m y))')
+            menai.evaluate('(let ((m (import "bad_export"))) (:: m y))')
 
 
 class TestImportBindingPosition:
@@ -370,7 +370,7 @@ class TestSecondClassNamespaces:
 
         result = menai.evaluate('''
 (let ((m (import "mod")))
-  (integer+ (m x) 1))
+  (integer+ (:: m x) 1))
 ''')
         assert result == 42
 
@@ -381,10 +381,71 @@ class TestSecondClassNamespaces:
 
         result = menai.evaluate('''
 (let ((m (import "mod")))
-  (let ((v (m x)))
+  (let ((v (:: m x)))
     (integer+ v 1)))
 ''')
         assert result == 42
+
+    def test_namespace_used_as_call_head_rejected(self, tmp_path):
+        """A namespace used as a call head is rejected, not treated as member access."""
+        (tmp_path / "mod.menai").write_text('(let ((fn (lambda (x) x))) (export fn))')
+        menai = Menai(module_path=[str(tmp_path)])
+
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('''
+(let ((m (import "mod")))
+  ((m fn) 1))
+''')
+        message = str(exc_info.value)
+        assert "cannot be used as a function" in message.lower()
+        assert "(:: m " in message
+
+    def test_bare_member_access_form_rejected(self, tmp_path):
+        """The old bare (namespace member) form is not member access and is rejected."""
+        (tmp_path / "mod.menai").write_text('(let ((x 41)) (export x))')
+        menai = Menai(module_path=[str(tmp_path)])
+
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('''
+(let ((m (import "mod")))
+  (m x))
+''')
+        assert "cannot be used as a function" in str(exc_info.value).lower()
+
+    def test_member_access_requires_namespace(self):
+        """The first argument of :: must be a namespace in scope."""
+        menai = Menai()
+
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(:: not-a-namespace member)')
+        assert "not a namespace" in str(exc_info.value).lower()
+
+    def test_member_access_wrong_arity_rejected(self, tmp_path):
+        """:: requires exactly a namespace and a member."""
+        (tmp_path / "mod.menai").write_text('(let ((x 1)) (export x))')
+        menai = Menai(module_path=[str(tmp_path)])
+
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(let ((m (import "mod"))) (:: m))')
+        assert "wrong number of arguments" in str(exc_info.value).lower()
+
+    def test_member_must_be_a_symbol(self, tmp_path):
+        """The member name of :: must be an unquoted symbol."""
+        (tmp_path / "mod.menai").write_text('(let ((x 1)) (export x))')
+        menai = Menai(module_path=[str(tmp_path)])
+
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(let ((m (import "mod"))) (:: m "x"))')
+        assert "must be a symbol" in str(exc_info.value).lower()
+
+    def test_unknown_member_rejected(self, tmp_path):
+        """A member the module does not export is rejected."""
+        (tmp_path / "mod.menai").write_text('(let ((x 1)) (export x))')
+        menai = Menai(module_path=[str(tmp_path)])
+
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(let ((m (import "mod"))) (:: m nope))')
+        assert "no member" in str(exc_info.value).lower()
 
 
 class TestCircularImports:
@@ -400,7 +461,7 @@ class TestCircularImports:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(MenaiCircularImportError) as exc_info:
-            menai.evaluate('(let ((m (import "module_a"))) (m v))')
+            menai.evaluate('(let ((m (import "module_a"))) (:: m v))')
 
         error_msg = str(exc_info.value)
         assert "circular" in error_msg.lower()
@@ -415,7 +476,7 @@ class TestCircularImports:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(MenaiCircularImportError) as exc_info:
-            menai.evaluate('(let ((m (import "a"))) (m v))')
+            menai.evaluate('(let ((m (import "a"))) (:: m v))')
 
         error_msg = str(exc_info.value)
         # Should show the chain: a -> b -> a
@@ -432,7 +493,7 @@ class TestCircularImports:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(MenaiCircularImportError) as exc_info:
-            menai.evaluate('(let ((m (import "x"))) (m v))')
+            menai.evaluate('(let ((m (import "x"))) (:: m v))')
 
         error_msg = str(exc_info.value)
         assert "circular" in error_msg.lower()
@@ -444,7 +505,7 @@ class TestCircularImports:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(MenaiCircularImportError) as exc_info:
-            menai.evaluate('(let ((m (import "self"))) (m v))')
+            menai.evaluate('(let ((m (import "self"))) (:: m v))')
 
         error_msg = str(exc_info.value)
         assert "circular" in error_msg.lower()
@@ -464,7 +525,7 @@ class TestTransitiveImports:
         # Module that uses base
         (tmp_path / "wrapper.menai").write_text("""
 (let ((base (import "base")))
-  (let ((add-ten (lambda (x) ((base add) x 10))))
+  (let ((add-ten (lambda (x) ((:: base add) x 10))))
     (export add-ten)))
 """)
 
@@ -472,7 +533,7 @@ class TestTransitiveImports:
 
         result = menai.evaluate('''
 (let ((w (import "wrapper")))
-  ((w add-ten) 5))
+  ((:: w add-ten) 5))
 ''')
 
         assert result == 15
@@ -488,14 +549,14 @@ class TestTransitiveImports:
         # Level 2
         (tmp_path / "level2.menai").write_text("""
 (let ((l3 (import "level3")))
-  (let ((get-value (lambda () (l3 value))))
+  (let ((get-value (lambda () (:: l3 value))))
     (export get-value)))
 """)
 
         # Level 1
         (tmp_path / "level1.menai").write_text("""
 (let ((l2 (import "level2")))
-  (let ((get-nested (lambda () ((l2 get-value)))))
+  (let ((get-nested (lambda () ((:: l2 get-value)))))
     (export get-nested)))
 """)
 
@@ -503,7 +564,7 @@ class TestTransitiveImports:
 
         result = menai.evaluate('''
 (let ((l1 (import "level1")))
-  ((l1 get-nested)))
+  ((:: l1 get-nested)))
 ''')
 
         assert result == 1
@@ -519,14 +580,14 @@ class TestTransitiveImports:
         # B imports base
         (tmp_path / "left.menai").write_text("""
 (let ((base (import "base")))
-  (let ((get-left (lambda () (base value))))
+  (let ((get-left (lambda () (:: base value))))
     (export get-left)))
 """)
 
         # C imports base
         (tmp_path / "right.menai").write_text("""
 (let ((base (import "base")))
-  (let ((get-right (lambda () (base value))))
+  (let ((get-right (lambda () (:: base value))))
     (export get-right)))
 """)
 
@@ -535,8 +596,8 @@ class TestTransitiveImports:
 (let ((left (import "left"))
       (right (import "right")))
   (let ((sum (lambda ()
-               (integer+ ((left get-left))
-                  ((right get-right))))))
+               (integer+ ((:: left get-left))
+                  ((:: right get-right))))))
     (export sum)))
 """)
 
@@ -544,7 +605,7 @@ class TestTransitiveImports:
 
         result = menai.evaluate('''
 (let ((top (import "top")))
-  ((top sum)))
+  ((:: top sum)))
 ''')
 
         # Should get 10 + 10 = 20 (base module cached and reused)
@@ -567,7 +628,7 @@ class TestModuleCompilation:
 
         result = menai.evaluate('''
 (let ((mod (import "let_test")))
-  ((mod sum)))
+  ((:: mod sum)))
 ''')
 
         assert result == 30
@@ -586,7 +647,7 @@ class TestModuleCompilation:
 
         result = menai.evaluate('''
 (let ((mod (import "recursive")))
-  ((mod factorial) 5))
+  ((:: mod factorial) 5))
 ''')
 
         assert result == 120
@@ -605,7 +666,7 @@ class TestModuleCompilation:
 
         result = menai.evaluate('''
 (let ((mod (import "cond_test")))
-  ((mod abs-val) -42))
+  ((:: mod abs-val) -42))
 ''')
 
         assert result == 42
@@ -622,7 +683,7 @@ class TestModuleCompilation:
 
         result = menai.evaluate('''
 (let ((mod (import "hof")))
-  ((mod sum-squares) (list 1 2 3 4)))
+  ((:: mod sum-squares) (list 1 2 3 4)))
 ''')
 
         # 1^2 + 2^2 + 3^2 + 4^2 = 1 + 4 + 9 + 16 = 30
@@ -642,7 +703,7 @@ class TestModuleEdgeCases:
         with pytest.raises(MenaiEvalError):
             menai.evaluate('''
 (let ((mod (import "empty")))
-  (mod anything))
+  (:: mod anything))
 ''')
 
     def test_module_with_complex_data_structures(self, tmp_path):
@@ -657,8 +718,8 @@ class TestModuleEdgeCases:
 
         result = menai.evaluate('''
 (let ((mod (import "complex")))
-  (let ((data (mod data))
-        (nested (mod nested)))
+  (let ((data (:: mod data))
+        (nested (:: mod nested)))
     (integer+ (list-first data)
        (dict-get nested "inner"))))
 ''')
@@ -673,7 +734,7 @@ class TestModuleEdgeCases:
         menai1 = Menai(module_path=[str(tmp_path)])
         menai2 = Menai(module_path=[str(tmp_path)])
 
-        menai1.evaluate('(let ((m (import "test"))) (m val))')
+        menai1.evaluate('(let ((m (import "test"))) (:: m val))')
 
         # menai1 has it cached
         assert "test" in menai1.module_cache
@@ -687,7 +748,7 @@ class TestModuleEdgeCases:
 
         menai = Menai(module_path=[str(tmp_path)])
 
-        result = menai.evaluate('(let ((m (import "my_module-v2"))) (m x))')
+        result = menai.evaluate('(let ((m (import "my_module-v2"))) (:: m x))')
         assert result == 1
 
 
@@ -710,7 +771,7 @@ class TestModuleNameCollisions:
         result = menai.evaluate('''
 (let ((a (import "mod_a"))
       (b (import "mod_b")))
-  (integer+ ((a helper) 5) ((b helper) 5)))
+  (integer+ ((:: a helper) 5) ((:: b helper) 5)))
 ''')
 
         # (5 + 1) + (5 * 10) = 6 + 50 = 56
@@ -728,7 +789,7 @@ class TestModuleNameCollisions:
         result = menai.evaluate('''
 (let ((s1 (import "shared"))
       (s2 (import "shared")))
-  (integer+ ((s1 f) 3) ((s2 f) 4)))
+  (integer+ ((:: s1 f) 3) ((:: s2 f) 4)))
 ''')
 
         # 9 + 16 = 25
@@ -750,8 +811,8 @@ class TestImportedStructAsPatternHead:
 
         result = menai.evaluate('''
 (let ((shapes (import "shapes")))
-  (let ((Point (shapes point))
-        (make-point (shapes make-point)))
+  (let ((Point (:: shapes point))
+        (make-point (:: shapes make-point)))
     (let ((p (make-point 3 4)))
       (match p
         ((Point x y) (integer+ x y))))))
@@ -770,7 +831,7 @@ class TestImportedStructAsPatternHead:
 
         result = menai.evaluate('''
 (let ((shapes (import "shapes")))
-  (let ((Point (shapes point)))
+  (let ((Point (:: shapes point)))
     (let ((p (Point 5 6)))
       (struct-get p 'x))))
 ''')

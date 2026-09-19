@@ -49,10 +49,10 @@ class Suite(BenchmarkSuite):
             start, days, cal_days, holidays = case_input
             calendar_def = (
                 f'(let* ((calendar (import "calendar"))'
-                f' (cal ((calendar calendar) "std" "Standard" "5-day" '
+                f' (cal ((:: calendar calendar) "std" "Standard" "5-day" '
                 f'(set "mon" "tue" "wed" "thu" "fri") {_format_menai_holidays(holidays)})))'
-                ' (dict "add-working-days" (calendar add-working-days)'
-                ' "add-calendar-days" (calendar add-calendar-days)'
+                ' (dict "add-working-days" (:: calendar add-working-days)'
+                ' "add-calendar-days" (:: calendar add-calendar-days)'
                 ' "cal" cal))'
             )
             expr = (

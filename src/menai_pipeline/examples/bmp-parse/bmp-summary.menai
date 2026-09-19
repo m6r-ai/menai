@@ -20,7 +20,7 @@
                (lambda (pixels)
                  (list->string (map-list row->string (vector->list pixels)) "\n"))))
              (let* ((content (dict-get inputs "content"))
-                    (parsed ((bmp-parser parse) content))
+                    (parsed ((:: bmp-parser parse) content))
                     (header (dict-get parsed "header"))
                     (meta (dict-get parsed "meta")))
                (dict

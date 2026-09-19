@@ -24,13 +24,13 @@
 
 (letrec
   ((tables (import "deflate_tables"))
-   (length-base (tables length-base))
-   (length-extra (tables length-extra))
-   (distance-base (tables distance-base))
-   (distance-extra (tables distance-extra))
-   (code-length-order (tables code-length-order))
-   (fixed-lit-lengths (tables fixed-lit-lengths))
-   (fixed-dist-lengths (tables fixed-dist-lengths))
+   (length-base (:: tables length-base))
+   (length-extra (:: tables length-extra))
+   (distance-base (:: tables distance-base))
+   (distance-extra (:: tables distance-extra))
+   (code-length-order (:: tables code-length-order))
+   (fixed-lit-lengths (:: tables fixed-lit-lengths))
+   (fixed-dist-lengths (:: tables fixed-dist-lengths))
 
    (make-writer
     (lambda ()

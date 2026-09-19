@@ -34,7 +34,7 @@ class TestAbsolutePathRejection:
         menai = Menai(module_path=[str(tmp_path)])
 
         with pytest.raises(MenaiModuleError) as exc_info:
-            menai.evaluate('(let ((m (import "/etc/passwd"))) (m x))')
+            menai.evaluate('(let ((m (import "/etc/passwd"))) (:: m x))')
 
         error_msg = str(exc_info.value)
         assert "absolute" in error_msg.lower()
@@ -122,7 +122,7 @@ class TestRelativePathNavigationRejection:
 
         for module_name in test_cases:
             with pytest.raises(MenaiModuleError) as exc_info:
-                menai.evaluate(f'(let ((m (import "{module_name}"))) (m x))')
+                menai.evaluate(f'(let ((m (import "{module_name}"))) (:: m x))')
 
             error_msg = str(exc_info.value)
             assert "relative path navigation" in error_msg.lower()
@@ -204,7 +204,7 @@ class TestValidPaths:
 
         result = menai.evaluate('''
 (let ((utils (import "lib/utils")))
-  ((utils square) 5))
+  ((:: utils square) 5))
 ''')
 
         assert result == 25
@@ -230,7 +230,7 @@ class TestModulePathUpdate:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Load module (gets cached)
-        menai.evaluate('(let ((m (import "test"))) (m value))')
+        menai.evaluate('(let ((m (import "test"))) (:: m value))')
         assert "test" in menai.module_cache
 
         # Change module path
@@ -270,7 +270,7 @@ class TestModulePathUpdate:
         # Load from first directory
         result1 = menai.evaluate('''
 (let ((mod (import "test")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result1 == 1
 
@@ -280,7 +280,7 @@ class TestModulePathUpdate:
         # Load again - should get module from second directory
         result2 = menai.evaluate('''
 (let ((mod (import "test")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result2 == 2
 
@@ -322,9 +322,9 @@ class TestCacheClearingBehavior:
         menai = Menai(module_path=[str(tmp_path)])
 
         # Load all modules
-        menai.evaluate('(let ((m (import "mod1"))) (m x))')
-        menai.evaluate('(let ((m (import "mod2"))) (m x))')
-        menai.evaluate('(let ((m (import "mod3"))) (m x))')
+        menai.evaluate('(let ((m (import "mod1"))) (:: m x))')
+        menai.evaluate('(let ((m (import "mod2"))) (:: m x))')
+        menai.evaluate('(let ((m (import "mod3"))) (:: m x))')
 
         assert len(menai.module_cache) == 3
 
@@ -341,7 +341,7 @@ class TestCacheClearingBehavior:
         menai = Menai(module_path=[str(tmp_path)])
 
         # First evaluation
-        menai.evaluate('(let ((m (import "persistent"))) (m value))')
+        menai.evaluate('(let ((m (import "persistent"))) (:: m value))')
         assert "persistent" in menai.module_cache
 
         # Second evaluation - cache should still have it
@@ -351,7 +351,7 @@ class TestCacheClearingBehavior:
         # Third evaluation using the module
         result = menai.evaluate('''
 (let ((mod (import "persistent")))
-  (mod value))
+  (:: mod value))
 ''')
         assert result == 42
         assert "persistent" in menai.module_cache
@@ -365,7 +365,7 @@ class TestCacheClearingBehavior:
         menai2 = Menai(module_path=[str(tmp_path)])
 
         # Load in first instance
-        menai1.evaluate('(let ((m (import "test"))) (m value))')
+        menai1.evaluate('(let ((m (import "test"))) (:: m value))')
 
         # First instance has it cached
         assert "test" in menai1.module_cache
@@ -462,7 +462,7 @@ class TestEdgeCases:
 
         # Empty string should fail at semantic analysis
         with pytest.raises(Exception):  # Could be MenaiEvalError or similar
-            menai.evaluate('(let ((m (import ""))) (m x))')
+            menai.evaluate('(let ((m (import ""))) (:: m x))')
 
     def test_module_name_with_only_slashes(self):
         """Test that paths with only slashes are rejected."""

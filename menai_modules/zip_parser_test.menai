@@ -2,11 +2,11 @@
 
 (let ((zip-mod (import "zip_parser"))
       (t (import "menai_test")))
-  (let ((parse (zip-mod parse))
-        (extract (zip-mod extract))
-        (assert-equal (t assert-equal))
-        (expect-pass (t test))
-        (expect-fail (t test-error)))
+  (let ((parse (:: zip-mod parse))
+        (extract (:: zip-mod extract))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
     (let ((tests (list
        (list "parse"
          (list

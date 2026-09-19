@@ -22,7 +22,7 @@ _FIXTURE_NAMES = [
 
 _ITERATIONS = 5
 
-_EXPR = '(let ((inflate (import "inflate"))) ((inflate inflate) (dict-get inputs "input-data")))'
+_EXPR = '(let ((inflate (import "inflate"))) ((:: inflate inflate) (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):

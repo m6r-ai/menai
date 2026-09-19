@@ -763,7 +763,7 @@ class TestStructModuleExport:
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format('''
         (let ((shapes (import "shapes")))
-          (let ((Point (shapes Point)))
+          (let ((Point (:: shapes Point)))
             (Point 3 4)))
         ''')
         assert result == '(Point 3 4)'
@@ -776,8 +776,8 @@ class TestStructModuleExport:
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format('''
         (let ((shapes (import "shapes")))
-          (let ((Point (shapes Point))
-                (p (let ((Point (shapes Point))) (Point 7 8))))
+          (let ((Point (:: shapes Point))
+                (p (let ((Point (:: shapes Point))) (Point 7 8))))
             (struct-get p 'x)))
         ''')
         assert result == '7'
@@ -790,8 +790,8 @@ class TestStructModuleExport:
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format('''
         (let ((shapes (import "shapes")))
-          (let ((Point (shapes Point))
-                (p (let ((Point (shapes Point))) (Point 3 4))))
+          (let ((Point (:: shapes Point))
+                (p (let ((Point (:: shapes Point))) (Point 3 4))))
             (integer+ (struct-get p 'x) (struct-get p 'y))))
         ''')
         assert result == '7'
@@ -809,9 +809,9 @@ class TestStructModuleExport:
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate("""
 (let ((shapes (import "shapes")))
-  (let ((make-point (shapes make-point))
-        (point-x    (shapes point-x))
-        (point-y    (shapes point-y)))
+  (let ((make-point (:: shapes make-point))
+        (point-x    (:: shapes point-x))
+        (point-y    (:: shapes point-y)))
     (let ((p (make-point 3 4)))
       (integer+ (point-x p) (point-y p)))))
 """)
@@ -826,7 +826,7 @@ class TestStructModuleExport:
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate_and_format("""
 (let ((shapes (import "shapes")))
-  (let ((Point (shapes Point)))
+  (let ((Point (:: shapes Point)))
     (Point 5 6)))
 """)
         assert result == '(Point 5 6)'
@@ -840,7 +840,7 @@ class TestStructModuleExport:
         m = Menai(module_path=[str(tmp_path)])
         result = m.evaluate("""
 (let ((shapes (import "shapes")))
-  (let ((Point (shapes Point)))
+  (let ((Point (:: shapes Point)))
     (let ((p (Point 10 20)))
       (integer+ (struct-get p 'x) (struct-get p 'y)))))
 """)

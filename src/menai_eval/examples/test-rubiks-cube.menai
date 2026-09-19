@@ -1,8 +1,8 @@
 (let ((rubiks (import "rubiks_cube")))
-  (let ((solved-cube-fn (rubiks solved-cube))
-        (apply-moves-fn (rubiks apply-moves))
-        (ida-star-fn (rubiks ida-star))
-        (format-solution-fn (rubiks format-solution)))
+  (let ((solved-cube-fn (:: rubiks solved-cube))
+        (apply-moves-fn (:: rubiks apply-moves))
+        (ida-star-fn (:: rubiks ida-star))
+        (format-solution-fn (:: rubiks format-solution)))
     ; Create a solved cube and scramble it with a few moves
     (let ((cube (solved-cube-fn)))
       (let ((scrambled (apply-moves-fn cube (list "R" "U" "R'" "D" "F" "R" "U'" "L"))))

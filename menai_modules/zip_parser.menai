@@ -177,7 +177,7 @@
                                          (dict-get header "central-offset")
                                          (dict-get header "entry-count")))))
                 (if want-content
-                    (let ((inflate (inflate-lib inflate)))
+                    (let ((inflate (:: inflate-lib inflate)))
                       (build-result
                         (map-list (lambda (e)
                                     (dict-set e "content"

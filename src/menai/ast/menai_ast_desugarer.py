@@ -52,6 +52,26 @@ def _namespace_binding(namespace: MenaiASTNamespace) -> _NamespaceBinding:
     )
 
 
+def _namespace_member_access(expr: MenaiASTNode) -> tuple[str, str] | None:
+    """
+    Return (namespace name, member name) if expr is a (:: namespace member) form.
+
+    Both operands must be symbols; the shape check is purely structural and does
+    not verify that the namespace name is in scope.
+    """
+    if not isinstance(expr, MenaiASTList) or len(expr.elements) != 3:
+        return None
+
+    head, namespace_expr, member_expr = expr.elements
+    if not (isinstance(head, MenaiASTSymbol) and head.name == '::'):
+        return None
+
+    if not (isinstance(namespace_expr, MenaiASTSymbol) and isinstance(member_expr, MenaiASTSymbol)):
+        return None
+
+    return namespace_expr.name, member_expr.name
+
+
 class MenaiASTDesugarer:
     """Transforms complex Menai constructs into core language."""
 
@@ -113,12 +133,12 @@ class MenaiASTDesugarer:
         if isinstance(value_expr, MenaiASTStruct):
             return value_expr
 
-        if (isinstance(value_expr, MenaiASTList) and len(value_expr.elements) == 2
-                and isinstance(value_expr.elements[0], MenaiASTSymbol)
-                and isinstance(value_expr.elements[1], MenaiASTSymbol)):
-            namespace = self._lookup_namespace(value_expr.elements[0].name)
+        member_access = _namespace_member_access(value_expr)
+        if member_access is not None:
+            namespace_name, member_name = member_access
+            namespace = self._lookup_namespace(namespace_name)
             if namespace is not None:
-                renamed = namespace.members.get(value_expr.elements[1].name)
+                renamed = namespace.members.get(member_name)
                 declaration = namespace.declarations.get(renamed) if renamed is not None else None
                 if isinstance(declaration, MenaiASTStruct):
                     return declaration
@@ -303,11 +323,11 @@ class MenaiASTDesugarer:
         if isinstance(first, MenaiASTSymbol):
             name = first.name
 
-            # Namespace member access: (namespace member).  Resolves to the
+            # Namespace member access: (:: namespace member).  Resolves to the
             # declaration the member denotes, so struct types, function
             # identities, and result types all cross the module boundary.
-            if self._lookup_namespace(name) is not None:
-                return self._desugar_namespace_access(expr, name)
+            if name == '::':
+                return self._desugar_namespace_access(expr)
 
             # Match expression - desugar it!
             if name == 'match':
@@ -851,9 +871,9 @@ class MenaiASTDesugarer:
             source_file=expr.source_file,
         )
 
-    def _desugar_namespace_access(self, expr: MenaiASTList, namespace_name: str) -> MenaiASTNode:
+    def _desugar_namespace_access(self, expr: MenaiASTList) -> MenaiASTNode:
         """
-        Resolve a namespace member access (namespace member) to its binding.
+        Resolve a namespace member access (:: namespace member) to its binding.
 
         The member key is looked up in the namespace's export map, which maps
         it to the renamed name under which the module's binding was emitted.
@@ -863,10 +883,13 @@ class MenaiASTDesugarer:
         resolves to a reference to its renamed binding, so a function keeps its
         identity and result types flow across the boundary.
         """
+        namespace_expr = expr.elements[1]
+        assert isinstance(namespace_expr, MenaiASTSymbol), "Namespace should be a symbol (validated by semantic analyzer)"
+        namespace_name = namespace_expr.name
         binding = self._lookup_namespace(namespace_name)
         assert binding is not None, "Namespace access reached without a bound namespace"
 
-        member_expr = expr.elements[1]
+        member_expr = expr.elements[2]
         assert isinstance(member_expr, MenaiASTSymbol), "Member should be a symbol (validated by semantic analyzer)"
         member_key = member_expr.name
 
@@ -876,7 +899,7 @@ class MenaiASTDesugarer:
                 message=f"Namespace '{namespace_name}' has no member '{member_key}'",
                 received=f"Member: {member_key}",
                 expected="A name the module exports",
-                example=f"({namespace_name} some-exported-name)",
+                example=f"(:: {namespace_name} some-exported-name)",
                 suggestion="Check the module's export form for the member name",
                 line=expr.line,
                 column=expr.column,

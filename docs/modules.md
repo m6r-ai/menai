@@ -38,11 +38,11 @@ compile-time operation, and it is only valid as the value of a `let`, `let*`, or
 
 ```menai
 (let ((math (import "math_utils")))
-  ((math square) 5))
+  ((:: math square) 5))
 → 25
 ```
 
-You access an exported binding with member access: `(namespace member)`. The
+You access an exported binding with member access: `(:: namespace member)`. The
 member is resolved at compile time to the declaration that produced it, so the
 compiler keeps full static knowledge of it.
 
@@ -52,11 +52,21 @@ A namespace is a compile-time construct, not an ordinary value. A namespace name
 may only be:
 
 - bound directly by a `let`/`let*`/`letrec` binding whose value is an `import`, and
-- used as the head of a member access, `(namespace member)`.
+- used as the first argument of a member access, `(:: namespace member)`.
 
 Using a namespace name anywhere else — passing it to a function, storing it in a
-list, or returning it — is a compile-time error. This restriction is what lets the
-compiler resolve every member access statically.
+list, returning it, or calling it as a function — is a compile-time error. This
+restriction is what lets the compiler resolve every member access statically.
+
+Member access is a distinct form, `(:: namespace member)`, so the shape of the
+form decides its meaning. A namespace name used as a call head is an error, not
+member access:
+
+```menai
+(let ((math (import "math_utils")))
+  (math square))          ; error: a namespace cannot be used as a function
+  (:: math square))       ; correct
+```
 
 ## Renaming on import
 
@@ -65,7 +75,7 @@ bind the member to a local name in the importer:
 
 ```menai
 (let ((shapes (import "shapes")))
-  (let ((Point (shapes point)))
+  (let ((Point (:: shapes point)))
     (Point 1 2)))
 ```
 
@@ -122,8 +132,8 @@ The importer cannot access `secret-key`:
 
 ```menai
 (let ((secret (import "secret")))
-  (secret validate))   ; works — returns the validate function
-  ; (secret secret-key) would be a compile-time error — it is not exported
+  (:: secret validate))   ; works — returns the validate function
+  ; (:: secret secret-key) would be a compile-time error — it is not exported
 ```
 
 ## Struct types in modules
@@ -148,9 +158,9 @@ Using it:
 
 ```menai
 (let ((shapes (import "shapes")))
-  (let ((Point (shapes point))
-        (make-point (shapes make-point))
-        (distance (shapes point-distance)))
+  (let ((Point (:: shapes point))
+        (make-point (:: shapes make-point))
+        (distance (:: shapes point-distance)))
     (let ((p1 (make-point 0 0))
           (p2 (make-point 3 4)))
       (distance p1 p2))))
@@ -162,8 +172,8 @@ destructuring pattern head:
 
 ```menai
 (let ((shapes (import "shapes")))
-  (let ((Point (shapes point))
-        (make-point (shapes make-point)))
+  (let ((Point (:: shapes point))
+        (make-point (:: shapes make-point)))
     (match (make-point 3 4)
       ((Point x y) (integer+ x y)))))
 → 7

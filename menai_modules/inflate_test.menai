@@ -2,10 +2,10 @@
 
 (let ((inflate-mod (import "inflate"))
       (t (import "menai_test")))
-  (let ((inflate (inflate-mod inflate))
-        (assert-equal (t assert-equal))
-        (expect-pass (t test))
-        (expect-fail (t test-error)))
+  (let ((inflate (:: inflate-mod inflate))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
      (let ((tests (list
         (list "stored blocks"
           (list

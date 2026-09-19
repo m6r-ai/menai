@@ -260,12 +260,17 @@ declared one; the importer binds the member to a local name first (see ADR-0023)
 ### Modules export named bindings; namespaces are second-class
 
 A module's body ends with an `(export name ...)` form naming the bindings it
-exports. `(import "name")` loads a module as a namespace, and `(namespace member)`
+exports. `(import "name")` loads a module as a namespace, and `(:: namespace member)`
 resolves at compile time to the declaration that produced the member.
 
 A namespace is second-class: it may only be bound directly by a `let`/`let*`/`letrec`
-binding and used as a member-access head. It cannot be passed, stored, or returned.
-This restriction is what guarantees every member access is statically resolvable.
+binding and used as the first argument of `::`. It cannot be passed, stored, returned,
+or called as a function. This restriction is what guarantees every member access is
+statically resolvable.
+
+Member access is a disjoint form: the shape of the form decides its meaning, so a
+namespace name used as a call head is an error, not member access. `::` is a reserved
+form head, like `import`/`export`/`struct`.
 
 The module resolver alpha-renames a module's bindings with a per-import prefix so
 that importing two modules that share a private name does not collide. The renamer

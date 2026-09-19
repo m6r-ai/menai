@@ -275,7 +275,7 @@
                                     (if (and (integer=? colour-type 3) (none? palette))
                                         (error "Malformed PNG: palette image is missing its PLTE chunk")
                                         (let ((channels (channels-for colour-type)))
-                                          (let ((inflate (zlib-lib decompress)))
+                                          (let ((inflate (:: zlib-lib decompress)))
                                             (let ((raw (inflate (dict-get chunks "idat"))))
                                               (let ((rows (unfilter-all raw width height channels)))
                                                 (dict

@@ -23,7 +23,7 @@ _FIXTURE_NAMES = [
 
 _ITERATIONS = 5
 
-_EXPR = '(let ((png (import "png_parser"))) ((png parse) (dict-get inputs "input-data")))'
+_EXPR = '(let ((png (import "png_parser"))) ((:: png parse) (dict-get inputs "input-data")))'
 
 
 class Suite(BenchmarkSuite):

@@ -332,7 +332,7 @@ details.
 
 ```menai
 (let ((math (import "math_utils")))
-  ((math square) 5))
+  ((:: math square) 5))
 → 25
 ```
 
@@ -340,4 +340,24 @@ details.
 
 ```menai
 (import "module-name")
+```
+
+## :: — namespace member access
+
+`::` accesses a member of a namespace bound by an `import`. The first argument
+must be a namespace in scope and the second an unquoted member name. The member
+resolves at compile time to the declaration that produced it. A namespace is
+second-class: it may appear only as the first argument of `::`, never as a call
+head or an ordinary value. See [Modules](modules.md) for full details.
+
+```menai
+(let ((math (import "math_utils")))
+  ((:: math square) 5))
+→ 25
+```
+
+### Syntax
+
+```menai
+(:: namespace member)
 ```

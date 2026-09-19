@@ -36,9 +36,9 @@ class Suite(BenchmarkSuite):
             moves_literal = "(list " + " ".join(f'"{m}"' for m in scramble_moves) + ")"
             expr = (
                 '(let ((rubiks (import "rubiks_cube")))'
-                '  (let ((solved-cube-fn (rubiks solved-cube))'
-                '        (apply-moves-fn (rubiks apply-moves))'
-                '        (ida-star-fn (rubiks ida-star)))'
+                '  (let ((solved-cube-fn (:: rubiks solved-cube))'
+                '        (apply-moves-fn (:: rubiks apply-moves))'
+                '        (ida-star-fn (:: rubiks ida-star)))'
                 f'    (let ((scrambled (apply-moves-fn (solved-cube-fn) {moves_literal})))'
                 '      (ida-star-fn scrambled 20))))'
             )

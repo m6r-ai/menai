@@ -51,7 +51,7 @@
           (if (integer<? (bytes-length b) 6)
               (error "Not a zlib stream: too short")
               (if (check-header b)
-                  (let ((inflate (inflate-lib inflate)))
+                  (let ((inflate (:: inflate-lib inflate)))
                     (let ((data (inflate (bytes-slice b 2 (integer- (bytes-length b) 4)))))
                       (let ((expected (bytes-read-u32-be b (integer- (bytes-length b) 4)))
                             (actual (adler32 data)))
