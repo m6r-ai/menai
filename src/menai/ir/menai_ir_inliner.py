@@ -277,21 +277,8 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         arg_count: int,
     ) -> bool:
         """Check whether a lambda is eligible for inlining."""
-        try:
-            node_count = _count_nodes(target.body_plan)
-
-        except RecursionError:
-            return False
-
-        if node_count > MAX_INLINE_NODES:
-            return False
-
-        if _has_captures_of_params(target.body_plan, set(target.params)):
-            return False
-
-        if _contains_letrec(target.body_plan):
-            return False
-
+        # Cheap field checks first, so a candidate that fails one of them is
+        # rejected without any tree walk.  Most candidates fail here.
         if target.is_variadic:
             min_arity = target.param_count - 1
             if arg_count < min_arity:
@@ -307,6 +294,23 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         if isinstance(func_plan, MenaiIRVariable):
             if target.binding_name is not None and target.binding_name in letrec_names:
                 return False
+
+        # Expensive tree walks last, only for candidates that survived the
+        # field checks above.
+        try:
+            node_count = _count_nodes(target.body_plan)
+
+        except RecursionError:
+            return False
+
+        if node_count > MAX_INLINE_NODES:
+            return False
+
+        if _has_captures_of_params(target.body_plan, set(target.params)):
+            return False
+
+        if _contains_letrec(target.body_plan):
+            return False
 
         return True
 
