@@ -436,6 +436,7 @@ Syntax: (operator arg1 arg2 ...)
 - Renaming: bind a member to a local name, e.g. (let ((Point (:: shapes point))) ...)
 - Modules can import other modules (transitive dependencies)
 - Private functions: bindings not named in the export form are private to the module
+- A module file is also a valid program: compiled directly (not imported) it evaluates to a dict mapping each export name to its value
 - Module names can include subdirectories: (e.g. import "lib/helpers")
 - Available modules can be found in the module search path directories
 

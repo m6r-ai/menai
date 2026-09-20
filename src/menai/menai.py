@@ -360,8 +360,11 @@ class Menai:
         # This will recursively handle any imports within this module.
         # The module resolver will call begin_loading() for each nested import,
         # which provides circular import detection.
-        # Use module name with .menai extension for source_file (relative path)
-        resolved_ast = self.compiler.compile_to_resolved_ast(code, f"{module_name}.menai")
+        # Use module name with .menai extension for source_file (relative path).
+        # A module's export form is preserved for the importer to consume.
+        resolved_ast = self.compiler.compile_to_resolved_ast(
+            code, f"{module_name}.menai", is_program=False
+        )
 
         # Cache the resolved module and update hash after successful compilation
         self.module_cache[module_name] = resolved_ast

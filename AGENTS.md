@@ -263,6 +263,14 @@ A module's body ends with an `(export name ...)` form naming the bindings it
 exports. `(import "name")` loads a module as a namespace, and `(:: namespace member)`
 resolves at compile time to the declaration that produced the member.
 
+The export form is consumed by the module resolver, and there are two paths. When a
+module is imported, the resolver consumes the export form and builds the namespace.
+When a module file is compiled directly as a program (e.g. by `menai-eval` or
+`menai-disassemble`) there is no importer, so the resolver lowers the export form to a
+dict mapping each export name to its value. Both paths go through the resolver, so the
+desugarer only ever sees a genuinely stray `export` (one that is not a module body) and
+rejects it.
+
 A namespace is second-class: it may only be bound directly by a `let`/`let*`/`letrec`
 binding and used as the first argument of `::`. It cannot be passed, stored, returned,
 or called as a function. This restriction is what guarantees every member access is

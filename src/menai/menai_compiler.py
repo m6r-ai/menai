@@ -84,7 +84,9 @@ class MenaiCompiler:
         self.vcode_builder = MenaiVCodeBuilder()
         self.bytecode_builder = MenaiBytecodeBuilder()
 
-    def compile_to_resolved_ast(self, source: str, source_file: str = "") -> MenaiASTNode:
+    def compile_to_resolved_ast(
+        self, source: str, source_file: str = "", is_program: bool = True
+    ) -> MenaiASTNode:
         """
         Compile source to fully resolved AST.
 
@@ -99,6 +101,10 @@ class MenaiCompiler:
         Args:
             source: Menai source code as a string
             source_file: Source file name for tracking origin of AST nodes
+            is_program: True when compiling a program directly, False when
+                loading a module.  A directly-compiled program's top-level
+                export form is lowered to a dict of exports; a loaded module's
+                export form is preserved for the importer to consume.
 
         Returns:
             Fully resolved AST (all imports replaced with module ASTs)
@@ -106,7 +112,12 @@ class MenaiCompiler:
         tokens = self.lexer.lex(source)
         ast = self.ast_builder.build(tokens, source, source_file)
         checked_ast = self.ast_semantic_analyzer.analyze(ast, source)
-        resolved_ast = self.ast_module_resolver.resolve(checked_ast)
+        if is_program:
+            resolved_ast = self.ast_module_resolver.resolve_program(checked_ast)
+
+        else:
+            resolved_ast = self.ast_module_resolver.resolve(checked_ast)
+
         return resolved_ast
 
     def compile(

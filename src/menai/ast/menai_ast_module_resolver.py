@@ -7,9 +7,16 @@ fresh, collision-free names and an export map pairing each export key with the
 renamed binding that produced it.  Member access therefore resolves to a
 specific binding and the compiler keeps full static knowledge of it.
 
-A module's exports are the constant string keys of its top-level export dict.
-The dict's values must be symbols bound by an enclosing let/let*/letrec in the
-module body, so that the declaration behind each export can be identified.
+A module is a let/let*/letrec chain whose body is an (export name ...) form
+naming the bindings it exports.  Each exported name must be bound by an
+enclosing let/let*/letrec in the module, so that the declaration behind each
+export can be identified.
+
+When a module is imported, this pass consumes its export form and builds the
+namespace.  When a module file is instead compiled directly as a program (for
+example by menai-eval or menai-disassemble) there is no importer to consume the
+export form, so resolve_program lowers it to a dict mapping each export name to
+its value.
 
 The module's bindings are alpha-renamed with a prefix derived from the module
 name and the import site, so importing two modules that both bind the same
@@ -135,6 +142,26 @@ class MenaiASTModuleResolver:
         # Recursively resolve imports in all subexpressions
         resolved_elements = tuple(self.resolve(elem) for elem in expr.elements)
         return MenaiASTList(resolved_elements, line=expr.line, column=expr.column, source_file=expr.source_file)
+
+    def resolve_program(self, expr: MenaiASTNode) -> MenaiASTNode:
+        """
+        Resolve imports in a program and lower a top-level module's export form.
+
+        A program is compiled directly rather than imported, so there is no
+        importer to consume its export form.  When the program is module-shaped
+        — a let/let*/letrec chain whose body is an (export name ...) form — the
+        export form is replaced with a dict mapping each export name to its
+        value, so the module evaluates to a dict of its exports.
+
+        Args:
+            expr: Program AST to resolve
+
+        Returns:
+            AST with all imports replaced by namespace nodes and any top-level
+            export form lowered to a dict of exports
+        """
+        resolved = self.resolve(expr)
+        return _lower_module_exports(resolved)
 
     def _resolve_import(self, expr: MenaiASTList) -> MenaiASTNode:
         """
@@ -274,6 +301,71 @@ def _extract_member_map(
         members.append((name_expr.name, renaming[name_expr.name]))
 
     return tuple(members)
+
+
+def _lower_module_exports(expr: MenaiASTNode) -> MenaiASTNode:
+    """
+    Lower a module-shaped program's export form to a dict of exports.
+
+    A program compiled directly is not imported, so nothing consumes its export
+    form.  When the program is module-shaped — a let/let*/letrec chain whose
+    body is an (export name ...) form — the export form is replaced with a
+    (dict "name" name ...) call, so the module evaluates to a dict mapping each
+    export name to its value.  A program that is not module-shaped is returned
+    unchanged.
+
+    Raises:
+        MenaiModuleError: If an exported name is not bound by the module
+    """
+    body = _unwrap_bindings(expr)
+    if not _is_export_form(body):
+        return expr
+
+    assert isinstance(body, MenaiASTList)
+    bound_names = _collect_bindings(expr)
+    dict_elements: list[MenaiASTNode] = [MenaiASTSymbol('dict', line=body.line, column=body.column, source_file=body.source_file)]
+    for name_expr in body.elements[1:]:
+        assert isinstance(name_expr, MenaiASTSymbol), "Export name should be a symbol (validated by semantic analyzer)"
+        if name_expr.name not in bound_names:
+            raise MenaiModuleError(
+                message=f"Module exports unbound name '{name_expr.name}'",
+                context="The exported name is not bound by an enclosing let/let*/letrec in the module",
+                suggestion=f"Bind '{name_expr.name}' in the module before exporting it",
+            )
+
+        dict_elements.append(MenaiASTString(
+            name_expr.name, line=name_expr.line, column=name_expr.column, source_file=name_expr.source_file,
+        ))
+        dict_elements.append(MenaiASTSymbol(
+            name_expr.name, line=name_expr.line, column=name_expr.column, source_file=name_expr.source_file,
+        ))
+
+    dict_call = MenaiASTList(
+        tuple(dict_elements), line=body.line, column=body.column, source_file=body.source_file,
+    )
+    return _replace_binding_body(expr, dict_call)
+
+
+def _is_export_form(node: MenaiASTNode) -> bool:
+    """Return True if node is an (export name ...) form."""
+    if not isinstance(node, MenaiASTList) or node.is_empty():
+        return False
+
+    head = node.first()
+    return isinstance(head, MenaiASTSymbol) and head.name == 'export'
+
+
+def _replace_binding_body(expr: MenaiASTNode, new_body: MenaiASTNode) -> MenaiASTNode:
+    """Replace the innermost body of a let/let*/letrec chain with new_body."""
+    if not _is_binding_form(expr):
+        return new_body
+
+    assert isinstance(expr, MenaiASTList)
+    inner = _replace_binding_body(expr.elements[2], new_body)
+    return MenaiASTList(
+        (expr.elements[0], expr.elements[1], inner),
+        line=expr.line, column=expr.column, source_file=expr.source_file,
+    )
 
 
 def _collect_bindings(module_ast: MenaiASTNode) -> dict[str, MenaiASTNode]:

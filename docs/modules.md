@@ -30,6 +30,20 @@ Each name must be a binding the module defines (by an enclosing `let`, `let*`, o
 
 This module exports two functions: `square` and `cube`.
 
+### Compiling a module directly
+
+A module file is also a valid program. When a module file is compiled directly
+(for example by `menai-eval` or `menai-disassemble`) rather than imported, there
+is no importer to consume its `export` form, so the module evaluates to a dict
+mapping each export name to its value:
+
+```menai
+; menai-eval math_utils.menai
+{("square" <square (x)>) ("cube" <cube (x)>)}
+```
+
+An `export` form that is not the body of a module is a compile-time error.
+
 ## Importing a module
 
 `(import "module-name")` loads a module as a **namespace**. Import is a

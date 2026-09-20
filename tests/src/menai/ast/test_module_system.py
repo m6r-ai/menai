@@ -18,7 +18,8 @@ from menai import Menai
 from menai.menai_error import (
     MenaiModuleNotFoundError,
     MenaiCircularImportError,
-    MenaiEvalError
+    MenaiEvalError,
+    MenaiModuleError,
 )
 
 
@@ -837,3 +838,119 @@ class TestImportedStructAsPatternHead:
 ''')
 
         assert result == 5
+
+
+class TestDirectModuleCompilation:
+    """Test compiling a module file directly as a program."""
+
+    def test_module_evaluates_to_dict_of_exports(self, tmp_path):
+        """A directly-compiled module evaluates to a dict of its exports."""
+        module_file = tmp_path / "math_utils.menai"
+        module_file.write_text("""
+(let ((square (lambda (x) (integer* x x)))
+      (cube (lambda (x) (integer* x (integer* x x)))))
+  (export square cube))
+""")
+
+        menai = Menai(module_path=[str(tmp_path)])
+        result = menai.evaluate(module_file.read_text())
+
+        assert set(result.keys()) == {"square", "cube"}
+        assert result["square"].parameters == ("x",)
+        assert result["cube"].parameters == ("x",)
+
+    def test_module_exports_only_named_bindings(self, tmp_path):
+        """A directly-compiled module exports only the bindings it names."""
+        module_file = tmp_path / "private_test.menai"
+        module_file.write_text("""
+(letrec ((helper (lambda (x) (integer* x 2)))
+         (public-fn (lambda (x) (helper x))))
+  (export public-fn))
+""")
+
+        menai = Menai(module_path=[str(tmp_path)])
+        result = menai.evaluate(module_file.read_text())
+
+        assert set(result.keys()) == {"public-fn"}
+
+    def test_direct_exports_agree_with_import(self, tmp_path):
+        """A directly-compiled module's exports match those seen through import."""
+        module_file = tmp_path / "math_utils.menai"
+        module_file.write_text("""
+(let ((square (lambda (x) (integer* x x))))
+  (export square))
+""")
+
+        menai = Menai(module_path=[str(tmp_path)])
+        direct = menai.evaluate(module_file.read_text())
+        imported = menai.evaluate('''
+(let ((m (import "math_utils")))
+  ((:: m square) 5))
+''')
+
+        assert set(direct.keys()) == {"square"}
+        assert imported == 25
+
+    def test_module_with_let_star_evaluates_to_dict(self, tmp_path):
+        """A directly-compiled let*-based module evaluates to a dict of exports."""
+        module_file = tmp_path / "let_star.menai"
+        module_file.write_text("""
+(let* ((x 10)
+       (y (integer+ x 5)))
+  (export x y))
+""")
+
+        menai = Menai(module_path=[str(tmp_path)])
+        result = menai.evaluate(module_file.read_text())
+
+        assert result == {"x": 10, "y": 15}
+
+    def test_module_with_empty_export_evaluates_to_empty_dict(self, tmp_path):
+        """A directly-compiled module with an empty export form is an empty dict."""
+        module_file = tmp_path / "empty.menai"
+        module_file.write_text("(export)")
+
+        menai = Menai(module_path=[str(tmp_path)])
+        result = menai.evaluate(module_file.read_text())
+
+        assert result == {}
+
+    def test_module_exporting_unbound_name_rejected(self, tmp_path):
+        """A directly-compiled module exporting an unbound name is rejected."""
+        module_file = tmp_path / "bad_export.menai"
+        module_file.write_text("(let ((x 1)) (export y))")
+
+        menai = Menai(module_path=[str(tmp_path)])
+
+        with pytest.raises(MenaiModuleError):
+            menai.evaluate(module_file.read_text())
+
+    def test_non_module_program_unaffected(self):
+        """An ordinary program that is not module-shaped is unaffected."""
+        menai = Menai()
+
+        assert menai.evaluate("(integer+ 1 2)") == 3
+
+    def test_stray_export_still_rejected(self):
+        """An export form that is not a module body is still rejected."""
+        menai = Menai()
+
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate("(lambda () (export x))")
+
+    def test_module_import_unaffected(self, tmp_path):
+        """Importing a module still resolves its members after direct compilation works."""
+        module_file = tmp_path / "shared.menai"
+        module_file.write_text("""
+(let ((f (lambda (x) (integer* x x))))
+  (export f))
+""")
+
+        menai = Menai(module_path=[str(tmp_path)])
+
+        result = menai.evaluate('''
+(let ((m (import "shared")))
+  ((:: m f) 6))
+''')
+
+        assert result == 36
