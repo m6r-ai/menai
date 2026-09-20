@@ -266,7 +266,9 @@ class TestGuardHoistingFromNonEntryBlocks:
                             (scan (integer+ i 1))
                             (scan (integer+ i 1))))))
                  (len 10)
-                 (s "abc"))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1)))))
+                 (s (flip 3)))
           (scan 0))
 
         's' is a free var (captured), never reassigned.  Its ASSERT_STRING
@@ -274,6 +276,9 @@ class TestGuardHoistingFromNonEntryBlocks:
         entry block.  The block containing the guard dominates the back-edge
         (both self-loop blocks are reached through it), so it should be
         hoisted.
+
+        's' is fed by 'flip', whose return type is ambiguous, so the free
+        var's type is not provable and the guard is inserted.
         """
         src = """
         (letrec ((scan
@@ -284,7 +289,9 @@ class TestGuardHoistingFromNonEntryBlocks:
                             (scan (integer+ i 1))
                             (scan (integer+ i 1))))))
                  (len 10)
-                 (s "abc"))
+                 (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
+                 (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1)))))
+                 (s (flip 3)))
           (scan 0))
         """
         code = _compile(src)

@@ -11,8 +11,10 @@ Analysis
 The pass computes a TypeFact (see menai_cfg_type_fact) for every SSA value in
 every function reachable from the root.  Within a function the facts are
 derived from constants, builtin result signatures, struct constructors, phi
-joins, and struct-is-instance? branch refinement.  Parameters start from an
-assumption about their type.
+joins, struct-is-instance? branch refinement, and the values captured by free
+variables.  Parameters start from an assumption about their type; a free
+variable's fact is the fact of the parent value that fills its capture slot,
+so a proven type flows into a nested function through a capture.
 
 Across functions the pass propagates the fact of each call argument into the
 corresponding parameter of the callee.  Because a caller's argument facts
@@ -87,6 +89,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeStructInstr,
     MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
+    MenaiCFGPatchClosureInstr,
     MenaiCFGPhiInstr,
     MenaiCFGStructGetIndexedInstr,
     MenaiCFGStructSetIndexedInstr,
@@ -96,6 +99,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGSwitchTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
+    MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGWholeProgramPass, collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, TypeFact, BOTTOM, fact_for_value, join
@@ -143,15 +147,29 @@ class _FunctionInfo:
     degraded by the internal join, but only when an external call site grounds
     it.  Without external grounding the first invocation's argument is
     unconstrained, so a recursive call site cannot prove the parameter's type.
+
+    `parent` and `parent_closure` locate the enclosing function and the
+    make_closure instruction that created this one, so a free variable's fact
+    can be read from the parent value it captures.  `value_facts` caches the
+    most recent per-value facts computed for this function, so that a child's
+    free-var facts can be derived from its parent's facts.
     """
 
-    def __init__(self, func: MenaiCFGFunction) -> None:
+    def __init__(
+        self,
+        func: MenaiCFGFunction,
+        parent: '_FunctionInfo | None' = None,
+        parent_closure: MenaiCFGMakeClosureInstr | None = None,
+    ) -> None:
         self.func = func
+        self.parent = parent
+        self.parent_closure = parent_closure
         self.callee_of_value: dict[int, MenaiCFGFunction] = {}
         self.external_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.internal_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.return_fact: TypeFact = BOTTOM
+        self.value_facts: dict[int, TypeFact] = {}
 
     def recompute_param_facts(self) -> None:
         """
@@ -179,7 +197,17 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     def _optimize_module(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         """Run the interprocedural analysis and rewrite struct field access."""
         functions = collect_functions(root)
-        info_of: dict[int, _FunctionInfo] = {id(func): _FunctionInfo(func) for func in functions}
+        parent_of = _parent_map(root)
+        info_of: dict[int, _FunctionInfo] = {}
+        for func in functions:
+            parent_entry = parent_of.get(id(func))
+            parent_info = info_of.get(id(parent_entry[0])) if parent_entry is not None else None
+            info_of[id(func)] = _FunctionInfo(
+                func,
+                parent=parent_info,
+                parent_closure=parent_entry[1] if parent_entry is not None else None,
+            )
+
         infos = list(info_of.values())
 
         self._resolve_all_callees(root, functions, info_of)
@@ -320,12 +348,18 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         call site: a recursive search passes its cube parameter through
         functions that each return a cube.  Without return facts the struct
         type never reaches the parameters that read its fields.
+
+        Each function's per-value facts are cached on its _FunctionInfo after
+        every iteration, so a child's free-var facts can be derived from its
+        parent's facts.  Functions are visited parents first, so the parent's
+        cache is already up to date when a child is processed.
         """
         changed = True
         while changed:
             changed = False
             for info in infos:
                 facts = self._intra_propagate(info, info.param_facts, info_of)
+                info.value_facts = facts
                 if self._propagate_call_args(info, facts, info_of):
                     changed = True
 
@@ -711,6 +745,9 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
             return BOTTOM
 
+        if isinstance(instr, MenaiCFGFreeVarInstr):
+            return self._free_var_fact(instr, info)
+
         if isinstance(instr, MenaiCFGCallInstr):
             callee = info.callee_of_value.get(instr.func.id)
             if callee is not None:
@@ -722,6 +759,70 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             return self._builtin_fact(instr, facts)
 
         return BOTTOM
+
+    def _free_var_fact(self, instr: MenaiCFGFreeVarInstr, info: _FunctionInfo) -> TypeFact:
+        """
+        Derive a free variable's fact from the parent value it captures.
+
+        A free variable is a value captured from the enclosing function.  Its
+        type is exactly the type of the parent value that fills its capture
+        slot, so the fact is read from the parent's cached per-value facts.
+
+        A free variable's index is a position in the child function's free_vars
+        list, which is ordered sibling free vars first, then outer free vars.
+        The make_closure instruction's captures hold only the outer captures,
+        so captures[i] corresponds to free_vars[len(free_vars) - len(captures)
+        + i].  A sibling free var is not in the captures list; it is installed
+        by the PATCH_CLOSURE whose capture_index equals the free var's index.
+
+        Returns BOTTOM when the parent is unknown, the capture cannot be
+        located, or the parent's fact for the captured value is not yet known.
+        """
+        parent = info.parent
+        parent_closure = info.parent_closure
+        if parent is None or parent_closure is None:
+            return BOTTOM
+
+        captured = self._captured_parent_value(instr, parent_closure, parent)
+        if captured is None:
+            return BOTTOM
+
+        return parent.value_facts.get(captured.id, BOTTOM)
+
+    @staticmethod
+    def _captured_parent_value(
+        instr: MenaiCFGFreeVarInstr,
+        parent_closure: MenaiCFGMakeClosureInstr,
+        parent: _FunctionInfo,
+    ) -> MenaiCFGValue | None:
+        """
+        Return the parent SSA value that fills a free variable's capture slot.
+
+        Outer free vars are read from the make_closure's captures list.  A
+        sibling free var is read from the PATCH_CLOSURE that installs it, which
+        is identified by the closure value and the free var's index.
+        """
+        free_vars = parent_closure.function.free_vars
+        captures = parent_closure.captures
+        outer_start = len(free_vars) - len(captures)
+
+        if instr.index >= outer_start:
+            return captures[instr.index - outer_start]
+
+        for block in parent.func.blocks:
+            for patch in block.patch_instrs:
+                if patch.closure.id == parent_closure.result.id and patch.capture_index == instr.index:
+                    return patch.value
+
+            for patch_instr in block.instrs:
+                if (
+                    isinstance(patch_instr, MenaiCFGPatchClosureInstr)
+                    and patch_instr.closure.id == parent_closure.result.id
+                    and patch_instr.capture_index == instr.index
+                ):
+                    return patch_instr.value
+
+        return None
 
     @staticmethod
     def _phi_fact(instr: MenaiCFGPhiInstr, facts: dict[int, TypeFact]) -> TypeFact:

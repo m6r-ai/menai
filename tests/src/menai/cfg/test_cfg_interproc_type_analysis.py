@@ -300,6 +300,64 @@ class TestStructTypeThroughSiblingCall:
         assert menai.evaluate_and_format(SIBLING_SRC) == "1"
 
 
+CAPTURED_RECEIVER_SRC = """
+(letrec ((cube (struct (x y)))
+         (read-x (lambda (c) (struct-get c 'x)))
+         (outer (lambda (c)
+                  (letrec ((loop (lambda () (read-x c))))
+                    (loop)))))
+  (outer (cube 1 2)))
+"""
+
+
+class TestStructTypeThroughCapturedVariable:
+    """
+    A struct type that reaches a field read through a captured free variable.
+
+    `outer`'s parameter is proven to be a cube by its call site.  `loop`
+    captures that parameter and passes it to `read-x`, so `read-x`'s receiver
+    is only ever fed by a free variable.  Resolving the field access requires
+    deriving the free variable's fact from the value captured in the parent.
+    """
+
+    def test_struct_get_becomes_indexed_get(self):
+        cfg = _build_cfg(CAPTURED_RECEIVER_SRC)
+        assert 'struct-indexed-get' in _ops(cfg)
+        assert 'struct-get' not in _ops(cfg)
+
+    def test_result(self, menai):
+        assert menai.evaluate_and_format(CAPTURED_RECEIVER_SRC) == "1"
+
+
+CAPTURED_SIBLING_RECEIVER_SRC = """
+(letrec ((cube (struct (x y)))
+         (read-x (lambda (c) (struct-get c 'x)))
+         (outer (lambda (c)
+                  (letrec ((helper (lambda () (read-x c)))
+                           (loop (lambda () (helper))))
+                    (loop)))))
+  (outer (cube 1 2)))
+"""
+
+
+class TestStructTypeThroughCapturedSiblingVariable:
+    """
+    A captured free variable that is itself captured by a nested closure.
+
+    `outer`'s proven cube parameter is captured by `helper`, and `helper` is
+    captured by `loop` as a letrec sibling.  The struct type must flow through
+    two capture levels for `read-x`'s receiver to resolve.
+    """
+
+    def test_struct_get_becomes_indexed_get(self):
+        cfg = _build_cfg(CAPTURED_SIBLING_RECEIVER_SRC)
+        assert 'struct-indexed-get' in _ops(cfg)
+        assert 'struct-get' not in _ops(cfg)
+
+    def test_result(self, menai):
+        assert menai.evaluate_and_format(CAPTURED_SIBLING_RECEIVER_SRC) == "1"
+
+
 class TestResultsUnchanged:
     """Rewritten and non-rewritten forms produce identical results."""
 
