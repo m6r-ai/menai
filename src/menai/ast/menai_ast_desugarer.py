@@ -2052,7 +2052,9 @@ class MenaiASTDesugarer:
 
         Emits an (and ($struct? tmp) ($struct-is-instance? tmp TypeName)) test, then
         uses the same list-pattern machinery to extract and bind each field
-        via ($struct-ref tmp field_idx).
+        via a name-based ($struct-get tmp 'field) call.  The interprocedural
+        type analysis resolves the field name to a constant index, because the
+        struct-is-instance? test proves the receiver's type on the match branch.
 
         Args:
             pattern: The struct pattern, e.g. (Point x y)
@@ -2085,13 +2087,18 @@ class MenaiASTDesugarer:
         field_patterns = list(pattern.elements[1:])
         element_info: list[tuple[MenaiASTNode, str, MenaiASTNode]] = []
 
+        struct_decl = self._lookup_struct(head.name)
+        assert struct_decl is not None
         for i, field_pattern in enumerate(field_patterns):
             elem_temp = self._gen_temp()
+            field_name = struct_decl.field_names[i]
             field_get = MenaiASTList((
-                MenaiASTSymbol('$struct-ref'),
+                MenaiASTSymbol('$struct-get'),
                 MenaiASTSymbol(temp_var),
-                MenaiASTInteger(i, line=pattern.line, column=pattern.column,
-                                source_file=pattern.source_file),
+                self._make_list((
+                    MenaiASTSymbol('quote'),
+                    MenaiASTSymbol(field_name),
+                ), pattern),
             ))
             element_info.append((field_pattern, elem_temp, field_get))
 

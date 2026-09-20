@@ -8,19 +8,28 @@ Covers:
      two different struct types (the receiver's type identity is not proven).
   3. Struct field access stays symbol-based when the receiver's type is not a
      struct at all.
-  4. struct-set through a parameter is rewritten to struct-set-ref.
+  4. struct-set through a parameter is rewritten to the indexed form.
   5. The rewritten and non-rewritten forms produce identical results.
   6. The type fact lattice join rules.
   7. Guards are eliminated for parameters whose types are proven, and kept
      for parameters whose call-site types are ambiguous.
   8. A parameter reached only by calls inside a recursion cycle is not proven
      from those calls, so its guard is retained.
+  9. A receiver whose type is proven only by a struct-is-instance? refinement
+     (including the phi an (and ...) guard lowers to) is rewritten too, and
+     nested struct destructuring resolves every field read.
 """
 
 import pytest
 
 from menai import MenaiError
-from menai.cfg.menai_cfg import MenaiCFGBuiltinInstr, MenaiCFGConstInstr, MenaiCFGGuardInstr
+from menai.cfg.menai_cfg import (
+    MenaiCFGBuiltinInstr,
+    MenaiCFGConstInstr,
+    MenaiCFGGuardInstr,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructSetIndexedInstr,
+)
 from menai.cfg.menai_cfg_optimization_pass import collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, BOTTOM, TypeFact, join
 from menai.menai_compiler import MenaiCompiler
@@ -45,13 +54,24 @@ def _build_cfg(source: str):
 
 
 def _field_ops(cfg) -> list[tuple[str, list]]:
-    """Collect (op, args) for every struct field-access builtin in the module."""
+    """
+    Collect (op, args) for every struct field access in the module.
+
+    Name-based accesses are reported under their builtin name ('struct-get',
+    'struct-set'); the index-based structural instructions the type analysis
+    emits are reported as 'struct-indexed-get' and 'struct-indexed-set', so a caller can
+    treat the two forms uniformly.
+    """
     result: list[tuple[str, list]] = []
     for func in collect_functions(cfg):
         for block in func.blocks:
             for instr in block.instrs:
-                if isinstance(instr, MenaiCFGBuiltinInstr) and instr.op in {
-                    'struct-get', 'struct-ref', 'struct-set', 'struct-set-ref',
+                if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+                    result.append(('struct-indexed-get', [instr.struct]))
+                elif isinstance(instr, MenaiCFGStructSetIndexedInstr):
+                    result.append(('struct-indexed-set', [instr.struct, instr.value]))
+                elif isinstance(instr, MenaiCFGBuiltinInstr) and instr.op in {
+                    'struct-get', 'struct-set',
                 }:
                     result.append((instr.op, instr.args))
 
@@ -63,15 +83,16 @@ def _ops(cfg) -> list[str]:
     return [op for op, _ in _field_ops(cfg)]
 
 
-def _defining_instr(cfg, value_id: int):
-    """Return the instruction defining a value id anywhere in the module."""
+def _indexed_gets(cfg) -> list:
+    """Return every index-based struct-get instruction in the module."""
+    result = []
     for func in collect_functions(cfg):
         for block in func.blocks:
             for instr in block.instrs:
-                if hasattr(instr, 'result') and instr.result.id == value_id:
-                    return instr
+                if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+                    result.append(instr)
 
-    raise AssertionError(f"no defining instruction for value {value_id}")
+    return result
 
 
 def _symbol_const_count(cfg) -> int:
@@ -96,18 +117,16 @@ MONOMORPHIC_SRC = """
 class TestMonormorphicStructFieldAccess:
     """A parameter proven to be one struct type resolves to index access."""
 
-    def test_struct_get_through_parameter_becomes_struct_ref(self):
+    def test_struct_get_through_parameter_becomes_indexed_get(self):
         cfg = _build_cfg(MONOMORPHIC_SRC)
-        assert 'struct-ref' in _ops(cfg)
+        assert 'struct-indexed-get' in _ops(cfg)
         assert 'struct-get' not in _ops(cfg)
 
     def test_resolved_index_is_constant_zero_for_first_field(self):
         cfg = _build_cfg(MONOMORPHIC_SRC)
-        refs = [args for op, args in _field_ops(cfg) if op == 'struct-ref']
-        assert len(refs) == 1
-        index_value = refs[0][1]
-        index_instr = _defining_instr(cfg, index_value.id)
-        assert index_instr.value.to_python() == 0
+        gets = _indexed_gets(cfg)
+        assert len(gets) == 1
+        assert gets[0].index == 0
 
 
 POLYMORPHIC_SRC = """
@@ -127,7 +146,7 @@ class TestPolymorphicStructFieldAccess:
     def test_struct_get_stays_symbol_based(self):
         cfg = _build_cfg(POLYMORPHIC_SRC)
         assert 'struct-get' in _ops(cfg)
-        assert 'struct-ref' not in _ops(cfg)
+        assert 'struct-indexed-get' not in _ops(cfg)
 
 
 NON_STRUCT_SRC = """
@@ -142,7 +161,7 @@ class TestNonStructReceiver:
     def test_struct_get_stays_symbol_based(self):
         cfg = _build_cfg(NON_STRUCT_SRC)
         assert 'struct-get' in _ops(cfg)
-        assert 'struct-ref' not in _ops(cfg)
+        assert 'struct-indexed-get' not in _ops(cfg)
 
 
 STRUCT_SET_SRC = """
@@ -153,11 +172,11 @@ STRUCT_SET_SRC = """
 
 
 class TestStructSetThroughParameter:
-    """struct-set through a proven parameter resolves to struct-set-ref."""
+    """struct-set through a proven parameter resolves to the indexed form."""
 
-    def test_struct_set_becomes_struct_set_ref(self):
+    def test_struct_set_becomes_indexed_set(self):
         cfg = _build_cfg(STRUCT_SET_SRC)
-        assert 'struct-set-ref' in _ops(cfg)
+        assert 'struct-indexed-set' in _ops(cfg)
         assert 'struct-set' not in _ops(cfg)
 
 
@@ -206,9 +225,9 @@ class TestStructTypeThroughReturnValues:
     propagation.
     """
 
-    def test_struct_get_through_return_chain_becomes_struct_ref(self):
+    def test_struct_get_through_return_chain_becomes_indexed_get(self):
         cfg = _build_cfg(RETURN_CHAIN_SRC)
-        assert 'struct-ref' in _ops(cfg)
+        assert 'struct-indexed-get' in _ops(cfg)
         assert 'struct-get' not in _ops(cfg)
 
     def test_return_chain_result(self, menai):
@@ -238,9 +257,9 @@ class TestStructTypeOnlyThroughReturns:
     propagation.
     """
 
-    def test_struct_get_becomes_struct_ref(self):
+    def test_struct_get_becomes_indexed_get(self):
         cfg = _build_cfg(RETURN_ONLY_SRC)
-        assert 'struct-ref' in _ops(cfg)
+        assert 'struct-indexed-get' in _ops(cfg)
         assert 'struct-get' not in _ops(cfg)
 
     def test_result(self, menai):
@@ -272,9 +291,9 @@ class TestStructTypeThroughSiblingCall:
     callees.
     """
 
-    def test_struct_get_becomes_struct_ref(self):
+    def test_struct_get_becomes_indexed_get(self):
         cfg = _build_cfg(SIBLING_SRC)
-        assert 'struct-ref' in _ops(cfg)
+        assert 'struct-indexed-get' in _ops(cfg)
         assert 'struct-get' not in _ops(cfg)
 
     def test_result(self, menai):
@@ -292,6 +311,91 @@ class TestResultsUnchanged:
 
     def test_struct_set_result(self, menai):
         assert menai.evaluate_and_format(STRUCT_SET_SRC) == "(point 10 2)"
+
+
+REFINED_RECEIVER_SRC = """
+(let ((point (struct (x y)))
+       (box (struct (item tag))))
+  (let ((inner (struct-get (box (point 1 2) 9) 'item)))
+    (if (struct-is-instance? inner point)
+        (struct-get inner 'x)
+        0)))
+"""
+
+
+class TestStructTypeThroughRefinement:
+    """
+    A receiver whose type is proven only by a struct-is-instance? refinement.
+
+    `inner` is produced by a struct-get, so its definition-site fact is unknown.
+    Its type is established only by the struct-is-instance? test on the branch
+    that reads its field.  The rewrite must consult the block-local refined
+    facts, not just the global per-value facts, for this access to resolve.
+    """
+
+    def test_struct_get_becomes_indexed_get(self):
+        cfg = _build_cfg(REFINED_RECEIVER_SRC)
+        assert 'struct-indexed-get' in _ops(cfg)
+        assert 'struct-get' not in _ops(cfg)
+
+    def test_result(self, menai):
+        assert menai.evaluate_and_format(REFINED_RECEIVER_SRC) == "1"
+
+
+REFINED_SET_RECEIVER_SRC = """
+(let ((point (struct (x y)))
+       (box (struct (item tag))))
+  (let ((inner (struct-get (box (point 1 2) 9) 'item)))
+    (if (struct-is-instance? inner point)
+        (struct-get (struct-set inner 'x 7) 'x)
+        0)))
+"""
+
+
+class TestStructSetThroughRefinement:
+    """
+    A struct-set on a receiver whose type is proven only by a refinement.
+
+    Mirrors TestStructTypeThroughRefinement for the update form: the receiver's
+    type comes from the struct-is-instance? test, so the rewrite must read the
+    block-local refined facts.
+    """
+
+    def test_struct_set_becomes_indexed_set(self):
+        cfg = _build_cfg(REFINED_SET_RECEIVER_SRC)
+        assert 'struct-indexed-set' in _ops(cfg)
+        assert 'struct-set' not in _ops(cfg)
+
+    def test_result(self, menai):
+        assert menai.evaluate_and_format(REFINED_SET_RECEIVER_SRC) == "7"
+
+
+NESTED_DESTRUCTURE_SRC = """
+(let ((point (struct (x y)))
+       (box (struct (item tag))))
+  (match (box (point 1 2) 9)
+    ((box inner tag) (match inner ((point a b) (integer+ a b))))
+    (_ 0)))
+"""
+
+
+class TestNestedDestructuring:
+    """
+    Nested struct destructuring resolves every field read.
+
+    The desugarer lowers each destructured field to a name-based struct-get.
+    The outer pattern's field comes from a constructor; the inner pattern's
+    receiver is that extracted field, whose type is proven only by the inner
+    struct-is-instance? test.  Every field read must resolve to the index form.
+    """
+
+    def test_all_field_reads_become_indexed_get(self):
+        cfg = _build_cfg(NESTED_DESTRUCTURE_SRC)
+        assert _ops(cfg).count('struct-indexed-get') == 3
+        assert 'struct-get' not in _ops(cfg)
+
+    def test_result(self, menai):
+        assert menai.evaluate_and_format(NESTED_DESTRUCTURE_SRC) == "3"
 
 
 class TestTypeFactJoin:

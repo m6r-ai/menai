@@ -6,15 +6,10 @@ Status: Accepted
 ## Context
 
 Struct field access in the surface language is by symbol name: `(struct-get p 'x)`
-looks up the field index in the struct type's hash table at runtime. Index-based
-opcodes (`struct-ref`, `struct-set-ref`) already existed but were only reachable
-through the explicit `struct-ref`/`struct-set-ref` builtins where the user supplies
-an integer index.
+looks up the field index in the struct type's hash table at runtime.
 
 The compiler can resolve a symbol field name to a constant index if it knows the
-receiver's specific struct type. The CFG type-propagation pass tracks a coarse type
-per value ('struct', 'integer', ...) but not the struct type identity, so it cannot
-resolve field access.
+receiver's specific struct type.
 
 The motivating workload reads struct fields inside functions that receive the struct
 as a parameter — for example a `distance` function taking two points. The struct type
@@ -32,7 +27,7 @@ Add a whole-program flow-based type analysis (`MenaiCFGInterprocTypeAnalysis`) t
 computes a type fact for every SSA value and propagates argument facts into callee
 parameters to a fixed point. Where a struct field access has a receiver whose struct
 type identity is proven and a constant-symbol field argument, rewrite it to the
-index-based form.
+index-based structural instruction.
 
 The analysis is flow-based, not Hindley-Milner. It degrades gracefully: a value whose
 type cannot be proven is simply unknown at that point, and the runtime path is used.
@@ -42,13 +37,13 @@ struct types is unknown, not polymorphic.
 The type fact lattice has three levels: BOTTOM (no information), a known kind, and ANY
 (conflicting kinds). Keeping "no information" and "conflicting information" distinct
 is essential: if both mapped to a single unknown element, joining two different known
-kinds would move *down* the lattice and the parameter-fact fixed point would oscillate
+kinds would move down the lattice and the parameter-fact fixed point would oscillate
 rather than converge.
 
 The distinction also governs soundness. A value whose type is genuinely unknown — a
-builtin result whose signature does not fix the result type (struct-ref, dict-get,
-list-first), or an unresolvable call result — is ANY, because it could be anything and
-a guard or an index resolution must not rely on it. BOTTOM is only the fixed-point
+builtin result whose signature does not fix the result type (e.g. `dict-get`,
+`list-first`), or an unresolvable call result — is ANY, because it could be anything
+and a guard or an index resolution must not rely on it. BOTTOM is only the fixed-point
 identity: it is the initial value and the join identity, not a claim that a value is
 untyped. Free variables and globals are left at BOTTOM: making them ANY would poison
 the return-fact fixed point, because a function that returns a captured value creates a
@@ -56,43 +51,7 @@ cycle through its own parameter, and ANY in that cycle never resolves back to th
 precise type the real call sites establish.
 
 The analysis pass stores its per-value facts on each function and a separate guard
-insertion pass consumes them. Guard insertion needs only the coarse type name, so it
-reads `fact.kind`. Splitting the two keeps a single source of facts and lets the
-interprocedural analysis run before guards are inserted, so guards can be suppressed
-where the interprocedural facts prove a type. The prelude is spliced into every
-program as ordinary lexical bindings, so its functions are analysed like any other
-function: every call site is present in the compilation and parameter inference
-applies to them.
-
-The fixed point propagates three kinds of fact, all of which are required for the
-analysis to fire on real code:
-
-- Argument facts into parameters: A call's argument facts join into the callee's
-  parameter facts, but call sites inside a recursion cycle are treated
-  separately.  The arguments of a call inside a cycle are computed from the very
-  parameters the call would be used to infer, so they describe a later iteration,
-  not the first invocation.  The analysis therefore tracks, per parameter, the
-  join over call sites outside the function's recursion component (the external
-  facts) and the join over call sites inside it (the internal facts).  The
-  effective parameter fact is the external join degraded by the internal join,
-  but only where an external call site grounds it.  A parameter with no external
-  grounding stays at BOTTOM, so its runtime guards are retained: a recursive
-  call site cannot prove the type of the value the function is first called with.
-  Without this split a parameter could be "proven" by a value derived from
-  itself, and a direct or mutual recursion whose only call site is inside the
-  cycle would drop its guards and allow the unguarded opcodes to receive a value
-  of the wrong type.
-- Return facts out of calls: Each function has a return fact, the join over its
-  return points; a call's result fact is the callee's return fact. This is essential
-  because a struct type usually enters a call chain through a function's return value
-  rather than a constructor at the call site: a recursive search passes its cube
-  parameter through functions that each return a cube.
-- Callee resolution: A call's callee is an SSA value, resolved from three sources:
-  a `make_closure` result; a phi joining such results; and a free variable, resolved
-  to whatever the corresponding capture denotes in the parent function (this is how a
-  function reaches a letrec sibling, which is captured rather than created locally).
-  Calls through function-valued parameters are not resolved. There is no function
-  cloning or specialisation.
+insertion pass consumes them.
 
 ## Alternatives considered
 

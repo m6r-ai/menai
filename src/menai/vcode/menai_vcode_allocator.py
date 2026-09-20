@@ -72,6 +72,8 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
+    MenaiVCodeStructGetIndexed,
+    MenaiVCodeStructSetIndexed,
     MenaiVCodeReg,
     MenaiVCodeReturn,
     MenaiVCodeSwitch,
@@ -280,6 +282,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         MenaiVCodeMakeStruct, MenaiVCodeMakeList,
         MenaiVCodeMakeVector,
         MenaiVCodeMakeSet, MenaiVCodeMakeDict,
+        MenaiVCodeStructGetIndexed, MenaiVCodeStructSetIndexed,
     )
 
     # Consuming types: instructions whose arguments are staged into the
@@ -544,6 +547,12 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, MenaiVCodeMakeDict):
         return [instr.dst.id], [r.id for k, v in instr.pairs for r in (k, v)]
+
+    if isinstance(instr, MenaiVCodeStructGetIndexed):
+        return [instr.dst.id], [instr.struct.id]
+
+    if isinstance(instr, MenaiVCodeStructSetIndexed):
+        return [instr.dst.id], [instr.struct.id, instr.value.id]
 
     if isinstance(instr, MenaiVCodeJumpIfTrue):
         return [], [instr.cond.id]

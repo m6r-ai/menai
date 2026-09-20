@@ -220,6 +220,39 @@ class MenaiCFGMakeDictInstr:
 
 
 @dataclass
+class MenaiCFGStructGetIndexedInstr:
+    """
+    %result = struct_get_indexed %struct, index
+
+    Reads the field at compile-time index `index` from `struct`.  Emitted by the
+    interprocedural type analysis when it resolves a name-based struct-get to a
+    constant index.  This is a compiler-internal optimisation target: it has no
+    builtin name and is not reachable from source.  The VM codegen lowers it to
+    STRUCT_INDEXED_GET.
+    """
+    result: MenaiCFGValue
+    struct: MenaiCFGValue
+    index: int
+
+
+@dataclass
+class MenaiCFGStructSetIndexedInstr:
+    """
+    %result = struct_set_indexed %struct, index, %value
+
+    Returns a new struct with the field at compile-time index `index` set to
+    `value`.  Emitted by the interprocedural type analysis when it resolves a
+    name-based struct-set to a constant index.  This is a compiler-internal
+    optimisation target: it has no builtin name and is not reachable from
+    source.  The VM codegen lowers it to STRUCT_INDEXED_SET.
+    """
+    result: MenaiCFGValue
+    struct: MenaiCFGValue
+    index: int
+    value: MenaiCFGValue
+
+
+@dataclass
 class MenaiCFGPatchClosureInstr:
     """
     patch_closure %closure, capture_index, %value
@@ -292,6 +325,8 @@ MenaiCFGInstr = (  # pylint: disable=invalid-name
     | MenaiCFGMakeVectorInstr
     | MenaiCFGMakeSetInstr
     | MenaiCFGMakeDictInstr
+    | MenaiCFGStructGetIndexedInstr
+    | MenaiCFGStructSetIndexedInstr
     | MenaiCFGMakeClosureInstr
     | MenaiCFGPatchClosureInstr
     | MenaiCFGGuardInstr
@@ -539,6 +574,12 @@ def _fmt_instr(instr: MenaiCFGInstr) -> str:
         pairs_str = ", ".join(f"({k}, {v})" for k, v in instr.pairs)
         return f"{instr.result} = make_dict [{pairs_str}]"
 
+    if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+        return f"{instr.result} = struct_get_indexed {instr.struct} [{instr.index}]"
+
+    if isinstance(instr, MenaiCFGStructSetIndexedInstr):
+        return f"{instr.result} = struct_set_indexed {instr.struct} [{instr.index}] = {instr.value}"
+
     if isinstance(instr, MenaiCFGPatchClosureInstr):
         return f"patch_closure {instr.closure} [{instr.capture_index}] = {instr.value}"
 
@@ -705,6 +746,12 @@ def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
 
     if isinstance(instr, MenaiCFGMakeDictInstr):
         return [i.id for k, v in instr.pairs for i in (k, v)]
+
+    if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+        return [instr.struct.id]
+
+    if isinstance(instr, MenaiCFGStructSetIndexedInstr):
+        return [instr.struct.id, instr.value.id]
 
     if isinstance(instr, MenaiCFGPatchClosureInstr):
         return [instr.closure.id, instr.value.id]

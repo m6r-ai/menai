@@ -61,6 +61,8 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeStruct,
+    MenaiVCodeStructGetIndexed,
+    MenaiVCodeStructSetIndexed,
     MenaiVCodeMove,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
@@ -367,6 +369,39 @@ class MenaiBytecodeBuilder:
 
                 ctx.max_outgoing_args = max(ctx.max_outgoing_args, 1 + n_fields)
                 ctx.emit(Opcode.MAKE_STRUCT, local_count, n_fields, dest=ctx.slot_of(instr.dst))
+                i += 1
+                continue
+
+            if isinstance(instr, MenaiVCodeStructGetIndexed):
+                local_count = ctx.slot_map.local_count
+                # Stage the field index into the outgoing zone slot 0; the opcode
+                # reads it from a register.
+                index_const_idx = ctx.add_constant(MenaiInteger(instr.index))
+                ctx.emit(Opcode.LOAD_CONST, index_const_idx, dest=local_count)
+                ctx.max_outgoing_args = max(ctx.max_outgoing_args, 1)
+                ctx.emit(
+                    Opcode.STRUCT_INDEXED_GET,
+                    ctx.slot_of(instr.struct),
+                    local_count,
+                    dest=ctx.slot_of(instr.dst),
+                )
+                i += 1
+                continue
+
+            if isinstance(instr, MenaiVCodeStructSetIndexed):
+                local_count = ctx.slot_map.local_count
+                # Stage the field index into the outgoing zone slot 0; the opcode
+                # reads it from a register.
+                index_const_idx = ctx.add_constant(MenaiInteger(instr.index))
+                ctx.emit(Opcode.LOAD_CONST, index_const_idx, dest=local_count)
+                ctx.max_outgoing_args = max(ctx.max_outgoing_args, 1)
+                ctx.emit(
+                    Opcode.STRUCT_INDEXED_SET,
+                    ctx.slot_of(instr.struct),
+                    local_count,
+                    dest=ctx.slot_of(instr.dst),
+                    src2=ctx.slot_of(instr.value),
+                )
                 i += 1
                 continue
 

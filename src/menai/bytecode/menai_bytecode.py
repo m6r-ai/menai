@@ -277,10 +277,10 @@ class Opcode(IntEnum):
     MAKE_STRUCT = _op(199, 2)           # MAKE_STRUCT type_idx arity — pops arity field regs, pushes MenaiStruct
     STRUCT_P = _op(200, 1)              # r_dest = (struct? r_src0)
     STRUCT_IS_INSTANCE_P = _op(201, 2)  # r_dest = (struct-is-instance? r_src0 r_src1) — tag check, src0=struct, src1=structtype
-    STRUCT_GET = _op(202, 2)            # r_dest = (struct-get r_src0 field_idx) — indexed field access
-    STRUCT_REF = _op(203, 2)            # r_dest = (struct-ref r_src0 field_idx) — indexed field access by immediate
-    STRUCT_SET = _op(204, 3)            # r_dest = (struct-set r_src0 field_idx r_src1) — functional update
-    STRUCT_SET_REF = _op(205, 3)        # r_dest = (struct-set-ref r_src0 field_idx r_src1) — functional update by immediate
+    STRUCT_GET = _op(202, 2)            # r_dest = (struct-get r_src0 field_sym) - field access by symbol name
+    STRUCT_INDEXED_GET = _op(203, 2)    # r_dest = indexed field read at r_src1 (compiler-internal)
+    STRUCT_SET = _op(204, 3)            # r_dest = (struct-set r_src0 field_sym r_src1) - functional update by symbol name
+    STRUCT_INDEXED_SET = _op(205, 3)    # r_dest = indexed field update of r_src0 at r_src1 (compiler-internal)
     STRUCT_EQ_P = _op(206, 2)           # r_dest = (struct=? r_src0 r_src1)
     STRUCT_NEQ_P = _op(207, 2)          # r_dest = (struct!=? r_src0 r_src1)
     STRUCT_TYPE = _op(208, 1)           # r_dest = (struct-type r_src0) → MenaiStructType value
@@ -599,9 +599,7 @@ BUILTIN_OPCODE_MAP: dict[str, tuple[Opcode, int]] = {
     'struct?': (Opcode.STRUCT_P, 1),
     'struct-is-instance?': (Opcode.STRUCT_IS_INSTANCE_P, 2),
     'struct-get': (Opcode.STRUCT_GET, 2),
-    'struct-ref': (Opcode.STRUCT_REF, 2),
     'struct-set': (Opcode.STRUCT_SET, 3),
-    'struct-set-ref': (Opcode.STRUCT_SET_REF, 3),
     'struct=?': (Opcode.STRUCT_EQ_P, 2),
     'struct!=?': (Opcode.STRUCT_NEQ_P, 2),
     'struct-type': (Opcode.STRUCT_TYPE, 1),

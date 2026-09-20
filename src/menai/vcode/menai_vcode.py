@@ -208,6 +208,35 @@ class MenaiVCodeMakeDict:
 
 
 @dataclass
+class MenaiVCodeStructGetIndexed:
+    """
+    dst = struct_get_indexed(struct, index)
+
+    Reads the field at compile-time index `index` from `struct`.  `index` is
+    stored directly on the instruction.  The bytecode emitter materialises the
+    index into a register and emits STRUCT_INDEXED_GET.
+    """
+    dst: MenaiVCodeReg
+    struct: MenaiVCodeReg
+    index: int
+
+
+@dataclass
+class MenaiVCodeStructSetIndexed:
+    """
+    dst = struct_set_indexed(struct, index, value)
+
+    Returns a new struct with the field at compile-time index `index` set to
+    `value`.  `index` is stored directly on the instruction.  The bytecode
+    emitter materialises the index into a register and emits STRUCT_INDEXED_SET.
+    """
+    dst: MenaiVCodeReg
+    struct: MenaiVCodeReg
+    index: int
+    value: MenaiVCodeReg
+
+
+@dataclass
 class MenaiVCodePatchClosure:
     """
     patch_closure(closure, capture_index, value)
@@ -293,6 +322,8 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodeMakeVector
     | MenaiVCodeMakeSet
     | MenaiVCodeMakeDict
+    | MenaiVCodeStructGetIndexed
+    | MenaiVCodeStructSetIndexed
     | MenaiVCodeJump
     | MenaiVCodeJumpIfTrue
     | MenaiVCodeJumpIfFalse
@@ -410,6 +441,12 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
 
     if isinstance(instr, MenaiVCodeMakeDict):
         return f"{instr.dst} = MAKE_DICT {[(str(k), str(v)) for k, v in instr.pairs]}"
+
+    if isinstance(instr, MenaiVCodeStructGetIndexed):
+        return f"{instr.dst} = STRUCT_INDEXED_GET {instr.struct} [{instr.index}]"
+
+    if isinstance(instr, MenaiVCodeStructSetIndexed):
+        return f"{instr.dst} = STRUCT_INDEXED_SET {instr.struct} [{instr.index}] = {instr.value}"
 
     if isinstance(instr, MenaiVCodeJump):
         return f"JUMP {instr.label}"

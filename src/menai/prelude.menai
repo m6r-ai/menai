@@ -1069,9 +1069,7 @@
    (struct? (lambda (x) ($struct? x)))
    (struct-is-instance? (lambda (s t) ($struct-is-instance? s t)))
    (struct-get (lambda (s field) ($struct-get s field)))
-   (struct-ref (lambda (s field) ($struct-ref s field)))
    (struct-set (lambda (s field val) ($struct-set s field val)))
-   (struct-set-ref (lambda (s field val) ($struct-set-ref s field val)))
    (struct=? (lambda (a b) ($struct=? a b)))
    (struct!=? (lambda (a b) ($struct!=? a b)))
    (struct-type (lambda (s) ($struct-type s)))
@@ -1463,9 +1461,7 @@
         "struct?" struct?
         "struct-is-instance?" struct-is-instance?
         "struct-get" struct-get
-        "struct-ref" struct-ref
         "struct-set" struct-set
-        "struct-set-ref" struct-set-ref
         "struct=?" struct=?
         "struct!=?" struct!=?
         "struct-type" struct-type

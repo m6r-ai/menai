@@ -62,6 +62,8 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructSetIndexedInstr,
     MenaiCFGPhiInstr,
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
@@ -92,6 +94,8 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
+    MenaiVCodeStructGetIndexed,
+    MenaiVCodeStructSetIndexed,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
     MenaiVCodeGuard,
@@ -417,6 +421,21 @@ class MenaiVCodeBuilder:
             args = [self._reg(a) for a in instr.args]
             instrs.append(MenaiVCodeMakeStruct(dst=dst, struct_type=instr.struct_type, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
+
+        if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+            dst = self._reg(instr.result)
+            struct_reg = self._reg(instr.struct)
+            instrs.append(MenaiVCodeStructGetIndexed(dst=dst, struct=struct_reg, index=instr.index))
+            return max(max_reg_id, dst.id, struct_reg.id)
+
+        if isinstance(instr, MenaiCFGStructSetIndexedInstr):
+            dst = self._reg(instr.result)
+            struct_reg = self._reg(instr.struct)
+            value_reg = self._reg(instr.value)
+            instrs.append(MenaiVCodeStructSetIndexed(
+                dst=dst, struct=struct_reg, index=instr.index, value=value_reg,
+            ))
+            return max(max_reg_id, dst.id, struct_reg.id, value_reg.id)
 
         if isinstance(instr, MenaiCFGMakeListInstr):
             dst = self._reg(instr.result)

@@ -54,13 +54,18 @@ After the fixed point, for every function the pass rewrites struct field access
 where the receiver's struct type identity is proven and the field argument is a
 constant symbol:
 
-    (struct-get p 'x)  ->  (struct-ref p <index>)
-    (struct-set p 'x v) -> (struct-set-ref p <index> v)
+    (struct-get p 'x)   ->  struct_get_indexed p, <index>
+    (struct-set p 'x v) ->  struct_set_indexed p, <index>, v
 
 The index is resolved from the MenaiStructType's field order.  A struct-get
 whose receiver's type is not proven, or whose field argument is not a constant
 symbol, is left unchanged and continues to use the runtime hash lookup.  The
 rewrite is a pure optimisation: it never changes observable behaviour.
+
+The receiver's type is read from the block-local facts, which include the
+refinement applied on a struct-is-instance? true edge, merged over the global
+per-value facts.  A receiver whose type is proven only by such a refinement has
+no definition-site fact, so reading the global facts alone would miss it.
 
 The pass mutates the CFG in place and returns the same root function.
 """
@@ -83,30 +88,25 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
     MenaiCFGPhiInstr,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructSetIndexedInstr,
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
     MenaiCFGSwitchTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
-    MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGWholeProgramPass, collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, TypeFact, BOTTOM, fact_for_value, join
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
-from menai.menai_value import MenaiInteger, MenaiStructType, MenaiSymbol
+from menai.menai_value import MenaiBoolean, MenaiStructType, MenaiSymbol
 
 # Builtins whose result is a struct of the same type as their first argument.
-_STRUCT_PRESERVING_OPS = {'struct-set', 'struct-set-ref'}
+_STRUCT_PRESERVING_OPS = {'struct-set'}
 
 # Builtins that read or write a struct field by symbol name.
 _FIELD_BY_SYMBOL_OPS = {'struct-get', 'struct-set'}
-
-# Field access builtins and the index-based opcode each rewrites to.
-_INDEXED_OP = {
-    'struct-get': 'struct-ref',
-    'struct-set': 'struct-set-ref',
-}
 
 # Instruction types that define a result SSA value.  Guard and patch
 # instructions are excluded: they have no result.
@@ -123,6 +123,8 @@ _VALUE_INSTR_TYPES = (
     MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructSetIndexedInstr,
     MenaiCFGPhiInstr,
 )
 
@@ -190,7 +192,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         for info in infos:
             facts = self._intra_propagate(info, info.param_facts, info_of)
             info.func.type_facts = facts
-            if self._rewrite_field_access(info.func, facts):
+            if self._rewrite_field_access(info, facts):
                 changed = True
 
         return root, changed
@@ -584,23 +586,84 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         (struct-is-instance? v TypeName), return (v.id, Known('struct', type)).
 
         The struct type is found from the constant structtype argument.
+
+        The condition may also be a phi that joins a struct-is-instance? result
+        with constant #f values, which is the shape an (and ...) guard lowers to.
+        On the true edge only the struct-is-instance? branch can have been taken,
+        so the refinement holds there too.
         """
         term = pred.terminator
         if not isinstance(term, MenaiCFGBranchTerm) or term.true_block is not succ:
             return None
 
-        for instr in pred.instrs:
-            if (
-                isinstance(instr, MenaiCFGBuiltinInstr)
-                and instr.op == 'struct-is-instance?'
-                and instr.result.id == term.cond.id
-                and len(instr.args) == 2
-            ):
-                type_instr = value_defs.get(instr.args[1].id)
-                if isinstance(type_instr, MenaiCFGConstInstr) and isinstance(type_instr.value, MenaiStructType):
-                    return instr.args[0].id, TypeFact(kind='struct', struct_type=type_instr.value)
+        cond_instr = value_defs.get(term.cond.id)
+        if isinstance(cond_instr, MenaiCFGPhiInstr):
+            return MenaiCFGInterprocTypeAnalysis._phi_true_edge_refinement(cond_instr, value_defs)
+
+        return MenaiCFGInterprocTypeAnalysis._instance_test_refinement(cond_instr, value_defs)
+
+    @staticmethod
+    def _instance_test_refinement(
+        instr: object,
+        value_defs: dict[int, object],
+    ) -> tuple[int, TypeFact] | None:
+        """
+        If instr is (struct-is-instance? v TypeName) with a constant structtype
+        argument, return (v.id, Known('struct', type)), else None.
+        """
+        if (
+            isinstance(instr, MenaiCFGBuiltinInstr)
+            and instr.op == 'struct-is-instance?'
+            and len(instr.args) == 2
+        ):
+            type_instr = value_defs.get(instr.args[1].id)
+            if isinstance(type_instr, MenaiCFGConstInstr) and isinstance(type_instr.value, MenaiStructType):
+                return instr.args[0].id, TypeFact(kind='struct', struct_type=type_instr.value)
 
         return None
+
+    @staticmethod
+    def _phi_true_edge_refinement(
+        phi: MenaiCFGPhiInstr,
+        value_defs: dict[int, object],
+    ) -> tuple[int, TypeFact] | None:
+        """
+        Refine through a phi that joins a struct-is-instance? result with #f.
+
+        This is the shape an (and (struct? v) (struct-is-instance? v T)) guard
+        lowers to: the struct? test guards the struct-is-instance? test, and the
+        two are joined by a phi.  The true edge can only have been reached
+        through the struct-is-instance? branch, because the other incoming values
+        are constant #f, so the refinement is sound.
+
+        Requires exactly one incoming value to be a struct-is-instance? result
+        and every other incoming value to be a constant false.
+        """
+        refinement: tuple[int, TypeFact] | None = None
+        for incoming_val, _ in phi.incoming:
+            candidate = MenaiCFGInterprocTypeAnalysis._instance_test_refinement(
+                value_defs.get(incoming_val.id), value_defs,
+            )
+            if candidate is not None:
+                if refinement is not None:
+                    return None
+
+                refinement = candidate
+                continue
+
+            if not MenaiCFGInterprocTypeAnalysis._is_constant_false(value_defs.get(incoming_val.id)):
+                return None
+
+        return refinement
+
+    @staticmethod
+    def _is_constant_false(instr: object) -> bool:
+        """Return True if instr defines the constant #f."""
+        return (
+            isinstance(instr, MenaiCFGConstInstr)
+            and isinstance(instr.value, MenaiBoolean)
+            and not instr.value.value
+        )
 
     def _instr_fact(
         self,
@@ -616,6 +679,16 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         if isinstance(instr, MenaiCFGMakeStructInstr):
             return TypeFact(kind='struct', struct_type=instr.struct_type)
+
+        if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+            return ANY
+
+        if isinstance(instr, MenaiCFGStructSetIndexedInstr):
+            receiver = facts.get(instr.struct.id, BOTTOM)
+            if receiver.kind == 'struct':
+                return receiver
+
+            return ANY
 
         if isinstance(instr, MenaiCFGMakeListInstr):
             return TypeFact(kind='list')
@@ -676,27 +749,38 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         if sig is not None and sig[1] is not None:
             return TypeFact(kind=sig[1])
 
-        # The result type is genuinely unknown (e.g. struct-ref, dict-get,
+        # The result type is genuinely unknown (e.g. dict-get,
         # list-first return a value whose type depends on the input), so the
         # result could be anything: ANY, not BOTTOM.
         return ANY
 
     def _rewrite_field_access(
         self,
-        func: MenaiCFGFunction,
+        info: _FunctionInfo,
         facts: dict[int, TypeFact],
     ) -> bool:
         """
         Rewrite struct-get/struct-set calls to their index-based forms where the
         receiver's struct type and the field index are both known.
 
+        The receiver's type is read from the block-local facts, not the global
+        per-value facts: a receiver whose type is proven only by a
+        struct-is-instance? branch refinement has no definition-site fact, so
+        the refinement must be visible here for the rewrite to fire.
+
         Returns True if any instruction was rewritten.
         """
+        func = info.func
         changed = False
-        next_value_id = _max_value_id(func) + 1
         value_defs = _value_defs(func)
         orphaned_symbols: set[int] = set()
         for block in func.blocks:
+            # Merge the global per-value facts with this block's incoming facts,
+            # block-local winning: a value defined in this block has only a
+            # global fact, while a value refined by a struct-is-instance? branch
+            # has a refined fact that exists only in the block-local facts.
+            block_facts = dict(facts)
+            block_facts.update(self._block_incoming(block, facts, info.param_facts, value_defs))
             new_instrs: list = []
             for instr in block.instrs:
                 if not isinstance(instr, MenaiCFGBuiltinInstr):
@@ -707,7 +791,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                     new_instrs.append(instr)
                     continue
 
-                index = self._resolve_field_index(instr, facts, value_defs)
+                index = self._resolve_field_index(instr, block_facts, value_defs)
                 if index is None:
                     new_instrs.append(instr)
                     continue
@@ -716,18 +800,22 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 # constant instruction that defined it may become dead.  Record
                 # it; it is removed below if no other instruction still uses it.
                 orphaned_symbols.add(instr.args[1].id)
-                index_value = MenaiCFGValue(id=next_value_id, hint="field_index")
-                next_value_id += 1
-                new_instrs.append(MenaiCFGConstInstr(result=index_value, value=MenaiInteger(index)))
-                facts[index_value.id] = TypeFact(kind='integer')
 
-                new_args = list(instr.args)
-                new_args[1] = index_value
-                new_instrs.append(MenaiCFGBuiltinInstr(
-                    result=instr.result,
-                    op=_INDEXED_OP[instr.op],
-                    args=new_args,
-                ))
+                if instr.op == 'struct-get':
+                    new_instrs.append(MenaiCFGStructGetIndexedInstr(
+                        result=instr.result,
+                        struct=instr.args[0],
+                        index=index,
+                    ))
+
+                else:
+                    new_instrs.append(MenaiCFGStructSetIndexedInstr(
+                        result=instr.result,
+                        struct=instr.args[0],
+                        index=index,
+                        value=instr.args[2],
+                    ))
+
                 changed = True
 
             block.instrs = new_instrs
@@ -950,17 +1038,6 @@ def _term_value_uses(term: object) -> list[int]:
         return [term.message.id]
 
     return []
-
-
-def _max_value_id(func: MenaiCFGFunction) -> int:
-    """Return the largest SSA value id defined anywhere in a function."""
-    largest = -1
-    for block in func.blocks:
-        for instr in block.instrs:
-            if isinstance(instr, _VALUE_INSTR_TYPES) and instr.result.id > largest:
-                largest = instr.result.id
-
-    return largest
 
 
 def _call_graph_sccs(infos: list[_FunctionInfo]) -> dict[int, int]:

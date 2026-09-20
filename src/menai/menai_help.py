@@ -254,9 +254,7 @@ Syntax: (operator arg1 arg2 ...)
 - Construction: call the structtype value directly with positional field values: (point 1 2) → a point instance
 - Type predicate (any struct): (struct? p) → #t for any struct instance
 - Field access: (struct-get p 'x) → value of field x; field name must be a symbol
-- Indexed field access: (struct-ref p 0) → value of field at index 0 (0-based)
 - Functional update (returns new struct — pure): (struct-set p 'x 10) → new point with x=10, y unchanged
-- Indexed functional update: (struct-set-ref p 0 10) → new point with field 0 set to 10
 - Equality: (struct=? p1 p2) → #t if same type tag and all fields equal; (struct!=? p1 p2) → negation
 - Display format: (point 1 2) — this is display-only; construction always uses (TypeName field1 field2 ...)
 - Pattern matching destructuring form: (match p ((point x y) (integer+ x y)) (_ 0)) — binds each field positionally to the pattern variables

@@ -844,17 +844,12 @@ values:
 | Function | Description |
 |----------|-------------|
 | `(struct-get instance 'field)` | Get field value by symbol name |
-| `(struct-ref instance index)` | Get field value by integer index (0-based) |
 | `(struct-set instance 'field value)` | Return new struct with field updated (by symbol name) |
-| `(struct-set-ref instance index value)` | Return new struct with field updated (by integer index) |
 
 ```menai
 (let ((point (struct (x y))))
   (let ((p (point 1 2)))
     (struct-get p 'x)))              → 1
-(let ((point (struct (x y))))
-  (let ((p (point 1 2)))
-    (struct-ref p 0)))              → 1   ; same field, by index
 (let ((point (struct (x y))))
   (let ((p (point 1 2)))
     (struct-get (struct-set p 'x 10) 'x)))  → 10

@@ -928,67 +928,35 @@ class TestStructErrors:
             )
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
-    def test_struct_ref_index_out_of_range_high(self, menai):
-        """struct-ref raises an error when the field index is beyond the last field."""
+    def test_struct_ref_is_not_callable(self, menai):
+        """struct-ref is a compiler-internal opcode and is not bound in the surface language."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(
+                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-ref p 0))"
+            )
+
+    def test_struct_set_ref_is_not_callable(self, menai):
+        """struct-set-ref is a compiler-internal opcode and is not bound in the surface language."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(
+                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-set-ref p 0 99))"
+            )
+
+    def test_struct_get_unknown_field_raises_error(self, menai):
+        """struct-get raises an error for an unknown field name."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-ref p 2))"
+                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-get p 'z))"
             )
-        assert exc_info.value.error_code == VMErrorCode.INDEX_OUT_OF_RANGE
+        assert exc_info.value.error_code == VMErrorCode.STRUCT_FIELD_NOT_FOUND
 
-    def test_struct_ref_index_negative(self, menai):
-        """struct-ref raises an error when the field index is negative."""
+    def test_struct_set_unknown_field_raises_error_on_zero_field_struct(self, menai):
+        """struct-set raises an error for any field name on a zero-field struct."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-ref p -1))"
+                "(let ((Unit (struct ())) (u (Unit))) (struct-set u 'x 99))"
             )
-        assert exc_info.value.error_code == VMErrorCode.INDEX_OUT_OF_RANGE
-
-    def test_struct_ref_index_zero_on_empty_struct(self, menai):
-        """struct-ref raises an error when accessing field 0 of a zero-field struct."""
-        with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate(
-                "(let ((Unit (struct ())) (u (Unit))) (struct-ref u 0))"
-            )
-        assert exc_info.value.error_code == VMErrorCode.INDEX_OUT_OF_RANGE
-
-    def test_struct_ref_valid_index_works(self, menai):
-        """struct-ref works correctly for valid indices."""
-        result = menai.evaluate_and_format(
-            "(let ((Point (struct (x y))) (p (Point 3 4))) (struct-ref p 0))"
-        )
-        assert result == '3'
-
-    def test_struct_set_ref_index_out_of_range_high(self, menai):
-        """struct-set-ref raises an error when the field index is beyond the last field."""
-        with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-set-ref p 2 99))"
-            )
-        assert exc_info.value.error_code == VMErrorCode.INDEX_OUT_OF_RANGE
-
-    def test_struct_set_ref_index_negative(self, menai):
-        """struct-set-ref raises an error when the field index is negative."""
-        with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-set-ref p -1 99))"
-            )
-        assert exc_info.value.error_code == VMErrorCode.INDEX_OUT_OF_RANGE
-
-    def test_struct_set_ref_index_zero_on_empty_struct(self, menai):
-        """struct-set-ref raises an error when accessing field 0 of a zero-field struct."""
-        with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate(
-                "(let ((Unit (struct ())) (u (Unit))) (struct-set-ref u 0 99))"
-            )
-        assert exc_info.value.error_code == VMErrorCode.INDEX_OUT_OF_RANGE
-
-    def test_struct_set_ref_valid_index_works(self, menai):
-        """struct-set-ref works correctly for valid indices."""
-        result = menai.evaluate_and_format(
-            "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-set-ref p 0 99))"
-        )
-        assert result == '(Point 99 2)'
+        assert exc_info.value.error_code == VMErrorCode.STRUCT_FIELD_NOT_FOUND
 
 
 # ---------------------------------------------------------------------------
