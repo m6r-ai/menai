@@ -112,6 +112,56 @@ def _count_direct_lambda_calls(ir) -> int:
     return 0
 
 
+def _count_builtin_calls(ir, name: str) -> int:
+    """Count calls to a builtin by name in the IR tree."""
+    if isinstance(ir, MenaiIRCall):
+        own = 1 if ir.is_builtin and ir.builtin_name == name else 0
+        return own + _count_builtin_calls(ir.func_plan, name) + sum(_count_builtin_calls(a, name) for a in ir.arg_plans)
+
+    if isinstance(ir, MenaiIRReturn):
+        return _count_builtin_calls(ir.value_plan, name)
+
+    if isinstance(ir, MenaiIRIf):
+        return (_count_builtin_calls(ir.condition_plan, name)
+                + _count_builtin_calls(ir.then_plan, name)
+                + _count_builtin_calls(ir.else_plan, name))
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        return (sum(_count_builtin_calls(v, name) for _, v in ir.bindings)
+                + _count_builtin_calls(ir.body_plan, name))
+
+    if isinstance(ir, MenaiIRLambda):
+        return _count_builtin_calls(ir.body_plan, name)
+
+    return 0
+
+
+def _count_bindings_named(ir, prefix: str) -> int:
+    """Count let/letrec bindings whose name starts with *prefix*."""
+    count = 0
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        count += sum(1 for name, _ in ir.bindings if name.startswith(prefix))
+        count += sum(_count_bindings_named(v, prefix) for _, v in ir.bindings)
+        count += _count_bindings_named(ir.body_plan, prefix)
+        return count
+
+    if isinstance(ir, MenaiIRReturn):
+        return _count_bindings_named(ir.value_plan, prefix)
+
+    if isinstance(ir, MenaiIRIf):
+        return (_count_bindings_named(ir.condition_plan, prefix)
+                + _count_bindings_named(ir.then_plan, prefix)
+                + _count_bindings_named(ir.else_plan, prefix))
+
+    if isinstance(ir, MenaiIRLambda):
+        return _count_bindings_named(ir.body_plan, prefix)
+
+    if isinstance(ir, MenaiIRCall):
+        return _count_bindings_named(ir.func_plan, prefix) + sum(_count_bindings_named(a, prefix) for a in ir.arg_plans)
+
+    return 0
+
+
 class TestLocalLambdaInlining:
     """Tests for inlining locally-bound lambdas."""
 
@@ -335,4 +385,113 @@ class TestInliningIntegration:
                    (func1 (compose mul2 add1)))
               (func1 5))
         """)
-        assert result == 12
+
+
+class TestArgumentLetBinding:
+    """Tests for hoisting a duplicated non-trivial argument into a let binding."""
+
+    def test_duplicated_call_argument_bound_once(self):
+        """A non-trivial argument used in several branches is evaluated once."""
+        ir = _build_ir("""
+            (let ((f (lambda (s) (if (integer=? s 0) "a" (if (integer=? s 1) "b" "c"))))
+                  (v 3))
+              (f (integer+ v 2)))
+        """)
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_builtin_calls(new_ir, 'integer+') == 1
+        assert _count_bindings_named(new_ir, '#:inline-tmp-') == 1
+
+    def test_duplicated_argument_uses_fresh_variable(self):
+        """The hoisted argument is referenced through the fresh binding, not re-evaluated."""
+        ir = _build_ir("""
+            (let ((f (lambda (s) (integer+ s s)))
+                  (v 3))
+              (f (integer* v 4)))
+        """)
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_builtin_calls(new_ir, 'integer*') == 1
+        assert _count_bindings_named(new_ir, '#:inline-tmp-') == 1
+
+    def test_variable_argument_not_bound(self):
+        """A variable argument is not hoisted, even when used several times."""
+        ir = _build_ir("""
+            (let ((f (lambda (s) (integer+ s s)))
+                  (v 7))
+              (f v))
+        """)
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_bindings_named(new_ir, '#:inline-tmp-') == 0
+
+    def test_constant_argument_not_bound(self):
+        """A constant argument is not hoisted, even when used several times."""
+        ir = _build_ir("(let ((f (lambda (s) (integer+ s s)))) (f 7))")
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_bindings_named(new_ir, '#:inline-tmp-') == 0
+
+    def test_single_use_argument_not_bound(self):
+        """A non-trivial argument used once is not hoisted."""
+        ir = _build_ir("""
+            (let ((f (lambda (s) (integer+ s 1)))
+                  (v 3))
+              (f (integer* v 4)))
+        """)
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_bindings_named(new_ir, '#:inline-tmp-') == 0
+
+    def test_shadowed_parameter_uses_not_counted(self):
+        """Uses of a parameter shadowed by an inner binding are not counted."""
+        ir = _build_ir("""
+            (let ((f (lambda (s) (let ((s 100)) (integer+ s s))))
+                  (v 3))
+              (f (integer* v 4)))
+        """)
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_bindings_named(new_ir, '#:inline-tmp-') == 0
+
+    def test_distinct_arguments_bound_separately(self):
+        """Two duplicated non-trivial arguments each get their own binding."""
+        ir = _build_ir("""
+            (let ((f (lambda (a b) (integer+ a b a b)))
+                  (v 3))
+              (f (integer* v 2) (integer* v 5)))
+        """)
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_bindings_named(new_ir, '#:inline-tmp-') == 2
+
+    def test_duplicated_argument_result_correct(self):
+        """Hoisting a duplicated argument preserves the computed result."""
+        from menai.menai import Menai
+
+        m = Menai()
+        result = m.evaluate("""
+            (let ((f (lambda (s) (integer+ s s s)))
+                  (v 6))
+              (f (integer* v 7)))
+        """)
+        assert result == 126
+
+    def test_tail_call_duplicated_argument_result_correct(self):
+        """Hoisting a duplicated argument in a tail call preserves the result."""
+        from menai.menai import Menai
+
+        m = Menai()
+        result = m.evaluate("""
+            (let ((f (lambda (s) (if (integer=? s 0) 0 (integer+ s s))))
+                  (v 5))
+              (f (integer* v 5)))
+        """)
+        assert result == 50

@@ -36,6 +36,17 @@ The pass iterates to a fixed point: after each round of inlining, the
 tree is walked again.  Inlining can expose new inlineable call sites (e.g.
 inlining a wrapper reveals a call to another small function), so the pass
 keeps going until no more inlining occurs.
+
+When substituting, a parameter that occurs more than once in the callee body
+and is bound to a non-trivial argument is first bound to a fresh let variable,
+and the parameter references are substituted with that variable.  Without this,
+substituting the argument expression at every occurrence would duplicate the
+argument's computation once per occurrence (e.g. a callee that tests its
+parameter in several branches would recompute an expensive argument in every
+branch).  Binding the argument once and reusing the variable keeps the
+computation to a single evaluation.  A parameter bound to a variable or a
+constant is left alone: such an argument is already a single register read or
+constant load, so duplicating it costs nothing.
 """
 
 import sys
@@ -82,10 +93,23 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
     def __init__(self) -> None:
         self._inlined = 0
+        self._temp_counter = 0
+
+    def _gen_temp(self) -> str:
+        """
+        Generate a unique temporary variable name for an inlined argument.
+
+        Uses the compiler-generated ``#:`` prefix so the name cannot collide
+        with a user identifier.  The counter is per-instance and monotonically
+        increasing, so repeated inlining never reuses a name.
+        """
+        self._temp_counter += 1
+        return f"#:inline-tmp-{self._temp_counter}"
 
     def optimize(self, ir: MenaiIRExpr) -> tuple[MenaiIRExpr, bool]:
         """Return an inlined IR tree and a boolean indicating whether any changes were made."""
         self._inlined = 0
+        self._temp_counter = 0
         new_ir = ir
         while True:
             prev = self._inlined
@@ -354,34 +378,86 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         MenaiIRReturn wrappers are handled: if the body is wrapped in Return
         and the call is a tail call, the wrapper is preserved; otherwise the
         inner value is used directly.
+
+        A parameter that occurs more than once in the callee body and is bound
+        to a non-trivial argument is bound to a fresh let variable first, and
+        the parameter references are substituted with that variable.  This
+        avoids duplicating the argument's computation once per occurrence.
         """
         param_map: dict[str, MenaiIRExpr] = {}
+        captured_bindings: list[tuple[str, MenaiIRExpr]] = []
 
         if target.is_variadic:
             min_arity = target.param_count - 1
             for i in range(min_arity):
-                param_map[target.params[i]] = arg_plans[i]
+                param_map[target.params[i]] = self._bind_argument(
+                    target.params[i], arg_plans[i], target.body_plan, captured_bindings
+                )
 
             rest_args = arg_plans[min_arity:]
-            param_map[target.params[min_arity]] = MenaiIRBuildList(element_plans=rest_args)
+            param_map[target.params[min_arity]] = self._bind_argument(
+                target.params[min_arity],
+                MenaiIRBuildList(element_plans=rest_args),
+                target.body_plan,
+                captured_bindings,
+            )
 
         else:
             for i, param in enumerate(target.params):
                 if i < len(arg_plans):
-                    param_map[param] = arg_plans[i]
+                    param_map[param] = self._bind_argument(
+                        param, arg_plans[i], target.body_plan, captured_bindings
+                    )
 
         body = _substitute(target.body_plan, param_map, set())
 
+        result: MenaiIRExpr
         if isinstance(body, MenaiIRReturn):
             if is_tail_call:
-                return body
+                result = body
 
-            return body.value_plan
+            else:
+                result = body.value_plan
 
-        if is_tail_call:
-            return MenaiIRReturn(value_plan=body)
+        elif is_tail_call:
+            result = MenaiIRReturn(value_plan=body)
 
-        return body
+        else:
+            result = body
+
+        if captured_bindings:
+            return MenaiIRLet(
+                bindings=captured_bindings,
+                body_plan=result,
+                in_tail_position=is_tail_call,
+            )
+
+        return result
+
+    def _bind_argument(
+        self,
+        param: str,
+        arg_plan: MenaiIRExpr,
+        body_plan: MenaiIRExpr,
+        captured_bindings: list[tuple[str, MenaiIRExpr]],
+    ) -> MenaiIRExpr:
+        """
+        Return the plan to substitute for *param*.
+
+        A non-trivial argument bound to a parameter that occurs more than once
+        in the callee body is hoisted into a fresh let binding, and the returned
+        plan is a reference to that binding.  Any other argument is returned
+        unchanged.
+        """
+        if isinstance(arg_plan, (MenaiIRVariable, MenaiIRConstant)):
+            return arg_plan
+
+        if _count_param_uses(body_plan, param, set()) <= 1:
+            return arg_plan
+
+        temp_name = self._gen_temp()
+        captured_bindings.append((temp_name, arg_plan))
+        return MenaiIRVariable(name=temp_name)
 
 
 def _contains_letrec(ir: MenaiIRExpr) -> bool:
@@ -486,6 +562,73 @@ def _has_captures_of_params(ir: MenaiIRExpr, params: set[str]) -> bool:
         return any(_has_captures_of_params(f, params) for f in ir.field_plans)
 
     return False
+
+
+def _count_param_uses(ir: MenaiIRExpr, param: str, shadowed: set[str]) -> int:
+    """
+    Count how many times *param* is referenced in *ir*.
+
+    Mirrors the shadowing rules of _substitute exactly, so the count matches
+    the number of occurrences that substitution would replace.  A reference is
+    counted only when it is not shadowed by an inner let/letrec/lambda binder.
+
+    Nested lambda capture plans (sibling_free_var_plans / outer_free_var_plans)
+    are evaluated in the enclosing scope but are not substituted into, so they
+    are not counted here either.
+    """
+    if isinstance(ir, MenaiIRVariable):
+        return 1 if ir.name == param and ir.name not in shadowed else 0
+
+    if isinstance(ir, (MenaiIRConstant, MenaiIRQuote, MenaiIREmptyList)):
+        return 0
+
+    if isinstance(ir, MenaiIRError):
+        return _count_param_uses(ir.message, param, shadowed)
+
+    if isinstance(ir, MenaiIRIf):
+        return (_count_param_uses(ir.condition_plan, param, shadowed)
+                + _count_param_uses(ir.then_plan, param, shadowed)
+                + _count_param_uses(ir.else_plan, param, shadowed))
+
+    if isinstance(ir, MenaiIRLet):
+        binding_names = {name for name, _ in ir.bindings}
+        return (sum(_count_param_uses(v, param, shadowed) for _, v in ir.bindings)
+                + _count_param_uses(ir.body_plan, param, shadowed | binding_names))
+
+    if isinstance(ir, MenaiIRLetrec):
+        binding_names = {name for name, _ in ir.bindings}
+        inner = shadowed | binding_names
+        return (sum(_count_param_uses(v, param, inner) for _, v in ir.bindings)
+                + _count_param_uses(ir.body_plan, param, inner))
+
+    if isinstance(ir, MenaiIRLambda):
+        inner = shadowed | set(ir.params) | set(ir.sibling_free_vars) | set(ir.outer_free_vars)
+        return _count_param_uses(ir.body_plan, param, inner)
+
+    if isinstance(ir, MenaiIRCall):
+        return (_count_param_uses(ir.func_plan, param, shadowed)
+                + sum(_count_param_uses(a, param, shadowed) for a in ir.arg_plans))
+
+    if isinstance(ir, MenaiIRReturn):
+        return _count_param_uses(ir.value_plan, param, shadowed)
+
+    if isinstance(ir, MenaiIRBuildList):
+        return sum(_count_param_uses(e, param, shadowed) for e in ir.element_plans)
+
+    if isinstance(ir, MenaiIRBuildDict):
+        return sum(_count_param_uses(k, param, shadowed) + _count_param_uses(v, param, shadowed)
+                   for k, v in ir.pair_plans)
+
+    if isinstance(ir, MenaiIRBuildSet):
+        return sum(_count_param_uses(e, param, shadowed) for e in ir.element_plans)
+
+    if isinstance(ir, MenaiIRBuildVector):
+        return sum(_count_param_uses(e, param, shadowed) for e in ir.element_plans)
+
+    if isinstance(ir, MenaiIRBuildStruct):
+        return sum(_count_param_uses(f, param, shadowed) for f in ir.field_plans)
+
+    raise TypeError(f"_count_param_uses: unhandled IR node type {type(ir).__name__}")
 
 
 def _count_nodes(ir: MenaiIRExpr) -> int:
