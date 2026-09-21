@@ -406,8 +406,14 @@ class Opcode(IntEnum):
     LIST_TO_VECTOR = _op(320, 1)        # r_dest = (list->vector r_src0)
     ASSERT_VECTOR = _op(321, 1)         # Check r_src0 — assert r_src0 is vector
 
+    # Bytes hashing operations
+    BYTES_HASH_SHA2_256 = _op(322, 1)       # r_dest = (bytes-hash-sha2-256 r_src0)
+    BYTES_HASH_SHA2_512 = _op(323, 1)       # r_dest = (bytes-hash-sha2-512 r_src0)
+    BYTES_HASH_SHA2_512_256 = _op(324, 1)   # r_dest = (bytes-hash-sha2-512-256 r_src0)
+    BYTES_HASH_SHA3_256 = _op(325, 1)       # r_dest = (bytes-hash-sha3-256 r_src0)
+
     # Control flow (jump table).  Kept last so its value remains the highest opcode.
-    SWITCH_INTEGER = _op(322, 2)        # SWITCH_INTEGER r_src0, jt[src1] — dense integer jump table dispatch
+    SWITCH_INTEGER = _op(326, 2)        # SWITCH_INTEGER r_src0, jt[src1] — dense integer jump table dispatch
 
 # Maps builtin function name → (opcode, arity) for all fixed-arity builtins.
 #
@@ -686,6 +692,10 @@ BUILTIN_OPCODE_MAP: dict[str, tuple[Opcode, int]] = {
     'bytes-append-uleb128': (Opcode.BYTES_APPEND_ULEB128, 2),
     'bytes-read-sleb128': (Opcode.BYTES_READ_SLEB128, 2),
     'bytes-append-sleb128': (Opcode.BYTES_APPEND_SLEB128, 2),
+    'bytes-hash-sha2-256': (Opcode.BYTES_HASH_SHA2_256, 1),
+    'bytes-hash-sha2-512': (Opcode.BYTES_HASH_SHA2_512, 1),
+    'bytes-hash-sha2-512-256': (Opcode.BYTES_HASH_SHA2_512_256, 1),
+    'bytes-hash-sha3-256': (Opcode.BYTES_HASH_SHA3_256, 1),
     'vector?': (Opcode.VECTOR_P, 1),
     'vector=?': (Opcode.VECTOR_EQ_P, 2),
     'vector!=?': (Opcode.VECTOR_NEQ_P, 2),

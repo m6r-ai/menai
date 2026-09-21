@@ -25,7 +25,8 @@ Status: Accepted
 
 ## Context
 
-What problem were we solving? What forces were at play?
+What problem were we solving? What forces were at play? This should be grounded in how
+we want the architecture to be, not in the specifics of how the codebase used to be.
 
 ## Decision
 
@@ -91,3 +92,4 @@ What costs, risks, or constraints does this decision impose?
 | [0021](0021-interprocedural-type-analysis.md) | Interprocedural flow-based type analysis | Accepted |
 | [0022](0022-no-runtime-globals.md) | No runtime globals | Accepted |
 | [0023](0023-second-class-module-namespaces.md) | Second-class module namespaces | Accepted |
+| [0024](0024-hash-primitives-in-c-vm.md) | Hash primitives are native VM operations | Accepted |

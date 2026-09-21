@@ -26,8 +26,8 @@
 #define V_FIELD_MASK 0xFFFu
 #define V_OPCODE_MASK 0xFFFFu
 
-/* Highest valid opcode (OP_SWITCH_INTEGER) */
-#define V_HIGHEST_OPCODE 323
+/* Highest valid opcode, derived from the generated opcode header. */
+#define V_HIGHEST_OPCODE MENAI_HIGHEST_OPCODE
 
 /*
  * Initialized-slot bitmask: 4096 bits = 64 uint64_t words.

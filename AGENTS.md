@@ -373,6 +373,14 @@ All four slice operations (`string-slice`, `list-slice`, `vector-slice`,
 start-after-end indices. They do not silently clamp.
 See [ADR-0019](docs/adr/0019-slice-out-of-bounds-raises-error.md).
 
+### Hash operations are native VM primitives
+The `bytes` hash operations (`bytes-hash-sha2-256`, `bytes-hash-sha2-512`,
+`bytes-hash-sha2-512-256`, `bytes-hash-sha3-256`) are opcode-backed primitives
+implemented natively in the VM core, not prelude functions. Hashing is a
+performance-critical, fixed-spec, integer-heavy kernel and therefore a language
+primitive.
+See [ADR-0024](docs/adr/0024-hash-primitives-in-c-vm.md).
+
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and

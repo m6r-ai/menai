@@ -4626,6 +4626,66 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_BYTES_HASH_SHA2_256: {
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
+            uint8_t digest[32];
+            menai_sha2_256(b->data, (size_t)b->length, digest);
+            MenaiBytes *r = alloc_menai_bytes_from_raw(vs, digest, 32);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_BYTES_HASH_SHA2_512: {
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
+            uint8_t digest[64];
+            menai_sha2_512(b->data, (size_t)b->length, digest);
+            MenaiBytes *r = alloc_menai_bytes_from_raw(vs, digest, 64);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_BYTES_HASH_SHA2_512_256: {
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
+            uint8_t digest[32];
+            menai_sha2_512_256(b->data, (size_t)b->length, digest);
+            MenaiBytes *r = alloc_menai_bytes_from_raw(vs, digest, 32);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_BYTES_HASH_SHA3_256: {
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
+            uint8_t digest[32];
+            menai_sha3_256(b->data, (size_t)b->length, digest);
+            MenaiBytes *r = alloc_menai_bytes_from_raw(vs, digest, 32);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
         case OP_BYTES_CONCAT: {
             MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);

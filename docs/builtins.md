@@ -675,6 +675,22 @@ fit in the specified width. Raise error if not enough bytes from offset.
 | `(filter-bytes pred b)` | Keep bytes where pred returns `#t` |
 | `(fold-bytes f init b)` | Left fold; f is `(lambda (acc byte) result)` |
 
+### Cryptographic hashing
+
+All take `(bytes)` and return the raw digest as bytes.
+
+| Function | Description |
+|----------|-------------|
+| `(bytes-hash-sha2-256 b)` | 32-byte SHA-256 digest |
+| `(bytes-hash-sha2-512 b)` | 64-byte SHA-512 digest |
+| `(bytes-hash-sha2-512-256 b)` | 32-byte SHA-512/256 digest |
+| `(bytes-hash-sha3-256 b)` | 32-byte SHA3-256 digest |
+
+```menai
+(bytes->string-hex (bytes-hash-sha2-256 (string->bytes "abc")))
+  → "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+```
+
 ---
 
 ## Vector

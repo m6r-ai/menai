@@ -39,6 +39,10 @@ New features:
   `filter-vector`'s, where a predicate call and an `if` join previously forced the
   value through a scratch register.
 - Improved the constant type annotations in the disassembler.
+- Added cryptographic hashing of `bytes` values: `bytes-hash-sha2-256`,
+  `bytes-hash-sha2-512`, `bytes-hash-sha2-512-256` (FIPS Pub 180-4) and
+  `bytes-hash-sha3-256` (FIPS Pub 202).  Each takes a `bytes` value and returns
+  the raw digest as `bytes`.
 
 Bug fixes:
 

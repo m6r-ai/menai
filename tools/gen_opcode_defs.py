@@ -48,7 +48,7 @@ def main() -> None:
 
     max_val = int(matches[-1][1])
     lines.append("")
-    lines.append(f"/* Highest opcode: {max_val} */")
+    lines.append(f"#define MENAI_HIGHEST_OPCODE {max_val}")
     lines.append("")
     lines.append("#endif /* MENAI_VM_OPCODES_H */")
     lines.append("")

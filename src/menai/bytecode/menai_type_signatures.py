@@ -319,6 +319,10 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'bytes-append-uleb128': (['bytes', 'integer'], 'bytes'),
     'bytes-read-sleb128': (['bytes', 'integer'], 'integer'),
     'bytes-append-sleb128': (['bytes', 'integer'], 'bytes'),
+    'bytes-hash-sha2-256': (['bytes'], 'bytes'),
+    'bytes-hash-sha2-512': (['bytes'], 'bytes'),
+    'bytes-hash-sha2-512-256': (['bytes'], 'bytes'),
+    'bytes-hash-sha3-256': (['bytes'], 'bytes'),
 
     # Vector operations
     'vector?': (['any'], 'boolean'),

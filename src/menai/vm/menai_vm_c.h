@@ -965,6 +965,11 @@ int menai_bytes_equal(MenaiBytes *a, MenaiBytes *b);
 int menai_bytes_compare(MenaiBytes *a, MenaiBytes *b);
 hash_t menai_bytes_hash(MenaiBytes *b);
 
+void menai_sha2_256(const uint8_t *data, size_t len, uint8_t *out);
+void menai_sha2_512(const uint8_t *data, size_t len, uint8_t *out);
+void menai_sha2_512_256(const uint8_t *data, size_t len, uint8_t *out);
+void menai_sha3_256(const uint8_t *data, size_t len, uint8_t *out);
+
 MenaiComplex *alloc_menai_complex(MenaiVMState *vs, double real, double imag);
 
 static inline void

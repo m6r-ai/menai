@@ -302,6 +302,11 @@ Syntax: (operator arg1 arg2 ...)
   - (bytes-append-uleb128 b value) → new bytes with unsigned LEB128 encoding; value must be non-negative
   - (bytes-read-sleb128 b offset) → (value next-offset) as a 2-element list; raises error if truncated
   - (bytes-append-sleb128 b value) → new bytes with signed LEB128 encoding
+- Cryptographic hashing — all take (bytes) and return the raw digest as bytes:
+  - (bytes-hash-sha2-256 b) → 32-byte SHA-256 digest
+  - (bytes-hash-sha2-512 b) → 64-byte SHA-512 digest
+  - (bytes-hash-sha2-512-256 b) → 32-byte SHA-512/256 digest
+  - (bytes-hash-sha3-256 b) → 32-byte SHA3-256 digest
 - Higher-order: (map-bytes f b) → new bytes with f applied to each byte; (filter-bytes pred b) → bytes of bytes satisfying pred; (fold-bytes f init b) → left fold over bytes; f signature is (lambda (acc byte) result) — same argument order as fold-list, where byte is an integer 0–255
 - Predicates: (bytes-empty? b) → #t if length is 0; (bytes-prefix? b prefix) → #t if b starts with prefix; (bytes-suffix? b suffix) → #t if b ends with suffix
 - Splitting: (bytes-split b delimiter) → list of bytes split on delimiter (delimiter must be non-empty); (bytes-split-int b byte) → list of bytes split on single byte value
