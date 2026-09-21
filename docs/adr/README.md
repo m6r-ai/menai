@@ -77,7 +77,7 @@ What costs, risks, or constraints does this decision impose?
 | [0006](0006-no-process-global-mutable-state-in-c-vm.md) | No process-global mutable state in the C VM | Accepted |
 | [0007](0007-dead-code-elimination-always-safe.md) | Dead code elimination is always safe | Accepted |
 | [0008](0008-letrec-is-genuine-mutual-recursion.md) | `letrec` reaching the IR builder is always genuine mutual recursion | Accepted |
-| [0009](0009-prelude-and-builtin-registry-consistency.md) | Prelude and builtin registry must stay consistent | Accepted |
+| [0009](0009-prelude-and-builtin-registry-consistency.md) | Prelude and builtin registry must stay consistent | Superseded by ADR-0026 |
 | [0010](0010-register-based-vm-instead-of-stack-based-vm.md) | Register-based VM instead of stack-based VM | Accepted |
 | [0011](0011-s-expression-syntax.md) | S-expression syntax | Accepted |
 | [0012](0012-distinct-none-type-for-absence.md) | Distinct `#none` type for absence | Accepted |
@@ -94,3 +94,4 @@ What costs, risks, or constraints does this decision impose?
 | [0023](0023-second-class-module-namespaces.md) | Second-class module namespaces | Accepted |
 | [0024](0024-hash-primitives-in-c-vm.md) | Hash primitives are native VM operations | Accepted |
 | [0025](0025-crc32-primitive-in-c-vm.md) | CRC-32 is a native VM operation | Accepted |
+| [0026](0026-single-builtin-table.md) | A single table describes each opcode-backed builtin | Accepted |

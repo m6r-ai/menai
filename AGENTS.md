@@ -214,21 +214,20 @@ See [ADR-0008](docs/adr/0008-letrec-is-genuine-mutual-recursion.md).
 
 There are two categories of builtin that must not be confused:
 
-- Opcode-backed builtins have an entry in `BUILTIN_FUNCTION_ARITIES` in
-  `menai_builtin_registry.py`. At import time the registry checks that every entry in
-  this table has a corresponding opcode in `BUILTIN_OPCODE_MAP`. Adding a name here
-  without an opcode will cause an assertion failure at startup.
+- Opcode-backed builtins have an entry in `BUILTINS` in `menai_builtin_registry.py`.
+  Each entry records the opcode, which is the single source of truth for the
+  builtin's existence and its opcode arity. A builtin's surface arity is recorded
+  alongside it.
 - Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
-  as Menai lambdas in `prelude.menai`. They MUST NOT be added to
-  `BUILTIN_FUNCTION_ARITIES`.
+  as Menai lambdas in `prelude.menai`. They MUST NOT be added to `BUILTINS`.
 
-See [ADR-0009](docs/adr/0009-prelude-and-builtin-registry-consistency.md).
+See [ADR-0026](docs/adr/0026-single-builtin-table.md).
 
 ### Name-based lowering must respect lexical shadowing
 
 The desugarer lowers a call by name: `(integer+ a b)` becomes `($integer+ a b)`,
 `(list-length x)` becomes `($list-length x)`, and so on. The semantic analyser
-likewise validates call arity against `BUILTIN_FUNCTION_ARITIES` by name. Both
+likewise validates call arity against the builtin registry by name. Both
 must first check whether the name is bound by an enclosing lexical binder
 (`let`/`let*`/`letrec`/`lambda`/`match`); if it is, the call refers to the user's
 binding and neither the rewrite nor the arity check may fire. Both passes track

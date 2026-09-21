@@ -127,7 +127,7 @@ class TestDollarPrimitiveUnknownName:
     """$-calls with an unrecognised base name are rejected."""
 
     def test_unknown_dollar_name(self, menai):
-        """($no-such-op 1) — base name not in BUILTIN_OPCODE_MAP."""
+        """($no-such-op 1) — base name not in the builtin registry."""
         with pytest.raises(MenaiEvalError, match="Unknown primitive"):
             menai.evaluate('($no-such-op 1)')
 

@@ -86,7 +86,7 @@ class MenaiVCodeBuiltin:
     """
     dst = <builtin_op>(args...)
 
-    `op` is the builtin name as it appears in BUILTIN_OPCODE_MAP.
+    `op` is the builtin name as it appears in the builtin registry.
     """
     dst: MenaiVCodeReg
     op: str

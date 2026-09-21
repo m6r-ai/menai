@@ -1,7 +1,7 @@
 """
 Type signatures for Menai builtin operations.
 
-Each entry maps a builtin name (as it appears in BUILTIN_OPCODE_MAP) to a
+Each entry maps a builtin name (as it appears in the builtin registry) to a
 tuple of (arg_types, result_type), where types are represented as strings
 matching the Menai type names: 'integer', 'float', 'complex', 'string',
 'boolean', 'symbol', 'list', 'dict', 'set', 'function', 'bytes', 'none',

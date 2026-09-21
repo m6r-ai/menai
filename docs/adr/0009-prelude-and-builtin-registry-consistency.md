@@ -1,7 +1,12 @@
 # ADR-0009: Prelude and builtin registry must stay consistent
 
 Date: 2026-08-24  
-Status: Accepted
+Status: Superseded by ADR-0026 (2026-09-21)
+
+The requirement that opcode-backed builtins and prelude-only functions must not
+be confused remains in force. The mechanism is superseded: ADR-0026 replaces the
+two tables and the startup assertion with a single table in which each
+opcode-backed builtin's entry records its opcode.
 
 ## Context
 

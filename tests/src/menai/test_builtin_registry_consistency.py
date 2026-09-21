@@ -1,55 +1,60 @@
-"""Tests for the builtin registry's arity-table/opcode-map consistency invariant."""
+"""Tests for the builtin registry."""
 
 import pytest
 
-from menai.bytecode.menai_bytecode import BUILTIN_OPCODE_MAP
-from menai.menai_builtin_registry import (
-    MenaiBuiltinRegistry,
-    _validate_arity_table_consistency,
-)
+from menai.menai_builtin_registry import BUILTINS, MenaiBuiltinRegistry
 
 
-class TestArityTableConsistency:
-    """The arity table must only contain opcode-backed builtins."""
+class TestBuiltinRegistryAccessors:
+    """The registry's accessors report the arity the compiler depends on."""
 
-    def test_every_arity_entry_has_an_opcode(self):
-        """Every name in BUILTIN_FUNCTION_ARITIES has a BUILTIN_OPCODE_MAP entry."""
-        orphans = [
-            name
-            for name in MenaiBuiltinRegistry.BUILTIN_FUNCTION_ARITIES
-            if name not in BUILTIN_OPCODE_MAP
-        ]
-        assert orphans == []
+    def test_fixed_arity_builtin(self):
+        """A fixed-arity builtin reports matching min and max."""
+        assert MenaiBuiltinRegistry.get_function_arity('integer-abs') == (1, 1)
 
-    def test_validation_passes_for_the_real_table(self):
-        """The real arity table satisfies the consistency check."""
-        _validate_arity_table_consistency()
+    def test_variadic_builtin(self):
+        """A variadic builtin reports an unbounded max."""
+        assert MenaiBuiltinRegistry.get_function_arity('integer+') == (0, None)
 
-    def test_validation_rejects_a_prelude_only_name(self, monkeypatch):
-        """A prelude-only name added to the arity table is rejected."""
-        monkeypatch.setitem(
-            MenaiBuiltinRegistry.BUILTIN_FUNCTION_ARITIES, 'map-list', (2, 2)
-        )
-        with pytest.raises(AssertionError, match='map-list'):
-            _validate_arity_table_consistency()
+    def test_optional_argument_builtin(self):
+        """A builtin with an optional trailing argument reports a range."""
+        assert MenaiBuiltinRegistry.get_function_arity('list-slice') == (2, 3)
 
-    def test_validation_reports_every_offending_name(self, monkeypatch):
-        """The error message names all offending entries, sorted."""
-        monkeypatch.setitem(
-            MenaiBuiltinRegistry.BUILTIN_FUNCTION_ARITIES, 'filter-list', (2, 2)
-        )
-        monkeypatch.setitem(
-            MenaiBuiltinRegistry.BUILTIN_FUNCTION_ARITIES, 'fold-list', (3, 3)
-        )
-        with pytest.raises(AssertionError) as exc_info:
-            _validate_arity_table_consistency()
+    def test_unknown_name_has_no_arity(self):
+        """A prelude-only function has no entry in the builtin table."""
+        assert MenaiBuiltinRegistry.get_function_arity('map-list') is None
 
-        message = str(exc_info.value)
-        assert 'filter-list' in message
-        assert 'fold-list' in message
-        assert message.index('filter-list') < message.index('fold-list')
+    def test_primitive_arity_is_the_opcode_operand_count(self):
+        """The primitive arity is the number of operands the opcode takes."""
+        assert MenaiBuiltinRegistry.get_primitive_arity('integer-abs') == 1
+        assert MenaiBuiltinRegistry.get_primitive_arity('list-slice') == 3
+        assert MenaiBuiltinRegistry.get_primitive_arity('map-list') is None
 
-    def test_prelude_constructors_are_not_in_the_arity_table(self):
-        """Variadic prelude constructors are not opcode-backed and stay out of the table."""
-        for name in ('list', 'set', 'vector'):
-            assert name not in MenaiBuiltinRegistry.BUILTIN_FUNCTION_ARITIES
+    def test_is_primitive_name_distinguishes_prelude_functions(self):
+        """Only opcode-backed builtins are primitive names."""
+        assert MenaiBuiltinRegistry.is_primitive_name('integer-abs') is True
+        assert MenaiBuiltinRegistry.is_primitive_name('map-list') is False
+
+
+class TestPreludeFunctionsAreNotOpcodeBacked:
+    """Prelude-only functions must not appear in the builtin table."""
+
+    @pytest.mark.parametrize("name", [
+        'map-list', 'filter-list', 'fold-list', 'list', 'set', 'vector',
+    ])
+    def test_prelude_function_absent_from_table(self, name):
+        """A prelude-only function is not an opcode-backed builtin."""
+        assert name not in BUILTINS
+
+
+class TestCodepointBuiltinArity:
+    """integer-codepoint->string is arity-checked like every other builtin."""
+
+    def test_wrong_arity_is_a_compile_time_error(self, menai):
+        """A wrong-arity call is rejected with a source-located error."""
+        with pytest.raises(Exception, match="wrong number of arguments"):
+            menai.evaluate('(integer-codepoint->string 65 66)')
+
+    def test_correct_arity_evaluates(self, menai):
+        """A correct call evaluates to the expected string."""
+        assert menai.evaluate('(integer-codepoint->string 65)') == "A"

@@ -91,7 +91,7 @@ class MenaiCFGBuiltinInstr:
     %result = <builtin_op> [%arg, ...]
 
     A direct builtin operation (opcode-backed).  `op` is the builtin name as
-    it appears in BUILTIN_OPCODE_MAP (e.g. 'integer+', 'list-first').
+    it appears in the builtin registry (e.g. 'integer+', 'list-first').
     The VM codegen maps `op` to the corresponding Opcode.
 
     Also covers the variadic BUILD_OPS ('list', 'dict') and the special-cased

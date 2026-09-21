@@ -3,7 +3,7 @@
 from typing import cast
 from dataclasses import dataclass, field
 
-from menai.bytecode.menai_bytecode import BUILTIN_OPCODE_MAP
+from menai.menai_builtin_registry import BUILTINS
 from menai.menai_error import MenaiEvalError
 from menai.ir.menai_ir import (
     MenaiIRExpr, MenaiIRConstant, MenaiIRVariable, MenaiIRIf, MenaiIRLet, MenaiIRLetrec,
@@ -124,8 +124,8 @@ class MenaiIRBuilder:
         # and resolve as globals.
         # Exceptions: 'list', 'dict', 'set', and 'vector' are variadic BUILD_OPs intercepted here
         # to emit MenaiIRBuildList / MenaiIRBuildDict / MenaiIRBuildSet / MenaiIRBuildVector flat nodes.  They are not
-        # in BUILTIN_OPCODE_MAP (no fixed arity) and cannot be $-prefixed.
-        self._builtin_names: frozenset = frozenset('$' + name for name in BUILTIN_OPCODE_MAP)
+        # opcode-backed builtins (no fixed arity) and cannot be $-prefixed.
+        self._builtin_names: frozenset = frozenset('$' + name for name in BUILTINS)
         self._builtin_names |= frozenset({'list', 'dict', 'set', 'vector'})
 
     def build(self, expr: MenaiASTNode) -> MenaiIRExpr:

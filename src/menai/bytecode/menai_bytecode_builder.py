@@ -27,7 +27,8 @@ scratch slot so that the sequential bytecode MOVE instructions are correct.
 import array
 from dataclasses import dataclass, field
 
-from menai.bytecode.menai_bytecode import BUILTIN_OPCODE_MAP, CodeObject, Opcode, pack_instruction, make_instructions_array
+from menai.bytecode.menai_bytecode import CodeObject, Opcode, pack_instruction, make_instructions_array
+from menai.menai_builtin_registry import BUILTINS
 from menai.menai_error import MenaiCodegenError
 from menai.menai_value import (
     MenaiBytes,
@@ -83,9 +84,9 @@ from menai.bytecode.menai_bytecode import (
 )
 
 
-UNARY_OPS = {name: op for name, (op, arity) in BUILTIN_OPCODE_MAP.items() if arity == 1}
-BINARY_OPS = {name: op for name, (op, arity) in BUILTIN_OPCODE_MAP.items() if arity == 2}
-TERNARY_OPS = {name: op for name, (op, arity) in BUILTIN_OPCODE_MAP.items() if arity == 3}
+UNARY_OPS = {name: info.opcode for name, info in BUILTINS.items() if info.opcode_arity() == 1}
+BINARY_OPS = {name: info.opcode for name, info in BUILTINS.items() if info.opcode_arity() == 2}
+TERNARY_OPS = {name: info.opcode for name, info in BUILTINS.items() if info.opcode_arity() == 3}
 
 
 """
@@ -618,9 +619,11 @@ class MenaiBytecodeBuilder:
         args = instr.args
         dest = ctx.slot_of(instr.dst)
 
-        opcode, _ = BUILTIN_OPCODE_MAP.get(op, (None, None))
-        if opcode is None:
+        info = BUILTINS.get(op)
+        if info is None:
             raise ValueError(f"MenaiBytecodeBuilder: unknown builtin op {op!r}")
+
+        opcode = info.opcode
 
         def slot(i: int) -> int:
             return ctx.slot_of(args[i])

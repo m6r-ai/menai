@@ -45,7 +45,7 @@ class MenaiASTSemanticAnalyzer:
 
         # Lexical scope for ordinary variable bindings, innermost frame last.
         # Used to suppress builtin-specific validation (e.g. call arity checks
-        # against BUILTIN_FUNCTION_ARITIES) when the name is bound by an
+        # against the builtin registry) when the name is bound by an
         # enclosing binder and therefore refers to the user's binding.
         self._scope_stack: list[set[str]] = []
 
@@ -1223,7 +1223,7 @@ class MenaiASTSemanticAnalyzer:
             # exactly the opcode's arity.  User-written $-calls must always be
             # fully saturated — there is no optional-argument handling for the
             # primitive form, so the only valid arity is the exact primitive
-            # arity from BUILTIN_OPCODE_MAP.
+            # arity from the builtin registry.
             if name.startswith('$'):
                 base = name[1:]
                 if not MenaiBuiltinRegistry.is_primitive_name(base):
