@@ -1503,3 +1503,192 @@ class TestIntegerToLongOverflowOffsets(TestIntegerToLongOverflow):
         """bytes-read-sleb128 rejects a bigint offset that does not fit in a C long."""
         with pytest.raises(MenaiEvalError):
             menai.evaluate(f'(bytes-read-sleb128 {self.FOUR_BYTES} {self.BIG_POS})')
+
+
+class TestBytesFloatingPoint:
+    """Test IEEE-754 floating-point read, append, and write operations."""
+
+    EMPTY = '(string-hex->bytes "")'
+
+    @pytest.mark.parametrize("hex_str,expected", [
+        ("0000803f", 1.0),
+        ("00000000", 0.0),
+        ("0000c03f", 1.5),
+        ("000080bf", -1.0),
+        ("000000c0", -2.0),
+    ])
+    def test_read_f32_le(self, menai, hex_str, expected):
+        """bytes-read-f32-le reads a single-precision little-endian float."""
+        assert menai.evaluate(f'(bytes-read-f32-le (string-hex->bytes "{hex_str}") 0)') == expected
+
+    @pytest.mark.parametrize("hex_str,expected", [
+        ("3f800000", 1.0),
+        ("00000000", 0.0),
+        ("3fc00000", 1.5),
+        ("bf800000", -1.0),
+        ("c0000000", -2.0),
+    ])
+    def test_read_f32_be(self, menai, hex_str, expected):
+        """bytes-read-f32-be reads a single-precision big-endian float."""
+        assert menai.evaluate(f'(bytes-read-f32-be (string-hex->bytes "{hex_str}") 0)') == expected
+
+    @pytest.mark.parametrize("hex_str,expected", [
+        ("000000000000f03f", 1.0),
+        ("0000000000000000", 0.0),
+        ("000000000000f83f", 1.5),
+        ("000000000000f0bf", -1.0),
+        ("00000000000000c0", -2.0),
+    ])
+    def test_read_f64_le(self, menai, hex_str, expected):
+        """bytes-read-f64-le reads a double-precision little-endian float."""
+        assert menai.evaluate(f'(bytes-read-f64-le (string-hex->bytes "{hex_str}") 0)') == expected
+
+    @pytest.mark.parametrize("hex_str,expected", [
+        ("3ff0000000000000", 1.0),
+        ("0000000000000000", 0.0),
+        ("3ff8000000000000", 1.5),
+        ("bff0000000000000", -1.0),
+        ("c000000000000000", -2.0),
+    ])
+    def test_read_f64_be(self, menai, hex_str, expected):
+        """bytes-read-f64-be reads a double-precision big-endian float."""
+        assert menai.evaluate(f'(bytes-read-f64-be (string-hex->bytes "{hex_str}") 0)') == expected
+
+    @pytest.mark.parametrize("value,expected_hex", [
+        (1.0, "0000803f"),
+        (0.0, "00000000"),
+        (1.5, "0000c03f"),
+        (-1.0, "000080bf"),
+    ])
+    def test_append_f32_le(self, menai, value, expected_hex):
+        """bytes-append-f32-le encodes a single-precision little-endian float."""
+        result = menai.evaluate(f'(bytes->string-hex (bytes-append-f32-le {self.EMPTY} {value}))')
+        assert result == expected_hex
+
+    @pytest.mark.parametrize("value,expected_hex", [
+        (1.0, "3f800000"),
+        (0.0, "00000000"),
+        (1.5, "3fc00000"),
+        (-1.0, "bf800000"),
+    ])
+    def test_append_f32_be(self, menai, value, expected_hex):
+        """bytes-append-f32-be encodes a single-precision big-endian float."""
+        result = menai.evaluate(f'(bytes->string-hex (bytes-append-f32-be {self.EMPTY} {value}))')
+        assert result == expected_hex
+
+    @pytest.mark.parametrize("value,expected_hex", [
+        (1.0, "000000000000f03f"),
+        (0.0, "0000000000000000"),
+        (1.5, "000000000000f83f"),
+        (-1.0, "000000000000f0bf"),
+    ])
+    def test_append_f64_le(self, menai, value, expected_hex):
+        """bytes-append-f64-le encodes a double-precision little-endian float."""
+        result = menai.evaluate(f'(bytes->string-hex (bytes-append-f64-le {self.EMPTY} {value}))')
+        assert result == expected_hex
+
+    @pytest.mark.parametrize("value,expected_hex", [
+        (1.0, "3ff0000000000000"),
+        (0.0, "0000000000000000"),
+        (1.5, "3ff8000000000000"),
+        (-1.0, "bff0000000000000"),
+    ])
+    def test_append_f64_be(self, menai, value, expected_hex):
+        """bytes-append-f64-be encodes a double-precision big-endian float."""
+        result = menai.evaluate(f'(bytes->string-hex (bytes-append-f64-be {self.EMPTY} {value}))')
+        assert result == expected_hex
+
+    def test_write_f32_le(self, menai):
+        """bytes-write-f32-le writes a single-precision value at offset, little-endian."""
+        result = menai.evaluate('(bytes->string-hex (bytes-write-f32-le (string-hex->bytes "00000000") 0 1.0))')
+        assert result == "0000803f"
+
+    def test_write_f32_be(self, menai):
+        """bytes-write-f32-be writes a single-precision value at offset, big-endian."""
+        result = menai.evaluate('(bytes->string-hex (bytes-write-f32-be (string-hex->bytes "00000000") 0 1.0))')
+        assert result == "3f800000"
+
+    def test_write_f64_le(self, menai):
+        """bytes-write-f64-le writes a double-precision value at offset, little-endian."""
+        result = menai.evaluate('(bytes->string-hex (bytes-write-f64-le (string-hex->bytes "0000000000000000") 0 1.0))')
+        assert result == "000000000000f03f"
+
+    def test_write_f64_be(self, menai):
+        """bytes-write-f64-be writes a double-precision value at offset, big-endian."""
+        result = menai.evaluate('(bytes->string-hex (bytes-write-f64-be (string-hex->bytes "0000000000000000") 0 1.0))')
+        assert result == "3ff0000000000000"
+
+    def test_read_with_offset(self, menai):
+        """Floating-point reads work at non-zero offsets."""
+        b = '(string-hex->bytes "ffff0000803f")'
+        assert menai.evaluate(f'(bytes-read-f32-le {b} 2)') == 1.0
+
+    def test_write_at_offset(self, menai):
+        """Floating-point writes patch at the given offset."""
+        result = menai.evaluate('(bytes->string-hex (bytes-write-f32-le (string-hex->bytes "0000000000") 1 1.0))')
+        assert result == "000000803f"
+
+    def test_f64_round_trip_exact(self, menai):
+        """f64 append followed by read round-trips exactly."""
+        result = menai.evaluate(f'(bytes-read-f64-le (bytes-append-f64-le {self.EMPTY} 3.141592653589793) 0)')
+        assert result == 3.141592653589793
+
+    def test_f32_round_trip_rounds(self, menai):
+        """f32 append followed by read round-trips to the nearest single-precision value."""
+        result = menai.evaluate(f'(bytes-read-f32-le (bytes-append-f32-le {self.EMPTY} 3.141592653589793) 0)')
+        assert result == 3.1415927410125732
+
+    def test_append_immutability(self, menai):
+        """bytes-append-f64 returns new bytes; original is unchanged."""
+        original = '(string-hex->bytes "0102")'
+        result = menai.evaluate(f'(bytes->string-hex (bytes-append-f64-le {original} 1.0))')
+        assert result == "0102000000000000f03f"
+        assert menai.evaluate(f'(bytes->string-hex {original})') == "0102"
+
+    def test_write_immutability(self, menai):
+        """bytes-write-f64 returns new bytes; original is unchanged."""
+        original = '(string-hex->bytes "000000000000000000")'
+        result = menai.evaluate(f'(bytes->string-hex (bytes-write-f64-le {original} 1 1.0))')
+        assert result == "00000000000000f03f"
+        assert menai.evaluate(f'(bytes->string-hex {original})') == "000000000000000000"
+
+    @pytest.mark.parametrize("expr", [
+        '(bytes-read-f32-le (string-hex->bytes "0000") 0)',
+        '(bytes-read-f32-be (string-hex->bytes "0000") 0)',
+        '(bytes-read-f64-le (string-hex->bytes "00000000000000") 0)',
+        '(bytes-read-f64-be (string-hex->bytes "00000000000000") 0)',
+        '(bytes-read-f32-le (string-hex->bytes "0000803f") 1)',
+    ])
+    def test_read_out_of_bounds(self, menai, expr):
+        """Floating-point reads raise an error when not enough bytes remain."""
+        with pytest.raises(MenaiEvalError, match="out of bounds"):
+            menai.evaluate(expr)
+
+    @pytest.mark.parametrize("expr", [
+        '(bytes-write-f32-le (string-hex->bytes "00") 0 1.0)',
+        '(bytes-write-f32-be (string-hex->bytes "00") 0 1.0)',
+        '(bytes-write-f64-le (string-hex->bytes "0000") 0 1.0)',
+        '(bytes-write-f64-be (string-hex->bytes "0000") 0 1.0)',
+    ])
+    def test_write_out_of_bounds(self, menai, expr):
+        """Floating-point writes raise an error when not enough bytes remain."""
+        with pytest.raises(MenaiEvalError, match="out of bounds"):
+            menai.evaluate(expr)
+
+    @pytest.mark.parametrize("expr", [
+        '(bytes-read-f32-le (string-hex->bytes "0000803f") 1.0)',
+        '(bytes-append-f32-le (string-hex->bytes "") 1)',
+        '(bytes-append-f64-be (string-hex->bytes "") 1)',
+        '(bytes-write-f32-le (string-hex->bytes "00000000") 0 1)',
+        '(bytes-write-f64-be (string-hex->bytes "0000000000000000") 0 1)',
+    ])
+    def test_type_errors(self, menai, expr):
+        """Floating-point bytes operations reject operands of the wrong type."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(expr)
+
+    def test_functions_are_first_class(self, menai):
+        """Floating-point bytes operations are first-class functions."""
+        assert menai.evaluate('(function? bytes-read-f32-le)') is True
+        assert menai.evaluate('(function? bytes-append-f64-be)') is True
+        assert menai.evaluate('(function? bytes-write-f32-le)') is True

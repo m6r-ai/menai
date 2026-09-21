@@ -667,6 +667,35 @@ fit in the specified width. Raise error if not enough bytes from offset.
 | `(bytes-read-sleb128 b offset)` | `→ (value next-offset)` 2-element list; signed; error if truncated |
 | `(bytes-append-sleb128 b value)` | New bytes with signed LEB128 |
 
+### Floating-point reads, appends, and writes
+
+These mirror the multi-byte integer operations but encode IEEE-754 floating-point
+values. All widths are little-endian (`-le`) or big-endian (`-be`).
+
+| Function | Description |
+|----------|-------------|
+| `(bytes-read-f32-le b offset)` | Read 4 bytes as a single-precision float; error if not enough bytes |
+| `(bytes-read-f32-be b offset)` | Read 4 bytes as a big-endian single-precision float |
+| `(bytes-read-f64-le b offset)` | Read 8 bytes as a double-precision float |
+| `(bytes-read-f64-be b offset)` | Read 8 bytes as a big-endian double-precision float |
+| `(bytes-append-f32-le b x)` | Append `x` as a little-endian single-precision float |
+| `(bytes-append-f32-be b x)` | Append `x` as a big-endian single-precision float |
+| `(bytes-append-f64-le b x)` | Append `x` as a little-endian double-precision float |
+| `(bytes-append-f64-be b x)` | Append `x` as a big-endian double-precision float |
+| `(bytes-write-f32-le b offset x)` | Write `x` as a little-endian single-precision float at `offset` |
+| `(bytes-write-f32-be b offset x)` | Write `x` as a big-endian single-precision float at `offset` |
+| `(bytes-write-f64-le b offset x)` | Write `x` as a little-endian double-precision float at `offset` |
+| `(bytes-write-f64-be b offset x)` | Write `x` as a big-endian double-precision float at `offset` |
+
+Reads return a `float`; appends and writes return new bytes (the original is
+unchanged). Writing a value to `f32` rounds it to the nearest single-precision
+value, as IEEE-754 specifies.
+
+```menai
+(bytes-read-f64-le (string-hex->bytes "000000000000f03f") 0)  → 1.0
+(bytes->string-hex (bytes-append-f32-le (string-hex->bytes "") 1.0))  → "0000803f"
+```
+
 ### Higher-order
 
 | Function | Description |
@@ -689,6 +718,17 @@ All take `(bytes)` and return the raw digest as bytes.
 ```menai
 (bytes->string-hex (bytes-hash-sha2-256 (string->bytes "abc")))
   → "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+```
+
+### Checksums
+
+`(bytes-crc32 b)` returns the CRC-32/ISO-HDLC checksum of `b` as an integer in the
+range 0–4294967295.  This is the reflected polynomial 0xEDB88320 with init and final
+xor of 0xFFFFFFFF — the checksum used by zlib, PNG and ZIP.
+
+```menai
+(bytes-crc32 (string->bytes "123456789"))
+  → 3421780262
 ```
 
 ---

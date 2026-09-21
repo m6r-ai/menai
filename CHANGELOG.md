@@ -25,6 +25,12 @@ New features:
   reversing the per-scanline filters.  All colour types are supported
   (greyscale, truecolour, palette, and the alpha variants), normalised to RGB
   or RGBA pixels.
+- Added a `bytes-crc32` primitive.  This computes the CRC-32/ISO-HDLC checksum of
+  a bytes value as an integer.
+- Added floating-point bytes primitives: `bytes-read-f32-le`/`-be`,
+  `bytes-read-f64-le`/`-be`, `bytes-append-f32-le`/`-be`, `bytes-append-f64-le`/`-be`,
+  `bytes-write-f32-le`/`-be`, and `bytes-write-f64-le`/`-be`.  These mirror the
+  multi-byte integer operations, encoding and decoding IEEE-754 values.
 - Reworked the type propagation optimizations.  Removed the old implementation and added
   a new one based on interprocedural analysis.  This allows return types to be back
   propagated to callers and to remove type guards that are provably not necessary.
@@ -43,6 +49,7 @@ New features:
   `bytes-hash-sha2-512`, `bytes-hash-sha2-512-256` (FIPS Pub 180-4) and
   `bytes-hash-sha3-256` (FIPS Pub 202).  Each takes a `bytes` value and returns
   the raw digest as `bytes`.
+- Added binary floating point read, append, and write operations for bytes.
 
 Bug fixes:
 

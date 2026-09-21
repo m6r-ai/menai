@@ -93,3 +93,4 @@ What costs, risks, or constraints does this decision impose?
 | [0022](0022-no-runtime-globals.md) | No runtime globals | Accepted |
 | [0023](0023-second-class-module-namespaces.md) | Second-class module namespaces | Accepted |
 | [0024](0024-hash-primitives-in-c-vm.md) | Hash primitives are native VM operations | Accepted |
+| [0025](0025-crc32-primitive-in-c-vm.md) | CRC-32 is a native VM operation | Accepted |

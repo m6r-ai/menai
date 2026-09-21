@@ -29,8 +29,9 @@ class MenaiBuiltinRegistry:
     # This table covers ONLY builtins that are backed by a VM opcode in
     # BUILTIN_OPCODE_MAP.  Pure-Menai prelude functions (map, filter, fold,
     # zip, unzip, find, any?, all?, etc.) are NOT in this table and must NOT
-    # be added — the registry asserts every entry has a BUILTIN_OPCODE_MAP
-    # entry, so adding a prelude-only name will cause an assertion failure.
+    # be added — _validate_arity_table_consistency (run at import time) raises
+    # if any entry lacks a BUILTIN_OPCODE_MAP entry, so adding a prelude-only
+    # name will cause an assertion failure at startup.
     BUILTIN_FUNCTION_ARITIES: dict[str, tuple[int, int | None]] = {
         'function?': (1, 1),
         'function=?': (2, 2),
@@ -166,7 +167,6 @@ class MenaiBuiltinRegistry:
         'string->complex': (1, 1),
         'string->integer': (1, 2),
         'string->integer-codepoint': (1, 1),
-        'list': (0, None),
         'list?': (1, 1),
         'list=?': (2, None),
         'list!=?': (2, None),
@@ -197,7 +197,6 @@ class MenaiBuiltinRegistry:
         'dict-values': (1, 1),
         'dict-merge': (2, 2),
         'dict-length': (1, 1),
-        'set': (0, None),
         'set?': (1, 1),
         'set=?': (2, None),
         'set!=?': (2, None),
@@ -304,7 +303,19 @@ class MenaiBuiltinRegistry:
         'bytes-hash-sha2-512': (1, 1),
         'bytes-hash-sha2-512-256': (1, 1),
         'bytes-hash-sha3-256': (1, 1),
-        'vector': (0, None),
+        'bytes-crc32': (1, 1),
+        'bytes-read-f32-le': (2, 2),
+        'bytes-read-f32-be': (2, 2),
+        'bytes-read-f64-le': (2, 2),
+        'bytes-read-f64-be': (2, 2),
+        'bytes-append-f32-le': (2, 2),
+        'bytes-append-f32-be': (2, 2),
+        'bytes-append-f64-le': (2, 2),
+        'bytes-append-f64-be': (2, 2),
+        'bytes-write-f32-le': (3, 3),
+        'bytes-write-f32-be': (3, 3),
+        'bytes-write-f64-le': (3, 3),
+        'bytes-write-f64-be': (3, 3),
         'vector?': (1, 1),
         'vector=?': (2, 2),
         'vector!=?': (2, 2),
@@ -356,3 +367,29 @@ class MenaiBuiltinRegistry:
 
         _, arity = entry
         return arity
+
+
+def _validate_arity_table_consistency() -> None:
+    """
+    Raise if any entry in the arity table lacks a backing opcode.
+
+    The arity table covers only opcode-backed builtins.  A prelude-only function
+    (implemented as a Menai lambda in prelude.menai) has no entry in
+    BUILTIN_OPCODE_MAP, so adding one to the arity table is a mistake that would
+    otherwise go unnoticed until the name is called.  Running this check at
+    import time catches the mistake deterministically and immediately.
+    """
+    orphans = sorted(
+        name
+        for name in MenaiBuiltinRegistry.BUILTIN_FUNCTION_ARITIES
+        if name not in BUILTIN_OPCODE_MAP
+    )
+    if orphans:
+        raise AssertionError(
+            "BUILTIN_FUNCTION_ARITIES contains names with no BUILTIN_OPCODE_MAP "
+            f"entry: {', '.join(orphans)}.  Prelude-only functions must not be "
+            "added to the arity table."
+        )
+
+
+_validate_arity_table_consistency()

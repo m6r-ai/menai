@@ -8,11 +8,16 @@
  * The Menai language only ever hashes a complete bytes value, so the streaming
  * context used internally is not exposed: each entry point appends the whole
  * message and finalises in one call.
+ *
+ * Also implements CRC-32/ISO-HDLC (the zlib/PNG/ZIP checksum) as a slice-by-8
+ * table-driven kernel.  Like the hashes it is a pure computation over a whole
+ * buffer with no allocation and no VM state.
  */
 #include <string.h>
 #include <stdlib.h>
 
 #include "menai_vm_c.h"
+#include "menai_vm_crc32_tables.h"
 
 /*
  * Byte-swap a 32-bit unsigned int.
@@ -864,4 +869,66 @@ menai_sha3_256(const uint8_t *data, size_t len, uint8_t *out)
     }
 
     memcpy(out, s, HASH_SHA3_256_SIZE);
+}
+
+/*
+ * Fold one byte into the running CRC-32 with the byte-at-a-time table.
+ */
+static inline uint32_t
+crc32_byte(uint32_t crc, uint8_t byte)
+{
+    return (crc >> 8) ^ crc32_table0[(crc ^ byte) & 0xFF];
+}
+
+/*
+ * Compute the CRC-32/ISO-HDLC checksum of a whole buffer.
+ *
+ * This is the reflected polynomial 0xEDB88320 with init 0xFFFFFFFF and final
+ * xor 0xFFFFFFFF — the checksum used by zlib, PNG and ZIP.
+ *
+ * The main loop consumes eight bytes per iteration using the slice-by-8
+ * tables, which breaks the serial dependency chain of the byte-at-a-time
+ * form.  The tail is handled one byte at a time.
+ */
+uint32_t
+menai_crc32(const uint8_t *data, size_t len)
+{
+    uint32_t crc = 0xFFFFFFFF;
+
+    /*
+     * The slice-by-8 loop reads eight bytes at a time.  The buffer is not
+     * guaranteed to be 8-byte aligned, so the bytes are combined explicitly
+     * rather than via a wider load.
+     */
+    while (len >= 8) {
+        uint32_t lo = (uint32_t)data[0]
+            | ((uint32_t)data[1] << 8)
+            | ((uint32_t)data[2] << 16)
+            | ((uint32_t)data[3] << 24);
+        uint32_t hi = (uint32_t)data[4]
+            | ((uint32_t)data[5] << 8)
+            | ((uint32_t)data[6] << 16)
+            | ((uint32_t)data[7] << 24);
+
+        lo ^= crc;
+        crc = crc32_table7[lo & 0xFF]
+            ^ crc32_table6[(lo >> 8) & 0xFF]
+            ^ crc32_table5[(lo >> 16) & 0xFF]
+            ^ crc32_table4[(lo >> 24) & 0xFF]
+            ^ crc32_table3[hi & 0xFF]
+            ^ crc32_table2[(hi >> 8) & 0xFF]
+            ^ crc32_table1[(hi >> 16) & 0xFF]
+            ^ crc32_table0[(hi >> 24) & 0xFF];
+
+        data += 8;
+        len -= 8;
+    }
+
+    while (len > 0) {
+        crc = crc32_byte(crc, *data);
+        data++;
+        len--;
+    }
+
+    return crc ^ 0xFFFFFFFF;
 }

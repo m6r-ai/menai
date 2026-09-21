@@ -70,6 +70,10 @@
             (expect-fail "rejects tRNS on greyscale"
                          (lambda ()
                            (parse (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000274524e53000a964624260000000e49444154789c6310506030700000017600a1ec308af40000000049454e44ae426082")))
-                         "only supported for palette"))))))
+                         "only supported for palette")
+            (expect-fail "rejects a chunk with a bad CRC"
+                         (lambda ()
+                           (parse (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020800000000dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082")))
+                         "checksum mismatch"))))))
 
       (export tests))))

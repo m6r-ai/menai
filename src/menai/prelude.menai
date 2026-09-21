@@ -849,6 +849,18 @@
    (bytes-append-uleb128 (lambda (b v) ($bytes-append-uleb128 b v)))
    (bytes-read-sleb128 (lambda (b off) ($bytes-read-sleb128 b off)))
    (bytes-append-sleb128 (lambda (b v) ($bytes-append-sleb128 b v)))
+   (bytes-read-f32-le (lambda (b off) ($bytes-read-f32-le b off)))
+   (bytes-read-f32-be (lambda (b off) ($bytes-read-f32-be b off)))
+   (bytes-read-f64-le (lambda (b off) ($bytes-read-f64-le b off)))
+   (bytes-read-f64-be (lambda (b off) ($bytes-read-f64-be b off)))
+   (bytes-append-f32-le (lambda (b v) ($bytes-append-f32-le b v)))
+   (bytes-append-f32-be (lambda (b v) ($bytes-append-f32-be b v)))
+   (bytes-append-f64-le (lambda (b v) ($bytes-append-f64-le b v)))
+   (bytes-append-f64-be (lambda (b v) ($bytes-append-f64-be b v)))
+   (bytes-write-f32-le (lambda (b off v) ($bytes-write-f32-le b off v)))
+   (bytes-write-f32-be (lambda (b off v) ($bytes-write-f32-be b off v)))
+   (bytes-write-f64-le (lambda (b off v) ($bytes-write-f64-le b off v)))
+   (bytes-write-f64-be (lambda (b off v) ($bytes-write-f64-be b off v)))
    (map-bytes (lambda (f b)
                 (letrec ((loop (lambda (i acc)
                                  (if ($integer=? i ($bytes-length b))
@@ -1563,6 +1575,18 @@
         "bytes-append-uleb128" bytes-append-uleb128
         "bytes-read-sleb128" bytes-read-sleb128
         "bytes-append-sleb128" bytes-append-sleb128
+        "bytes-read-f32-le" bytes-read-f32-le
+        "bytes-read-f32-be" bytes-read-f32-be
+        "bytes-read-f64-le" bytes-read-f64-le
+        "bytes-read-f64-be" bytes-read-f64-be
+        "bytes-append-f32-le" bytes-append-f32-le
+        "bytes-append-f32-be" bytes-append-f32-be
+        "bytes-append-f64-le" bytes-append-f64-le
+        "bytes-append-f64-be" bytes-append-f64-be
+        "bytes-write-f32-le" bytes-write-f32-le
+        "bytes-write-f32-be" bytes-write-f32-be
+        "bytes-write-f64-le" bytes-write-f64-le
+        "bytes-write-f64-be" bytes-write-f64-be
         "map-bytes" map-bytes
         "filter-bytes" filter-bytes
         "fold-bytes" fold-bytes

@@ -412,8 +412,25 @@ class Opcode(IntEnum):
     BYTES_HASH_SHA2_512_256 = _op(324, 1)   # r_dest = (bytes-hash-sha2-512-256 r_src0)
     BYTES_HASH_SHA3_256 = _op(325, 1)       # r_dest = (bytes-hash-sha3-256 r_src0)
 
+    # Bytes checksum operations
+    BYTES_CRC32 = _op(326, 1)           # r_dest = (bytes-crc32 r_src0)
+
+    # Bytes floating-point operations
+    BYTES_READ_F32_LE = _op(327, 2)     # r_dest = (bytes-read-f32-le r_src0 r_src1)
+    BYTES_READ_F32_BE = _op(328, 2)     # r_dest = (bytes-read-f32-be r_src0 r_src1)
+    BYTES_READ_F64_LE = _op(329, 2)     # r_dest = (bytes-read-f64-le r_src0 r_src1)
+    BYTES_READ_F64_BE = _op(330, 2)     # r_dest = (bytes-read-f64-be r_src0 r_src1)
+    BYTES_APPEND_F32_LE = _op(331, 2)   # r_dest = (bytes-append-f32-le r_src0 r_src1)
+    BYTES_APPEND_F32_BE = _op(332, 2)   # r_dest = (bytes-append-f32-be r_src0 r_src1)
+    BYTES_APPEND_F64_LE = _op(333, 2)   # r_dest = (bytes-append-f64-le r_src0 r_src1)
+    BYTES_APPEND_F64_BE = _op(334, 2)   # r_dest = (bytes-append-f64-be r_src0 r_src1)
+    BYTES_WRITE_F32_LE = _op(335, 3)    # r_dest = (bytes-write-f32-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_F32_BE = _op(336, 3)    # r_dest = (bytes-write-f32-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_F64_LE = _op(337, 3)    # r_dest = (bytes-write-f64-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_F64_BE = _op(338, 3)    # r_dest = (bytes-write-f64-be r_src0 r_src1 r_src2)
+
     # Control flow (jump table).  Kept last so its value remains the highest opcode.
-    SWITCH_INTEGER = _op(326, 2)        # SWITCH_INTEGER r_src0, jt[src1] — dense integer jump table dispatch
+    SWITCH_INTEGER = _op(339, 2)        # SWITCH_INTEGER r_src0, jt[src1] — dense integer jump table dispatch
 
 # Maps builtin function name → (opcode, arity) for all fixed-arity builtins.
 #
@@ -696,6 +713,19 @@ BUILTIN_OPCODE_MAP: dict[str, tuple[Opcode, int]] = {
     'bytes-hash-sha2-512': (Opcode.BYTES_HASH_SHA2_512, 1),
     'bytes-hash-sha2-512-256': (Opcode.BYTES_HASH_SHA2_512_256, 1),
     'bytes-hash-sha3-256': (Opcode.BYTES_HASH_SHA3_256, 1),
+    'bytes-crc32': (Opcode.BYTES_CRC32, 1),
+    'bytes-read-f32-le': (Opcode.BYTES_READ_F32_LE, 2),
+    'bytes-read-f32-be': (Opcode.BYTES_READ_F32_BE, 2),
+    'bytes-read-f64-le': (Opcode.BYTES_READ_F64_LE, 2),
+    'bytes-read-f64-be': (Opcode.BYTES_READ_F64_BE, 2),
+    'bytes-append-f32-le': (Opcode.BYTES_APPEND_F32_LE, 2),
+    'bytes-append-f32-be': (Opcode.BYTES_APPEND_F32_BE, 2),
+    'bytes-append-f64-le': (Opcode.BYTES_APPEND_F64_LE, 2),
+    'bytes-append-f64-be': (Opcode.BYTES_APPEND_F64_BE, 2),
+    'bytes-write-f32-le': (Opcode.BYTES_WRITE_F32_LE, 3),
+    'bytes-write-f32-be': (Opcode.BYTES_WRITE_F32_BE, 3),
+    'bytes-write-f64-le': (Opcode.BYTES_WRITE_F64_LE, 3),
+    'bytes-write-f64-be': (Opcode.BYTES_WRITE_F64_BE, 3),
     'vector?': (Opcode.VECTOR_P, 1),
     'vector=?': (Opcode.VECTOR_EQ_P, 2),
     'vector!=?': (Opcode.VECTOR_NEQ_P, 2),

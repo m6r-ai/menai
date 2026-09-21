@@ -11,10 +11,10 @@
 ;     "meta" (dict "format" "png" "channels" ...))
 ;
 ; Pixels are normalised to RGB or RGBA regardless of the source colour type:
-;   - colour type 0 (greyscale)          -> (vector g g g)
-;   - colour type 2 (truecolour)         -> (vector r g b)
-;   - colour type 3 (palette)            -> (vector r g b) or (vector r g b a)
-;   - colour type 4 (greyscale + alpha)  -> (vector g g g a)
+;   - colour type 0 (greyscale) -> (vector g g g)
+;   - colour type 2 (truecolour) -> (vector r g b)
+;   - colour type 3 (palette) -> (vector r g b) or (vector r g b a)
+;   - colour type 4 (greyscale + alpha) -> (vector g g g a)
 ;   - colour type 6 (truecolour + alpha) -> (vector r g b a)
 ; The original colour type is preserved in the "header" dict.
 ;
@@ -39,9 +39,19 @@
             (typ (bytes->string (bytes-slice b (integer+ pos 4) (integer+ pos 8)))))
         (let ((data-start (integer+ pos 8))
               (data-end (integer+ pos 8 length)))
-          (list typ
-                (bytes-slice b data-start data-end)
-                (integer+ data-end 4))))))
+          (let ((expected (bytes-read-u32-be b data-end))
+                (actual (bytes-crc32 (bytes-slice b (integer+ pos 4) data-end))))
+            (if (integer=? expected actual)
+                (list typ
+                      (bytes-slice b data-start data-end)
+                      (integer+ data-end 4))
+                (error (string-concat
+                         "PNG chunk \""
+                         typ
+                         "\" checksum mismatch: expected "
+                         (integer->string expected)
+                         " but computed "
+                         (integer->string actual)))))))))
 
    ; Walk all chunks, returning a dict with the IHDR fields, the concatenated
    ; IDAT data, and the PLTE / tRNS payloads when present.  Chunk order is not

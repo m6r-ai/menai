@@ -969,6 +969,7 @@ void menai_sha2_256(const uint8_t *data, size_t len, uint8_t *out);
 void menai_sha2_512(const uint8_t *data, size_t len, uint8_t *out);
 void menai_sha2_512_256(const uint8_t *data, size_t len, uint8_t *out);
 void menai_sha3_256(const uint8_t *data, size_t len, uint8_t *out);
+uint32_t menai_crc32(const uint8_t *data, size_t len);
 
 MenaiComplex *alloc_menai_complex(MenaiVMState *vs, double real, double imag);
 

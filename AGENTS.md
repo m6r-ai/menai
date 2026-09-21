@@ -214,12 +214,13 @@ See [ADR-0008](docs/adr/0008-letrec-is-genuine-mutual-recursion.md).
 
 There are two categories of builtin that must not be confused:
 
-- Opcode-backed builtins have an entry in `BUILTIN_OPCODE_ARITIES` in
-  `menai_builtin_registry.py`. The registry asserts that every entry in this table has a
-  corresponding opcode in `BUILTIN_OPCODE_MAP`. Adding a name here without an opcode
-  will cause an assertion failure at startup.
+- Opcode-backed builtins have an entry in `BUILTIN_FUNCTION_ARITIES` in
+  `menai_builtin_registry.py`. At import time the registry checks that every entry in
+  this table has a corresponding opcode in `BUILTIN_OPCODE_MAP`. Adding a name here
+  without an opcode will cause an assertion failure at startup.
 - Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
-  as Menai lambdas in `prelude.menai`. They MUST NOT be added to `BUILTIN_OPCODE_ARITIES`.
+  as Menai lambdas in `prelude.menai`. They MUST NOT be added to
+  `BUILTIN_FUNCTION_ARITIES`.
 
 See [ADR-0009](docs/adr/0009-prelude-and-builtin-registry-consistency.md).
 
@@ -380,6 +381,13 @@ implemented natively in the VM core, not prelude functions. Hashing is a
 performance-critical, fixed-spec, integer-heavy kernel and therefore a language
 primitive.
 See [ADR-0024](docs/adr/0024-hash-primitives-in-c-vm.md).
+
+### CRC-32 is a native VM primitive
+The `bytes-crc32` operation is an opcode-backed primitive implemented natively
+in the VM core, not a prelude function, and returns the checksum as an
+`integer`. It is a performance-critical, fixed-spec, integer-heavy kernel and
+therefore a language primitive.
+See [ADR-0025](docs/adr/0025-crc32-primitive-in-c-vm.md).
 
 ## VM implementation
 

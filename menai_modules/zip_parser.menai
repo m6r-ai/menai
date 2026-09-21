@@ -16,14 +16,14 @@
 ; Each entry dict is:
 ;
 ;   (dict
-;     "name"              <string>   ; entry name (UTF-8)
-;     "compression"       <integer>  ; 0 = stored, 8 = deflate
-;     "crc32"             <integer>
-;     "compressed-size"   <integer>
+;     "name" <string>               ; entry name (UTF-8)
+;     "compression" <integer>       ; 0 = stored, 8 = deflate
+;     "crc32" <integer>
+;     "compressed-size" <integer>
 ;     "uncompressed-size" <integer>
-;     "data-offset"       <integer>  ; absolute offset of the entry's data
-;     "is-directory"      <boolean>  ; #t when the name ends with "/"
-;     "content"           <bytes> or #none)
+;     "data-offset" <integer>       ; absolute offset of the entry's data
+;     "is-directory" <boolean>      ; #t when the name ends with "/"
+;     "content" <bytes> or #none)
 ;
 ; The parser reads the End Of Central Directory record, then walks the central
 ; directory.  It does not scan local file headers from the front, because the
@@ -145,14 +145,26 @@
             (start (dict-get entry "data-offset"))
             (size (dict-get entry "compressed-size")))
         (let ((raw (bytes-slice b start (integer+ start size))))
-          (if (integer=? method 0)
-              raw
-              (if (integer=? method 8)
-                  (inflate raw)
+          (let ((content
+                 (if (integer=? method 0)
+                     raw
+                     (if (integer=? method 8)
+                         (inflate raw)
+                         (error (string-concat
+                                  "Unsupported ZIP: compression method "
+                                  (integer->string method)
+                                  " is not supported (only stored and deflate)"))))))
+            (let ((expected (dict-get entry "crc32"))
+                  (actual (bytes-crc32 content)))
+              (if (integer=? expected actual)
+                  content
                   (error (string-concat
-                           "Unsupported ZIP: compression method "
-                           (integer->string method)
-                           " is not supported (only stored and deflate)"))))))))
+                           "ZIP entry \""
+                           (dict-get entry "name")
+                           "\" checksum mismatch: expected "
+                           (integer->string expected)
+                           " but computed "
+                           (integer->string actual))))))))))
 
    ; Build the top-level result dict from a list of entries.
    (build-result

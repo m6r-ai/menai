@@ -4686,6 +4686,20 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_BYTES_CRC32: {
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
+            uint32_t crc = menai_crc32(b->data, (size_t)b->length);
+            MenaiInteger *r = alloc_menai_integer_from_long_long(vs, (long long)crc);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
         case OP_BYTES_CONCAT: {
             MenaiBytes *a = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
@@ -4994,6 +5008,61 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 #undef BYTES_READ_MULTI
 
         /*
+         * Floating-point read helpers.  Each reads N bytes at the given offset,
+         * assembles them in the specified endianness as the IEEE-754 bit pattern,
+         * and bit-casts to a MenaiFloat.  memcpy is used for the bit-cast to
+         * avoid strict-aliasing undefined behaviour.
+         */
+#define BYTES_READ_FLOAT(opcode_name, width, ctype, uint_bits_t, le) \
+        case opcode_name: { \
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0]; \
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1]; \
+            ssize_t offset; \
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
+                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
+                goto error; \
+            } \
+\
+            ssize_t blen = b->length; \
+            if (offset < 0 || offset + (width) > blen) { \
+                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
+                goto error; \
+            } \
+\
+            const uint8_t *d = b->data + offset; \
+            uint_bits_t bits = 0; \
+            if (le) { \
+                for (int _i = 0; _i < (width); _i++) { \
+                    bits |= ((uint_bits_t)d[_i]) << (_i * 8); \
+                } \
+            } else { \
+                for (int _i = 0; _i < (width); _i++) { \
+                    bits = (bits << 8) | d[_i]; \
+                } \
+            } \
+\
+            ctype fval; \
+            memcpy(&fval, &bits, sizeof(ctype)); \
+            MenaiFloat *r = alloc_menai_float(vs, (double)fval); \
+            if (r == NULL) { \
+                vm_err = MENAI_ERR_NOMEM; \
+                goto error; \
+            } \
+\
+            menai_value_release(vs, frame_regs[dest]); \
+            frame_regs[dest] = (MenaiValue *)r; \
+            break; \
+        }
+
+        BYTES_READ_FLOAT(OP_BYTES_READ_F32_LE, 4, float, uint32_t, 1)
+        BYTES_READ_FLOAT(OP_BYTES_READ_F32_BE, 4, float, uint32_t, 0)
+        BYTES_READ_FLOAT(OP_BYTES_READ_F64_LE, 8, double, uint64_t, 1)
+        BYTES_READ_FLOAT(OP_BYTES_READ_F64_BE, 8, double, uint64_t, 0)
+
+#undef BYTES_READ_FLOAT
+
+        /*
          * Multi-byte append helpers using a shared pattern.  Each takes bytes
          * and an integer value, encodes the value into N bytes in the specified
          * endianness, appends them, and returns the new bytes.
@@ -5070,6 +5139,38 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         BYTES_APPEND_MULTI(OP_BYTES_APPEND_I64_BE, 8, 1, 0)
 
 #undef BYTES_APPEND_MULTI
+
+        /*
+         * Floating-point append helpers.  Each takes bytes and a float value,
+         * encodes the IEEE-754 bit pattern into N bytes in the specified
+         * endianness, appends them, and returns the new bytes.
+         */
+#define BYTES_APPEND_FLOAT(opcode_name, width, ctype, uint_bits_t, le) \
+        case opcode_name: { \
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0]; \
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
+            MenaiFloat *v = (MenaiFloat *)frame_regs[src1]; \
+            ctype fval = (ctype)v->value; \
+            uint_bits_t bits = 0; \
+            memcpy(&bits, &fval, sizeof(ctype)); \
+\
+            MenaiBytes *r = alloc_menai_bytes_from_append_multi(vs, b, (unsigned long long)bits, (width), le); \
+            if (r == NULL) { \
+                vm_err = MENAI_ERR_NOMEM; \
+                goto error; \
+            } \
+\
+            menai_value_release(vs, frame_regs[dest]); \
+            frame_regs[dest] = (MenaiValue *)r; \
+            break; \
+        }
+
+        BYTES_APPEND_FLOAT(OP_BYTES_APPEND_F32_LE, 4, float, uint32_t, 1)
+        BYTES_APPEND_FLOAT(OP_BYTES_APPEND_F32_BE, 4, float, uint32_t, 0)
+        BYTES_APPEND_FLOAT(OP_BYTES_APPEND_F64_LE, 8, double, uint64_t, 1)
+        BYTES_APPEND_FLOAT(OP_BYTES_APPEND_F64_BE, 8, double, uint64_t, 0)
+
+#undef BYTES_APPEND_FLOAT
 
         /*
          * Multi-byte write helpers.  Each takes bytes, offset, and integer value,
@@ -5154,6 +5255,52 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         BYTES_WRITE_MULTI(OP_BYTES_WRITE_I64_BE, 8, 1, 0)
 
 #undef BYTES_WRITE_MULTI
+
+        /*
+         * Floating-point write helpers.  Each takes bytes, offset, and a float
+         * value, writes the encoded IEEE-754 bit pattern at the offset, and
+         * returns the new bytes.
+         */
+#define BYTES_WRITE_FLOAT(opcode_name, width, ctype, uint_bits_t, le) \
+        case opcode_name: { \
+            MenaiBytes *b = (MenaiBytes *)frame_regs[src0]; \
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
+            MenaiInteger *off_val = (MenaiInteger *)frame_regs[src1]; \
+            int src2 = (int)(word & FIELD_MASK); \
+            MenaiFloat *v = (MenaiFloat *)frame_regs[src2]; \
+            ssize_t offset; \
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
+                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
+                goto error; \
+            } \
+\
+            ssize_t blen = b->length; \
+            if (offset < 0 || offset + (width) > blen) { \
+                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
+                goto error; \
+            } \
+\
+            ctype fval = (ctype)v->value; \
+            uint_bits_t bits = 0; \
+            memcpy(&bits, &fval, sizeof(ctype)); \
+\
+            MenaiBytes *r = alloc_menai_bytes_from_write_multi(vs, b, offset, (unsigned long long)bits, (width), le); \
+            if (r == NULL) { \
+                vm_err = MENAI_ERR_NOMEM; \
+                goto error; \
+            } \
+\
+            menai_value_release(vs, frame_regs[dest]); \
+            frame_regs[dest] = (MenaiValue *)r; \
+            break; \
+        }
+
+        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F32_LE, 4, float, uint32_t, 1)
+        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F32_BE, 4, float, uint32_t, 0)
+        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F64_LE, 8, double, uint64_t, 1)
+        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F64_BE, 8, double, uint64_t, 0)
+
+#undef BYTES_WRITE_FLOAT
 
         /*
          * LEB128 read (unsigned).  Returns a two-element list (value next-offset).
