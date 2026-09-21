@@ -861,6 +861,11 @@
    (bytes-write-f32-be (lambda (b off v) ($bytes-write-f32-be b off v)))
    (bytes-write-f64-le (lambda (b off v) ($bytes-write-f64-le b off v)))
    (bytes-write-f64-be (lambda (b off v) ($bytes-write-f64-be b off v)))
+   (bytes-crc32 (lambda (b) ($bytes-crc32 b)))
+   (bytes-hash-sha2-256 (lambda (b) ($bytes-hash-sha2-256 b)))
+   (bytes-hash-sha2-512 (lambda (b) ($bytes-hash-sha2-512 b)))
+   (bytes-hash-sha2-512-256 (lambda (b) ($bytes-hash-sha2-512-256 b)))
+   (bytes-hash-sha3-256 (lambda (b) ($bytes-hash-sha3-256 b)))
    (map-bytes (lambda (f b)
                 (letrec ((loop (lambda (i acc)
                                  (if ($integer=? i ($bytes-length b))
@@ -1587,6 +1592,11 @@
         "bytes-write-f32-be" bytes-write-f32-be
         "bytes-write-f64-le" bytes-write-f64-le
         "bytes-write-f64-be" bytes-write-f64-be
+        "bytes-crc32" bytes-crc32
+        "bytes-hash-sha2-256" bytes-hash-sha2-256
+        "bytes-hash-sha2-512" bytes-hash-sha2-512
+        "bytes-hash-sha2-512-256" bytes-hash-sha2-512-256
+        "bytes-hash-sha3-256" bytes-hash-sha3-256
         "map-bytes" map-bytes
         "filter-bytes" filter-bytes
         "fold-bytes" fold-bytes
