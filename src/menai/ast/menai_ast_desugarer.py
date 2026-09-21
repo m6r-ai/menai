@@ -429,11 +429,12 @@ class MenaiASTDesugarer:
                     )
                 # Computed-default completions: bind the collection to a temp to
                 # avoid double-evaluation, then synthesise the length call.
-                if name in ('string-slice', 'list-slice', 'bytes-slice') and n_args == 2:
+                if name in ('string-slice', 'list-slice', 'bytes-slice', 'vector-slice') and n_args == 2:
                     _slice_length_fns = {
                         'string-slice': 'string-length',
                         'list-slice': 'list-length',
                         'bytes-slice': 'bytes-length',
+                        'vector-slice': 'vector-length',
                     }
                     length_fn = _slice_length_fns[name]
                     coll_arg = self.desugar(expr.elements[1])
