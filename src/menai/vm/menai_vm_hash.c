@@ -10,8 +10,40 @@
  * message and finalises in one call.
  */
 #include <string.h>
+#include <stdlib.h>
 
 #include "menai_vm_c.h"
+
+/*
+ * Byte-swap a 32-bit unsigned int.
+ *
+ * Every platform the VM targets is little-endian, so the big-endian
+ * conversions always swap and the little-endian conversions never do.  GCC and
+ * Clang lower __builtin_bswap32 to a single instruction; MSVC does the same for
+ * _byteswap_ulong.
+ */
+static inline uint32_t
+hash_bswap32(uint32_t v)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_bswap32(v);
+#else
+    return _byteswap_ulong(v);
+#endif
+}
+
+/*
+ * Byte-swap a 64-bit unsigned int.
+ */
+static inline uint64_t
+hash_bswap64(uint64_t v)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_bswap64(v);
+#else
+    return _byteswap_uint64(v);
+#endif
+}
 
 /*
  * Convert a 32-bit unsigned int from big-endian to host form.
@@ -19,11 +51,7 @@
 static inline uint32_t
 hash_u32_be_to_host(uint32_t v)
 {
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-    return __builtin_bswap32(v);
-#else
-    return v;
-#endif
+    return hash_bswap32(v);
 }
 
 /*
@@ -32,11 +60,7 @@ hash_u32_be_to_host(uint32_t v)
 static inline uint64_t
 hash_u64_be_to_host(uint64_t v)
 {
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-    return __builtin_bswap64(v);
-#else
-    return v;
-#endif
+    return hash_bswap64(v);
 }
 
 /*
@@ -45,11 +69,7 @@ hash_u64_be_to_host(uint64_t v)
 static inline uint64_t
 hash_u64_le_to_host(uint64_t v)
 {
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
     return v;
-#else
-    return __builtin_bswap64(v);
-#endif
 }
 
 /*
@@ -58,11 +78,7 @@ hash_u64_le_to_host(uint64_t v)
 static inline uint64_t
 hash_u64_host_to_be(uint64_t v)
 {
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-    return __builtin_bswap64(v);
-#else
-    return v;
-#endif
+    return hash_bswap64(v);
 }
 
 /*
