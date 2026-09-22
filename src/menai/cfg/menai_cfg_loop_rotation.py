@@ -1,0 +1,433 @@
+"""
+CFG pass: loop rotation (loop inversion).
+
+A self-loop (a tail-recursive loop lowered to a ``MenaiCFGSelfLoopTerm``)
+is emitted with its test at the top of the loop:
+
+    header:  <loop test>
+             branch %cond -> exit / body
+    body:    ...
+             self_loop(args)        ; unconditional back-edge
+
+Every iteration therefore pays for two branch instructions: the
+unconditional back-edge jump and the conditional test at the top.
+
+This pass rotates the loop so the test is evaluated at the bottom:
+
+    header:  <loop test>            ; peeled entry test
+             branch %cond -> exit / body
+    body:    ...
+             self_loop(args, target=continue)
+    continue: <loop test>           ; rotated test (copy of the header test)
+             branch %cond2 -> exit / body
+
+The back-edge now lands on the rotated test, which branches directly back
+into the body when the loop should continue.  The unconditional back-edge
+jump is replaced by a conditional branch, saving one jump per iteration.
+The peeled test in the header is retained so the loop is skipped entirely
+when the entry condition is false.
+
+The self-loop is deliberately kept as a ``MenaiCFGSelfLoopTerm`` and merely
+re-targeted, rather than replaced by a plain branch.  The backend relies on
+the self-loop to update the loop-carried parameter slots and to drive its
+self-loop slot optimisations; a plain branch would silently lose both.  The
+rotated test block is reached through the self-loop's ``__entry__`` label,
+exactly as LICM's loop-entry block is.
+
+The rotated test is a full copy of the header block's test instructions
+(everything except the param and free-var definitions), not just the branch
+condition.  The header block also holds the guards and intermediate
+computations the test depends on, and those must be re-executed on every
+iteration just as the condition must.  Copying the whole test and remapping
+its result SSA values to fresh ids keeps the copy self-contained while its
+operands continue to reference the parameter and free-var values, which the
+back-edge moves update in place.
+
+Applicability
+-------------
+The pass handles the canonical shape only:
+
+  - exactly one ``MenaiCFGSelfLoopTerm`` in the function,
+  - the loop header (the self-loop's target, or the entry block when the
+    target is unset) ends in a ``MenaiCFGBranchTerm``,
+  - the header test's operands are all params, free vars, or values defined
+    outside the header block (so they are valid at the back-edge), and
+  - the branch's false target is the block containing the self-loop (a
+    single-block loop body).
+
+Anything else is left unrotated.  The pass is idempotent: an already-rotated
+loop (whose self-loop target block is a copy of the header test) is detected
+and skipped.
+"""
+
+from menai.cfg.menai_cfg import (
+    MenaiCFGApplyInstr,
+    MenaiCFGBlock,
+    MenaiCFGBranchTerm,
+    MenaiCFGBuiltinInstr,
+    MenaiCFGCallInstr,
+    MenaiCFGConstInstr,
+    MenaiCFGFreeVarInstr,
+    MenaiCFGFunction,
+    MenaiCFGGuardInstr,
+    MenaiCFGInstr,
+    MenaiCFGMakeClosureInstr,
+    MenaiCFGMakeDictInstr,
+    MenaiCFGMakeListInstr,
+    MenaiCFGMakeSetInstr,
+    MenaiCFGMakeStructInstr,
+    MenaiCFGMakeVectorInstr,
+    MenaiCFGParamInstr,
+    MenaiCFGPhiInstr,
+    MenaiCFGSelfLoopTerm,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructSetIndexedInstr,
+    MenaiCFGValue,
+    relink_predecessors,
+    value_ids_in_instr,
+)
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+
+
+class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
+    """
+    CFG optimization pass that rotates a self-loop so its test is at the
+    bottom, replacing the unconditional back-edge with a conditional one.
+
+    See the module docstring for the algorithm and applicability conditions.
+    """
+
+    def _optimize_function(
+        self, func: MenaiCFGFunction,
+    ) -> tuple[MenaiCFGFunction, bool]:
+        """Rotate a self-loop if the function has the canonical loop shape."""
+        self_loop = self._find_self_loop(func)
+        if self_loop is None:
+            return func, False
+
+        header = self_loop.target if self_loop.target is not None else func.entry()
+
+        if not isinstance(header.terminator, MenaiCFGBranchTerm):
+            return func, False
+
+        branch = header.terminator
+        body = branch.false_block
+
+        # Canonical shape: the loop body is the block containing the
+        # self-loop, and the branch's false target is that body.
+        self_loop_block = self._self_loop_block(func, self_loop)
+        if body is not self_loop_block:
+            return func, False
+
+        if self._is_rotated(self_loop, header, body):
+            return func, False
+
+        test_instrs = self._header_test_instrs(header)
+        if not test_instrs:
+            return func, False
+
+        if not self._operands_safe_at_back_edge(func, test_instrs, header):
+            return func, False
+
+        if self._test_results_used_by_body(test_instrs, body, self_loop):
+            return func, False
+
+        # Build the rotated test block: a copy of the header test with fresh
+        # SSA result ids, terminated by a branch with the header's targets.
+        remap: dict[int, MenaiCFGValue] = {}
+        next_id = self._max_value_id(func) + 1
+        for instr in test_instrs:
+            result = getattr(instr, 'result', None)
+            if result is not None:
+                remap[result.id] = MenaiCFGValue(id=next_id, hint=result.hint)
+                next_id += 1
+
+        new_instrs = [
+            self._clone_with_remap(instr, remap) for instr in test_instrs
+        ]
+        new_cond = remap.get(branch.cond.id, branch.cond)
+
+        continue_block = MenaiCFGBlock(
+            id=self._next_block_id(func),
+            label="loop_continue",
+            instrs=new_instrs,
+            terminator=MenaiCFGBranchTerm(
+                cond=new_cond,
+                true_block=branch.true_block,
+                false_block=body,
+            ),
+        )
+
+        func.blocks.append(continue_block)
+        self_loop.target = continue_block
+
+        relink_predecessors(func)
+        return func, True
+
+    def _find_self_loop(
+        self, func: MenaiCFGFunction,
+    ) -> MenaiCFGSelfLoopTerm | None:
+        """Return the function's SelfLoopTerm, or None if there is none."""
+        for block in func.blocks:
+            if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
+                return block.terminator
+
+        return None
+
+    def _self_loop_block(
+        self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
+    ) -> MenaiCFGBlock | None:
+        """Return the block whose terminator is `self_loop`."""
+        for block in func.blocks:
+            if block.terminator is self_loop:
+                return block
+
+        return None
+
+    def _is_rotated(
+        self,
+        self_loop: MenaiCFGSelfLoopTerm,
+        header: MenaiCFGBlock,
+        body: MenaiCFGBlock,
+    ) -> bool:
+        """
+        Return True if the loop is already rotated.
+
+        A rotated loop has its self-loop target set to a block (other than
+        the header) whose terminator branches back to the body.  The
+        original unrotated header also branches to the body, so the
+        self-loop target is what distinguishes the two.
+        """
+        if self_loop.target is None or self_loop.target is header:
+            return False
+
+        term = self_loop.target.terminator
+        if not isinstance(term, MenaiCFGBranchTerm):
+            return False
+
+        return term.false_block is body and term.true_block is not body
+
+    def _header_test_instrs(
+        self, header: MenaiCFGBlock,
+    ) -> list[MenaiCFGInstr]:
+        """
+        Return the header block's test instructions.
+
+        This is every instruction except the param and free-var definitions,
+        which establish the parameter and capture slots once and must not be
+        re-executed on the back-edge.
+        """
+        return [
+            instr for instr in header.instrs
+            if not isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
+        ]
+
+    def _operands_safe_at_back_edge(
+        self,
+        func: MenaiCFGFunction,
+        test_instrs: list[MenaiCFGInstr],
+        header: MenaiCFGBlock,
+    ) -> bool:
+        """
+        Return True if the header test can be re-evaluated at the back-edge
+        with correct values.
+
+        The rotated test shares the header test's operands.  Those values are
+        correct at the back-edge only when they are:
+
+          - params (updated in place by the back-edge moves, so reading them
+            after the self-loop observes the new value),
+          - free vars (never reassigned), or
+          - defined outside the loop-header block (in the preamble or an
+            entry block that dominates the back-edge).
+
+        An operand defined inside the loop-header block by a loop-variant
+        instruction would be stale at the back-edge, so such a test is not
+        rotated.  Operands defined within the header test itself are remapped
+        to the copy's own definitions and are therefore safe.
+        """
+        header_ids = {id(instr) for instr in header.instrs}
+        test_ids = {id(instr) for instr in test_instrs}
+
+        for instr in test_instrs:
+            for operand_id in value_ids_in_instr(instr):
+                defining = self._defining_instr(func, operand_id)
+                if defining is None:
+                    # No defining instruction (a param or free var whose value
+                    # is established by the entry block).  Safe.
+                    continue
+
+                if isinstance(defining, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr)):
+                    continue
+
+                if id(defining) in test_ids:
+                    # Defined within the copied test; the remap handles it.
+                    continue
+
+                if id(defining) in header_ids:
+                    return False
+
+        return True
+
+    def _test_results_used_by_body(
+        self,
+        test_instrs: list[MenaiCFGInstr],
+        body: MenaiCFGBlock,
+        self_loop: MenaiCFGSelfLoopTerm,
+    ) -> bool:
+        """
+        Return True if any header test result is consumed by the loop body.
+
+        After rotation the back-edge skips the header test, so a value the
+        header computes is only available on the first iteration.  If the
+        body reads such a value, the rotated loop would use a stale value on
+        later iterations.  A header test whose results flow into the body is
+        therefore not rotated.
+
+        The body's own instructions and the self-loop args are both checked;
+        a value passed through the self-loop args is a loop-carried value and
+        must be recomputed each iteration.
+        """
+        test_result_ids = {
+            result.id
+            for instr in test_instrs
+            if (result := getattr(instr, 'result', None)) is not None
+        }
+        if not test_result_ids:
+            return False
+
+        body_uses: set[int] = set()
+        for instr in body.instrs:
+            body_uses.update(value_ids_in_instr(instr))
+
+        body_uses.update(arg.id for arg in self_loop.args)
+        return bool(test_result_ids & body_uses)
+
+    def _defining_instr(
+        self, func: MenaiCFGFunction, value_id: int,
+    ) -> MenaiCFGInstr | None:
+        """Return the instruction that defines `value_id`, or None."""
+        for block in func.blocks:
+            for instr in block.instrs:
+                result = getattr(instr, 'result', None)
+                if result is not None and result.id == value_id:
+                    return instr
+
+        return None
+
+    def _clone_with_remap(
+        self, instr: MenaiCFGInstr, remap: dict[int, MenaiCFGValue],
+    ) -> MenaiCFGInstr:
+        """
+        Clone an instruction, remapping its result and operands.
+
+        A result or operand value id present in `remap` is replaced by the
+        remapped value; ids absent from `remap` are shared with the original
+        instruction (they are params, free vars, or values defined outside the
+        header test).
+        """
+        def rv(value: MenaiCFGValue) -> MenaiCFGValue:
+            """Remap a single SSA value."""
+            return remap.get(value.id, value)
+
+        def rvs(values: list[MenaiCFGValue]) -> list[MenaiCFGValue]:
+            """Remap a list of SSA values."""
+            return [rv(v) for v in values]
+
+        if isinstance(instr, MenaiCFGConstInstr):
+            return MenaiCFGConstInstr(result=rv(instr.result), value=instr.value)
+
+        if isinstance(instr, MenaiCFGBuiltinInstr):
+            return MenaiCFGBuiltinInstr(
+                result=rv(instr.result), op=instr.op, args=rvs(instr.args),
+            )
+
+        if isinstance(instr, MenaiCFGCallInstr):
+            return MenaiCFGCallInstr(
+                result=rv(instr.result), func=rv(instr.func), args=rvs(instr.args),
+            )
+
+        if isinstance(instr, MenaiCFGApplyInstr):
+            return MenaiCFGApplyInstr(
+                result=rv(instr.result), func=rv(instr.func), arg_list=rv(instr.arg_list),
+            )
+
+        if isinstance(instr, MenaiCFGMakeClosureInstr):
+            return MenaiCFGMakeClosureInstr(
+                result=rv(instr.result),
+                function=instr.function,
+                captures=rvs(instr.captures),
+                needs_patching=instr.needs_patching,
+            )
+
+        if isinstance(instr, MenaiCFGMakeStructInstr):
+            return MenaiCFGMakeStructInstr(
+                result=rv(instr.result), struct_type=instr.struct_type, args=rvs(instr.args),
+            )
+
+        if isinstance(instr, MenaiCFGMakeListInstr):
+            return MenaiCFGMakeListInstr(result=rv(instr.result), args=rvs(instr.args))
+
+        if isinstance(instr, MenaiCFGMakeVectorInstr):
+            return MenaiCFGMakeVectorInstr(result=rv(instr.result), args=rvs(instr.args))
+
+        if isinstance(instr, MenaiCFGMakeSetInstr):
+            return MenaiCFGMakeSetInstr(result=rv(instr.result), args=rvs(instr.args))
+
+        if isinstance(instr, MenaiCFGMakeDictInstr):
+            return MenaiCFGMakeDictInstr(
+                result=rv(instr.result),
+                pairs=[(rv(k), rv(v)) for k, v in instr.pairs],
+            )
+
+        if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+            return MenaiCFGStructGetIndexedInstr(
+                result=rv(instr.result), struct=rv(instr.struct), index=instr.index,
+            )
+
+        if isinstance(instr, MenaiCFGStructSetIndexedInstr):
+            return MenaiCFGStructSetIndexedInstr(
+                result=rv(instr.result),
+                struct=rv(instr.struct),
+                index=instr.index,
+                value=rv(instr.value),
+            )
+
+        if isinstance(instr, MenaiCFGGuardInstr):
+            return MenaiCFGGuardInstr(value=rv(instr.value), expected_type=instr.expected_type)
+
+        if isinstance(instr, MenaiCFGPhiInstr):
+            return MenaiCFGPhiInstr(
+                result=rv(instr.result),
+                incoming=[(rv(v), block) for v, block in instr.incoming],
+            )
+
+        raise TypeError(
+            f"MenaiCFGLoopRotation: cannot clone {type(instr).__name__}"
+        )
+
+    def _next_block_id(self, func: MenaiCFGFunction) -> int:
+        """Return the next available block id in func."""
+        return max(b.id for b in func.blocks) + 1
+
+    def _max_value_id(self, func: MenaiCFGFunction) -> int:
+        """Return the highest SSA value id present anywhere in func."""
+        max_id = -1
+        for block in func.blocks:
+            for instr in block.instrs:
+                result = getattr(instr, 'result', None)
+                if result is not None:
+                    max_id = max(max_id, result.id)
+
+                for vid in value_ids_in_instr(instr):
+                    max_id = max(max_id, vid)
+
+            term = block.terminator
+            if isinstance(term, MenaiCFGBranchTerm):
+                max_id = max(max_id, term.cond.id)
+
+            elif isinstance(term, MenaiCFGSelfLoopTerm):
+                for arg in term.args:
+                    max_id = max(max_id, arg.id)
+
+        return max_id

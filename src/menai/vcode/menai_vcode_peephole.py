@@ -683,6 +683,8 @@ def peephole(func: MenaiVCodeFunction, slot_map: SlotMap) -> MenaiVCodeFunction:
         changed = False
         instrs, c = _eliminate_redundant_moves(instrs, slot_map)
         changed = changed or c
+        instrs, c = _eliminate_entry_fallthrough(instrs)
+        changed = changed or c
         instrs, c = _eliminate_jump_over_jump(instrs)
         changed = changed or c
         instrs, c = _fold_branch_load_return(instrs, slot_map)
@@ -731,6 +733,51 @@ def _eliminate_redundant_moves(
 
         else:
             result.append(instr)
+
+    return result, changed
+
+
+def _eliminate_entry_fallthrough(
+    instrs: list[MenaiVCodeInstr],
+) -> tuple[list[MenaiVCodeInstr], bool]:
+    """
+    Remove a JUMP __entry__ that falls through to the __entry__ label.
+
+    Loop rotation places the rotated test block immediately after the loop
+    body, so the self-loop's JUMP __entry__ is a fall-through to the
+    __entry__ label.  Removing the jump lets the rotated test run directly
+    with no branch, which is the point of the rotation.
+
+    The jump is only removed when the __entry__ label is the next thing in
+    the stream (possibly with other labels in between).  When the self-loop
+    targets the function entry (the unrotated case), no __entry__ label is
+    emitted and the jump is left untouched.
+    """
+    result: list[MenaiVCodeInstr] = []
+    changed = False
+    i = 0
+    while i < len(instrs):
+        instr = instrs[i]
+        if isinstance(instr, MenaiVCodeJump) and instr.label == "__entry__":
+            j = i + 1
+            falls_through = False
+            while j < len(instrs):
+                next_instr = instrs[j]
+                if not isinstance(next_instr, MenaiVCodeLabel):
+                    break
+
+                if next_instr.name == "__entry__":
+                    falls_through = True
+
+                j += 1
+
+            if falls_through:
+                changed = True
+                i += 1
+                continue
+
+        result.append(instr)
+        i += 1
 
     return result, changed
 

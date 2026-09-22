@@ -58,13 +58,20 @@ def _find_lambda(code, name: str):
 
 def _self_loop_target(code) -> int | None:
     """
-    Return the instruction index that the self-loop JUMP targets,
-    or None if there is no self-loop in the function.
+    Return the instruction index of the loop entry point (the target of the
+    back-edge), or None if there is no loop in the function.
+
+    Handles both loop shapes: an unrotated loop ends with an unconditional
+    backward JUMP, while a rotated loop ends with a conditional backward
+    jump (the rotated test) back into the body.
     """
     for i, instr in enumerate(code.instructions):
         op = unpack_instruction(instr)
         if op.opcode == int(Opcode.JUMP) and op.src0 < i:
             return op.src0
+
+        if op.opcode in (int(Opcode.JUMP_IF_FALSE), int(Opcode.JUMP_IF_TRUE)) and op.src1 < i:
+            return op.src1
 
     return None
 
@@ -341,15 +348,20 @@ class TestGuardHoisting:
         """
         code = _compile(src)
         sl = _find_lambda(code, "search-loop")
-        assert _count_op(sl, Opcode.ASSERT_INTEGER) == 1
+        # The guard is not hoisted out of the loop.  The loop is rotated, so
+        # the guard appears twice: once in the entry test and once in the
+        # rotated test at the bottom of the loop.  Both execute inside the
+        # loop, so the guard is re-checked on every iteration.
+        assert _count_op(sl, Opcode.ASSERT_INTEGER) == 2
         target = _self_loop_target(sl)
         assert target is not None
-        guard_idx = next(
+        guard_indices = [
             i for i, instr in enumerate(sl.instructions)
             if unpack_instruction(instr).opcode == int(Opcode.ASSERT_INTEGER)
-        )
-        assert target <= guard_idx, (
-            "self-loop must NOT skip the non-loop-invariant ASSERT_INTEGER guard"
+        ]
+        assert any(gi >= target for gi in guard_indices), (
+            "the non-loop-invariant ASSERT_INTEGER guard must be re-executed "
+            "inside the loop"
         )
 
     def test_free_var_guard_hoisted(self):

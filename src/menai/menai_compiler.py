@@ -18,20 +18,21 @@ from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
 from menai.ast.menai_lexer import MenaiLexer
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.bytecode.menai_bytecode_builder import MenaiBytecodeBuilder
-from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
 from menai.cfg.menai_cfg_branch_const_prop import MenaiCFGBranchConstProp
-from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
-from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
+from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
 from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
 from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
-from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAnalysis
 from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
+from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAnalysis
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
+from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
+from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
+from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.ir.menai_ir_builder import MenaiIRBuilder
+from menai.ir.menai_ir_inliner import MenaiIRInliner
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 from menai.ir.menai_ir_optimizer import MenaiIROptimizer
-from menai.ir.menai_ir_inliner import MenaiIRInliner
 from menai.menai_value import MenaiValue
 from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 
@@ -79,6 +80,7 @@ class MenaiCompiler:
             self._interproc_type_analysis,
             MenaiCFGGuardInsertion(),
             MenaiCFGLICM(),
+            MenaiCFGLoopRotation(),
             MenaiCFGDeadCaptures(),
         ]
         self.vcode_builder = MenaiVCodeBuilder()

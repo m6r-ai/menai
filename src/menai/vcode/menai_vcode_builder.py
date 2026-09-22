@@ -488,8 +488,11 @@ class MenaiVCodeBuilder:
         """
         Return reachable blocks in reverse post-order.
 
-        Self-loop back-edges (SelfLoopTerm) are not followed — they are
-        back-edges to the entry that are handled by emitting JUMP __entry__.
+        A self-loop back-edge (SelfLoopTerm) is normally a back-edge to the
+        entry block and is handled by emitting JUMP __entry__, so it is not
+        followed.  When the self-loop has an explicit target (set by LICM or
+        loop rotation), the target is a real block that may be reachable only
+        through the back-edge, so it is followed here to keep it live.
         """
         visited: set = set()
         post_order: list[MenaiCFGBlock] = []
@@ -513,6 +516,9 @@ class MenaiVCodeBuilder:
                         dfs(t)
 
                 dfs(term.default_block)
+
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                dfs(term.target)
 
             post_order.append(block)
 

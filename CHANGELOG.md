@@ -38,12 +38,9 @@ New features:
   instead made them a letrec around the user's program.  This removes a number of
   idiosyncracies in the internal design.
 - Improved the slot allocator so it eliminates more redundant `MOVE` opcodes in
-  self-recursive loops.  A loop-carried parameter update is now coalesced into the
-  parameter slot even when a call sits between the value's definition and the
-  back-edge move, and a single-use value that feeds a phi arm is written directly
-  into the phi result's slot.  This removes the residual `MOVE` in loops such as
-  `filter-vector`'s, where a predicate call and an `if` join previously forced the
-  value through a scratch register.
+  self-recursive loops.
+- Added a loop rotation CFG pass.  A self-recursive loop with its test at the top
+  is rotated so the test is evaluated at the bottom.
 - Improved the constant type annotations in the disassembler.
 - Added cryptographic hashing of `bytes` values: `bytes-hash-sha2-256`,
   `bytes-hash-sha2-512`, `bytes-hash-sha2-512-256` (FIPS Pub 180-4) and
