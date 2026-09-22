@@ -16,7 +16,7 @@
 ; window to find back-references; it does not attempt lazy matching.
 ;
 ; The bit writer is a pure state value threaded through every call:
-;   (dict "bytes" <bytes> "bit" <0-7> "acc" <integer>)
+;   (writer <bytes> <0-7> <integer>)
 ; `acc` holds the bits accumulated for the current output byte, and `bit` is how
 ; many of them are present (0-7).  Writing bits appends them above the existing
 ; ones; when eight have accumulated the byte is emitted and the accumulator is
@@ -32,38 +32,42 @@
    (fixed-lit-lengths (:: tables fixed-lit-lengths))
    (fixed-dist-lengths (:: tables fixed-dist-lengths))
 
+   ; The bit-writer state: an output bytes value, the number of bits held in the
+   ; accumulator (0-7), and the accumulator itself.
+   (writer (struct (bytes bit acc)))
+
    (make-writer
     (lambda ()
-      (dict "bytes" (string->bytes "") "bit" 0 "acc" 0)))
+      (writer (string->bytes "") 0 0)))
 
    ; Append `count` bits of `value` (least-significant bit first) to the writer.
    (write-bits
     (lambda (w value count)
       (if (integer=? count 0)
           w
-          (let ((acc (integer-bit-or (dict-get w "acc")
+          (let ((acc (integer-bit-or (struct-get w 'acc)
                                      (integer-bit-shift-left
                                        (integer-bit-and value 1)
-                                       (dict-get w "bit"))))
-                (bit (integer+ (dict-get w "bit") 1)))
+                                       (struct-get w 'bit))))
+                (bit (integer+ (struct-get w 'bit) 1)))
             (if (integer=? bit 8)
-                (write-bits (dict "bytes" (bytes-append-u8 (dict-get w "bytes") acc)
-                                  "bit" 0
-                                  "acc" 0)
+                (write-bits (writer (bytes-append-u8 (struct-get w 'bytes) acc)
+                                    0
+                                    0)
                             (integer-bit-shift-right value 1)
                             (integer- count 1))
-                (write-bits (dict "bytes" (dict-get w "bytes")
-                                  "bit" bit
-                                  "acc" acc)
+                (write-bits (writer (struct-get w 'bytes)
+                                    bit
+                                    acc)
                             (integer-bit-shift-right value 1)
                             (integer- count 1)))))))
 
    ; Pad the writer to the next byte boundary, returning the new writer.
    (align-writer
     (lambda (w)
-      (if (integer=? (dict-get w "bit") 0)
+      (if (integer=? (struct-get w 'bit) 0)
           w
-          (write-bits w 0 (integer- 8 (dict-get w "bit"))))))
+          (write-bits w 0 (integer- 8 (struct-get w 'bit))))))
 
    ; Write a Huffman code: `code` is the canonical code value and `length` its
    ; bit length.  DEFLATE stores Huffman codes most-significant bit first, so
@@ -84,7 +88,7 @@
 
    (writer->bytes
     (lambda (w)
-      (dict-get (align-writer w) "bytes")))
+      (struct-get (align-writer w) 'bytes)))
 
    ; The maximum DEFLATE back-reference distance (window size).
    (window-size 32768)
@@ -368,10 +372,10 @@
             (let ((w3 (write-bits w2 len 16)))
               (let ((w4 (write-bits w3 (integer-bit-and (integer-bit-not len) #xffff) 16)))
                 (let ((w5 (align-writer w4)))
-                  (dict "bytes" (bytes-concat (dict-get w5 "bytes")
-                                              (bytes-slice b start end))
-                        "bit" 0
-                        "acc" 0)))))))))
+                  (writer (bytes-concat (struct-get w5 'bytes)
+                                        (bytes-slice b start end))
+                          0
+                          0)))))))))
 
    ; Emit the token stream using the given literal/length and distance code
    ; lists, ending with the end-of-block symbol (256).

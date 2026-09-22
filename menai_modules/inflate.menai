@@ -8,16 +8,16 @@
 ; (BTYPE = 11) are rejected.
 ;
 ; The bit reader is a pure state value threaded through every call:
-;   (dict "bytes" <bytes> "pos" <byte-offset> "bit" <0-7>)
+;   (reader <bytes> <byte-offset> <0-7>)
 ; `bit` is the index of the next bit to read within byte `pos`, counted from
 ; the least-significant bit (DEFLATE is LSB-first within each byte).
 ;
 ; Decompressed output is carried as an output state value threaded through the
 ; decode:
-;   (dict "chunks" <reversed list of every appended bytes value>
-;         "pending" <reversed list of bytes appended since the window was last refreshed>
-;         "window" <bytes: the most recent output, coalesced>
-;         "total" <integer: total bytes produced>)
+;   (output <reversed list of every appended bytes value>
+;           <reversed list of bytes appended since the window was last refreshed>
+;           <bytes: the most recent output, coalesced>
+;           <integer: total bytes produced>)
 ; Appending only prepends to `chunks` and `pending`, so it is O(1) regardless
 ; of how much output has already been produced.  `window` is a coalesced
 ; contiguous view of the most recent output and is refreshed lazily, only when
@@ -36,9 +36,13 @@
    (fixed-lit-lengths (:: tables fixed-lit-lengths))
    (fixed-dist-lengths (:: tables fixed-dist-lengths))
 
+   ; The bit-reader state: the input bytes, the current byte offset, and the
+   ; index of the next bit to read within that byte (0-7).
+   (reader (struct (bytes pos bit)))
+
    (make-reader
     (lambda (b)
-      (dict "bytes" b "pos" 0 "bit" 0)))
+      (reader b 0 0)))
 
    ; The maximum DEFLATE back-reference distance.  The output window must
    ; always retain at least this many bytes of recent output so that any
@@ -46,22 +50,24 @@
    (window-cap 32768)
 
    ; Create an empty output state.
+   (output (struct (chunks pending window total)))
+
    (make-output
     (lambda ()
-      (dict "chunks" (list)
-            "pending" (list)
-            "window" (string->bytes "")
-            "total" 0)))
+      (output (list)
+              (list)
+              (string->bytes "")
+              0)))
 
    ; Append a bytes value to the output.  O(1): the value is prepended to the
    ; chunk list (for the final concatenation) and to the pending list (for the
    ; next window refresh).
    (output-append-bytes
     (lambda (out bs)
-      (dict "chunks" (list-prepend (dict-get out "chunks") bs)
-            "pending" (list-prepend (dict-get out "pending") bs)
-            "window" (dict-get out "window")
-            "total" (integer+ (dict-get out "total") (bytes-length bs)))))
+      (output (list-prepend (struct-get out 'chunks) bs)
+              (list-prepend (struct-get out 'pending) bs)
+              (struct-get out 'window)
+              (integer+ (struct-get out 'total) (bytes-length bs)))))
 
    ; Coalesce the pending appends onto the window, keeping only the most recent
    ; `window-cap` bytes (all a back-reference can reach).  Returns the output
@@ -69,18 +75,18 @@
    ; there is nothing pending, so it is cheap to call before every read.
    (output-refresh-window
     (lambda (out)
-      (let ((pending (dict-get out "pending")))
+      (let ((pending (struct-get out 'pending)))
         (if (list-null? pending)
             out
             (let ((win (apply bytes-concat
-                              (list-prepend (list-reverse pending) (dict-get out "window")))))
-              (dict "chunks" (dict-get out "chunks")
-                    "pending" (list)
-                    "window" (if (integer>? (bytes-length win) window-cap)
-                                 (bytes-slice win (integer- (bytes-length win) window-cap)
-                                              (bytes-length win))
-                                 win)
-                    "total" (dict-get out "total")))))))
+                              (list-prepend (list-reverse pending) (struct-get out 'window)))))
+              (output (struct-get out 'chunks)
+                      (list)
+                      (if (integer>? (bytes-length win) window-cap)
+                          (bytes-slice win (integer- (bytes-length win) window-cap)
+                                       (bytes-length win))
+                          win)
+                      (struct-get out 'total)))))))
 
    ; Concatenate a list of bytes values in a balanced tree rather than a left
    ; fold.  A left fold copies the growing prefix once per element, which is
@@ -98,22 +104,22 @@
    ; Flatten the output state into a single bytes value.  O(total * log n).
    (output-finalize
     (lambda (out)
-      (concat-chunks (list-reverse (dict-get out "chunks")))))
+      (concat-chunks (list-reverse (struct-get out 'chunks)))))
 
    ; Read a single bit, returning (list <0-or-1> <new-state>).
    (read-bit
     (lambda (state)
-      (let ((b (dict-get state "bytes"))
-            (pos (dict-get state "pos"))
-            (bit (dict-get state "bit")))
+      (let ((b (struct-get state 'bytes))
+            (pos (struct-get state 'pos))
+            (bit (struct-get state 'bit)))
         (if (integer>=? pos (bytes-length b))
             (error "inflate: unexpected end of input while reading bits")
             (let ((value (integer-bit-and
                            (integer-bit-shift-right (bytes-ref b pos) bit)
                            1)))
               (if (integer=? bit 7)
-                  (list value (dict "bytes" b "pos" (integer+ pos 1) "bit" 0))
-                  (list value (dict "bytes" b "pos" pos "bit" (integer+ bit 1)))))))))
+                  (list value (reader b (integer+ pos 1) 0))
+                  (list value (reader b pos (integer+ bit 1)))))))))
 
    ; Read `n` bits LSB-first, returning (list <integer> <new-state>).
    ; The first bit read becomes the least-significant bit of the result.
@@ -134,23 +140,23 @@
    ; Discard bits up to the next byte boundary, returning the new state.
    (align-to-byte
     (lambda (state)
-      (let ((bit (dict-get state "bit")))
+      (let ((bit (struct-get state 'bit)))
         (if (integer=? bit 0)
             state
-            (dict "bytes" (dict-get state "bytes")
-                  "pos" (integer+ (dict-get state "pos") 1)
-                  "bit" 0)))))
+            (reader (struct-get state 'bytes)
+                    (integer+ (struct-get state 'pos) 1)
+                    0)))))
 
    ; Read LEN raw bytes from the current byte position, returning
    ; (list <bytes> <new-state>).  The reader must be byte-aligned.
    (read-raw-bytes
     (lambda (state n)
-      (let ((b (dict-get state "bytes"))
-            (pos (dict-get state "pos")))
+      (let ((b (struct-get state 'bytes))
+            (pos (struct-get state 'pos)))
         (if (integer>? (integer+ pos n) (bytes-length b))
             (error "inflate: unexpected end of input while reading stored block")
             (list (bytes-slice b pos (integer+ pos n))
-                  (dict "bytes" b "pos" (integer+ pos n) "bit" 0))))))
+                  (reader b (integer+ pos n) 0))))))
 
    ; Build a canonical Huffman decoding table from a list of code lengths.
    ; `lengths` is a list where element i is the code length of symbol i
@@ -166,6 +172,7 @@
         ((max-length
           (lambda (lst)
             (fold-list (lambda (acc len) (integer-max acc len)) 0 lst)))
+
          ; Compute the first canonical code for each length 1..maxlen.
          ; bl_count[len] = number of codes of that length.
          ; Returns a dict mapping length to the first code assigned to it.
@@ -189,6 +196,7 @@
                     (count-lengths (list-rest lst)
                                     (dict-set acc (list-first lst)
                                               (integer+ (dict-get acc (list-first lst) 0) 1))))))
+
              ; Walk symbols in order, assigning each its canonical code.
              ; Returns a table dict keyed by (1 << length) + code.
              (assign
@@ -276,11 +284,11 @@
    ; is all a back-reference can reach.
    (copy-back-reference
     (lambda (out distance length)
-      (if (integer>? distance (dict-get out "total"))
+      (if (integer>? distance (struct-get out 'total))
           (error "inflate: back-reference distance exceeds output produced so far")
           (let ((out (output-refresh-window out)))
-            (let ((win (dict-get out "window"))
-                  (wlen (bytes-length (dict-get out "window"))))
+            (let ((win (struct-get out 'window))
+                  (wlen (bytes-length (struct-get out 'window))))
               (let ((block-len (integer-min distance length)))
                 (let ((block (bytes-slice win (integer- wlen distance)
                                           (integer+ (integer- wlen distance) block-len))))
