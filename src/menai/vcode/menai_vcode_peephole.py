@@ -84,7 +84,31 @@ Sub-passes
 
    Does not require a SlotMap — operates entirely on label strings.
 
-The four post-allocation sub-passes are composed and iterated to a joint
+5. Jump-to-return inlining
+   Replaces any unconditional jump that targets a label immediately
+   followed by a RETURN with the RETURN itself:
+
+       JUMP @L            RETURN r
+       ...          →     ...
+       @L: RETURN r
+
+   After inlining, labels that are no longer targeted by any jump (and are
+   not reachable via fall-through) are removed along with their now-dead
+   RETURN instruction.
+
+   This is the terminal-instruction analogue of jump threading.  It arises
+   when a CFG join block whose only content is a return is lowered to a
+   label followed by RETURN, with predecessor blocks jumping to it.  Jump
+   threading handles the case where the intermediate block ends in a JUMP;
+   this pass handles the case where it ends in a RETURN.
+
+   Only unconditional jumps are handled — a conditional jump to a RETURN
+   cannot be inlined without duplicating the RETURN on the fall-through
+   path, which is a different transformation.
+
+   Does not require a SlotMap — operates entirely on label strings.
+
+The five post-allocation sub-passes are composed and iterated to a joint
 fixed point.
 
 Pre-allocation passes
@@ -665,6 +689,8 @@ def peephole(func: MenaiVCodeFunction, slot_map: SlotMap) -> MenaiVCodeFunction:
         changed = changed or c
         instrs, c = _thread_jumps(instrs)
         changed = changed or c
+        instrs, c = _inline_jump_to_return(instrs)
+        changed = changed or c
 
     if instrs is func.instrs:
         return func
@@ -1065,3 +1091,139 @@ def _thread_jumps(
         i += 1
 
     return result, changed
+
+
+def _inline_jump_to_return(
+    instrs: list[MenaiVCodeInstr],
+) -> tuple[list[MenaiVCodeInstr], bool]:
+    """
+    Inline an unconditional JUMP that targets a label immediately followed
+    by a RETURN.
+
+    When a label L is immediately followed (possibly after further labels)
+    by RETURN r, every unconditional JUMP @L can be replaced by RETURN r
+    directly, eliminating the jump.  After rewriting, labels that are no
+    longer targeted by any jump (and are not reachable via fall-through)
+    are removed along with their now-dead RETURN instruction.
+
+    This is the terminal-instruction analogue of jump threading: where
+    jump threading retargets a jump through a label followed by another
+    JUMP, this pass replaces the jump outright with the terminal RETURN
+    that the label introduces.  It arises when a CFG join block whose only
+    content is a return is lowered to a label followed by RETURN, with
+    predecessor blocks jumping to it.
+
+    Only unconditional jumps are handled.  A conditional jump to a RETURN
+    cannot be inlined without duplicating the RETURN on the fall-through
+    path, which is a different transformation and not performed here.
+
+    The __entry__ sentinel label is never threaded through — it is always
+    a valid direct target and may not appear as a label instruction in the
+    stream (it is resolved specially by the bytecode emitter).
+    """
+    # Build a map: label name -> the RETURN instruction that immediately
+    # follows the label (skipping any further consecutive labels).
+    label_to_return: dict[str, MenaiVCodeReturn] = {}
+
+    for i, instr in enumerate(instrs):
+        if not isinstance(instr, MenaiVCodeLabel):
+            continue
+
+        if instr.name == "__entry__":
+            continue
+
+        j = i + 1
+        while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
+            j += 1
+
+        if j >= len(instrs):
+            continue
+
+        target = instrs[j]
+        if isinstance(target, MenaiVCodeReturn):
+            label_to_return[instr.name] = target
+
+    if not label_to_return:
+        return instrs, False
+
+    # Rewrite unconditional jumps whose target introduces a RETURN.
+    rewritten: list[MenaiVCodeInstr] = []
+    changed = False
+    for instr in instrs:
+        if isinstance(instr, MenaiVCodeJump) and instr.label in label_to_return:
+            ret = label_to_return[instr.label]
+            rewritten.append(MenaiVCodeReturn(value=ret.value))
+            changed = True
+
+        else:
+            rewritten.append(instr)
+
+    if not changed:
+        return instrs, False
+
+    # Compute the set of labels that are still live after rewriting: either
+    # targeted by some jump/switch, or reachable via fall-through from the
+    # preceding non-label instruction.
+    live_labels: set[str] = set()
+
+    for instr in rewritten:
+        if isinstance(instr, MenaiVCodeJump):
+            live_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeJumpIfTrue):
+            live_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeJumpIfFalse):
+            live_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeSwitch):
+            live_labels.add(instr.default_label)
+            live_labels.update(instr.labels)
+
+    prev: MenaiVCodeInstr | None = None
+    for instr in rewritten:
+        if isinstance(instr, MenaiVCodeLabel):
+            if prev is not None and not isinstance(prev, _no_fallthrough_types):
+                live_labels.add(instr.name)
+
+        else:
+            prev = instr
+
+    # Emit the final instruction list, dropping any run of consecutive
+    # labels followed by a RETURN when none of the labels is live.  The
+    # RETURN is dead in that case because it is only reachable through the
+    # dropped labels.
+    result: list[MenaiVCodeInstr] = []
+    i = 0
+    while i < len(rewritten):
+        instr = rewritten[i]
+
+        if isinstance(instr, MenaiVCodeLabel):
+            j = i
+            run_is_live = False
+            while j < len(rewritten):
+                label = rewritten[j]
+                if not isinstance(label, MenaiVCodeLabel):
+                    break
+
+                if label.name in live_labels:
+                    run_is_live = True
+
+                j += 1
+
+            if (
+                j < len(rewritten)
+                and isinstance(rewritten[j], MenaiVCodeReturn)
+                and not run_is_live
+            ):
+                i = j + 1
+                continue
+
+            result.append(instr)
+            i += 1
+            continue
+
+        result.append(instr)
+        i += 1
+
+    return result, True

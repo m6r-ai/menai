@@ -50,6 +50,8 @@ New features:
   `bytes-hash-sha3-256` (FIPS Pub 202).  Each takes a `bytes` value and returns
   the raw digest as `bytes`.
 - Added binary floating point read, append, and write operations for bytes.
+- Added a peephole optimization that inlines an unconditional jump targeting a
+  label immediately followed by a `RETURN`.
 
 Bug fixes:
 
