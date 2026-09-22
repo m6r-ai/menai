@@ -136,7 +136,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             return self._opt_if(ir, scope_stack, letrec_names)
 
         if isinstance(ir, MenaiIRLambda):
-            return self._opt_lambda(ir, scope_stack)
+            return self._opt_lambda(ir, scope_stack, letrec_names)
 
         if isinstance(ir, MenaiIRCall):
             return self._opt_call(ir, scope_stack, letrec_names)
@@ -222,7 +222,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             opt_bindings.append((name, opt_value))
 
         child_stack = scope_stack + [new_scope]
-        opt_body = self._opt(ir.body_plan, child_stack, set())
+        opt_body = self._opt(ir.body_plan, child_stack, names)
 
         return MenaiIRLetrec(
             bindings=opt_bindings,
@@ -248,13 +248,20 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRLambda,
         scope_stack: list[dict[str, MenaiIRLambda]],
+        letrec_names: set[str],
     ) -> MenaiIRLambda:
-        """Walk a lambda body in a fresh scope (params shadow outer bindings)."""
+        """
+        Walk a lambda body in a fresh scope (params shadow outer bindings).
+
+        The enclosing letrec's binding names are carried through the body walk,
+        so a call to a letrec sibling inside the lambda body is recognised as a
+        recursive call and is not inlined.
+        """
         param_scope = {name: ir for name in ir.params}
         child_stack = scope_stack + [param_scope]
         return MenaiIRLambda(
             params=ir.params,
-            body_plan=self._opt(ir.body_plan, child_stack, set()),
+            body_plan=self._opt(ir.body_plan, child_stack, letrec_names),
             sibling_free_vars=ir.sibling_free_vars,
             sibling_free_var_plans=ir.sibling_free_var_plans,
             outer_free_vars=ir.outer_free_vars,

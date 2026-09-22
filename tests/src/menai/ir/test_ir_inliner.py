@@ -162,6 +162,19 @@ def _count_bindings_named(ir, prefix: str) -> int:
     return 0
 
 
+class _RecordingInliner(MenaiIRInliner):
+    """An inliner that records the letrec names in scope at each call candidate."""
+
+    def __init__(self, seen_letrec_names: list[set[str]]) -> None:
+        super().__init__()
+        self._seen_letrec_names = seen_letrec_names
+
+    def _is_inlineable(self, target, func_plan, letrec_names, arg_count):
+        """Record the letrec names in scope, then delegate to the base check."""
+        self._seen_letrec_names.append(set(letrec_names))
+        return super()._is_inlineable(target, func_plan, letrec_names, arg_count)
+
+
 class TestLocalLambdaInlining:
     """Tests for inlining locally-bound lambdas."""
 
@@ -190,6 +203,27 @@ class TestLocalLambdaInlining:
         new_ir, changed = _inline(ir)
 
         assert not changed
+
+    def test_recursion_check_fires_for_letrec_body_call(self):
+        """
+        A call to a letrec-bound lambda made from the letrec's body is rejected
+        by the recursion check.
+
+        The lambda captures itself as a sibling, so the captures check would also
+        reject it.  This test asserts that the letrec's binding names are in scope
+        at the call site, which is what makes the recursion check fire, so a
+        regression in the letrec-scope tracking is caught.
+        """
+        ir = _build_ir("""
+            (letrec ((loop (lambda (n) (if (integer=? n 0) 0 (loop (integer- n 1))))))
+              (loop 5))
+        """)
+        seen_letrec_names = []
+        recorder = _RecordingInliner(seen_letrec_names)
+        recorder.optimize(ir)
+
+        assert seen_letrec_names
+        assert all('loop' in names for names in seen_letrec_names)
 
     def test_arity_mismatch_not_inlined(self):
         """A lambda called with wrong number of arguments should not be inlined."""
