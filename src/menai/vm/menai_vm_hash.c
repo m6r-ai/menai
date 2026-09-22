@@ -20,73 +20,6 @@
 #include "menai_vm_crc32_tables.h"
 
 /*
- * Byte-swap a 32-bit unsigned int.
- *
- * Every platform the VM targets is little-endian, so the big-endian
- * conversions always swap and the little-endian conversions never do.  GCC and
- * Clang lower __builtin_bswap32 to a single instruction; MSVC does the same for
- * _byteswap_ulong.
- */
-static inline uint32_t
-hash_bswap32(uint32_t v)
-{
-#if defined(__GNUC__) || defined(__clang__)
-    return __builtin_bswap32(v);
-#else
-    return _byteswap_ulong(v);
-#endif
-}
-
-/*
- * Byte-swap a 64-bit unsigned int.
- */
-static inline uint64_t
-hash_bswap64(uint64_t v)
-{
-#if defined(__GNUC__) || defined(__clang__)
-    return __builtin_bswap64(v);
-#else
-    return _byteswap_uint64(v);
-#endif
-}
-
-/*
- * Convert a 32-bit unsigned int from big-endian to host form.
- */
-static inline uint32_t
-hash_u32_be_to_host(uint32_t v)
-{
-    return hash_bswap32(v);
-}
-
-/*
- * Convert a 64-bit unsigned int from big-endian to host form.
- */
-static inline uint64_t
-hash_u64_be_to_host(uint64_t v)
-{
-    return hash_bswap64(v);
-}
-
-/*
- * Convert a 64-bit unsigned int from little-endian to host form.
- */
-static inline uint64_t
-hash_u64_le_to_host(uint64_t v)
-{
-    return v;
-}
-
-/*
- * Convert a 64-bit unsigned int from host form to big-endian.
- */
-static inline uint64_t
-hash_u64_host_to_be(uint64_t v)
-{
-    return hash_bswap64(v);
-}
-
-/*
  * Copy len bytes from s to d.
  *
  * The length is decomposed into 1, 2, 4 and then 8 byte chunks so that the
@@ -277,7 +210,7 @@ hash_sha2_256_transform(uint32_t *hash, const uint8_t *block)
     uint32_t w[16];
     const uint32_t *nb = (const uint32_t *)block;
     for (int i = 0; i < 16; i++) {
-        w[i] = hash_u32_be_to_host(nb[i]);
+        w[i] = menai_u32_be_to_host(nb[i]);
     }
 
     hash_sha2_256_expand(wv, 0, hash_sha2_256_k[0], w[0]);
@@ -355,11 +288,11 @@ menai_sha2_256(const uint8_t *data, size_t len, uint8_t *out)
 
     memset(block + rem, 0, HASH_SHA2_256_BLOCK - 8 - rem);
     uint64_t *bl = (uint64_t *)(block + HASH_SHA2_256_BLOCK - 8);
-    *bl = hash_u64_host_to_be((uint64_t)len << 3);
+    *bl = menai_u64_host_to_be((uint64_t)len << 3);
     hash_sha2_256_transform(h, block);
 
     for (int i = 0; i < HASH_SHA2_256_WORDS; i++) {
-        h[i] = hash_u32_be_to_host(h[i]);
+        h[i] = menai_u32_be_to_host(h[i]);
     }
 
     memcpy(out, h, HASH_SHA2_256_SIZE);
@@ -520,7 +453,7 @@ hash_sha2_512_transform(uint64_t *hash, const uint8_t *block)
     uint64_t w[16];
     const uint64_t *nb = (const uint64_t *)block;
     for (int i = 0; i < 16; i++) {
-        w[i] = hash_u64_be_to_host(nb[i]);
+        w[i] = menai_u64_be_to_host(nb[i]);
     }
 
     hash_sha2_512_expand(wv, 0, hash_sha2_512_k[0], w[0]);
@@ -604,11 +537,11 @@ hash_sha2_512_common(const uint8_t *data, size_t len, uint8_t *out, const uint64
 
     memset(block + rem, 0, HASH_SHA2_512_BLOCK - 8 - rem);
     uint64_t *bl = (uint64_t *)(block + HASH_SHA2_512_BLOCK - 8);
-    *bl = hash_u64_host_to_be((uint64_t)len << 3);
+    *bl = menai_u64_host_to_be((uint64_t)len << 3);
     hash_sha2_512_transform(h, block);
 
     for (int i = 0; i < out_words; i++) {
-        h[i] = hash_u64_be_to_host(h[i]);
+        h[i] = menai_u64_be_to_host(h[i]);
     }
 
     memcpy(out, h, (size_t)out_words * sizeof(uint64_t));
@@ -824,7 +757,7 @@ hash_sha3_keccak(uint64_t *s, const uint8_t *block, size_t block_size)
     const uint64_t *b = (const uint64_t *)block;
     size_t num_words = block_size / sizeof(uint64_t);
     for (size_t i = 0; i < num_words; i++) {
-        s[i] ^= hash_u64_le_to_host(b[i]);
+        s[i] ^= menai_u64_le_to_host(b[i]);
     }
 
     /*
@@ -865,7 +798,7 @@ menai_sha3_256(const uint8_t *data, size_t len, uint8_t *out)
     hash_sha3_keccak(s, block, HASH_SHA3_256_BLOCK);
 
     for (size_t i = 0; i < HASH_SHA3_256_SIZE / sizeof(uint64_t); i++) {
-        s[i] = hash_u64_le_to_host(s[i]);
+        s[i] = menai_u64_le_to_host(s[i]);
     }
 
     memcpy(out, s, HASH_SHA3_256_SIZE);

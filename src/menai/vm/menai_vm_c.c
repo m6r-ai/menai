@@ -4920,16 +4920,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             } \
 \
             const uint8_t *d = b->data + offset; \
-            unsigned long long uval = 0; \
-            if (le) { \
-                for (int _i = 0; _i < (width); _i++) { \
-                    uval |= ((unsigned long long)d[_i]) << (_i * 8); \
-                } \
-            } else { \
-                for (int _i = 0; _i < (width); _i++) { \
-                    uval = (uval << 8) | d[_i]; \
-                } \
-            } \
+            unsigned long long uval = menai_bytes_decode_u64(d, (width), le); \
 \
             if (is_signed) { \
                 long long sval; \
@@ -5031,16 +5022,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             } \
 \
             const uint8_t *d = b->data + offset; \
-            uint_bits_t bits = 0; \
-            if (le) { \
-                for (int _i = 0; _i < (width); _i++) { \
-                    bits |= ((uint_bits_t)d[_i]) << (_i * 8); \
-                } \
-            } else { \
-                for (int _i = 0; _i < (width); _i++) { \
-                    bits = (bits << 8) | d[_i]; \
-                } \
-            } \
+            uint_bits_t bits = (uint_bits_t)menai_bytes_decode_u64(d, (width), le); \
 \
             ctype fval; \
             memcpy(&fval, &bits, sizeof(ctype)); \

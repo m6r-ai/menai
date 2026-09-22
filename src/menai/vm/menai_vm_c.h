@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
+#include <string.h>
 
 #ifdef MENAI_DEBUG_MAGIC
 #include <stdio.h>
@@ -33,6 +34,295 @@ typedef ptrdiff_t ssize_t;
 #define MENAI_LIKELY(x) (x)
 #define MENAI_UNLIKELY(x) (x)
 #endif
+
+/*
+ * Host byte order detection.
+ *
+ * MENAI_LITTLE_ENDIAN is defined to 1 on a little-endian host and 0 on a
+ * big-endian host.  GCC and Clang expose __BYTE_ORDER__; MSVC only targets
+ * little-endian platforms.
+ */
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define MENAI_LITTLE_ENDIAN 0
+#else
+#define MENAI_LITTLE_ENDIAN 1
+#endif
+#elif defined(_MSC_VER)
+#define MENAI_LITTLE_ENDIAN 1
+#else
+#error "Cannot determine host byte order; define MENAI_LITTLE_ENDIAN"
+#endif
+
+/*
+ * Byte-swap primitives.
+ *
+ * These unconditionally reverse the byte order of the argument.  GCC and
+ * Clang lower __builtin_bswap* to a single instruction; MSVC does the same
+ * for _byteswap_*.
+ */
+static inline uint16_t
+menai_bswap16(uint16_t v)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_bswap16(v);
+#else
+    return _byteswap_ushort(v);
+#endif
+}
+
+static inline uint32_t
+menai_bswap32(uint32_t v)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_bswap32(v);
+#else
+    return _byteswap_ulong(v);
+#endif
+}
+
+static inline uint64_t
+menai_bswap64(uint64_t v)
+{
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_bswap64(v);
+#else
+    return _byteswap_uint64(v);
+#endif
+}
+
+/*
+ * Byte-swap a 24-bit value held in the low three bytes of a uint32_t.
+ * There is no single-instruction swap for 24 bits; reversing the low three
+ * bytes of a 32-bit swap and shifting down gives the same result.
+ */
+static inline uint32_t
+menai_bswap24(uint32_t v)
+{
+    return menai_bswap32(v) >> 8;
+}
+
+/*
+ * Endian conversion helpers.
+ *
+ * Each converts between the named byte order and host order.  They are
+ * correct on both little- and big-endian hosts: a conversion swaps only when
+ * the named order differs from the host order.
+ */
+static inline uint16_t
+menai_u16_le_to_host(uint16_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return v;
+#else
+    return menai_bswap16(v);
+#endif
+}
+
+static inline uint16_t
+menai_u16_be_to_host(uint16_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return menai_bswap16(v);
+#else
+    return v;
+#endif
+}
+
+static inline uint16_t
+menai_u16_host_to_le(uint16_t v)
+{
+    return menai_u16_le_to_host(v);
+}
+
+static inline uint16_t
+menai_u16_host_to_be(uint16_t v)
+{
+    return menai_u16_be_to_host(v);
+}
+
+static inline uint32_t
+menai_u24_le_to_host(uint32_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return v;
+#else
+    return menai_bswap24(v);
+#endif
+}
+
+static inline uint32_t
+menai_u24_be_to_host(uint32_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return menai_bswap24(v);
+#else
+    return v;
+#endif
+}
+
+static inline uint32_t
+menai_u24_host_to_le(uint32_t v)
+{
+    return menai_u24_le_to_host(v);
+}
+
+static inline uint32_t
+menai_u24_host_to_be(uint32_t v)
+{
+    return menai_u24_be_to_host(v);
+}
+
+static inline uint32_t
+menai_u32_le_to_host(uint32_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return v;
+#else
+    return menai_bswap32(v);
+#endif
+}
+
+static inline uint32_t
+menai_u32_be_to_host(uint32_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return menai_bswap32(v);
+#else
+    return v;
+#endif
+}
+
+static inline uint32_t
+menai_u32_host_to_le(uint32_t v)
+{
+    return menai_u32_le_to_host(v);
+}
+
+static inline uint32_t
+menai_u32_host_to_be(uint32_t v)
+{
+    return menai_u32_be_to_host(v);
+}
+
+static inline uint64_t
+menai_u64_le_to_host(uint64_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return v;
+#else
+    return menai_bswap64(v);
+#endif
+}
+
+static inline uint64_t
+menai_u64_be_to_host(uint64_t v)
+{
+#if MENAI_LITTLE_ENDIAN
+    return menai_bswap64(v);
+#else
+    return v;
+#endif
+}
+
+static inline uint64_t
+menai_u64_host_to_le(uint64_t v)
+{
+    return menai_u64_le_to_host(v);
+}
+
+static inline uint64_t
+menai_u64_host_to_be(uint64_t v)
+{
+    return menai_u64_be_to_host(v);
+}
+
+/*
+ * menai_bytes_decode_u64 — read `width` bytes at src as an unsigned integer
+ * in the requested byte order.  width must be 1, 2, 3, 4 or 8; le selects
+ * little-endian (non-zero) or big-endian (zero).  Correct on both host orders.
+ */
+static inline unsigned long long
+menai_bytes_decode_u64(const uint8_t *src, int width, int le)
+{
+    switch (width) {
+    case 1:
+        return (unsigned long long)src[0];
+    case 2: {
+        uint16_t v;
+        memcpy(&v, src, sizeof(v));
+        return (unsigned long long)(le ? menai_u16_le_to_host(v) : menai_u16_be_to_host(v));
+    }
+    case 3: {
+        uint32_t v;
+#if MENAI_LITTLE_ENDIAN
+        v = (uint32_t)src[0] | ((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16);
+#else
+        v = ((uint32_t)src[0] << 16) | ((uint32_t)src[1] << 8) | (uint32_t)src[2];
+#endif
+        return (unsigned long long)(le ? menai_u24_le_to_host(v) : menai_u24_be_to_host(v));
+    }
+    case 4: {
+        uint32_t v;
+        memcpy(&v, src, sizeof(v));
+        return (unsigned long long)(le ? menai_u32_le_to_host(v) : menai_u32_be_to_host(v));
+    }
+    case 8: {
+        uint64_t v;
+        memcpy(&v, src, sizeof(v));
+        return (unsigned long long)(le ? menai_u64_le_to_host(v) : menai_u64_be_to_host(v));
+    }
+    default:
+        return 0;
+    }
+}
+
+/*
+ * menai_bytes_encode_u64 — write `value` into `width` bytes at dest in the
+ * requested byte order.  width must be 1, 2, 3, 4 or 8; le selects
+ * little-endian (non-zero) or big-endian (zero).  Correct on both host orders.
+ */
+static inline void
+menai_bytes_encode_u64(uint8_t *dest, unsigned long long value, int width, int le)
+{
+    switch (width) {
+    case 1:
+        dest[0] = (uint8_t)value;
+        break;
+    case 2: {
+        uint16_t v = (uint16_t)value;
+        v = le ? menai_u16_host_to_le(v) : menai_u16_host_to_be(v);
+        memcpy(dest, &v, sizeof(v));
+        break;
+    }
+    case 3: {
+        uint32_t v = (uint32_t)value;
+        v = le ? menai_u24_host_to_le(v) : menai_u24_host_to_be(v);
+#if MENAI_LITTLE_ENDIAN
+        dest[0] = (uint8_t)v;
+        dest[1] = (uint8_t)(v >> 8);
+        dest[2] = (uint8_t)(v >> 16);
+#else
+        dest[0] = (uint8_t)(v >> 16);
+        dest[1] = (uint8_t)(v >> 8);
+        dest[2] = (uint8_t)v;
+#endif
+        break;
+    }
+    case 4: {
+        uint32_t v = (uint32_t)value;
+        v = le ? menai_u32_host_to_le(v) : menai_u32_host_to_be(v);
+        memcpy(dest, &v, sizeof(v));
+        break;
+    }
+    case 8: {
+        uint64_t v = (uint64_t)value;
+        v = le ? menai_u64_host_to_le(v) : menai_u64_host_to_be(v);
+        memcpy(dest, &v, sizeof(v));
+        break;
+    }
+    }
+}
 
 /*
  * MenaiType — the type tag for a Menai value.  uint16_t is sufficient for

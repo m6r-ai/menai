@@ -135,16 +135,7 @@ alloc_menai_bytes_from_append_multi(MenaiVMState *vs, MenaiBytes *b, unsigned lo
         memcpy(obj->inline_data, b->data, (size_t)len);
     }
 
-    uint8_t *dest = obj->inline_data + len;
-    if (le) {
-        for (int i = 0; i < width; i++) {
-            dest[i] = (uint8_t)((value >> (i * 8)) & 0xFF);
-        }
-    } else {
-        for (int i = 0; i < width; i++) {
-            dest[i] = (uint8_t)((value >> ((width - 1 - i) * 8)) & 0xFF);
-        }
-    }
+    menai_bytes_encode_u64(obj->inline_data + len, value, width, le);
 
     return obj;
 }
@@ -166,16 +157,7 @@ alloc_menai_bytes_from_write_multi(MenaiVMState *vs, MenaiBytes *b, ssize_t offs
         memcpy(obj->inline_data, b->data, (size_t)len);
     }
 
-    uint8_t *dest = obj->inline_data + offset;
-    if (le) {
-        for (int i = 0; i < width; i++) {
-            dest[i] = (uint8_t)((value >> (i * 8)) & 0xFF);
-        }
-    } else {
-        for (int i = 0; i < width; i++) {
-            dest[i] = (uint8_t)((value >> ((width - 1 - i) * 8)) & 0xFF);
-        }
-    }
+    menai_bytes_encode_u64(obj->inline_data + offset, value, width, le);
 
     return obj;
 }
