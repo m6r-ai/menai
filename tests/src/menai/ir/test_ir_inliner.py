@@ -136,6 +136,30 @@ def _count_builtin_calls(ir, name: str) -> int:
     return 0
 
 
+def _count_calls_to_constant(ir) -> int:
+    """Count calls whose function position is a constant."""
+    if isinstance(ir, MenaiIRCall):
+        own = 1 if isinstance(ir.func_plan, MenaiIRConstant) else 0
+        return own + _count_calls_to_constant(ir.func_plan) + sum(_count_calls_to_constant(a) for a in ir.arg_plans)
+
+    if isinstance(ir, MenaiIRReturn):
+        return _count_calls_to_constant(ir.value_plan)
+
+    if isinstance(ir, MenaiIRIf):
+        return (_count_calls_to_constant(ir.condition_plan)
+                + _count_calls_to_constant(ir.then_plan)
+                + _count_calls_to_constant(ir.else_plan))
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        return (sum(_count_calls_to_constant(v) for _, v in ir.bindings)
+                + _count_calls_to_constant(ir.body_plan))
+
+    if isinstance(ir, MenaiIRLambda):
+        return _count_calls_to_constant(ir.body_plan)
+
+    return 0
+
+
 def _count_bindings_named(ir, prefix: str) -> int:
     """Count let/letrec bindings whose name starts with *prefix*."""
     count = 0
@@ -378,6 +402,26 @@ class TestInliningCorrectness:
         new_ir, changed = _inline(ir)
 
         assert changed
+
+
+class TestParameterCallNotInlined:
+    """Tests that a call to a parameter is never inlined as the enclosing lambda."""
+
+    def test_parameter_call_not_inlined_as_enclosing_lambda(self):
+        """A call to a parameter is not replaced by the enclosing lambda's body."""
+        ir = _build_ir("(let ((g (lambda (f) (f 5)))) (g (lambda (x) (integer+ x 1))))")
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_calls_to_constant(new_ir) == 0
+
+    def test_parameter_call_result_correct(self):
+        """A higher-order call through a parameter evaluates to the expected value."""
+        from menai.menai import Menai
+
+        m = Menai()
+        result = m.evaluate("(let ((g (lambda (f) (f 5)))) (g (lambda (x) (integer+ x 1))))")
+        assert result == 6
 
 
 class TestInliningIntegration:

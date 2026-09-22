@@ -9,6 +9,9 @@ The pass resolves two kinds of call target:
 
 - A lambda bound in an enclosing let/letrec whose value is a MenaiIRLambda.
   The scope stack maps binding names to lambda nodes as the tree is walked.
+  A lambda parameter is entered into the scope with a None value: it shadows
+  any outer binding of the same name but resolves to no target, because a
+  parameter is a runtime value rather than a statically-known lambda.
   Prelude functions are ordinary bindings in that scope stack: the prelude is
   spliced into every program as a letrec, so its functions are resolved the
   same way as any other local lambda.
@@ -122,7 +125,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _opt(
         self,
         ir: MenaiIRExpr,
-        scope_stack: list[dict[str, MenaiIRLambda]],
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
         letrec_names: set[str],
     ) -> MenaiIRExpr:
         """Recursively walk the IR tree and inline eligible call sites."""
@@ -181,12 +184,12 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _opt_let(
         self,
         ir: MenaiIRLet,
-        scope_stack: list[dict[str, MenaiIRLambda]],
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
         letrec_names: set[str],
     ) -> MenaiIRExpr:
         """Walk a let, adding lambda bindings to the scope for the body."""
         opt_bindings: list[tuple[str, MenaiIRExpr]] = []
-        new_scope: dict[str, MenaiIRLambda] = {}
+        new_scope: dict[str, MenaiIRLambda | None] = {}
 
         for name, value_plan in ir.bindings:
             opt_value = self._opt(value_plan, scope_stack, letrec_names)
@@ -207,12 +210,12 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _opt_letrec(
         self,
         ir: MenaiIRLetrec,
-        scope_stack: list[dict[str, MenaiIRLambda]],
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
     ) -> MenaiIRExpr:
         """Walk a letrec, adding lambda bindings to the scope for the body."""
         names = {name for name, _ in ir.bindings}
         opt_bindings: list[tuple[str, MenaiIRExpr]] = []
-        new_scope: dict[str, MenaiIRLambda] = {}
+        new_scope: dict[str, MenaiIRLambda | None] = {}
 
         for name, value_plan in ir.bindings:
             opt_value = self._opt(value_plan, scope_stack, names)
@@ -233,7 +236,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _opt_if(
         self,
         ir: MenaiIRIf,
-        scope_stack: list[dict[str, MenaiIRLambda]],
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
         letrec_names: set[str],
     ) -> MenaiIRExpr:
         """Optimize the branches of an if-expression."""
@@ -247,7 +250,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _opt_lambda(
         self,
         ir: MenaiIRLambda,
-        scope_stack: list[dict[str, MenaiIRLambda]],
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
         letrec_names: set[str],
     ) -> MenaiIRLambda:
         """
@@ -256,8 +259,14 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         The enclosing letrec's binding names are carried through the body walk,
         so a call to a letrec sibling inside the lambda body is recognised as a
         recursive call and is not inlined.
+
+        Each parameter is entered into the scope as a non-resolvable binding.
+        A parameter is a runtime value, not a statically-known lambda, so a call
+        whose function position is a parameter must not resolve to anything.
+        Entering the name with a None value makes it shadow any outer binding of
+        the same name while resolving to no target.
         """
-        param_scope = {name: ir for name in ir.params}
+        param_scope: dict[str, MenaiIRLambda | None] = {name: None for name in ir.params}
         child_stack = scope_stack + [param_scope]
         return MenaiIRLambda(
             params=ir.params,
@@ -276,7 +285,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _opt_call(
         self,
         ir: MenaiIRCall,
-        scope_stack: list[dict[str, MenaiIRLambda]],
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
         letrec_names: set[str],
     ) -> MenaiIRExpr:
         """Try to inline a call site; fall back to optimizing arguments."""
@@ -298,7 +307,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _resolve_target(
         self,
         func_plan: MenaiIRExpr,
-        scope_stack: list[dict[str, MenaiIRLambda]],
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
     ) -> MenaiIRLambda | None:
         """
         Resolve a call target to a MenaiIRLambda, or None if not resolvable.
@@ -308,6 +317,12 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         lambda is written at the call site, so inlining it there changes no
         scoping: its captures are resolved against the enclosing scope at that
         exact position and remain in scope after substitution.
+
+        A variable resolves to the lambda bound to that name in the innermost
+        scope that binds it.  A scope entry may be None, meaning the name is
+        bound there but is not a statically-known lambda (a lambda parameter).
+        Such a name shadows any outer binding of the same name and resolves to
+        no target, so the search stops at the innermost binding.
         """
         if isinstance(func_plan, MenaiIRLambda):
             return func_plan
