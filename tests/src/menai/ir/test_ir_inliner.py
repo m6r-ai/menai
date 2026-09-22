@@ -2,6 +2,8 @@
 
 from typing import cast
 
+import pytest
+
 from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
@@ -404,8 +406,9 @@ class TestInliningCorrectness:
         assert changed
 
 
-class TestParameterCallNotInlined:
-    """Tests that a call to a parameter is never inlined as the enclosing lambda."""
+class TestBoundNameShadowsOuterLambda:
+    """Tests that a bound name shadows an outer binding of the same name, so a
+    call to it is never inlined as the outer lambda."""
 
     def test_parameter_call_not_inlined_as_enclosing_lambda(self):
         """A call to a parameter is not replaced by the enclosing lambda's body."""
@@ -422,6 +425,30 @@ class TestParameterCallNotInlined:
         m = Menai()
         result = m.evaluate("(let ((g (lambda (f) (f 5)))) (g (lambda (x) (integer+ x 1))))")
         assert result == 6
+
+    def test_non_lambda_let_binding_not_inlined_as_outer_lambda(self):
+        """A let binding to a non-lambda value shadows an outer lambda of the same name."""
+        ir = _build_ir("(let ((f (lambda (x) (integer+ x 1)))) (let ((f 99)) (f 5)))")
+        new_ir, changed = _inline(ir)
+
+        assert not changed
+
+    def test_non_lambda_letrec_binding_not_inlined_as_outer_lambda(self):
+        """A letrec binding to a non-lambda value shadows an outer lambda of the same name."""
+        ir = _build_ir("(let ((f (lambda (x) (integer+ x 1)))) (letrec ((f 99)) (f 5)))")
+        new_ir, changed = _inline(ir)
+
+        assert not changed
+
+    def test_shadowed_outer_lambda_not_called(self):
+        """Calling a name shadowed by a non-lambda value does not invoke the outer lambda."""
+        from menai import Menai, MenaiEvalError, VMErrorCode
+
+        m = Menai()
+        with pytest.raises(MenaiEvalError) as exc_info:
+            m.evaluate("(let ((f (lambda (x) (integer+ x 1)))) (let ((f 99)) (f 5)))")
+
+        assert exc_info.value.error_code == VMErrorCode.NOT_CALLABLE
 
 
 class TestInliningIntegration:

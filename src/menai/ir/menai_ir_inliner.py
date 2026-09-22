@@ -187,14 +187,20 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         scope_stack: list[dict[str, MenaiIRLambda | None]],
         letrec_names: set[str],
     ) -> MenaiIRExpr:
-        """Walk a let, adding lambda bindings to the scope for the body."""
+        """
+        Walk a let, adding its bindings to the scope for the body.
+
+        Every binding name is entered into the scope so that it shadows any
+        outer binding of the same name.  A binding whose value is a lambda maps
+        to that lambda; any other value maps to None, meaning the name is bound
+        but is not a statically-known lambda and so resolves to no target.
+        """
         opt_bindings: list[tuple[str, MenaiIRExpr]] = []
         new_scope: dict[str, MenaiIRLambda | None] = {}
 
         for name, value_plan in ir.bindings:
             opt_value = self._opt(value_plan, scope_stack, letrec_names)
-            if isinstance(opt_value, MenaiIRLambda):
-                new_scope[name] = opt_value
+            new_scope[name] = opt_value if isinstance(opt_value, MenaiIRLambda) else None
 
             opt_bindings.append((name, opt_value))
 
@@ -212,15 +218,21 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         ir: MenaiIRLetrec,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
     ) -> MenaiIRExpr:
-        """Walk a letrec, adding lambda bindings to the scope for the body."""
+        """
+        Walk a letrec, adding its bindings to the scope for the body.
+
+        Every binding name is entered into the scope so that it shadows any
+        outer binding of the same name.  A binding whose value is a lambda maps
+        to that lambda; any other value maps to None, meaning the name is bound
+        but is not a statically-known lambda and so resolves to no target.
+        """
         names = {name for name, _ in ir.bindings}
         opt_bindings: list[tuple[str, MenaiIRExpr]] = []
         new_scope: dict[str, MenaiIRLambda | None] = {}
 
         for name, value_plan in ir.bindings:
             opt_value = self._opt(value_plan, scope_stack, names)
-            if isinstance(opt_value, MenaiIRLambda):
-                new_scope[name] = opt_value
+            new_scope[name] = opt_value if isinstance(opt_value, MenaiIRLambda) else None
 
             opt_bindings.append((name, opt_value))
 
