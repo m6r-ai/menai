@@ -349,33 +349,37 @@ class TestDirectLambdaApplicationInlining:
 class TestPreludeInlining:
     """Tests for inlining prelude functions."""
 
-    def test_map_list_not_inlined(self):
-        """map-list should not be inlined (contains recursive helper)."""
+    def test_map_list_inlined(self):
+        """map-list is inlined at its call sites."""
         ir = _build_ir("(map-list (lambda (x) (integer+ x 1)) (list 1 2 3))", inject_prelude=True)
         new_ir, changed = _inline(ir)
 
-        assert not changed
+        assert changed
+        assert _count_calls_to(new_ir, 'map-list') == 0
 
-    def test_filter_list_not_inlined(self):
-        """filter-list should not be inlined (contains recursive helper)."""
+    def test_filter_list_inlined(self):
+        """filter-list is inlined at its call sites."""
         ir = _build_ir("(filter-list (lambda (x) (integer>? x 2)) (list 1 2 3 4 5))", inject_prelude=True)
         new_ir, changed = _inline(ir)
 
-        assert not changed
+        assert changed
+        assert _count_calls_to(new_ir, 'filter-list') == 0
 
-    def test_fold_list_not_inlined(self):
-        """fold-list should not be inlined (contains recursive helper)."""
+    def test_fold_list_inlined(self):
+        """fold-list is inlined at its call sites."""
         ir = _build_ir("(fold-list integer+ 0 (list 1 2 3))", inject_prelude=True)
         new_ir, changed = _inline(ir)
 
-        assert not changed
+        assert changed
+        assert _count_calls_to(new_ir, 'fold-list') == 0
 
-    def test_recursive_prelude_not_inlined(self):
-        """A recursive prelude function should not be inlined."""
+    def test_sort_list_not_inlined(self):
+        """sort-list is not inlined because its body exceeds the node threshold."""
         ir = _build_ir("(sort-list integer<? (list 3 1 2))", inject_prelude=True)
+        before = _count_calls_to(ir, 'sort-list')
         new_ir, changed = _inline(ir)
 
-        assert not changed
+        assert _count_calls_to(new_ir, 'sort-list') == before
 
 
 class TestInliningCorrectness:

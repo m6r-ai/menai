@@ -394,9 +394,6 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         if _has_captures_of_params(target.body_plan, set(target.params)):
             return False
 
-        if _contains_letrec(target.body_plan):
-            return False
-
         return True
 
     def _inline(
@@ -492,50 +489,6 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         temp_name = self._gen_temp()
         captured_bindings.append((temp_name, arg_plan))
         return MenaiIRVariable(name=temp_name)
-
-
-def _contains_letrec(ir: MenaiIRExpr) -> bool:
-    """Check whether the IR tree contains a MenaiIRLetrec node."""
-    if isinstance(ir, MenaiIRLetrec):
-        return True
-
-    if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList)):
-        return False
-
-    if isinstance(ir, MenaiIRError):
-        return _contains_letrec(ir.message)
-
-    if isinstance(ir, MenaiIRIf):
-        return (_contains_letrec(ir.condition_plan)
-                or _contains_letrec(ir.then_plan)
-                or _contains_letrec(ir.else_plan))
-
-    if isinstance(ir, MenaiIRLet):
-        return (any(_contains_letrec(v) for _, v in ir.bindings)
-                or _contains_letrec(ir.body_plan))
-
-    if isinstance(ir, MenaiIRCall):
-        return _contains_letrec(ir.func_plan) or any(_contains_letrec(a) for a in ir.arg_plans)
-
-    if isinstance(ir, MenaiIRReturn):
-        return _contains_letrec(ir.value_plan)
-
-    if isinstance(ir, MenaiIRBuildList):
-        return any(_contains_letrec(e) for e in ir.element_plans)
-
-    if isinstance(ir, MenaiIRBuildDict):
-        return any(_contains_letrec(k) or _contains_letrec(v) for k, v in ir.pair_plans)
-
-    if isinstance(ir, MenaiIRBuildSet):
-        return any(_contains_letrec(e) for e in ir.element_plans)
-
-    if isinstance(ir, MenaiIRBuildVector):
-        return any(_contains_letrec(e) for e in ir.element_plans)
-
-    if isinstance(ir, MenaiIRBuildStruct):
-        return any(_contains_letrec(f) for f in ir.field_plans)
-
-    return False
 
 
 def _has_captures_of_params(ir: MenaiIRExpr, params: set[str]) -> bool:

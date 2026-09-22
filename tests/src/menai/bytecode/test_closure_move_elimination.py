@@ -71,12 +71,17 @@ class TestClosureMoveElimination:
         The closure register's last use is the consuming CALL, and no barrier
         exists between MAKE_CLOSURE and that CALL, so the register is assigned
         directly to its outgoing zone slot.
+
+        The higher-order function is a parameter, so it is not inlined and the
+        closure stays a call argument.  The lambda captures a let binding, so
+        the program's lambda is emitted as a closure rather than a constant.
         """
         src = """
-            (lambda (face)
-              (let ((center (list-ref face 4)))
-                (list-length
-                  (filter-list (lambda (s) (integer!=? s center)) face))))
+            (let ((offset 4))
+              (lambda (apply-f face)
+                (let ((center (list-ref face offset)))
+                  (list-length
+                    (apply-f (lambda (s) (integer!=? s center)) face)))))
         """
         code = _find_lambda(_compile(src))
         # The closure is arg 0 and should be back-propagated.
@@ -104,12 +109,16 @@ class TestClosureMoveElimination:
         argument.  When the consuming CALL is the last use and no barrier
         exists, the capture register is assigned directly to its outgoing
         zone slot.
+
+        The higher-order function is a parameter, so it is not inlined and the
+        closure stays a call argument.
         """
         src = """
-            (lambda (face)
-              (let ((center (list-ref face 4)))
-                (list-length
-                  (filter-list face (lambda (s) (integer!=? s center))))))
+            (let ((offset 4))
+              (lambda (apply-f face)
+                (let ((center (list-ref face offset)))
+                  (list-length
+                    (apply-f face (lambda (s) (integer!=? s center)))))))
         """
         code = _find_lambda(_compile(src))
         # face is arg 0 (fixed param — MOVE unavoidable).
@@ -122,21 +131,22 @@ class TestClosureMoveElimination:
         the intermediate CALL would clobber it.  A MOVE must be preserved for
         the closure register.
 
-        The pred closure captures a dynamic threshold, so it cannot be inlined.
-        A map-list CALL between MAKE_CLOSURE and the filter-list CALL acts as
-        a barrier, preventing the closure register from being back-propagated
-        into the outgoing zone.
+        The pred closure captures a dynamic threshold.  A CALL to the
+        higher-order function between MAKE_CLOSURE and the consuming CALL acts
+        as a barrier, preventing the closure register from being
+        back-propagated into the outgoing zone.
         """
         src = """
-            (lambda (lst)
-              (let ((threshold (list-ref lst 0)))
-                (let ((pred (lambda (x) (integer<? x threshold))))
-                  (let ((mapped (map-list (lambda (x) (integer+ x 1)) lst)))
-                    (list-length (filter-list pred mapped))))))
+            (let ((offset 0))
+              (lambda (apply-f lst)
+                (let ((threshold (list-ref lst offset)))
+                  (let ((pred (lambda (x) (integer<? x threshold))))
+                    (let ((mapped (apply-f (lambda (x) (integer+ x 1)) lst)))
+                      (list-length (apply-f pred mapped)))))))
         """
         code = _find_lambda(_compile(src))
-        # The map-list CALL between MAKE_CLOSURE and the filter-list CALL
-        # is a barrier, so the closure register stays in local_count and
+        # The first apply-f CALL between MAKE_CLOSURE and the consuming apply-f
+        # CALL is a barrier, so the closure register stays in local_count and
         # a MOVE is needed to stage it.  The lst param also needs a MOVE.
         assert _count_op(code, Opcode.MAKE_CLOSURE) == 1
         assert _count_op(code, Opcode.PATCH_CLOSURE) == 1
