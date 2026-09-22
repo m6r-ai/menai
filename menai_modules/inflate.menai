@@ -72,8 +72,8 @@
       (let ((pending (dict-get out "pending")))
         (if (list-null? pending)
             out
-            (let ((win (bytes-concat (dict-get out "window")
-                                     (apply bytes-concat (list-reverse pending)))))
+            (let ((win (apply bytes-concat
+                              (list-prepend (list-reverse pending) (dict-get out "window")))))
               (dict "chunks" (dict-get out "chunks")
                     "pending" (list)
                     "window" (if (integer>? (bytes-length win) window-cap)
