@@ -18,6 +18,9 @@ Covers:
   9. A receiver whose type is proven only by a struct-is-instance? refinement
      (including the phi an (and ...) guard lowers to) is rewritten too, and
      nested struct destructuring resolves every field read.
+ 10. A parameter fed two different struct types by two functions inside the
+     same recursion component is ambiguous, so its field access stays
+     symbol-based and the result is correct.
 """
 
 import pytest
@@ -91,6 +94,18 @@ def _indexed_gets(cfg) -> list:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGStructGetIndexedInstr):
                     result.append(instr)
+
+    return result
+
+
+def _indexed_get_functions(cfg) -> set[str]:
+    """Return the binding names of functions containing an index-based struct-get."""
+    result: set[str] = set()
+    for func in collect_functions(cfg):
+        for block in func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+                    result.add(func.binding_name)
 
     return result
 
@@ -665,3 +680,51 @@ class TestRecursiveParameterGrounding:
 
     def test_cycle_degrading_grounded_parameter_result_correct(self, menai):
         assert menai.evaluate_and_format(DEGRADED_RECURSIVE_SRC) == "(1)"
+
+
+AMBIGUOUS_INNER_PARAM_SRC = """
+(letrec
+  ((Point (struct (x y)))
+   (Other (struct (y x)))
+   (a
+    (lambda (p n)
+      (if (integer=? n 0)
+          (struct-get p 'x)
+          (b p (integer- n 1)))))
+   (b
+    (lambda (p n)
+      (if (integer=? n 0)
+          (struct-get p 'x)
+          (if (integer=? n 1)
+              (c (Other 777 888) 5)
+              (c p 0)))))
+   (c
+    (lambda (p n)
+      (if (integer=? n 0)
+          (struct-get p 'x)
+          (b p 0)))))
+  (a (Point 1 2) 2))
+"""
+
+
+class TestAmbiguousInnerParameter:
+    """
+    A parameter fed two different struct types by two functions inside the
+    same recursion component is ambiguous, so its field access stays
+    symbol-based.
+
+    `b` is called with a Point from `a` and with an Other from `c`.  Both
+    functions are in the same recursion component, so neither call site is
+    external.  The receiver's struct type is not proven and the field read
+    must not be resolved to a constant index.
+
+    `a` is called only from outside the component, with a Point, so its own
+    field read is resolved; only `b` and `c` are ambiguous.
+    """
+
+    def test_ambiguous_inner_parameters_stay_symbol_based(self):
+        cfg = _build_cfg(AMBIGUOUS_INNER_PARAM_SRC)
+        assert _indexed_get_functions(cfg) == {"a"}
+
+    def test_ambiguous_inner_parameter_result_correct(self, menai):
+        assert menai.evaluate_and_format(AMBIGUOUS_INNER_PARAM_SRC) == "888"

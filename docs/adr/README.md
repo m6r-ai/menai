@@ -89,9 +89,10 @@ What costs, risks, or constraints does this decision impose?
 | [0018](0018-vector-type.md) | Vector type | Accepted |
 | [0019](0019-slice-out-of-bounds-raises-error.md) | Slice operations raise errors on out-of-bounds indices | Accepted |
 | [0020](0020-cfg-pass-scope-contracts.md) | CFG pass scope contracts — per-function and whole-program | Accepted |
-| [0021](0021-interprocedural-type-analysis.md) | Interprocedural flow-based type analysis | Accepted |
+| [0021](0021-interprocedural-type-analysis.md) | Interprocedural flow-based type analysis | Superseded by ADR-0027 |
 | [0022](0022-no-runtime-globals.md) | No runtime globals | Accepted |
 | [0023](0023-second-class-module-namespaces.md) | Second-class module namespaces | Accepted |
 | [0024](0024-hash-primitives-in-c-vm.md) | Hash primitives are native VM operations | Accepted |
 | [0025](0025-crc32-primitive-in-c-vm.md) | CRC-32 is a native VM operation | Accepted |
 | [0026](0026-single-builtin-table.md) | A single table describes each opcode-backed builtin | Accepted |
+| [0027](0027-recursion-cycle-parameter-grounding.md) | Recursion-cycle parameter grounding in the interprocedural type analysis | Accepted |

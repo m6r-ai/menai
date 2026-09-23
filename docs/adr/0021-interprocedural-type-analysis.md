@@ -1,7 +1,13 @@
 # ADR-0021: Interprocedural flow-based type analysis
 
 Date: 2026-09-17  
-Status: Accepted
+Status: Superseded by ADR-0027 (2026-09-23)
+
+The analysis itself, its fact lattice, and its role as a pure optimisation remain
+in force. The rule for call sites inside a recursion cycle is superseded: it
+conflated "no call site outside the recursion component" with "a call site there
+whose argument is unknown", which both forfeited sound facts and admitted a
+miscompile. ADR-0027 replaces that rule.
 
 ## Context
 

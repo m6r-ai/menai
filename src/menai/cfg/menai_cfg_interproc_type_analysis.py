@@ -25,20 +25,23 @@ join is monotone, so the fixed point is reached.
 Call sites within a recursion cycle are handled specially.  A call inside a
 cycle has its arguments computed from the very parameters the call would be
 used to infer, so its argument facts describe a later iteration, not the first
-invocation.  They may degrade an externally-grounded parameter but must not
-ground one on their own: otherwise a parameter could be "proven" by a value
-derived from itself even though the value the function is first called with is
-unconstrained.  The pass therefore tracks, per parameter, the join over call
-sites outside the function's recursion component (the external facts) and the
-join over call sites inside it (the internal facts).  The effective parameter
-fact is the external join degraded by the internal join, but only where an
-external call site grounds it; with no external grounding the parameter stays
-at BOTTOM and its runtime guards are retained.  A direct self-recursive tail
-call is a MenaiCFGSelfLoopTerm; a call between mutually-recursive functions is
-an ordinary call.  Both are internal when caller and callee share a
-strongly-connected component of the call graph.  Return facts are still
-propagated through cycles: a function's return value genuinely is the join
-over every return path, recursive ones included.
+invocation.  The pass therefore tracks, per parameter, the join over call sites
+outside the function's recursion component (the external facts), the join over
+call sites inside it (the internal facts), and whether any external call site
+exists for the parameter at all.
+
+A parameter with an external call site takes the join of its external and
+internal facts.  A parameter whose only external call site passes an unknown
+value is unconstrained and takes ANY, so that it degrades any parameter it is
+passed to rather than being dropped by the join.  A parameter with no external
+call site takes its internal facts when the recursion component is externally
+grounded (it contains a function with an external call site, through which every
+function in it is reachable); otherwise it stays at BOTTOM and its runtime guards
+are retained.  A direct self-recursive tail call is a MenaiCFGSelfLoopTerm; a
+call between mutually-recursive functions is an ordinary call.  Both are internal
+when caller and callee share a strongly-connected component of the call graph.
+Return facts are still propagated through cycles: a function's return value
+genuinely is the join over every return path, recursive ones included.
 
 Callee resolution
 -----------------
@@ -139,14 +142,14 @@ class _FunctionInfo:
     value that denotes each function, the current parameter facts, and the
     current return fact.
 
-    Parameter facts are tracked from two sources.  `external_param_facts` is
-    the join over call sites outside the function's recursion component; these
-    describe the first invocation's arguments.  `internal_param_facts` is the
-    join over call sites inside the component; these describe the arguments of
-    later iterations.  `param_facts` is the effective fact: the external join,
-    degraded by the internal join, but only when an external call site grounds
-    it.  Without external grounding the first invocation's argument is
-    unconstrained, so a recursive call site cannot prove the parameter's type.
+    Parameter facts are tracked from three sources.  `external_param_facts` is
+    the join over call sites outside the function's recursion component;
+    `internal_param_facts` is the join over call sites inside it;
+    `external_param_present` records, per parameter, whether any call site
+    outside the component exists at all.  The presence flag is distinct from a
+    non-BOTTOM external fact: a call site whose argument's type is unknown
+    leaves the external fact at BOTTOM, which is not the same as having no call
+    site there.  `param_facts` is the effective fact derived from all three.
 
     `parent` and `parent_closure` locate the enclosing function and the
     make_closure instruction that created this one, so a free variable's fact
@@ -167,20 +170,10 @@ class _FunctionInfo:
         self.callee_of_value: dict[int, MenaiCFGFunction] = {}
         self.external_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.internal_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
+        self.external_param_present: list[bool] = [False] * func.param_count()
         self.param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.return_fact: TypeFact = BOTTOM
         self.value_facts: dict[int, TypeFact] = {}
-
-    def recompute_param_facts(self) -> None:
-        """
-        Derive the effective parameter facts from the external and internal
-        joins.  A parameter with no external grounding stays BOTTOM: a
-        recursive call site describes a later iteration, not the first.
-        """
-        self.param_facts = [
-            external if external.is_bottom() else join(external, internal)
-            for external, internal in zip(self.external_param_facts, self.internal_param_facts)
-        ]
 
 
 class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
@@ -193,6 +186,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     def __init__(self) -> None:
         """Initialise the per-compilation strongly-connected-component map."""
         self._scc_of: dict[int, int] = {}
+        self._grounded_sccs: set[int] = set()
 
     def _optimize_module(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         """Run the interprocedural analysis and rewrite struct field access."""
@@ -213,8 +207,10 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self._resolve_all_callees(root, functions, info_of)
 
         self._scc_of = _call_graph_sccs(infos)
+        self._grounded_sccs = self._externally_grounded_sccs(infos)
 
         self._propagate_to_fixed_point(infos, info_of)
+        self._saturate_unknown_externals(infos, info_of)
 
         changed = False
         for info in infos:
@@ -224,6 +220,89 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 changed = True
 
         return root, changed
+
+    def _saturate_unknown_externals(
+        self,
+        infos: list[_FunctionInfo],
+        info_of: dict[int, _FunctionInfo],
+    ) -> None:
+        """
+        Make parameters reached by an unknown external argument unconstrained.
+
+        Once the fixed point has converged an external call site whose argument
+        is still BOTTOM passes a value of genuinely unknown type, so the
+        parameter it feeds can be anything and must degrade any parameter it is
+        in turn passed to.  The external fact is set to ANY and the fixed point
+        is re-run, because the parameter's fact may already have grounded other
+        parameters.
+
+        This is done after convergence rather than during it because a
+        not-yet-computed argument is also BOTTOM while the fixed point is
+        running; treating that as unknown would latch ANY onto a parameter whose
+        argument later resolves to a concrete type.
+        """
+        while True:
+            saturated = False
+            for info in infos:
+                for index in range(info.func.param_count()):
+                    if info.external_param_present[index] and info.external_param_facts[index].is_bottom():
+                        info.external_param_facts[index] = ANY
+                        info.param_facts = self._effective_param_facts(info)
+                        saturated = True
+
+            if not saturated:
+                return
+
+            self._propagate_to_fixed_point(infos, info_of)
+
+    def _externally_grounded_sccs(self, infos: list[_FunctionInfo]) -> set[int]:
+        """
+        Return the ids of the recursion components that have an external entry.
+
+        A component is externally grounded when at least one of its functions
+        has a call site from outside the component.  Every function in such a
+        component is reachable from that entry through calls within the
+        component, so the facts that flow around it are grounded by it.
+        """
+        grounded: set[int] = set()
+        for info in infos:
+            for callee_func, _, internal in self._call_sites(info):
+                if not internal:
+                    grounded.add(self._scc_of[id(callee_func)])
+
+        return grounded
+
+    def _effective_param_facts(self, info: _FunctionInfo) -> list[TypeFact]:
+        """
+        Derive a function's effective parameter facts from the external and
+        internal joins and the presence of external call sites.
+
+        A parameter with an external call site is the join of its external and
+        internal facts.  A parameter with no external call site uses its
+        internal facts when the recursion component is externally grounded;
+        otherwise it stays BOTTOM and its runtime guards are retained.
+
+        An external call site whose argument's type is unknown contributes
+        BOTTOM, which the join ignores.  Such a parameter is made unconstrained
+        by `_saturate_unknown_externals` once the fixed point has converged,
+        not here: while the fixed point is running an argument's fact may be
+        BOTTOM only because it has not been computed yet.
+        """
+        grounded = self._scc_of[id(info.func)] in self._grounded_sccs
+        result: list[TypeFact] = []
+        for index in range(info.func.param_count()):
+            external = info.external_param_facts[index]
+            internal = info.internal_param_facts[index]
+            if info.external_param_present[index]:
+                result.append(join(external, internal))
+
+            elif grounded:
+                result.append(internal)
+
+            else:
+                result.append(BOTTOM)
+
+        return result
 
     def _resolve_all_callees(
         self,
@@ -418,7 +497,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         External call sites (outside the callee's recursion component) update
         the callee's external facts; intra-component call sites update its
         internal facts.  The callee's effective parameter facts are then
-        recomputed from the two.
+        recomputed from the two and the presence of external call sites.
 
         Returns True if any parameter fact changed.
         """
@@ -426,7 +505,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         for callee_func, args, internal in self._call_sites(info):
             callee = info_of[id(callee_func)]
             if self._join_arg_facts(callee, args, facts, internal):
-                callee.recompute_param_facts()
+                callee.param_facts = self._effective_param_facts(callee)
                 changed = True
 
         return changed
@@ -442,6 +521,10 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Join a call's argument facts into the callee's external or internal
         parameter facts.
 
+        An external call site also records that the parameter has one, so that
+        a parameter reached by an unknown external argument is distinguished
+        from one with no external call site at all.
+
         For a variadic callee the fixed parameters receive the corresponding
         argument facts and the rest parameter receives a list fact, since the
         VM packs the remaining arguments into a list.
@@ -454,6 +537,11 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         fixed = param_count - 1 if callee.func.is_variadic else param_count
         for i in range(min(fixed, len(args))):
+            if not internal:
+                if not callee.external_param_present[i]:
+                    callee.external_param_present[i] = True
+                    changed = True
+
             if _join_param(target, i, facts.get(args[i].id, BOTTOM)):
                 changed = True
 
@@ -478,9 +566,9 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         strongly-connected component of the call graph, i.e. inside a recursion
         cycle.  Such a call's arguments are computed from the very parameters
         the call would be used to infer, so its argument facts describe a later
-        iteration, not the first invocation.  They may degrade an
-        externally-grounded parameter but must not ground one on their own; the
-        caller routes them to the callee's internal facts accordingly.
+        iteration, not the first invocation.  The caller routes them to the
+        callee's internal facts, which ground a parameter only when the
+        recursion component is externally grounded.
         Return-fact propagation is unaffected: a function's return value
         genuinely is the join over every path, recursive ones included.
         """

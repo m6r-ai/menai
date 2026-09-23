@@ -178,10 +178,17 @@ information" mapped to a single unknown element, joining two different known kin
 would move down the lattice and the parameter-fact fixed point would oscillate instead
 of converging.
 
+BOTTOM is the fixed-point identity, so it is not the same as "unknown". A call site
+whose argument's type is unknown must degrade the parameter it feeds, not be dropped
+by the join. Conflating the two lets a value of one type be reported as proven for a
+parameter that an unknown value can also reach, which is a miscompile, not a missed
+optimisation.
+
 The analysis is a pure optimisation: where a type cannot be proven, the existing
 runtime path is used. It never changes observable behaviour.
 
-See [ADR-0021](docs/adr/0021-interprocedural-type-analysis.md).
+See [ADR-0021](docs/adr/0021-interprocedural-type-analysis.md) and
+[ADR-0027](docs/adr/0027-recursion-cycle-parameter-grounding.md).
 
 ### Menai is pure — dead code elimination is always safe
 
