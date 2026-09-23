@@ -793,6 +793,18 @@ def _eliminate_jump_over_jump(
     between the conditional and the unconditional jump is just a marker and
     does not affect the pattern.
 
+    The inversion is only valid when the conditional's not-taken target is
+    the block that follows the removed JUMP.  The original pair is
+
+        JUMP_IF_FALSE cond, @F
+        JUMP @T
+
+    whose false path goes to @F and whose true path goes to @T.  Inverting
+    to JUMP_IF_TRUE cond, @T leaves the false path to fall through, so the
+    fall-through block must be @F (and symmetrically for JUMP_IF_TRUE).  If
+    it is not — or there is no following label at all, so the fall-through
+    would run off the end of the function — the pattern is not rewritten.
+
     After removing the unconditional jump, any labels that pointed to it
     are left in place (they now point to the next real instruction), which
     is correct.
@@ -812,6 +824,24 @@ def _eliminate_jump_over_jump(
                 jump = instrs[j]
                 assert isinstance(jump, MenaiVCodeJump)
                 if jump.label == "__entry__":
+                    result.append(instr)
+                    i += 1
+                    continue
+
+                # The fall-through target is the first label after the JUMP.
+                # The inversion is only safe when it matches the conditional's
+                # not-taken target.
+                fallthrough_label: str | None = None
+                k = j + 1
+                while k < len(instrs):
+                    candidate = instrs[k]
+                    if isinstance(candidate, MenaiVCodeLabel):
+                        fallthrough_label = candidate.name
+                        break
+
+                    k += 1
+
+                if fallthrough_label != instr.label:
                     result.append(instr)
                     i += 1
                     continue

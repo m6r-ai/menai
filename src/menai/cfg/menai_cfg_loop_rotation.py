@@ -52,8 +52,11 @@ The pass handles the canonical shape only:
     target is unset) ends in a ``MenaiCFGBranchTerm``,
   - the header test's operands are all params, free vars, or values defined
     outside the header block (so they are valid at the back-edge), and
-  - the branch's false target is the block containing the self-loop (a
-    single-block loop body).
+  - the branch's false target is the entry of the loop body and the block
+    containing the self-loop is reachable from it without passing back
+    through the header (the body is a region entered at the false target and
+    exited by the self-loop; it may span several blocks), and
+  - no header test result is consumed anywhere in the body region.
 
 Anything else is left unrotated.  The pass is idempotent: an already-rotated
 loop (whose self-loop target block is a copy of the header test) is detected
@@ -71,6 +74,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFunction,
     MenaiCFGGuardInstr,
     MenaiCFGInstr,
+    MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGMakeListInstr,
@@ -82,6 +86,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGSelfLoopTerm,
     MenaiCFGStructGetIndexedInstr,
     MenaiCFGStructSetIndexedInstr,
+    MenaiCFGSwitchTerm,
     MenaiCFGValue,
     relink_predecessors,
     value_ids_in_instr,
@@ -113,10 +118,15 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         branch = header.terminator
         body = branch.false_block
 
-        # Canonical shape: the loop body is the block containing the
-        # self-loop, and the branch's false target is that body.
+        # Canonical shape: the header branch's false target is the entry of
+        # the loop body, and the self-loop terminates that body.  The body
+        # may span several blocks (e.g. when it contains a nested branch);
+        # what matters is that the self-loop block is reachable from the
+        # body entry without passing back through the header, so the body is
+        # a region entered at `body` and exited by the self-loop.
         self_loop_block = self._self_loop_block(func, self_loop)
-        if body is not self_loop_block:
+        body_region = self._body_region(body, header)
+        if self_loop_block is None or self_loop_block.id not in body_region:
             return func, False
 
         if self._is_rotated(self_loop, header, body):
@@ -129,7 +139,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         if not self._operands_safe_at_back_edge(func, test_instrs, header):
             return func, False
 
-        if self._test_results_used_by_body(test_instrs, body, self_loop):
+        if self._test_results_used_by_body(
+            func, test_instrs, body_region, self_loop,
+        ):
             return func, False
 
         # Build the rotated test block: a copy of the header test with fresh
@@ -167,12 +179,23 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
     def _find_self_loop(
         self, func: MenaiCFGFunction,
     ) -> MenaiCFGSelfLoopTerm | None:
-        """Return the function's SelfLoopTerm, or None if there is none."""
+        """
+        Return the function's sole SelfLoopTerm, or None.
+
+        A function with more than one self-loop terminator is not rotated:
+        the self-loops are the multiple back-edges of one loop (e.g. both
+        arms of a tail-recursive branch), and retargeting only one of them
+        would leave the others jumping to the unrotated entry.
+        """
+        found: MenaiCFGSelfLoopTerm | None = None
         for block in func.blocks:
             if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
-                return block.terminator
+                if found is not None:
+                    return None
 
-        return None
+                found = block.terminator
+
+        return found
 
     def _self_loop_block(
         self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
@@ -183,6 +206,54 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
                 return block
 
         return None
+
+    def _successors(self, block: MenaiCFGBlock) -> list[MenaiCFGBlock]:
+        """
+        Return the blocks a block's terminator can transfer control to.
+
+        A self-loop terminator contributes no successor here: it always
+        targets the loop header, which the region walk excludes.
+        """
+        term = block.terminator
+        if term is None:
+            return []
+
+        if isinstance(term, MenaiCFGJumpTerm):
+            return [term.target]
+
+        if isinstance(term, MenaiCFGBranchTerm):
+            return [term.true_block, term.false_block]
+
+        if isinstance(term, MenaiCFGSwitchTerm):
+            targets = [t for t in term.targets if t is not None]
+            targets.append(term.default_block)
+            return targets
+
+        return []
+
+    def _body_region(
+        self, body_entry: MenaiCFGBlock, header: MenaiCFGBlock,
+    ) -> set[int]:
+        """
+        Return the ids of the blocks forming the loop body region.
+
+        The region is every block reachable from `body_entry` without passing
+        through the loop header.  The header is the rotation point, so it is
+        excluded; the self-loop back-edge is not followed (it targets the
+        header, which is excluded anyway).  A single-block body yields a
+        one-element set.
+        """
+        region: set[int] = set()
+        stack = [body_entry]
+        while stack:
+            block = stack.pop()
+            if block.id in region or block is header:
+                continue
+
+            region.add(block.id)
+            stack.extend(self._successors(block))
+
+        return region
 
     def _is_rotated(
         self,
@@ -271,8 +342,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
 
     def _test_results_used_by_body(
         self,
+        func: MenaiCFGFunction,
         test_instrs: list[MenaiCFGInstr],
-        body: MenaiCFGBlock,
+        body_region: set[int],
         self_loop: MenaiCFGSelfLoopTerm,
     ) -> bool:
         """
@@ -284,8 +356,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         later iterations.  A header test whose results flow into the body is
         therefore not rotated.
 
-        The body's own instructions and the self-loop args are both checked;
-        a value passed through the self-loop args is a loop-carried value and
+        Every block in the body region is checked, not just the entry block,
+        because the body may span several blocks.  The self-loop args are
+        checked too: a value passed through them is a loop-carried value and
         must be recomputed each iteration.
         """
         test_result_ids = {
@@ -297,8 +370,12 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
             return False
 
         body_uses: set[int] = set()
-        for instr in body.instrs:
-            body_uses.update(value_ids_in_instr(instr))
+        for block in func.blocks:
+            if block.id not in body_region:
+                continue
+
+            for instr in block.instrs:
+                body_uses.update(value_ids_in_instr(instr))
 
         body_uses.update(arg.id for arg in self_loop.args)
         return bool(test_result_ids & body_uses)

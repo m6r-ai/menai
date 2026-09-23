@@ -271,3 +271,182 @@ class TestLoopRotation:
           (outer 3 (list)))
         """)
         assert str(result) == "[1, 3, 6]"
+
+
+class TestMultiBlockBodyRotation:
+    """A self-loop whose body spans several blocks should be rotated."""
+
+    def test_nested_branch_body_rotated(self):
+        """
+        (letrec ((count-mismatch
+                  (lambda (i acc)
+                    (if (integer>=? i 9)
+                        acc
+                        (count-mismatch
+                          (integer+ i 1)
+                          (if (integer!=? i 4)
+                              (integer+ acc 1)
+                              acc))))))
+          (count-mismatch 0 0))
+
+        The loop body contains a nested branch, so the body is a region of
+        several blocks rather than a single block.  The loop test is at the
+        top and the back-edge is unconditional; after rotation the back-edge
+        is a conditional branch back into the body.
+        """
+        src = """
+        (letrec ((count-mismatch
+                  (lambda (i acc)
+                    (if (integer>=? i 9)
+                        acc
+                        (count-mismatch
+                          (integer+ i 1)
+                          (if (integer!=? i 4)
+                              (integer+ acc 1)
+                              acc))))))
+          (count-mismatch 0 0))
+        """
+        code = _compile(src)
+        fn = _find_lambda(code, "count-mismatch")
+        assert _has_backward_conditional_jump(fn), (
+            "rotated loop must have a conditional back-edge"
+        )
+        assert not _has_backward_unconditional_jump(fn), (
+            "rotated loop must not have an unconditional back-edge"
+        )
+
+    def test_nested_branch_body_retains_entry_test(self):
+        """
+        The peeled entry test must be retained so the loop is skipped when the
+        entry condition is false.  The loop test uses INTEGER_GTE_P, so there
+        should be two of them after rotation: one in the header, one at the
+        bottom.
+        """
+        src = """
+        (letrec ((count-mismatch
+                  (lambda (i acc)
+                    (if (integer>=? i 9)
+                        acc
+                        (count-mismatch
+                          (integer+ i 1)
+                          (if (integer!=? i 4)
+                              (integer+ acc 1)
+                              acc))))))
+          (count-mismatch 0 0))
+        """
+        code = _compile(src)
+        fn = _find_lambda(code, "count-mismatch")
+        assert _count_op(fn, Opcode.INTEGER_GTE_P) == 2, (
+            "rotated loop must have both the entry test and the bottom test"
+        )
+
+    def test_nested_branch_body_correct_results(self):
+        """End-to-end: a rotated multi-block-body loop must produce correct results."""
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (letrec ((count-mismatch
+                  (lambda (i acc)
+                    (if (integer>=? i 9)
+                        acc
+                        (count-mismatch
+                          (integer+ i 1)
+                          (if (integer!=? i 4)
+                              (integer+ acc 1)
+                              acc))))))
+          (count-mismatch 0 0))
+        """)
+        assert result == 8
+
+    def test_nested_branch_body_skips_loop_when_entry_false(self):
+        """
+        End-to-end: when the entry condition is already false, the peeled
+        entry test must skip the loop entirely and return the accumulator.
+        """
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (letrec ((count-mismatch
+                  (lambda (i acc)
+                    (if (integer>=? i 9)
+                        acc
+                        (count-mismatch
+                          (integer+ i 1)
+                          (if (integer!=? i 4)
+                              (integer+ acc 1)
+                              acc))))))
+          (count-mismatch 9 42))
+        """)
+        assert result == 42
+
+
+class TestMultipleSelfLoopsNotRotated:
+    """A function whose loop has more than one back-edge is not rotated."""
+
+    def test_two_arms_tail_calling_same_loop_not_rotated(self):
+        """
+        (letrec ((scan
+                  (lambda (i)
+                    (if (integer>=? i 10)
+                        i
+                        (if (integer=? i 5)
+                            (scan (integer+ i 1))
+                            (scan (integer+ i 1)))))))
+          (scan 0))
+
+        Both arms of the inner branch tail-call `scan`, so the function has
+        two self-loop terminators.  Rotating only one of them would leave the
+        other jumping to the unrotated entry, so the loop must be left
+        unrotated.
+        """
+        src = """
+        (letrec ((scan
+                  (lambda (i)
+                    (if (integer>=? i 10)
+                        i
+                        (if (integer=? i 5)
+                            (scan (integer+ i 1))
+                            (scan (integer+ i 1)))))))
+          (scan 0))
+        """
+        code = _compile(src)
+        fn = _find_lambda(code, "scan")
+        assert not _has_backward_conditional_jump(fn), (
+            "a loop with multiple back-edges must not be rotated"
+        )
+
+    def test_two_arms_correct_results(self):
+        """End-to-end: a multi-back-edge loop must still produce correct results."""
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (letrec ((scan
+                  (lambda (i)
+                    (if (integer>=? i 10)
+                        i
+                        (if (integer=? i 5)
+                            (scan (integer+ i 1))
+                            (scan (integer+ i 1)))))))
+          (scan 0))
+        """)
+        assert result == 10
+
+    def test_prelude_find_vector_correct(self):
+        """
+        End-to-end: the prelude's find-vector has a nested branch in its loop
+        body and must return the first matching element (or #none).
+        """
+        from menai import Menai
+        menai = Menai()
+
+        found = menai.evaluate(
+            "(find-vector (lambda (x) (integer>? x 3)) (vector 1 2 3 4 5))"
+        )
+        assert found == 4
+        missing = menai.evaluate(
+            "(find-vector (lambda (x) (integer>? x 9)) (vector 1 2 3))"
+        )
+        assert missing is None
