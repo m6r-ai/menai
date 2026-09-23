@@ -124,6 +124,7 @@ menai/
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
 │   ├── menai_pretty_print/     # code formatter
+│   ├── menai_render/           # shared bytecode rendering and code-object walk
 │   └── menai_test/             # test runner for *_test.menai files
 └── tests/
     ├── src/
@@ -293,6 +294,23 @@ must not rename a namespace member name (it is a key, not a variable reference) 
 a struct pattern head's member name — see `_ModuleRenamer`.
 
 See [ADR-0023](docs/adr/0023-second-class-module-namespaces.md).
+
+### The code-object walk order is a contract between Python and C
+
+`menai_render.menai_render_walk.walk_code_objects` defines the canonical ordering of
+code objects and instructions within a compiled program: depth-first, root first,
+children in list order, with a global instruction ordinal assigned contiguously in
+visit order. This ordering is the contract shared with the C VM's instruction tracer,
+which assigns the same ordinals during conversion of the Python `CodeObject` tree.
+
+The two implementations must agree exactly. If they drift, execution counts collected
+in C are attributed to the wrong instructions, silently. Any change to the traversal
+order on one side must be mirrored on the other, and the agreement is covered by a test.
+
+The ordering must remain a pure function of the tree structure. It is what makes a
+trace buffer meaningful across repeated `execute()` calls: the native code objects are
+ephemeral (rebuilt and destroyed per call), so ordinals — not pointers — are the only
+stable key.
 
 ### The C VM has no process-global mutable state
 

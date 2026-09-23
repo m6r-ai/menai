@@ -19,7 +19,6 @@ Usage:
 """
 
 import argparse
-from collections.abc import Iterator
 from pathlib import Path
 import sys
 import traceback
@@ -27,169 +26,15 @@ import traceback
 from menai import Menai, MenaiError
 from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
 from menai.menai_compiler import MenaiCompiler
-from menai.menai_value import MenaiValue
-from menai.bytecode.menai_bytecode import Opcode, CodeObject, Instruction, reg_name, unpack_instruction
-
-
-_ANSI_CYAN = "\033[36m"
-_ANSI_YELLOW = "\033[33m"
-_ANSI_GREEN = "\033[32m"
-_ANSI_GREY = "\033[90m"
-_ANSI_RESET = "\033[0m"
-
-
-def _cyan(text: str, color: bool) -> str:
-    """Wrap text in cyan ANSI codes if color is enabled."""
-    return f"{_ANSI_CYAN}{text}{_ANSI_RESET}" if color else text
-
-
-def _yellow(text: str, color: bool) -> str:
-    """Wrap text in yellow ANSI codes if color is enabled."""
-    return f"{_ANSI_YELLOW}{text}{_ANSI_RESET}" if color else text
-
-
-def _grey(text: str, color: bool) -> str:
-    """Wrap text in grey ANSI codes if color is enabled."""
-    return f"{_ANSI_GREY}{text}{_ANSI_RESET}" if color else text
-
-
-def _green(text: str, color: bool) -> str:
-    """Wrap text in green ANSI codes if color is enabled."""
-    return f"{_ANSI_GREEN}{text}{_ANSI_RESET}" if color else text
-
-
-def _instructions(code: CodeObject) -> Iterator[Instruction]:
-    """Yield unpacked Instruction objects from a CodeObject's packed instruction array."""
-    for word in code.instructions:
-        yield unpack_instruction(word)
-
-
-_MAX_CONSTANT_LENGTH = 64
-
-
-def format_constant(const: object) -> str:
-    """
-    Format a constant for display.
-
-    Menai values are shown as their Menai type name followed by the value's
-    canonical Menai display form (its describe() form).  This keeps every
-    constant self-identifying: a symbol is shown as a symbol rather than as a
-    bare name, and a struct type is shown with its name and fields.  Long values
-    are truncated.
-    """
-    if isinstance(const, str):
-        if len(const) > _MAX_CONSTANT_LENGTH:
-            return f'"{const[:_MAX_CONSTANT_LENGTH - 3]}..."'
-
-        return f'"{const}"'
-
-    if isinstance(const, MenaiValue):
-        val_str = f"{const.type_name()} {const.describe()}"
-        if len(val_str) > _MAX_CONSTANT_LENGTH:
-            return f'{val_str[:_MAX_CONSTANT_LENGTH - 3]}...'
-
-        return val_str
-
-    return str(const)
-
-
-def clean_name(name: str) -> str:
-    """Strip the '(N param[s])' suffix the bytecode builder appends to closure names."""
-    if '(' in name:
-        return name[:name.index('(')].strip()
-
-    return name
-
-
-def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
-    """Add annotation to instruction showing what it does."""
-    opcode = instr.opcode
-    src0 = instr.src0
-
-    annotation = ""
-
-    if opcode == Opcode.LOAD_CONST:
-        if src0 < len(code.constants):
-            const = code.constants[src0]
-            const_str = format_constant(const)
-            if len(const_str) > 40:
-                const_str = const_str[:37] + "..."
-
-            annotation = f"  ; {const_str}"
-
-    elif opcode == Opcode.LOAD_NONE:
-        annotation = "  ; #none"
-
-    elif opcode in (Opcode.LOAD_TRUE, Opcode.LOAD_FALSE):
-        val = "#t" if opcode == Opcode.LOAD_TRUE else "#f"
-        annotation = f"  ; {val}"
-
-    elif opcode == Opcode.LOAD_EMPTY_LIST:
-        annotation = "  ; []"
-
-    elif opcode == Opcode.MAKE_CLOSURE:
-        if instr.src0 < len(code.code_objects):
-            nested = code.code_objects[instr.src0]
-            name = nested.name or f"<lambda-{src0}>"
-            loc_parts = []
-            if nested.source_file:
-                loc_parts.append(nested.source_file)
-
-            if nested.source_line and nested.source_line > 0:
-                loc_parts.append(f"line {nested.source_line}")
-
-            line_info = f" at {':'.join(loc_parts)}" if loc_parts else ""
-            annotation = f"  ; closure for '{clean_name(name)}'{line_info}"
-
-    elif opcode == Opcode.PATCH_CLOSURE:
-        # src0 = closure register, src1 = capture index, src2 = value register.
-        # Scan for the MAKE_CLOSURE that produced each register so we can name
-        # the closure and the free-var being filled.
-        closure_name = None
-        free_var_name = None
-        for scan_instr in _instructions(code):
-            if scan_instr.opcode == Opcode.MAKE_CLOSURE and scan_instr.dest == instr.src0:
-                nested = code.code_objects[scan_instr.src0]
-                closure_name = clean_name(nested.name) if nested.name else reg_name(instr.src0, code)
-                if instr.src1 < len(nested.free_vars):
-                    free_var_name = nested.free_vars[instr.src1]
-
-                break
-
-        # Name the value being patched in: use the closure's own name if the
-        # value register also holds a known closure, otherwise use reg_name.
-        value_closure_name = None
-        for scan_instr in _instructions(code):
-            if scan_instr.opcode == Opcode.MAKE_CLOSURE and scan_instr.dest == instr.src2:
-                value_closure_name = clean_name(code.code_objects[scan_instr.src0].name)
-                break
-
-        lhs_closure = closure_name or reg_name(instr.src0, code)
-        lhs_capture = f"'{free_var_name}'" if free_var_name else f"capture[{instr.src1}]"
-        rhs_sym = value_closure_name
-        rhs_reg = reg_name(instr.src2, code)
-        rhs = f"'{rhs_sym}'" if rhs_sym else rhs_reg
-        annotation = f"  ; '{lhs_closure}'.{lhs_capture} = {rhs}"
-
-    elif opcode == Opcode.RAISE_ERROR:
-        if src0 < len(code.constants):
-            msg = code.constants[src0]
-            annotation = f"  ; Raise error: {format_constant(msg)[:40]}"
-
-    elif opcode == Opcode.SWITCH_INTEGER:
-        if instr.src1 < len(code.jump_tables):
-            t_min, t_default, targets = code.jump_tables[instr.src1]
-            hi = t_min + len(targets) - 1
-            annotation = f"  ; see jt{instr.src1}: {t_min}..{hi} -> arms, else @{t_default}"
-
-    return annotation
-
-
-def format_instruction(instr: Instruction, index: int, code: CodeObject) -> str:
-    """Format an instruction with symbolic register names derived from code."""
-    instr_str = f"{index:4}: {instr.format(code)}"
-    # Pad to fixed width so annotations align; 48 chars covers the longest opcodes
-    return instr_str.ljust(48)
+from menai.bytecode.menai_bytecode import Opcode, CodeObject
+from menai_render.menai_render_colour import cyan, green, grey, yellow
+from menai_render.menai_render_instruction import (
+    annotate_instruction,
+    clean_name,
+    format_constant,
+    format_instruction,
+    instructions,
+)
 
 
 def disassemble(code: CodeObject) -> str:
@@ -215,13 +60,13 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
 
     output = []
     output.append(f"{indent}{'-'*70}")                                    # plain: function opener
-    output.append(f"{indent}{_yellow('Function: ' + display_name, color)}")
-    output.append(_grey(f"{indent}{'-'*70}", color))
+    output.append(f"{indent}{yellow('Function: ' + display_name, color)}")
+    output.append(grey(f"{indent}{'-'*70}", color))
 
     # Show code objects table
     if code.code_objects:
-        output.append(f"{indent}{_green('Code Objects: ' + str(len(code.code_objects)), color)}")
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(f"{indent}{green('Code Objects: ' + str(len(code.code_objects)), color)}")
+        output.append(grey(f"{indent}{'-'*70}", color))
         for i, nested in enumerate(code.code_objects):
             nested_name = clean_name(nested.name) if nested.name else f"<lambda-{i}>"
             loc_parts = []
@@ -233,93 +78,93 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
 
             loc_str = f" [{':'.join(loc_parts)}]" if loc_parts else ""
             coid = f"x{i}"
-            output.append(f"{indent}{_cyan(f'{coid:>6}: {nested_name}{loc_str}', color)}")
+            output.append(f"{indent}{cyan(f'{coid:>6}: {nested_name}{loc_str}', color)}")
 
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(grey(f"{indent}{'-'*70}", color))
 
     # Show constants table
     if code.constants:
-        output.append(f"{indent}{_green('Constants: ' + str(len(code.constants)), color)}")
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(f"{indent}{green('Constants: ' + str(len(code.constants)), color)}")
+        output.append(grey(f"{indent}{'-'*70}", color))
         for i, const in enumerate(code.constants):
             const_str = format_constant(const)
             cid = f"k{i}"
-            output.append(f"{indent}{_cyan(f'{cid:>6}: {const_str}', color)}")
+            output.append(f"{indent}{cyan(f'{cid:>6}: {const_str}', color)}")
 
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(grey(f"{indent}{'-'*70}", color))
 
     # Show jump tables (for SWITCH_INTEGER)
     if code.jump_tables:
-        output.append(f"{indent}{_green('Jump Tables: ' + str(len(code.jump_tables)), color)}")
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(f"{indent}{green('Jump Tables: ' + str(len(code.jump_tables)), color)}")
+        output.append(grey(f"{indent}{'-'*70}", color))
         for j, (t_min, t_default, targets) in enumerate(code.jump_tables):
             hi = t_min + len(targets) - 1
             jid = f"jt{j}"
             output.append(
-                f"{indent}{_cyan(f'{jid:>6}: min={t_min}  default=@{t_default}  span={t_min}..{hi}', color)}"
+                f"{indent}{cyan(f'{jid:>6}: min={t_min}  default=@{t_default}  span={t_min}..{hi}', color)}"
             )
             for slot, target in enumerate(targets):
                 value = t_min + slot
                 if target == t_default:
-                    output.append(f"{indent}{_cyan(f'       _ : @{target}  (default)', color)}")
+                    output.append(f"{indent}{cyan(f'       _ : @{target}  (default)', color)}")
 
                 else:
-                    output.append(f"{indent}{_cyan(f'{value:>7} : @{target}', color)}")
+                    output.append(f"{indent}{cyan(f'{value:>7} : @{target}', color)}")
 
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(grey(f"{indent}{'-'*70}", color))
 
     # Show register map for params and captures (only when present)
     param_count = code.param_count
     if param_count:
-        output.append(f"{indent}{_green('Inputs: ' + str(code.param_count), color)}")
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(f"{indent}{green('Inputs: ' + str(code.param_count), color)}")
+        output.append(grey(f"{indent}{'-'*70}", color))
         for i, pname in enumerate(code.param_names):
             rid = f"i{i}"
             label = f"{rid:>6}: '{pname}'"
-            output.append(f"{indent}{_cyan(label, color)}")
+            output.append(f"{indent}{cyan(label, color)}")
 
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(grey(f"{indent}{'-'*70}", color))
 
     capture_count = len(code.free_vars)
     if capture_count:
-        output.append(f"{indent}{_green('Captured: ' + str(len(code.free_vars)), color)}")
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(f"{indent}{green('Captured: ' + str(len(code.free_vars)), color)}")
+        output.append(grey(f"{indent}{'-'*70}", color))
         for i, fname in enumerate(code.free_vars):
             rid = f"c{i}"
             label = f"{rid:>6}: '{fname}'"
-            output.append(f"{indent}{_cyan(label, color)}")
+            output.append(f"{indent}{cyan(label, color)}")
 
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(grey(f"{indent}{'-'*70}", color))
 
     locals_count = code.local_count - param_count - capture_count
     if locals_count:
-        output.append(f"{indent}{_green('Locals: ' + str(locals_count), color)}")
-        output.append(_grey(f"{indent}{'-'*70}", color))
+        output.append(f"{indent}{green('Locals: ' + str(locals_count), color)}")
+        output.append(grey(f"{indent}{'-'*70}", color))
 
     # Show annotated disassembly
-    output.append(f"{indent}{_green('Instructions: ' + str(len(code.instructions)), color)}")
-    output.append(_grey(f"{indent}{'-'*70}", color))
+    output.append(f"{indent}{green('Instructions: ' + str(len(code.instructions)), color)}")
+    output.append(grey(f"{indent}{'-'*70}", color))
 
     # Pre-pass: collect all jump target indices.
     # JUMP target is in src0; JUMP_IF_FALSE/TRUE target is in src1; SWITCH_INTEGER
     # targets come from the jump table (all entries plus the default).
     switch_targets = {
         t
-        for instr in _instructions(code)
+        for instr in instructions(code)
         if instr.opcode == Opcode.SWITCH_INTEGER and instr.src1 < len(code.jump_tables)
         for t in (*code.jump_tables[instr.src1][2], code.jump_tables[instr.src1][1])
     }
     jump_targets = {
         instr.src1 if instr.opcode in (Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
         else instr.src0
-        for instr in _instructions(code)
+        for instr in instructions(code)
         if instr.opcode in (Opcode.JUMP, Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
     } | switch_targets
     control_flow_opcodes = {
         Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE, Opcode.CALL, Opcode.APPLY, Opcode.SWITCH_INTEGER,
     }
 
-    for i, instr in enumerate(_instructions(code)):
+    for i, instr in enumerate(instructions(code)):
         is_target = i in jump_targets
         if is_target and i > 0:
             output.append(f"{indent}")
@@ -333,7 +178,7 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
         target_marker = "► " if is_target else "  "
 
         if annotation:
-            output.append(f"{indent}{target_marker}{instr_str}{_green(annotation, color)}")
+            output.append(f"{indent}{target_marker}{instr_str}{green(annotation, color)}")
 
         else:
             output.append(f"{indent}{target_marker}{instr_str}")
@@ -359,7 +204,7 @@ def analyze_function_flow(code: CodeObject) -> dict[int, str]:
     """Track which functions are stored in which variables."""
     var_map = {}
 
-    for instr in _instructions(code):
+    for instr in instructions(code):
         if instr.opcode == Opcode.MAKE_CLOSURE:
             closure_idx = instr.src0
             var_idx = instr.dest
@@ -383,7 +228,7 @@ def trace_calls(code: CodeObject, var_map: dict[int, str]) -> list[str]:
     """Trace function calls."""
     traces = []
 
-    for i, instr in enumerate(_instructions(code)):
+    for i, instr in enumerate(instructions(code)):
         if instr.opcode == Opcode.CALL:
             arg_count = instr.src1
             func_reg = instr.src0
