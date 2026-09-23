@@ -227,8 +227,19 @@
 
    (count-mismatched
      (lambda (face)
-       (let ((center (get-sticker face 4)))
-         (vector-length (filter-vector (lambda (s) (integer!=? s center)) face)))))
+       (count-mismatch-loop face (vector-ref face 4) 0 0)))
+
+   (count-mismatch-loop
+     (lambda (face center i acc)
+       (if (integer>=? i 9)
+           acc
+           (count-mismatch-loop
+             face
+             center
+             (integer+ i 1)
+             (if (integer!=? (vector-ref face i) center)
+                 (integer+ acc 1)
+                 acc)))))
 
    (heuristic
      (lambda (cube)

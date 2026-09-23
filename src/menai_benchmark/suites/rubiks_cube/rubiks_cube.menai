@@ -223,8 +223,18 @@
 
    (count-mismatched
      (lambda (face)
-       (let ((center (get-sticker face 4)))
-         (list-length (filter-list (lambda (s) (integer!=? s center)) face)))))
+       (count-mismatch-loop face (get-sticker face 4) 0)))
+
+   (count-mismatch-loop
+     (lambda (face center acc)
+       (if (list-null? face)
+           acc
+           (count-mismatch-loop
+             (list-rest face)
+             center
+             (if (integer!=? (list-first face) center)
+                 (integer+ acc 1)
+                 acc)))))
 
    (heuristic
      (lambda (cube)
