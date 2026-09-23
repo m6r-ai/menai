@@ -14,6 +14,35 @@ from menai.bytecode.menai_bytecode import CodeObject, Instruction, Opcode, reg_n
 _MAX_CONSTANT_LENGTH = 64
 
 
+# Opcodes after which a blank line is emitted, so that control-flow boundaries
+# are visually separated in a listing.
+CONTROL_FLOW_OPCODES = frozenset({
+    Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE, Opcode.CALL, Opcode.APPLY, Opcode.SWITCH_INTEGER,
+})
+
+
+def jump_targets(code: CodeObject) -> set[int]:
+    """
+    Return the instruction indices that are jump targets in a code object.
+
+    A JUMP carries its target in src0; JUMP_IF_FALSE and JUMP_IF_TRUE carry it
+    in src1.  SWITCH_INTEGER targets come from its jump table — every arm target
+    plus the default.
+    """
+    switch_targets = {
+        t
+        for instr in instructions(code)
+        if instr.opcode == Opcode.SWITCH_INTEGER and instr.src1 < len(code.jump_tables)
+        for t in (*code.jump_tables[instr.src1][2], code.jump_tables[instr.src1][1])
+    }
+    return {
+        instr.src1 if instr.opcode in (Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
+        else instr.src0
+        for instr in instructions(code)
+        if instr.opcode in (Opcode.JUMP, Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
+    } | switch_targets
+
+
 def instructions(code: CodeObject) -> Iterator[Instruction]:
     """Yield unpacked Instruction objects from a CodeObject's packed instruction array."""
     for word in code.instructions:

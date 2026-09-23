@@ -29,10 +29,12 @@ from menai.menai_compiler import MenaiCompiler
 from menai.bytecode.menai_bytecode import Opcode, CodeObject
 from menai_render.menai_render_colour import cyan, green, grey, yellow
 from menai_render.menai_render_instruction import (
+    CONTROL_FLOW_OPCODES,
     annotate_instruction,
     clean_name,
     format_constant,
     format_instruction,
+    jump_targets,
     instructions,
 )
 
@@ -145,27 +147,10 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
     output.append(f"{indent}{green('Instructions: ' + str(len(code.instructions)), color)}")
     output.append(grey(f"{indent}{'-'*70}", color))
 
-    # Pre-pass: collect all jump target indices.
-    # JUMP target is in src0; JUMP_IF_FALSE/TRUE target is in src1; SWITCH_INTEGER
-    # targets come from the jump table (all entries plus the default).
-    switch_targets = {
-        t
-        for instr in instructions(code)
-        if instr.opcode == Opcode.SWITCH_INTEGER and instr.src1 < len(code.jump_tables)
-        for t in (*code.jump_tables[instr.src1][2], code.jump_tables[instr.src1][1])
-    }
-    jump_targets = {
-        instr.src1 if instr.opcode in (Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
-        else instr.src0
-        for instr in instructions(code)
-        if instr.opcode in (Opcode.JUMP, Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE)
-    } | switch_targets
-    control_flow_opcodes = {
-        Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE, Opcode.CALL, Opcode.APPLY, Opcode.SWITCH_INTEGER,
-    }
+    jump_target_indices = jump_targets(code)
 
     for i, instr in enumerate(instructions(code)):
-        is_target = i in jump_targets
+        is_target = i in jump_target_indices
         if is_target and i > 0:
             output.append(f"{indent}")
 
@@ -185,7 +170,7 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
 
         # Blank line after a control flow opcode, unless the next instruction is
         # already a jump target (which will insert its own blank line above).
-        if instr.opcode in control_flow_opcodes and (i + 1) not in jump_targets:
+        if instr.opcode in CONTROL_FLOW_OPCODES and (i + 1) not in jump_target_indices:
             output.append(f"{indent}")
 
     output.append(f"{indent}{'-'*70}")                                    # plain: function closer

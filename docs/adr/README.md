@@ -96,3 +96,4 @@ What costs, risks, or constraints does this decision impose?
 | [0025](0025-crc32-primitive-in-c-vm.md) | CRC-32 is a native VM operation | Accepted |
 | [0026](0026-single-builtin-table.md) | A single table describes each opcode-backed builtin | Accepted |
 | [0027](0027-recursion-cycle-parameter-grounding.md) | Recursion-cycle parameter grounding in the interprocedural type analysis | Accepted |
+| [0028](0028-instruction-tracing-by-ordinal.md) | Instruction tracing keyed by walk-order ordinals | Accepted |

@@ -515,6 +515,15 @@ struct MenaiCodeObject {
     char *name;                          /* function name for error messages, or NULL */
     int source_line;                     /* source line where this function is defined, or 0 */
     char *source_file;                   /* source file name, or NULL */
+
+    /*
+     * Trace ordinals — assigned by the bridge during conversion, in the
+     * canonical walk order defined by menai_render.menai_render_walk.  The C
+     * tracer attributes execution counts to these ordinals; the Python
+     * renderers resolve them back to code objects and instruction indices.
+     */
+    int code_ordinal;                    /* 0-based position of this code object in walk order */
+    int instr_base;                      /* global instruction ordinal of instruction 0 */
 };
 
 /*
@@ -917,6 +926,33 @@ typedef struct {
 } MenaiProfileData;
 
 /*
+ * MenaiTraceData — per-instance instruction and call tracing counters.
+ *
+ * Where MenaiProfileData records how many times each *kind* of opcode ran,
+ * MenaiTraceData records how many times each *individual* instruction ran,
+ * plus how many times each code object was called.  This is what allows a
+ * hot spot to be attributed to a specific instruction and function.
+ *
+ * instr_counts[i]  — executions of the instruction with global ordinal i.
+ * call_counts[c]   — calls to the code object with code ordinal c.
+ * n_instr          — length of instr_counts (total instructions in the tree).
+ * n_code           — length of call_counts (total code objects in the tree).
+ * enabled          — 0 = tracing off, 1 = counting.
+ *
+ * The arrays are sized to the converted code tree and reallocated only when
+ * that size changes.  They are zeroed at the start of every execute call so
+ * that a trace reflects a single run.  Both arrays are owned by the VM state
+ * and freed at teardown; they are never shared across VM instances.
+ */
+typedef struct {
+    uint64_t *instr_counts;
+    uint64_t *call_counts;
+    size_t n_instr;
+    size_t n_code;
+    int enabled;
+} MenaiTraceData;
+
+/*
  * Threshold at which we start to run the garbage collector.
  */
 #define GC_THRESHOLD 4096
@@ -977,6 +1013,11 @@ typedef struct MenaiVMState {
      * VM instruction profiler data.
      */
     MenaiProfileData _profile;
+
+    /*
+     * VM instruction and call tracer data.
+     */
+    MenaiTraceData _trace;
 
     /*
      * VM error status.
@@ -1765,6 +1806,12 @@ void menai_vm_cancel(MenaiVMState *vs);
 void menai_vm_enable_profiling(MenaiVMState *vs);
 
 void menai_vm_get_profile_data(MenaiVMState *vs, uint64_t *out_counts, uint64_t *out_total_instr);
+
+int menai_vm_prepare_trace(MenaiVMState *vs, MenaiCodeObject *code);
+
+void menai_vm_get_trace_data(MenaiVMState *vs, uint64_t **out_instr, size_t *out_n_instr, uint64_t **out_calls, size_t *out_n_code);
+
+void menai_code_object_count(MenaiCodeObject *co, size_t *out_instr, size_t *out_code);
 
 void menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root);
 

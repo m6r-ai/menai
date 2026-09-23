@@ -125,6 +125,7 @@ menai/
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
 │   ├── menai_pretty_print/     # code formatter
 │   ├── menai_render/           # shared bytecode rendering and code-object walk
+│   ├── menai_trace/            # VM instruction and call trace resolution and rendering
 │   └── menai_test/             # test runner for *_test.menai files
 └── tests/
     ├── src/
@@ -311,6 +312,22 @@ The ordering must remain a pure function of the tree structure. It is what makes
 trace buffer meaningful across repeated `execute()` calls: the native code objects are
 ephemeral (rebuilt and destroyed per call), so ordinals — not pointers — are the only
 stable key.
+
+The C side stamps ordinals in `menai_code_object_from_python_rec` (the bridge), which
+assigns a code object's ordinal and instruction base *before* recursing into its
+children — that pre-order placement is what makes the C assignment match the Python
+walk. The trace arrays themselves live in `MenaiVMState` and are sized to the tree at
+the start of each `execute()` call by `menai_vm_prepare_trace`.
+
+Each logical `CodeObject` must convert to exactly one native code object. A function
+value is reached through a constant whose `bytecode` is also a child of some parent, so
+the bridge carries a `ConversionContext` mapping Python `CodeObject` to native code
+object and reuses the child rather than converting the bytecode again. Converting it
+twice gives one logical function two native instances; the second is stamped from a
+fresh counter, so its counts land on ordinal 0 and are silently attributed to the
+module.
+
+See [ADR-0028](docs/adr/0028-instruction-tracing-by-ordinal.md).
 
 ### The C VM has no process-global mutable state
 

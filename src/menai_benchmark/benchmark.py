@@ -5,6 +5,10 @@ from dataclasses import field
 from typing import Any
 
 from menai import Menai
+from menai.bytecode.menai_bytecode import CodeObject
+from menai_trace.menai_trace_data import TraceResult as ResolvedTrace
+from menai_trace.menai_trace_data import resolve_trace
+from menai_trace.menai_trace_render import render_annotated, render_hot_instructions
 
 
 @dataclass
@@ -54,6 +58,15 @@ class ProfileResult:
     error: str | None = None
 
 
+@dataclass
+class TraceResult:
+    """Instruction and call trace data for one case."""
+
+    case: BenchmarkCase
+    trace: ResolvedTrace | None = None
+    error: str | None = None
+
+
 class BenchmarkSuite(ABC):
     """
     Abstract base class for a family of related benchmarks.
@@ -92,25 +105,34 @@ class BenchmarkRunner:
     When *profile* is True, opcode profiling is enabled on the Menai VM
     during the timed runs.  Profile data is collected from the final
     timed iteration of each case and returned alongside timing results.
+
+    When *trace* is True, instruction and call tracing is enabled on the
+    Menai VM during the timed runs.  Trace data is collected from the final
+    timed iteration of each case and resolved against the compiled code
+    object.  Tracing requires the prepared value to be a CodeObject, so it
+    only applies to the Menai implementation.
     """
 
-    def __init__(self, suite: BenchmarkSuite, menai: Menai, profile: bool = False) -> None:
-        """Initialise the runner with a suite, a warmed-up Menai instance, and optional profiling."""
+    def __init__(self, suite: BenchmarkSuite, menai: Menai, profile: bool = False, trace: bool = False) -> None:
+        """Initialise the runner with a suite, a warmed-up Menai instance, and optional instrumentation."""
         self._suite = suite
         self._menai = menai
         self._profile = profile
+        self._trace = trace
 
-    def run(self) -> tuple[list[CaseResult], list[ProfileResult]]:
-        """Execute every case and return timing and profile results."""
+    def run(self) -> tuple[list[CaseResult], list[ProfileResult], list[TraceResult]]:
+        """Execute every case and return timing, profile, and trace results."""
         suite = self._suite
         impl = suite.implementation(self._menai)
         results: list[CaseResult] = []
         profile_results: list[ProfileResult] = []
+        trace_results: list[TraceResult] = []
 
         for case in suite.cases():
             times: list[float] = []
             error: str | None = None
             profile_data: dict[str, int] = {}
+            raw_trace: tuple[list[int], list[int]] | None = None
 
             # Pre-timing setup: build strings, compile, etc.
             if impl.prepare is not None:
@@ -119,7 +141,7 @@ class BenchmarkRunner:
             else:
                 prepared = case.input
 
-            if self._profile:
+            if self._profile or self._trace:
                 self._menai.vm.enable_profiling()
 
             try:
@@ -128,9 +150,13 @@ class BenchmarkRunner:
                     vm_timing = self._menai.vm.get_timing_data()
                     times.append(vm_timing.get("execute_ns", 0) / 1_000_000_000.0)
 
-                    # Collect profile data from the last iteration.
-                    if self._profile and iteration == case.iterations - 1:
-                        profile_data = self._menai.vm.get_profile_data()
+                    # Collect instrumentation data from the last iteration.
+                    if iteration == case.iterations - 1:
+                        if self._profile:
+                            profile_data = self._menai.vm.get_profile_data()
+
+                        if self._trace:
+                            raw_trace = self._menai.vm.get_trace_data()
 
             except Exception as exc:
                 error = str(exc)
@@ -163,7 +189,34 @@ class BenchmarkRunner:
                     )
                 )
 
-        return results, profile_results
+            if self._trace:
+                trace_results.append(
+                    TraceResult(
+                        case=case,
+                        trace=_resolve_case_trace(prepared, raw_trace, error),
+                        error=error,
+                    )
+                )
+
+        return results, profile_results, trace_results
+
+
+def _resolve_case_trace(
+    prepared: Any,
+    raw_trace: tuple[list[int], list[int]] | None,
+    error: str | None,
+) -> ResolvedTrace | None:
+    """
+    Resolve raw trace arrays against the prepared code object.
+
+    Returns None when the case errored, when no trace was collected, or when
+    the prepared value is not a CodeObject (i.e. not the Menai implementation).
+    """
+    if error is not None or raw_trace is None or not isinstance(prepared, CodeObject):
+        return None
+
+    instr_counts, call_counts = raw_trace
+    return resolve_trace(prepared, instr_counts, call_counts)
 
 
 class BenchmarkReporter:
@@ -263,3 +316,61 @@ class BenchmarkReporter:
         print()
         print(separator)
         print()
+
+    def report_trace(
+        self,
+        suite_name: str,
+        trace_results: list[TraceResult],
+        top_n: int = 20,
+    ) -> None:
+        """
+        Print the hottest instructions for each case.
+
+        Only cases whose prepared value was a CodeObject produce a trace, so
+        cases from non-Menai implementations are skipped.
+        """
+        self._report_traces(
+            suite_name,
+            "TRACES",
+            trace_results,
+            lambda trace: render_hot_instructions(trace, color=False, top_n=top_n),
+        )
+
+    def report_annotated(
+        self,
+        suite_name: str,
+        trace_results: list[TraceResult],
+    ) -> None:
+        """
+        Print the annotated disassembly for each case.
+
+        Only cases whose prepared value was a CodeObject produce a trace, so
+        cases from non-Menai implementations are skipped.
+        """
+        self._report_traces(
+            suite_name,
+            "ANNOTATED TRACES",
+            trace_results,
+            lambda trace: render_annotated(trace, color=False),
+        )
+
+    def _report_traces(
+        self,
+        suite_name: str,
+        heading: str,
+        trace_results: list[TraceResult],
+        render: Callable[[ResolvedTrace], list[str]],
+    ) -> None:
+        """Print a per-case trace section using the given renderer."""
+        print()
+        print(f"{suite_name.upper()} \u2014 {heading}")
+
+        for tr in trace_results:
+            trace = tr.trace
+            if trace is None:
+                continue
+
+            print()
+            print(f"  {tr.case.name}")
+            for line in render(trace):
+                print(f"  {line}")

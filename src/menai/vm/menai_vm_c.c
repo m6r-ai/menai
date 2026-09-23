@@ -208,16 +208,23 @@ _menai_shl_overflow(long a, long shift, long *r) {
 #define OPCODE_MASK 0xFFFFu
 
 /*
- * Profiling control — enable and extract.
+ * Profiling and tracing control — enable and extract.
  * These are always compiled in (not under MENAI_PROFILE) so the bridge
  * can call them regardless of build mode.  When profiling is not compiled
  * into the dispatch loop the counters simply stay at zero.
+ *
+ * Enabling resets both the opcode histogram and the trace arrays.  The trace
+ * arrays are sized to the code tree by menai_vm_prepare_trace at the start of
+ * each execute call; enabling only clears the enabled flag and the counters
+ * that are already allocated.
  */
 void
 menai_vm_enable_profiling(MenaiVMState *vs)
 {
     memset(&vs->_profile, 0, sizeof(MenaiProfileData));
     vs->_profile.enabled = 1;
+
+    vs->_trace.enabled = 1;
 }
 
 void
@@ -225,6 +232,74 @@ menai_vm_get_profile_data(MenaiVMState *vs, uint64_t *out_counts, uint64_t *out_
 {
     memcpy(out_counts, vs->_profile.opcode_counts, sizeof(vs->_profile.opcode_counts));
     *out_total_instr = vs->_profile.total_instructions;
+}
+
+/*
+ * menai_vm_prepare_trace — size and zero the trace arrays for a code tree.
+ *
+ * Called at the start of every execute call.  The arrays are reallocated only
+ * when the tree size changes, and are zeroed on every call so that a trace
+ * reflects a single execution.  Does nothing when tracing is disabled.
+ *
+ * Returns MENAI_OK, or MENAI_ERR_NOMEM on allocation failure.
+ */
+int
+menai_vm_prepare_trace(MenaiVMState *vs, MenaiCodeObject *code)
+{
+    if (!vs->_trace.enabled) {
+        return MENAI_OK;
+    }
+
+    size_t n_instr = 0;
+    size_t n_code = 0;
+    menai_code_object_count(code, &n_instr, &n_code);
+
+    if (n_instr != vs->_trace.n_instr) {
+        free(vs->_trace.instr_counts);
+        vs->_trace.instr_counts = NULL;
+        if (n_instr > 0) {
+            vs->_trace.instr_counts = (uint64_t *)calloc(n_instr, sizeof(uint64_t));
+            if (!vs->_trace.instr_counts) {
+                vs->_trace.n_instr = 0;
+                return MENAI_ERR_NOMEM;
+            }
+        }
+
+        vs->_trace.n_instr = n_instr;
+    }
+
+    if (n_code != vs->_trace.n_code) {
+        free(vs->_trace.call_counts);
+        vs->_trace.call_counts = NULL;
+        if (n_code > 0) {
+            vs->_trace.call_counts = (uint64_t *)calloc(n_code, sizeof(uint64_t));
+            if (!vs->_trace.call_counts) {
+                vs->_trace.n_code = 0;
+                return MENAI_ERR_NOMEM;
+            }
+        }
+
+        vs->_trace.n_code = n_code;
+    }
+
+    if (n_instr > 0) {
+        memset(vs->_trace.instr_counts, 0, n_instr * sizeof(uint64_t));
+    }
+
+    if (n_code > 0) {
+        memset(vs->_trace.call_counts, 0, n_code * sizeof(uint64_t));
+    }
+
+    return MENAI_OK;
+}
+
+void
+menai_vm_get_trace_data(MenaiVMState *vs, uint64_t **out_instr, size_t *out_n_instr, uint64_t **out_calls, size_t *out_n_code)
+{
+    *out_instr = vs->_trace.instr_counts;
+    *out_n_instr = vs->_trace.n_instr;
+    *out_calls = vs->_trace.call_counts;
+    *out_n_code = vs->_trace.n_code;
 }
 
 /*
@@ -506,6 +581,8 @@ typedef struct {
     int base;
     MenaiValue **frame_regs;
     int return_dest;
+    int instr_base;                  /* global ordinal of this frame's instruction 0 */
+    int code_ordinal;                /* this frame's code object ordinal */
 } Frame;
 
 /*
@@ -637,6 +714,20 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
     new_frame->base = callee_base;
     new_frame->frame_regs = regs + callee_base;
     new_frame->return_dest = return_dest;
+    new_frame->instr_base = co->instr_base;
+    new_frame->code_ordinal = co->code_ordinal;
+
+    /*
+     * Count the call against the callee.  call_setup is the single path taken
+     * by CALL, TAIL_CALL, APPLY, and TAIL_APPLY, so counting here covers every
+     * function call exactly once.  This also counts entry to the top-level
+     * code object, which is a genuine call into it; the module therefore
+     * reports one call.
+     */
+    if (vs->_profile.enabled) {
+        vs->_trace.call_counts[co->code_ordinal]++;
+    }
+
     return MENAI_OK;
 }
 
@@ -695,6 +786,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         if (vs->_profile.enabled) {
             vs->_profile.opcode_counts[opcode]++;
             vs->_profile.total_instructions++;
+
+            /*
+             * cur_ip is the index of the instruction just fetched, so
+             * frame->instr_base + cur_ip is its global ordinal.  The trace
+             * arrays are sized to the code tree by menai_vm_prepare_trace.
+             */
+            vs->_trace.instr_counts[frame->instr_base + cur_ip]++;
         }
 
         switch (opcode) {
@@ -7726,6 +7824,12 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code)
     vs->error.call_depth = 0;
     vs->error.user_value = NULL;
     vs->error.backtrace_count = 0;
+
+    /* Size and zero the trace arrays for this code tree (no-op if disabled). */
+    if (menai_vm_prepare_trace(vs, code) != MENAI_OK) {
+        vs->error.code = MENAI_ERR_NOMEM;
+        return NULL;
+    }
 
     size_t needed = (size_t)code->local_count + code->outgoing_arg_slots;
     size_t num_regs = INITIAL_REG_CAPACITY;

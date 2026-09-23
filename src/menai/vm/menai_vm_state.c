@@ -106,6 +106,9 @@ menai_vm_state_free(MenaiVMState *vs)
     menai_closure_gc_collect(vs, NULL);
     menai_closure_registry_free(vs);
 
+    free(vs->_trace.instr_counts);
+    free(vs->_trace.call_counts);
+
     if (vs->empty_vector) {
         menai_value_free(vs, (MenaiValue *)vs->empty_vector);
     }

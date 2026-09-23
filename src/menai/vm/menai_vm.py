@@ -16,6 +16,7 @@ from menai.vm.menai_vm_c import cancel as _c_vm_cancel  # type: ignore[import-no
 from menai.vm.menai_vm_c import enable_profiling as _c_vm_enable_profiling  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import get_profile_data as _c_vm_get_profile_data  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import get_timing_data as _c_vm_get_timing_data  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import get_trace_data as _c_vm_get_trace_data  # type: ignore[import-not-found]
 
 
 class MenaiVM:
@@ -77,6 +78,22 @@ class MenaiVM:
                 result[Opcode(int(key)).name] = count
 
         return result
+
+    def get_trace_data(self) -> tuple[list[int], list[int]]:
+        """
+        Return instruction and call counts from the most recent execute() call.
+
+        Returns a pair (instr_counts, call_counts):
+
+            instr_counts[i] — executions of the instruction with global ordinal i
+            call_counts[c]  — calls to the code object with code ordinal c
+
+        Both lists are in the canonical walk order defined by
+        menai_render.menai_render_walk.walk_code_objects.  Returns
+        ([], []) if tracing was never enabled.
+        """
+        instr_counts, call_counts = _c_vm_get_trace_data(self._state)
+        return (cast(list[int], instr_counts), cast(list[int], call_counts))
 
     def get_timing_data(self) -> dict[str, int]:
         """

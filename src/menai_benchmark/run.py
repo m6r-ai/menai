@@ -97,7 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
             "python run.py --suite sort sudoku         # run multiple\n"
             "python run.py --iterations 5              # override iteration count\n"
             "python run.py --profile                   # opcode profiling (Menai only)\n"
-            "python run.py --profile --profile-top 20  # limit opcode output"
+            "python run.py --profile --profile-top 20  # limit opcode output\n"
+            "python run.py --trace                     # instruction tracing (Menai only)\n"
+            "python run.py --trace --trace-top 10      # limit trace output\n"
+            "python run.py --annotate                  # annotated disassembly (Menai only)"
         ),
     )
     parser.add_argument(
@@ -137,6 +140,36 @@ def build_parser() -> argparse.ArgumentParser:
         dest="profile_top",
         help="Show top N opcodes in the profile output (default: 40).",
     )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        dest="trace",
+        help=(
+            "Enable VM instruction and call tracing during timed runs.  Adds "
+            "the hottest instructions per case after the timing report.  "
+            "Tracing overhead is included in the measured times.  Only applies "
+            "to the Menai implementation."
+        ),
+    )
+    parser.add_argument(
+        "--trace-top",
+        metavar="N",
+        type=int,
+        default=20,
+        dest="trace_top",
+        help="Show top N instructions per case in the trace output (default: 20).",
+    )
+    parser.add_argument(
+        "--annotate",
+        action="store_true",
+        dest="annotate",
+        help=(
+            "Enable VM instruction tracing and print the annotated disassembly "
+            "of every function per case, with each instruction's share of the "
+            "total instructions executed.  Only applies to the Menai "
+            "implementation."
+        ),
+    )
     return parser
 
 
@@ -146,6 +179,9 @@ def run_suite(
     iterations: int | None,
     profile: bool,
     profile_top: int,
+    trace: bool,
+    trace_top: int,
+    annotate: bool,
 ) -> None:
     """
     Instantiate, run, and report a single benchmark suite.
@@ -158,6 +194,9 @@ def run_suite(
                       case before running.
         profile:      If ``True``, enable opcode profiling during timed runs.
         profile_top:  Number of top opcodes to show in the profile output.
+        trace:        If ``True``, enable instruction tracing during timed runs.
+        trace_top:    Number of top instructions to show per case in the trace output.
+        annotate:     If ``True``, print the annotated disassembly per case.
     """
     suite = suite_class()
 
@@ -168,8 +207,8 @@ def run_suite(
     module_path = [str(suite_dir), str(_MENAI_MODULES_DIR)]
     menai = Menai(module_path=module_path)
 
-    runner = BenchmarkRunner(suite, menai, profile=profile)
-    results, profile_results = runner.run()
+    runner = BenchmarkRunner(suite, menai, profile=profile, trace=trace or annotate)
+    results, profile_results, trace_results = runner.run()
 
     reporter = BenchmarkReporter()
     reporter.report(suite.name, results)
@@ -179,6 +218,19 @@ def run_suite(
             suite.name,
             profile_results,
             top_n=profile_top,
+        )
+
+    if trace:
+        reporter.report_trace(
+            suite.name,
+            trace_results,
+            top_n=trace_top,
+        )
+
+    if annotate:
+        reporter.report_annotated(
+            suite.name,
+            trace_results,
         )
 
 
@@ -214,6 +266,9 @@ def main() -> None:
             iterations=args.iterations,
             profile=args.profile,
             profile_top=args.profile_top,
+            trace=args.trace,
+            trace_top=args.trace_top,
+            annotate=args.annotate,
         )
 
     if len(selected) > 1:

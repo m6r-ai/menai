@@ -39,7 +39,100 @@ perf_counter_ns(void)
 #endif
 }
 
-static MenaiValue *slow_value_to_menai_value(MenaiVMState *vs, PyObject *src);
+/*
+ * ConversionContext — maps a Python CodeObject to the native MenaiCodeObject
+ * built for it during a single top-level conversion.
+ *
+ * A compiled program is a tree of CodeObjects in which a function constant
+ * holds a reference to a CodeObject that is also a child of some parent.  The
+ * VM executes functions reached through those constants, so without this map
+ * the bridge would build a separate native code object for every function
+ * constant — giving one logical function several native instances.  The
+ * instruction tracer keys counts by the ordinal stamped on a native code
+ * object, so duplicate instances would each be stamped from a fresh counter
+ * and all counts would collapse onto ordinal 0.
+ *
+ * The map makes the executed tree and the walked tree the same object graph:
+ * one native code object per logical CodeObject, stamped once.  Entries are
+ * borrowed pointers valid only for the duration of the conversion.
+ */
+typedef struct {
+    PyObject **py_codes;
+    MenaiCodeObject **native_codes;
+    size_t count;
+    size_t capacity;
+} ConversionContext;
+
+/*
+ * conversion_context_record — record that py_code converted to native.
+ *
+ * Grows the arrays by doubling.  Returns 0 on success, -1 on allocation
+ * failure with a Python exception set.
+ */
+static int
+conversion_context_record(ConversionContext *ctx, PyObject *py_code, MenaiCodeObject *native)
+{
+    if (ctx->count == ctx->capacity) {
+        size_t new_capacity = ctx->capacity == 0 ? 64 : ctx->capacity * 2;
+        PyObject **new_py = (PyObject **)realloc(ctx->py_codes, new_capacity * sizeof(PyObject *));
+        if (!new_py) {
+            PyErr_NoMemory();
+            return -1;
+        }
+
+        ctx->py_codes = new_py;
+
+        MenaiCodeObject **new_native = (MenaiCodeObject **)realloc(
+            ctx->native_codes, new_capacity * sizeof(MenaiCodeObject *));
+        if (!new_native) {
+            PyErr_NoMemory();
+            return -1;
+        }
+
+        ctx->native_codes = new_native;
+        ctx->capacity = new_capacity;
+    }
+
+    ctx->py_codes[ctx->count] = py_code;
+    ctx->native_codes[ctx->count] = native;
+    ctx->count++;
+    return 0;
+}
+
+/*
+ * conversion_context_lookup — find the native code object for a Python one.
+ *
+ * Compares by identity: the same Python CodeObject always maps to the same
+ * native code object.  Returns NULL when py_code was not converted in this
+ * context.
+ */
+static MenaiCodeObject *
+conversion_context_lookup(ConversionContext *ctx, PyObject *py_code)
+{
+    for (size_t i = 0; i < ctx->count; i++) {
+        if (ctx->py_codes[i] == py_code) {
+            return ctx->native_codes[i];
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * conversion_context_final — release the context's arrays.
+ */
+static void
+conversion_context_final(ConversionContext *ctx)
+{
+    free(ctx->py_codes);
+    free(ctx->native_codes);
+    ctx->py_codes = NULL;
+    ctx->native_codes = NULL;
+    ctx->count = 0;
+    ctx->capacity = 0;
+}
+
+static MenaiValue *slow_value_to_menai_value(MenaiVMState *vs, PyObject *src, ConversionContext *ctx);
 static PyObject *menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val);
 static void bridge_raise_validation_error(const MenaiValidationError *err);
 
@@ -149,12 +242,17 @@ _read_bool(PyObject *obj, const char *attr, int *out)
 }
 
 /*
- * menai_code_object_from_python — build a MenaiCodeObject tree from a Python
- * CodeObject.  All constants are converted to fast MenaiValues.  Returns a
- * new reference (ob_refcnt == 1), or NULL on error with a Python exception set.
+ * menai_code_object_from_python_rec — recursive worker for the conversion.
+ *
+ * Assigns each code object a code ordinal and an instruction base in the
+ * canonical walk order defined by menai_render.menai_render_walk: depth-first,
+ * parent before children, children in list order.  *next_code is the next code
+ * ordinal and *next_instr is the next global instruction ordinal; both advance
+ * as the tree is visited.  The parent's ordinal and base are assigned before
+ * recursing into children, which is what makes this pre-order.
  */
 static MenaiCodeObject *
-menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
+menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next_code, int *next_instr, ConversionContext *ctx)
 {
     MenaiCodeObject *co = (MenaiCodeObject *)calloc(1, sizeof(MenaiCodeObject));
     if (!co) {
@@ -164,6 +262,19 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
 
     co->ob_refcnt = 1;
     MENAI_SET_MAGIC(co);
+
+    co->code_ordinal = *next_code;
+    co->instr_base = *next_instr;
+    *next_code += 1;
+
+    /*
+     * Record this code object before recursing, so that a function constant
+     * referring to it (directly or through a sibling) resolves to this same
+     * native instance.
+     */
+    if (conversion_context_record(ctx, py_code, co) < 0) {
+        goto fail;
+    }
 
     /* Scalar fields */
     if (_read_int(py_code, "param_count", &co->param_count) < 0) {
@@ -288,6 +399,13 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
     Py_DECREF(instrs_obj);
 
     /*
+     * Advance the global instruction ordinal past this code object's own
+     * instructions.  This happens before recursing into children, so a child's
+     * base follows its parent's instructions — matching the Python walk.
+     */
+    *next_instr += co->code_len;
+
+    /*
      * children — recurse first so that when we convert constants that are
      * functions, their children already exist and can be referenced.
      */
@@ -307,7 +425,7 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
         }
 
         for (ssize_t i = 0; i < co->nchildren; i++) {
-            co->children[i] = menai_code_object_from_python(vs, PyList_GET_ITEM(py_children, i));
+            co->children[i] = menai_code_object_from_python_rec(vs, PyList_GET_ITEM(py_children, i), next_code, next_instr, ctx);
             if (!co->children[i]) {
                 Py_DECREF(py_children);
                 goto fail;
@@ -337,7 +455,7 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
 
         for (ssize_t i = 0; i < co->nconst; i++) {
             PyObject *orig = PyList_GET_ITEM(py_constants, i);
-            MenaiValue *fast = slow_value_to_menai_value(vs, orig);
+            MenaiValue *fast = slow_value_to_menai_value(vs, orig, ctx);
             if (!fast) {
                 Py_DECREF(py_constants);
                 goto fail;
@@ -423,6 +541,29 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
 fail:
     menai_code_object_release(vs, co);
     return NULL;
+}
+
+/*
+ * menai_code_object_from_python — build a MenaiCodeObject tree from a Python
+ * CodeObject.  All constants are converted to fast MenaiValues.  Returns a
+ * new reference (ob_refcnt == 1), or NULL on error with a Python exception set.
+ *
+ * Assigns trace ordinals to every code object and instruction in the tree, in
+ * the canonical walk order.  The ordinals are stable across conversions of the
+ * same Python tree, which is what makes them usable as trace keys.
+ */
+static MenaiCodeObject *
+menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
+{
+    int next_code = 0;
+    int next_instr = 0;
+    ConversionContext ctx = {0};
+
+    MenaiCodeObject *co = menai_code_object_from_python_rec(
+        vs, py_code, &next_code, &next_instr, &ctx);
+
+    conversion_context_final(&ctx);
+    return co;
 }
 
 /*
@@ -632,7 +773,7 @@ slow_bytes_to_fast(MenaiVMState *vs, PyObject *src)
 }
 
 static inline MenaiValue *
-slow_vector_to_fast(MenaiVMState *vs, PyObject *src)
+slow_vector_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyObject *elems = PyObject_GetAttrString(src, "elements");
     if (!elems) {
@@ -648,7 +789,7 @@ slow_vector_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     for (Py_ssize_t i = 0; i < n; i++) {
-        MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
+        MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i), ctx);
         if (!item) {
             menai_value_release(vs, (MenaiValue *)r);
             Py_DECREF(elems);
@@ -682,7 +823,7 @@ slow_symbol_to_fast(MenaiVMState *vs, PyObject *src)
 }
 
 static inline MenaiValue *
-slow_list_to_fast(MenaiVMState *vs, PyObject *src)
+slow_list_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyObject *elems = PyObject_GetAttrString(src, "elements");
     if (!elems) {
@@ -694,7 +835,7 @@ slow_list_to_fast(MenaiVMState *vs, PyObject *src)
     menai_value_retain((MenaiValue *)lst);
 
     for (Py_ssize_t i = n - 1; i >= 0; i--) {
-        MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
+        MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i), ctx);
         if (!item) {
             menai_value_release(vs, (MenaiValue *)lst);
             Py_DECREF(elems);
@@ -719,7 +860,7 @@ slow_list_to_fast(MenaiVMState *vs, PyObject *src)
 }
 
 static inline MenaiValue *
-slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
+slow_dict_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyObject *pairs = PyObject_GetAttrString(src, "pairs");
     if (!pairs) {
@@ -746,13 +887,13 @@ slow_dict_to_fast(MenaiVMState *vs, PyObject *src)
 
     for (Py_ssize_t i = 0; i < n; i++) {
         PyObject *pair = PyTuple_GET_ITEM(pairs, i);
-        MenaiValue *fk = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(pair, 0));
+        MenaiValue *fk = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(pair, 0), ctx);
         if (!fk) {
             Py_DECREF(pairs);
             goto fail;
         }
 
-        MenaiValue *fv = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(pair, 1));
+        MenaiValue *fv = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(pair, 1), ctx);
         if (!fv) {
             menai_value_release(vs, fk);
             Py_DECREF(pairs);
@@ -805,7 +946,7 @@ fail:
 }
 
 static inline MenaiValue *
-slow_set_to_fast(MenaiVMState *vs, PyObject *src)
+slow_set_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyObject *elems = PyObject_GetAttrString(src, "elements");
     if (!elems) {
@@ -822,7 +963,7 @@ slow_set_to_fast(MenaiVMState *vs, PyObject *src)
 
     MenaiSetElement **elements = s->elements;
     for (Py_ssize_t i = 0; i < n; i++) {
-        MenaiValue *fe = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i));
+        MenaiValue *fe = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i), ctx);
         if (!fe) {
             for (Py_ssize_t j = 0; j < i; j++) {
                 menai_value_release(vs, (MenaiValue *)elements[j]);
@@ -956,14 +1097,14 @@ slow_structtype_to_fast(MenaiVMState *vs, PyObject *src)
 }
 
 static inline MenaiValue *
-slow_struct_to_fast(MenaiVMState *vs, PyObject *src)
+slow_struct_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyObject *st = PyObject_GetAttrString(src, "struct_type");
     if (!st) {
         return NULL;
     }
 
-    MenaiStructType *fast_st = (MenaiStructType *)slow_value_to_menai_value(vs, st);
+    MenaiStructType *fast_st = (MenaiStructType *)slow_value_to_menai_value(vs, st, ctx);
     Py_DECREF(st);
     if (!fast_st) {
         return NULL;
@@ -985,7 +1126,7 @@ slow_struct_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     for (Py_ssize_t i = 0; i < n; i++) {
-        MenaiValue *ff = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(fields, i));
+        MenaiValue *ff = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(fields, i), ctx);
         if (!ff) {
             for (Py_ssize_t j = 0; j < i; j++) {
                 menai_value_release(vs, fast_arr[j]);
@@ -1016,17 +1157,35 @@ slow_struct_to_fast(MenaiVMState *vs, PyObject *src)
 }
 
 static inline MenaiValue *
-slow_function_to_fast(MenaiVMState *vs, PyObject *src)
+slow_function_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyObject *bc = PyObject_GetAttrString(src, "bytecode");
     if (!bc) {
         return NULL;
     }
 
-    MenaiCodeObject *co = menai_code_object_from_python(vs, bc);
-    Py_DECREF(bc);
-    if (!co) {
-        return NULL;
+    /*
+     * A function's bytecode is also a child of some parent code object, so it
+     * has normally already been converted in this context.  Reuse that native
+     * code object rather than building a second instance for the same logical
+     * function: the trace ordinals are stamped per native code object, and a
+     * duplicate would be stamped from a fresh counter.
+     *
+     * When there is no context entry (a function value converted outside a
+     * code-tree conversion, e.g. an injected value), fall back to converting
+     * the bytecode as its own tree.
+     */
+    MenaiCodeObject *co = ctx ? conversion_context_lookup(ctx, bc) : NULL;
+    if (co) {
+        menai_code_object_retain(co);
+        Py_DECREF(bc);
+
+    } else {
+        co = menai_code_object_from_python(vs, bc);
+        Py_DECREF(bc);
+        if (!co) {
+            return NULL;
+        }
     }
 
     MenaiFunction *f = alloc_menai_function(vs, co);
@@ -1042,7 +1201,7 @@ slow_function_to_fast(MenaiVMState *vs, PyObject *src)
     }
 
     for (Py_ssize_t ci = 0; ci < f->bytecode->ncap; ci++) {
-        MenaiValue *fast_cv = slow_value_to_menai_value(vs, PyList_GET_ITEM(cap, ci));
+        MenaiValue *fast_cv = slow_value_to_menai_value(vs, PyList_GET_ITEM(cap, ci), ctx);
         if (!fast_cv) {
             menai_value_release(vs, (MenaiValue *)f);
             Py_DECREF(cap);
@@ -1057,7 +1216,7 @@ slow_function_to_fast(MenaiVMState *vs, PyObject *src)
 }
 
 static MenaiValue *
-slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
+slow_value_to_menai_value(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyTypeObject *t = Py_TYPE(src);
 
@@ -1090,7 +1249,7 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
     }
 
     if (t == Slow_VectorType) {
-        return slow_vector_to_fast(vs, src);
+        return slow_vector_to_fast(vs, src, ctx);
     }
 
     if (t == Slow_SymbolType) {
@@ -1098,15 +1257,15 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
     }
 
     if (t == Slow_ListType) {
-        return slow_list_to_fast(vs, src);
+        return slow_list_to_fast(vs, src, ctx);
     }
 
     if (t == Slow_DictType) {
-        return slow_dict_to_fast(vs, src);
+        return slow_dict_to_fast(vs, src, ctx);
     }
 
     if (t == Slow_SetType) {
-        return slow_set_to_fast(vs, src);
+        return slow_set_to_fast(vs, src, ctx);
     }
 
     if (t == Slow_StructTypeType) {
@@ -1114,11 +1273,11 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src)
     }
 
     if (t == Slow_StructType) {
-        return slow_struct_to_fast(vs, src);
+        return slow_struct_to_fast(vs, src, ctx);
     }
 
     if (t == Slow_FunctionType) {
-        return slow_function_to_fast(vs, src);
+        return slow_function_to_fast(vs, src, ctx);
     }
 
     PyErr_Format(PyExc_TypeError, "slow_value_to_menai_value: unexpected type %R", (PyObject *)t);
@@ -2151,6 +2310,68 @@ menai_vm_c_get_profile_data(PyObject *self, PyObject *capsule)
 }
 
 /*
+ * menai_vm_c_get_trace_data — Python-callable wrapper.
+ *
+ * get_trace_data(state_capsule) returns a tuple of two lists:
+ *   (instr_counts, call_counts)
+ * where instr_counts[i] is the number of times the instruction with global
+ * ordinal i executed, and call_counts[c] is the number of times the code
+ * object with code ordinal c was called.  Both lists are in the canonical
+ * walk order and are empty when tracing was never enabled.
+ */
+static PyObject *
+menai_vm_c_get_trace_data(PyObject *self, PyObject *capsule)
+{
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    uint64_t *instr_counts;
+    uint64_t *call_counts;
+    size_t n_instr;
+    size_t n_code;
+    menai_vm_get_trace_data(vs, &instr_counts, &n_instr, &call_counts, &n_code);
+
+    PyObject *instr_list = PyList_New((Py_ssize_t)n_instr);
+    if (!instr_list) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < n_instr; i++) {
+        PyObject *count = PyLong_FromUnsignedLongLong(instr_counts[i]);
+        if (!count) {
+            Py_DECREF(instr_list);
+            return NULL;
+        }
+
+        PyList_SET_ITEM(instr_list, (Py_ssize_t)i, count);
+    }
+
+    PyObject *call_list = PyList_New((Py_ssize_t)n_code);
+    if (!call_list) {
+        Py_DECREF(instr_list);
+        return NULL;
+    }
+
+    for (size_t i = 0; i < n_code; i++) {
+        PyObject *count = PyLong_FromUnsignedLongLong(call_counts[i]);
+        if (!count) {
+            Py_DECREF(instr_list);
+            Py_DECREF(call_list);
+            return NULL;
+        }
+
+        PyList_SET_ITEM(call_list, (Py_ssize_t)i, count);
+    }
+
+    PyObject *result = PyTuple_Pack(2, instr_list, call_list);
+    Py_DECREF(instr_list);
+    Py_DECREF(call_list);
+    return result;
+}
+
+/*
  * menai_vm_c_get_timing_data — Python-callable wrapper.
  *
  * get_timing_data(state_capsule) returns a dict with:
@@ -2424,6 +2645,12 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_get_profile_data,
         METH_O,
         "Return profiling data as a dict mapping opcode name to [count, cycles]."
+    },
+    {
+        "get_trace_data",
+        menai_vm_c_get_trace_data,
+        METH_O,
+        "Return (instr_counts, call_counts) lists in canonical walk order."
     },
     {
         "get_timing_data",

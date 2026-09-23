@@ -19,6 +19,9 @@ python run.py --suite sort sudoku    # run multiple suites
 python run.py --iterations 3         # override iteration count on every case
 python run.py --profile              # opcode profiling (Menai only)
 python run.py --profile --profile-top 20  # limit opcode output
+python run.py --trace                # instruction tracing (Menai only)
+python run.py --trace --trace-top 10 # limit trace output
+python run.py --annotate             # annotated disassembly (Menai only)
 ```
 
 ## Structure
@@ -108,6 +111,28 @@ unprofiled run.
 Opcode profile data is produced by the Menai VM.
 
 `--profile-top N` controls how many opcodes are shown per case (default: 40).
+
+## Instruction tracing
+
+The `--trace` flag enables VM-level instruction and call tracing during the
+timed runs.  After the timing report, the hottest instructions are printed for
+each Menai case, attributed to the function they belong to.  Where `--profile`
+shows which opcode *kinds* dominate, `--trace` shows which individual
+instructions and functions dominate.
+
+Tracing overhead is included in the measured times.  `--trace-top N` controls
+how many instructions are shown per case (default: 20).
+
+## Annotated disassembly
+
+The `--annotate` flag enables instruction tracing and prints the annotated
+disassembly of every function for each Menai case, in disassembly order, with
+each instruction's execution count and its percentage of the total instructions
+executed.  This is the `perf annotate` view: the whole function body is visible
+so a hot region can be read in context.  Each function header shows that
+function's share of the total.
+
+Percentages are of instruction count, not time.
 
 ## Suites
 

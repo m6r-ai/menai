@@ -17,6 +17,16 @@ available and may be combined:
                wall-clock time, giving instruction throughput and average
                time per instruction.
 
+  --trace      VM-level instruction and call tracing.  Counts how many times
+               each *individual* instruction is executed and how many times
+               each function is called, attributed to the disassembly so hot
+               spots can be read against the disassembler output.
+
+  --annotate   Annotated disassembly.  Renders every function in disassembly
+               order with each instruction's execution count and its share of
+               the total instructions executed.  This is the perf-annotate
+               view for reading hot regions in context.
+
 The two modes are complementary: cProfile covers the compiler (which is
 pure Python) but sees VM execution as a single opaque C frame, while opcode
 profiling covers the VM runtime but not the compiler.
@@ -31,6 +41,10 @@ Usage:
     menai-eval -
     menai-eval <file.menai> --cprofile
     menai-eval <file.menai> --profile
+    menai-eval <file.menai> --trace
+    menai-eval <file.menai> --profile --trace
+    menai-eval <file.menai> --annotate
+    menai-eval <file.menai> --profile --annotate
     menai-eval <file.menai> --cprofile --profile
     menai-eval <file.menai> --profile --top 50
     menai-eval <file.menai> --cprofile --sort time
@@ -50,6 +64,8 @@ from pathlib import Path
 from menai import Menai, MenaiError, MenaiString, MenaiValue
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_compiler import MenaiCompiler
+from menai_trace.menai_trace_data import resolve_trace
+from menai_trace.menai_trace_render import render_annotated, render_full_trace
 
 _ANSI_GREY = "\033[90m"
 _ANSI_RESET = "\033[0m"
@@ -233,23 +249,31 @@ def profile_compiler(
     return code
 
 
-def profile_vm(
+def instrument_vm(
     menai: Menai,
     code: CodeObject,
     top_n: int,
     color: bool,
+    profile: bool,
+    trace: bool,
+    annotate: bool,
 ) -> MenaiValue:
     """
-    Execute the compiled code with VM-level opcode profiling enabled.
+    Execute the compiled code once with VM instrumentation enabled.
 
-    A warm-up run is performed without profiling so that first-run costs
-    (page faults, code cache warming) do not skew the timed measurement.
+    Both the opcode histogram and the instruction/call trace are collected
+    during a single run, so requesting both costs no more than requesting one.
+    A warm-up run is performed without instrumentation so that first-run costs
+    (page faults, code cache warming) do not skew the measurement.
 
     Args:
-        menai:  Initialised Menai instance.
-        code:   Compiled CodeObject.
-        top_n:  Number of top opcodes to print.
-        color:  Whether to colour the section separators.
+        menai:   Initialised Menai instance.
+        code:    Compiled CodeObject.
+        top_n:   Number of entries to show in each report.
+        color:   Whether to colour the output.
+        profile: Whether to report the opcode histogram.
+        trace:   Whether to report the instruction and call trace.
+        annotate: Whether to report the annotated per-function disassembly.
 
     Returns:
         The evaluation result (raw MenaiValue).
@@ -276,6 +300,28 @@ def profile_vm(
 
     elapsed_s = time.perf_counter() - start
 
+    if profile:
+        _print_opcode_profile(menai, top_n, elapsed_s, color)
+
+    if trace or annotate:
+        instr_counts, call_counts = menai.vm.get_trace_data()
+        trace_result = resolve_trace(code, instr_counts, call_counts)
+
+        if trace:
+            print()
+            for line in render_full_trace(trace_result, color=color, top_n=top_n):
+                print(line)
+
+        if annotate:
+            print()
+            for line in render_annotated(trace_result, color=color):
+                print(line)
+
+    return result
+
+
+def _print_opcode_profile(menai: Menai, top_n: int, elapsed_s: float, color: bool) -> None:
+    """Print the per-opcode frequency histogram collected from the last run."""
     profile_data = menai.vm.get_profile_data()
 
     print()
@@ -284,7 +330,7 @@ def profile_vm(
     if not profile_data or profile_data.get("__total__", 0) == 0:
         print("No opcode profiling data collected.")
         print("The C VM may not have been built with profiling support.")
-        return result
+        return
 
     total_instr = profile_data.pop("__total__")
     avg_ns_per_instr = (elapsed_s / total_instr * 1e9) if total_instr > 0 else 0.0
@@ -310,8 +356,6 @@ def profile_vm(
     print(f"Wall-clock time:      {elapsed_s * 1000.0:.3f} ms")
     print(f"Instructions/sec:     {instr_per_sec:,.0f}")
     print(f"Avg time/instruction: {avg_ns_per_instr:.1f} ns")
-
-    return result
 
 
 def _report_execution_error(exc: Exception) -> None:
@@ -360,6 +404,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile",
         action="store_true",
         help="Profile VM execution with per-opcode frequency counting",
+    )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="Trace VM execution with per-instruction and per-function counts",
+    )
+    parser.add_argument(
+        "--annotate",
+        action="store_true",
+        help="Annotate the disassembly of every function with per-instruction execution shares",
     )
     parser.add_argument(
         "--output", "-o",
@@ -423,8 +477,11 @@ def main() -> int:
     else:
         code, _ = compile_source(source, name, menai)
 
-    if args.profile:
-        result = profile_vm(menai, code, args.top, color)
+    if args.profile or args.trace or args.annotate:
+        result = instrument_vm(
+            menai, code, args.top, color,
+            profile=args.profile, trace=args.trace, annotate=args.annotate,
+        )
 
     else:
         try:
