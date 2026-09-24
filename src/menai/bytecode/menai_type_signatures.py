@@ -163,12 +163,12 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'string-trim': (['string'], 'string'),
     'string-trim-left': (['string'], 'string'),
     'string-trim-right': (['string'], 'string'),
-    'string->integer': (['string', 'integer'], 'integer'),
-    'string->float': (['string'], 'float'),
-    'string->complex': (['string'], 'complex'),
+    'string->integer': (['string', 'integer'], None),
+    'string->float': (['string'], None),
+    'string->complex': (['string'], None),
     'string->list': (['string', 'string'], 'list'),
     'string-ref': (['string', 'integer'], 'string'),
-    'string-index': (['string', 'string'], 'integer'),
+    'string-index': (['string', 'string'], None),
     'string-prefix?': (['string', 'string'], 'boolean'),
     'string-suffix?': (['string', 'string'], 'boolean'),
     'string->integer-codepoint': (['string'], 'integer'),
@@ -190,7 +190,7 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'list-ref': (['list', 'integer'], None),
     'list-null?': (['list'], 'boolean'),
     'list-member?': (['list', 'any'], 'boolean'),
-    'list-index': (['list', 'any'], 'integer'),
+    'list-index': (['list', 'any'], None),
     'list-slice': (['list', 'integer', 'integer'], 'list'),
     'list-remove': (['list', 'any'], 'list'),
     'list-concat': (['list', 'list'], 'list'),
@@ -257,7 +257,7 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'string-hex->bytes': (['string'], 'bytes'),
     'bytes-concat': (['bytes', 'bytes'], 'bytes'),
     'bytes-index': (['bytes', 'bytes'], None),
-    'bytes-index-int': (['bytes', 'integer'], 'integer'),
+    'bytes-index-int': (['bytes', 'integer'], None),
     'bytes<?': (['bytes', 'bytes'], 'boolean'),
     'bytes>?': (['bytes', 'bytes'], 'boolean'),
     'bytes<=?': (['bytes', 'bytes'], 'boolean'),
@@ -315,9 +315,9 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'bytes-write-i32-be': (['bytes', 'integer', 'integer'], 'bytes'),
     'bytes-write-i64-le': (['bytes', 'integer', 'integer'], 'bytes'),
     'bytes-write-i64-be': (['bytes', 'integer', 'integer'], 'bytes'),
-    'bytes-read-uleb128': (['bytes', 'integer'], 'integer'),
+    'bytes-read-uleb128': (['bytes', 'integer'], 'list'),
     'bytes-append-uleb128': (['bytes', 'integer'], 'bytes'),
-    'bytes-read-sleb128': (['bytes', 'integer'], 'integer'),
+    'bytes-read-sleb128': (['bytes', 'integer'], 'list'),
     'bytes-append-sleb128': (['bytes', 'integer'], 'bytes'),
     'bytes-hash-sha2-256': (['bytes'], 'bytes'),
     'bytes-hash-sha2-512': (['bytes'], 'bytes'),
@@ -351,4 +351,30 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'vector-index': (['vector', 'any'], None),
     'vector->list': (['vector'], 'list'),
     'list->vector': (['list'], 'vector'),
+}
+
+
+# Type-predicate builtins mapped to the Menai type name each one tests for.
+# A predicate returns #t exactly when its argument's type is the mapped type.
+# The type names match the `kind` values of the type-fact lattice
+# (menai_cfg_type_fact), so a proven fact determines the predicate's result:
+# the predicate is #t when the fact's kind equals the mapped type, and #f when
+# the fact's kind is any other proven type.  A fact that is BOTTOM or ANY
+# determines nothing.
+TYPE_PREDICATES: dict[str, str] = {
+    'none?': 'none',
+    'boolean?': 'boolean',
+    'integer?': 'integer',
+    'float?': 'float',
+    'complex?': 'complex',
+    'string?': 'string',
+    'bytes?': 'bytes',
+    'list?': 'list',
+    'dict?': 'dict',
+    'set?': 'set',
+    'vector?': 'vector',
+    'symbol?': 'symbol',
+    'function?': 'function',
+    'struct?': 'struct',
+    'structtype?': 'structtype',
 }
