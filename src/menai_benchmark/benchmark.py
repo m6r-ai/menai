@@ -8,7 +8,7 @@ from menai import Menai
 from menai.bytecode.menai_bytecode import CodeObject
 from menai_trace.menai_trace_data import TraceResult as ResolvedTrace
 from menai_trace.menai_trace_data import resolve_trace
-from menai_trace.menai_trace_render import render_annotated, render_hot_instructions
+from menai_trace.menai_trace_render import render_annotated, render_function_summary
 
 
 @dataclass
@@ -321,10 +321,10 @@ class BenchmarkReporter:
         self,
         suite_name: str,
         trace_results: list[TraceResult],
-        top_n: int = 20,
+        top_n: int | None = 20,
     ) -> None:
         """
-        Print the hottest instructions for each case.
+        Print a per-function summary for each case, ranked by instructions executed.
 
         Only cases whose prepared value was a CodeObject produce a trace, so
         cases from non-Menai implementations are skipped.
@@ -333,7 +333,7 @@ class BenchmarkReporter:
             suite_name,
             "TRACES",
             trace_results,
-            lambda trace: render_hot_instructions(trace, color=False, top_n=top_n),
+            lambda trace: render_function_summary(trace, color=False, top_n=top_n),
         )
 
     def report_annotated(

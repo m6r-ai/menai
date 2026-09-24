@@ -11,10 +11,7 @@ from menai_render.menai_render_instruction import annotate_instruction, format_i
 from menai_trace.menai_trace_data import resolve_trace
 from menai_trace.menai_trace_render import (
     render_annotated,
-    render_call_summary,
-    render_full_trace,
-    render_hot_instructions,
-    render_trace,
+    render_function_summary,
 )
 
 _SOURCE = """
@@ -51,73 +48,63 @@ class TestInstructionLineMatchesDisassembler:
         assert expected == "  ; integer 1"
 
 
-class TestRenderTrace:
-    """The full trace rendering includes the expected sections."""
+class TestRenderFunctionSummary:
+    """The function summary ranks functions by instructions executed."""
 
     def test_contains_totals(self):
         _, result = _traced_result()
-        lines = render_trace(result, color=False)
-        text = "\n".join(lines)
+        text = "\n".join(render_function_summary(result, color=False))
         assert "Total instructions executed:" in text
         assert "Total function calls:" in text
 
     def test_contains_each_function(self):
         _, result = _traced_result()
-        text = "\n".join(render_trace(result, color=False))
+        text = "\n".join(render_function_summary(result, color=False))
         assert "fact" in text
 
-    def test_top_n_limits_instructions_per_function(self):
+    def test_functions_ordered_by_instructions_executed(self):
         _, result = _traced_result()
-        lines = render_trace(result, color=False, top_n=2)
-        count_lines = [ln for ln in lines if "%" in ln and ":" in ln]
-        assert len(count_lines) == 4
+        lines = render_function_summary(result, color=False)
+        counts = _summary_instruction_counts(lines)
+        assert counts == sorted(counts, reverse=True)
 
-
-class TestRenderCallSummary:
-    """The call summary orders functions by call count."""
-
-    def test_most_called_function_first(self):
+    def test_function_with_most_instructions_first(self):
         _, result = _traced_result()
-        lines = render_call_summary(result, color=False)
+        lines = render_function_summary(result, color=False)
         body = [ln for ln in lines if "fact" in ln or "<module>" in ln]
         assert "fact" in body[0]
 
     def test_shows_call_count(self):
         _, result = _traced_result()
-        text = "\n".join(render_call_summary(result, color=False))
+        text = "\n".join(render_function_summary(result, color=False))
         assert "5" in text
 
-
-class TestRenderHotInstructions:
-    """Hot instructions are ordered by count across the whole program."""
-
-    def test_highest_count_first(self):
+    def test_top_n_limits_functions(self):
         _, result = _traced_result()
-        lines = render_hot_instructions(result, color=False, top_n=5)
-        counts = []
-        for line in lines:
-            stripped = line.strip()
-            if stripped and stripped[0].isdigit():
-                counts.append(int(stripped.split()[0].replace(",", "")))
+        lines = render_function_summary(result, color=False, top_n=1)
+        assert len(_summary_instruction_counts(lines)) == 1
 
-        assert counts == sorted(counts, reverse=True)
-
-    def test_top_n_respected(self):
+    def test_total_row_sums_the_functions(self):
         _, result = _traced_result()
-        lines = render_hot_instructions(result, color=False, top_n=3)
-        body = [ln for ln in lines if "%" in ln and ":" in ln]
-        assert len(body) == 3
+        lines = render_function_summary(result, color=False)
+        assert any("TOTAL" in ln for ln in lines)
+        total_row = next(ln for ln in lines if "TOTAL" in ln)
+        assert f"{result.total_instructions():,}" in total_row
 
 
-class TestRenderFullTrace:
-    """The full trace combines hot instructions, call summary, and detail."""
+def _summary_instruction_counts(lines: list[str]) -> list[int]:
+    """Extract the instructions-executed column from a function summary body."""
+    counts: list[int] = []
+    for line in lines:
+        stripped = line.strip()
+        if "%" not in stripped or "TOTAL" in stripped:
+            continue
 
-    def test_contains_all_three_sections(self):
-        _, result = _traced_result()
-        text = "\n".join(render_full_trace(result, color=False))
-        assert "HOT INSTRUCTIONS" in text
-        assert "CALL SUMMARY" in text
-        assert "INSTRUCTION TRACE" in text
+        first = stripped.split()[0]
+        if first.replace(",", "").isdigit():
+            counts.append(int(first.replace(",", "")))
+
+    return counts
 
 
 class TestRenderAnnotated:

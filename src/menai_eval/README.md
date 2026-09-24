@@ -15,7 +15,7 @@ python -m menai_eval.eval <file.menai>                       # evaluate and prin
 python -m menai_eval.eval -                                  # read the expression from stdin
 python -m menai_eval.eval <file.menai> --cprofile            # profile the compiler
 python -m menai_eval.eval <file.menai> --profile             # profile VM opcodes
-python -m menai_eval.eval <file.menai> --trace               # trace VM instructions
+python -m menai_eval.eval <file.menai> --trace               # per-function trace
 python -m menai_eval.eval <file.menai> --profile --trace     # both VM reports
 python -m menai_eval.eval <file.menai> --annotate            # annotated disassembly
 python -m menai_eval.eval <file.menai> --profile --annotate  # both VM reports
@@ -58,24 +58,19 @@ hardware: the VM executes most opcodes in under 5 ns, while the cheapest
 high-resolution timer read costs ~40–100 ns, making per-instruction timing
 dominated by measurement overhead rather than actual work.
 
-### `--trace` — VM instruction and call trace
+### `--trace` — VM per-function trace
 
-Counts how many times each *individual* instruction is executed and how many
-times each function is called, attributed to the disassembly.  Where `--profile`
-answers "how much work is arithmetic vs. calling", `--trace` answers "which
-instruction is hot" and "which function dominates".
+Ranks functions by the number of instructions they executed, showing each
+function's share of the total instructions executed by the whole program and
+its call count.  Where `--profile` answers "how much work is arithmetic vs.
+calling", `--trace` answers "which function dominates".
 
-The trace reports three views:
-
-- **Hot instructions** — the most-executed instructions across the whole
-  program, with their function.
-- **Call summary** — every function with its call count, most-called first.
-- **Instruction trace** — each function's instructions with per-instruction
-  counts, formatted and annotated exactly as the disassembler renders them, so
-  a hot instruction can be read against `menai-disassemble` output.
+The functions are ordered by instructions executed, most first, with a `TOTAL`
+footer.  This is a function-level view; use `--annotate` for the
+instruction-level view.
 
 `--trace` and `--profile` may be combined; both are collected from a single
-instrumented run.  `--top` limits the number of entries shown in each report.
+instrumented run.  `--top` limits the number of functions shown.
 
 ### `--annotate` — annotated disassembly
 
@@ -85,7 +80,7 @@ This is the `perf annotate` view: the full body of every function is visible,
 so a hot region can be read in context rather than only as a sorted list of the
 hottest instructions.  Each function header shows that function's share of the
 total, so a line's share can be read either against the program or against its
-own function.
+own function.  This is the instruction-level counterpart to `--trace`.
 
 Percentages are of instruction count, not time.  Per-instruction timing is not
 measurable at these speeds (see the note under `--profile` above), so the share

@@ -98,7 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
             "python run.py --iterations 5              # override iteration count\n"
             "python run.py --profile                   # opcode profiling (Menai only)\n"
             "python run.py --profile --profile-top 20  # limit opcode output\n"
-            "python run.py --trace                     # instruction tracing (Menai only)\n"
+            "python run.py --trace                     # per-function tracing (Menai only)\n"
             "python run.py --trace --trace-top 10      # limit trace output\n"
             "python run.py --annotate                  # annotated disassembly (Menai only)"
         ),
@@ -145,8 +145,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="trace",
         help=(
-            "Enable VM instruction and call tracing during timed runs.  Adds "
-            "the hottest instructions per case after the timing report.  "
+            "Enable VM per-function tracing during timed runs.  Adds a "
+            "per-function summary per case, ranked by instructions executed, "
+            "after the timing report.  "
             "Tracing overhead is included in the measured times.  Only applies "
             "to the Menai implementation."
         ),
@@ -157,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=20,
         dest="trace_top",
-        help="Show top N instructions per case in the trace output (default: 20).",
+        help="Show top N functions per case in the trace output (default: 20).",
     )
     parser.add_argument(
         "--annotate",
@@ -194,8 +195,8 @@ def run_suite(
                       case before running.
         profile:      If ``True``, enable opcode profiling during timed runs.
         profile_top:  Number of top opcodes to show in the profile output.
-        trace:        If ``True``, enable instruction tracing during timed runs.
-        trace_top:    Number of top instructions to show per case in the trace output.
+        trace:        If ``True``, enable per-function tracing during timed runs.
+        trace_top:    Number of top functions to show per case in the trace output.
         annotate:     If ``True``, print the annotated disassembly per case.
     """
     suite = suite_class()

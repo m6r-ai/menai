@@ -1,10 +1,14 @@
 """
 Rendering of a resolved trace as text.
 
-The instruction listing reuses the disassembler's instruction formatting and
-annotations, so a traced instruction line matches the corresponding
-disassembly line with a leading execution-count column added.  This lets a hot
-spot found in a trace be read directly against the disassembler output.
+Two views are provided:
+
+  * A per-function summary, ranking functions by the number of instructions
+    they executed and showing each function's share of the program total.
+  * An annotated disassembly, which reuses the disassembler's instruction
+    formatting and annotations so that a traced instruction line matches the
+    corresponding disassembly line with a leading execution-count column added.
+    This lets a hot spot be read directly against the disassembler output.
 """
 
 from menai_render.menai_render_colour import green, grey, yellow
@@ -20,6 +24,7 @@ from menai_trace.menai_trace_data import FunctionTrace, InstructionTrace, TraceR
 _SEPARATOR_WIDTH = 70
 _COUNT_COL = 12
 _FUNCTION_COL = 40
+_PCT_COL = 11
 
 
 def _function_label(function: FunctionTrace) -> str:
@@ -39,16 +44,24 @@ def _function_label(function: FunctionTrace) -> str:
     return name
 
 
-def render_trace(result: TraceResult, color: bool = False, top_n: int | None = None) -> list[str]:
+def render_function_summary(result: TraceResult, color: bool = False, top_n: int | None = None) -> list[str]:
     """
-    Render a trace as a list of text lines.
+    Render a per-function summary, ranked by instructions executed.
+
+    Each function is shown with the number of instructions it executed, its
+    share of the total instructions executed by the whole program, and its call
+    count.  Functions are ordered by instructions executed, most first, so the
+    dominant functions appear at the top.
+
+    Percentages are of instruction count, not time.  Per-instruction timing is
+    not measurable at these speeds (see the menai_eval README), so the share of
+    executed instructions is the meaningful signal.
 
     Args:
         result: The resolved trace to render.
         color:  Whether to emit ANSI colour codes.
-        top_n:  When given, only the top N instructions per function are shown,
-                ordered by execution count.  When None, all instructions are
-                shown in instruction order.
+        top_n:  When given, only the top N functions are shown.  When None, all
+                functions are shown.
 
     Returns:
         The rendered lines.
@@ -59,67 +72,45 @@ def render_trace(result: TraceResult, color: bool = False, top_n: int | None = N
     total_calls = result.total_calls()
 
     lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
-    lines.append(yellow("INSTRUCTION TRACE", color))
+    lines.append(yellow("FUNCTION TRACE", color))
     lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
     lines.append(f"{'Total instructions executed:':<32} {total_instr:>12,}")
     lines.append(f"{'Total function calls:':<32} {total_calls:>12,}")
     lines.append("")
 
-    for function in result.functions:
-        lines.extend(_render_function(function, total_instr, color, top_n))
-
-    return lines
-
-
-def _render_function(function: FunctionTrace, total_instr: int, color: bool, top_n: int | None) -> list[str]:
-    """Render one function's instruction listing and call count."""
-    lines: list[str] = []
-    label = _function_label(function)
-
-    lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
-    lines.append(
-        f"{yellow('Function: ', color)}{label}"
-        f"{grey(f'  (ordinal {function.ordinal})', color)}"
-    )
-    lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
-    lines.append(f"{'Calls:':<12} {function.calls:>10,}")
-    lines.append(f"{'Instructions executed:':<24} {function.total_executed():>10,}")
-    lines.append("")
-
-    traces = list(function.instructions)
+    ordered = sorted(result.functions, key=lambda f: f.total_executed(), reverse=True)
     if top_n is not None:
-        traces = sorted(traces, key=lambda t: t.count, reverse=True)[:top_n]
+        ordered = ordered[:top_n]
 
-    lines.append(f"{'Count':>{_COUNT_COL}} {'% of total':>11}  Instruction")
-    lines.append(f"{'-' * _COUNT_COL} {'-' * 11}  {'-' * 48}")
+    lines.append(
+        f"{'Instructions':>{_COUNT_COL}} {'% of total':>{_PCT_COL}} "
+        f"{'Calls':>{_COUNT_COL}}  {'Function':<{_FUNCTION_COL}}"
+    )
+    lines.append(
+        f"{'-' * _COUNT_COL} {'-' * _PCT_COL} {'-' * _COUNT_COL}  {'-' * _FUNCTION_COL}"
+    )
 
-    for trace in traces:
-        lines.append(_render_instruction(trace, function, total_instr, color))
+    for function in ordered:
+        executed = function.total_executed()
+        pct = (executed / total_instr * 100.0) if total_instr > 0 else 0.0
+        label = _function_label(function)
+        if len(label) > _FUNCTION_COL:
+            label = label[:_FUNCTION_COL - 3] + "..."
 
-    lines.append("")
+        lines.append(
+            f"{executed:>{_COUNT_COL},} {pct:>{_PCT_COL - 1}.2f}% "
+            f"{function.calls:>{_COUNT_COL},}  {label:<{_FUNCTION_COL}}"
+        )
+
+    lines.append(
+        f"{'-' * _COUNT_COL} {'-' * _PCT_COL} {'-' * _COUNT_COL}  {'-' * _FUNCTION_COL}"
+    )
+    lines.append(
+        f"{total_instr:>{_COUNT_COL},} {'100.00%':>{_PCT_COL}} "
+        f"{total_calls:>{_COUNT_COL},}  {'TOTAL':<{_FUNCTION_COL}}"
+    )
+
     return lines
-
-
-def _render_instruction(
-    trace: InstructionTrace,
-    function: FunctionTrace,
-    total_instr: int,
-    color: bool,
-    target_marker: str = "  ",
-) -> str:
-    """Render one instruction line: count, percentage, then the disassembly line."""
-    pct = (trace.count / total_instr * 100.0) if total_instr > 0 else 0.0
-    instr_str = format_instruction(trace.instruction, trace.index, function.code)
-    annotation = annotate_instruction(trace.instruction, function.code)
-    prefix = f"{trace.count:>{_COUNT_COL},} {pct:>10.2f}%  {target_marker}"
-
-    if trace.count == 0:
-        return f"{grey(prefix + instr_str + annotation, color)}"
-
-    if annotation:
-        return f"{prefix}{instr_str}{green(annotation, color)}"
-
-    return f"{prefix}{instr_str}"
 
 
 def render_annotated(result: TraceResult, color: bool = False) -> list[str]:
@@ -199,69 +190,23 @@ def _render_annotated_function(function: FunctionTrace, total_instr: int, color:
     return lines
 
 
-def render_call_summary(result: TraceResult, color: bool = False) -> list[str]:
-    """Render a per-function call-count summary, ordered by call count."""
-    lines: list[str] = []
+def _render_instruction(
+    trace: InstructionTrace,
+    function: FunctionTrace,
+    total_instr: int,
+    color: bool,
+    target_marker: str = "  ",
+) -> str:
+    """Render one instruction line: count, percentage, then the disassembly line."""
+    pct = (trace.count / total_instr * 100.0) if total_instr > 0 else 0.0
+    instr_str = format_instruction(trace.instruction, trace.index, function.code)
+    annotation = annotate_instruction(trace.instruction, function.code)
+    prefix = f"{trace.count:>{_COUNT_COL},} {pct:>10.2f}%  {target_marker}"
 
-    lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
-    lines.append(yellow("CALL SUMMARY", color))
-    lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
+    if trace.count == 0:
+        return f"{grey(prefix + instr_str + annotation, color)}"
 
-    ordered = sorted(result.functions, key=lambda f: f.calls, reverse=True)
-    lines.append(f"{'Calls':>{_COUNT_COL}}  {'Function':<{_FUNCTION_COL}}")
-    lines.append(f"{'-' * _COUNT_COL}  {'-' * _FUNCTION_COL}")
+    if annotation:
+        return f"{prefix}{instr_str}{green(annotation, color)}"
 
-    for function in ordered:
-        label = _function_label(function)
-        if len(label) > _FUNCTION_COL:
-            label = label[:_FUNCTION_COL - 3] + "..."
-
-        lines.append(f"{function.calls:>{_COUNT_COL},}  {label:<{_FUNCTION_COL}}")
-
-    return lines
-
-
-def render_hot_instructions(result: TraceResult, color: bool = False, top_n: int = 20) -> list[str]:
-    """Render the hottest individual instructions across the whole program."""
-    lines: list[str] = []
-
-    lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
-    lines.append(yellow(f"HOT INSTRUCTIONS  (top {top_n})", color))
-    lines.append(grey("\u2500" * _SEPARATOR_WIDTH, color))
-
-    total_instr = result.total_instructions()
-
-    flattened: list[tuple[FunctionTrace, InstructionTrace]] = []
-    for function in result.functions:
-        for trace in function.instructions:
-            if trace.count > 0:
-                flattened.append((function, trace))
-
-    flattened.sort(key=lambda pair: pair[1].count, reverse=True)
-
-    lines.append(f"{'Count':>{_COUNT_COL}} {'% of total':>11}  {'Function':<28} Instruction")
-    lines.append(f"{'-' * _COUNT_COL} {'-' * 11}  {'-' * 28} {'-' * 40}")
-
-    for function, trace in flattened[:top_n]:
-        pct = (trace.count / total_instr * 100.0) if total_instr > 0 else 0.0
-        label = clean_name(function.code.name) if function.code.name else "<anonymous>"
-        if len(label) > 28:
-            label = label[:25] + "..."
-
-        instr_str = f"{trace.index:4}: {trace.instruction.format(function.code)}"
-        if len(instr_str) > 40:
-            instr_str = instr_str[:37] + "..."
-
-        lines.append(f"{trace.count:>{_COUNT_COL},} {pct:>10.2f}%  {label:<28} {instr_str}")
-
-    return lines
-
-
-def render_full_trace(result: TraceResult, color: bool = False, top_n: int | None = None) -> list[str]:
-    """Render the complete trace: hot instructions, call summary, and per-function detail."""
-    lines = render_hot_instructions(result, color)
-    lines.append("")
-    lines.extend(render_call_summary(result, color))
-    lines.append("")
-    lines.extend(render_trace(result, color, top_n))
-    return lines
+    return f"{prefix}{instr_str}"

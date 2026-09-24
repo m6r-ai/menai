@@ -17,15 +17,16 @@ available and may be combined:
                wall-clock time, giving instruction throughput and average
                time per instruction.
 
-  --trace      VM-level instruction and call tracing.  Counts how many times
-               each *individual* instruction is executed and how many times
-               each function is called, attributed to the disassembly so hot
-               spots can be read against the disassembler output.
+  --trace      VM-level per-function tracing.  Ranks functions by the number
+               of instructions they executed, showing each function's share of
+               the total instructions executed and its call count.  This
+               answers "which function dominates".
 
   --annotate   Annotated disassembly.  Renders every function in disassembly
                order with each instruction's execution count and its share of
                the total instructions executed.  This is the perf-annotate
-               view for reading hot regions in context.
+               view for reading hot regions in context, and is the
+               instruction-level counterpart to --trace.
 
 The two modes are complementary: cProfile covers the compiler (which is
 pure Python) but sees VM execution as a single opaque C frame, while opcode
@@ -65,7 +66,7 @@ from menai import Menai, MenaiError, MenaiString, MenaiValue
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_compiler import MenaiCompiler
 from menai_trace.menai_trace_data import resolve_trace
-from menai_trace.menai_trace_render import render_annotated, render_full_trace
+from menai_trace.menai_trace_render import render_annotated, render_function_summary
 
 _ANSI_GREY = "\033[90m"
 _ANSI_RESET = "\033[0m"
@@ -309,7 +310,7 @@ def instrument_vm(
 
         if trace:
             print()
-            for line in render_full_trace(trace_result, color=color, top_n=top_n):
+            for line in render_function_summary(trace_result, color=color, top_n=top_n):
                 print(line)
 
         if annotate:
@@ -408,7 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--trace",
         action="store_true",
-        help="Trace VM execution with per-instruction and per-function counts",
+        help="Trace VM execution with per-function instruction shares and call counts",
     )
     parser.add_argument(
         "--annotate",
