@@ -639,7 +639,13 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     ) -> dict[int, TypeFact]:
         """
         Compute the incoming facts for a block: parameter facts for the entry
-        block, and the meet of predecessor outgoing facts otherwise.
+        block, and the join of predecessor outgoing facts otherwise.
+
+        A value defined in any predecessor is included with its fact from
+        that predecessor, joined with its fact from any other predecessor that
+        also defines it.  A value defined in only one predecessor is therefore
+        still visible, which a phi node needs to join its incoming values
+        correctly; dropping it would make the phi's fact too precise.
 
         A block reached from a struct-is-instance? true edge inherits the
         refined struct type of the predicate's argument.
@@ -648,7 +654,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             return self._entry_facts(block, param_facts)
 
         result: dict[int, TypeFact] = {}
-        first = True
         for pred in block.predecessors:
             pred_facts = self._outgoing_facts(pred, facts)
             refinement = self._true_edge_refinement(pred, block, value_defs, info)
@@ -657,14 +662,12 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 pred_facts = dict(pred_facts)
                 pred_facts[val_id] = refined
 
-            if first:
-                result = dict(pred_facts)
-                first = False
+            for val_id, fact in pred_facts.items():
+                if val_id in result:
+                    result[val_id] = join(result[val_id], fact)
 
-            else:
-                for val_id, fact in pred_facts.items():
-                    if val_id in result:
-                        result[val_id] = join(result[val_id], fact)
+                else:
+                    result[val_id] = fact
 
         return result
 
