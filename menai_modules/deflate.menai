@@ -297,6 +297,15 @@
    ; Uses Huffman's algorithm via repeated merging of the two least-frequent
    ; nodes.  Symbols with zero frequency get length 0.  The result is a list of
    ; lengths indexed by symbol.
+   ;
+   ; The two least-frequent nodes are found with the two-queue method rather
+   ; than by re-sorting the node list on every merge.  The leaf queue is sorted
+   ; once up front; the internal-node queue is naturally in non-decreasing
+   ; weight order because each merged node weighs at least as much as the two
+   ; it replaces.  The lightest node overall is therefore always at the head of
+   ; one of the two queues, so each merge is a constant-time comparison of the
+   ; two heads.  This makes the whole construction O(n log n) (dominated by the
+   ; single initial sort) instead of the O(n^2 log n) of re-sorting per merge.
    (build-code-lengths
     (lambda (freqs)
       (letrec
@@ -317,40 +326,61 @@
                                        (walk (list-ref payload 1) (integer+ depth 1) acc))))))
               (fold-list (lambda (acc node) (walk (list-first node) 0 acc))
                          depths-acc nodes))))
+         ; Pop the lightest node from the two weight-ordered queues and return
+         ; (list <node> <leaves'> <internals'>).  A node is (list <payload>
+         ; <weight>), so its weight is at index 1.
+         (pop-min
+          (lambda (leaves internals)
+            (if (list-null? leaves)
+                (list (list-first internals) leaves (list-rest internals))
+                (if (list-null? internals)
+                    (list (list-first leaves) (list-rest leaves) internals)
+                    (if (integer<=? (list-ref (list-first leaves) 1)
+                                    (list-ref (list-first internals) 1))
+                        (list (list-first leaves) (list-rest leaves) internals)
+                        (list (list-first internals) leaves (list-rest internals)))))))
          (merge
-          (lambda (nodes depths-acc)
-            (if (integer<=? (list-length nodes) 1)
-                (depths nodes depths-acc)
-                (let ((sorted (sort-list (lambda (a b) (integer<? (list-ref a 1) (list-ref b 1))) nodes)))
-                  (let ((first (list-first sorted))
-                        (second (list-ref sorted 1)))
-                    (let ((merged (list (list (list-ref first 0) (list-ref second 0))
-                                        (integer+ (list-ref first 1) (list-ref second 1)))))
-                      (merge (list-concat (list-slice sorted 2) (list merged))
-                             depths-acc))))))))
+          (lambda (leaves internals remaining)
+            (if (integer<=? remaining 1)
+                (if (list-null? leaves) (list-first internals) (list-first leaves))
+                (let ((p1 (pop-min leaves internals)))
+                  (let ((n1 (list-first p1))
+                        (leaves1 (list-ref p1 1))
+                        (internals1 (list-ref p1 2)))
+                    (let ((p2 (pop-min leaves1 internals1)))
+                      (let ((n2 (list-first p2))
+                            (leaves2 (list-ref p2 1))
+                            (internals2 (list-ref p2 2)))
+                        (let ((merged (list (list (list-ref n1 0) (list-ref n2 0))
+                                            (integer+ (list-ref n1 1) (list-ref n2 1)))))
+                          (merge leaves2 (list-append internals2 merged)
+                                 (integer- remaining 1)))))))))))
         (let ((active (active-symbols 0 freqs (list))))
           (if (list-null? active)
               (map-list (lambda (f) 0) freqs)
-              (let ((depth-map (merge active (dict))))
-                (letrec ((build (lambda (i lst acc)
-                                  (if (list-null? lst)
-                                      (list-reverse acc)
-                                      (build (integer+ i 1) (list-rest lst)
-                                             (list-prepend acc (dict-get depth-map i 0)))))))
-                  (let ((lengths (build 0 freqs (list))))
-                    ; A single active symbol is assigned depth 0 by the merge,
-                    ; but a code length of 0 means "unused" in DEFLATE.  When
-                    ; the longest code is zero bits, give every active symbol
-                    ; length 1 so the alphabet has a usable code.
-                    (if (integer=? (fold-list (lambda (acc len) (integer-max acc len)) 0 lengths) 0)
-                        (letrec ((fix (lambda (fs acc)
-                                        (if (list-null? fs)
-                                            (list-reverse acc)
-                                            (fix (list-rest fs)
-                                                 (list-prepend acc
-                                                               (if (integer>? (list-first fs) 0) 1 0)))))))
-                          (fix freqs (list)))
-                        lengths)))))))))
+              (let ((sorted-leaves (sort-list (lambda (a b) (integer<? (list-ref a 1) (list-ref b 1))) active)))
+                (let ((depth-map (depths (list (merge sorted-leaves (list)
+                                                      (list-length sorted-leaves)))
+                                         (dict))))
+                  (letrec ((build (lambda (i lst acc)
+                                    (if (list-null? lst)
+                                        (list-reverse acc)
+                                        (build (integer+ i 1) (list-rest lst)
+                                               (list-prepend acc (dict-get depth-map i 0)))))))
+                    (let ((lengths (build 0 freqs (list))))
+                      ; A single active symbol is assigned depth 0 by the merge,
+                      ; but a code length of 0 means "unused" in DEFLATE.  When
+                      ; the longest code is zero bits, give every active symbol
+                      ; length 1 so the alphabet has a usable code.
+                      (if (integer=? (fold-list (lambda (acc len) (integer-max acc len)) 0 lengths) 0)
+                          (letrec ((fix (lambda (fs acc)
+                                          (if (list-null? fs)
+                                              (list-reverse acc)
+                                              (fix (list-rest fs)
+                                                   (list-prepend acc
+                                                                 (if (integer>? (list-first fs) 0) 1 0)))))))
+                            (fix freqs (list)))
+                          lengths))))))))))
 
    ; Clamp code lengths to the DEFLATE maximum of 15 bits.
    (clamp-lengths
