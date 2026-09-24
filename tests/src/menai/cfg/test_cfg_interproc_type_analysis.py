@@ -17,7 +17,9 @@ Covers:
      from those calls, so its guard is retained.
   9. A receiver whose type is proven only by a struct-is-instance? refinement
      (including the phi an (and ...) guard lowers to) is rewritten too, and
-     nested struct destructuring resolves every field read.
+     nested struct destructuring resolves every field read.  This holds when
+     the struct type is a free variable captured from an enclosing scope, not
+     only when it is a local constant.
  10. A parameter fed two different struct types by two functions inside the
      same recursion component is ambiguous, so its field access stays
      symbol-based and the result is correct.
@@ -441,6 +443,36 @@ class TestStructSetThroughRefinement:
 
     def test_result(self, menai):
         assert menai.evaluate_and_format(REFINED_SET_RECEIVER_SRC) == "7"
+
+
+FREE_VAR_STRUCT_TYPE_SRC = """
+(let ((point (struct (x y)))
+      (box (struct (item tag))))
+  (letrec ((pick (lambda (inner) (if (struct-is-instance? inner point)
+                                     (struct-get inner 'x)
+                                     0))))
+    (pick (struct-get (box (point 1 2) 9) 'item))))
+"""
+
+
+class TestStructTypeThroughFreeVariable:
+    """
+    A struct-is-instance? test whose struct type is a free variable.
+
+    The struct type `point` is declared in an enclosing let, so inside `pick`
+    it is a free variable rather than a constant.  The receiver `inner` comes
+    from a struct-get, so its type is proven only by the struct-is-instance?
+    test.  The rewrite must resolve the structtype argument through the value
+    it captures, not only when it is a local constant.
+    """
+
+    def test_struct_get_becomes_indexed_get(self):
+        cfg = _build_cfg(FREE_VAR_STRUCT_TYPE_SRC)
+        assert 'struct-indexed-get' in _ops(cfg)
+        assert 'struct-get' not in _ops(cfg)
+
+    def test_result(self, menai):
+        assert menai.evaluate_and_format(FREE_VAR_STRUCT_TYPE_SRC) == "1"
 
 
 NESTED_DESTRUCTURE_SRC = """

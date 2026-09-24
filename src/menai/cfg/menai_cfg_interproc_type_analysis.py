@@ -613,7 +613,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         while True:
             changed = False
             for block in func.blocks:
-                block_facts = dict(self._block_incoming(block, facts, param_facts, value_defs))
+                block_facts = dict(self._block_incoming(block, facts, param_facts, value_defs, info))
                 for instr in block.instrs:
                     if not isinstance(instr, _VALUE_INSTR_TYPES):
                         continue
@@ -635,6 +635,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         facts: dict[int, TypeFact],
         param_facts: list[TypeFact],
         value_defs: dict[int, object],
+        info: _FunctionInfo,
     ) -> dict[int, TypeFact]:
         """
         Compute the incoming facts for a block: parameter facts for the entry
@@ -650,7 +651,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         first = True
         for pred in block.predecessors:
             pred_facts = self._outgoing_facts(pred, facts)
-            refinement = self._true_edge_refinement(pred, block, value_defs)
+            refinement = self._true_edge_refinement(pred, block, value_defs, info)
             if refinement is not None:
                 val_id, refined = refinement
                 pred_facts = dict(pred_facts)
@@ -697,17 +698,20 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         return result
 
-    @staticmethod
     def _true_edge_refinement(
+        self,
         pred: MenaiCFGBlock,
         succ: MenaiCFGBlock,
         value_defs: dict[int, object],
+        info: _FunctionInfo,
     ) -> tuple[int, TypeFact] | None:
         """
         If pred branches to succ on the true edge and the condition is
         (struct-is-instance? v TypeName), return (v.id, Known('struct', type)).
 
-        The struct type is found from the constant structtype argument.
+        The struct type is resolved from the structtype argument, which may be a
+        constant (a struct declared in this function) or a free variable (a
+        struct declared in an enclosing function or imported).
 
         The condition may also be a phi that joins a struct-is-instance? result
         with constant #f values, which is the shape an (and ...) guard lowers to.
@@ -720,34 +724,37 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         cond_instr = value_defs.get(term.cond.id)
         if isinstance(cond_instr, MenaiCFGPhiInstr):
-            return MenaiCFGInterprocTypeAnalysis._phi_true_edge_refinement(cond_instr, value_defs)
+            return self._phi_true_edge_refinement(cond_instr, value_defs, info)
 
-        return MenaiCFGInterprocTypeAnalysis._instance_test_refinement(cond_instr, value_defs)
+        return self._instance_test_refinement(cond_instr, value_defs, info)
 
-    @staticmethod
     def _instance_test_refinement(
+        self,
         instr: object,
         value_defs: dict[int, object],
+        info: _FunctionInfo,
     ) -> tuple[int, TypeFact] | None:
         """
-        If instr is (struct-is-instance? v TypeName) with a constant structtype
-        argument, return (v.id, Known('struct', type)), else None.
+        If instr is (struct-is-instance? v TypeName) whose structtype argument
+        resolves to a struct type, return (v.id, Known('struct', type)), else
+        None.
         """
         if (
             isinstance(instr, MenaiCFGBuiltinInstr)
             and instr.op == 'struct-is-instance?'
             and len(instr.args) == 2
         ):
-            type_instr = value_defs.get(instr.args[1].id)
-            if isinstance(type_instr, MenaiCFGConstInstr) and isinstance(type_instr.value, MenaiStructType):
-                return instr.args[0].id, TypeFact(kind='struct', struct_type=type_instr.value)
+            struct_type = self._struct_type_of_value(instr.args[1].id, value_defs, info)
+            if struct_type is not None:
+                return instr.args[0].id, TypeFact(kind='struct', struct_type=struct_type)
 
         return None
 
-    @staticmethod
     def _phi_true_edge_refinement(
+        self,
         phi: MenaiCFGPhiInstr,
         value_defs: dict[int, object],
+        info: _FunctionInfo,
     ) -> tuple[int, TypeFact] | None:
         """
         Refine through a phi that joins a struct-is-instance? result with #f.
@@ -763,8 +770,8 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         """
         refinement: tuple[int, TypeFact] | None = None
         for incoming_val, _ in phi.incoming:
-            candidate = MenaiCFGInterprocTypeAnalysis._instance_test_refinement(
-                value_defs.get(incoming_val.id), value_defs,
+            candidate = self._instance_test_refinement(
+                value_defs.get(incoming_val.id), value_defs, info,
             )
             if candidate is not None:
                 if refinement is not None:
@@ -773,7 +780,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 refinement = candidate
                 continue
 
-            if not MenaiCFGInterprocTypeAnalysis._is_constant_false(value_defs.get(incoming_val.id)):
+            if not self._is_constant_false(value_defs.get(incoming_val.id)):
                 return None
 
         return refinement
@@ -912,6 +919,58 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         return None
 
+    def _struct_type_of_value(
+        self,
+        value_id: int,
+        value_defs: dict[int, object],
+        info: _FunctionInfo,
+    ) -> MenaiStructType | None:
+        """
+        Resolve an SSA value to the MenaiStructType it names, where it can be
+        resolved.
+
+        The structtype argument of a struct-is-instance? test is a name
+        reference, so it is either a constant (a struct declared in the same
+        function) or a free variable (a struct declared in an enclosing
+        function or imported).  A free variable is resolved through the parent
+        value it captures, mirroring `_free_var_fact`; a phi whose incoming
+        values all name the same struct type is resolved to that type.
+
+        Returns None when the value does not name a single struct type.
+        """
+        instr = value_defs.get(value_id)
+        if isinstance(instr, MenaiCFGConstInstr) and isinstance(instr.value, MenaiStructType):
+            return instr.value
+
+        if isinstance(instr, MenaiCFGFreeVarInstr):
+            parent = info.parent
+            parent_closure = info.parent_closure
+            if parent is None or parent_closure is None:
+                return None
+
+            captured = self._captured_parent_value(instr, parent_closure, parent)
+            if captured is None:
+                return None
+
+            return self._struct_type_of_value(captured.id, _value_defs(parent.func), parent)
+
+        if isinstance(instr, MenaiCFGPhiInstr):
+            result: MenaiStructType | None = None
+            for incoming_val, _ in instr.incoming:
+                resolved = self._struct_type_of_value(incoming_val.id, value_defs, info)
+                if resolved is None:
+                    return None
+
+                if result is None:
+                    result = resolved
+
+                elif result is not resolved:
+                    return None
+
+            return result
+
+        return None
+
     @staticmethod
     def _phi_fact(instr: MenaiCFGPhiInstr, facts: dict[int, TypeFact]) -> TypeFact:
         """Join the facts of a phi node's incoming values."""
@@ -969,7 +1028,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             # global fact, while a value refined by a struct-is-instance? branch
             # has a refined fact that exists only in the block-local facts.
             block_facts = dict(facts)
-            block_facts.update(self._block_incoming(block, facts, info.param_facts, value_defs))
+            block_facts.update(self._block_incoming(block, facts, info.param_facts, value_defs, info))
             new_instrs: list = []
             for instr in block.instrs:
                 if not isinstance(instr, MenaiCFGBuiltinInstr):
