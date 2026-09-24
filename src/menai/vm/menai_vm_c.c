@@ -5411,6 +5411,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     vm_err = MENAI_ERR_TRUNCATED_LEB128;
                     goto error;
                 }
+
                 byte = d[pos];
                 result |= ((unsigned long long)(byte & 0x7F)) << shift;
                 shift += 7;
@@ -5507,6 +5508,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
+
                 result = next;
             }
 
@@ -5544,6 +5546,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     vm_err = MENAI_ERR_TRUNCATED_LEB128;
                     goto error;
                 }
+
                 byte = d[pos];
                 result |= ((long long)(byte & 0x7F)) << shift;
                 shift += 7;
@@ -5609,6 +5612,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 vm_err = MENAI_ERR_OVERFLOW;
                 goto error;
             }
+
             uint8_t buf[10];
             int nbytes = 0;
             int more = 1;
@@ -5620,6 +5624,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 } else {
                     byte |= 0x80;
                 }
+
                 buf[nbytes++] = byte;
             }
 
@@ -5632,6 +5637,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
                 }
+
                 result = next;
             }
 
