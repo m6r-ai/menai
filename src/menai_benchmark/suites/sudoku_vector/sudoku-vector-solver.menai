@@ -55,16 +55,24 @@
                  (set-union (col-set board col)
                             (box-set board row col))))))
 
-  ; Scan left-to-right, top-to-bottom for the first cell containing 0.
-  ; Returns (row col), or #none when the board is fully filled.
-  (find-empty (lambda (board row col)
+  ; Scan one row's cells left-to-right for the first containing 0.
+  ; Returns (row-idx col), or #none if the row is full.
+  (find-empty-in-row (lambda (row-idx row-vector col)
+    (if (integer>=? col 9)
+      #none
+      (if (integer=? (vector-ref row-vector col) 0)
+        (list row-idx col)
+        (find-empty-in-row row-idx row-vector (integer+ col 1))))))
+
+  ; Scan top-to-bottom for the first row with an empty cell, fetching each
+  ; row vector once. Returns (row col), or #none when the board is full.
+  (find-empty (lambda (board row)
     (if (integer>=? row 9)
       #none
-      (if (integer>=? col 9)
-        (find-empty board (integer+ row 1) 0)
-        (if (integer=? (vector-ref (vector-ref board row) col) 0)
-          (list row col)
-          (find-empty board row (integer+ col 1)))))))
+      (let ((found (find-empty-in-row row (vector-ref board row) 0)))
+        (if (none? found)
+          (find-empty board (integer+ row 1))
+          found)))))
 
   ; Return a new board with `num` placed at (row, col).
   (set-cell (lambda (board row col num)
@@ -84,7 +92,7 @@
 
   ; Solve the board by backtracking. Returns the solved board or #none.
   (solve (lambda (board)
-    (let ((empty (find-empty board 0 0)))
+    (let ((empty (find-empty board 0)))
       (if (none? empty)
         board
         (try-candidates board (list-first empty) (list-ref empty 1)
