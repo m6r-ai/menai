@@ -347,6 +347,17 @@ module.
 
 See [ADR-0028](docs/adr/0028-instruction-tracing-by-ordinal.md).
 
+### Exception blocks are laid out after the normal path
+
+Blocks that end in a raise must be laid out after all normal-path blocks in a
+function. The ordering is stable and the entry block stays first.
+
+Emitted layout is derived from the CFG, not from the CFG's block-list order, so
+reordering the block list does not by itself move anything in the emitted code.
+The exception-last partition must be applied to the layout order explicitly.
+
+See [ADR-0030](docs/adr/0030-exception-blocks-emitted-last.md).
+
 ### The C VM has no process-global mutable state
 
 All mutable VM state (pool allocator free-lists, singletons, the closure registry) is

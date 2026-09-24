@@ -26,6 +26,7 @@ from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
 from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAnalysis
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
 from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
+from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlocks
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
 from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
@@ -84,6 +85,7 @@ class MenaiCompiler:
             MenaiCFGLICM(),
             MenaiCFGLoopRotation(),
             MenaiCFGDeadCaptures(),
+            MenaiCFGOrderExceptionBlocks(),
         ]
         self.vcode_builder = MenaiVCodeBuilder()
         self.bytecode_builder = MenaiBytecodeBuilder()

@@ -487,6 +487,16 @@ class MenaiVCodeBuilder:
         followed.  When the self-loop has an explicit target (set by LICM or
         loop rotation), the target is a real block that may be reachable only
         through the back-edge, so it is followed here to keep it live.
+
+        The result is stably partitioned so that blocks the CFG marks as
+        exception blocks come last.  A block is an exception block when it
+        appears after every non-exception block in func.blocks -- the ordering
+        MenaiCFGOrderExceptionBlocks establishes by moving raise-terminated
+        blocks to the end.  Reading the partition from func.blocks rather than
+        testing the terminator keeps that pass the single statement of which
+        blocks are exception blocks.  Keeping them last in the emission order
+        places the cold exception instructions after the hot normal path,
+        improving instruction cache locality on the path that actually runs.
         """
         visited: set = set()
         post_order: list[MenaiCFGBlock] = []
@@ -518,7 +528,41 @@ class MenaiVCodeBuilder:
 
         dfs(func.entry())
         post_order.reverse()
-        return post_order
+
+        exception_ids = self._exception_block_ids(func)
+        if not exception_ids:
+            return post_order
+
+        normal = [b for b in post_order if b.id not in exception_ids]
+        exception = [b for b in post_order if b.id in exception_ids]
+        return normal + exception
+
+    def _exception_block_ids(self, func: MenaiCFGFunction) -> set[int]:
+        """
+        Return the ids of the function's exception blocks.
+
+        A block is an exception block when it appears after every block that
+        is not an exception block in func.blocks.  MenaiCFGOrderExceptionBlocks
+        produces exactly this shape by stably moving raise-terminated blocks to
+        the end of the list, so the trailing run of the list is the exception
+        set.  The entry block is never an exception block: it is pinned first
+        by the pass and must stay first in the emission order.  When the
+        function has no such trailing run (the pass did not run, or there are
+        no raise blocks) the set is empty and no reordering occurs.
+        """
+        tail_start = len(func.blocks)
+        while tail_start > 0:
+            term = func.blocks[tail_start - 1].terminator
+            if not isinstance(term, MenaiCFGRaiseTerm):
+                break
+
+            tail_start -= 1
+
+        entry = func.entry()
+        return {
+            block.id for block in func.blocks[tail_start:]
+            if block is not entry
+        }
 
     def _hoisted_value_ids(
         self,

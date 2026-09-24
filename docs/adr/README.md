@@ -98,3 +98,4 @@ What costs, risks, or constraints does this decision impose?
 | [0027](0027-recursion-cycle-parameter-grounding.md) | Recursion-cycle parameter grounding in the interprocedural type analysis | Accepted |
 | [0028](0028-instruction-tracing-by-ordinal.md) | Instruction tracing keyed by walk-order ordinals | Accepted |
 | [0029](0029-predicate-fold-locally-proven-only.md) | Type-predicate folding is restricted to locally-proven arguments | Accepted |
+| [0030](0030-exception-blocks-emitted-last.md) | Exception blocks are laid out after the normal path | Accepted |
