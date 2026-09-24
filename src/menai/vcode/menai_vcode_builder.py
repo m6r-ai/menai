@@ -147,15 +147,6 @@ class MenaiVCodeBuilder:
         # places (phi-move pre-computation and terminator emission).
         labels: dict[int, str] = {block.id: self._label(block) for block in rpo}
 
-        # When a SelfLoopTerm has an explicit target (set by the LICM pass
-        # when it hoists loop-invariant instructions into a preamble), the
-        # target block's label is "__entry__" so that the slot allocator and
-        # bytecode builder still recognise the self-loop jump pattern.
-        for block in rpo:
-            term = block.terminator
-            if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
-                labels[term.target.id] = "__entry__"
-
         # Pre-compute param and free-var register lookups from the entry block,
         # so SelfLoopTerm handling can do O(1) lookups instead of linear scans.
         param_regs: dict[int, MenaiVCodeReg] = {}
@@ -295,10 +286,11 @@ class MenaiVCodeBuilder:
                 max_reg_id = max(max_reg_id, term.func.id, term.arg_list.id)
 
             elif isinstance(term, MenaiCFGSelfLoopTerm):
-                # Self-loop: jump back to the entry label.  The entry block
-                # has no label emitted (it is always first), so we use the
-                # special sentinel label "entry" which the bytecode emitter
-                # resolves to instruction index 0.
+                # Self-loop: jump back to the loop entry.  When the loop has
+                # been rotated (the terminator carries a target), the jump
+                # targets that block's own label.  Otherwise it targets the
+                # function entry via the "__entry__" sentinel, which the
+                # bytecode emitter resolves to instruction index 0.
                 for arg in term.args:
                     max_reg_id = max(max_reg_id, arg.id)
 
@@ -323,7 +315,9 @@ class MenaiVCodeBuilder:
                     instrs.append(MenaiVCodeMove(dst=fv_reg, src=fv_reg))
                     max_reg_id = max(max_reg_id, fv_reg.id)
 
-                instrs.append(MenaiVCodeJump(label="__entry__"))
+                jump_label = labels[term.target.id] if term.target is not None else "__entry__"
+
+                instrs.append(MenaiVCodeJump(label=jump_label, is_self_loop=True))
 
             elif isinstance(term, MenaiCFGRaiseTerm):
                 msg_reg = self._reg(term.message)

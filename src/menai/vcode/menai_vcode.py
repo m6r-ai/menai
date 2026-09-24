@@ -251,8 +251,16 @@ class MenaiVCodePatchClosure:
 
 @dataclass
 class MenaiVCodeJump:
-    """Unconditional jump to label."""
+    """
+    Unconditional jump to label.
+
+    `is_self_loop` marks the back-edge of a self-loop.  The slot allocator
+    and peephole recognise self-loop back-edges by this flag rather than by
+    the jump's label, so a rotated loop can target a per-back-edge test block
+    with an ordinary label instead of the shared `__entry__` sentinel.
+    """
     label: str
+    is_self_loop: bool = False
 
 
 @dataclass

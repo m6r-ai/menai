@@ -382,10 +382,10 @@ class TestMultiBlockBodyRotation:
         assert result == 42
 
 
-class TestMultipleSelfLoopsNotRotated:
-    """A function whose loop has more than one back-edge is not rotated."""
+class TestMultipleBackEdgesRotated:
+    """A loop with more than one back-edge is rotated, one test per back-edge."""
 
-    def test_two_arms_tail_calling_same_loop_not_rotated(self):
+    def test_two_arms_tail_calling_same_loop_rotated(self):
         """
         (letrec ((scan
                   (lambda (i)
@@ -397,9 +397,8 @@ class TestMultipleSelfLoopsNotRotated:
           (scan 0))
 
         Both arms of the inner branch tail-call `scan`, so the function has
-        two self-loop terminators.  Rotating only one of them would leave the
-        other jumping to the unrotated entry, so the loop must be left
-        unrotated.
+        two self-loop terminators.  Each back-edge gets its own copy of the
+        rotated test, so neither back-edge needs an unconditional jump.
         """
         src = """
         (letrec ((scan
@@ -413,8 +412,33 @@ class TestMultipleSelfLoopsNotRotated:
         """
         code = _compile(src)
         fn = _find_lambda(code, "scan")
-        assert not _has_backward_conditional_jump(fn), (
-            "a loop with multiple back-edges must not be rotated"
+        assert _has_backward_conditional_jump(fn), (
+            "a loop with multiple back-edges must be rotated"
+        )
+        assert not _has_backward_unconditional_jump(fn), (
+            "every back-edge must be a conditional branch back into the body"
+        )
+
+    def test_two_arms_retains_both_entry_and_bottom_tests(self):
+        """
+        Each back-edge gets its own copy of the loop test, so a loop with two
+        back-edges has three INTEGER_GTE_P tests after rotation: the peeled
+        entry test plus one per back-edge.
+        """
+        src = """
+        (letrec ((scan
+                  (lambda (i)
+                    (if (integer>=? i 10)
+                        i
+                        (if (integer=? i 5)
+                            (scan (integer+ i 1))
+                            (scan (integer+ i 1)))))))
+          (scan 0))
+        """
+        code = _compile(src)
+        fn = _find_lambda(code, "scan")
+        assert _count_op(fn, Opcode.INTEGER_GTE_P) == 3, (
+            "rotated loop must have the entry test plus one test per back-edge"
         )
 
     def test_two_arms_correct_results(self):
@@ -450,3 +474,36 @@ class TestMultipleSelfLoopsNotRotated:
             "(find-vector (lambda (x) (integer>? x 9)) (vector 1 2 3))"
         )
         assert missing is None
+
+    def test_prelude_sort_list_correct(self):
+        """
+        End-to-end: the prelude's sort-list uses a merge helper whose loop has
+        two back-edges (one per branch arm).  It must sort correctly.
+        """
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate(
+            "(sort-list (lambda (x y) (integer<? x y)) (list 3 1 2 5 4))"
+        )
+        assert str(result) == "[1, 2, 3, 4, 5]"
+        empty = menai.evaluate(
+            "(sort-list (lambda (x y) (integer<? x y)) (list))"
+        )
+        assert str(empty) == "[]"
+
+    def test_prelude_sort_list_merge_rotated(self):
+        """
+        The prelude's merge helper has two back-edges.  After rotation neither
+        back-edge is an unconditional jump.
+        """
+        code = _compile(
+            "(sort-list (lambda (x y) (integer<? x y)) (list 3 1 2 5 4))"
+        )
+        fn = _find_lambda(code, "merge")
+        assert _has_backward_conditional_jump(fn), (
+            "merge's loop must be rotated"
+        )
+        assert not _has_backward_unconditional_jump(fn), (
+            "neither of merge's back-edges may be an unconditional jump"
+        )

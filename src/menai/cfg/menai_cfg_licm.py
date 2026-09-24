@@ -3,11 +3,13 @@ CFG pass: loop-invariant code motion (LICM).
 
 When a function contains a SelfLoopTerm (a tail-recursive loop), instructions
 whose operands are all loop-invariant are hoisted into a preamble block that
-executes once on function entry.  The SelfLoopTerm's target is set to the
+executes once on function entry.  Every SelfLoopTerm's target is set to the
 loop-entry block (the original entry minus the hoisted instructions), so the
-self-loop skips the preamble on every iteration after the first.
+self-loop skips the preamble on every iteration after the first.  A loop may
+have more than one back-edge (both arms of a branch tail-calling the enclosing
+function); all of them are retargeted.
 
-Because Menai is pure — no side effects, no mutation — any instruction whose
+As Menai is pure (no side effects, no mutation) any instruction whose
 operands are all loop-invariant can be hoisted unconditionally.  There is no
 need to check for side effects, memory aliasing, or ordering hazards.
 
@@ -23,17 +25,17 @@ operands are all loop-invariant.  The base cases are:
 
 Guard-specific invariance
 -------------------------
-A MenaiCFGGuardInstr on a param that *is* reassigned by the self-loop is still
+A MenaiCFGGuardInstr on a param that is reassigned by the self-loop is still
 loop-invariant when the back-edge type (the type of the value assigned to
 that param by the SelfLoopTerm) matches the guard's expected type.  In that
 case the guard will succeed on every iteration just as it did on the first.
 
-When the back-edge value is a phi node (e.g. from an inner ``if`` that
+When the back-edge value is a phi node (e.g. from an inner `if` that
 produces different values on different branches), the back-edge type may be
 unknown even though the type is semantically preserved.  This happens when
 one phi incoming value is the param itself (passed through unchanged on a
-skip path) — its type is unknown because the guard that would establish it
-is on a different branch.  In this case a **type preservation check** is
+skip path).  Its type is unknown because the guard that would establish it
+is on a different branch.  In this case a type preservation check is
 used: if we assume the param has the guard's expected type, and under that
 assumption the back-edge value also has that type, then the guard is
 loop-invariant.  The guard checks the type on the first iteration (in the
@@ -53,9 +55,9 @@ When at least one instruction is hoisted, the entry block is split:
   - Loop-entry: remaining instructions (non-hoisted), with the original
     terminator.
 
-The SelfLoopTerm's target is set to the loop-entry block.  The VCode builder
-recognises this and emits a label named "__entry__" for the loop-entry block,
-so the self-loop jump resolves to the loop-entry rather than the preamble.
+Each SelfLoopTerm's target is set to the loop-entry block.  The VCode builder
+emits the self-loop jump targeting that block's own label, so the back-edge
+resolves to the loop-entry rather than the preamble.
 
 Hoisting from non-entry blocks
 ------------------------------
@@ -178,24 +180,24 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         self, func: MenaiCFGFunction,
     ) -> tuple[MenaiCFGFunction, bool]:
         """Hoist loop-invariant instructions from a self-loop into a preamble."""
-        self_loop = self._find_self_loop(func)
-        if self_loop is None:
+        self_loops = self._find_self_loop(func)
+        if self_loops is None:
             return func, False
 
         entry = func.entry()
         param_ids = self._param_ids_by_index(entry)
-        unchanged_param_ids = self._unchanged_param_ids(self_loop, param_ids)
+        unchanged_param_ids = self._unchanged_param_ids(self_loops, param_ids)
 
         # Build a map from SSA value id to defining instruction for type lookup.
         def_map = self._build_def_map(func)
 
         # Compute back-edge types for guard invariance checks.
-        back_edge_types = self._back_edge_types(self_loop, param_ids, def_map)
+        back_edge_types = self._back_edge_types(self_loops, param_ids, def_map)
 
         # Compute the set of loop-invariant SSA value ids.
         invariant_ids = self._compute_invariant_values(
             func, unchanged_param_ids, back_edge_types,
-            self_loop, param_ids, def_map,
+            self_loops, param_ids, def_map,
         )
 
         # Collect hoistable instructions from all blocks.
@@ -247,7 +249,8 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         func.blocks.append(loop_entry)
 
-        self_loop.target = loop_entry
+        for self_loop in self_loops:
+            self_loop.target = loop_entry
 
         return func, True
 
@@ -256,7 +259,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         func: MenaiCFGFunction,
         unchanged_param_ids: set[int],
         back_edge_types: dict[int, str | None],
-        self_loop: MenaiCFGSelfLoopTerm,
+        self_loops: list[MenaiCFGSelfLoopTerm],
         param_ids: dict[int, int],
         def_map: dict[int, MenaiCFGInstr],
     ) -> set[int]:
@@ -344,7 +347,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
                 elif back_edge_type is None:
                     if self._back_edge_preserves_type(
                         val_id, instr.expected_type,
-                        self_loop, param_ids, def_map,
+                        self_loops, param_ids, def_map,
                     ):
                         invariant.add(val_id)
 
@@ -388,7 +391,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
     def _back_edge_types(
         self,
-        self_loop: MenaiCFGSelfLoopTerm,
+        self_loops: list[MenaiCFGSelfLoopTerm],
         param_ids: dict[int, int],
         def_map: dict[int, MenaiCFGInstr],
     ) -> dict[int, str | None]:
@@ -397,14 +400,29 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         For each param, the back-edge type is the type of the corresponding
         SelfLoopTerm arg (the new value assigned to that param on the
-        back-edge).  The arg's type is determined by examining the
-        instruction that defines the arg's SSA value.
+        back-edge).  When a loop has several back-edges, the param's type is
+        the join of the args from all of them: the common type when every
+        back-edge agrees, otherwise unknown (None).  The arg's type is
+        determined by examining the instruction that defines its SSA value.
         """
         result: dict[int, str | None] = {}
-        for param_index, arg_val in enumerate(self_loop.args):
-            param_id = param_ids.get(param_index)
-            if param_id is not None:
-                result[param_id] = self._type_of_value(arg_val, def_map)
+        for param_index, param_id in param_ids.items():
+            types: list[str | None] = []
+            arity_ok = True
+            for self_loop in self_loops:
+                if param_index >= len(self_loop.args):
+                    arity_ok = False
+                    break
+
+                types.append(self._type_of_value(self_loop.args[param_index], def_map))
+
+            if not arity_ok or not types:
+                result[param_id] = None
+                continue
+
+            first = types[0]
+            agrees = first is not None and all(t == first for t in types[1:])
+            result[param_id] = first if agrees else None
 
         return result
 
@@ -454,7 +472,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         self,
         param_id: int,
         expected_type: str,
-        self_loop: MenaiCFGSelfLoopTerm,
+        self_loops: list[MenaiCFGSelfLoopTerm],
         param_ids: dict[int, int],
         def_map: dict[int, MenaiCFGInstr],
     ) -> bool:
@@ -473,6 +491,9 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         type is unknown in the normal ``_type_of_value`` lookup, but under
         the hypothesis it has ``expected_type``, which may make the phi's
         type known and matching.
+
+        Every back-edge must preserve the type: a loop with several
+        back-edges is only invariant if all of them do.
         """
         param_index = None
         for idx, pid in param_ids.items():
@@ -480,15 +501,22 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
                 param_index = idx
                 break
 
-        if param_index is None or param_index >= len(self_loop.args):
+        if param_index is None:
             return False
 
-        back_edge_val = self_loop.args[param_index]
         hypothesis: dict[int, str | None] = {param_id: expected_type}
-        computed = self._type_of_value_with_hypothesis(
-            back_edge_val, def_map, hypothesis, set(),
-        )
-        return computed == expected_type
+        for self_loop in self_loops:
+            if param_index >= len(self_loop.args):
+                return False
+
+            back_edge_val = self_loop.args[param_index]
+            computed = self._type_of_value_with_hypothesis(
+                back_edge_val, def_map, hypothesis, set(),
+            )
+            if computed != expected_type:
+                return False
+
+        return True
 
     def _type_of_value_with_hypothesis(
         self,
@@ -549,13 +577,36 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
     def _find_self_loop(
         self, func: MenaiCFGFunction,
-    ) -> MenaiCFGSelfLoopTerm | None:
-        """Return the SelfLoopTerm in func, or None if there is none."""
+    ) -> list[MenaiCFGSelfLoopTerm] | None:
+        """
+        Return the function's self-loop terminators, or None.
+
+        A tail-recursive loop can have more than one back-edge: when both
+        arms of a branch in the body tail-call the enclosing function, each
+        arm gets its own SelfLoopTerm.  Returns None when there are no
+        self-loops, or when they do not all share one loop header (which
+        would mean more than one distinct loop, not a single hoistable one).
+        """
+        found: list[MenaiCFGSelfLoopTerm] = []
         for block in func.blocks:
             if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
-                return block.terminator
+                found.append(block.terminator)
 
-        return None
+        if not found:
+            return None
+
+        header = self._self_loop_header(func, found[0])
+        for self_loop in found[1:]:
+            if self._self_loop_header(func, self_loop) is not header:
+                return None
+
+        return found
+
+    def _self_loop_header(
+        self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
+    ) -> MenaiCFGBlock:
+        """Return the header a self-loop targets (the entry block when unset)."""
+        return self_loop.target if self_loop.target is not None else func.entry()
 
     def _param_ids_by_index(
         self, entry: MenaiCFGBlock,
@@ -570,15 +621,17 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
     def _unchanged_param_ids(
         self,
-        self_loop: MenaiCFGSelfLoopTerm,
+        self_loops: list[MenaiCFGSelfLoopTerm],
         param_ids: dict[int, int],
     ) -> set[int]:
         """
         Return the set of SSA value ids for params that are not reassigned
-        by the self-loop (their index is beyond the length of self_loop.args).
-        These params are loop-invariant, just like free vars.
+        by any self-loop (their index is beyond the length of the self-loop
+        args).  These params are loop-invariant, just like free vars.  All
+        self-loops of one loop pass the same number of args, so the first
+        self-loop's arity is representative.
         """
-        n_args = len(self_loop.args)
+        n_args = len(self_loops[0].args)
         return {
             param_id for index, param_id in param_ids.items()
             if index >= n_args

@@ -486,7 +486,7 @@ def schedule_self_loop_moves(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
             if not isinstance(jump_instr, MenaiVCodeJump):
                 continue
 
-            if jump_instr.label != "__entry__":
+            if not jump_instr.is_self_loop:
                 continue
 
             move_start = jump_idx - 1
@@ -741,24 +741,27 @@ def _eliminate_entry_fallthrough(
     instrs: list[MenaiVCodeInstr],
 ) -> tuple[list[MenaiVCodeInstr], bool]:
     """
-    Remove a JUMP __entry__ that falls through to the __entry__ label.
+    Remove a self-loop jump that falls through to its target label.
 
-    Loop rotation places the rotated test block immediately after the loop
-    body, so the self-loop's JUMP __entry__ is a fall-through to the
-    __entry__ label.  Removing the jump lets the rotated test run directly
-    with no branch, which is the point of the rotation.
+    Loop rotation places a rotated test block immediately after the loop body
+    block that back-edges to it, so the self-loop's jump is a fall-through to
+    that block's label.  Removing the jump lets the rotated test run directly
+    with no branch, which is the point of the rotation.  A loop with several
+    back-edges has one such test block per back-edge, each eliminated
+    independently.
 
-    The jump is only removed when the __entry__ label is the next thing in
-    the stream (possibly with other labels in between).  When the self-loop
-    targets the function entry (the unrotated case), no __entry__ label is
-    emitted and the jump is left untouched.
+    The jump is only removed when its target label is the next thing in the
+    stream (possibly with other labels in between).  When the self-loop
+    targets the function entry (the unrotated case), the jump targets the
+    "__entry__" sentinel, which has no label in the stream, so the jump is
+    left untouched.
     """
     result: list[MenaiVCodeInstr] = []
     changed = False
     i = 0
     while i < len(instrs):
         instr = instrs[i]
-        if isinstance(instr, MenaiVCodeJump) and instr.label == "__entry__":
+        if isinstance(instr, MenaiVCodeJump) and instr.is_self_loop:
             j = i + 1
             falls_through = False
             while j < len(instrs):
@@ -766,7 +769,7 @@ def _eliminate_entry_fallthrough(
                 if not isinstance(next_instr, MenaiVCodeLabel):
                     break
 
-                if next_instr.name == "__entry__":
+                if next_instr.name == instr.label:
                     falls_through = True
 
                 j += 1
@@ -823,7 +826,7 @@ def _eliminate_jump_over_jump(
             if j < len(instrs) and isinstance(instrs[j], MenaiVCodeJump):
                 jump = instrs[j]
                 assert isinstance(jump, MenaiVCodeJump)
-                if jump.label == "__entry__":
+                if jump.is_self_loop:
                     result.append(instr)
                     i += 1
                     continue

@@ -329,7 +329,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
 
     # Phase 3b: back-propagate param slot assignments for self-loop moves.
     # A self-loop is emitted as a group of MenaiVCodeMove instructions
-    # (one per param) immediately followed by JUMP __entry__.  For each move
+    # (one per param) immediately followed by a self-loop jump.  For each move
     # whose source register meets the same safety conditions as Phase 3, we
     # reassign the source register's slot directly to the target param slot
     # so the definition writes straight into the param slot and the MOVE
@@ -341,7 +341,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #   3. No call or apply between the register's definition and this move.
     #   4. No instruction between the definition and this move reads from param_slot.
     for jump_idx, instr in enumerate(func.instrs):
-        if not isinstance(instr, MenaiVCodeJump) or instr.label != "__entry__":
+        if not isinstance(instr, MenaiVCodeJump) or not instr.is_self_loop:
             continue
 
         # Collect the contiguous MOVE group immediately before this JUMP.
@@ -403,7 +403,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #   3. No instruction between the definition and this move reads from
     #      param_slot (condition 4 of Phase 3b; the barrier check is dropped).
     for jump_idx, instr in enumerate(func.instrs):
-        if not isinstance(instr, MenaiVCodeJump) or instr.label != "__entry__":
+        if not isinstance(instr, MenaiVCodeJump) or not instr.is_self_loop:
             continue
 
         move_start = jump_idx - 1
