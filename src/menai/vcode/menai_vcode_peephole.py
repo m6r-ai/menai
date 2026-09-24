@@ -189,6 +189,7 @@ from menai.menai_value import (
     MenaiFloat,
     MenaiInteger,
     MenaiString,
+    MenaiStructType,
     MenaiValue,
 )
 from menai.vcode.menai_vcode_allocator import SlotMap
@@ -200,11 +201,17 @@ def _const_key(value: MenaiValue) -> tuple:
 
     Scalar types (integer, float, complex, boolean, string, bytes) are keyed
     by (type_name, value) so that distinct values of the same type compare
-    correctly.  All other types are keyed by object identity, matching the
-    bytecode builder's add_constant logic.
+    correctly.  Struct type descriptors are keyed by (type_name, tag) because
+    they are logically identified by their tag and each constructor call site
+    lowers the declaration to a fresh descriptor object.  All other types are
+    keyed by object identity, matching the bytecode builder's add_constant
+    logic.
     """
     if isinstance(value, (MenaiInteger, MenaiFloat, MenaiComplex, MenaiBoolean, MenaiString, MenaiBytes)):
         return (type(value).__name__, value.value)
+
+    if isinstance(value, MenaiStructType):
+        return (type(value).__name__, value.tag)
 
     return (id(value),)
 

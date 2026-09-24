@@ -40,6 +40,7 @@ from menai.menai_value import (
     MenaiInteger,
     MenaiList,
     MenaiNone,
+    MenaiStructType,
     MenaiVector,
     MenaiSet,
     MenaiString,
@@ -201,6 +202,13 @@ class _EmitContext:
         """Add value to the constant pool if not already present, and return its index."""
         if isinstance(value, (MenaiInteger, MenaiFloat, MenaiComplex, MenaiBoolean, MenaiString, MenaiBytes)):
             key: tuple = (type(value).__name__, value.value)
+
+        elif isinstance(value, MenaiStructType):
+            # Struct type descriptors are logically identified by their tag, which is
+            # unique per struct declaration within a compilation.  Each constructor
+            # call site lowers the declaration to a fresh descriptor object, so keying
+            # by identity would give every site its own pool entry.
+            key = (type(value).__name__, value.tag)
 
         else:
             key = (id(value),)

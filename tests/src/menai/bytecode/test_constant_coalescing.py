@@ -11,6 +11,12 @@ Safety: a duplicate is only coalesced with an earlier load when no labels
 (branch targets) appear between them, ensuring the first load dominates
 the duplicate.
 
+Struct type descriptors are not emitted as VCode LOAD_CONST instructions —
+the bytecode builder stages them directly into the constant pool at each
+MAKE_STRUCT site.  They are deduplicated by the constant pool's add_constant
+keying, which identifies a descriptor by its compile-time tag rather than by
+object identity.
+
 Covers:
   1. Basic coalescing — duplicate integer constant in straight-line code
   2. Coalescing of string constants
@@ -19,6 +25,7 @@ Covers:
   5. Correctness — results are identical with the optimisation
   6. Distinct constants of the same type are not coalesced
   7. Nested functions coalesce independently
+  8. Struct type descriptors are coalesced in the constant pool
 """
 
 import pytest
@@ -313,6 +320,96 @@ class TestConstantCoalescingDistinctValues:
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
         assert _count_op(code, Opcode.LOAD_CONST) == 2
+
+
+def _struct_type_constants(code, name: str) -> list:
+    """Return pool entries in `code` that are struct type descriptors named `name`."""
+    return [
+        c for c in code.constants
+        if type(c).__name__ == "MenaiStructType" and c.name == name
+    ]
+
+
+class TestStructTypeConstantCoalescing:
+    """Repeated struct type descriptors share one constant pool entry."""
+
+    def test_repeated_constructor_calls_share_one_pool_entry(self):
+        """
+        Three constructor calls of the same struct type stage the type
+        descriptor into the constant pool.  Because each call site lowers the
+        declaration to a fresh descriptor object, the pool must key descriptors
+        by their tag so that all three share one entry.
+        """
+        src = """
+        (let ((Point (struct (x y))))
+          (let ((a (Point 1 2))
+                (b (Point 3 4)))
+            (Point (struct-get a 'x) (struct-get b 'y))))
+        """
+        code = _compile(src)
+        assert len(_struct_type_constants(code, "Point")) == 1
+
+    def test_repeated_constructor_calls_share_one_load(self):
+        """
+        The shared struct type descriptor is loaded by each MAKE_STRUCT site,
+        but all sites reference the same pool index.
+        """
+        src = """
+        (let ((Point (struct (x y))))
+          (let ((a (Point 1 2))
+                (b (Point 3 4)))
+            (Point (struct-get a 'x) (struct-get b 'y))))
+        """
+        code = _compile(src)
+        struct_consts = _struct_type_constants(code, "Point")
+        assert len(struct_consts) == 1
+        # Every LOAD_CONST of the descriptor uses the same pool index.
+        descriptor_index = code.constants.index(struct_consts[0])
+        load_indices = [
+            unpack_instruction(i).src0
+            for i in code.instructions
+            if unpack_instruction(i).opcode == Opcode.LOAD_CONST
+        ]
+        assert load_indices.count(descriptor_index) == 3
+
+    def test_distinct_struct_types_with_same_fields_not_coalesced(self):
+        """
+        Two struct types with identical fields are distinct nominal types and
+        must keep separate pool entries.
+        """
+        src = """
+        (let ((Point (struct (x y)))
+              (Vec (struct (x y))))
+          (let ((a (Point 1 2))
+                (b (Vec 3 4)))
+            (list a b (struct-get a 'x) (struct-get b 'y))))
+        """
+        code = _compile(src)
+        assert len(_struct_type_constants(code, "Point")) == 1
+        assert len(_struct_type_constants(code, "Vec")) == 1
+
+    def test_repeated_struct_type_correct_result(self, menai):
+        """Repeated constructor calls of one struct type produce correct results."""
+        src = """
+        (let ((Point (struct (x y))))
+          (let ((a (Point 1 2))
+                (b (Point 3 4)))
+            (Point (struct-get a 'x) (struct-get b 'y))))
+        """
+        assert menai.evaluate_and_format(src) == "(Point 1 4)"
+
+    def test_distinct_struct_types_correct_result(self, menai):
+        """Distinct struct types with identical fields keep distinct identities."""
+        src = """
+        (let ((Point (struct (x y)))
+              (Vec (struct (x y))))
+          (let ((a (Point 1 2))
+                (b (Vec 3 4)))
+            (list (struct-is-instance? a Point)
+                  (struct-is-instance? a Vec)
+                  (struct-is-instance? b Vec))))
+        """
+        assert menai.evaluate(src) == [True, False, True]
 
 
 class TestConstantCoalescingNestedFunctions:
