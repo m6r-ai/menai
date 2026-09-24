@@ -45,22 +45,24 @@
     (lambda (w value count)
       (if (integer=? count 0)
           w
-          (let ((acc (integer-bit-or (struct-get w 'acc)
-                                     (integer-bit-shift-left
-                                       (integer-bit-and value 1)
-                                       (struct-get w 'bit))))
-                (bit (integer+ (struct-get w 'bit) 1)))
-            (if (integer=? bit 8)
-                (write-bits (writer (bytes-append-u8 (struct-get w 'bytes) acc)
-                                    0
-                                    0)
-                            (integer-bit-shift-right value 1)
-                            (integer- count 1))
-                (write-bits (writer (struct-get w 'bytes)
-                                    bit
-                                    acc)
-                            (integer-bit-shift-right value 1)
-                            (integer- count 1)))))))
+          (match w
+            ((writer bytes bit acc)
+             (let ((new-acc (integer-bit-or acc
+                                            (integer-bit-shift-left
+                                              (integer-bit-and value 1)
+                                              bit)))
+                   (new-bit (integer+ bit 1)))
+               (if (integer=? new-bit 8)
+                   (write-bits (writer (bytes-append-u8 bytes new-acc)
+                                       0
+                                       0)
+                               (integer-bit-shift-right value 1)
+                               (integer- count 1))
+                   (write-bits (writer bytes
+                                       new-bit
+                                       new-acc)
+                               (integer-bit-shift-right value 1)
+                               (integer- count 1)))))))))
 
    ; Pad the writer to the next byte boundary, returning the new writer.
    (align-writer
