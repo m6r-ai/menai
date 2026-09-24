@@ -1,9 +1,10 @@
 """
 Tests for trace rendering.
 
-The rendered instruction lines must match the disassembler's instruction
-formatting and annotations, so that a hot spot found in a trace can be read
-directly against the disassembler output.
+The function summary ranks functions by instructions executed.  The annotated
+view's instruction lines must match the disassembler's instruction formatting
+and annotations, so that a hot spot found in a trace can be read directly
+against the disassembler output.
 """
 
 from menai import Menai
