@@ -109,17 +109,16 @@
    ; Read a single bit, returning (list <0-or-1> <new-state>).
    (read-bit
     (lambda (state)
-      (let ((b (struct-get state 'bytes))
-            (pos (struct-get state 'pos))
-            (bit (struct-get state 'bit)))
-        (if (integer>=? pos (bytes-length b))
-            (error "inflate: unexpected end of input while reading bits")
-            (let ((value (integer-bit-and
-                           (integer-bit-shift-right (bytes-ref b pos) bit)
-                           1)))
-              (if (integer=? bit 7)
-                  (list value (reader b (integer+ pos 1) 0))
-                  (list value (reader b pos (integer+ bit 1)))))))))
+      (match state
+        ((reader b pos bit)
+         (if (integer>=? pos (bytes-length b))
+             (error "inflate: unexpected end of input while reading bits")
+             (let ((value (integer-bit-and
+                            (integer-bit-shift-right (bytes-ref b pos) bit)
+                            1)))
+               (if (integer=? bit 7)
+                   (list value (reader b (integer+ pos 1) 0))
+                   (list value (reader b pos (integer+ bit 1))))))))))
 
    ; Read `n` bits LSB-first, returning (list <integer> <new-state>).
    ; The first bit read becomes the least-significant bit of the result.
