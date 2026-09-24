@@ -43,7 +43,7 @@ The pass mutates the CFG in place — it inserts MenaiCFGGuardInstr instructions
 into block.instrs lists and returns the same MenaiCFGFunction.
 """
 
-from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
+from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES, TYPE_PREDICATES
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
     MenaiCFGBranchTerm,
@@ -54,28 +54,6 @@ from menai.cfg.menai_cfg import (
     MenaiCFGSwitchTerm,
 )
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
-
-# Map from type-predicate builtin name to the Menai type name it tests for.
-# When a branch condition is the result of one of these predicates, the
-# true-edge successor inherits the refined type of the predicate's argument.
-_TYPE_PREDICATES: dict[str, str] = {
-    'none?': 'none',
-    'boolean?': 'boolean',
-    'integer?': 'integer',
-    'float?': 'float',
-    'complex?': 'complex',
-    'string?': 'string',
-    'bytes?': 'bytes',
-    'list?': 'list',
-    'dict?': 'dict',
-    'set?': 'set',
-    'vector?': 'vector',
-    'symbol?': 'symbol',
-    'function?': 'function',
-    'struct?': 'struct',
-    'structtype?': 'structtype',
-}
-
 
 class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
     """
@@ -325,9 +303,9 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
             if (
                 isinstance(instr, MenaiCFGBuiltinInstr)
                 and instr.result.id == term.cond.id
-                and instr.op in _TYPE_PREDICATES
+                and instr.op in TYPE_PREDICATES
                 and len(instr.args) == 1
             ):
-                return instr.args[0].id, _TYPE_PREDICATES[instr.op]
+                return instr.args[0].id, TYPE_PREDICATES[instr.op]
 
         return None

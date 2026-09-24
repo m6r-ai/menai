@@ -97,3 +97,4 @@ What costs, risks, or constraints does this decision impose?
 | [0026](0026-single-builtin-table.md) | A single table describes each opcode-backed builtin | Accepted |
 | [0027](0027-recursion-cycle-parameter-grounding.md) | Recursion-cycle parameter grounding in the interprocedural type analysis | Accepted |
 | [0028](0028-instruction-tracing-by-ordinal.md) | Instruction tracing keyed by walk-order ordinals | Accepted |
+| [0029](0029-predicate-fold-locally-proven-only.md) | Type-predicate folding is restricted to locally-proven arguments | Accepted |

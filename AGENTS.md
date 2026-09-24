@@ -192,6 +192,24 @@ runtime path is used. It never changes observable behaviour.
 See [ADR-0021](docs/adr/0021-interprocedural-type-analysis.md) and
 [ADR-0027](docs/adr/0027-recursion-cycle-parameter-grounding.md).
 
+### Predicate folding consumes only locally-proven facts
+
+`MenaiCFGPredicateFold` folds a type predicate (`none?`, `integer?`, ...) only
+when its argument's type fact is derived locally — from constants, value
+constructors, and builtins whose signature fixes the result type, combined
+through phi nodes. A fact derived from a parameter, a free variable, or a call
+result is never used, however precise the interprocedural analysis reports it.
+
+The reason is that the interprocedural analysis does not resolve calls through
+function-valued parameters. A function value that escapes into an unresolved
+call can be called with values of any type, but the analysis does not see those
+call sites and so does not degrade the function's parameter facts. Consuming
+such a fact to fold a predicate deletes a branch that must be taken at runtime,
+which changes behaviour. Locally-proven facts do not depend on the analysis's
+precision, so the fold is sound without escape analysis.
+
+See [ADR-0029](docs/adr/0029-predicate-fold-locally-proven-only.md).
+
 ### Menai is pure — dead code elimination is always safe
 
 Because Menai has no side effects, any expression whose result is never used can be

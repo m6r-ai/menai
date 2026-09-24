@@ -27,6 +27,7 @@ from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAna
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
 from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGOptimizationPass
+from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.ir.menai_ir_builder import MenaiIRBuilder
@@ -78,6 +79,7 @@ class MenaiCompiler:
             MenaiCFGSimplifyBlocks(),
             MenaiCFGSwitchDispatch(),
             self._interproc_type_analysis,
+            MenaiCFGPredicateFold(),
             MenaiCFGGuardInsertion(),
             MenaiCFGLICM(),
             MenaiCFGLoopRotation(),
