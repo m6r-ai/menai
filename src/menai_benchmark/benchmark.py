@@ -93,7 +93,11 @@ class BenchmarkSuite(ABC):
 
 class BenchmarkRunner:
     """
-    Runs a BenchmarkSuite and collects CaseResult objects.
+    Runs selected cases from a BenchmarkSuite and collects CaseResult objects.
+
+    The cases to run are supplied explicitly rather than read from the suite,
+    so the caller controls selection (e.g. running a single case).  The suite
+    is still required to resolve the implementation under benchmark.
 
     The caller is responsible for warming up the Menai instance before
     passing it in.  No additional warmup is performed here.
@@ -113,22 +117,30 @@ class BenchmarkRunner:
     only applies to the Menai implementation.
     """
 
-    def __init__(self, suite: BenchmarkSuite, menai: Menai, profile: bool = False, trace: bool = False) -> None:
-        """Initialise the runner with a suite, a warmed-up Menai instance, and optional instrumentation."""
+    def __init__(
+        self,
+        suite: BenchmarkSuite,
+        cases: list[BenchmarkCase],
+        menai: Menai,
+        profile: bool = False,
+        trace: bool = False,
+    ) -> None:
+        """Initialise the runner with a suite, the cases to run, a warmed-up Menai instance, and optional instrumentation."""
         self._suite = suite
+        self._cases = cases
         self._menai = menai
         self._profile = profile
         self._trace = trace
 
     def run(self) -> tuple[list[CaseResult], list[ProfileResult], list[TraceResult]]:
-        """Execute every case and return timing, profile, and trace results."""
+        """Execute the selected cases and return timing, profile, and trace results."""
         suite = self._suite
         impl = suite.implementation(self._menai)
         results: list[CaseResult] = []
         profile_results: list[ProfileResult] = []
         trace_results: list[TraceResult] = []
 
-        for case in suite.cases():
+        for case in self._cases:
             times: list[float] = []
             error: str | None = None
             profile_data: dict[str, int] = {}

@@ -1,0 +1,81 @@
+; zip-extract module — extracts the contents of a ZIP archive.
+;
+; Exports: "extract" — takes a bytes value containing a ZIP file and returns a
+; dict describing its entries with each entry's "content" field filled in with
+; the decompressed bytes (or #none for entries that carry no data, such as
+; directory entries):
+;
+;   (dict
+;     "entries" (list of entry dicts, in central-directory order)
+;     "meta"    (dict "format" "zip" "entry-count" ... "comment" ...))
+;
+; Each entry dict is:
+;
+;   (dict
+;     "name" <string>               ; entry name (UTF-8)
+;     "compression" <integer>       ; 0 = stored, 8 = deflate
+;     "crc32" <integer>
+;     "compressed-size" <integer>
+;     "uncompressed-size" <integer>
+;     "local-offset" <integer>      ; offset of the entry's local file header
+;     "data-offset" <integer>       ; absolute offset of the entry's data
+;     "is-directory" <boolean>      ; #t when the name ends with "/"
+;     "content" <bytes> or #none)
+;
+; The entry metadata is produced by zip-entries; this module adds the
+; decompressed contents.  The CRC-32 carried by each entry is verified against
+; the decompressed data.
+;
+; Supported: stored (method 0) and deflate (method 8) entries.  Any other
+; compression method raises a runtime error.
+
+(letrec
+  ((entries-lib (import "zip-entries"))
+   (deflate-lib (import "deflate-decompress"))
+
+   ; Decompress one entry's data, returning the bytes.  Only stored and deflate
+   ; are supported.
+   (entry-content
+    (lambda (b entry decompress)
+      (let ((method (dict-get entry "compression"))
+            (start (dict-get entry "data-offset"))
+            (size (dict-get entry "compressed-size")))
+        (let ((raw (bytes-slice b start (integer+ start size))))
+          (let ((content
+                 (if (integer=? method 0)
+                     raw
+                     (if (integer=? method 8)
+                         (decompress raw)
+                         (error (string-concat
+                                  "Unsupported ZIP: compression method "
+                                  (integer->string method)
+                                  " is not supported (only stored and deflate)"))))))
+            (let ((expected (dict-get entry "crc32"))
+                  (actual (bytes-crc32 content)))
+              (if (integer=? expected actual)
+                  content
+                  (error (string-concat
+                           "ZIP entry \""
+                           (dict-get entry "name")
+                           "\" checksum mismatch: expected "
+                           (integer->string expected)
+                           " but computed "
+                           (integer->string actual))))))))))
+
+   (extract
+    (lambda (b)
+      (if (bytes? b)
+          (let ((listed ((:: entries-lib entries) b)))
+            (let ((decompress (:: deflate-lib decompress)))
+              (dict
+                "entries" (map-list
+                            (lambda (e)
+                              (dict-set e "content"
+                                        (if (dict-get e "is-directory")
+                                            #none
+                                            (entry-content b e decompress))))
+                            (dict-get listed "entries"))
+                "meta" (dict-get listed "meta"))))
+          (error "zip-extract: extract expects a bytes value")))))
+
+  (export extract))

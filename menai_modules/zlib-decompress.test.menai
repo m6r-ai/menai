@@ -1,0 +1,52 @@
+; Tests for zlib-decompress.menai
+
+(let ((zlib-mod (import "zlib-decompress"))
+      (t (import "menai_test")))
+  (let ((decompress (:: zlib-mod decompress))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests (list
+       (list "decompress"
+         (list
+           (expect-pass "decompresses a deflate stream"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b045d"))))
+                            (assert-equal (bytes->string r) "hello world"))))
+           (expect-pass "decompresses an empty stream"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "789c030000000001"))))
+                            (assert-equal (bytes-length r) 0))))
+           (expect-pass "decompresses a stored stream"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "7801010800f7ff61626364656667680e000325"))))
+                            (assert-equal (bytes->string r) "abcdefgh"))))))
+
+       (list "errors"
+         (list
+           (expect-fail "rejects non-bytes argument"
+                        (lambda ()
+                          (decompress "not bytes"))
+                        "expects a bytes value")
+           (expect-fail "rejects too-short input"
+                        (lambda ()
+                          (decompress (string-hex->bytes "789c")))
+                        "too short")
+           (expect-fail "rejects non-DEFLATE compression method"
+                        (lambda ()
+                          (decompress (string-hex->bytes "7709cbc80400013b00d2")))
+                        "not DEFLATE")
+           (expect-fail "rejects a failed header check"
+                        (lambda ()
+                          (decompress (string-hex->bytes "789dcbc80400013b00d2")))
+                        "header check failed")
+           (expect-fail "rejects preset dictionaries"
+                        (lambda ()
+                          (decompress (string-hex->bytes "7820cbc80400013b00d2")))
+                        "preset dictionaries")
+           (expect-fail "rejects a checksum mismatch"
+                        (lambda ()
+                          (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b04a2")))
+                        "checksum mismatch"))))))
+
+      (export tests))))

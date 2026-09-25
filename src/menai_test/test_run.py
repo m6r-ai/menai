@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Menai test runner — discovers and executes *_test.menai test suites."""
+"""Menai test runner — discovers and executes *.test.menai test suites."""
 
 import argparse
 import sys
@@ -299,13 +299,13 @@ def run_file(
     name_filter: str | None,
 ) -> list[TestResult]:
     """
-    Execute all tests in a single *_test.menai file and return their results.
+    Execute all tests in a single *.test.menai file and return their results.
 
     This is the programmatic entry point used by callers that want the raw
     outcomes (for example a pytest driver) rather than printed output.
 
     Args:
-        test_file: Path to the *_test.menai file to run
+        test_file: Path to the *.test.menai file to run
         name_filter: Only run tests whose full path contains this text
             (case-insensitive), or None to run everything
 
@@ -354,7 +354,7 @@ def _run_file(
 
 def _discover_test_files(paths: list[Path]) -> list[Path]:
     """
-    Find all *_test.menai files under the given paths.
+    Find all *.test.menai files under the given paths.
 
     Paths may be files or directories. Directories are searched recursively.
     Results are sorted for deterministic ordering.
@@ -362,11 +362,11 @@ def _discover_test_files(paths: list[Path]) -> list[Path]:
     found: list[Path] = []
     for path in paths:
         if path.is_file():
-            if path.name.endswith("_test.menai"):
+            if path.name.endswith(".test.menai"):
                 found.append(path)
 
         elif path.is_dir():
-            found.extend(sorted(path.rglob("*_test.menai")))
+            found.extend(sorted(path.rglob("*.test.menai")))
 
         else:
             print(f"Warning: path not found: {path}", file=sys.stderr)
@@ -377,12 +377,12 @@ def _discover_test_files(paths: list[Path]) -> list[Path]:
 def main() -> None:
     """Entry point for the Menai test runner."""
     parser = argparse.ArgumentParser(
-        description="Menai test runner — executes *_test.menai test suites",
+        description="Menai test runner — executes *.test.menai test suites",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s menai_modules/            # run all tests under menai_modules/
-  %(prog)s menai_modules/json_parser_test.menai  # run a single file
+  %(prog)s menai_modules/json-decode.test.menai  # run a single file
   %(prog)s menai_modules/ --filter "parse-string"  # filter by name
   %(prog)s menai_modules/ --verbose  # show passing tests too
 """,
@@ -391,7 +391,7 @@ Examples:
         "paths",
         nargs="+",
         metavar="PATH",
-        help="Files or directories to search for *_test.menai files",
+        help="Files or directories to search for *.test.menai files",
     )
     parser.add_argument(
         "--filter",
@@ -411,7 +411,7 @@ Examples:
     test_files = _discover_test_files([Path(p) for p in args.paths])
 
     if not test_files:
-        print("No *_test.menai files found.")
+        print("No *.test.menai files found.")
         sys.exit(0)
 
     total_stats = RunStats()

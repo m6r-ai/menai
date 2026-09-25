@@ -1,6 +1,6 @@
 # Menai Test Runner
 
-A test runner for Menai modules. Test files use the `_test.menai` suffix and
+A test runner for Menai modules. Test files use the `.test.menai` suffix and
 export a structured tree of named test thunks. The runner discovers, executes,
 and reports them with full isolation between tests.
 
@@ -8,16 +8,16 @@ and reports them with full isolation between tests.
 
 ```bash
 # Run all tests under a directory (recursive)
-python -m menai_test.test_run menai_modules/
+menai-test menai_modules/
 
 # Run a single test file
-python -m menai_test.test_run menai_modules/json_parser_test.menai
+menai-test menai_modules/json-decode.test.menai
 
 # Show passing tests as well as failures
-python -m menai_test.test_run menai_modules/ --verbose
+menai-test menai_modules/ --verbose
 
 # Filter by name (case-insensitive substring match on full path)
-python -m menai_test.test_run menai_modules/ --filter "parse-string"
+menai-test menai_modules/ --filter "parse-string"
 ```
 
 The runner exits with code 0 if all tests pass, non-zero if any fail.
@@ -143,7 +143,7 @@ Exports:
 ## Output format
 
 ```
-menai_modules/json_parser_test.menai
+menai_modules/json-decode.test.menai
   ✓  objects > empty object
   ✓  objects > single key
   ✗  strings > escapes > unicode

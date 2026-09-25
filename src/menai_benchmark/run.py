@@ -9,6 +9,7 @@ from pathlib import Path
 from menai import Menai
 
 from menai_benchmark import (
+    BenchmarkCase,
     BenchmarkReporter,
     BenchmarkRunner,
     BenchmarkSuite,
@@ -61,29 +62,47 @@ def discover_suites() -> list[tuple[Path, type[BenchmarkSuite]]]:
     return found
 
 
-def filter_suites(
+def find_suite(
     all_suites: list[tuple[Path, type[BenchmarkSuite]]],
-    names: list[str],
-) -> list[tuple[Path, type[BenchmarkSuite]]]:
+    name: str,
+) -> tuple[Path, type[BenchmarkSuite]] | None:
     """
-    Return only the suites whose name contains any of the given substrings.
+    Return the suite whose name exactly matches, ignoring case.
 
-    Matching is case-insensitive.  A suite's name is taken from its
-    ``BenchmarkSuite.name`` class attribute.
+    A suite's name is taken from its ``BenchmarkSuite.name`` class attribute.
 
     Args:
         all_suites: The full list of discovered (directory, class) pairs.
-        names:      Substrings to match against suite names.
+        name:       The suite name to match.
 
     Returns:
-        The filtered subset, preserving discovery order.
+        The matching (directory, class) pair, or ``None`` if there is no match.
     """
-    lowered = [n.lower() for n in names]
-    return [
-        (suite_dir, cls)
-        for suite_dir, cls in all_suites
-        if any(fragment in cls.name.lower() for fragment in lowered)
-    ]
+    lowered = name.lower()
+    for suite_dir, cls in all_suites:
+        if cls.name.lower() == lowered:
+            return suite_dir, cls
+
+    return None
+
+
+def find_case(cases: list[BenchmarkCase], name: str) -> BenchmarkCase | None:
+    """
+    Return the case whose name exactly matches, ignoring case.
+
+    Args:
+        cases: The suite's cases.
+        name:  The case name to match.
+
+    Returns:
+        The matching case, or ``None`` if there is no match.
+    """
+    lowered = name.lower()
+    for case in cases:
+        if case.name.lower() == lowered:
+            return case
+
+    return None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -94,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "python run.py                             # run all suites\n"
             "python run.py --suite sort                # run only the sort suite\n"
-            "python run.py --suite sort sudoku         # run multiple\n"
+            "python run.py --suite sort --case n=1000  # run one case in a suite\n"
             "python run.py --iterations 5              # override iteration count\n"
             "python run.py --profile                   # opcode profiling (Menai only)\n"
             "python run.py --profile --profile-top 20  # limit opcode output\n"
@@ -106,13 +125,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--suite",
         metavar="NAME",
-        dest="suites",
-        nargs="+",
-        action="append",
+        dest="suite",
         default=None,
         help=(
-            "Run only suites whose name contains NAME (case-insensitive substring "
-            "match).  May be repeated or given multiple values.  Omit to run all."
+            "Run only the suite named NAME (case-insensitive exact match).  "
+            "Omit to run all suites."
+        ),
+    )
+    parser.add_argument(
+        "--case",
+        metavar="NAME",
+        dest="case",
+        default=None,
+        help=(
+            "Run only the case named NAME within the selected suite "
+            "(case-insensitive exact match).  Requires --suite."
         ),
     )
     parser.add_argument(
@@ -177,6 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run_suite(
     suite_dir: Path,
     suite_class: type[BenchmarkSuite],
+    case_name: str | None,
     iterations: int | None,
     profile: bool,
     profile_top: int,
@@ -191,6 +219,8 @@ def run_suite(
         suite_dir:    Directory containing the suite's ``suite.py`` (and any
                       ``.menai`` files it imports).
         suite_class:  The ``Suite`` subclass to instantiate.
+        case_name:    If given, run only the case with this name (case-insensitive
+                      exact match); otherwise run every case in the suite.
         iterations:   If given, override ``BenchmarkCase.iterations`` on every
                       case before running.
         profile:      If ``True``, enable opcode profiling during timed runs.
@@ -200,15 +230,29 @@ def run_suite(
         annotate:     If ``True``, print the annotated disassembly per case.
     """
     suite = suite_class()
+    cases = suite.cases()
+
+    if case_name is not None:
+        selected = find_case(cases, case_name)
+        if selected is None:
+            available = ", ".join(case.name for case in cases)
+            print(
+                f"No case named '{case_name}' in suite '{suite.name}'. "
+                f"Available cases: {available}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        cases = [selected]
 
     if iterations is not None:
-        for case in suite.cases():
+        for case in cases:
             case.iterations = iterations
 
     module_path = [str(suite_dir), str(_MENAI_MODULES_DIR)]
     menai = Menai(module_path=module_path)
 
-    runner = BenchmarkRunner(suite, menai, profile=profile, trace=trace or annotate)
+    runner = BenchmarkRunner(suite, cases, menai, profile=profile, trace=trace or annotate)
     results, profile_results, trace_results = runner.run()
 
     reporter = BenchmarkReporter()
@@ -246,16 +290,20 @@ def main() -> None:
         print("No suites found under suites/*/suite.py.", file=sys.stderr)
         sys.exit(1)
 
-    if args.suites is not None:
-        flat_names = [name for group in args.suites for name in group]
-        selected = filter_suites(all_suites, flat_names)
-        if not selected:
-            joined = ", ".join(flat_names)
+    if args.case is not None and args.suite is None:
+        parser.error("--case requires --suite")
+
+    if args.suite is not None:
+        found = find_suite(all_suites, args.suite)
+        if found is None:
+            available = ", ".join(cls.name for _, cls in all_suites)
             print(
-                f"No suites matched the filter(s): {joined}",
+                f"No suite named '{args.suite}'. Available suites: {available}",
                 file=sys.stderr,
             )
             sys.exit(1)
+
+        selected = [found]
 
     else:
         selected = all_suites
@@ -264,6 +312,7 @@ def main() -> None:
         run_suite(
             suite_dir=suite_dir,
             suite_class=suite_class,
+            case_name=args.case,
             iterations=args.iterations,
             profile=args.profile,
             profile_top=args.profile_top,

@@ -1,0 +1,68 @@
+; Tests for json-decode.menai
+
+(let ((json (import "json-decode"))
+      (t (import "menai_test")))
+  (let ((decode (:: json decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test)))
+    (let ((tests
+      (list
+        ; Tests for objects
+        (list "objects"
+          (list
+            (expect-pass "empty object"
+                         (lambda () (assert-equal (decode "{}") (dict))))
+            (expect-pass "single key"
+                         (lambda () (assert-equal (decode "{\"a\": 1}") (dict "a" 1))))
+            (expect-pass "nested object"
+                         (lambda () (assert-equal (decode "{\"a\": {\"b\": 2}}")
+                                                  (dict "a" (dict "b" 2)))))))
+
+        ; Tests for arrays
+        (list "arrays"
+          (list
+            (expect-pass "empty array"
+                         (lambda () (assert-equal (decode "[]") (list))))
+            (expect-pass "integer array"
+                         (lambda () (assert-equal (decode "[1, 2, 3]") (list 1 2 3))))
+            (expect-pass "nested array"
+                         (lambda () (assert-equal (decode "[[1, 2], [3, 4]]")
+                                                  (list (list 1 2) (list 3 4)))))))
+
+        ; Tests for strings
+        (list "strings"
+          (list
+            (expect-pass "empty string"
+                         (lambda () (assert-equal (decode "\"\"") "")))
+            (expect-pass "simple string"
+                         (lambda () (assert-equal (decode "\"hello\"") "hello")))
+            (list "escapes"
+              (list
+                (expect-pass "newline"
+                             (lambda () (assert-equal (decode "\"\\n\"") "\n")))
+                (expect-pass "tab"
+                             (lambda () (assert-equal (decode "\"\\t\"") "\t")))
+                (expect-pass "unicode"
+                             (lambda () (assert-equal (decode "\"\\u0041\"") "A")))))))
+
+        ; Tests for numbers
+        (list "numbers"
+          (list
+            (expect-pass "integer"
+                         (lambda () (assert-equal (decode "42") 42)))
+            (expect-pass "negative integer"
+                         (lambda () (assert-equal (decode "-7") -7)))
+            (expect-pass "float"
+                         (lambda () (assert-equal (decode "3.14") 3.14)))))
+
+        ; Tests for literals
+        (list "literals"
+          (list
+            (expect-pass "true"
+                         (lambda () (assert-equal (decode "true") #t)))
+            (expect-pass "false"
+                         (lambda () (assert-equal (decode "false") #f)))
+            (expect-pass "null"
+                         (lambda () (assert-equal (decode "null") #none))))))))
+
+      (export tests))))

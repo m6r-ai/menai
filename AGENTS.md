@@ -52,12 +52,37 @@ If you need to use an API read the source code to understand it first.
 - If you open a terminal it will automatically be in the root of the mindspace directory.  Don't change directory unless
   you want to be somewhere else.
 - Terminals will not open with a python virtual environment by default.  The venv is at `venv/` in the mindspace root.
+  Activate it (`source venv/bin/activate`) before running any of the project's console scripts.  Without it, the
+  scripts resolve to a stale globally-installed copy rather than the working tree, which produces misleading results
+  (for example `menai-test` reporting that no test files were found).
 - Do not pipe pytest output through `grep` or other filtering tools.  pytest interleaves progress dots on stderr with
   summary lines on stdout, so filtering mangles the output and hides the pass/fail counts.  Run pytest with no flags
   and pipe through `tail` only if the output is too long to read in full:
   ```bash
   python -m pytest tests/src/menai/ 2>&1 | tail -10
   ```
+
+## Project tools
+
+The project installs a set of console scripts (declared in `pyproject.toml`). They are
+available on the PATH once the venv is active. Do not guess their names or invoke the
+underlying modules with `python -m`; use the console scripts.
+
+- `menai-test <path>...` — discovers and runs `*.test.menai` suites. Takes files or
+  directories. `--filter TEXT` selects tests by name; `--verbose` shows passing tests too.
+  This is the tool for running the standard library module tests:
+  ```bash
+  menai-test menai_modules/                          # all module tests
+  menai-test menai_modules/json-decode.test.menai    # a single suite
+  ```
+- `menai-eval <file>` — compiles and evaluates a `.menai` file (or an expression from
+  stdin) and prints the result. `--cprofile` profiles the compiler, `--profile` profiles
+  VM execution.
+- `menai-check <file>...` — validates parenthesis balance and pinpoints mismatched parens.
+- `menai-pretty-print <file>...` — formats Menai source.
+- `menai-disassemble <file>` — compiles and prints annotated bytecode disassembly.
+- `menai-benchmark` — runs the performance benchmark suites.
+- `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps.
 
 ## Code quality
 
@@ -126,7 +151,7 @@ menai/
 │   ├── menai_pretty_print/     # code formatter
 │   ├── menai_render/           # shared bytecode rendering and code-object walk
 │   ├── menai_trace/            # VM instruction and call trace resolution and rendering
-│   └── menai_test/             # test runner for *_test.menai files
+│   └── menai_test/             # test runner for *.test.menai files
 └── tests/
     ├── src/
     │   └── menai/              # compiler core tests
@@ -313,6 +338,30 @@ must not rename a namespace member name (it is a key, not a variable reference) 
 a struct pattern head's member name — see `_ModuleRenamer`.
 
 See [ADR-0023](docs/adr/0023-second-class-module-namespaces.md).
+
+### A module cannot export a name it also needs as a builtin or prelude function
+
+A module's own bindings shadow same-named builtins and prelude functions throughout
+its body. A module that exports `list` therefore shadows the prelude's `list` inside
+itself and can no longer construct an empty list. There is no escape hatch: the
+`$`-prefixed form only reaches opcode-backed primitives, and `list` is a prelude
+function, not a primitive.
+
+Module and export names must avoid the names of the builtins and prelude functions
+the module itself uses. This is why the ZIP reader exports `entries` rather than the
+naturally-named `list`.
+
+### Renaming a module requires a repo-wide text sweep, not just `.menai` files
+
+Module names appear in more places than the module files themselves. In particular
+they appear as string literals inside Python source — benchmark suites and pipeline
+examples build Menai expressions as `'(let ((x (import "module-name"))) ...)'` strings.
+
+A rename is not complete until every occurrence of the old name has been found and
+updated. Search the whole repository (excluding `.git`, `venv`, and build artefacts),
+not just `menai_modules/` and `docs/`. Both the old module name and the old export
+name must be swept, and the test-file naming convention (`<module>.test.menai`) must
+be applied to any renamed test file.
 
 ### The code-object walk order is a contract between Python and C
 

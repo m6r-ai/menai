@@ -162,7 +162,7 @@ menai/
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
 │   ├── menai_pretty_print/     # code formatter
-│   └── menai_test/             # test runner for *_test.menai files
+│   └── menai_test/             # test runner for *.test.menai files
 └── tests/                      # compiler core tests
 ```
 

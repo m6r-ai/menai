@@ -1,0 +1,40 @@
+; Tests for zip-extract.menai
+
+(let ((zip-mod (import "zip-extract"))
+      (t (import "menai_test")))
+  (let ((extract (:: zip-mod extract))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests (list
+       (list "extract"
+         (list
+           (expect-pass "deflate entry is decompressed"
+                        (lambda ()
+                          (let ((r (extract (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000"))))
+                            (assert-equal (bytes->string (dict-get (list-first (dict-get r "entries")) "content")) "hello world"))))
+           (expect-pass "stored entry is returned verbatim"
+                        (lambda ()
+                          (let ((r (extract (string-hex->bytes "504b030414000000000007542f5df1080d9b040000000400000005000000612e74787441414141504b0102140314000000000007542f5df1080d9b0400000004000000050000000000000000000000800100000000612e747874504b0506000000000100010033000000270000000000"))))
+                            (assert-equal (bytes->string (dict-get (list-first (dict-get r "entries")) "content")) "AAAA"))))
+           (expect-pass "directory entry has no content"
+                        (lambda ()
+                          (let ((r (extract (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000"))))
+                            (assert-equal (dict-get (list-first (dict-get r "entries")) "content") #none))))
+           (expect-pass "nested file content"
+                        (lambda ()
+                          (let ((r (extract (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000"))))
+                            (assert-equal (bytes->string (dict-get (list-ref (dict-get r "entries") 1) "content")) "nested content"))))))
+
+       (list "errors"
+         (list
+           (expect-fail "rejects non-bytes argument"
+                        (lambda ()
+                          (extract "not bytes"))
+                        "expects a bytes value")
+           (expect-fail "rejects an entry with a bad CRC"
+                        (lambda ()
+                          (extract (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d00114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")))
+                        "checksum mismatch"))))))
+
+      (export tests))))

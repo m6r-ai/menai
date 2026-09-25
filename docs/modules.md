@@ -198,27 +198,40 @@ destructuring pattern head:
 The `menai_modules/` directory contains standard library modules. Currently this
 includes:
 
-- `json_parser.menai` — a JSON parser that converts JSON strings to Menai values
-- `bmp_parser.menai` — a BMP parser that converts uncompressed 24-bit and 32-bit
-  BMP files (as bytes) to a dict containing the decoded header, a normalised
-  top-down pixel grid, and parser metadata
-- `deflate.menai` — a raw DEFLATE compressor (RFC 1951) that converts a bytes
-  value to a raw DEFLATE stream; the optional second argument selects the block
-  encoding (`"auto"`, `"stored"`, `"fixed"`, or `"dynamic"`), with `"auto"`
-  choosing the smallest of the three.  It is the counterpart to `inflate.menai`
-- `inflate.menai` — a raw DEFLATE decompressor (RFC 1951) that converts a bytes
-  value containing a raw DEFLATE stream to the decompressed bytes; supports
-  stored, fixed Huffman, and dynamic Huffman blocks
-- `zip_parser.menai` — a ZIP archive parser that reads a ZIP file (as bytes) and
-  returns its central directory as a list of entry dicts, with `parse` (metadata
-  only) and `extract` (decompressed contents) entry points; supports stored and
-  deflate entries
-- `zlib_parser.menai` — a zlib stream decompressor (RFC 1950) that strips the
-  2-byte header, delegates the DEFLATE data to `inflate`, and verifies the
-  Adler-32 trailer
-- `png_parser.menai` — a PNG parser that converts non-interlaced 8-bit PNG files
-  (as bytes) to a dict containing the decoded header, a top-down pixel grid, and
-  parser metadata.  All colour types are supported (greyscale, truecolour,
-  palette, and the alpha variants), normalised to RGB or RGBA pixels
+- `json-decode.menai` — decodes a JSON string to the equivalent Menai value
+  (`decode`)
+- `bmp-decode.menai` — decodes uncompressed 24-bit and 32-bit BMP files (as
+  bytes) to a dict containing the decoded header, a normalised top-down pixel
+  grid, and metadata (`decode`)
+- `png-decode.menai` — decodes non-interlaced 8-bit PNG files (as bytes) to a
+  dict containing the decoded header, a top-down pixel grid, and metadata.  All
+  colour types are supported (greyscale, truecolour, palette, and the alpha
+  variants), normalised to RGB or RGBA pixels (`decode`)
+- `deflate-compress.menai` — compresses a bytes value to a raw DEFLATE stream
+  (RFC 1951); the optional second argument selects the block encoding (`"auto"`,
+  `"stored"`, `"fixed"`, or `"dynamic"`), with `"auto"` choosing the smallest of
+  the three (`compress`)
+- `deflate-decompress.menai` — decompresses a raw DEFLATE stream (RFC 1951) to
+  bytes; supports stored, fixed Huffman, and dynamic Huffman blocks
+  (`decompress`)
+- `deflate-tables.menai` — the constant tables defined by RFC 1951, shared by
+  `deflate-compress` and `deflate-decompress`.  Not an operation module; it
+  exports specification data
+- `zlib-decompress.menai` — decompresses a zlib stream (RFC 1950), stripping the
+  2-byte header, delegating the DEFLATE data to `deflate-decompress`, and
+  verifying the Adler-32 trailer (`decompress`)
+- `zip-entries.menai` — reads a ZIP file (as bytes) and returns its central
+  directory as a list of entry dicts, without decompressing the contents
+  (`entries`)
+- `zip-extract.menai` — reads a ZIP file and returns the same entry dicts with
+  each entry's contents decompressed and its CRC-32 verified (`extract`)
 
-See [Examples](examples.md) for a walkthrough of the JSON parser.
+Modules are named `<format>-<operation>`: the format names the thing the module
+operates on, and the operation names what it does.  A module exports its
+operation under the same name as the operation in its module name, so
+`json-decode` exports `decode`.  Operations that are inverses use a symmetric
+pair of names (`decode`/`encode`, `compress`/`decompress`); operations that are
+not inverses are named individually (`entries`, `extract`, `create`).  See
+[Module naming](module_naming.md) for the full convention.
+
+See [Examples](examples.md) for a walkthrough of the JSON decoder.

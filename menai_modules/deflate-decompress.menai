@@ -1,0 +1,497 @@
+; deflate-decompress module — raw DEFLATE decompressor (RFC 1951).
+;
+; Exports: "decompress" — takes a bytes value containing a raw DEFLATE stream and
+; returns a bytes value containing the decompressed data.
+;
+; All three DEFLATE block types are supported: stored (BTYPE = 00), fixed
+; Huffman (BTYPE = 01), and dynamic Huffman (BTYPE = 10).  Invalid block types
+; (BTYPE = 11) are rejected.
+;
+; The bit reader is a pure state value threaded through every call:
+;   (reader <bytes> <byte-offset> <0-7>)
+; `bit` is the index of the next bit to read within byte `pos`, counted from
+; the least-significant bit (DEFLATE is LSB-first within each byte).
+;
+; Decompressed output is carried as an output state value threaded through the
+; decode:
+;   (output <reversed list of every appended bytes value>
+;           <reversed list of bytes appended since the window was last refreshed>
+;           <bytes: the most recent output, coalesced>
+;           <integer: total bytes produced>)
+; Appending only prepends to `chunks` and `pending`, so it is O(1) regardless
+; of how much output has already been produced.  `window` is a coalesced
+; contiguous view of the most recent output and is refreshed lazily, only when
+; a back-reference needs to read from it.  A back-reference can reach back at
+; most the maximum DEFLATE distance, so refreshing keeps only the most recent
+; `window-cap` bytes; `chunks` retains everything for the final concatenation.
+; This makes the decode linear in the output size rather than quadratic.
+
+(letrec
+  ((tables (import "deflate-tables"))
+   (length-base (:: tables length-base))
+   (length-extra (:: tables length-extra))
+   (distance-base (:: tables distance-base))
+   (distance-extra (:: tables distance-extra))
+   (code-length-order (:: tables code-length-order))
+   (fixed-lit-lengths (:: tables fixed-lit-lengths))
+   (fixed-dist-lengths (:: tables fixed-dist-lengths))
+
+   ; The bit-reader state: the input bytes, the current byte offset, and the
+   ; index of the next bit to read within that byte (0-7).
+   (reader (struct (bytes pos bit)))
+
+   (make-reader
+    (lambda (b)
+      (reader b 0 0)))
+
+   ; The maximum DEFLATE back-reference distance.  The output window must
+   ; always retain at least this many bytes of recent output so that any
+   ; back-reference can be resolved.
+   (window-cap 32768)
+
+   ; Create an empty output state.
+   (output (struct (chunks pending window total)))
+
+   (make-output
+    (lambda ()
+      (output (list)
+              (list)
+              (string->bytes "")
+              0)))
+
+   ; Append a bytes value to the output.  O(1): the value is prepended to the
+   ; chunk list (for the final concatenation) and to the pending list (for the
+   ; next window refresh).
+   (output-append-bytes
+    (lambda (out bs)
+      (output (list-prepend (struct-get out 'chunks) bs)
+              (list-prepend (struct-get out 'pending) bs)
+              (struct-get out 'window)
+              (integer+ (struct-get out 'total) (bytes-length bs)))))
+
+   ; Coalesce the pending appends onto the window, keeping only the most recent
+   ; `window-cap` bytes (all a back-reference can reach).  Returns the output
+   ; state with an empty pending list.  O(window-cap + pending).  A no-op when
+   ; there is nothing pending, so it is cheap to call before every read.
+   (output-refresh-window
+    (lambda (out)
+      (let ((pending (struct-get out 'pending)))
+        (if (list-null? pending)
+            out
+            (let ((win (apply bytes-concat
+                              (list-prepend (list-reverse pending) (struct-get out 'window)))))
+              (output (struct-get out 'chunks)
+                      (list)
+                      (if (integer>? (bytes-length win) window-cap)
+                          (bytes-slice win (integer- (bytes-length win) window-cap)
+                                       (bytes-length win))
+                          win)
+                      (struct-get out 'total)))))))
+
+   ; Concatenate a list of bytes values in a balanced tree rather than a left
+   ; fold.  A left fold copies the growing prefix once per element, which is
+   ; O(total * n); merging pairs instead copies each byte O(log n) times.
+   (concat-chunks
+    (lambda (chunks)
+      (if (list-null? chunks)
+          (string->bytes "")
+          (if (list-null? (list-rest chunks))
+              (list-first chunks)
+              (let ((half (integer/ (list-length chunks) 2)))
+                (bytes-concat (concat-chunks (list-slice chunks 0 half))
+                              (concat-chunks (list-slice chunks half))))))))
+
+   ; Flatten the output state into a single bytes value.  O(total * log n).
+   (output-finalize
+    (lambda (out)
+      (concat-chunks (list-reverse (struct-get out 'chunks)))))
+
+   ; Read a single bit, returning (list <0-or-1> <new-state>).
+   (read-bit
+    (lambda (state)
+      (match state
+        ((reader b pos bit)
+         (if (integer>=? pos (bytes-length b))
+             (error "deflate-decompress: unexpected end of input while reading bits")
+             (let ((value (integer-bit-and
+                            (integer-bit-shift-right (bytes-ref b pos) bit)
+                            1)))
+               (if (integer=? bit 7)
+                   (list value (reader b (integer+ pos 1) 0))
+                   (list value (reader b pos (integer+ bit 1))))))))))
+
+   ; Read `n` bits LSB-first, returning (list <integer> <new-state>).
+   ; The first bit read becomes the least-significant bit of the result.
+   (read-bits
+    (lambda (state n)
+      (letrec ((loop (lambda (remaining acc st)
+                       (if (integer=? remaining 0)
+                           (list acc st)
+                           (let ((result (read-bit st)))
+                             (let ((value (list-first result))
+                                   (next (list-ref result 1)))
+                               (loop (integer- remaining 1)
+                                     (integer-bit-or acc
+                                       (integer-bit-shift-left value (integer- n remaining)))
+                                     next)))))))
+        (loop n 0 state))))
+
+   ; Discard bits up to the next byte boundary, returning the new state.
+   (align-to-byte
+    (lambda (state)
+      (let ((bit (struct-get state 'bit)))
+        (if (integer=? bit 0)
+            state
+            (reader (struct-get state 'bytes)
+                    (integer+ (struct-get state 'pos) 1)
+                    0)))))
+
+   ; Read LEN raw bytes from the current byte position, returning
+   ; (list <bytes> <new-state>).  The reader must be byte-aligned.
+   (read-raw-bytes
+    (lambda (state n)
+      (let ((b (struct-get state 'bytes))
+            (pos (struct-get state 'pos)))
+        (if (integer>? (integer+ pos n) (bytes-length b))
+            (error "deflate-decompress: unexpected end of input while reading stored block")
+            (list (bytes-slice b pos (integer+ pos n))
+                  (reader b (integer+ pos n) 0))))))
+
+   ; Build a canonical Huffman decoding table from a list of code lengths.
+   ; `lengths` is a list where element i is the code length of symbol i
+   ; (0 means the symbol is unused).  Returns a dict mapping an integer key to
+   ; the symbol index, following the canonical code assignment of RFC 1951
+   ; §3.2.2 (shorter codes first; within a length, codes assigned in symbol
+   ; order).  A code of length L with value `code` is keyed by (1 << L) + code;
+   ; because a code of length L is always less than 2^L, keys for different
+   ; lengths occupy disjoint ranges.
+   (build-huffman-table
+    (lambda (lengths)
+      (letrec
+        ((max-length
+          (lambda (lst)
+            (fold-list (lambda (acc len) (integer-max acc len)) 0 lst)))
+
+         ; Compute the first canonical code for each length 1..maxlen.
+         ; bl_count[len] = number of codes of that length.
+         ; Returns a dict mapping length to the first code assigned to it.
+         (first-codes
+          (lambda (bl-count maxlen)
+            (letrec ((loop (lambda (len code acc)
+                             (if (integer>? len maxlen)
+                                 acc
+                                 (let ((next (integer-bit-shift-left
+                                               (integer+ code (dict-get bl-count len 0))
+                                               1)))
+                                   (loop (integer+ len 1) next
+                                         (dict-set acc len code)))))))
+              (loop 1 0 (dict))))))
+        (let ((maxlen (max-length lengths)))
+          (letrec
+            ((count-lengths
+              (lambda (lst acc)
+                (if (list-null? lst)
+                    acc
+                    (count-lengths (list-rest lst)
+                                    (dict-set acc (list-first lst)
+                                              (integer+ (dict-get acc (list-first lst) 0) 1))))))
+
+             ; Walk symbols in order, assigning each its canonical code.
+             ; Returns a table dict keyed by (1 << length) + code.
+             (assign
+              (lambda (symbols lens codes table)
+                (if (list-null? symbols)
+                    table
+                    (let ((len (list-first lens))
+                          (sym (list-first symbols)))
+                      (if (integer=? len 0)
+                          (assign (list-rest symbols) (list-rest lens) codes table)
+                          (let ((code (dict-get codes len)))
+                            (if (none? code)
+                                (error "deflate-decompress: internal error building Huffman table")
+                                (let ((key (integer+ (integer-bit-shift-left 1 len) code)))
+                                  (assign (list-rest symbols)
+                                          (list-rest lens)
+                                          (dict-set codes len (integer+ code 1))
+                                          (dict-set table key sym)))))))))))
+            (let ((symbols (range 0 (list-length lengths))))
+              (assign symbols lengths (first-codes (count-lengths lengths (dict)) maxlen) (dict))))))))
+
+   ; Decode one symbol using a canonical Huffman table, reading bits one at a
+   ; time until a code matches.  The table is keyed by (1 << length) + code, so
+   ; the lookup key is built with integer arithmetic.  Returns
+   ; (list <symbol> <new-state>).
+   (decode-symbol
+    (lambda (state table)
+      (letrec ((loop (lambda (st length code)
+                       (if (integer>? length 15)
+                           (error "deflate-decompress: invalid Huffman code (no match within 15 bits)")
+                           (let ((result (read-bit st)))
+                             (let ((bit (list-first result))
+                                   (next (list-ref result 1)))
+                               (let ((new-code (integer-bit-or
+                                                 (integer-bit-shift-left code 1)
+                                                 bit)))
+                                 (let ((key (integer+ (integer-bit-shift-left 1 (integer+ length 1))
+                                                      new-code)))
+                                   (let ((sym (dict-get table key)))
+                                     (if (none? sym)
+                                         (loop next (integer+ length 1) new-code)
+                                         (list sym next)))))))))))
+        (loop state 0 0))))
+
+   ; Read `n` extra bits and return (list <integer> <new-state>).
+   (read-extra
+    (lambda (state n)
+      (if (integer=? n 0)
+          (list 0 state)
+          (read-bits state n))))
+
+   ; Decode a length symbol (257-285) into an actual length value.
+   ; Returns (list <length> <new-state>).
+   (decode-length
+    (lambda (state sym)
+      (let ((idx (integer- sym 257)))
+        (let ((base (vector-ref length-base idx))
+              (extra (vector-ref length-extra idx)))
+          (let ((extra-result (read-extra state extra)))
+            (list (integer+ base (list-first extra-result))
+                  (list-ref extra-result 1)))))))
+
+   ; Decode a distance symbol (0-29) into an actual distance value.
+   ; Returns (list <distance> <new-state>).
+   (decode-distance
+    (lambda (state sym)
+      (let ((base (vector-ref distance-base sym))
+            (extra (vector-ref distance-extra sym)))
+        (let ((extra-result (read-extra state extra)))
+          (list (integer+ base (list-first extra-result))
+                (list-ref extra-result 1))))))
+
+   ; Copy `length` bytes from `distance` bytes back in the output, appending to
+   ; it.  Returns the new output state.
+   ;
+   ; The source is the block of `min(distance, length)` bytes ending at the end
+   ; of the window; the copied bytes are that block repeated.  When
+   ; `distance >= length` the block is already `length` bytes, so a single
+   ; slice is appended.  When `distance < length` the block is shorter than the
+   ; copy and is repeated to fill it, which reproduces the byte-at-a-time
+   ; overlap replication.  Appending in one operation keeps the cost
+   ; proportional to `length` rather than to the window size.
+   ;
+   ; The window is refreshed first so it covers the most recent output, which
+   ; is all a back-reference can reach.
+   (copy-back-reference
+    (lambda (out distance length)
+      (if (integer>? distance (struct-get out 'total))
+          (error "deflate-decompress: back-reference distance exceeds output produced so far")
+          (let ((out (output-refresh-window out)))
+            (let ((win (struct-get out 'window))
+                  (wlen (bytes-length (struct-get out 'window))))
+              (let ((block-len (integer-min distance length)))
+                (let ((block (bytes-slice win (integer- wlen distance)
+                                          (integer+ (integer- wlen distance) block-len))))
+                  (output-append-bytes out (repeat-to-length block block-len length)))))))))
+
+   ; Return a bytes value of exactly `length` bytes formed by repeating `block`
+   ; (which has `block-len` bytes) until it is long enough, then truncating.
+   ; `block-len` must be at least 1 and at most `length`.
+   (repeat-to-length
+    (lambda (block block-len length)
+      (letrec ((loop (lambda (acc)
+                       (if (integer>=? (bytes-length acc) length)
+                           (bytes-slice acc 0 length)
+                           (loop (bytes-concat acc block))))))
+        (loop block))))
+
+   ; Decode the symbols of a Huffman-coded block (fixed or dynamic) until the
+   ; end-of-block symbol (256).  Returns (list <output-state> <new-state>).
+   ;
+   ; Consecutive literals are gathered into a pending list and appended in one
+   ; operation when a match or the end of the block is reached.  Appending each
+   ; literal individually would allocate a one-byte value per literal, which
+   ; dominates the cost on literal-heavy streams.
+   (decode-huffman-block
+    (lambda (state lit-table dist-table out)
+      (letrec
+        ((flush-literals (lambda (acc pending)
+                           (if (list-null? pending)
+                               acc
+                               (output-append-bytes acc (list->bytes (list-reverse pending))))))
+         (loop (lambda (st acc pending)
+                 (let ((sym-result (decode-symbol st lit-table)))
+                   (let ((sym (list-first sym-result))
+                         (st2 (list-ref sym-result 1)))
+                     (if (integer=? sym 256)
+                         (list (flush-literals acc pending) st2)
+                         (if (integer<? sym 256)
+                             (loop st2 acc (list-prepend pending sym))
+                             (let ((length-result (decode-length st2 sym)))
+                               (let ((length (list-first length-result))
+                                     (st3 (list-ref length-result 1)))
+                                 (let ((dist-sym-result (decode-symbol st3 dist-table)))
+                                   (let ((dist-sym (list-first dist-sym-result))
+                                         (st4 (list-ref dist-sym-result 1)))
+                                     (let ((dist-result (decode-distance st4 dist-sym)))
+                                       (let ((distance (list-first dist-result))
+                                             (st5 (list-ref dist-result 1)))
+                                         (loop st5
+                                               (copy-back-reference (flush-literals acc pending)
+                                                                    distance length)
+                                               (list)))))))))))))))
+        (loop state out (list)))))
+
+   ; Decode one stored block (BTYPE = 00).  The reader is positioned just after
+   ; the 3 header bits; stored blocks byte-align, then carry LEN and NLEN
+   ; (little-endian u16 each) followed by LEN literal bytes.  Returns
+   ; (list <bytes> <new-state>).
+   (decode-stored-block
+    (lambda (state)
+      (let ((aligned (align-to-byte state)))
+        (let ((len-result (read-raw-bytes aligned 2)))
+          (let ((len-bytes (list-first len-result))
+                (state2 (list-ref len-result 1)))
+            (let ((nlen-result (read-raw-bytes state2 2)))
+              (let ((nlen-bytes (list-first nlen-result))
+                    (state3 (list-ref nlen-result 1)))
+                (let ((len (bytes-read-u16-le len-bytes 0))
+                      (nlen (bytes-read-u16-le nlen-bytes 0)))
+                  (if (integer=? len (integer-bit-and (integer-bit-not nlen) #xffff))
+                      (read-raw-bytes state3 len)
+                      (error "deflate-decompress: stored block LEN does not match NLEN"))))))))))
+
+   ; The fixed Huffman decoding tables (RFC 1951 §3.2.6).  These are constant,
+   ; so they are built once here rather than per block.  Building them per block
+   ; dominates the cost of archives with many small fixed-Huffman entries.
+   (fixed-lit-table (build-huffman-table fixed-lit-lengths))
+   (fixed-dist-table (build-huffman-table fixed-dist-lengths))
+
+   ; Decode one fixed Huffman block (BTYPE = 01).  Returns
+   ; (list <output-state> <new-state>).
+   (decode-fixed-block
+    (lambda (state out)
+      (decode-huffman-block state fixed-lit-table fixed-dist-table out)))
+
+   ; Read the code-length code lengths and build the code-length Huffman table.
+   ; Reads HCLEN + 4 three-bit lengths in the special order.  Returns
+   ; (list <table> <new-state>).
+   (read-code-length-table
+    (lambda (state hclen)
+      (let ((count (integer+ hclen 4)))
+        (letrec ((loop (lambda (i st lengths)
+                         (if (integer>=? i count)
+                             (list (build-huffman-table
+                                     (build-code-length-lengths lengths 19))
+                                   st)
+                             (let ((r (read-bits st 3)))
+                               (loop (integer+ i 1)
+                                     (list-ref r 1)
+                                     (dict-set lengths
+                                               (vector-ref code-length-order i)
+                                               (list-first r))))))))
+          (loop 0 state (dict))))))
+
+   ; Expand a sparse dict of code lengths (only the first `count` entries of
+   ; the code-length order are meaningful) into a full list of length 19, with
+   ; unset entries defaulting to 0.
+   (build-code-length-lengths
+    (lambda (lengths count)
+      (map-list (lambda (i) (dict-get lengths i 0)) (range 0 count))))
+
+   ; Decode the HLIT + HDIST code lengths from the code-length table, expanding
+   ; the repeat codes 16/17/18 (RFC 1951 §3.2.7).  Returns
+   ; (list <list-of-lengths> <new-state>).
+   (read-code-lengths
+    (lambda (state cl-table total)
+      (letrec ((loop (lambda (st acc)
+                       (if (integer>=? (list-length acc) total)
+                           (list (list-reverse acc) st)
+                           (let ((sym-result (decode-symbol st cl-table)))
+                             (let ((sym (list-first sym-result))
+                                   (st2 (list-ref sym-result 1)))
+                               (if (integer<=? sym 15)
+                                   (loop st2 (list-prepend acc sym))
+                                   (if (integer=? sym 16)
+                                       (let ((r (read-bits st2 2)))
+                                         (let ((repeat (integer+ 3 (list-first r)))
+                                               (prev (list-first acc)))
+                                           (loop (list-ref r 1)
+                                                 (repeat-prepend acc prev repeat))))
+                                       (if (integer=? sym 17)
+                                           (let ((r (read-bits st2 3)))
+                                             (loop (list-ref r 1)
+                                                   (repeat-prepend acc 0 (integer+ 3 (list-first r)))))
+                                           (let ((r (read-bits st2 7)))
+                                             (loop (list-ref r 1)
+                                                   (repeat-prepend acc 0 (integer+ 11 (list-first r))))))))))))))
+        (loop state (list)))))
+
+   ; Prepend `value` `n` times to list `lst`.
+   (repeat-prepend
+    (lambda (lst value n)
+      (if (integer=? n 0)
+          lst
+          (repeat-prepend (list-prepend lst value) value (integer- n 1)))))
+
+   ; Decode one dynamic Huffman block (BTYPE = 10).  Reads the literal/length
+   ; and distance code lengths, builds the two tables, and decodes the block
+   ; body.  Returns (list <output-state> <new-state>).
+   (decode-dynamic-block
+    (lambda (state out)
+      (let ((hlit-result (read-bits state 5)))
+        (let ((hlit (list-first hlit-result))
+              (state1 (list-ref hlit-result 1)))
+          (let ((hdist-result (read-bits state1 5)))
+            (let ((hdist (list-first hdist-result))
+                  (state2 (list-ref hdist-result 1)))
+              (let ((hclen-result (read-bits state2 4)))
+                (let ((hclen (list-first hclen-result))
+                      (state3 (list-ref hclen-result 1)))
+                  (let ((cl-result (read-code-length-table state3 hclen)))
+                    (let ((cl-table (list-first cl-result))
+                          (state4 (list-ref cl-result 1)))
+                      (let ((num-lit (integer+ hlit 257))
+                            (num-dist (integer+ hdist 1)))
+                        (let ((lengths-result (read-code-lengths state4 cl-table (integer+ num-lit num-dist))))
+                          (let ((lengths (list-first lengths-result))
+                                (state5 (list-ref lengths-result 1)))
+                            (let ((lit-lengths (list-slice lengths 0 num-lit))
+                                  (dist-lengths (list-slice lengths num-lit (integer+ num-lit num-dist))))
+                              (decode-huffman-block state5
+                                                    (build-huffman-table lit-lengths)
+                                                    (build-huffman-table dist-lengths)
+                                                    out)))))))))))))))
+
+   ; Decode the block stream until the final block (BFINAL = 1) is consumed.
+   ; The output state is threaded through and extended by each block.  Returns
+   ; (list <output-state> <new-state>).
+   (decode-blocks
+    (lambda (state out)
+      (let ((bfinal-result (read-bit state)))
+        (let ((bfinal (list-first bfinal-result))
+              (state1 (list-ref bfinal-result 1)))
+          (let ((btype-result (read-bits state1 2)))
+            (let ((btype (list-first btype-result))
+                  (state2 (list-ref btype-result 1)))
+              (let ((block-result
+                     (if (integer=? btype 0)
+                         (let ((r (decode-stored-block state2)))
+                           (list (output-append-bytes out (list-first r)) (list-ref r 1)))
+                         (if (integer=? btype 1)
+                             (decode-fixed-block state2 out)
+                             (if (integer=? btype 2)
+                                 (decode-dynamic-block state2 out)
+                                 (error "deflate-decompress: invalid block type (BTYPE = 11)"))))))
+                (let ((new-out (list-first block-result))
+                      (state3 (list-ref block-result 1)))
+                  (if (integer=? bfinal 1)
+                      (list new-out state3)
+                      (decode-blocks state3 new-out))))))))))
+
+   (decompress
+    (lambda (b)
+      (if (bytes? b)
+          (output-finalize (list-first (decode-blocks (make-reader b) (make-output))))
+          (error "deflate-decompress: decompress expects a bytes value")))))
+
+  (export decompress))

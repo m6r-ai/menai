@@ -1,4 +1,4 @@
-(let ((json-parser (import "json_parser")))
+(let ((json-decoder (import "json-decode")))
   (let ((run
          (lambda (inputs)
            (letrec
@@ -24,7 +24,7 @@
                       (string-concat "{" (list->string pair-strings ", ") "}")))
                    (_ "?unknown?")))))
              (let* ((content (dict-get inputs "content"))
-                    (parsed ((:: json-parser parse) content))
+                    (parsed ((:: json-decoder decode) content))
                     (result (value->string parsed)))
                (dict "result" result))))))
     (export run)))

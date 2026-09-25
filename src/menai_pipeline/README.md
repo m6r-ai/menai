@@ -243,8 +243,8 @@ python -m menai_pipeline.run src/menai_pipeline/examples/module-step/pipeline.js
 
 ### `json-parse`
 
-Reads a JSON file and renders it back as a string using a Menai-based JSON parser
-(`json_parser` from the standard library).  Demonstrates module-to-module imports
+Reads a JSON file and renders it back as a string using a Menai-based JSON decoder
+(`json-decode` from the standard library).  Demonstrates module-to-module imports
 within a pipeline step and recursive value rendering.
 
 ```bash
@@ -253,10 +253,10 @@ python -m menai_pipeline.run src/menai_pipeline/examples/json-parse/pipeline.jso
 
 ### `bmp-parse`
 
-Reads a BMP image as raw bytes and parses it with the `bmp_parser` standard
+Reads a BMP image as raw bytes and decodes it with the `bmp-decode` standard
 library module, rendering the decoded pixel grid as text.  Demonstrates binary
 file reading via `read_bytes`, the bytes data flow through a Menai step, and
-binary format parsing.
+binary format decoding.
 
 ```bash
 python -m menai_pipeline.run src/menai_pipeline/examples/bmp-parse/pipeline.json

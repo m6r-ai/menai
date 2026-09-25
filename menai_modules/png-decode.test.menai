@@ -1,0 +1,79 @@
+; Tests for png-decode.menai
+
+(let ((png-mod (import "png-decode"))
+      (t (import "menai_test")))
+  (let ((decode (:: png-mod decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+     (let ((tests (list
+        (list "header"
+          (list
+            (expect-pass "header fields"
+                         (lambda ()
+                           (let ((r (decode (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))))
+                             (assert-equal (dict-get r "header") (dict "width" 2 "height" 2 "bit-depth" 8 "colour-type" 0 "compression" 0 "filter" 0 "interlace" 0)))))
+            (expect-pass "meta reports three channels for greyscale"
+                         (lambda ()
+                           (let ((r (decode (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))))
+                             (assert-equal (dict-get r "meta") (dict "format" "png" "channels" 3)))))
+            (expect-pass "meta reports four channels for rgba"
+                         (lambda ()
+                           (let ((r (decode (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000274524e53ff80080fb36a0000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
+                             (assert-equal (dict-get r "meta") (dict "format" "png" "channels" 4)))))))
+
+        (list "pixels"
+          (list
+            (expect-pass "greyscale pixels normalise to RGB"
+                         (lambda ()
+                           (let ((r (decode (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))))
+                             (assert-equal (dict-get r "pixels") (vector (vector (vector 10 10 10) (vector 200 200 200)) (vector (vector 50 50 50) (vector 255 255 255)))))))
+            (expect-pass "greyscale with alpha normalises to RGBA"
+                         (lambda ()
+                           (let ((r (decode (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020804000000d8bfc5af0000001249444154789c63e0fa7fa281c188e1ff7f001499048214c3c8690000000049454e44ae426082"))))
+                             (assert-equal (dict-get r "pixels") (vector (vector (vector 10 10 10 255) (vector 200 200 200 128)) (vector (vector 50 50 50 0) (vector 255 255 255 255)))))))
+            (expect-pass "palette pixels resolve through PLTE"
+                         (lambda ()
+                           (let ((r (decode (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
+                             (assert-equal (dict-get r "pixels") (vector (vector (vector 255 0 0) (vector 0 255 0)) (vector (vector 0 0 255) (vector 255 255 255)))))))
+            (expect-pass "palette with tRNS adds alpha"
+                         (lambda ()
+                           (let ((r (decode (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000274524e53ff80080fb36a0000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
+                             (assert-equal (dict-get r "pixels") (vector (vector (vector 255 0 0) (vector 0 255 0 128)) (vector (vector 0 0 255) (vector 255 255 255)))))))))
+
+        (list "errors"
+          (list
+            (expect-fail "rejects non-bytes argument"
+                         (lambda ()
+                           (decode "not bytes"))
+                         "expects a bytes value")
+            (expect-fail "rejects unsupported bit depth"
+                         (lambda ()
+                           (decode (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000021002000000ad4446300000001649444154789c636064626661656360e7e06464640400015500318f92a71a0000000049454e44ae426082")))
+                         "bit depth 16")
+            (expect-fail "rejects interlaced images"
+                         (lambda ()
+                           (decode (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208020000018ad3aae50000001649444154789c636064626661656360e7e06464640400015500318f92a71a0000000049454e44ae426082")))
+                         "interlaced")
+            (expect-fail "rejects unsupported colour type"
+                         (lambda ()
+                           (decode (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020807000000ca0a6a410000000b49444154789c636000010000060001fe8c67c80000000049454e44ae426082")))
+                         "colour type 7")
+            (expect-fail "rejects palette image without PLTE"
+                         (lambda ()
+                           (decode (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000b49444154789c636000010000060001fe8c67c80000000049454e44ae426082")))
+                         "missing its PLTE")
+            (expect-fail "rejects out-of-range palette index"
+                         (lambda ()
+                           (decode (string-hex->bytes "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd1600000003504c54450102030d8764d50000000e49444154789c6360646460640400001200055519c12c0000000049454e44ae426082")))
+                         "palette index 1 is out of range")
+            (expect-fail "rejects tRNS on greyscale"
+                         (lambda ()
+                           (decode (string-hex->bytes "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000274524e53000a964624260000000e49444154789c6310506030700000017600a1ec308af40000000049454e44ae426082")))
+                         "only supported for palette")
+            (expect-fail "rejects a chunk with a bad CRC"
+                         (lambda ()
+                           (decode (string-hex->bytes "89504e470d0a1a0a0000000d4948445200000002000000020800000000dd52f80000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082")))
+                         "checksum mismatch"))))))
+
+      (export tests))))

@@ -15,7 +15,7 @@ Run from this directory with the virtual environment active:
 ```
 python run.py                        # run all suites
 python run.py --suite sort           # run only the sort suite
-python run.py --suite sort sudoku    # run multiple suites
+python run.py --suite sort --case n=1000  # run one case in a suite
 python run.py --iterations 3         # override iteration count on every case
 python run.py --profile              # opcode profiling (Menai only)
 python run.py --profile --profile-top 20  # limit opcode output
@@ -23,6 +23,11 @@ python run.py --trace                # per-function tracing (Menai only)
 python run.py --trace --trace-top 10 # limit trace output
 python run.py --annotate             # annotated disassembly (Menai only)
 ```
+
+`--suite` selects a single suite by exact name (case-insensitive); omit it to
+run every suite.  `--case` selects a single case within that suite by exact
+name (case-insensitive) and requires `--suite`.  A name that matches nothing
+is an error listing the available names.
 
 ## Structure
 
@@ -32,25 +37,25 @@ benchmark/
 ├── run.py                # CLI entry point — discovers and runs suites
 ├── README.md
 └── suites/
-    ├── bmp_parser/
-    │   ├── suite.py          # BMP parser benchmark suite
+    ├── bmp-decode/
+    │   ├── suite.py          # BMP decoder benchmark suite
     │   ├── generate_fixtures.py
     │   └── fixtures/         # committed .bmp inputs
     ├── calendar/
     │   ├── suite.py          # Calendar arithmetic benchmark suite
     │   └── calendar.menai
-    ├── deflate/
+    ├── deflate-compress/
     │   ├── suite.py          # DEFLATE compressor benchmark suite
     │   ├── generate_fixtures.py
     │   └── fixtures/         # committed raw inputs
-    ├── inflate/
+    ├── deflate-decompress/
     │   ├── suite.py          # DEFLATE decompressor benchmark suite
     │   ├── generate_fixtures.py
     │   └── fixtures/         # committed raw DEFLATE inputs
-    ├── json_parser/
-    │   └── suite.py          # JSON parser benchmark suite
-    ├── png_parser/
-    │   ├── suite.py          # PNG parser benchmark suite
+    ├── json-decode/
+    │   └── suite.py          # JSON decoder benchmark suite
+    ├── png-decode/
+    │   ├── suite.py          # PNG decoder benchmark suite
     │   ├── generate_fixtures.py
     │   └── fixtures/         # committed .png inputs
     ├── rubiks_cube/
@@ -68,11 +73,11 @@ benchmark/
     ├── sudoku_vector/
     │   ├── suite.py          # Sudoku solver benchmark suite (vector board)
     │   └── sudoku-vector-solver.menai
-    ├── zip_parser/
+    ├── zip/
     │   ├── suite.py          # ZIP archive benchmark suite
     │   ├── generate_fixtures.py
     │   └── fixtures/         # committed .zip inputs
-    └── zlib_parser/
+    └── zlib-decompress/
         ├── suite.py          # zlib stream benchmark suite
         ├── generate_fixtures.py
         └── fixtures/         # committed .zlib inputs
@@ -81,7 +86,7 @@ benchmark/
 ## What is benchmarked
 
 Each suite benchmarks a single Menai implementation.  Correctness is covered by
-the `*_test.menai` files (run via `menai-test`), so the benchmark suites are
+the `*.test.menai` files (run via `menai-test`), so the benchmark suites are
 timing-only.
 
 ## Fixtures
@@ -138,8 +143,8 @@ Percentages are of instruction count, not time.
 
 ## Suites
 
-### BMP Parser
-Parses uncompressed 24-bit and 32-bit BMP files.  Five cases cover bottom-up and
+### BMP Decode
+Decodes uncompressed 24-bit and 32-bit BMP files.  Five cases cover bottom-up and
 top-down row order, 24-bit and 32-bit pixels, and a width that requires row
 padding.  Inputs are committed fixtures (see [Fixtures](#fixtures)).
 
@@ -150,24 +155,24 @@ days-in-month: 12 arms).  Five cases advance a project start date by both a
 working-day count (5–400) and a calendar-day span (5–600), so the days-in-month
 table is executed on every day step across month and year boundaries.
 
-### DEFLATE
+### DEFLATE Compress
 Compresses raw byte inputs using the default block encoding.  Four cases span
 text that compresses well, incompressible data, and long runs.  Inputs are
 committed fixtures (see [Fixtures](#fixtures)).
 
-### Inflate
+### DEFLATE Decompress
 Decompresses raw DEFLATE streams.  Five cases cover text that compresses well,
 incompressible data, long runs, and a stored-block stream.  Inputs are
 committed fixtures (see [Fixtures](#fixtures)).
 
-### JSON Parser
-Parses JSON strings of varying structure and size using a hand-written parser
+### JSON Decode
+Decodes JSON strings of varying structure and size using a hand-written decoder
 in Menai. Nine cases cover primitives (integer, float, booleans, null), strings
 with escapes, empty collections, nested arrays, a long string (~2000 chars),
 and a deeply nested array (500 levels).
 
-### PNG Parser
-Parses non-interlaced 8-bit PNG files.  Six cases cover the greyscale,
+### PNG Decode
+Decodes non-interlaced 8-bit PNG files.  Six cases cover the greyscale,
 greyscale+alpha, palette, truecolour, and truecolour+alpha colour types at
 sizes from 64×64 to 192×192, exercising zlib decompression, scanline filter
 reversal, and per-pixel normalisation to RGB/RGBA.  Inputs are committed
@@ -194,14 +199,14 @@ vector of 9 row-vectors instead of a list of lists, so cell access is
 counts are shared with the sudoku suite, which makes the Menai timings directly
 comparable across the two suites.
 
-### ZIP Parser
-Parses and extracts ZIP archives.  Five fixtures (stored and deflate entries,
+### ZIP
+Reads and extracts ZIP archives.  Five fixtures (stored and deflate entries,
 16 mixed entries, 128 small entries, and a 256 KB entry) are each run through
-both `parse` (central-directory metadata only) and `extract` (which additionally
+both `entries` (central-directory metadata only) and `extract` (which additionally
 decompresses every entry), giving ten cases.  Inputs are committed fixtures
 (see [Fixtures](#fixtures)).
 
-### zlib Parser
+### zlib Decompress
 Decompresses zlib streams.  Four cases span text that compresses well,
 incompressible data, and long runs.  Inputs are committed fixtures
 (see [Fixtures](#fixtures)).

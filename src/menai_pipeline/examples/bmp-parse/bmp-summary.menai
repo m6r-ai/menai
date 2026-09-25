@@ -3,7 +3,7 @@
 ; The 'content' input is the raw file bytes, delivered as a Menai bytes value
 ; by the filesystem tool's read_bytes operation.
 
-(let ((bmp-parser (import "bmp_parser")))
+(let ((bmp-decoder (import "bmp-decode")))
   (let ((run
          (lambda (inputs)
            (letrec
@@ -20,7 +20,7 @@
                (lambda (pixels)
                  (list->string (map-list row->string (vector->list pixels)) "\n"))))
              (let* ((content (dict-get inputs "content"))
-                    (parsed ((:: bmp-parser parse) content))
+                    (parsed ((:: bmp-decoder decode) content))
                     (header (dict-get parsed "header"))
                     (meta (dict-get parsed "meta")))
                (dict

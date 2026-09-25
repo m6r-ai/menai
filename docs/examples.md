@@ -122,9 +122,9 @@ A function that classifies a value:
 → 120
 ```
 
-## JSON parser
+## JSON decoder
 
-The `json_parser.menai` module in `menai_modules/` is a complete JSON parser written
+The `json-decode.menai` module in `menai_modules/` is a complete JSON decoder written
 in Menai. It converts JSON strings to Menai values:
 
 | JSON | Menai |
@@ -141,23 +141,23 @@ in Menai. It converts JSON strings to Menai values:
 Using it:
 
 ```menai
-(let ((json (import "json_parser")))
-  (let ((parse (:: json parse)))
-    (parse "{\"name\": \"Alice\", \"scores\": [95, 87, 92]}")))
+(let ((json (import "json-decode")))
+  (let ((decode (:: json decode)))
+    (decode "{\"name\": \"Alice\", \"scores\": [95, 87, 92]}")))
 → {("name" "Alice") ("scores" (95 87 92))}
 ```
 
-The parser uses an explicit work stack to avoid call-stack overflow on deeply nested
+The decoder uses an explicit work stack to avoid call-stack overflow on deeply nested
 JSON. Each stack frame describes what to do when a sub-value is returned. This is a
 good example of how to handle iterative parsing in a pure functional language.
 
-The parser is also a good example of module structure: it uses `letrec` to define
-mutually recursive helper functions, exports a single `parse` function with an
+The decoder is also a good example of module structure: it uses `letrec` to define
+mutually recursive helper functions, exports a single `decode` function with an
 `export` form, and keeps all helpers private.
 
 ## Writing a test module
 
-Test files use the `*_test.menai` convention and are run by the `menai-test` tool.
+Test files use the `*.test.menai` convention and are run by the `menai-test` tool.
 Here is the structure of a test module:
 
 ```menai

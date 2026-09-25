@@ -14,10 +14,12 @@ any data the host can deliver as a value.
 One demonstrated use is **binary format parsing**. The `bytes` type and its
 multi-byte integer primitives let a Menai module decode a binary file into a
 structured, queryable value — for example a BMP image into a dict of header
-fields plus a normalised pixel grid. The standard library ships parsers for JSON
-(`json_parser`) and BMP (`bmp_parser`), and the pattern generalises to other
-formats. The host reads the file and binds it as a `bytes` value; Menai decodes
-it purely.
+fields plus a normalised pixel grid. The standard library ships decoders for JSON
+(`json-decode`), BMP (`bmp-decode`), PNG (`png-decode`), ZIP (`zip-entries`,
+`zip-extract`), zlib (`zlib-decompress`), and raw DEFLATE (`deflate-decompress`),
+with the matching encoders and compressors alongside them, and the pattern
+generalises to other formats. The host reads the file and binds it as a `bytes`
+value; Menai decodes it purely.
 
 ## Why does it exist?
 
