@@ -39,6 +39,8 @@ benchmark/
 └── suites/
     ├── bmp_decode/
     │   └── suite.py          # BMP decoder benchmark suite
+    ├── bmp_encode/
+    │   └── suite.py          # BMP encoder benchmark suite
     ├── calendar/
     │   ├── suite.py          # Calendar arithmetic benchmark suite
     │   └── calendar.menai
@@ -144,6 +146,14 @@ Percentages are of instruction count, not time.
 Decodes uncompressed 24-bit and 32-bit BMP files.  Five cases cover bottom-up and
 top-down row order, 24-bit and 32-bit pixels, and a width that requires row
 padding.  Inputs are generated fixtures (see [Fixtures](#fixtures)).
+
+### BMP Encode
+Encodes decoded BMP descriptions.  The five cases use the same geometries as
+the BMP Decode suite (bottom-up and top-down row order, 24-bit and 32-bit
+pixels, and a width that requires row padding), so the write and read
+directions can be compared.  The containers are constructed as Menai
+expressions rather than parsed from bytes, so the timing measures encoding
+alone.
 
 ### Calendar
 Working-day date arithmetic over a 5-day calendar with holidays.  The Menai

@@ -15,21 +15,19 @@ New features:
   both may be combined.
 - Removed `menai-profile` as `menai-eval` does everything it did and more.
 - Added an approach for implementing negative tests in `menai-test`.
-- Added a preliminary BMP parser.  This reads BMP image files.
-- Added an `inflate` module.  This is a raw DEFLATE (RFC 1951) decompressor supporting
-  stored, fixed Huffman, and dynamic Huffman blocks.
-- Added a `deflate` module.  This is a raw DEFLATE (RFC 1951) compressor supporting
-  stored, fixed Huffman, and dynamic Huffman blocks, with an optional mode argument
-  selecting the encoding (defaulting to the smallest of the three).  It is the
-  counterpart to the `inflate` module.
-- Added a `zip_parser` module.  This reads a ZIP archive's central directory and can
-  extract stored and deflate entries.
-- Added a `zlib_parser` module.  This decompresses a zlib stream (RFC 1950),
-  verifying the header check and the Adler-32 trailer.
-- Added a `png_parser` module.  This reads non-interlaced 8-bit PNG image files,
+- Added `bmp-decode` and `bmp-encode` modules to read and write BMP image files.
+- Added `deflate-compress` and `deflate-decompress` modules.  These compress and
+  decompress using DEFLATE (RFC 1951) compression.
+- Added `zip-create`, `zip-entries` and `zip-extract` modules.  These write/read a ZIP
+  archive's central directory and can process stored and deflated entries.
+- Added `zlib-compress` and `zlib-decompress` modules.  These compress and decompress
+  a zlib stream (RFC 1950).
+- Added a `png-decode` module.  This reads non-interlaced 8-bit PNG image files,
   reversing the per-scanline filters.  All colour types are supported
   (greyscale, truecolour, palette, and the alpha variants), normalised to RGB
   or RGBA pixels.
+- Added a `json-encode` module to serialize JSON and renamed `json_parser` to
+  `json-decode`.
 - Added a `bytes-crc32` primitive.  This computes the CRC-32/ISO-HDLC checksum of
   a bytes value as an integer.
 - Added floating-point bytes primitives: `bytes-read-f32-le`/`-be`,
@@ -57,40 +55,27 @@ New features:
 
 Bug fixes:
 
-- Fixed a VM crash when `apply` is used with a large argument list.  The
-  register file was sized from the callee's static local count rather than the
-  runtime argument count, so applying a function to a list larger than the
+- Fixed a slot allocation bug that could emit a branch on a register in the
+  outgoing argument zone.
+- Fixed a VM crash when `apply` is used with a large argument list.
   reserved slots corrupted memory.
 - Fixed a VM stack overflow when freeing a long list.  The list finalizer
   released the tail recursively, using one C stack frame per element, so freeing
   a list of a few hundred thousand elements overflowed the C stack.  Long lists
   are now freed iteratively.
 - Fixed a CFG bug where branch constant propagation could remove a phi node whose
-  result was still used by a branch target.  When a phi feeding a type-predicate
-  branch had one constant arm re-wired away and the sole remaining arm was
-  non-constant, the phi was deleted even though a branch target still referenced
-  it, leaving a use with no definition.
+  result was still used by a branch target.
 - Fixed a CFG bug where dead capture elimination failed to remove orphaned
-  `PATCH_CLOSURE` instructions.  The set of dead captures was tracked per block,
-  but a closure's `MAKE_CLOSURE` and its `PATCH_CLOSURE` can live in different
-  blocks, so patches in later blocks were left behind.  When all sibling captures
-  were dead the closure became a shared constant, and the leftover patch then
-  mutated that constant.
+  `PATCH_CLOSURE` instructions.
 - Dictionaries created with duplicate keys retained the first value, but should have
   retained the last one.
 - Sets created with dynamic duplicate elements must not contain duplicates!
 - Fixed a crash in the closure cycle collector when a dead closure was destroyed
-  twice in one sweep.  Destroying one dead closure can destroy another, because a
-  code object's constant pool can hold a closure and destroying that code object
-  releases it.  The sweep then reached the already-destroyed closure's own entry and
-  destroyed it again, releasing a freed code object.  A closure is now tagged as
-  freed at its single destruction point, and the sweep skips entries already tagged.
+  twice in one sweep.
 - Fixed a problem where desugaring did not correctly honour shadowing of operation names.
 - Struct type recognition is now lexically scoped.  Two struct types with the same
   name in different scopes are distinct, and a struct type is not visible outside the
-  binder that declares it.  A struct type exported from a module and rebound by the
-  importer is no longer usable as a destructuring pattern head; read its fields with
-  `struct-get` or `struct-ref` instead.
+  binder that declares it.
 
 ## v0.5.0 (2026-09-14)
 

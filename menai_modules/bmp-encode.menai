@@ -1,0 +1,166 @@
+; bmp-encode module — encodes a decoded BMP description as a BMP file.
+;
+; Exports: "encode" — takes the dict that bmp-decode produces and returns a
+; bytes value containing an uncompressed 24-bit or 32-bit BMP file.  It is the
+; inverse of bmp-decode's decode: for every value that encode accepts,
+; (decode (encode v)) reproduces v.
+;
+; The input dict has the shape bmp-decode produces:
+;
+;   (dict
+;     "header" (dict "file-size" ... "data-offset" ... "dib-size" ...
+;                    "width" ... "height" ... "planes" ... "bpp" ...
+;                    "compression" ... "image-size" ... "x-ppm" ... "y-ppm" ...
+;                    "colours-used" ... "colours-important" ...)
+;     "pixels" (vector of rows, top-down; each row a vector of pixels;
+;               each pixel a vector of channels)
+;     "meta"   (dict "format" "bmp" "row-padding" ... "bottom-up" ...))
+;
+; Pixels are (vector r g b) for 24-bit files and (vector r g b a) for 32-bit
+; files.  The pixel grid is top-down; the file is written bottom-up or top-down
+; according to "bottom-up", and the height is signed to match.
+;
+; The derived header fields are recomputed from the pixel data and the
+; descriptive fields are preserved:
+;
+;   recomputed: "file-size", "data-offset", "image-size"
+;   preserved:  "dib-size", "width", "height", "planes", "bpp", "compression",
+;               "x-ppm", "y-ppm", "colours-used", "colours-important"
+;
+; "width" and "height" are taken from the header and must match the pixel grid;
+; the written height is signed according to "bottom-up".  Only uncompressed
+; files with 24 or 32 bits per pixel are supported.
+
+(letrec
+  ((signature (string->bytes "BM"))
+
+   ; The BITMAPFILEHEADER size (14 bytes) and the BITMAPINFOHEADER size (40
+   ; bytes); together they place the pixel data at offset 54.
+   (file-header-size 14)
+   (dib-header-size 40)
+   (data-offset 54)
+
+   ; The number of bytes in one row of pixels, including the padding that
+   ; rounds the row up to a multiple of four bytes.
+   (row-stride
+    (lambda (width bpp)
+      (integer* (integer/ (integer+ (integer* width bpp) 31) 32) 4)))
+
+   ; The number of padding bytes appended to each row.
+   (row-padding
+    (lambda (width bpp)
+      (integer- (row-stride width bpp) (integer/ (integer* width bpp) 8))))
+
+   ; The channels of one pixel as a list, or #none if the pixel is malformed.
+   (pixel-channels
+    (lambda (pixel)
+      (if (vector? pixel)
+          (vector->list pixel)
+          #none)))
+
+   ; Write one pixel's channels in BMP byte order (blue, green, red, alpha).
+   (encode-pixel
+    (lambda (b pixel bpp)
+      (let ((channels (pixel-channels pixel)))
+        (if (none? channels)
+            (error "bmp-encode: each pixel must be a vector of channels")
+            (if (integer=? bpp 24)
+                (if (integer=? (list-length channels) 3)
+                    (bytes-append-u8
+                      (bytes-append-u8
+                        (bytes-append-u8 b (list-ref channels 2))
+                        (list-ref channels 1))
+                      (list-ref channels 0))
+                    (error "bmp-encode: a 24-bit pixel must have 3 channels"))
+                (if (integer=? (list-length channels) 4)
+                    (bytes-append-u8
+                      (bytes-append-u8
+                        (bytes-append-u8
+                          (bytes-append-u8 b (list-ref channels 2))
+                          (list-ref channels 1))
+                        (list-ref channels 0))
+                      (list-ref channels 3))
+                    (error "bmp-encode: a 32-bit pixel must have 4 channels")))))))
+
+   ; Write one row's pixels followed by its padding bytes.
+   (encode-row
+    (lambda (b row width bpp)
+      (if (vector? row)
+          (letrec ((loop (lambda (x acc)
+                           (if (integer>=? x width)
+                               acc
+                               (loop (integer+ x 1)
+                                     (encode-pixel acc (vector-ref row x) bpp))))))
+            (let ((padded (loop 0 b)))
+              (letrec ((pad (lambda (n acc)
+                              (if (integer>=? n (row-padding width bpp))
+                                  acc
+                                  (pad (integer+ n 1) (bytes-append-u8 acc 0))))))
+                (pad 0 padded))))
+          (error "bmp-encode: each row must be a vector of pixels"))))
+
+   ; Write all rows in file order.  The pixel grid is top-down; a bottom-up file
+   ; stores the rows in reverse, so the rows are reversed when "bottom-up" is
+   ; true.
+   (encode-rows
+    (lambda (b pixels width height bpp bottom-up)
+      (if (vector? pixels)
+          (let ((ordered (if bottom-up (list->vector (list-reverse (vector->list pixels))) pixels)))
+            (letrec ((loop (lambda (y acc)
+                             (if (integer>=? y height)
+                                 acc
+                                 (loop (integer+ y 1)
+                                       (encode-row acc (vector-ref ordered y) width bpp))))))
+              (loop 0 b)))
+          (error "bmp-encode: \"pixels\" must be a vector of rows"))))
+
+   ; Build the 14-byte BITMAPFILEHEADER plus the 40-byte BITMAPINFOHEADER.
+   (encode-header
+    (lambda (header width height bpp image-size)
+      (bytes-concat
+        signature
+        (bytes-append-u32-le (bytes-concat) (integer+ data-offset image-size))
+        (bytes-append-u16-le (bytes-concat) 0)
+        (bytes-append-u16-le (bytes-concat) 0)
+        (bytes-append-u32-le (bytes-concat) data-offset)
+        (bytes-append-u32-le (bytes-concat) dib-header-size)
+        (bytes-append-u32-le (bytes-concat) width)
+        (bytes-append-i32-le (bytes-concat) height)
+        (bytes-append-u16-le (bytes-concat) (dict-get header "planes"))
+        (bytes-append-u16-le (bytes-concat) bpp)
+        (bytes-append-u32-le (bytes-concat) 0)
+        (bytes-append-u32-le (bytes-concat) image-size)
+        (bytes-append-i32-le (bytes-concat) (dict-get header "x-ppm"))
+        (bytes-append-i32-le (bytes-concat) (dict-get header "y-ppm"))
+        (bytes-append-u32-le (bytes-concat) (dict-get header "colours-used"))
+        (bytes-append-u32-le (bytes-concat) (dict-get header "colours-important")))))
+
+   (encode
+    (lambda (container)
+      (if (dict? container)
+          (let ((header (dict-get container "header"))
+                (pixels (dict-get container "pixels"))
+                (meta (dict-get container "meta")))
+            (if (dict? header)
+                (let ((width (dict-get header "width"))
+                      (bpp (dict-get header "bpp")))
+                  (if (or (integer=? bpp 24) (integer=? bpp 32))
+                      (let ((bottom-up (if (dict? meta) (dict-get meta "bottom-up") #t))
+                            (abs-height (integer-abs (dict-get header "height"))))
+                        (let ((file-height (if bottom-up
+                                               abs-height
+                                               (integer-neg abs-height))))
+                          (let ((image-size (integer* (row-stride width bpp) abs-height)))
+                            (let ((data (encode-rows (bytes-concat) pixels width abs-height
+                                                     bpp bottom-up)))
+                              (bytes-concat
+                                (encode-header header width file-height bpp image-size)
+                                data)))))
+                      (error (string-concat
+                               "bmp-encode: unsupported bit depth "
+                               (integer->string bpp)
+                               " (only 24 or 32 are supported)"))))
+                (error "bmp-encode: \"header\" must be a dict")))
+          (error "bmp-encode: encode expects a dict")))))
+
+  (export encode))

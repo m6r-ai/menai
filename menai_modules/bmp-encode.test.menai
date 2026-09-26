@@ -1,0 +1,124 @@
+; Tests for bmp-encode.menai
+
+(let ((bmp-encode (import "bmp-encode"))
+      (bmp-decode (import "bmp-decode"))
+      (t (import "menai_test")))
+  (let ((encode (:: bmp-encode encode))
+        (decode (:: bmp-decode decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Round-trips through bmp-decode
+        (list "round-trips"
+          (list
+            (expect-pass "24-bit bottom-up file is reproduced"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
+                             (assert-equal (decode (encode v)) v))))
+            (expect-pass "24-bit top-down file is reproduced"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))))
+                             (assert-equal (decode (encode v)) v))))
+            (expect-pass "padded file is reproduced"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))))
+                             (assert-equal (decode (encode v)) v))))
+            (expect-pass "32-bit file is reproduced"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))))
+                             (assert-equal (decode (encode v)) v))))
+            (expect-pass "single pixel is reproduced"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))))
+                             (assert-equal (decode (encode v)) v))))
+            (expect-pass "canonical files are reproduced byte for byte"
+                         (lambda ()
+                           (let ((hex "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+                             (assert-equal (encode (decode (string-hex->bytes hex)))
+                                           (string-hex->bytes hex)))))))
+
+        ; Header fields
+        (list "header"
+          (list
+            (expect-pass "width and height are preserved"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))))
+                             (let ((h (dict-get (decode (encode v)) "header")))
+                               (assert-equal (list (dict-get h "width") (dict-get h "height"))
+                                             (list 3 2))))))
+            (expect-pass "bit depth is preserved"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))))
+                             (assert-equal (dict-get (dict-get (decode (encode v)) "header") "bpp") 32))))
+            (expect-pass "resolution is preserved"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
+                             (let ((h (dict-get (decode (encode v)) "header")))
+                               (assert-equal (list (dict-get h "x-ppm") (dict-get h "y-ppm"))
+                                             (list 2835 2835))))))
+            (expect-pass "file size and data offset are recomputed"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
+                             (let ((h (dict-get (decode (encode v)) "header")))
+                               (assert-equal (list (dict-get h "file-size") (dict-get h "data-offset"))
+                                             (list 70 54))))))))
+
+        ; Orientation and padding
+        (list "layout"
+          (list
+            (expect-pass "bottom-up orientation is preserved"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
+                             (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "bottom-up") #t))))
+            (expect-pass "top-down orientation is preserved"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))))
+                             (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "bottom-up") #f))))
+            (expect-pass "row padding is recomputed"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))))
+                             (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "row-padding") 3))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-dict argument"
+                         (lambda () (encode "not a dict"))
+                         "expects a dict")
+            (expect-fail "rejects a missing header"
+                         (lambda () (encode (dict "pixels" (vector))))
+                         "\"header\" must be a dict")
+            (expect-fail "rejects an unsupported bit depth"
+                         (lambda ()
+                           (encode (dict "header" (dict "width" 1 "height" 1 "bpp" 8)
+                                         "pixels" (vector (vector (vector 0 0 0)))
+                                         "meta" (dict "bottom-up" #t))))
+                         "unsupported bit depth")
+            (expect-fail "rejects a non-vector pixel grid"
+                         (lambda ()
+                           (encode (dict "header" (dict "width" 1 "height" 1 "bpp" 24)
+                                         "pixels" "not a vector"
+                                         "meta" (dict "bottom-up" #t))))
+                         "\"pixels\" must be a vector of rows")
+            (expect-fail "rejects a pixel with the wrong channel count"
+                         (lambda ()
+                           (encode (dict "header" (dict "width" 1 "height" 1 "bpp" 24)
+                                         "pixels" (vector (vector (vector 1 2)))
+                                         "meta" (dict "bottom-up" #t))))
+                         "must have 3 channels"))))))
+
+      (export tests))))
