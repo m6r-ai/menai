@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from menai import Menai, MenaiBytes, MenaiDict, MenaiString
-
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 
 _SUITE_DIR = Path(__file__).resolve().parent
 _FIXTURES_DIR = _SUITE_DIR / "fixtures"
@@ -41,15 +38,9 @@ class Suite(BenchmarkSuite):
             for name in _FIXTURE_NAMES
         ]
 
-    def implementation(self, menai: Menai) -> Implementation:
-        """Return the Menai deflate-compress implementation."""
-        def prepare_menai(fixture_path: Path) -> Any:
-            """Compile the compress expression with the fixture bytes bound (untimed)."""
-            inputs = MenaiDict(((MenaiString("input-data"), MenaiBytes(fixture_path.read_bytes())),))
-            return menai.compile(_EXPR, inject=("inputs", inputs))
-
-        def run_menai(code: Any) -> Any:
-            """Execute the pre-compiled bytecode (timed)."""
-            return menai.vm.execute(code)
-
-        return Implementation(run=run_menai, prepare=prepare_menai)
+    def menai_program(self) -> MenaiProgram:
+        """Return the compress expression, reading fixture bytes as its input."""
+        return MenaiProgram(
+            expression=_EXPR,
+            fixture=lambda fixture_path: fixture_path.read_bytes(),
+        )

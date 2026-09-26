@@ -215,11 +215,19 @@ incompressible data, and long runs.  Inputs are committed fixtures
 
 1. Create `suites/<name>/suite.py` containing a class named `Suite` that
    subclasses `BenchmarkSuite` from `benchmark`.
-2. Implement `cases()` and `implementation()`.
-3. Non-standard `.menai` modules go in the suite directory.  Standard-library
+2. Implement `cases()` and `menai_program()`.
+3. `menai_program()` returns a `MenaiProgram` describing the expression to
+   benchmark.  Its `expression` is either a constant string or a callable that
+   maps a case input to an expression string.  When the program reads binary
+   input, set `fixture` to a callable that maps a case input to the bytes bound
+   as the `inputs` dict's `"input-data"` member, and have the expression read it
+   via `(dict-get inputs "input-data")`.  The framework compiles the expression
+   (with any fixture bound) outside the timed loop and executes the pre-compiled
+   bytecode inside it.
+4. Non-standard `.menai` modules go in the suite directory.  Standard-library
    modules are resolved from `menai_modules/` and must not be copied into the
    suite, so that the benchmark always exercises the reference implementation.
-4. For binary inputs, add a `generate_fixtures.py` script and a `fixtures/`
+5. For binary inputs, add a `generate_fixtures.py` script and a `fixtures/`
    directory, and commit the generated files (see [Fixtures](#fixtures)).
 
 The runner discovers suites automatically via `suites/*/suite.py`.

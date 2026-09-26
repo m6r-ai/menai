@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from menai import Menai
-
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 from menai_benchmark.suites.sudoku.suite import (
     PUZZLES,
     _ITERATIONS,
@@ -28,6 +25,16 @@ def _board_to_menai(flat: list[int]) -> str:
     return "(vector\n  " + "\n  ".join(rows) + ")"
 
 
+def _expr(flat: list[int]) -> str:
+    """Build the solver-driving expression for a sudoku board."""
+    board_expr = _board_to_menai(flat)
+    return (
+        '(let ((sudoku (import "sudoku-vector-solver")))'
+        ' (let ((solve-fn (:: sudoku solve)))'
+        f' (solve-fn {board_expr})))'
+    )
+
+
 class Suite(BenchmarkSuite):
     """Benchmark suite for a sudoku solver whose board is a vector of row vectors."""
 
@@ -45,20 +52,6 @@ class Suite(BenchmarkSuite):
             for label, difficulty, flat in PUZZLES
         ]
 
-    def implementation(self, menai: Menai) -> Implementation:
-        """Return the vector-board Menai solver implementation."""
-        def prepare_menai(flat: list[int]) -> Any:
-            """Build expression string and compile to bytecode (untimed)."""
-            board_expr = _board_to_menai(flat)
-            expr = (
-                '(let ((sudoku (import "sudoku-vector-solver")))'
-                ' (let ((solve-fn (:: sudoku solve)))'
-                f' (solve-fn {board_expr})))'
-            )
-            return menai.compile(expr)
-
-        def run_menai(code: Any) -> Any:
-            """Execute pre-compiled bytecode (timed)."""
-            return menai.execute_raw(code)
-
-        return Implementation(run=run_menai, prepare=prepare_menai)
+    def menai_program(self) -> MenaiProgram:
+        """Return the solver expression, built from the case input board."""
+        return MenaiProgram(expression=_expr)

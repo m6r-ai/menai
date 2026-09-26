@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Any
 
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
-from menai import Menai
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 
 _SIZES = [10, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
 _ITERATIONS = 5
@@ -15,6 +13,14 @@ _rng = random.Random(42)
 _INPUTS: dict[int, list[int]] = {
     size: _rng.sample(range(size * 10), size) for size in _SIZES
 }
+
+_SORT_EXPR = (_SUITE_DIR / "list-sort.menai").read_text(encoding="utf-8").strip()
+
+
+def _expr(lst: list[int]) -> str:
+    """Wrap a list of integers in a Menai sort call."""
+    items = " ".join(str(n) for n in lst)
+    return f"({_SORT_EXPR} (list {items}))"
 
 
 class Suite(BenchmarkSuite):
@@ -34,18 +40,6 @@ class Suite(BenchmarkSuite):
             for size in _SIZES
         ]
 
-    def implementation(self, menai: Menai) -> Implementation:
-        """Return the Menai sort implementation."""
-        sort_expr = (_SUITE_DIR / "list-sort.menai").read_text(encoding="utf-8").strip()
-
-        def prepare_menai(lst: list[int]) -> Any:
-            """Build the expression string and compile to bytecode (untimed)."""
-            items = " ".join(str(n) for n in lst)
-            expr = f"({sort_expr} (list {items}))"
-            return menai.compile(expr)
-
-        def run_menai(code: Any) -> Any:
-            """Execute pre-compiled bytecode (timed)."""
-            return menai.execute_raw(code)
-
-        return Implementation(run=run_menai, prepare=prepare_menai)
+    def menai_program(self) -> MenaiProgram:
+        """Return the sort expression, built from the case input list."""
+        return MenaiProgram(expression=_expr)

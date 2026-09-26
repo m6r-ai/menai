@@ -7,8 +7,10 @@ from .benchmark import (
     BenchmarkSuite,
     CaseResult,
     Implementation,
+    MenaiProgram,
     ProfileResult,
     TraceResult,
+    build_menai_implementation,
 )
 
 __all__ = [
@@ -18,6 +20,8 @@ __all__ = [
     "BenchmarkSuite",
     "CaseResult",
     "Implementation",
+    "MenaiProgram",
     "ProfileResult",
     "TraceResult",
+    "build_menai_implementation",
 ]

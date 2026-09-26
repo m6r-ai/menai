@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from menai import Menai, MenaiBytes, MenaiDict, MenaiString
-
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 
 _SUITE_DIR = Path(__file__).resolve().parent
 _FIXTURES_DIR = _SUITE_DIR / "fixtures"
@@ -28,10 +25,17 @@ _ITERATIONS = 5
 _OPERATIONS = ["entries", "extract"]
 
 
-def _expr(operation: str) -> str:
-    """Return the Menai expression that runs the given operation on the bound fixture."""
+def _expression(case_input: tuple[str, str]) -> str:
+    """Return the operation expression for a (fixture, operation) case input."""
+    _, operation = case_input
     module = "zip-entries" if operation == "entries" else "zip-extract"
     return f'(let ((zip (import "{module}"))) ((:: zip {operation}) (dict-get inputs "input-data")))'
+
+
+def _fixture(case_input: tuple[str, str]) -> bytes:
+    """Return the fixture bytes for a (fixture, operation) case input."""
+    name, _ = case_input
+    return (_FIXTURES_DIR / name).read_bytes()
 
 
 class Suite(BenchmarkSuite):
@@ -52,16 +56,6 @@ class Suite(BenchmarkSuite):
             for operation in _OPERATIONS
         ]
 
-    def implementation(self, menai: Menai) -> Implementation:
-        """Return the Menai ZIP reader implementation."""
-        def prepare_menai(case_input: tuple[str, str]) -> Any:
-            """Compile the operation expression with the fixture bytes bound (untimed)."""
-            name, operation = case_input
-            inputs = MenaiDict(((MenaiString("input-data"), MenaiBytes((_FIXTURES_DIR / name).read_bytes())),))
-            return menai.compile(_expr(operation), inject=("inputs", inputs))
-
-        def run_menai(code: Any) -> Any:
-            """Execute the pre-compiled bytecode (timed)."""
-            return menai.vm.execute(code)
-
-        return Implementation(run=run_menai, prepare=prepare_menai)
+    def menai_program(self) -> MenaiProgram:
+        """Return the ZIP operation expression, reading the case's fixture bytes."""
+        return MenaiProgram(expression=_expression, fixture=_fixture)

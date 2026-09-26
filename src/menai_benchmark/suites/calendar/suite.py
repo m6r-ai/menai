@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
-from menai import Menai
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 
 _CASES: list[tuple[str, str, int, int, frozenset[str]]] = [
     ("short_5d",    "2025-03-17",   5,   5, frozenset()),
@@ -20,6 +17,29 @@ def _format_menai_holidays(holidays: frozenset[str]) -> str:
         return "(set)"
 
     return "(set " + " ".join(f'"{d}"' for d in sorted(holidays)) + ")"
+
+
+def _expr(case_input: tuple[str, int, int, frozenset[str]]) -> str:
+    """Build the module-driving expression for a calendar case."""
+    start, days, cal_days, holidays = case_input
+    calendar_def = (
+        f'(let* ((calendar (import "calendar"))'
+        f' (cal ((:: calendar calendar) "std" "Standard" "5-day" '
+        f'(set "mon" "tue" "wed" "thu" "fri") {_format_menai_holidays(holidays)})))'
+        ' (dict "add-working-days" (:: calendar add-working-days)'
+        ' "add-calendar-days" (:: calendar add-calendar-days)'
+        ' "cal" cal))'
+    )
+    return (
+        f'(let* ((mod {calendar_def})'
+        ' (add-working-days (dict-get mod "add-working-days"))'
+        ' (add-calendar-days (dict-get mod "add-calendar-days"))'
+        ' (cal (dict-get mod "cal")))'
+        ' (list'
+        f'  (add-working-days "{start}" {float(days)} cal)'
+        f'  (add-calendar-days "{start}" {days})'
+        f'  (add-calendar-days "{start}" {cal_days})))'
+    )
 
 
 class Suite(BenchmarkSuite):
@@ -41,34 +61,6 @@ class Suite(BenchmarkSuite):
             for name, start, days, cal_days, holidays in _CASES
         ]
 
-    def implementation(self, menai: Menai) -> Implementation:
-        """Return the Menai calendar implementation."""
-
-        def prepare_menai(case_input: tuple[str, int, int, frozenset[str]]) -> Any:
-            """Build the module-driving expression and compile to bytecode (untimed)."""
-            start, days, cal_days, holidays = case_input
-            calendar_def = (
-                f'(let* ((calendar (import "calendar"))'
-                f' (cal ((:: calendar calendar) "std" "Standard" "5-day" '
-                f'(set "mon" "tue" "wed" "thu" "fri") {_format_menai_holidays(holidays)})))'
-                ' (dict "add-working-days" (:: calendar add-working-days)'
-                ' "add-calendar-days" (:: calendar add-calendar-days)'
-                ' "cal" cal))'
-            )
-            expr = (
-                f'(let* ((mod {calendar_def})'
-                ' (add-working-days (dict-get mod "add-working-days"))'
-                ' (add-calendar-days (dict-get mod "add-calendar-days"))'
-                ' (cal (dict-get mod "cal")))'
-                ' (list'
-                f'  (add-working-days "{start}" {float(days)} cal)'
-                f'  (add-calendar-days "{start}" {days})'
-                f'  (add-calendar-days "{start}" {cal_days})))'
-            )
-            return menai.compile(expr)
-
-        def run_menai(code: Any) -> Any:
-            """Execute pre-compiled bytecode (timed)."""
-            return menai.execute_raw(code)
-
-        return Implementation(run=run_menai, prepare=prepare_menai)
+    def menai_program(self) -> MenaiProgram:
+        """Return the calendar expression, built from the case input tuple."""
+        return MenaiProgram(expression=_expr)

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
-from menai import Menai
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, Implementation
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 
 _LONG_STRING = '"' + ("abcdefghij" * 200) + '"'
 _DEEP_ARRAY = ("[" * 500) + "0" + ("]" * 500)
@@ -76,14 +73,6 @@ class Suite(BenchmarkSuite):
             for name, json_str, iters in _CASES
         ]
 
-    def implementation(self, menai: Menai) -> Implementation:
-        """Return the Menai JSON decoder implementation."""
-        def prepare_menai(json_str: str) -> Any:
-            """Build expression string and compile to bytecode (untimed)."""
-            return menai.compile(_to_menai_expr(json_str))
-
-        def run_menai(code: Any) -> Any:
-            """Execute pre-compiled bytecode (timed)."""
-            return menai.execute_raw(code)
-
-        return Implementation(run=run_menai, prepare=prepare_menai)
+    def menai_program(self) -> MenaiProgram:
+        """Return the JSON decode expression, built from the case input string."""
+        return MenaiProgram(expression=_to_menai_expr)

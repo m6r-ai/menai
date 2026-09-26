@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
-from menai import Menai
+from menai import Menai, MenaiBytes, MenaiDict, MenaiString
 from menai.bytecode.menai_bytecode import CodeObject
 from menai_trace.menai_trace_data import TraceResult as ResolvedTrace
 from menai_trace.menai_trace_data import resolve_trace
@@ -36,6 +36,53 @@ class Implementation:
 
     run: Callable
     prepare: Callable | None = None
+
+
+@dataclass
+class MenaiProgram:
+    """
+    Declarative description of the Menai program a suite benchmarks.
+
+    *expression* is either a constant expression string, or a callable that
+    maps a case input to an expression string.
+
+    *fixture* is an optional callable that maps a case input to the bytes
+    bound as the ``inputs`` dict's ``"input-data"`` member.  When it is
+    provided, the expression reads its input via
+    ``(dict-get inputs "input-data")``; when it is ``None`` the expression is
+    compiled with no injected binding.
+    """
+
+    expression: str | Callable[[Any], str]
+    fixture: Callable[[Any], bytes] | None = None
+
+
+def build_menai_implementation(menai: Menai, program: MenaiProgram) -> Implementation:
+    """
+    Build the benchmark Implementation for a Menai program.
+
+    Compilation (including expression construction and fixture binding) happens
+    in *prepare*, outside the timed loop; *run* executes the pre-compiled
+    bytecode.  This keeps compilation cost out of the measured section.
+    """
+    expression = program.expression
+    fixture = program.fixture
+
+    def prepare(case_input: Any) -> CodeObject:
+        """Build the expression, bind any fixture bytes, and compile (untimed)."""
+        expr = expression if isinstance(expression, str) else expression(case_input)
+
+        if fixture is None:
+            return menai.compile(expr)
+
+        inputs = MenaiDict(((MenaiString("input-data"), MenaiBytes(fixture(case_input))),))
+        return menai.compile(expr, inject=("inputs", inputs))
+
+    def run(code: CodeObject) -> Any:
+        """Execute the pre-compiled bytecode (timed)."""
+        return menai.execute_raw(code)
+
+    return Implementation(run=run, prepare=prepare)
 
 
 @dataclass
@@ -83,12 +130,8 @@ class BenchmarkSuite(ABC):
         """Return the list of cases that the implementation will be run against."""
 
     @abstractmethod
-    def implementation(self, menai: Menai) -> Implementation:
-        """
-        Return the Menai implementation to benchmark.
-
-        The supplied *menai* instance is already warmed up.
-        """
+    def menai_program(self) -> MenaiProgram:
+        """Return the Menai program that will be timed against the cases."""
 
 
 class BenchmarkRunner:
@@ -135,7 +178,7 @@ class BenchmarkRunner:
     def run(self) -> tuple[list[CaseResult], list[ProfileResult], list[TraceResult]]:
         """Execute the selected cases and return timing, profile, and trace results."""
         suite = self._suite
-        impl = suite.implementation(self._menai)
+        impl = build_menai_implementation(self._menai, suite.menai_program())
         results: list[CaseResult] = []
         profile_results: list[ProfileResult] = []
         trace_results: list[TraceResult] = []
