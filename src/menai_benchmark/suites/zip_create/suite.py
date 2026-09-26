@@ -3,7 +3,8 @@ from __future__ import annotations
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 
 # Each case builds a ZIP archive from a generated container.  The entry sets
-# mirror the zip suite's fixtures so the two directions can be compared.
+# mirror the zip-entries and zip-extract suites' fixtures so the two directions
+# can be compared.
 
 _DEFLATED = 8
 _STORED = 0

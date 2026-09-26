@@ -67,10 +67,12 @@ benchmark/
     ├── sudoku_vector/
     │   ├── suite.py          # Sudoku solver benchmark suite (vector board)
     │   └── sudoku-vector-solver.menai
-    ├── zip/
-    │   └── suite.py          # ZIP archive benchmark suite
     ├── zip_create/
     │   └── suite.py          # ZIP archive writer benchmark suite
+    ├── zip_entries/
+    │   └── suite.py          # ZIP central-directory reader benchmark suite
+    ├── zip_extract/
+    │   └── suite.py          # ZIP archive extractor benchmark suite
     ├── zlib_compress/
     │   └── suite.py          # zlib stream compressor benchmark suite
     └── zlib_decompress/
@@ -202,19 +204,25 @@ vector of 9 row-vectors instead of a list of lists, so cell access is
 counts are shared with the sudoku_list suite, which makes the Menai timings directly
 comparable across the two suites.
 
-### ZIP
-Reads and extracts ZIP archives.  Five fixtures (stored and deflate entries,
-16 mixed entries, 128 small entries, and a 256 KB entry) are each run through
-both `entries` (central-directory metadata only) and `extract` (which additionally
-decompresses every entry), giving ten cases.  Inputs are generated fixtures
+### ZIP Entries
+Reads ZIP central-directory metadata.  Five fixtures (stored and deflate
+entries, 16 mixed entries, 128 small entries, and a 256 KB entry) are each
+decoded without decompressing any entry.  Inputs are generated fixtures
 (see [Fixtures](#fixtures)).
+
+### ZIP Extract
+Extracts ZIP archives, decompressing every entry.  The five cases use the same
+entry sets as the ZIP Entries suite, so the metadata-only and
+decompression-inclusive directions can be compared.  Inputs are generated
+fixtures (see [Fixtures](#fixtures)).
 
 ### ZIP Create
 Builds ZIP archives from generated containers.  The five cases use the same
-entry sets as the ZIP suite (stored and deflate entries, 16 mixed entries,
-128 small entries, and a 256 KB entry), so the write and read directions can be
-compared.  The containers are constructed as Menai expressions rather than
-parsed from bytes, so the timing measures archive construction alone.
+entry sets as the ZIP Entries and ZIP Extract suites (stored and deflate
+entries, 16 mixed entries, 128 small entries, and a 256 KB entry), so the write
+and read directions can be compared.  The containers are constructed as Menai
+expressions rather than parsed from bytes, so the timing measures archive
+construction alone.
 
 ### zlib Compress
 Compresses byte inputs to zlib streams.  Four cases span text that compresses
