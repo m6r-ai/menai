@@ -1,0 +1,184 @@
+; Tests for zip-create.menai
+
+(let ((zip-create (import "zip-create"))
+      (zip-entries (import "zip-entries"))
+      (zip-extract (import "zip-extract"))
+      (t (import "menai_test")))
+  (let ((create (:: zip-create create))
+        (entries (:: zip-entries entries))
+        (extract (:: zip-extract extract))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Content round-trips through zip-entries and zip-extract
+        (list "round-trips"
+          (list
+            (expect-pass "empty archive"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries" (list)
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get r "entries") (list)))))
+            (expect-pass "single stored entry"
+                         (lambda ()
+                           (let ((r (extract (create (dict "entries"
+                                                           (list (dict "name" "a.txt"
+                                                                       "compression" 0
+                                                                       "content" (string->bytes "AAAA")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "content")
+                                           (string->bytes "AAAA")))))
+            (expect-pass "single deflate entry"
+                         (lambda ()
+                           (let ((r (extract (create (dict "entries"
+                                                           (list (dict "name" "hello.txt"
+                                                                       "compression" 8
+                                                                       "content" (string->bytes "hello world")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "content")
+                                           (string->bytes "hello world")))))
+            (expect-pass "entry name is preserved"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "dir/sub/file.txt"
+                                                                       "compression" 0
+                                                                       "content" (string->bytes "x")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "name")
+                                           "dir/sub/file.txt"))))
+            (expect-pass "compression method is preserved"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "a.txt"
+                                                                       "compression" 8
+                                                                       "content" (string->bytes "x")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 8))))
+            (expect-pass "compression method defaults to stored"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "a.txt"
+                                                                       "content" (string->bytes "x")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 0))))
+            (expect-pass "directory entry is flagged"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "dir/" "content" #none))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #t))))
+            (expect-pass "file entry is not flagged as a directory"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "a.txt"
+                                                                       "content" (string->bytes "x")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #f))))
+            (expect-pass "entry order is preserved"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "one" "content" (string->bytes "1"))
+                                                                 (dict "name" "two" "content" (string->bytes "2"))
+                                                                 (dict "name" "three" "content" (string->bytes "3")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (map-list (lambda (e) (dict-get e "name"))
+                                                     (dict-get r "entries"))
+                                           (list "one" "two" "three")))))
+            (expect-pass "multiple entries of mixed methods"
+                         (lambda ()
+                           (let ((r (extract (create (dict "entries"
+                                                           (list (dict "name" "stored.txt"
+                                                                       "compression" 0
+                                                                       "content" (string->bytes "plain"))
+                                                                 (dict "name" "deflated.txt"
+                                                                       "compression" 8
+                                                                       "content" (string->bytes "repeated repeated repeated")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (map-list (lambda (e) (dict-get e "content"))
+                                                     (dict-get r "entries"))
+                                           (list (string->bytes "plain")
+                                                 (string->bytes "repeated repeated repeated"))))))
+            (expect-pass "empty content"
+                         (lambda ()
+                           (let ((r (extract (create (dict "entries"
+                                                           (list (dict "name" "empty"
+                                                                       "compression" 0
+                                                                       "content" (string->bytes "")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "content")
+                                           (string->bytes "")))))))
+
+        ; Derived fields are recomputed, not taken from the input
+        (list "derived-fields"
+          (list
+            (expect-pass "crc-32 is recomputed"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "a.txt"
+                                                                       "compression" 0
+                                                                       "content" (string->bytes "AAAA")
+                                                                       "crc32" 999))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "crc32")
+                                           (bytes-crc32 (string->bytes "AAAA"))))))
+            (expect-pass "uncompressed size is recomputed"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "a.txt"
+                                                                       "compression" 0
+                                                                       "content" (string->bytes "AAAA")
+                                                                       "uncompressed-size" 999))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "uncompressed-size") 4))))
+            (expect-pass "compressed size is recomputed"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "a.txt"
+                                                                       "compression" 0
+                                                                       "content" (string->bytes "AAAA")
+                                                                       "compressed-size" 999))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (list-first (dict-get r "entries")) "compressed-size") 4))))))
+
+        ; Metadata
+        (list "meta"
+          (list
+            (expect-pass "entry count is reported"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries"
+                                                           (list (dict "name" "a" "content" (string->bytes "1"))
+                                                                 (dict "name" "b" "content" (string->bytes "2")))
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (dict-get r "meta") "entry-count") 2))))
+            (expect-pass "comment is preserved"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries" (list)
+                                                           "meta" (dict "comment" "made by menai"))))))
+                             (assert-equal (dict-get (dict-get r "meta") "comment") "made by menai"))))
+            (expect-pass "absent comment reads back as none"
+                         (lambda ()
+                           (let ((r (entries (create (dict "entries" (list)
+                                                           "meta" (dict "comment" #none))))))
+                             (assert-equal (dict-get (dict-get r "meta") "comment") #none))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-dict argument"
+                         (lambda () (create "not a dict"))
+                         "expects a dict")
+            (expect-fail "rejects a non-list entries field"
+                         (lambda () (create (dict "entries" "not a list")))
+                         "\"entries\" must be a list")
+            (expect-fail "rejects an entry without a string name"
+                         (lambda () (create (dict "entries" (list (dict "name" 42)))))
+                         "must be a string")
+            (expect-fail "rejects an unsupported compression method"
+                         (lambda () (create (dict "entries"
+                                                  (list (dict "name" "a.txt"
+                                                              "compression" 99
+                                                              "content" (string->bytes "x"))))))
+                         "unsupported compression method"))))))
+
+      (export tests))))

@@ -1,0 +1,200 @@
+; zip-create module — builds a ZIP archive from a container description.
+;
+; Exports: "create" — takes a dict describing a ZIP archive and returns a bytes
+; value containing the archive.  It is the write side of zip-entries and
+; zip-extract: reading back an archive produced by create recovers the logical
+; entries that were put in.  This is a content round-trip, not a byte
+; round-trip: the archive is written in a canonical layout, so it need not be
+; byte-identical to any archive the same entries came from.
+;
+; The input dict has the same shape that zip-entries and zip-extract produce:
+;
+;   (dict
+;     "entries" (list of entry dicts)
+;     "meta"    (dict "comment" <string> or #none))
+;
+; Each entry dict uses these fields:
+;
+;   "name"        <string>          ; required; a trailing "/" marks a directory
+;   "compression" <integer>         ; optional; 0 = stored (default), 8 = deflate
+;   "content"     <bytes> or #none  ; optional; #none or absent means no data
+;
+; The derived fields the readers report ("crc32", "compressed-size",
+; "uncompressed-size", "local-offset", "data-offset", "is-directory") are
+; recomputed from the content and ignored if present on input.
+;
+; The archive is laid out in the standard way: every entry's local file header
+; and data first, then the central directory, then the end-of-central-directory
+; record.  Entries are written in the order given.  Directory entries (names
+; ending in "/") are written with no data and a zero CRC.
+;
+; Supported: stored (0) and deflate (8).  Any other compression method raises.
+
+(letrec
+  ((deflate-lib (import "deflate-compress"))
+
+   ; The ZIP signatures, little-endian on disk.
+   (signature-local (string-hex->bytes "504b0304"))
+   (signature-central (string-hex->bytes "504b0102"))
+   (signature-eocd (string-hex->bytes "504b0506"))
+
+   ; Version needed to extract: 2.0, the minimum for deflate.
+   (version-needed 20)
+
+   ; The general-purpose bit flag: bit 11 marks the filename as UTF-8.
+   (flags-utf8 #x0800)
+
+   ; The MS-DOS date and time stamped into every entry.  1980-01-01 00:00:00 is
+   ; the earliest representable value and keeps the output deterministic.
+   (dos-time 0)
+   (dos-date 33)
+
+   ; The external attributes marking an entry as a directory.
+   (directory-attributes #x10)
+
+   ; The bytes of an entry's content: the "content" field when it is bytes,
+   ; otherwise empty.
+   (entry-content
+    (lambda (entry)
+      (let ((content (dict-get entry "content")))
+        (if (bytes? content) content (bytes-concat)))))
+
+   ; The compression method of an entry, defaulting to stored (0).
+   (entry-method
+    (lambda (entry)
+      (let ((method (dict-get entry "compression")))
+        (if (integer? method) method 0))))
+
+   ; Compress an entry's content with the requested method.
+   (encode-content
+    (lambda (content method)
+      (if (integer=? method 0)
+          content
+          (if (integer=? method 8)
+              ((:: deflate-lib compress) content)
+              (error (string-concat
+                       "zip-create: unsupported compression method "
+                       (integer->string method)
+                       " (only stored (0) and deflate (8) are supported)"))))))
+
+   ; Build one entry's local file header followed by its data.  Returns
+   ; (list <bytes> <crc32> <compressed-size> <uncompressed-size> <method>).
+   (build-local-entry
+    (lambda (entry)
+      (let ((name (dict-get entry "name")))
+        (if (string? name)
+            (let ((name-bytes (string->bytes name)))
+              (let ((content (entry-content entry))
+                    (method (entry-method entry)))
+                (let ((data (encode-content content method))
+                      (crc (bytes-crc32 content)))
+                  (list
+                    (bytes-concat
+                      signature-local
+                      (bytes-append-u16-le (bytes-concat) version-needed)
+                      (bytes-append-u16-le (bytes-concat) flags-utf8)
+                      (bytes-append-u16-le (bytes-concat) method)
+                      (bytes-append-u16-le (bytes-concat) dos-time)
+                      (bytes-append-u16-le (bytes-concat) dos-date)
+                      (bytes-append-u32-le (bytes-concat) crc)
+                      (bytes-append-u32-le (bytes-concat) (bytes-length data))
+                      (bytes-append-u32-le (bytes-concat) (bytes-length content))
+                      (bytes-append-u16-le (bytes-concat) (bytes-length name-bytes))
+                      (bytes-append-u16-le (bytes-concat) 0)
+                      name-bytes
+                      data)
+                    crc
+                    (bytes-length data)
+                    (bytes-length content)
+                    method))))
+            (error "zip-create: entry \"name\" must be a string")))))
+
+   ; Build one entry's central directory record.
+   (build-central-entry
+    (lambda (entry local-offset crc compressed-size uncompressed-size method)
+      (let ((name-bytes (string->bytes (dict-get entry "name"))))
+        (bytes-concat
+          signature-central
+          (bytes-append-u16-le (bytes-concat) version-needed)
+          (bytes-append-u16-le (bytes-concat) version-needed)
+          (bytes-append-u16-le (bytes-concat) flags-utf8)
+          (bytes-append-u16-le (bytes-concat) method)
+          (bytes-append-u16-le (bytes-concat) dos-time)
+          (bytes-append-u16-le (bytes-concat) dos-date)
+          (bytes-append-u32-le (bytes-concat) crc)
+          (bytes-append-u32-le (bytes-concat) compressed-size)
+          (bytes-append-u32-le (bytes-concat) uncompressed-size)
+          (bytes-append-u16-le (bytes-concat) (bytes-length name-bytes))
+          (bytes-append-u16-le (bytes-concat) 0)
+          (bytes-append-u16-le (bytes-concat) 0)
+          (bytes-append-u16-le (bytes-concat) 0)
+          (bytes-append-u16-le (bytes-concat) 0)
+          (bytes-append-u32-le (bytes-concat)
+                               (if (string-suffix? (dict-get entry "name") "/")
+                                   directory-attributes
+                                   0))
+          (bytes-append-u32-le (bytes-concat) local-offset)
+          name-bytes))))
+
+   ; Build the local section and the central directory in one pass, threading
+   ; the running output offset.  Returns
+   ; (list <local-bytes> <central-bytes> <entry-count>).
+   (build-entries
+    (lambda (entries)
+      (letrec
+        ((loop (lambda (rest offset local-acc central-acc count)
+                 (if (list-null? rest)
+                     (list local-acc central-acc count)
+                     (let ((entry (list-first rest)))
+                       (let ((built (build-local-entry entry)))
+                         (let ((local-bytes (list-first built))
+                               (crc (list-ref built 1))
+                               (compressed-size (list-ref built 2))
+                               (uncompressed-size (list-ref built 3))
+                               (method (list-ref built 4)))
+                           (loop (list-rest rest)
+                                 (integer+ offset (bytes-length local-bytes))
+                                 (bytes-concat local-acc local-bytes)
+                                 (bytes-concat central-acc
+                                               (build-central-entry
+                                                 entry offset crc
+                                                 compressed-size uncompressed-size method))
+                                 (integer+ count 1)))))))))
+        (loop entries 0 (bytes-concat) (bytes-concat) 0))))
+
+   ; Build the end-of-central-directory record.
+   (build-eocd
+    (lambda (count central-size central-offset comment)
+      (let ((comment-bytes (if (string? comment) (string->bytes comment) (bytes-concat))))
+        (bytes-concat
+          signature-eocd
+          (bytes-append-u16-le (bytes-concat) 0)
+          (bytes-append-u16-le (bytes-concat) 0)
+          (bytes-append-u16-le (bytes-concat) count)
+          (bytes-append-u16-le (bytes-concat) count)
+          (bytes-append-u32-le (bytes-concat) central-size)
+          (bytes-append-u32-le (bytes-concat) central-offset)
+          (bytes-append-u16-le (bytes-concat) (bytes-length comment-bytes))
+          comment-bytes))))
+
+   (create
+    (lambda (container)
+      (if (dict? container)
+          (let ((entries (dict-get container "entries"))
+                (meta (dict-get container "meta")))
+            (if (list? entries)
+                (let ((built (build-entries entries)))
+                  (let ((local-bytes (list-first built))
+                        (central-bytes (list-ref built 1))
+                        (count (list-ref built 2)))
+                    (bytes-concat
+                      local-bytes
+                      central-bytes
+                      (build-eocd count
+                                  (bytes-length central-bytes)
+                                  (bytes-length local-bytes)
+                                  (if (dict? meta) (dict-get meta "comment") #none)))))
+                (error "zip-create: \"entries\" must be a list")))
+          (error "zip-create: create expects a dict")))))
+
+  (export create))

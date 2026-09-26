@@ -232,6 +232,9 @@ includes:
   (`entries`)
 - `zip-extract.menai` — reads a ZIP file and returns the same entry dicts with
   each entry's contents decompressed and its CRC-32 verified (`extract`)
+- `zip-create.menai` — builds a ZIP file (as bytes) from a container dict of
+  the shape `zip-entries` and `zip-extract` produce, with stored or deflate
+  entries; the write side of the ZIP readers (`create`)
 
 Modules are named `<format>-<operation>`: the format names the thing the module
 operates on, and the operation names what it does.  A module exports its
