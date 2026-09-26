@@ -47,22 +47,19 @@
           w
           (match w
             ((writer bytes bit acc)
-             (let ((new-acc (integer-bit-or acc
-                                            (integer-bit-shift-left
-                                              (integer-bit-and value 1)
-                                              bit)))
-                   (new-bit (integer+ bit 1)))
-               (if (integer=? new-bit 8)
-                   (write-bits (writer (bytes-append-u8 bytes new-acc)
-                                       0
-                                       0)
-                               (integer-bit-shift-right value 1)
-                               (integer- count 1))
-                   (write-bits (writer bytes
-                                       new-bit
-                                       new-acc)
-                               (integer-bit-shift-right value 1)
-                               (integer- count 1)))))))))
+             (let ((combined (integer-bit-or acc
+                                             (integer-bit-shift-left
+                                               (integer-bit-and value
+                                                                (integer- (integer-bit-shift-left 1 count) 1))
+                                               bit)))
+                   (total (integer+ bit count)))
+               (letrec ((emit (lambda (bs n remaining)
+                                (if (integer<? n 8)
+                                    (writer bs n remaining)
+                                    (emit (bytes-append-u8 bs (integer-bit-and remaining #xff))
+                                          (integer- n 8)
+                                          (integer-bit-shift-right remaining 8))))))
+                 (emit bytes total combined))))))))
 
    ; Pad the writer to the next byte boundary, returning the new writer.
    (align-writer
@@ -71,22 +68,18 @@
           w
           (write-bits w 0 (integer- 8 (struct-get w 'bit))))))
 
-   ; Write a Huffman code: `code` is the canonical code value and `length` its
-   ; bit length.  DEFLATE stores Huffman codes most-significant bit first, so
-   ; the bits are emitted in reverse order.
-   (write-code
-    (lambda (w code length)
-      (letrec ((loop (lambda (i st)
-                       (if (integer=? i length)
-                           st
+   ; Reverse the low `length` bits of `value`.  DEFLATE stores Huffman codes
+   ; most-significant bit first, while the bit writer appends least-significant
+   ; bit first, so a canonical code is reversed into write order.
+   (reverse-bits
+    (lambda (value length)
+      (letrec ((loop (lambda (i acc)
+                       (if (integer>=? i length)
+                           acc
                            (loop (integer+ i 1)
-                                 (write-bits st
-                                             (integer-bit-and
-                                               (integer-bit-shift-right code
-                                                 (integer- (integer- length 1) i))
-                                               1)
-                                             1))))))
-        (loop 0 w))))
+                                 (integer-bit-or (integer-bit-shift-left acc 1)
+                                                 (integer-bit-and (integer-bit-shift-right value i) 1)))))))
+        (loop 0 0))))
 
    (writer->bytes
     (lambda (w)
@@ -142,7 +135,10 @@
    ; Compute canonical Huffman codes from a list of code lengths.
    ; Returns a list of (list <code> <length>) indexed by symbol, following the
    ; canonical assignment of RFC 1951 §3.2.2 (shorter codes first; within a
-   ; length, codes assigned in symbol order).
+   ; length, codes assigned in symbol order).  Each code is returned in the bit
+   ; order the writer needs: DEFLATE stores Huffman codes most-significant bit
+   ; first, while the bit writer appends least-significant bit first, so the
+   ; code is reversed once here rather than on every write.
    (canonical-codes
     (lambda (lengths)
       (let ((maxlen (fold-list (lambda (acc len) (integer-max acc len)) 0 lengths)))
@@ -176,14 +172,14 @@
                                          (let ((code (dict-get codes len)))
                                            (assign (list-rest lst)
                                                    (dict-set codes len (integer+ code 1))
-                                                   (list-prepend acc (list code len))))))))))
+                                                   (list-prepend acc (list (reverse-bits code len) len))))))))))
               (assign lengths nexts (list))))))))
 
    ; Emit one symbol's Huffman code using a symbol-code list.
    (write-symbol
     (lambda (w codes symbol)
       (let ((entry (list-ref codes symbol)))
-        (write-code w (list-first entry) (list-ref entry 1)))))
+        (write-bits w (list-first entry) (list-ref entry 1)))))
 
    ; --- LZ77 matching -------------------------------------------------------
 
