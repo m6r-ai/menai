@@ -37,27 +37,19 @@ benchmark/
 ├── run.py                # CLI entry point — discovers and runs suites
 ├── README.md
 └── suites/
-    ├── bmp-decode/
-    │   ├── suite.py          # BMP decoder benchmark suite
-    │   ├── generate_fixtures.py
-    │   └── fixtures/         # committed .bmp inputs
+    ├── bmp_decode/
+    │   └── suite.py          # BMP decoder benchmark suite
     ├── calendar/
     │   ├── suite.py          # Calendar arithmetic benchmark suite
     │   └── calendar.menai
-    ├── deflate-compress/
-    │   ├── suite.py          # DEFLATE compressor benchmark suite
-    │   ├── generate_fixtures.py
-    │   └── fixtures/         # committed raw inputs
-    ├── deflate-decompress/
-    │   ├── suite.py          # DEFLATE decompressor benchmark suite
-    │   ├── generate_fixtures.py
-    │   └── fixtures/         # committed raw DEFLATE inputs
-    ├── json-decode/
+    ├── deflate_compress/
+    │   └── suite.py          # DEFLATE compressor benchmark suite
+    ├── deflate_decompress/
+    │   └── suite.py          # DEFLATE decompressor benchmark suite
+    ├── json_decode/
     │   └── suite.py          # JSON decoder benchmark suite
-    ├── png-decode/
-    │   ├── suite.py          # PNG decoder benchmark suite
-    │   ├── generate_fixtures.py
-    │   └── fixtures/         # committed .png inputs
+    ├── png_decode/
+    │   └── suite.py          # PNG decoder benchmark suite
     ├── rubiks_cube/
     │   ├── suite.py          # Rubik's cube IDA* benchmark suite
     │   └── rubiks_cube.menai
@@ -74,13 +66,9 @@ benchmark/
     │   ├── suite.py          # Sudoku solver benchmark suite (vector board)
     │   └── sudoku-vector-solver.menai
     ├── zip/
-    │   ├── suite.py          # ZIP archive benchmark suite
-    │   ├── generate_fixtures.py
-    │   └── fixtures/         # committed .zip inputs
-    └── zlib-decompress/
-        ├── suite.py          # zlib stream benchmark suite
-        ├── generate_fixtures.py
-        └── fixtures/         # committed .zlib inputs
+    │   └── suite.py          # ZIP archive benchmark suite
+    └── zlib_decompress/
+        └── suite.py          # zlib stream benchmark suite
 ```
 
 ## What is benchmarked
@@ -91,11 +79,12 @@ timing-only.
 
 ## Fixtures
 
-Suites whose input is binary (image and archive formats) read committed fixture
-files from a `fixtures/` directory inside the suite.  The fixtures are produced
-by a `generate_fixtures.py` script in the same directory and checked in, so every
-machine and every run reads byte-identical inputs.  The generator is
-deterministic — re-running it reproduces the committed files exactly.
+Suites whose input is binary (image and archive formats) generate their fixture
+bytes in memory from deterministic code in the suite module.  There are no
+committed binary files: each fixture is a pure function of fixed constants, so
+every machine and every run produces byte-identical inputs.  Generation is lazy
+and memoised — a fixture is built the first time a case needs it, so running one
+suite does not pay for another suite's fixtures.
 
 Fixture bytes are passed to Menai as a bound `bytes` value rather than embedded
 in the expression string, which keeps large binary blobs out of the compiled
@@ -146,7 +135,7 @@ Percentages are of instruction count, not time.
 ### BMP Decode
 Decodes uncompressed 24-bit and 32-bit BMP files.  Five cases cover bottom-up and
 top-down row order, 24-bit and 32-bit pixels, and a width that requires row
-padding.  Inputs are committed fixtures (see [Fixtures](#fixtures)).
+padding.  Inputs are generated fixtures (see [Fixtures](#fixtures)).
 
 ### Calendar
 Working-day date arithmetic over a 5-day calendar with holidays.  The Menai
@@ -158,12 +147,12 @@ table is executed on every day step across month and year boundaries.
 ### DEFLATE Compress
 Compresses raw byte inputs using the default block encoding.  Four cases span
 text that compresses well, incompressible data, and long runs.  Inputs are
-committed fixtures (see [Fixtures](#fixtures)).
+generated fixtures (see [Fixtures](#fixtures)).
 
 ### DEFLATE Decompress
 Decompresses raw DEFLATE streams.  Five cases cover text that compresses well,
 incompressible data, long runs, and a stored-block stream.  Inputs are
-committed fixtures (see [Fixtures](#fixtures)).
+generated fixtures (see [Fixtures](#fixtures)).
 
 ### JSON Decode
 Decodes JSON strings of varying structure and size using a hand-written decoder
@@ -175,7 +164,7 @@ and a deeply nested array (500 levels).
 Decodes non-interlaced 8-bit PNG files.  Six cases cover the greyscale,
 greyscale+alpha, palette, truecolour, and truecolour+alpha colour types at
 sizes from 64×64 to 192×192, exercising zlib decompression, scanline filter
-reversal, and per-pixel normalisation to RGB/RGBA.  Inputs are committed
+reversal, and per-pixel normalisation to RGB/RGBA.  Inputs are generated
 fixtures (see [Fixtures](#fixtures)).
 
 ### Rubik's Cube
@@ -203,12 +192,12 @@ comparable across the two suites.
 Reads and extracts ZIP archives.  Five fixtures (stored and deflate entries,
 16 mixed entries, 128 small entries, and a 256 KB entry) are each run through
 both `entries` (central-directory metadata only) and `extract` (which additionally
-decompresses every entry), giving ten cases.  Inputs are committed fixtures
+decompresses every entry), giving ten cases.  Inputs are generated fixtures
 (see [Fixtures](#fixtures)).
 
 ### zlib Decompress
 Decompresses zlib streams.  Four cases span text that compresses well,
-incompressible data, and long runs.  Inputs are committed fixtures
+incompressible data, and long runs.  Inputs are generated fixtures
 (see [Fixtures](#fixtures)).
 
 ## Adding a new suite
@@ -227,7 +216,8 @@ incompressible data, and long runs.  Inputs are committed fixtures
 4. Non-standard `.menai` modules go in the suite directory.  Standard-library
    modules are resolved from `menai_modules/` and must not be copied into the
    suite, so that the benchmark always exercises the reference implementation.
-5. For binary inputs, add a `generate_fixtures.py` script and a `fixtures/`
-   directory, and commit the generated files (see [Fixtures](#fixtures)).
+5. For binary inputs, generate the fixture bytes in the suite module from
+   deterministic code and return them from the `fixture` callable (see
+   [Fixtures](#fixtures)).
 
 The runner discovers suites automatically via `suites/*/suite.py`.
