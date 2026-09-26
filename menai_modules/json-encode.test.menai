@@ -1,0 +1,150 @@
+; Tests for json-encode.menai
+
+(let ((json-encode (import "json-encode"))
+      (json-decode (import "json-decode"))
+      (t (import "menai_test")))
+  (let ((encode (:: json-encode encode))
+        (decode (:: json-decode decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Direct encoding of scalar values
+        (list "scalars"
+          (list
+            (expect-pass "null"
+                         (lambda () (assert-equal (encode #none) "null")))
+            (expect-pass "true"
+                         (lambda () (assert-equal (encode #t) "true")))
+            (expect-pass "false"
+                         (lambda () (assert-equal (encode #f) "false")))
+            (expect-pass "integer"
+                         (lambda () (assert-equal (encode 42) "42")))
+            (expect-pass "negative integer"
+                         (lambda () (assert-equal (encode -7) "-7")))
+            (expect-pass "float"
+                         (lambda () (assert-equal (encode 3.14) "3.14")))
+            (expect-pass "float with positive exponent drops the plus sign"
+                         (lambda () (assert-equal (encode 1e10) "1e10")))
+            (expect-pass "float with negative exponent"
+                         (lambda () (assert-equal (encode 0.001) "0.001")))))
+
+        ; Direct encoding of strings
+        (list "strings"
+          (list
+            (expect-pass "empty string"
+                         (lambda () (assert-equal (encode "") "\"\"")))
+            (expect-pass "simple string"
+                         (lambda () (assert-equal (encode "hello") "\"hello\"")))
+            (list "escapes"
+              (list
+                (expect-pass "double quote"
+                             (lambda () (assert-equal (encode "\"") "\"\\\"\"")))
+                (expect-pass "backslash"
+                             (lambda () (assert-equal (encode "\\") "\"\\\\\"")))
+                (expect-pass "newline"
+                             (lambda () (assert-equal (encode "\n") "\"\\n\"")))
+                (expect-pass "tab"
+                             (lambda () (assert-equal (encode "\t") "\"\\t\"")))
+                (expect-pass "carriage return"
+                             (lambda () (assert-equal (encode "\r") "\"\\r\"")))
+                (expect-pass "form feed"
+                             (lambda () (assert-equal (encode "\u000c") "\"\\f\"")))
+                (expect-pass "backspace"
+                             (lambda () (assert-equal (encode "\u0008") "\"\\b\"")))
+                (expect-pass "other control character"
+                             (lambda () (assert-equal (encode "\u0001") "\"\\u0001\"")))))))
+
+        ; Direct encoding of collections
+        (list "collections"
+          (list
+            (expect-pass "empty array"
+                         (lambda () (assert-equal (encode (list)) "[]")))
+            (expect-pass "integer array"
+                         (lambda () (assert-equal (encode (list 1 2 3)) "[1,2,3]")))
+            (expect-pass "nested array"
+                         (lambda () (assert-equal (encode (list (list 1 2) (list 3 4)))
+                                                  "[[1,2],[3,4]]")))
+            (expect-pass "empty object"
+                         (lambda () (assert-equal (encode (dict)) "{}")))
+            (expect-pass "single-key object"
+                         (lambda () (assert-equal (encode (dict "a" 1)) "{\"a\":1}")))
+            (expect-pass "multi-key object preserves insertion order"
+                         (lambda () (assert-equal (encode (dict "a" 1 "b" 2))
+                                                  "{\"a\":1,\"b\":2}")))
+            (expect-pass "nested object"
+                         (lambda () (assert-equal (encode (dict "a" (dict "b" 2)))
+                                                  "{\"a\":{\"b\":2}}")))))
+
+        ; Round-trips through json-decode
+        (list "round-trips"
+          (list
+            (expect-pass "null"
+                         (lambda () (assert-equal (decode (encode #none)) #none)))
+            (expect-pass "booleans"
+                         (lambda () (assert-equal (list (decode (encode #t)) (decode (encode #f)))
+                                                  (list #t #f))))
+            (expect-pass "integer"
+                         (lambda () (assert-equal (decode (encode 42)) 42)))
+            (expect-pass "negative integer"
+                         (lambda () (assert-equal (decode (encode -1234)) -1234)))
+            (expect-pass "float"
+                         (lambda () (assert-equal (decode (encode 3.14)) 3.14)))
+            (expect-pass "integral float stays a float"
+                         (lambda () (assert-equal (decode (encode 1.0)) 1.0)))
+            (expect-pass "float with exponent"
+                         (lambda () (assert-equal (decode (encode 1e10)) 1e10)))
+            (expect-pass "string"
+                         (lambda () (assert-equal (decode (encode "hello world")) "hello world")))
+            (expect-pass "string with escapes"
+                         (lambda () (assert-equal (decode (encode "a\"b\\c\nd\te")) "a\"b\\c\nd\te")))
+            (expect-pass "string with control character"
+                         (lambda () (assert-equal (decode (encode "\u0001")) "\u0001")))
+            (expect-pass "array"
+                         (lambda () (assert-equal (decode (encode (list 1 2 3))) (list 1 2 3))))
+            (expect-pass "nested array"
+                         (lambda () (assert-equal (decode (encode (list (list 1 2) (list 3 4))))
+                                                  (list (list 1 2) (list 3 4)))))
+            (expect-pass "object"
+                         (lambda () (assert-equal (decode (encode (dict "a" 1 "b" "two")))
+                                                  (dict "a" 1 "b" "two"))))
+            (expect-pass "nested object"
+                         (lambda () (assert-equal (decode (encode (dict "a" (dict "b" (list 1 2)))))
+                                                  (dict "a" (dict "b" (list 1 2))))))
+            (expect-pass "mixed structure"
+                         (lambda () (assert-equal
+                                      (decode (encode (dict "name" "Alice"
+                                                            "age" 30
+                                                            "active" #t
+                                                            "tags" (list "admin" "user")
+                                                            "address" (dict "city" "Wonderland" "zip" #none))))
+                                      (dict "name" "Alice"
+                                            "age" 30
+                                            "active" #t
+                                            "tags" (list "admin" "user")
+                                            "address" (dict "city" "Wonderland" "zip" #none)))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "bytes has no JSON representation"
+                         (lambda () (encode (string->bytes "abc")))
+                         "no JSON representation")
+            (expect-fail "symbol has no JSON representation"
+                         (lambda () (encode 'foo))
+                         "no JSON representation")
+            (expect-fail "vector has no JSON representation"
+                         (lambda () (encode (vector 1 2 3)))
+                         "no JSON representation")
+            (expect-fail "set has no JSON representation"
+                         (lambda () (encode (set 1 2 3)))
+                         "no JSON representation")
+            (expect-fail "complex has no JSON representation"
+                         (lambda () (encode (float->complex 1.0 2.0)))
+                         "no JSON representation")
+            (expect-fail "non-string dict key"
+                         (lambda () (encode (dict 1 "value")))
+                         "dict keys must be strings"))))))
+
+      (export tests))))

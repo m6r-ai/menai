@@ -200,6 +200,9 @@ includes:
 
 - `json-decode.menai` — decodes a JSON string to the equivalent Menai value
   (`decode`)
+- `json-encode.menai` — encodes a Menai value as a JSON string; the inverse of
+  `json-decode`, so `(decode (encode v))` reproduces `v` for every value
+  `encode` accepts (`encode`)
 - `bmp-decode.menai` — decodes uncompressed 24-bit and 32-bit BMP files (as
   bytes) to a dict containing the decoded header, a normalised top-down pixel
   grid, and metadata (`decode`)

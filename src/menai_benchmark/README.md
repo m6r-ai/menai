@@ -48,6 +48,8 @@ benchmark/
     │   └── suite.py          # DEFLATE decompressor benchmark suite
     ├── json_decode/
     │   └── suite.py          # JSON decoder benchmark suite
+    ├── json_encode/
+    │   └── suite.py          # JSON encoder benchmark suite
     ├── png_decode/
     │   └── suite.py          # PNG decoder benchmark suite
     ├── rubiks_list/
@@ -159,6 +161,14 @@ Decodes JSON strings of varying structure and size using a hand-written decoder
 in Menai. Nine cases cover primitives (integer, float, booleans, null), strings
 with escapes, empty collections, nested arrays, a long string (~2000 chars),
 and a deeply nested array (500 levels).
+
+### JSON Encode
+Encodes Menai values of varying structure and size using a hand-written encoder
+in Menai. Eight cases mirror the JSON Decode cases: an object, a flat array of
+100 integers, a flat object of 50 pairs, a mixed nested structure, a
+string-heavy object, a number-variety array, unicode strings, and a long string
+(~2000 chars). The values are constructed directly rather than parsed from
+JSON, so the timing measures encoding alone.
 
 ### PNG Decode
 Decodes non-interlaced 8-bit PNG files.  Six cases cover the greyscale,
