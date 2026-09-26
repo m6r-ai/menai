@@ -69,6 +69,8 @@ benchmark/
     │   └── sudoku-vector-solver.menai
     ├── zip/
     │   └── suite.py          # ZIP archive benchmark suite
+    ├── zlib_compress/
+    │   └── suite.py          # zlib stream compressor benchmark suite
     └── zlib_decompress/
         └── suite.py          # zlib stream benchmark suite
 ```
@@ -203,6 +205,11 @@ Reads and extracts ZIP archives.  Five fixtures (stored and deflate entries,
 16 mixed entries, 128 small entries, and a 256 KB entry) are each run through
 both `entries` (central-directory metadata only) and `extract` (which additionally
 decompresses every entry), giving ten cases.  Inputs are generated fixtures
+(see [Fixtures](#fixtures)).
+
+### zlib Compress
+Compresses byte inputs to zlib streams.  Four cases span text that compresses
+well, incompressible data, and long runs.  Inputs are generated fixtures
 (see [Fixtures](#fixtures)).
 
 ### zlib Decompress

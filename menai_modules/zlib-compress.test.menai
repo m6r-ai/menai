@@ -1,0 +1,98 @@
+; Tests for zlib-compress.menai
+
+(let ((zlib-compress (import "zlib-compress"))
+      (zlib-decompress (import "zlib-decompress"))
+      (t (import "menai_test")))
+  (let ((compress (:: zlib-compress compress))
+        (decompress (:: zlib-decompress decompress))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Round-trips through zlib-decompress
+        (list "round-trips"
+          (list
+            (expect-pass "empty input"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "")))
+                                                  (string->bytes ""))))
+            (expect-pass "short text"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "hello world")))
+                                                  (string->bytes "hello world"))))
+            (expect-pass "repetitive text"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
+                                                  (string->bytes "abcabcabcabcabcabcabcabc"))))
+            (expect-pass "single byte"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "x")))
+                                                  (string->bytes "x"))))
+            (expect-pass "all byte values"
+                         (lambda ()
+                           (let ((data (string->bytes "")))
+                             (assert-equal (decompress (compress data)) data))))))
+
+        ; The header is well formed: 0x78 0x9c, and (CMF * 256 + FLG) is a
+        ; multiple of 31.
+        (list "header"
+          (list
+            (expect-pass "starts with the 0x789c header"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes "payload"))))
+                             (assert-equal (bytes-slice stream 0 2)
+                                           (string-hex->bytes "789c")))))
+            (expect-pass "header check is a multiple of 31"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes "payload"))))
+                             (let ((cmf (bytes-ref stream 0))
+                                   (flg (bytes-ref stream 1)))
+                               (assert-equal (integer% (integer+ (integer* cmf 256) flg) 31) 0)))))))
+
+        ; The trailer is the big-endian Adler-32 of the uncompressed data.
+        (list "checksum"
+          (list
+            (expect-pass "adler-32 of empty input is 1"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes ""))))
+                             (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4))
+                                           1))))
+            (expect-pass "adler-32 of a known payload"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes "hello world hello world hello world"))))
+                             (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4))
+                                           #xef930d55))))))
+
+        ; Streams produced by other zlib implementations must decompress.
+        (list "interoperability"
+          (list
+            (expect-pass "decompresses a stream produced elsewhere"
+                         (lambda ()
+                           (assert-equal (bytes->string
+                                           (decompress (string-hex->bytes "78dacb48cdc9c95728cf2fca4951c8c0ce0600ef930d55")))
+                                         "hello world hello world hello world")))))
+
+        ; The optional mode argument selects the DEFLATE block encoding.
+        (list "modes"
+          (list
+            (expect-pass "stored mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "stored"))
+                                                  (string->bytes "abcdefgh"))))
+            (expect-pass "fixed mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "fixed"))
+                                                  (string->bytes "abcdefgh"))))
+            (expect-pass "dynamic mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "dynamic"))
+                                                  (string->bytes "abcdefgh"))))
+            (expect-pass "auto mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "auto"))
+                                                  (string->bytes "abcdefgh"))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-bytes argument"
+                         (lambda () (compress "not bytes"))
+                         "expects a bytes value")
+            (expect-fail "rejects an unknown mode"
+                         (lambda () (compress (string->bytes "abc") "bogus"))
+                         "unknown mode"))))))
+
+      (export tests))))

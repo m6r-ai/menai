@@ -1,0 +1,54 @@
+; zlib-compress module — compresses bytes to a zlib stream (RFC 1950).
+;
+; Exports: "compress" — takes a bytes value and returns a bytes value containing
+; a complete zlib stream.  It is the inverse of zlib-decompress's decompress:
+; for every bytes value b, (decompress (compress b)) reproduces b.
+;
+; The optional second argument selects the DEFLATE block encoding and is passed
+; straight through to deflate-compress ("auto", "stored", "fixed", or
+; "dynamic"); it defaults to "auto".  It does not affect decompression.
+;
+; A zlib stream is:
+;   - CMF byte: bits 0-3 are the compression method (8 = DEFLATE), bits 4-7 are
+;     the window size exponent (CINFO).
+;   - FLG byte: bits 0-4 are a check value, bit 5 is the preset-dictionary flag,
+;     bits 6-7 are the compression level.
+;   - the DEFLATE data (produced by deflate-compress).
+;   - a 4-byte big-endian Adler-32 checksum of the uncompressed data.
+;
+; This module emits the header 0x78 0x9c: method DEFLATE, a 32K window, no
+; preset dictionary, and the default compression level.  The header check is
+; that (CMF * 256 + FLG) is a multiple of 31, which 0x789c satisfies.
+
+(letrec
+  ((deflate-lib (import "deflate-compress"))
+
+   ; The modulus used by Adler-32 (the largest prime below 65536).
+   (adler-modulus 65521)
+
+   ; Compute the Adler-32 checksum of a bytes value as an integer: two running
+   ; sums taken modulo 65521, combined as (b << 16) | a.
+   (adler32
+    (lambda (b)
+      (letrec ((loop (lambda (i a bb)
+                       (if (integer>=? i (bytes-length b))
+                           (integer-bit-or (integer-bit-shift-left bb 16) a)
+                           (loop (integer+ i 1)
+                                 (integer% (integer+ a (bytes-ref b i)) adler-modulus)
+                                 (integer% (integer+ bb a (bytes-ref b i)) adler-modulus))))))
+        (loop 0 1 0))))
+
+   ; The two-byte zlib header: CMF = 0x78, FLG = 0x9c.
+   (header (string-hex->bytes "789c"))
+
+   (compress
+    (lambda (b . rest)
+      (if (bytes? b)
+          (let ((mode (if (list-null? rest) "auto" (list-first rest))))
+            (let ((deflate (:: deflate-lib compress)))
+              (bytes-concat header
+                            (deflate b mode)
+                            (bytes-append-u32-be (bytes-concat) (adler32 b)))))
+          (error "zlib-compress: compress expects a bytes value")))))
+
+  (export compress))

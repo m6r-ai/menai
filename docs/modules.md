@@ -220,6 +220,10 @@ includes:
 - `deflate-tables.menai` — the constant tables defined by RFC 1951, shared by
   `deflate-compress` and `deflate-decompress`.  Not an operation module; it
   exports specification data
+- `zlib-compress.menai` — compresses bytes to a zlib stream (RFC 1950), writing
+  the 2-byte header, delegating the DEFLATE data to `deflate-compress`, and
+  appending the Adler-32 trailer; the optional second argument selects the
+  DEFLATE block encoding (`compress`)
 - `zlib-decompress.menai` — decompresses a zlib stream (RFC 1950), stripping the
   2-byte header, delegating the DEFLATE data to `deflate-decompress`, and
   verifying the Adler-32 trailer (`decompress`)
