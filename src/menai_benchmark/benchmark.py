@@ -149,11 +149,11 @@ class BenchmarkRunner:
     execute_ns (pure VM execution, excluding Python↔C bridge overhead),
     read via get_timing_data() after each call.
 
-    When *profile* is True, opcode profiling is enabled on the Menai VM
-    during the timed runs.  Profile data is collected from the final
+    When *opcodes* is True, opcode profiling is enabled on the Menai VM
+    during the timed runs.  Opcode profile data is collected from the final
     timed iteration of each case and returned alongside timing results.
 
-    When *trace* is True, instruction and call tracing is enabled on the
+    When *profile* is True, instruction and call tracing is enabled on the
     Menai VM during the timed runs.  Trace data is collected from the final
     timed iteration of each case and resolved against the compiled code
     object.  Tracing requires the prepared value to be a CodeObject, so it
@@ -165,15 +165,15 @@ class BenchmarkRunner:
         suite: BenchmarkSuite,
         cases: list[BenchmarkCase],
         menai: Menai,
+        opcodes: bool = False,
         profile: bool = False,
-        trace: bool = False,
     ) -> None:
         """Initialise the runner with a suite, the cases to run, a warmed-up Menai instance, and optional instrumentation."""
         self._suite = suite
         self._cases = cases
         self._menai = menai
+        self._opcodes = opcodes
         self._profile = profile
-        self._trace = trace
 
     def run(self) -> tuple[list[CaseResult], list[ProfileResult], list[TraceResult]]:
         """Execute the selected cases and return timing, profile, and trace results."""
@@ -186,7 +186,7 @@ class BenchmarkRunner:
         for case in self._cases:
             times: list[float] = []
             error: str | None = None
-            profile_data: dict[str, int] = {}
+            opcode_data: dict[str, int] = {}
             raw_trace: tuple[list[int], list[int]] | None = None
 
             # Pre-timing setup: build strings, compile, etc.
@@ -196,7 +196,7 @@ class BenchmarkRunner:
             else:
                 prepared = case.input
 
-            if self._profile or self._trace:
+            if self._opcodes or self._profile:
                 self._menai.vm.enable_profiling()
 
             try:
@@ -207,10 +207,10 @@ class BenchmarkRunner:
 
                     # Collect instrumentation data from the last iteration.
                     if iteration == case.iterations - 1:
-                        if self._profile:
-                            profile_data = self._menai.vm.get_profile_data()
+                        if self._opcodes:
+                            opcode_data = self._menai.vm.get_profile_data()
 
-                        if self._trace:
+                        if self._profile:
                             raw_trace = self._menai.vm.get_trace_data()
 
             except Exception as exc:
@@ -233,18 +233,18 @@ class BenchmarkRunner:
                 )
             )
 
-            if self._profile:
-                total = profile_data.pop("__total__", 0) if profile_data else 0
+            if self._opcodes:
+                total = opcode_data.pop("__total__", 0) if opcode_data else 0
                 profile_results.append(
                     ProfileResult(
                         case=case,
-                        opcode_counts=profile_data,
+                        opcode_counts=opcode_data,
                         total_instructions=total,
                         error=error,
                     )
                 )
 
-            if self._trace:
+            if self._profile:
                 trace_results.append(
                     TraceResult(
                         case=case,

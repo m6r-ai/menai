@@ -14,6 +14,7 @@ from menai_pipeline.pipeline_engine import PipelineResult, StepResult, execute_p
 from menai_pipeline.pipeline_optimizer import optimize_pipeline
 from menai_pipeline.pipeline_parser import PipelineParseError, load_pipeline
 from menai_pipeline.pipeline_step import MenaiStep, Pipeline, ToolStep
+from menai_trace.menai_trace_render import render_annotated, render_function_summary
 
 
 _ANSI_CYAN = "\033[36m"
@@ -21,6 +22,11 @@ _ANSI_GREEN = "\033[32m"
 _ANSI_RED = "\033[31m"
 _ANSI_GREY = "\033[90m"
 _ANSI_RESET = "\033[0m"
+
+_SEPARATOR_WIDTH = 70
+_OPCODE_COL = 40
+_COUNT_COL = 15
+_PCT_COL = 12
 
 
 def _use_color(no_color: bool) -> bool:
@@ -166,6 +172,7 @@ def _run_with_profile(
     lines: int,
     on_step_start: Callable[[str], None] | None,
     on_step_done: Callable[[StepResult], None] | None,
+    instrument: bool,
 ) -> tuple[PipelineResult, str]:
     """
     Execute a pipeline under cProfile and return (result, profile_stats_string).
@@ -176,13 +183,19 @@ def _run_with_profile(
         lines: Number of functions to show in the profile output
         on_step_start: Optional step-start callback forwarded to execute_pipeline
         on_step_done: Optional step-done callback forwarded to execute_pipeline
+        instrument: Whether to enable VM profiling during execution
 
     Returns:
         Tuple of (PipelineResult, formatted profile string)
     """
     profiler = cProfile.Profile()
     profiler.enable()
-    result = execute_pipeline(pipeline, on_step_start=on_step_start, on_step_done=on_step_done)
+    result = execute_pipeline(
+        pipeline,
+        on_step_start=on_step_start,
+        on_step_done=on_step_done,
+        instrument=instrument,
+    )
     profiler.disable()
 
     buf = io.StringIO()
@@ -192,6 +205,100 @@ def _run_with_profile(
     stats.print_stats(lines)
 
     return result, buf.getvalue()
+
+
+def _separator(color: bool) -> str:
+    """Return a full-width section separator, optionally coloured grey."""
+    line = "\u2500" * _SEPARATOR_WIDTH
+    return f"{_ANSI_GREY}{line}{_ANSI_RESET}" if color else line
+
+
+def _print_opcode_profile(result: PipelineResult, top_n: int, color: bool) -> None:
+    """
+    Print the per-opcode frequency histogram aggregated across all Menai steps.
+
+    Opcode counts are additive across steps, so the aggregate is a meaningful
+    whole-pipeline view.  A per-step breakdown follows when the pipeline has
+    more than one Menai step.
+    """
+    profiles = [p for p in result.step_profiles if p.opcode_counts]
+    if not profiles:
+        return
+
+    aggregate: dict[str, int] = {}
+    for profile in profiles:
+        for name, count in profile.opcode_counts.items():
+            aggregate[name] = aggregate.get(name, 0) + count
+
+    total_instr = aggregate.pop("__total__", 0)
+
+    print()
+    print(_separator(color))
+    print(f"VM OPCODE PROFILE  (top {top_n} by count)")
+    print(_separator(color))
+
+    if total_instr == 0:
+        print("No opcode profiling data collected.")
+        print("The C VM may not have been built with profiling support.")
+        return
+
+    entries = [(name, count) for name, count in aggregate.items() if count > 0]
+    entries.sort(key=lambda e: e[1], reverse=True)
+
+    print(f"{'Opcode':<{_OPCODE_COL}} {'Count':>{_COUNT_COL}} {'% of total':>{_PCT_COL}}")
+    print(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
+
+    for name, count in entries[:top_n]:
+        pct = (count / total_instr * 100.0) if total_instr > 0 else 0.0
+        print(f"{name:<{_OPCODE_COL}} {count:>{_COUNT_COL},} {pct:>{_PCT_COL - 1}.1f}%")
+
+    print(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
+    print(f"{'TOTAL':<{_OPCODE_COL}} {total_instr:>{_COUNT_COL},}")
+
+    if len(profiles) > 1:
+        print()
+        print("Per step:")
+        for profile in profiles:
+            step_total = profile.opcode_counts.get("__total__", 0)
+            print(f"  {profile.step_id:<24} {step_total:>{_COUNT_COL},}")
+
+
+def _print_function_profiles(result: PipelineResult, top_n: int, color: bool) -> None:
+    """Print a per-function summary for each Menai step that has trace data."""
+    profiles = [p for p in result.step_profiles if p.trace is not None]
+    if not profiles:
+        return
+
+    print()
+    print(_separator(color))
+    print(f"VM FUNCTION PROFILE  (top {top_n} per step)")
+    print(_separator(color))
+
+    for profile in profiles:
+        assert profile.trace is not None
+        print()
+        print(f"  {profile.step_id}")
+        for line in render_function_summary(profile.trace, color=color, top_n=top_n):
+            print(f"  {line}")
+
+
+def _print_annotated(result: PipelineResult, color: bool) -> None:
+    """Print the annotated disassembly for each Menai step that has trace data."""
+    profiles = [p for p in result.step_profiles if p.trace is not None]
+    if not profiles:
+        return
+
+    print()
+    print(_separator(color))
+    print("VM ANNOTATED TRACE")
+    print(_separator(color))
+
+    for profile in profiles:
+        assert profile.trace is not None
+        print()
+        print(f"  {profile.step_id}")
+        for line in render_annotated(profile.trace, color=color):
+            print(f"  {line}")
 
 
 def main() -> int:
@@ -210,7 +317,7 @@ Examples:
   python -m menai_pipeline.run --no-optimize examples/adjacent-collapse/pipeline.json
   python -m menai_pipeline.run -v examples/file-transform/pipeline.json
   python -m menai_pipeline.run -v --timings examples/clock-and-file/pipeline.json
-  python -m menai_pipeline.run --profile examples/file-transform/pipeline.json
+  python -m menai_pipeline.run --cprofile examples/file-transform/pipeline.json
         """
     )
 
@@ -247,24 +354,63 @@ Examples:
     )
 
     parser.add_argument(
-        "--profile", "-p",
+        "--cprofile",
         action="store_true",
-        help="Run the pipeline under cProfile and print the top hotspots"
+        help="Run the pipeline under Python's cProfile and print the top hotspots"
     )
 
     parser.add_argument(
-        "--profile-lines",
+        "--cprofile-lines",
         type=int,
         default=30,
         metavar="N",
-        help="Number of functions to show in profile output (default: 30)"
+        help="Number of functions to show in cProfile output (default: 30)"
     )
 
     parser.add_argument(
-        "--profile-sort",
+        "--cprofile-sort",
         default="cumulative",
         choices=["cumulative", "tottime", "calls", "filename"],
-        help="Sort key for profile output (default: cumulative)"
+        help="Sort key for cProfile output (default: cumulative)"
+    )
+
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        dest="profile",
+        help=(
+            "Profile VM execution per Menai step, ranking functions by the "
+            "number of instructions they executed"
+        )
+    )
+
+    parser.add_argument(
+        "--opcodes",
+        action="store_true",
+        dest="opcodes",
+        help=(
+            "Profile VM execution per Menai step with per-opcode frequency "
+            "counting, aggregated across the pipeline"
+        )
+    )
+
+    parser.add_argument(
+        "--annotate",
+        action="store_true",
+        dest="annotate",
+        help=(
+            "Annotate the disassembly of every function in each Menai step "
+            "with per-instruction execution shares"
+        )
+    )
+
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=40,
+        metavar="N",
+        dest="top",
+        help="Show top N entries in VM profile output (default: 40)"
     )
 
     parser.add_argument(
@@ -324,6 +470,7 @@ Examples:
 
     profile_output = None
     start = time.monotonic()
+    instrument = args.profile or args.opcodes or args.annotate
 
     on_step_start = None
     on_step_done = None
@@ -334,13 +481,23 @@ Examples:
             pipeline, args.verbosity, args.timings, color
         )
 
-    if args.profile:
+    if args.cprofile:
         result, profile_output = _run_with_profile(
-            pipeline, args.profile_sort, args.profile_lines, on_step_start, on_step_done
+            pipeline,
+            args.cprofile_sort,
+            args.cprofile_lines,
+            on_step_start,
+            on_step_done,
+            instrument,
         )
 
     else:
-        result = execute_pipeline(pipeline, on_step_start=on_step_start, on_step_done=on_step_done)
+        result = execute_pipeline(
+            pipeline,
+            on_step_start=on_step_start,
+            on_step_done=on_step_done,
+            instrument=instrument,
+        )
 
     elapsed = time.monotonic() - start
 
@@ -353,9 +510,18 @@ Examples:
 
     if profile_output:
         print()
-        print(f"Profile (top {args.profile_lines} by {args.profile_sort}):")
+        print(f"cProfile (top {args.cprofile_lines} by {args.cprofile_sort}):")
         for line in profile_output.splitlines():
             print(line)
+
+    if args.opcodes:
+        _print_opcode_profile(result, args.top, color)
+
+    if args.profile:
+        _print_function_profiles(result, args.top, color)
+
+    if args.annotate:
+        _print_annotated(result, color)
 
     if result.success:
         if args.verbosity >= 1:

@@ -1,7 +1,7 @@
 # Menai Evaluator
 
 Compiles and evaluates a Menai source file, printing the result.  Optionally
-profiles or traces the compilation pipeline, VM execution, or both.
+profiles the compilation pipeline, VM execution, or both.
 
 A `.menai` file is a single expression, so evaluating it means compiling that
 expression and printing the value it evaluates to.
@@ -14,12 +14,12 @@ Run from the repository root with the virtual environment active:
 python -m menai_eval.eval <file.menai>                       # evaluate and print the result
 python -m menai_eval.eval -                                  # read the expression from stdin
 python -m menai_eval.eval <file.menai> --cprofile            # profile the compiler
-python -m menai_eval.eval <file.menai> --profile             # profile VM opcodes
-python -m menai_eval.eval <file.menai> --trace               # per-function trace
-python -m menai_eval.eval <file.menai> --profile --trace     # both VM reports
+python -m menai_eval.eval <file.menai> --profile             # per-function profile
+python -m menai_eval.eval <file.menai> --opcodes             # VM opcode profile
+python -m menai_eval.eval <file.menai> --profile --opcodes   # both VM reports
 python -m menai_eval.eval <file.menai> --annotate            # annotated disassembly
-python -m menai_eval.eval <file.menai> --profile --annotate  # both VM reports
-python -m menai_eval.eval <file.menai> --cprofile --profile  # both
+python -m menai_eval.eval <file.menai> --opcodes --annotate  # both VM reports
+python -m menai_eval.eval <file.menai> --cprofile --opcodes  # both
 python -m menai_eval.eval <file.menai> --profile --top 50    # show top 50 entries
 python -m menai_eval.eval <file.menai> --cprofile --sort time
 python -m menai_eval.eval <file.menai> --cprofile --output stats.prof
@@ -45,7 +45,7 @@ cumulative-time table and bury the compiler passes beneath it.
 `--output FILE` saves the raw profile data for later inspection with
 `python -m pstats FILE` or `snakeviz FILE`.
 
-### `--profile` — VM opcode profile
+### `--opcodes` — VM opcode profile
 
 Counts how many times each bytecode opcode is executed inside the C VM and
 measures total wall-clock time (after a warm-up pass).  Reports which opcodes
@@ -58,18 +58,18 @@ hardware: the VM executes most opcodes in under 5 ns, while the cheapest
 high-resolution timer read costs ~40–100 ns, making per-instruction timing
 dominated by measurement overhead rather than actual work.
 
-### `--trace` — VM per-function trace
+### `--profile` — VM per-function profile
 
 Ranks functions by the number of instructions they executed, showing each
 function's share of the total instructions executed by the whole program and
-its call count.  Where `--profile` answers "how much work is arithmetic vs.
-calling", `--trace` answers "which function dominates".
+its call count.  Where `--opcodes` answers "how much work is arithmetic vs.
+calling", `--profile` answers "which function dominates".
 
 The functions are ordered by instructions executed, most first, with a `TOTAL`
 footer.  This is a function-level view; use `--annotate` for the
 instruction-level view.
 
-`--trace` and `--profile` may be combined; both are collected from a single
+`--profile` and `--opcodes` may be combined; both are collected from a single
 instrumented run.  `--top` limits the number of functions shown.
 
 ### `--annotate` — annotated disassembly
@@ -80,14 +80,14 @@ This is the `perf annotate` view: the full body of every function is visible,
 so a hot region can be read in context rather than only as a sorted list of the
 hottest instructions.  Each function header shows that function's share of the
 total, so a line's share can be read either against the program or against its
-own function.  This is the instruction-level counterpart to `--trace`.
+own function.  This is the instruction-level counterpart to `--profile`.
 
 Percentages are of instruction count, not time.  Per-instruction timing is not
-measurable at these speeds (see the note under `--profile` above), so the share
+measurable at these speeds (see the note under `--opcodes` above), so the share
 of executed instructions is the meaningful signal.
 
-`--annotate` is a separate presentation from `--trace` and may be combined with
-`--profile`; all are collected from a single instrumented run.
+`--annotate` is a separate presentation from `--profile` and may be combined with
+`--opcodes`; all are collected from a single instrumented run.
 
 ## Rendering string results
 

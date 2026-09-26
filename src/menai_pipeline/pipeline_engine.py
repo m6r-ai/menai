@@ -7,10 +7,12 @@ import time
 from typing import Any
 
 from menai import Menai, MenaiError
+from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_value import (
     MenaiBoolean, MenaiBytes, MenaiDict, MenaiFloat, MenaiInteger, MenaiList,
     MenaiNone, MenaiString, MenaiValue,
 )
+from menai_trace.menai_trace_data import TraceResult, resolve_trace
 
 from menai_pipeline.pipeline_step import MenaiStep, Pipeline, ToolStep, resolve_step_expression
 from menai_pipeline.pipeline_tools import (
@@ -32,10 +34,30 @@ class StepResult:
 
 
 @dataclass
+class StepProfile:
+    """
+    VM instrumentation collected from a single Menai step.
+
+    Only Menai steps produce a profile; tool steps have no VM execution to
+    measure and are absent from the profile list.
+
+    opcode_counts holds the per-opcode execution histogram for the step's
+    execute() call, keyed by opcode name, with the special key "__total__"
+    mapping to the step's total instruction count.  trace holds the resolved
+    per-instruction and per-function counts, or None when tracing was not
+    requested.
+    """
+    step_id: str
+    opcode_counts: dict[str, int] = field(default_factory=dict)
+    trace: TraceResult | None = None
+
+
+@dataclass
 class PipelineResult:
     """Result from executing a complete pipeline."""
     success: bool
     step_results: list[StepResult] = field(default_factory=list)
+    step_profiles: list[StepProfile] = field(default_factory=list)
     error: str = ""
 
 
@@ -195,9 +217,9 @@ def _execute_menai_step(
     step: MenaiStep,
     step_outputs: dict[str, str | bytes],
     menai: Menai,
-) -> dict[str, str | bytes]:
+) -> tuple[dict[str, str | bytes], CodeObject]:
     """
-    Execute a Menai step and return a map of output key -> string or bytes value.
+    Execute a Menai step and return its outputs and compiled code object.
 
     The step expression must evaluate to a Menai dict.  Each key in the
     dict that appears in step.outputs is extracted and stored.  Keys with
@@ -209,7 +231,9 @@ def _execute_menai_step(
         menai: Menai evaluator instance
 
     Returns:
-        Map of output key -> string or bytes value for all non-none outputs
+        A pair of (outputs, code) where outputs maps each output key to its
+        string or bytes value for all non-none outputs, and code is the
+        compiled code object that was executed.
 
     Raises:
         PipelineExecutionError: If evaluation fails or result is not a dict
@@ -218,7 +242,8 @@ def _execute_menai_step(
     inputs = _resolve_step_inputs(step, step_outputs)
 
     try:
-        result = menai.evaluate_raw_with_dict(expression, "inputs", inputs)
+        code = menai.compile(expression, inject=("inputs", inputs))
+        result = menai.execute_raw(code)
 
     except MenaiError as e:
         raise PipelineExecutionError(
@@ -255,7 +280,7 @@ def _execute_menai_step(
                 f"must be a string, bytes, or #none, got '{type(val).__name__}'"
             )
 
-    return outputs
+    return outputs, code
 
 
 def _get_tool(tool_name: str) -> Any:
@@ -361,6 +386,7 @@ def execute_pipeline(
     pipeline: Pipeline,
     on_step_start: Callable[[str], None] | None = None,
     on_step_done: Callable[['StepResult'], None] | None = None,
+    instrument: bool = False,
 ) -> PipelineResult:
     """
     Execute a pipeline, running each step in order.
@@ -373,9 +399,14 @@ def execute_pipeline(
         pipeline: The pipeline to execute
         on_step_start: Optional callback invoked with the step ID before each step runs
         on_step_done: Optional callback invoked with the StepResult after each step
+        instrument: When True, enable VM profiling so that each Menai step's
+            opcode histogram and instruction/call trace are collected and
+            returned in PipelineResult.step_profiles.  Instrumentation does
+            not change the pipeline's results.
 
     Returns:
-        PipelineResult with per-step results and overall success/failure
+        PipelineResult with per-step results, per-step VM profiles (when
+        instrumenting), and overall success/failure
     """
     menai = Menai(module_path=[
         str(pipeline.directory),
@@ -384,6 +415,7 @@ def execute_pipeline(
 
     step_outputs: dict[str, str | bytes] = {}
     step_results: list[StepResult] = []
+    step_profiles: list[StepProfile] = []
 
     for step in pipeline.steps:
         if on_step_start is not None:
@@ -392,9 +424,15 @@ def execute_pipeline(
         step_start = time.monotonic()
         try:
             if isinstance(step, MenaiStep):
-                outputs = _execute_menai_step(step, step_outputs, menai)
+                if instrument:
+                    menai.vm.enable_profiling()
+
+                outputs, code = _execute_menai_step(step, step_outputs, menai)
                 for key, value in outputs.items():
                     step_outputs[f"{step.step_id}.{key}"] = value
+
+                if instrument:
+                    step_profiles.append(_collect_step_profile(step.step_id, code, menai))
 
                 step_results.append(StepResult(
                     step_id=step.step_id,
@@ -430,6 +468,7 @@ def execute_pipeline(
             return PipelineResult(
                 success=False,
                 step_results=step_results,
+                step_profiles=step_profiles,
                 error=f"Pipeline stopped: authorization denied at step '{step.step_id}'"
             )
 
@@ -446,7 +485,22 @@ def execute_pipeline(
             return PipelineResult(
                 success=False,
                 step_results=step_results,
+                step_profiles=step_profiles,
                 error=f"Pipeline stopped at step '{step.step_id}': {e}"
             )
 
-    return PipelineResult(success=True, step_results=step_results)
+    return PipelineResult(success=True, step_results=step_results, step_profiles=step_profiles)
+
+
+def _collect_step_profile(step_id: str, code: CodeObject, menai: Menai) -> StepProfile:
+    """
+    Collect the opcode histogram and instruction/call trace for one Menai step.
+
+    Called immediately after the step's execute() call, while the VM's
+    profiling counters and trace arrays still hold that step's data.  The raw
+    trace arrays are resolved against the step's code object.
+    """
+    opcode_counts = menai.vm.get_profile_data()
+    instr_counts, call_counts = menai.vm.get_trace_data()
+    trace = resolve_trace(code, instr_counts, call_counts)
+    return StepProfile(step_id=step_id, opcode_counts=opcode_counts, trace=trace)

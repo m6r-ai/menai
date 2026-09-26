@@ -12,21 +12,21 @@ available and may be combined:
                IR building, IR optimisation, CFG building, CFG optimisation,
                VCode building, and bytecode emission.
 
-  --profile    VM-level opcode frequency profiling.  Counts how many times
-               each bytecode opcode is executed and measures total
-               wall-clock time, giving instruction throughput and average
-               time per instruction.
-
-  --trace      VM-level per-function tracing.  Ranks functions by the number
+  --profile    VM-level per-function profiling.  Ranks functions by the number
                of instructions they executed, showing each function's share of
                the total instructions executed and its call count.  This
                answers "which function dominates".
+
+  --opcodes    VM-level opcode frequency profiling.  Counts how many times
+               each bytecode opcode is executed and measures total
+               wall-clock time, giving instruction throughput and average
+               time per instruction.
 
   --annotate   Annotated disassembly.  Renders every function in disassembly
                order with each instruction's execution count and its share of
                the total instructions executed.  This is the perf-annotate
                view for reading hot regions in context, and is the
-               instruction-level counterpart to --trace.
+               instruction-level counterpart to --profile.
 
 The two modes are complementary: cProfile covers the compiler (which is
 pure Python) but sees VM execution as a single opaque C frame, while opcode
@@ -42,11 +42,11 @@ Usage:
     menai-eval -
     menai-eval <file.menai> --cprofile
     menai-eval <file.menai> --profile
-    menai-eval <file.menai> --trace
-    menai-eval <file.menai> --profile --trace
+    menai-eval <file.menai> --opcodes
+    menai-eval <file.menai> --profile --opcodes
     menai-eval <file.menai> --annotate
-    menai-eval <file.menai> --profile --annotate
-    menai-eval <file.menai> --cprofile --profile
+    menai-eval <file.menai> --opcodes --annotate
+    menai-eval <file.menai> --cprofile --opcodes
     menai-eval <file.menai> --profile --top 50
     menai-eval <file.menai> --cprofile --sort time
     menai-eval <file.menai> --cprofile --output stats.prof
@@ -255,8 +255,8 @@ def instrument_vm(
     code: CodeObject,
     top_n: int,
     color: bool,
+    opcodes: bool,
     profile: bool,
-    trace: bool,
     annotate: bool,
 ) -> MenaiValue:
     """
@@ -272,8 +272,8 @@ def instrument_vm(
         code:    Compiled CodeObject.
         top_n:   Number of entries to show in each report.
         color:   Whether to colour the output.
-        profile: Whether to report the opcode histogram.
-        trace:   Whether to report the instruction and call trace.
+        opcodes: Whether to report the opcode histogram.
+        profile: Whether to report the instruction and call trace.
         annotate: Whether to report the annotated per-function disassembly.
 
     Returns:
@@ -301,14 +301,14 @@ def instrument_vm(
 
     elapsed_s = time.perf_counter() - start
 
-    if profile:
+    if opcodes:
         _print_opcode_profile(menai, top_n, elapsed_s, color)
 
-    if trace or annotate:
+    if profile or annotate:
         instr_counts, call_counts = menai.vm.get_trace_data()
         trace_result = resolve_trace(code, instr_counts, call_counts)
 
-        if trace:
+        if profile:
             print()
             for line in render_function_summary(trace_result, color=color, top_n=top_n):
                 print(line)
@@ -404,12 +404,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="Profile VM execution with per-opcode frequency counting",
+        help="Profile VM execution with per-function instruction shares and call counts",
     )
     parser.add_argument(
-        "--trace",
+        "--opcodes",
         action="store_true",
-        help="Trace VM execution with per-function instruction shares and call counts",
+        help="Profile VM execution with per-opcode frequency counting",
     )
     parser.add_argument(
         "--annotate",
@@ -478,10 +478,10 @@ def main() -> int:
     else:
         code, _ = compile_source(source, name, menai)
 
-    if args.profile or args.trace or args.annotate:
+    if args.profile or args.opcodes or args.annotate:
         result = instrument_vm(
             menai, code, args.top, color,
-            profile=args.profile, trace=args.trace, annotate=args.annotate,
+            opcodes=args.opcodes, profile=args.profile, annotate=args.annotate,
         )
 
     else:

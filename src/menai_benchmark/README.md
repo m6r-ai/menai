@@ -17,10 +17,10 @@ python run.py                        # run all suites
 python run.py --suite sort           # run only the sort suite
 python run.py --suite sort --case n=1000  # run one case in a suite
 python run.py --iterations 3         # override iteration count on every case
-python run.py --profile              # opcode profiling (Menai only)
-python run.py --profile --profile-top 20  # limit opcode output
-python run.py --trace                # per-function tracing (Menai only)
-python run.py --trace --trace-top 10 # limit trace output
+python run.py --opcodes              # opcode profiling (Menai only)
+python run.py --opcodes --opcodes-top 20  # limit opcode output
+python run.py --profile              # per-function profiling (Menai only)
+python run.py --profile --profile-top 10  # limit profile output
 python run.py --annotate             # annotated disassembly (Menai only)
 ```
 
@@ -104,7 +104,7 @@ source.
 
 ## Opcode profiling
 
-The `--profile` flag enables VM-level opcode frequency profiling during the
+The `--opcodes` flag enables VM-level opcode frequency profiling during the
 timed runs.  After the timing report, an opcode frequency table is printed
 for each Menai implementation and case, showing which bytecode opcodes
 dominate execution by count and as a percentage of total instructions.
@@ -116,18 +116,18 @@ unprofiled run.
 
 Opcode profile data is produced by the Menai VM.
 
-`--profile-top N` controls how many opcodes are shown per case (default: 40).
+`--opcodes-top N` controls how many opcodes are shown per case (default: 40).
 
-## Per-function tracing
+## Per-function profiling
 
-The `--trace` flag enables VM-level tracing during the timed runs.  After the
-timing report, a per-function summary is printed for each Menai case, ranking
-functions by the number of instructions they executed and showing each
-function's share of the total instructions executed and its call count.  Where
-`--profile` shows which opcode *kinds* dominate, `--trace` shows which
+The `--profile` flag enables VM-level per-function profiling during the timed
+runs.  After the timing report, a per-function summary is printed for each Menai
+case, ranking functions by the number of instructions they executed and showing
+each function's share of the total instructions executed and its call count.
+Where `--opcodes` shows which opcode *kinds* dominate, `--profile` shows which
 functions dominate.
 
-Tracing overhead is included in the measured times.  `--trace-top N` controls
+Profiling overhead is included in the measured times.  `--profile-top N` controls
 how many functions are shown per case (default: 20).
 
 ## Annotated disassembly
@@ -138,7 +138,7 @@ each instruction's execution count and its percentage of the total instructions
 executed.  This is the `perf annotate` view: the whole function body is visible
 so a hot region can be read in context.  Each function header shows that
 function's share of the total.  This is the instruction-level counterpart to
-`--trace`.
+`--profile`.
 
 Percentages are of instruction count, not time.
 

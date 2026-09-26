@@ -76,13 +76,17 @@ underlying modules with `python -m`; use the console scripts.
   menai-test menai_modules/json-decode.test.menai    # a single suite
   ```
 - `menai-eval <file>` — compiles and evaluates a `.menai` file (or an expression from
-  stdin) and prints the result. `--cprofile` profiles the compiler, `--profile` profiles
-  VM execution.
+  stdin) and prints the result. `--cprofile` profiles the compiler; `--profile`,
+  `--opcodes`, and `--annotate` profile VM execution (per-function, per-opcode, and
+  annotated disassembly respectively).
 - `menai-check <file>...` — validates parenthesis balance and pinpoints mismatched parens.
 - `menai-pretty-print <file>...` — formats Menai source.
 - `menai-disassemble <file>` — compiles and prints annotated bytecode disassembly.
-- `menai-benchmark` — runs the performance benchmark suites.
-- `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps.
+- `menai-benchmark` — runs the performance benchmark suites. `--profile`, `--opcodes`,
+  and `--annotate` profile VM execution.
+- `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps. `--cprofile`
+  profiles the pipeline engine with Python's cProfile; `--profile`, `--opcodes`, and
+  `--annotate` profile VM execution.
 
 ## Code quality
 

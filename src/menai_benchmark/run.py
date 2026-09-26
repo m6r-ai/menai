@@ -115,10 +115,10 @@ def build_parser() -> argparse.ArgumentParser:
             "python run.py --suite sort                # run only the sort suite\n"
             "python run.py --suite sort --case n=1000  # run one case in a suite\n"
             "python run.py --iterations 5              # override iteration count\n"
-            "python run.py --profile                   # opcode profiling (Menai only)\n"
-            "python run.py --profile --profile-top 20  # limit opcode output\n"
-            "python run.py --trace                     # per-function tracing (Menai only)\n"
-            "python run.py --trace --trace-top 10      # limit trace output\n"
+            "python run.py --opcodes                   # opcode profiling (Menai only)\n"
+            "python run.py --opcodes --opcodes-top 20  # limit opcode output\n"
+            "python run.py --profile                   # per-function profiling (Menai only)\n"
+            "python run.py --profile --profile-top 10  # limit profile output\n"
             "python run.py --annotate                  # annotated disassembly (Menai only)"
         ),
     )
@@ -150,9 +150,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the iteration count on every BenchmarkCase.",
     )
     parser.add_argument(
-        "--profile",
+        "--opcodes",
         action="store_true",
-        dest="profile",
+        dest="opcodes",
         help=(
             "Enable VM opcode profiling during timed runs.  Adds per-opcode "
             "frequency tables after the timing report.  Profiling overhead "
@@ -160,32 +160,32 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--profile-top",
+        "--opcodes-top",
         metavar="N",
         type=int,
         default=40,
-        dest="profile_top",
-        help="Show top N opcodes in the profile output (default: 40).",
+        dest="opcodes_top",
+        help="Show top N opcodes in the opcode output (default: 40).",
     )
     parser.add_argument(
-        "--trace",
+        "--profile",
         action="store_true",
-        dest="trace",
+        dest="profile",
         help=(
-            "Enable VM per-function tracing during timed runs.  Adds a "
+            "Enable VM per-function profiling during timed runs.  Adds a "
             "per-function summary per case, ranked by instructions executed, "
             "after the timing report.  "
-            "Tracing overhead is included in the measured times.  Only applies "
+            "Profiling overhead is included in the measured times.  Only applies "
             "to the Menai implementation."
         ),
     )
     parser.add_argument(
-        "--trace-top",
+        "--profile-top",
         metavar="N",
         type=int,
         default=20,
-        dest="trace_top",
-        help="Show top N functions per case in the trace output (default: 20).",
+        dest="profile_top",
+        help="Show top N functions per case in the profile output (default: 20).",
     )
     parser.add_argument(
         "--annotate",
@@ -206,10 +206,10 @@ def run_suite(
     suite_class: type[BenchmarkSuite],
     case_name: str | None,
     iterations: int | None,
+    opcodes: bool,
+    opcodes_top: int,
     profile: bool,
     profile_top: int,
-    trace: bool,
-    trace_top: int,
     annotate: bool,
 ) -> None:
     """
@@ -223,10 +223,10 @@ def run_suite(
                       exact match); otherwise run every case in the suite.
         iterations:   If given, override ``BenchmarkCase.iterations`` on every
                       case before running.
-        profile:      If ``True``, enable opcode profiling during timed runs.
-        profile_top:  Number of top opcodes to show in the profile output.
-        trace:        If ``True``, enable per-function tracing during timed runs.
-        trace_top:    Number of top functions to show per case in the trace output.
+        opcodes:      If ``True``, enable opcode profiling during timed runs.
+        opcodes_top:  Number of top opcodes to show in the opcode output.
+        profile:      If ``True``, enable per-function profiling during timed runs.
+        profile_top:  Number of top functions to show per case in the profile output.
         annotate:     If ``True``, print the annotated disassembly per case.
     """
     suite = suite_class()
@@ -252,24 +252,24 @@ def run_suite(
     module_path = [str(suite_dir), str(_MENAI_MODULES_DIR)]
     menai = Menai(module_path=module_path)
 
-    runner = BenchmarkRunner(suite, cases, menai, profile=profile, trace=trace or annotate)
+    runner = BenchmarkRunner(suite, cases, menai, opcodes=opcodes, profile=profile or annotate)
     results, profile_results, trace_results = runner.run()
 
     reporter = BenchmarkReporter()
     reporter.report(suite.name, results)
 
-    if profile:
+    if opcodes:
         reporter.report_profile(
             suite.name,
             profile_results,
-            top_n=profile_top,
+            top_n=opcodes_top,
         )
 
-    if trace:
+    if profile:
         reporter.report_trace(
             suite.name,
             trace_results,
-            top_n=trace_top,
+            top_n=profile_top,
         )
 
     if annotate:
@@ -314,10 +314,10 @@ def main() -> None:
             suite_class=suite_class,
             case_name=args.case,
             iterations=args.iterations,
+            opcodes=args.opcodes,
+            opcodes_top=args.opcodes_top,
             profile=args.profile,
             profile_top=args.profile_top,
-            trace=args.trace,
-            trace_top=args.trace_top,
             annotate=args.annotate,
         )
 

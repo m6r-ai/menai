@@ -4,14 +4,9 @@
 
 New features:
 
-- Changed the `--trace` option of `menai-eval` and `menai-benchmark` to report a
-  per-function summary, ranking functions by the number of instructions they
-  executed with each function's share of the total and its call count.  The
-  instruction-level view is provided by `--annotate`, which annotates the full
-  disassembly of every function with per-instruction execution shares.
 - Added `menai-eval`, a tool that compiles and evaluates a `.menai` file (or an
   expression from stdin) and prints the result.  It can optionally profile the
-  compiler with `--cprofile` and/or VM execution opcodes with `--profile`, and
+  compiler with `--cprofile` and/or VM execution opcodes with `--opcodes`, and
   both may be combined.
 - Removed `menai-profile` as `menai-eval` does everything it did and more.
 - Added an approach for implementing negative tests in `menai-test`.

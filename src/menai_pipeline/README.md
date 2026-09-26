@@ -163,10 +163,49 @@ Options:
 | `-v` / `--verbose` | Show pipeline summary and per-step status |
 | `-vv` | Also show truncated output values for each step |
 | `--timings` / `-t` | Show per-step elapsed time and timing bar (implies `-v`) |
-| `--profile` / `-p` | Run under cProfile and print the top hotspots |
-| `--profile-lines N` | Number of functions to show in profile output (default: 30) |
-| `--profile-sort` | Sort key for profile output: `cumulative` (default), `tottime`, `calls`, `filename` |
+| `--cprofile` | Run the pipeline under Python's cProfile and print the top hotspots |
+| `--cprofile-lines N` | Number of functions to show in cProfile output (default: 30) |
+| `--cprofile-sort` | Sort key for cProfile output: `cumulative` (default), `tottime`, `calls`, `filename` |
+| `--profile` | Profile VM execution per Menai step, ranking functions by instructions executed |
+| `--opcodes` | Profile VM execution per Menai step with per-opcode frequency counting |
+| `--annotate` | Annotate the disassembly of every function in each Menai step with per-instruction execution shares |
+| `--top N` | Show top N entries in VM profile output (default: 40) |
 | `--no-color` | Disable ANSI colour output |
+
+## Profiling
+
+Two kinds of profiling are available.  They are independent and may be combined.
+
+### `--cprofile` — Python-level cProfile
+
+Runs the whole pipeline under Python's `cProfile` and prints the top hotspots.
+This profiles the pipeline engine itself (the Python code that drives the steps),
+not the Menai VM.  `--cprofile-lines N` controls how many functions are shown
+(default: 30) and `--cprofile-sort` selects the sort key.
+
+### `--profile`, `--opcodes`, `--annotate` — VM profiling
+
+These three modes profile Menai VM execution.  Only Menai steps execute VM code,
+so tool steps (`filesystem`, `clock`, `console`) contribute nothing and are
+absent from the reports.  Because each Menai step compiles and executes its own
+program, the per-function and annotated views are reported per step.
+
+- `--profile` ranks functions within each Menai step by the number of
+  instructions they executed, showing each function's share of that step's total
+  and its call count.
+- `--opcodes` reports the per-opcode execution frequency, aggregated across all
+  Menai steps (opcode counts are additive), with a per-step breakdown when the
+  pipeline has more than one Menai step.
+- `--annotate` renders the annotated disassembly of every function in each Menai
+  step, with each instruction's execution count and its share of that step's
+  total.
+
+`--top N` limits how many entries appear in the `--profile` and `--opcodes`
+reports.  Percentages are of instruction count, not time: per-instruction timing
+is not measurable at VM speeds.
+
+VM profiling does not change the pipeline's results.  Profiling overhead is
+included in the reported step timings.
 
 ## Examples
 
