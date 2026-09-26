@@ -43,11 +43,11 @@ def _compress(raw: bytes, level: int) -> bytes:
 
 
 _FIXTURES: list[tuple[str, Callable[[], bytes]]] = [
-    ("text-4k.deflate", lambda: _compress(_repeating_text(4096), 9)),
-    ("text-32k.deflate", lambda: _compress(_repeating_text(32768), 9)),
-    ("incremental-16k.deflate", lambda: _compress(_incremental_bytes(16384), 9)),
-    ("stored-8k.deflate", lambda: _compress(_repeating_text(8192), 0)),
-    ("runs-32k.deflate", lambda: _compress(_runs(32768), 9)),
+    ("text-4k", lambda: _compress(_repeating_text(4096), 9)),
+    ("text-32k", lambda: _compress(_repeating_text(32768), 9)),
+    ("incremental-16k", lambda: _compress(_incremental_bytes(16384), 9)),
+    ("stored-8k", lambda: _compress(_repeating_text(8192), 0)),
+    ("runs-32k", lambda: _compress(_runs(32768), 9)),
 ]
 
 
@@ -76,7 +76,7 @@ class Suite(BenchmarkSuite):
         """Return one case per fixture file."""
         return [
             BenchmarkCase(
-                name=name.removesuffix(".deflate"),
+                name=name,
                 input=name,
                 iterations=_ITERATIONS,
             )

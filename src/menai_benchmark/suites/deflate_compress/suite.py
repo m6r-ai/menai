@@ -34,10 +34,10 @@ def _runs(size: int) -> bytes:
 
 
 _FIXTURES: list[tuple[str, Callable[[], bytes]]] = [
-    ("text-4k.bin", lambda: _repeating_text(4096)),
-    ("text-32k.bin", lambda: _repeating_text(32768)),
-    ("incremental-16k.bin", lambda: _incremental_bytes(16384)),
-    ("runs-32k.bin", lambda: _runs(32768)),
+    ("text-4k", lambda: _repeating_text(4096)),
+    ("text-32k", lambda: _repeating_text(32768)),
+    ("incremental-16k", lambda: _incremental_bytes(16384)),
+    ("runs-32k", lambda: _runs(32768)),
 ]
 
 
@@ -66,7 +66,7 @@ class Suite(BenchmarkSuite):
         """Return one case per fixture file."""
         return [
             BenchmarkCase(
-                name=name.removesuffix(".bin"),
+                name=name,
                 input=name,
                 iterations=_ITERATIONS,
             )

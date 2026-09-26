@@ -1,11 +1,11 @@
 from pathlib import Path
 
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
-from menai_benchmark.suites.rubiks_cube.suite import _SCRAMBLES
+from menai_benchmark.suites.rubiks_list.suite import _SCRAMBLES
 
 _SUITE_DIR = Path(__file__).resolve().parent
 
-# The scramble sequences are shared with the list-based rubiks_cube suite so the
+# The scramble sequences are shared with the list-based rubiks_list suite so the
 # two suites measure exactly the same work: only the face representation
 # differs.
 

@@ -48,19 +48,19 @@ def _many_entries(count: int) -> list[tuple[str, bytes, int]]:
 
 
 _FIXTURES: list[tuple[str, list[tuple[str, bytes, int]]]] = [
-    ("single-deflate.zip", [
+    ("single-deflate", [
         ("hello.txt", _text_content(1024), _DEFLATED),
     ]),
-    ("single-stored.zip", [
+    ("single-stored", [
         ("hello.txt", _text_content(1024), _STORED),
     ]),
-    ("mixed-16.zip", [
+    ("mixed-16", [
         (f"file{i:02d}.txt", _text_content(512 + i * 32),
          _DEFLATED if i % 2 == 0 else _STORED)
         for i in range(16)
     ]),
-    ("many-128.zip", _many_entries(128)),
-    ("large-256k.zip", [
+    ("many-128", _many_entries(128)),
+    ("large-256k", [
         ("large.bin", _text_content(256 * 1024), _DEFLATED),
     ]),
 ]
@@ -104,7 +104,7 @@ class Suite(BenchmarkSuite):
         """Return one case per (fixture, operation) pair."""
         return [
             BenchmarkCase(
-                name=f"{name.removesuffix('.zip')}/{operation}",
+                name=f"{name}/{operation}",
                 input=(name, operation),
                 iterations=_ITERATIONS,
             )

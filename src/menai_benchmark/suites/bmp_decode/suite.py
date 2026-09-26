@@ -10,11 +10,11 @@ _EXPR = '(let ((bmp (import "bmp-decode"))) ((:: bmp decode) (dict-get inputs "i
 
 # Fixture geometry: (name, width, height, bits-per-pixel, top-down row order).
 _FIXTURES: list[tuple[str, int, int, int, bool]] = [
-    ("truecolour-64x64.bmp", 64, 64, 24, False),
-    ("truecolour-128x128.bmp", 128, 128, 24, False),
-    ("truecolour-topdown-128x128.bmp", 128, 128, 24, True),
-    ("truecolour-alpha-128x128.bmp", 128, 128, 32, False),
-    ("padded-65x64.bmp", 65, 64, 24, False),
+    ("truecolour-64x64", 64, 64, 24, False),
+    ("truecolour-128x128", 128, 128, 24, False),
+    ("truecolour-topdown-128x128", 128, 128, 24, True),
+    ("truecolour-alpha-128x128", 128, 128, 32, False),
+    ("padded-65x64", 65, 64, 24, False),
 ]
 
 _FILE_HEADER_SIZE = 14
@@ -99,7 +99,7 @@ class Suite(BenchmarkSuite):
         """Return one case per fixture file."""
         return [
             BenchmarkCase(
-                name=name.removesuffix(".bmp"),
+                name=name,
                 input=name,
                 iterations=_ITERATIONS,
             )

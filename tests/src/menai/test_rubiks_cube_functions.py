@@ -25,7 +25,7 @@ _SCRAMBLES: list[tuple[str, list[str]]] = [
     ("7-move", ["R", "U", "R'", "D", "F", "R", "U"]),
 ]
 
-_SUITE_DIR = "src/menai_benchmark/suites/rubiks_cube"
+_SUITE_DIR = "src/menai_benchmark/suites/rubiks_list"
 _MODULES_DIR = "menai_modules"
 
 

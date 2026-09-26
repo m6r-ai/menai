@@ -19,12 +19,12 @@ _COLOUR_TYPE_TRUECOLOUR_ALPHA = 6
 
 # Fixture geometry: (name, width, height, colour type).
 _FIXTURES: list[tuple[str, int, int, int]] = [
-    ("greyscale-64x64.png", 64, 64, _COLOUR_TYPE_GREYSCALE),
-    ("greyscale-alpha-64x64.png", 64, 64, _COLOUR_TYPE_GREYSCALE_ALPHA),
-    ("palette-128x128.png", 128, 128, _COLOUR_TYPE_PALETTE),
-    ("truecolour-128x128.png", 128, 128, _COLOUR_TYPE_TRUECOLOUR),
-    ("truecolour-alpha-128x128.png", 128, 128, _COLOUR_TYPE_TRUECOLOUR_ALPHA),
-    ("truecolour-192x192.png", 192, 192, _COLOUR_TYPE_TRUECOLOUR),
+    ("greyscale-64x64", 64, 64, _COLOUR_TYPE_GREYSCALE),
+    ("greyscale-alpha-64x64", 64, 64, _COLOUR_TYPE_GREYSCALE_ALPHA),
+    ("palette-128x128", 128, 128, _COLOUR_TYPE_PALETTE),
+    ("truecolour-128x128", 128, 128, _COLOUR_TYPE_TRUECOLOUR),
+    ("truecolour-alpha-128x128", 128, 128, _COLOUR_TYPE_TRUECOLOUR_ALPHA),
+    ("truecolour-192x192", 192, 192, _COLOUR_TYPE_TRUECOLOUR),
 ]
 
 _cache: dict[str, bytes] = {}
@@ -108,7 +108,7 @@ class Suite(BenchmarkSuite):
         """Return one case per fixture file."""
         return [
             BenchmarkCase(
-                name=name.removesuffix(".png"),
+                name=name,
                 input=name,
                 iterations=_ITERATIONS,
             )

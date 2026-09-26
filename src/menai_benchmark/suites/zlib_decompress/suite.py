@@ -35,10 +35,10 @@ def _runs(size: int) -> bytes:
 
 
 _FIXTURES: list[tuple[str, Callable[[], bytes]]] = [
-    ("text-4k.zlib", lambda: zlib.compress(_repeating_text(4096), 9)),
-    ("text-32k.zlib", lambda: zlib.compress(_repeating_text(32768), 9)),
-    ("incremental-16k.zlib", lambda: zlib.compress(_incremental_bytes(16384), 9)),
-    ("runs-32k.zlib", lambda: zlib.compress(_runs(32768), 9)),
+    ("text-4k", lambda: zlib.compress(_repeating_text(4096), 9)),
+    ("text-32k", lambda: zlib.compress(_repeating_text(32768), 9)),
+    ("incremental-16k", lambda: zlib.compress(_incremental_bytes(16384), 9)),
+    ("runs-32k", lambda: zlib.compress(_runs(32768), 9)),
 ]
 
 
@@ -67,7 +67,7 @@ class Suite(BenchmarkSuite):
         """Return one case per fixture file."""
         return [
             BenchmarkCase(
-                name=name.removesuffix(".zlib"),
+                name=name,
                 input=name,
                 iterations=_ITERATIONS,
             )

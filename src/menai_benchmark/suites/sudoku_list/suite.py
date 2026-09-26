@@ -80,7 +80,7 @@ def _expr(flat: list[int]) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for the Menai sudoku solver."""
 
-    name = "sudoku"
+    name = "sudoku_list"
     description = "Solve sudoku puzzles of varying difficulty."
 
     def cases(self) -> list[BenchmarkCase]:

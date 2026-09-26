@@ -3,14 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
-from menai_benchmark.suites.sudoku.suite import (
+from menai_benchmark.suites.sudoku_list.suite import (
     PUZZLES,
     _ITERATIONS,
 )
 
 _SUITE_DIR = Path(__file__).resolve().parent
 
-# The puzzles and iteration counts are shared with the list-based sudoku suite
+# The puzzles and iteration counts are shared with the list-based sudoku_list suite
 # so the two suites measure exactly the same work: only the board
 # representation differs.
 

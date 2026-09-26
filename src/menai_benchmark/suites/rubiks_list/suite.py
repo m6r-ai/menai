@@ -29,7 +29,7 @@ def _expr(scramble_moves: list[str]) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for the Menai Rubik's cube IDA* solver."""
 
-    name = "rubiks_cube"
+    name = "rubiks_list"
     description = "Solve scrambled Rubik's cubes of increasing depth using IDA*."
 
     def cases(self) -> list[BenchmarkCase]:
