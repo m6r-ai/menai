@@ -76,6 +76,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeStructSetIndexed,
     MenaiVCodeReg,
     MenaiVCodeReturn,
+    MenaiVCodeRaise,
     MenaiVCodeSwitch,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
@@ -267,6 +268,14 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #      already written local_count + outgoing_offset.
     #      For call/apply result registers the defining call itself is not a
     #      barrier — the scan starts strictly after the definition index.
+    #   4. No use of the register anywhere in its current definition's lifetime
+    #      requires a local slot.  Branch conditions, switch scrutinees, call
+    #      function registers, apply arg-list registers, and raise messages are
+    #      validated against local_count, so a register used in any of those
+    #      positions must not be moved into the outgoing zone even when its
+    #      final use is a call argument.  The outgoing zone is transient
+    #      argument-staging space; a value read as persistent state must live
+    #      in the local region.
     #
     #   Closure and capture registers are NOT excluded: PATCH_CLOSURE reads its
     #   operands from whatever slot they are assigned to, including outgoing
@@ -319,6 +328,20 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
                     break
 
             if barrier:
+                continue
+
+            # Condition 4: the register must not be used in any position that
+            # requires a local slot anywhere in its current definition's
+            # lifetime.  Such a use reads the register as persistent state,
+            # which the outgoing zone cannot provide.
+            local_required = False
+            for scan_idx in range(reg_def, instr_idx + 1):
+                scan_instr = func.instrs[scan_idx]
+                if _use_requires_local_slot(scan_instr, reg_id):
+                    local_required = True
+                    break
+
+            if local_required:
                 continue
 
             slots[reg_id] = local_count + outgoing_offset
@@ -597,6 +620,43 @@ def _active_def(
             hi = mid - 1
 
     return defs[lo] if defs[lo] <= use_idx else None
+
+
+def _use_requires_local_slot(instr: MenaiVCodeInstr, reg_id: int) -> bool:
+    """
+    Return True if instr reads reg_id from a position that the bytecode
+    validator requires to be a local slot (index < local_count).
+
+    The outgoing zone (slots local_count..local_count+N-1) is transient
+    argument-staging space.  Instructions that read a register as persistent
+    state rather than as a staged argument must therefore have that register
+    in the local region:
+
+      - JUMP_IF_TRUE / JUMP_IF_FALSE: condition register
+      - SWITCH: scrutinee register
+      - CALL / TAIL_CALL: function register
+      - APPLY / TAIL_APPLY: function register and arg-list register
+      - RAISE_ERROR: message register
+
+    A register used in any of these positions cannot be back-propagated into
+    the outgoing zone, even when its final use is a call argument.
+    """
+    if isinstance(instr, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
+        return instr.cond.id == reg_id
+
+    if isinstance(instr, MenaiVCodeSwitch):
+        return instr.src.id == reg_id
+
+    if isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall)):
+        return instr.func.id == reg_id
+
+    if isinstance(instr, (MenaiVCodeApply, MenaiVCodeTailApply)):
+        return reg_id in (instr.func.id, instr.arg_list.id)
+
+    if isinstance(instr, MenaiVCodeRaise):
+        return instr.message.id == reg_id
+
+    return False
 
 
 def _outgoing_args(instr: MenaiVCodeInstr) -> list[tuple[MenaiVCodeReg, int]]:
