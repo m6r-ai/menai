@@ -2,62 +2,60 @@
 
 Menai is a pure functional programming language with Lisp-like S-expression syntax.
 It is homoiconic, strictly typed, and side-effect free.  It has no I/O, no mutation,
-no access to the filesystem, network, or any other external state.
+and no access to the filesystem, network, or any other external state.
 
-While Menai doesn't support I/O operations, it is designed to be embedded into other
-software that does.  It started as part of the [Humbug](https://github.com/m6r-ai/humbug)
-AI project which uses Menai to perform file and data processing, sorting operations, apply
-mathematical reasoning, etc., but does so within its AI tool framework that does the I/O
-operations and handles permissioning.
+That last part is the whole point.  Menai is a computational language - you hand it
+values, it returns a value, and nothing else changes.  There is no filesystem to
+touch, no network to reach, and no state to corrupt.  Thsi means there's nothing to
+sandbox and nothing to escape.  An AI can be given Menai and left to run it unsupervised,
+which is a much stronger guarantee than "we tried to block the dangerous parts".
 
-The separation of concerns means we never have to worry about non-deterministic or stateful
-behaviour within Menai itself, leaving the stateful activities residing elsewhere.
+Menai doesn't do I/O itself, but it is designed to be embedded in software that does.
+The host reads the file, queries the clock, or writes the result; Menai does the
+computation in between.  This keeps the non-deterministic and stateful parts of a
+system outside the language, where they can be permissioned and reviewed.
 
-This repo contains a number of tools and examples that demonstrate this approach, including
-a simple [pipeline runner](src/menai_pipeline_runner/README.md) that can chain I/O operations
-implemented in Python with deterministic operations implemented in Menai.
+Menai started life inside [Humbug](https://github.com/m6r-ai/humbug), where it is used
+for file and data processing, sorting, parsing, and mathematical reasoning.  It was
+extracted into its own repository because it solves a fundamentally different problem
+and has zero dependencies on Humbug.
 
-As a pure functional language, Menai lends itself to being highly optimized.  The current
-implementation compiles to a virtual machine bytecode but future versions will target highly
-optimized native code.  The language design has also lent itself to very fast compilation, with
-Menai code compiled on demand.
+## What you can do with it
 
-## Designed with AI
+Menai is not a toy.  The standard library in [`menai_modules/`](menai_modules/) is
+written entirely in Menai, and it implements real binary and text formats:
 
-One of the more unusual features of Menai is that it was designed with AI, and with an assumption
-that AI would be heavily used in both implementing the language and in using it.
+| Module | What it does |
+|--------|--------------|
+| `json-decode` / `json-encode` | Read and write JSON |
+| `bmp-decode` / `bmp-encode` | Read and write uncompressed 24-bit and 32-bit BMP images |
+| `png-decode` / `png-encode` | Read and write non-interlaced 8-bit PNG images |
+| `zip-entries` / `zip-extract` / `zip-create` | Read ZIP central directories, extract and decompress entries, and build archives |
+| `zlib-compress` / `zlib-decompress` | Compress and decompress zlib streams (RFC 1950) |
+| `deflate-compress` / `deflate-decompress` | Compress and decompress raw DEFLATE streams (RFC 1951) |
 
-As such a key question has always been "what would you, as an AI, want in a language, as opposed
-to what would a human want?"  This means Menai prefers precision over convenience, and explicit
-clarity over brevity that might make anything unclear.
+These are not bindings to libraries written in another language.  The whole idea is
+to focus on making Menai fast enough to do these things natively.
 
-An example of where this has had an impact are that there is no implicit type coercion.  If you have
-an integer and want to use it in a floating point operation you must explicitly convert it.
-Similarly, there are no overloaded operators, so where other languages might have an `+` operator,
-Menai has explcit `integer+`, `float+`, and `complex+` operators.  It turns out AIs can generate
+## The language
+
+Menai has a rich but strict type system.  Integers are arbitrary precision, and there
+are floats, complex numbers, strings, booleans, symbols, bytes, and structs.  Menai has
+a useful set of containers including lists, dictionaries, and sets.  It also has vectors
+for index-heavy code where a list's O(n) random access is a bottleneck.
+
+Everything is dynamically typed, but every low-level operation is strictly typed.
+There is no implicit coercion: `integer+` adds integers and raises an error if you
+hand it a float.  There are no overloaded operators.  This is deliberate and emphasizes
+precision over convenience, with explicit clarity over brevity.  It turns out AIs generate
 very robust code this way.
 
-## Key characteristics
+The language has lexical scoping, pattern matching with destructuring, a compile-time module
+system, and tail-call optimisation.  It's very much like a pure functional scheme but without
+any global state and with a more opinionated approach to operation naming.
 
-- **Pure functional** — no side effects, no mutation, immutable data
-- **Homoiconic** — code and data share the same representation (S-expressions)
-- **Strictly typed** — no implicit coercion between numeric types; each type has
-  its own operators (e.g. `integer+`, `float*`, `complex/`)
-- **Proper lists only** — no improper lists
-- **Tail call optimised** — recursive functions don't overflow the stack
-- **Pattern matching** — declarative branching with destructuring
-- **Module system** — write and import `.menai` files
-- **Atoms** - atoms for integers (arbitrary precision), floating point numbers, complex
-  floating point numbers, strings, booleans
-- **Bytes type** — with multi-byte integer read/write (little/big-endian, LEB128)
-- **Structs** — nominal typed records with functional updates
-- **Containers** - lists, dictionaries, sets
-- **Compiled** - code is compiled with an optimizing compiler to a virtual machine bytecode
-
-## An example
-
-Here's an example that finds the occurrence of words in a string and then returns the 3 most
-frequent words, sorted by frequency!
+Here is a program that counts word occurrences and returns the three most frequent
+words, sorted by frequency:
 
 ```menai
 (letrec
@@ -83,15 +81,91 @@ frequent words, sorted by frequency!
   (top-words "the quick brown fox jumps over the lazy dog the fox runs" 3))
 ```
 
-This returns `(("the" 3) ("fox" 2) ("quick" 1))`.  This is a dictionary output with the word as a key and the
-number of occurences as the value.
+This returns `(("the" 3) ("fox" 2) ("quick" 1))`.
 
-## Language manual
+The full language manual is in [`docs/`](docs/).  Start with
+[`docs/index.md`](docs/index.md) for a table of contents and introduction.  The manual
+is written for both human and AI readers.
 
-The full language manual is in [`docs/`](docs/). Start with
-[`docs/index.md`](docs/index.md) for a table of contents and introduction.
+## Compiler and runtime
 
-The manual is written for both human and AI readers.
+Menai is compiled, not interpreted.  The pipeline goes through five internal
+representations on the way to bytecode: abstract syntax tree, intermediate
+representation, control-flow graph, virtual code, and finally bytecode.
+
+Each representation makes a different class of optimisation natural.  Inlining and dead
+binding elimination want a tree, branch constant propagation and phi collapsing want a
+control-flow graph, slot allocation and peephole optimisation want a flat instruction
+list, etc.  Each layer exists because trying to do its passes anywhere else would be
+awkward, fragile, or fidelity-losing.
+
+The bytecode runs on a register-based C VM with a pool allocator, reference counting,
+and a closure cycle collector.  The VM has no process-global mutable state, so
+multiple instances can run independently and safely.
+
+Compilation is fast enough to do on demand.  Every optimisation has to justify its
+cost: if a pass costs 10ms it needs to offer close to that as a saving in a single
+runtime use, and if it costs 100ms it is probably not worth having.
+
+The pipeline is authoritative in
+[`src/menai/menai_compiler.py`](src/menai/menai_compiler.py) — it is always current
+and should be read directly rather than reproduced in documentation.
+
+## Tooling
+
+Menai ships with a full set of command-line tools:
+
+| Tool | Purpose |
+|------|---------|
+| `menai-eval` | Compile and run a `.menai` file, with optional compiler and VM profiling |
+| `menai-test` | Discover and run `*.test.menai` suites |
+| `menai-check` | Validate parenthesis balance and pinpoint mismatched parens |
+| `menai-pretty-print` | Format Menai source |
+| `menai-disassemble` | Print annotated bytecode disassembly |
+| `menai-benchmark` | Run the performance benchmark suites |
+| `menai-pipeline` | Run a JSON-defined pipeline of tool and Menai steps |
+
+The profiling is worth noting.  `menai-eval`, `menai-benchmark`, and
+`menai-pipeline` can all profile VM execution three ways: `--profile` ranks functions
+by instructions executed, `--opcodes` counts opcode frequency, and `--annotate` shows
+the annotated disassembly with each instruction's execution share.  That last one is
+a `perf annotate` view for Menai.
+
+`menai-check` exists because AIs have a peculiar weakness.  Much as they struggle to
+count the "R"s in "strawberry", they struggle with long runs of parentheses and will
+often write throwaway scripts to check their own work.  It is easier to give them a
+reusable tool that does this.  Humans can use it too, but most find it easier to let
+an editor highlight matching parentheses visually.
+
+## Embedding Menai
+
+Menai is designed to be embedded.  The interface is deliberately small —
+`Menai`, `MenaiError`, `MenaiString`, `MenaiList`, and `MenaiValue` — and the language
+has no idea who is hosting it.
+
+The [`menai-pipeline`](src/menai_pipeline/README.md) tool demonstrates the pattern:
+a JSON file describes a sequence of steps, some of which are I/O operations
+(filesystem, clock, console) and some of which are Menai computations.  Values flow
+between them, and because Menai is pure, adjacent Menai steps are automatically
+collapsed and optimised together before execution.  The
+[`examples/`](src/menai_pipeline/examples/) directory has working pipelines that read
+BMP files, parse JSON, and combine clock readings with file contents.
+
+## Designed with AI
+
+Menai was designed with AI, and with the assumption that AI would be heavily used both
+in implementing the language and in using it.  That means it does a few things
+differently to a human-focused language.
+
+The guiding question is always "what would you, as an AI, want in a language, as
+opposed to what would a human want?"  The answer, repeatedly, was precision over
+convenience.  Explicit `integer+`, `float+`, and `complex+` operators instead of one
+overloaded `+`, no implicit coercion, proper lists only, etc.
+
+The AI-facing language reference lives in
+[`src/menai/menai_help.py`](src/menai/menai_help.py).  It is the single source of truth
+for the help text shown to AI agents, fetched by the host rather than duplicated, so it
+can never drift out of sync with the language.
 
 ## Getting started
 
@@ -102,9 +176,19 @@ pip install menai
 ```
 
 The C VM is compiled into the wheels, so `pip install menai` includes it
-automatically — no separate build or download step is needed. Wheels are
+automatically — no separate build or download step is needed.  Wheels are
 published for Linux, macOS, and Windows on x86_64 and ARM64, across Python
 3.10–3.14.
+
+### A first program
+
+```menai
+(let ((greet (lambda (name)
+               (string-concat "Hello, " name))))
+  (greet "World"))
+```
+
+Evaluates to `"Hello, World"`.
 
 ### Development
 
@@ -123,34 +207,11 @@ Requires a C compiler (gcc, clang, or MSVC).
 make test
 ```
 
-### A first program
-
-```menai
-(let ((greet (lambda (name)
-               (string-concat "Hello, " name))))
-  (greet "World"))
-```
-
-Evaluates to `"Hello, World"`.
-
-## Implementation
-
-Menai is compiled through an optimizing pipeline (lexing → AST → semantic analysis →
-module resolution → desugaring → constant folding → IR → IR optimisation → CFG →
-CFG optimisation → VCode → bytecode) and executed by a register-based C VM.
-
-The pipeline is authoritative in `src/menai/menai_compiler.py` — it is always current
-and should be read directly rather than reproduced in documentation.
-
-The reference implementation is in Python, but the language specification is
-independent of Python. Future bindings (C, Rust, etc.) will implement the same
-language against the same spec.
-
 ## Repository structure
 
 ```text
 menai/
-├── docs/                       # language manual
+├── docs/                       # language manual and design records
 ├── menai_modules/              # standard library (.menai files)
 ├── pyproject.toml              # Python package configuration
 ├── setup.py                    # C VM extension build (platform-specific flags)
@@ -162,14 +223,19 @@ menai/
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
 │   ├── menai_pretty_print/     # code formatter
+│   ├── menai_render/           # shared bytecode rendering and code-object walk
+│   ├── menai_trace/            # VM instruction and call trace rendering
 │   └── menai_test/             # test runner for *.test.menai files
 └── tests/                      # compiler core tests
 ```
 
-## Design intent
+## Where to go next
 
-See [`blueprint.md`](blueprint.md) for the design philosophy, core principles, and
-architectural decisions behind Menai.
+- [`docs/index.md`](docs/index.md) — the language manual
+- [`blueprint.md`](blueprint.md) — design philosophy and core principles
+- [`docs/adr/`](docs/adr/) — the architecture decision records
+- [`src/menai_pipeline/README.md`](src/menai_pipeline/README.md) — the pipeline runner
+- [`src/menai_benchmark/README.md`](src/menai_benchmark/README.md) — the benchmark suites
 
 ## License
 
