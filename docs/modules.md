@@ -198,18 +198,14 @@ destructuring pattern head:
 The `menai_modules/` directory contains standard library modules. Currently this
 includes:
 
-- `json-decode.menai` — decodes a JSON string to the equivalent Menai value
-  (`decode`)
-- `json-encode.menai` — encodes a Menai value as a JSON string; the inverse of
-  `json-decode`, so `(decode (encode v))` reproduces `v` for every value
-  `encode` accepts (`encode`)
 - `bmp-decode.menai` — decodes uncompressed 24-bit and 32-bit BMP files (as
   bytes) to a dict containing the decoded header, a normalised top-down pixel
   grid, and metadata (`decode`)
-- `png-decode.menai` — decodes non-interlaced 8-bit PNG files (as bytes) to a
-  dict containing the decoded header, a top-down pixel grid, and metadata.  All
-  colour types are supported (greyscale, truecolour, palette, and the alpha
-  variants), normalised to RGB or RGBA pixels (`decode`)
+- `bmp-encode.menai` — encodes a decoded BMP description (as a dict) to an
+  uncompressed 24-bit or 32-bit BMP file; the inverse of `bmp-decode`, so
+  `(decode (encode v))` reproduces `v` for every value `encode` accepts.  The
+  derived header fields are recomputed and the descriptive fields preserved
+  (`encode`)
 - `deflate-compress.menai` — compresses a bytes value to a raw DEFLATE stream
   (RFC 1951); the optional second argument selects the block encoding (`"auto"`,
   `"stored"`, `"fixed"`, or `"dynamic"`), with `"auto"` choosing the smallest of
@@ -220,13 +216,20 @@ includes:
 - `deflate-tables.menai` — the constant tables defined by RFC 1951, shared by
   `deflate-compress` and `deflate-decompress`.  Not an operation module; it
   exports specification data
-- `zlib-compress.menai` — compresses bytes to a zlib stream (RFC 1950), writing
-  the 2-byte header, delegating the DEFLATE data to `deflate-compress`, and
-  appending the Adler-32 trailer; the optional second argument selects the
-  DEFLATE block encoding (`compress`)
-- `zlib-decompress.menai` — decompresses a zlib stream (RFC 1950), stripping the
-  2-byte header, delegating the DEFLATE data to `deflate-decompress`, and
-  verifying the Adler-32 trailer (`decompress`)
+- `json-decode.menai` — decodes a JSON string to the equivalent Menai value
+  (`decode`)
+- `json-encode.menai` — encodes a Menai value as a JSON string; the inverse of
+  `json-decode`, so `(decode (encode v))` reproduces `v` for every value
+  `encode` accepts (`encode`)
+- `png-decode.menai` — decodes non-interlaced 8-bit PNG files (as bytes) to a
+  dict containing the decoded header, a top-down pixel grid, and metadata.  All
+  colour types are supported (greyscale, truecolour, palette, and the alpha
+  variants), normalised to RGB or RGBA pixels (`decode`)
+- `png-encode.menai` — encodes a decoded PNG description (as a dict) to a
+  non-interlaced 8-bit PNG file.  It emits truecolour (type 2) or truecolour
+  with alpha (type 6) according to the channel count; the decoder normalises
+  every source colour type to RGB or RGBA, so the other colour types cannot be
+  reconstructed.  The inverse of `png-decode` for truecolour images (`encode`)
 - `zip-entries.menai` — reads a ZIP file (as bytes) and returns its central
   directory as a list of entry dicts, without decompressing the contents
   (`entries`)
@@ -235,6 +238,13 @@ includes:
 - `zip-create.menai` — builds a ZIP file (as bytes) from a container dict of
   the shape `zip-entries` and `zip-extract` produce, with stored or deflate
   entries; the write side of the ZIP readers (`create`)
+- `zlib-compress.menai` — compresses bytes to a zlib stream (RFC 1950), writing
+  the 2-byte header, delegating the DEFLATE data to `deflate-compress`, and
+  appending the Adler-32 trailer; the optional second argument selects the
+  DEFLATE block encoding (`compress`)
+- `zlib-decompress.menai` — decompresses a zlib stream (RFC 1950), stripping the
+  2-byte header, delegating the DEFLATE data to `deflate-decompress`, and
+  verifying the Adler-32 trailer (`decompress`)
 
 Modules are named `<format>-<operation>`: the format names the thing the module
 operates on, and the operation names what it does.  A module exports its

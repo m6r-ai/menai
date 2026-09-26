@@ -22,10 +22,8 @@ New features:
   archive's central directory and can process stored and deflated entries.
 - Added `zlib-compress` and `zlib-decompress` modules.  These compress and decompress
   a zlib stream (RFC 1950).
-- Added a `png-decode` module.  This reads non-interlaced 8-bit PNG image files,
-  reversing the per-scanline filters.  All colour types are supported
-  (greyscale, truecolour, palette, and the alpha variants), normalised to RGB
-  or RGBA pixels.
+- Added `png-decode` and `png-encode` modules.  These read/write non-interlaced 8-bit
+  PNG image files.
 - Added a `json-encode` module to serialize JSON and renamed `json_parser` to
   `json-decode`.
 - Added a `bytes-crc32` primitive.  This computes the CRC-32/ISO-HDLC checksum of

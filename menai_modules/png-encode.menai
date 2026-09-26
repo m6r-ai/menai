@@ -1,0 +1,143 @@
+; png-encode module — encodes a decoded PNG description as a PNG file.
+;
+; Exports: "encode" — takes the dict that png-decode produces and returns a
+; bytes value containing a non-interlaced 8-bit PNG file.  It is the inverse of
+; png-decode's decode for truecolour images: for every value whose header
+; reports colour type 2 (truecolour) or 6 (truecolour + alpha),
+; (decode (encode v)) reproduces v.
+;
+; The input dict has the shape png-decode produces:
+;
+;   (dict
+;     "header" (dict "width" ... "height" ... "bit-depth" ... "colour-type" ...
+;                    "compression" ... "filter" ... "interlace" ...)
+;     "pixels" (vector of rows, top-down; each row a vector of pixels;
+;               each pixel a vector of channels)
+;     "meta"   (dict "format" "png" "channels" ...))
+;
+; Pixels are RGB (3 channels) or RGBA (4 channels).  The number of channels is
+; taken from "meta"; the emitted colour type is 2 for RGB and 6 for RGBA, and
+; the IHDR colour type is written to match.
+;
+; The decoder normalises every source colour type to RGB or RGBA, so an encoder
+; cannot reconstruct a palette, greyscale, or greyscale+alpha file from the
+; normalised pixels.  This module therefore emits truecolour (or truecolour with
+; alpha).  A value whose header reports one of the other colour types encodes to
+; a valid PNG that decodes to the same pixels, but with colour type 2 or 6.
+;
+; Every scanline is written with filter type 0 (None).  The scanline data is
+; compressed with zlib-compress to form the IDAT chunk.  Each chunk carries a
+; CRC-32 of its type and data.
+
+(letrec
+  ((zlib-lib (import "zlib-compress"))
+   (signature (string-hex->bytes "89504e470d0a1a0a"))
+
+   ; The PNG colour type for a given number of normalised channels.
+   (colour-type-for
+    (lambda (channels)
+      (if (integer=? channels 3)
+          2
+          (if (integer=? channels 4)
+              6
+              (error (string-concat
+                       "png-encode: unsupported channel count "
+                       (integer->string channels)
+                       " (only 3 (RGB) or 4 (RGBA) are supported)"))))))
+
+   ; Build one chunk: length, type, data, and a CRC-32 of type and data.
+   (build-chunk
+    (lambda (typ data)
+      (let ((type-bytes (string->bytes typ))
+            (body (bytes-concat (string->bytes typ) data)))
+        (bytes-concat
+          (bytes-append-u32-be (bytes-concat) (bytes-length data))
+          body
+          (bytes-append-u32-be (bytes-concat) (bytes-crc32 body))))))
+
+   ; Build the IHDR chunk data.
+   (build-ihdr
+    (lambda (width height colour-type)
+      (bytes-concat
+        (bytes-append-u32-be (bytes-concat) width)
+        (bytes-append-u32-be (bytes-concat) height)
+        (bytes-append-u8 (bytes-concat) 8)
+        (bytes-append-u8 (bytes-concat) colour-type)
+        (bytes-append-u8 (bytes-concat) 0)
+        (bytes-append-u8 (bytes-concat) 0)
+        (bytes-append-u8 (bytes-concat) 0))))
+
+   ; Return one pixel's channel byte values as a list.
+   (encode-pixel
+    (lambda (pixel channels)
+      (if (vector? pixel)
+          (if (integer=? (vector-length pixel) channels)
+              (letrec ((loop (lambda (c acc)
+                               (if (integer>=? c channels)
+                                   acc
+                                   (loop (integer+ c 1)
+                                         (list-prepend acc (vector-ref pixel c)))))))
+                (list-reverse (loop 0 (list))))
+              (error (string-concat
+                       "png-encode: each pixel must have "
+                       (integer->string channels)
+                       " channels")))
+          (error "png-encode: each pixel must be a vector of channels"))))
+
+   ; Build the filtered scanline data: each row is a filter byte (0) followed
+   ; by the row's raw channel bytes.  Each row is assembled as a list of byte
+   ; values and converted once with list->bytes; the rows are then concatenated.
+   ; This keeps the cost linear in the byte count, rather than the quadratic
+   ; cost of appending to a growing bytes value or of concatenating one chunk
+   ; per pixel.
+   (build-scanlines
+    (lambda (pixels width height channels)
+      (if (vector? pixels)
+          (letrec
+            ((row-bytes
+              (lambda (row)
+                (list->bytes
+                  (letrec ((loop (lambda (x acc)
+                                   (if (integer>=? x width)
+                                       acc
+                                       (loop (integer+ x 1)
+                                             (list-concat acc
+                                                          (encode-pixel (vector-ref row x)
+                                                                        channels)))))))
+                    (loop 0 (list 0))))))
+             (loop
+              (lambda (y acc)
+                (if (integer>=? y height)
+                    (apply bytes-concat (list-reverse acc))
+                    (let ((row (vector-ref pixels y)))
+                      (if (vector? row)
+                          (if (integer=? (vector-length row) width)
+                              (loop (integer+ y 1)
+                                    (list-prepend acc (row-bytes row)))
+                              (error "png-encode: each row must have \"width\" pixels"))
+                          (error "png-encode: each row must be a vector of pixels")))))))
+            (loop 0 (list)))
+          (error "png-encode: \"pixels\" must be a vector of rows"))))
+
+   (encode
+    (lambda (container)
+      (if (dict? container)
+          (let ((header (dict-get container "header"))
+                (pixels (dict-get container "pixels"))
+                (meta (dict-get container "meta")))
+            (if (dict? header)
+                (let ((width (dict-get header "width"))
+                      (height (dict-get header "height")))
+                  (let ((channels (if (dict? meta) (dict-get meta "channels") 3)))
+                    (let ((colour-type (colour-type-for channels)))
+                      (let ((scanlines (build-scanlines pixels width height channels)))
+                        (let ((compressed ((:: zlib-lib compress) scanlines)))
+                          (bytes-concat
+                            signature
+                            (build-chunk "IHDR" (build-ihdr width height colour-type))
+                            (build-chunk "IDAT" compressed)
+                            (build-chunk "IEND" (bytes-concat))))))))
+                (error "png-encode: \"header\" must be a dict")))
+          (error "png-encode: encode expects a dict")))))
+
+  (export encode))

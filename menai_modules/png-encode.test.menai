@@ -1,0 +1,104 @@
+; Tests for png-encode.menai
+
+(let ((png-encode (import "png-encode"))
+      (png-decode (import "png-decode"))
+      (t (import "menai_test")))
+  (let ((encode (:: png-encode encode))
+        (decode (:: png-decode decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Round-trips through png-decode.  The decoder normalises every source
+        ; colour type to RGB or RGBA, so the encoder emits truecolour (2) or
+        ; truecolour with alpha (6); the round-trip holds for those types.
+        (list "round-trips"
+          (list
+            (expect-pass "truecolour file is reproduced"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))))
+                             (assert-equal (decode (encode v)) v))))
+            (expect-pass "truecolour with alpha file is reproduced"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000174944415478da63f8cfc0f01f081b1880b4c3ffffff1900401807ba5e4291230000000049454e44ae426082"))))
+                             (assert-equal (decode (encode v)) v))))
+            (expect-pass "single pixel is reproduced"
+                         (lambda ()
+                           (let ((v (decode (encode (dict "header" (dict "width" 1 "height" 1)
+                                                           "pixels" (vector (vector (vector 18 52 86)))
+                                                           "meta" (dict "channels" 3))))))
+                             (assert-equal (dict-get v "pixels")
+                                           (vector (vector (vector 18 52 86)))))))
+            (expect-pass "palette image re-encodes to truecolour with the same pixels"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))))
+                             (let ((re (decode (encode v))))
+                               (assert-equal (list (dict-get (dict-get re "header") "colour-type")
+                                                   (dict-get re "pixels"))
+                                             (list 2 (dict-get v "pixels")))))))))
+
+        ; Structure of the produced file
+        (list "structure"
+          (list
+            (expect-pass "starts with the PNG signature"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))))
+                             (assert-equal (bytes-slice (encode v) 0 8)
+                                           (string-hex->bytes "89504e470d0a1a0a")))))
+            (expect-pass "colour type matches the channel count"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000174944415478da63f8cfc0f01f081b1880b4c3ffffff1900401807ba5e4291230000000049454e44ae426082"))))
+                             (assert-equal (dict-get (dict-get (decode (encode v)) "header") "colour-type") 6))))
+            (expect-pass "dimensions are preserved"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))))
+                             (let ((h (dict-get (decode (encode v)) "header")))
+                               (assert-equal (list (dict-get h "width") (dict-get h "height"))
+                                             (list 2 2))))))
+            (expect-pass "bit depth, compression, filter, and interlace are the supported values"
+                         (lambda ()
+                           (let ((v (decode (string-hex->bytes
+                                      "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))))
+                             (let ((h (dict-get (decode (encode v)) "header")))
+                               (assert-equal (list (dict-get h "bit-depth")
+                                                   (dict-get h "compression")
+                                                   (dict-get h "filter")
+                                                   (dict-get h "interlace"))
+                                             (list 8 0 0 0))))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-dict argument"
+                         (lambda () (encode "not a dict"))
+                         "expects a dict")
+            (expect-fail "rejects a missing header"
+                         (lambda () (encode (dict "pixels" (vector))))
+                         "\"header\" must be a dict")
+            (expect-fail "rejects an unsupported channel count"
+                         (lambda ()
+                           (encode (dict "header" (dict "width" 1 "height" 1)
+                                         "pixels" (vector (vector (vector 1 2)))
+                                         "meta" (dict "channels" 2))))
+                         "unsupported channel count")
+            (expect-fail "rejects a non-vector pixel grid"
+                         (lambda ()
+                           (encode (dict "header" (dict "width" 1 "height" 1)
+                                         "pixels" "not a vector"
+                                         "meta" (dict "channels" 3))))
+                         "\"pixels\" must be a vector of rows")
+            (expect-fail "rejects a pixel with the wrong channel count"
+                         (lambda ()
+                           (encode (dict "header" (dict "width" 1 "height" 1)
+                                         "pixels" (vector (vector (vector 1 2)))
+                                         "meta" (dict "channels" 3))))
+                         "must have 3 channels"))))))
+
+      (export tests))))

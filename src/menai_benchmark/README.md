@@ -54,6 +54,8 @@ benchmark/
     │   └── suite.py          # JSON encoder benchmark suite
     ├── png_decode/
     │   └── suite.py          # PNG decoder benchmark suite
+    ├── png_encode/
+    │   └── suite.py          # PNG encoder benchmark suite
     ├── rubiks_list/
     │   ├── suite.py          # Rubik's cube IDA* benchmark suite
     │   └── rubiks_cube.menai
@@ -192,6 +194,13 @@ greyscale+alpha, palette, truecolour, and truecolour+alpha colour types at
 sizes from 64×64 to 192×192, exercising zlib decompression, scanline filter
 reversal, and per-pixel normalisation to RGB/RGBA.  Inputs are generated
 fixtures (see [Fixtures](#fixtures)).
+
+### PNG Encode
+Encodes decoded PNG descriptions.  Three cases cover truecolour and
+truecolour+alpha at 48x48 and 96x96.  The containers are constructed as Menai
+expressions rather than parsed from bytes, so the timing measures encoding
+alone.  Note that at these sizes most of the time is spent in the DEFLATE
+compressor, which the encoder uses for the IDAT chunk.
 
 ### Rubik's Cube (list)
 Solves scrambled Rubik's cubes using IDA* with a misplaced-stickers heuristic.
