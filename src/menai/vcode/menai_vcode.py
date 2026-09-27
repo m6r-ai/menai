@@ -212,13 +212,14 @@ class MenaiVCodeStructGetIndexed:
     """
     dst = struct_get_indexed(struct, index)
 
-    Reads the field at compile-time index `index` from `struct`.  `index` is
-    stored directly on the instruction.  The bytecode emitter materialises the
-    index into a register and emits STRUCT_INDEXED_GET.
+    Reads the field at `index` from `struct`.  `index` is a register holding
+    the field index; the VCode builder materialises the compile-time index
+    constant into a register so the allocator manages its slot like any other
+    value.
     """
     dst: MenaiVCodeReg
     struct: MenaiVCodeReg
-    index: int
+    index: MenaiVCodeReg
 
 
 @dataclass
@@ -226,13 +227,14 @@ class MenaiVCodeStructSetIndexed:
     """
     dst = struct_set_indexed(struct, index, value)
 
-    Returns a new struct with the field at compile-time index `index` set to
-    `value`.  `index` is stored directly on the instruction.  The bytecode
-    emitter materialises the index into a register and emits STRUCT_INDEXED_SET.
+    Returns a new struct with the field at `index` set to `value`.  `index` is
+    a register holding the field index; the VCode builder materialises the
+    compile-time index constant into a register so the allocator manages its
+    slot like any other value.
     """
     dst: MenaiVCodeReg
     struct: MenaiVCodeReg
-    index: int
+    index: MenaiVCodeReg
     value: MenaiVCodeReg
 
 

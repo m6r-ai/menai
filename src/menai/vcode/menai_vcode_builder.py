@@ -72,6 +72,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
+    result_id_in_instr,
     value_ids_in_instr,
     value_ids_in_term,
 )
@@ -104,6 +105,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
 )
+from menai.menai_value import MenaiInteger
 
 
 class MenaiVCodeBuilder:
@@ -242,7 +244,13 @@ class MenaiVCodeBuilder:
 
         # Emit instructions for each block in RPO order.
         instrs: list[MenaiVCodeInstr] = []
-        max_reg_id = -1
+        # Seed the register counter above every SSA value id in the function.
+        # Lowering allocates synthetic registers (e.g. the field-index constant
+        # for struct-get-indexed / struct-set-indexed) with ids of
+        # max_reg_id + 1.  Seeding from the function-wide maximum guarantees
+        # those ids cannot collide with any SSA value id, including ids that
+        # are only reached later in the RPO walk.
+        max_reg_id = self._max_value_id(func)
 
         for i, block in enumerate(rpo):
             next_block = rpo[i + 1] if i + 1 < len(rpo) else None
@@ -476,17 +484,21 @@ class MenaiVCodeBuilder:
         if isinstance(instr, MenaiCFGStructGetIndexedInstr):
             dst = self._reg(instr.result)
             struct_reg = self._reg(instr.struct)
-            instrs.append(MenaiVCodeStructGetIndexed(dst=dst, struct=struct_reg, index=instr.index))
-            return max(max_reg_id, dst.id, struct_reg.id)
+            index_reg = MenaiVCodeReg(id=max(max_reg_id, dst.id, struct_reg.id) + 1, hint="index")
+            instrs.append(MenaiVCodeLoadConst(dst=index_reg, value=MenaiInteger(value=instr.index)))
+            instrs.append(MenaiVCodeStructGetIndexed(dst=dst, struct=struct_reg, index=index_reg))
+            return max(max_reg_id, dst.id, struct_reg.id, index_reg.id)
 
         if isinstance(instr, MenaiCFGStructSetIndexedInstr):
             dst = self._reg(instr.result)
             struct_reg = self._reg(instr.struct)
             value_reg = self._reg(instr.value)
+            index_reg = MenaiVCodeReg(id=max(max_reg_id, dst.id, struct_reg.id, value_reg.id) + 1, hint="index")
+            instrs.append(MenaiVCodeLoadConst(dst=index_reg, value=MenaiInteger(value=instr.index)))
             instrs.append(MenaiVCodeStructSetIndexed(
-                dst=dst, struct=struct_reg, index=instr.index, value=value_reg,
+                dst=dst, struct=struct_reg, index=index_reg, value=value_reg,
             ))
-            return max(max_reg_id, dst.id, struct_reg.id, value_reg.id)
+            return max(max_reg_id, dst.id, struct_reg.id, value_reg.id, index_reg.id)
 
         if isinstance(instr, MenaiCFGMakeListInstr):
             dst = self._reg(instr.result)
@@ -530,6 +542,30 @@ class MenaiVCodeBuilder:
             self._reg_cache[value.id] = reg
 
         return reg
+
+    def _max_value_id(self, func: MenaiCFGFunction) -> int:
+        """
+        Return the maximum SSA value id used anywhere in func, or -1 if none.
+
+        Lowering allocates synthetic registers with ids of max_reg_id + 1, so
+        seeding the register counter from this value keeps those ids above every
+        SSA value id in the function.
+        """
+        highest = -1
+        for block in func.blocks:
+            for instr in block.instrs:
+                result_id = result_id_in_instr(instr)
+                if result_id is not None:
+                    highest = max(highest, result_id)
+
+                for value_id in value_ids_in_instr(instr):
+                    highest = max(highest, value_id)
+
+            if block.terminator is not None:
+                for value_id in value_ids_in_term(block.terminator):
+                    highest = max(highest, value_id)
+
+        return highest
 
     def _label(self, block: MenaiCFGBlock) -> str:
         """Return the label string for a CFG block."""

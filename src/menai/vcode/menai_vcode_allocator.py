@@ -35,12 +35,14 @@ are no-ops and will be eliminated by the peephole pass.
 
 Call argument registers and make-* instruction element registers (make-list,
 make-set, make-struct, make-dict) whose last use is the consuming instruction
-itself, and whose definition has no intervening barrier, are reassigned
-directly to the outgoing zone (local_count + outgoing_offset) in Phase 3.
+itself, and whose target outgoing slot is not written between their definition
+and that instruction, are reassigned directly to the outgoing zone
+(local_count + outgoing_offset) in Phase 3.
 
 Self-loop argument registers whose last use is the self-loop move itself,
-and whose definition has no intervening barrier, are reassigned directly
-to the target param slot (arg_index) in Phase 3b, eliminating the MOVE.
+and whose target param slot is neither written nor read between their
+definition and that move, are reassigned directly to the target param slot
+(arg_index) in Phase 3b, eliminating the MOVE.
 
 Param/free-var register ids
 ----------------------------
@@ -279,11 +281,14 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #   2. The consuming instruction is the last use of the register's current
     #      definition — the outgoing zone is clobbered when the instruction
     #      executes, so no later read is safe.
-    #   3. No call/apply/make barrier between the register's definition and
-    #      this instruction — a prior call, apply, or make-* would have
-    #      already written local_count + outgoing_offset.
-    #      For call/apply result registers the defining call itself is not a
-    #      barrier — the scan starts strictly after the definition index.
+    #   3. No barrier between the register's definition and this instruction.
+    #      A barrier is any instruction that implicitly uses the outgoing zone:
+    #      a call, apply, or make-* marshals operands there, and a call's
+    #      callee frame extends from local_count into it.  Any such
+    #      instruction reached before the consuming instruction would clobber
+    #      the staged value.  For call/apply result registers the defining
+    #      instruction itself is not scanned — the range starts strictly after
+    #      the definition index.
     #   4. No use of the register anywhere in its current definition's lifetime
     #      requires a local slot.  Branch conditions, switch scrutinees, call
     #      function registers, apply arg-list registers, and raise messages are
@@ -299,15 +304,17 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     #   clobbers the outgoing zone between the register's definition and the
     #   consuming instruction, which covers any PATCH_CLOSURE in that range.
 
-    # Barrier types: any instruction that writes into the outgoing zone and
-    # therefore clobbers slots local_count..local_count+N.
+    # Barrier types: any instruction that implicitly uses the outgoing zone and
+    # therefore clobbers slots local_count..local_count+N.  This is exactly the
+    # set of opcodes that marshall operands into the outgoing zone.  No other
+    # opcode may use it: every other instruction addresses its operands by
+    # explicit register.
     barrier_types = (
         MenaiVCodeCall, MenaiVCodeApply,
         MenaiVCodeTailCall, MenaiVCodeTailApply,
         MenaiVCodeMakeStruct, MenaiVCodeMakeList,
         MenaiVCodeMakeVector,
         MenaiVCodeMakeSet, MenaiVCodeMakeDict,
-        MenaiVCodeStructGetIndexed, MenaiVCodeStructSetIndexed,
     )
 
     # Consuming types: instructions whose arguments are staged into the
@@ -336,7 +343,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
                 continue
 
             barrier = False
-            # Condition 4: scan for a barrier between def and use.
+            # Condition 3: scan for a barrier between def and use.
             for scan_idx in range(reg_def + 1, instr_idx):
                 scan_instr = func.instrs[scan_idx]
                 if isinstance(scan_instr, barrier_types):
@@ -377,7 +384,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     # Safety conditions (parallel to Phase 3):
     #   1. Not a fixed register (param or free var).
     #   2. The self-loop move is the last use of the register's current definition.
-    #   3. No call or apply between the register's definition and this move.
+    #   3. No barrier between the register's definition and this move.
     #   4. No instruction between the definition and this move reads from param_slot.
     for jump_idx, instr in enumerate(func.instrs):
         if not isinstance(instr, MenaiVCodeJump) or not instr.is_self_loop:
@@ -501,7 +508,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     # Safety conditions (parallel to Phase 3b):
     #   1. Not a fixed register (param or free var).
     #   2. The phi move is the last use of the register's current definition.
-    #   3. No call/apply/make barrier between the definition and this move.
+    #   3. No barrier between the definition and this move.
     #   4. No instruction between the definition and this move reads from the
     #      phi result's slot.
     for move_idx, move in enumerate(func.instrs):
@@ -598,10 +605,10 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], [r.id for k, v in instr.pairs for r in (k, v)]
 
     if isinstance(instr, MenaiVCodeStructGetIndexed):
-        return [instr.dst.id], [instr.struct.id]
+        return [instr.dst.id], [instr.struct.id, instr.index.id]
 
     if isinstance(instr, MenaiVCodeStructSetIndexed):
-        return [instr.dst.id], [instr.struct.id, instr.value.id]
+        return [instr.dst.id], [instr.struct.id, instr.index.id, instr.value.id]
 
     if isinstance(instr, MenaiVCodeJumpIfTrue):
         return [], [instr.cond.id]

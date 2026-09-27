@@ -776,6 +776,20 @@ def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
     return []
 
 
+def result_id_in_instr(instr: 'MenaiCFGInstr') -> int | None:
+    """
+    Return the id of the SSA value instr defines, or None if it defines none.
+
+    Every instruction type in MenaiCFGInstr defines a result except
+    MenaiCFGGuardInstr, which validates an existing value in place, and
+    MenaiCFGPatchClosureInstr, which mutates a closure during letrec fixup.
+    """
+    if isinstance(instr, (MenaiCFGGuardInstr, MenaiCFGPatchClosureInstr)):
+        return None
+
+    return instr.result.id
+
+
 def value_ids_in_term(term: 'MenaiCFGTerminator') -> list[int]:
     """Return all input value ids referenced by a terminator."""
     if isinstance(term, MenaiCFGReturnTerm):

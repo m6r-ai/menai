@@ -179,6 +179,8 @@ from menai.vcode.menai_vcode import (
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
+    MenaiVCodeStructGetIndexed,
+    MenaiVCodeStructSetIndexed,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
 )
@@ -324,6 +326,21 @@ def _replace_reg(
                 )
                 for k, v in instr.pairs
             ],
+        )
+
+    if isinstance(instr, MenaiVCodeStructGetIndexed):
+        return MenaiVCodeStructGetIndexed(
+            dst=instr.dst,
+            struct=new_reg if instr.struct.id == old_id else instr.struct,
+            index=new_reg if instr.index.id == old_id else instr.index,
+        )
+
+    if isinstance(instr, MenaiVCodeStructSetIndexed):
+        return MenaiVCodeStructSetIndexed(
+            dst=instr.dst,
+            struct=new_reg if instr.struct.id == old_id else instr.struct,
+            index=new_reg if instr.index.id == old_id else instr.index,
+            value=new_reg if instr.value.id == old_id else instr.value,
         )
 
     if isinstance(instr, MenaiVCodeJumpIfTrue):
@@ -669,6 +686,12 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, MenaiVCodeMakeDict):
         return [instr.dst.id], [r.id for k, v in instr.pairs for r in (k, v)]
+
+    if isinstance(instr, MenaiVCodeStructGetIndexed):
+        return [instr.dst.id], [instr.struct.id, instr.index.id]
+
+    if isinstance(instr, MenaiVCodeStructSetIndexed):
+        return [instr.dst.id], [instr.struct.id, instr.index.id, instr.value.id]
 
     # MenaiVCodeJump: no register references.
     return [], []
