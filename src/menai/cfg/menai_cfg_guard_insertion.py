@@ -17,6 +17,16 @@ redundant guards in blocks it dominates (those with a single chain of
 single-predecessor blocks from it), but not in sibling blocks reached via
 alternative branches.
 
+The incoming type knowledge of every block is computed to a fixed point
+before any guard is inserted.  A single forward pass over the block list is
+not sufficient: a loop header's back-edge predecessor depends on the header
+itself, so its outgoing types are not yet known when the header is processed.
+A single pass would then treat the back-edge as carrying no type and fall
+back to the analysis facts, re-inserting a guard for a value that is in fact
+typed on every path into the header.  The transfer is monotone (a guard
+establishes its expected type regardless of the incoming type), so iterating
+converges.
+
 For each block, the incoming type knowledge is determined by its predecessors:
 
   - A block with exactly one predecessor inherits that predecessor's outgoing
@@ -74,35 +84,17 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
 
         Returns True if any guards were inserted.
         """
-        changed = False
         types: dict[int, str | None] = {
             val_id: fact.kind for val_id, fact in func.type_facts.items()
         }
 
-        outgoing_types: dict[int, dict[int, str | None]] = {}
-        branch_true_types: dict[int, dict[int, str | None]] = {}
+        outgoing_types, branch_true_types = self._compute_block_types(func, types)
 
+        changed = False
         for block in func.blocks:
-            preds = block.predecessors
-            if len(preds) == 1:
-                pred = preds[0]
-                term = pred.terminator
-                if (
-                    pred.id in branch_true_types
-                    and isinstance(term, MenaiCFGBranchTerm)
-                    and block.id == term.true_block.id
-                ):
-                    block_types = dict(branch_true_types[pred.id])
-
-                else:
-                    block_types = dict(outgoing_types.get(pred.id, types))
-
-            elif len(preds) > 1:
-                block_types = self._meet_outgoing_types(preds, outgoing_types, types)
-
-            else:
-                block_types = dict(types)
-
+            block_types = self._incoming_types(
+                block, outgoing_types, branch_true_types, types,
+            )
             new_instrs: list[MenaiCFGInstr] = []
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGBuiltinInstr):
@@ -113,15 +105,112 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
             self._guard_branch(block, block_types, new_instrs)
             self._guard_switch(block, block_types, new_instrs)
 
-            self._refine_branch_types(block, block_types, branch_true_types)
-
-            outgoing_types[block.id] = block_types
-
             if len(new_instrs) != len(block.instrs):
                 block.instrs = new_instrs
                 changed = True
 
         return changed
+
+    def _compute_block_types(
+        self,
+        func: MenaiCFGFunction,
+        types: dict[int, str | None],
+    ) -> tuple[dict[int, dict[int, str | None]], dict[int, dict[int, str | None]]]:
+        """
+        Compute each block's outgoing known types by iterating to a fixed
+        point.
+
+        A single forward pass over the block list is not enough: a loop
+        header's back-edge predecessor may appear later in the list (and in
+        any case depends on the header itself), so its outgoing types are not
+        yet known when the header is processed.  The header's meet would then
+        treat the back-edge as carrying no type and fall back to the analysis
+        facts, re-inserting a guard for a value that is in fact typed on every
+        path into the header.
+
+        Iterating to a fixed point resolves the cycle: the transfer is
+        monotone (a guard establishes its expected type regardless of the
+        incoming type), so the outgoing types only grow, and the loop
+        terminates once no block's outgoing types change.
+
+        Guards are not materialised here; the transfer is simulated with a
+        scratch instruction list so only the resulting types are kept.  The
+        final types are used by _insert_guards to insert the guards.
+
+        Returns (outgoing_types, branch_true_types).
+        """
+        outgoing_types: dict[int, dict[int, str | None]] = {
+            block.id: dict(types) for block in func.blocks
+        }
+        branch_true_types: dict[int, dict[int, str | None]] = {}
+
+        while True:
+            new_outgoing: dict[int, dict[int, str | None]] = {}
+            new_branch_true: dict[int, dict[int, str | None]] = {}
+
+            for block in func.blocks:
+                block_types = self._incoming_types(
+                    block, outgoing_types, branch_true_types, types,
+                )
+                self._apply_transfer(block, block_types)
+                new_outgoing[block.id] = block_types
+                self._refine_branch_types(block, block_types, new_branch_true)
+
+            if new_outgoing == outgoing_types and new_branch_true == branch_true_types:
+                return outgoing_types, branch_true_types
+
+            outgoing_types = new_outgoing
+            branch_true_types = new_branch_true
+
+    def _incoming_types(
+        self,
+        block: MenaiCFGBlock,
+        outgoing_types: dict[int, dict[int, str | None]],
+        branch_true_types: dict[int, dict[int, str | None]],
+        types: dict[int, str | None],
+    ) -> dict[int, str | None]:
+        """
+        Compute the known types at the entry of a block from its
+        predecessors' outgoing types.  See the module docstring for the
+        dominance scoping rules.
+        """
+        preds = block.predecessors
+        if len(preds) == 1:
+            pred = preds[0]
+            term = pred.terminator
+            if (
+                pred.id in branch_true_types
+                and isinstance(term, MenaiCFGBranchTerm)
+                and block.id == term.true_block.id
+            ):
+                return dict(branch_true_types[pred.id])
+
+            return dict(outgoing_types.get(pred.id, types))
+
+        if len(preds) > 1:
+            return self._meet_outgoing_types(preds, outgoing_types, types)
+
+        return dict(types)
+
+    def _apply_transfer(
+        self,
+        block: MenaiCFGBlock,
+        block_types: dict[int, str | None],
+    ) -> None:
+        """
+        Simulate the guards a block would receive, updating `block_types` in
+        place to the block's outgoing types.
+
+        The guard helpers append to a scratch instruction list that is
+        discarded: only their effect on `block_types` is wanted here.
+        """
+        scratch: list[MenaiCFGInstr] = []
+        for instr in block.instrs:
+            if isinstance(instr, MenaiCFGBuiltinInstr):
+                self._guard_builtin_args(instr, block_types, scratch)
+
+        self._guard_branch(block, block_types, scratch)
+        self._guard_switch(block, block_types, scratch)
 
     @staticmethod
     def _meet_outgoing_types(

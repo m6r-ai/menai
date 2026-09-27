@@ -12,6 +12,20 @@ that guards are correctly scoped.
 """
 
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
+from menai.cfg.menai_cfg import (
+    MenaiCFGBlock,
+    MenaiCFGBranchTerm,
+    MenaiCFGBuiltinInstr,
+    MenaiCFGFunction,
+    MenaiCFGGuardInstr,
+    MenaiCFGJumpTerm,
+    MenaiCFGParamInstr,
+    MenaiCFGReturnTerm,
+    MenaiCFGSelfLoopTerm,
+    MenaiCFGValue,
+    relink_predecessors,
+)
+from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
 from menai.menai_compiler import MenaiCompiler
 
 
@@ -118,3 +132,120 @@ class TestGuardScoping:
         """
         code = _find_lambda(_compile(src))
         assert _count_op(code, Opcode.ASSERT_INTEGER) == 1
+
+
+def _v(value_id: int, hint: str = "") -> MenaiCFGValue:
+    """Return an SSA value with the given id."""
+    return MenaiCFGValue(id=value_id, hint=hint)
+
+
+def _count_guards(func: MenaiCFGFunction) -> int:
+    """Count MenaiCFGGuardInstr instructions in a function."""
+    return sum(
+        1 for block in func.blocks for instr in block.instrs
+        if isinstance(instr, MenaiCFGGuardInstr)
+    )
+
+
+def _guards_for(func: MenaiCFGFunction, value_id: int) -> int:
+    """Count guards on a specific SSA value in a function."""
+    return sum(
+        1 for block in func.blocks for instr in block.instrs
+        if isinstance(instr, MenaiCFGGuardInstr) and instr.value.id == value_id
+    )
+
+
+class TestLoopHeaderGuardScoping:
+    """
+    A guard proven before a loop must suppress guards at the loop header.
+
+    The loop header is a join point: it is reached from the pre-header and
+    from the loop's back-edge.  The back-edge predecessor's outgoing types
+    depend on the header itself, so a single forward pass over the block list
+    would not yet know them when it reaches the header, and would re-insert a
+    guard for a value that is in fact typed on every path into the header.
+    The pass computes block types to a fixed point to avoid this.
+    """
+
+    @staticmethod
+    def _loop_with_header_use() -> MenaiCFGFunction:
+        """
+        Build a CFG shaped like a rotated tail-recursive loop:
+
+          block 0 (entry):     %x = list-first %lst; integer+ %x %x  (guards %x)
+          block 1 (preheader): jump to block 2
+          block 2 (header):    integer+ %x %one; branch to block 4 / block 3
+          block 3 (body):      integer+ %k %one; self-loop to block 2
+          block 4 (exit):      return
+
+        The header (block 2) is a join of the pre-header (block 1) and the
+        back-edge (block 3), and uses %x, which is guarded in the entry block.
+        The body (block 3) does not use %x, so it does not re-establish %x's
+        type on the back-edge.
+        """
+        lst = _v(0, "lst")
+        x = _v(1, "x")
+        one = _v(2, "one")
+        y0 = _v(3, "y0")
+        y2 = _v(4, "y2")
+        k = _v(5, "k")
+        y3 = _v(6, "y3")
+
+        entry = MenaiCFGBlock(id=0, label="entry")
+        entry.instrs = [
+            MenaiCFGParamInstr(result=lst, index=0, param_name="lst"),
+            MenaiCFGBuiltinInstr(result=x, op="list-first", args=[lst]),
+            MenaiCFGBuiltinInstr(result=one, op="integer+", args=[x, x]),
+            MenaiCFGBuiltinInstr(result=y0, op="integer+", args=[one, one]),
+        ]
+
+        preheader = MenaiCFGBlock(id=1, label="preheader")
+
+        header = MenaiCFGBlock(id=2, label="loop_entry")
+        header.instrs = [
+            MenaiCFGBuiltinInstr(result=y2, op="integer+", args=[x, one]),
+        ]
+
+        body = MenaiCFGBlock(id=3, label="body")
+        body.instrs = [
+            MenaiCFGBuiltinInstr(result=y3, op="integer+", args=[k, one]),
+        ]
+
+        exit_block = MenaiCFGBlock(id=4, label="exit")
+
+        entry.terminator = MenaiCFGJumpTerm(target=preheader)
+        preheader.terminator = MenaiCFGJumpTerm(target=header)
+        header.terminator = MenaiCFGBranchTerm(
+            cond=y2, true_block=exit_block, false_block=body,
+        )
+        body.terminator = MenaiCFGSelfLoopTerm(args=[], target=header)
+        exit_block.terminator = MenaiCFGReturnTerm(value=y2)
+
+        func = MenaiCFGFunction(params=["lst"], binding_name="loop")
+        func.blocks = [entry, preheader, header, body, exit_block]
+        relink_predecessors(func)
+        return func
+
+    def test_guard_proven_before_loop_not_repeated_at_header(self):
+        """
+        %x is guarded once in the entry block.  The loop header and the body
+        use it, but neither may re-guard it: it is typed on every path into
+        the header.  There must be exactly one guard on %x.
+        """
+        func = self._loop_with_header_use()
+        MenaiCFGGuardInsertion()._optimize_function(func)
+        assert _guards_for(func, 1) == 1, (
+            "the guard on %x must be inserted once, not repeated at the "
+            "loop header or in the body"
+        )
+
+    def test_loop_header_guard_count(self):
+        """
+        The only guards needed are: %lst as list, %x as integer, %one as
+        integer (all in the entry block), %y2 as boolean (the header branch
+        condition), and %k as integer (the body).  No guard is re-inserted
+        at the header for %x or %one.
+        """
+        func = self._loop_with_header_use()
+        MenaiCFGGuardInsertion()._optimize_function(func)
+        assert _count_guards(func) == 5
