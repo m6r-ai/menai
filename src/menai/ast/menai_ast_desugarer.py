@@ -737,7 +737,7 @@ class MenaiASTDesugarer:
 
                 else:
                     current_batch.append(group)
-                    current_batch_names |= group.names
+                    current_batch_names.update(group.names)
 
         if current_batch:
             runs.append(('let', current_batch))

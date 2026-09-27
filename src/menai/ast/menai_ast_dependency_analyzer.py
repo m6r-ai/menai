@@ -11,7 +11,7 @@ from menai.ast.menai_ast import MenaiASTNode, MenaiASTSymbol, MenaiASTList
 @dataclass
 class MenaiBindingGroup:
     """Represents a group of bindings that should be evaluated together."""
-    names: set[str]
+    names: list[str]
     bindings: list[tuple[str, MenaiASTNode]]
     is_recursive: bool
     depends_on: set[str]  # Other groups this depends on
@@ -39,8 +39,13 @@ class MenaiASTDependencyAnalyzer:
         groups = []
         binding_dict = dict(bindings)
 
+        # Source position of each binding, used to order each group's names
+        # deterministically (a group's names come from an SCC, which is a set).
+        source_order = {name: i for i, (name, _) in enumerate(bindings)}
+
         for group_names in scc_groups:
-            group_bindings = [(name, binding_dict[name]) for name in group_names]
+            ordered_names = sorted(group_names, key=source_order.__getitem__)
+            group_bindings = [(name, binding_dict[name]) for name in ordered_names]
             is_recursive = len(group_names) > 1 or any(
                 name in dependencies[name] for name in group_names
             )
@@ -51,7 +56,7 @@ class MenaiASTDependencyAnalyzer:
                 external_deps.update(dependencies[name] - group_names)
 
             groups.append(MenaiBindingGroup(
-                names=group_names,
+                names=ordered_names,
                 bindings=group_bindings,
                 is_recursive=is_recursive,
                 depends_on=external_deps
@@ -209,7 +214,10 @@ class MenaiASTDependencyAnalyzer:
             on_stack[node] = True
 
             # Consider successors
-            for successor in graph.get(node, set()):
+            # Iterate successors in sorted order so SCC discovery, and
+            # therefore the order of the returned components, is deterministic
+            # regardless of set iteration order.
+            for successor in sorted(graph.get(node, set())):
                 if successor not in index:
                     strongconnect(successor)
                     lowlinks[node] = min(lowlinks[node], lowlinks[successor])
