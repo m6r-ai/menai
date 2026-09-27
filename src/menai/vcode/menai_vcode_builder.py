@@ -643,6 +643,11 @@ class MenaiVCodeBuilder:
         outside the region and must not count as a loop-internal use.  Only
         arms whose predecessor is itself inside the region are loop-internal.
 
+        A self-loop terminator whose target is outside the region is an
+        enclosing loop's back-edge that merely lives in this loop's exit
+        block.  Its args belong to the enclosing loop, so they are not uses by
+        this loop and must not count as loop-internal.
+
         Param and free-var definitions are excluded — the allocator handles
         those separately.
         """
@@ -686,6 +691,20 @@ class MenaiVCodeBuilder:
 
             term = block.terminator
             if term is not None:
+                # A self-loop terminator whose target is outside the region is
+                # an enclosing loop's back-edge that merely lives in this
+                # loop's exit block.  Its args are the enclosing loop's
+                # loop-carried updates, not uses by this loop, so they must not
+                # be counted here: doing so would mark an enclosing loop's
+                # back-edge value as hoisted for this loop and pin it to a
+                # permanently-live slot.
+                if (
+                    isinstance(term, MenaiCFGSelfLoopTerm)
+                    and term.target is not None
+                    and term.target.id not in region
+                ):
+                    continue
+
                 used_ids.update(value_ids_in_term(term))
 
         return sorted(preamble_ids & used_ids)
