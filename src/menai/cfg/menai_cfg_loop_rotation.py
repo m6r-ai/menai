@@ -321,13 +321,18 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         """
         Return the header block's test instructions.
 
-        This is every instruction except the param and free-var definitions,
-        which establish the parameter and capture slots once and must not be
-        re-executed on the back-edge.
+        This is every instruction except the param, free-var, and phi
+        definitions.  Param and free-var definitions establish the parameter
+        and capture slots once and must not be re-executed on the back-edge.
+        Phi definitions are the loop-carried variables; their slots are
+        updated in place by the back-edge moves, so copying them into the
+        rotated test would produce a second phi with no predecessors.
         """
         return [
             instr for instr in header.instrs
-            if not isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
+            if not isinstance(
+                instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr, MenaiCFGPhiInstr)
+            )
         ]
 
     def _operands_safe_at_back_edge(
@@ -345,6 +350,8 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
 
           - params (updated in place by the back-edge moves, so reading them
             after the self-loop observes the new value),
+          - phi results (the loop-carried variables, likewise updated in place
+            by the back-edge moves),
           - free vars (never reassigned), or
           - defined outside the loop-header block (in the preamble or an
             entry block that dominates the back-edge).
@@ -366,6 +373,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
                     continue
 
                 if isinstance(defining, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr)):
+                    continue
+
+                if isinstance(defining, MenaiCFGPhiInstr):
                     continue
 
                 if id(defining) in test_ids:

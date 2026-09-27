@@ -213,14 +213,21 @@ class MenaiVCodeBuilder:
                 successors.append(term.default_block)
 
             elif isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is not None:
-                # A MenaiIRLoop back-edge targets the loop-entry block, whose
-                # phis are the loop-carried variables.  The back-edge must
-                # supply the phi arm for this block, so the loop-entry block is
-                # a phi-move successor here.  A function-level self-loop
-                # (param_vals is None) updates the function's param registers
-                # directly and contributes no phi moves.
-                assert term.target is not None
-                successors = [term.target]
+                # A MenaiIRLoop back-edge carries its loop-carried updates
+                # directly: param_vals[i] is the loop-carried variable and
+                # args[i] is its new value.  Emit one move per pair rather than
+                # deriving them from the target block's phis, so the updates
+                # survive a retarget that points the self-loop at a block with
+                # no phis (loop rotation targets a copy of the test).  A
+                # function-level self-loop (param_vals is None) updates the
+                # function's param registers directly and contributes no phi
+                # moves.
+                for param_val, arg_val in zip(term.param_vals, term.args):
+                    dst = self._reg(param_val)
+                    src = self._reg(arg_val)
+                    phi_moves[block.id].append((dst, src))
+
+                successors = []
 
             for succ in successors:
                 for instr in succ.instrs:
