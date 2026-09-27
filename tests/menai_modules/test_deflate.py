@@ -1,10 +1,11 @@
-"""Python-side checks for the deflate module.
+"""Python-side checks for the deflate-compress module.
 
 These tests complement the in-language round-trip tests in
-``menai_modules/deflate_test.menai`` by validating deflate's output against an
-independent DEFLATE decoder (Python's ``zlib``).  This guards against a
-symmetric bug in the Menai ``deflate``/``inflate`` pair that a round-trip
-through the same implementation would not catch.
+``menai_modules/deflate-compress.test.menai`` by validating the compressor's
+output against an independent DEFLATE decoder (Python's ``zlib``).  This
+guards against a symmetric bug in the Menai ``deflate-compress``/
+``deflate-decompress`` pair that a round-trip through the same implementation
+would not catch.
 """
 
 import zlib
@@ -17,8 +18,8 @@ from menai import Menai
 def _hex_of(menai: Menai, text: str, mode: str) -> str:
     """Return the hex of deflate(text, mode) for the given mode."""
     expr = (
-        '(let ((d (import "deflate")))'
-        '  (let ((deflate (:: d deflate)))'
+        '(let ((d (import "deflate-compress")))'
+        '  (let ((deflate (:: d compress)))'
         f'    (bytes->string-hex (deflate (string->bytes "{text}") "{mode}"))))'
     )
     return menai.evaluate_raw(expr).value
@@ -27,8 +28,8 @@ def _hex_of(menai: Menai, text: str, mode: str) -> str:
 def _bytes_of(menai: Menai, hex_str: str, mode: str) -> str:
     """Return the hex of deflate(list->bytes(0..255), mode)."""
     expr = (
-        '(let ((d (import "deflate")))'
-        '  (let ((deflate (:: d deflate)))'
+        '(let ((d (import "deflate-compress")))'
+        '  (let ((deflate (:: d compress)))'
         f'    (bytes->string-hex (deflate (string-hex->bytes "{hex_str}") "{mode}"))))'
     )
     return menai.evaluate_raw(expr).value
