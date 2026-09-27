@@ -83,6 +83,7 @@ from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
 from menai.cfg.menai_cfg import (
     MenaiCFGApplyInstr,
     MenaiCFGBlock,
+    MenaiCFGBranchTerm,
     MenaiCFGBuiltinInstr,
     MenaiCFGCallInstr,
     MenaiCFGConstInstr,
@@ -100,6 +101,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGParamInstr,
     MenaiCFGPhiInstr,
     MenaiCFGSelfLoopTerm,
+    MenaiCFGSwitchTerm,
     MenaiCFGValue,
     value_ids_in_instr,
 )
@@ -185,6 +187,19 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             return func, False
 
         entry = func.entry()
+        header = self._self_loop_header(func, self_loops[0])
+
+        # When the loop header is not the entry block (a MenaiIRLoop lowered to
+        # a distinct loop-entry block), the header already has a pre-header that
+        # dominates it and the back-edge already skips it.  Hoisting goes into
+        # that pre-header and the self-loop target is left unchanged.  Splitting
+        # the entry block in this case would orphan the header's phi nodes.
+        pre_header: MenaiCFGBlock | None = None
+        if header is not entry:
+            pre_header = self._pre_header(func, header, self_loops)
+            if pre_header is None:
+                return func, False
+
         param_ids = self._param_ids_by_index(entry)
         unchanged_param_ids = self._unchanged_param_ids(self_loops, param_ids)
 
@@ -200,11 +215,24 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             self_loops, param_ids, def_map,
         )
 
-        # Collect hoistable instructions from all blocks.
+        # Only instructions inside the loop may be hoisted.  A block is inside
+        # the loop when it is reachable from the loop header.  For a
+        # function-level self-loop the header is the entry block and every block
+        # is reachable, so all blocks qualify.  For a MenaiIRLoop the header is a
+        # distinct loop-entry block, and the blocks that precede it (the
+        # pre-header and any earlier blocks) are outside the loop; hoisting an
+        # instruction out of one of those into the pre-header would move it
+        # across a use and break dominance.
+        loop_block_ids = self._loop_block_ids(header)
+
+        # Collect hoistable instructions from blocks inside the loop.
         preamble_instrs: list[MenaiCFGInstr] = []
         seen_guards: set[tuple[int, str]] = set()
 
         for block in func.blocks:
+            if block.id not in loop_block_ids:
+                continue
+
             remaining: list[MenaiCFGInstr] = []
             for instr in block.instrs:
                 if self._is_hoistable(instr, invariant_ids):
@@ -225,7 +253,17 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         if not preamble_instrs:
             return func, False
 
-        # Split the entry block into preamble + loop-entry.
+        if pre_header is not None:
+            # MenaiIRLoop case: append the hoisted instructions to the
+            # pre-header, before its terminator.  The self-loop already targets
+            # the header, which the pre-header dominates, so the hoisted
+            # instructions run once and the back-edge skips them.
+            pre_header.instrs.extend(preamble_instrs)
+            return func, True
+
+        # Function-level self-loop: the header is the entry block, so split it
+        # into a preamble (param/free-var definitions plus hoisted instructions)
+        # and a new loop-entry block that the self-loop targets.
         def_instrs: list[MenaiCFGInstr] = [
             instr for instr in entry.instrs
             if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
@@ -607,6 +645,74 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
     ) -> MenaiCFGBlock:
         """Return the header a self-loop targets (the entry block when unset)."""
         return self_loop.target if self_loop.target is not None else func.entry()
+
+    def _loop_block_ids(
+        self, header: MenaiCFGBlock,
+    ) -> set[int]:
+        """
+        Return the ids of the blocks that are inside the loop.
+
+        A block is inside the loop when it is reachable from the loop header by
+        following successors.  The back-edge is followed (it targets the header,
+        which is already in the set).  For a function-level self-loop the header
+        is the entry block, so every block is reachable and the whole function
+        is the loop.  For a MenaiIRLoop the header is a distinct loop-entry
+        block, so blocks that precede it are excluded.
+        """
+        region: set[int] = set()
+        stack = [header]
+        while stack:
+            block = stack.pop()
+            if block.id in region:
+                continue
+
+            region.add(block.id)
+            term = block.terminator
+            if isinstance(term, MenaiCFGJumpTerm):
+                stack.append(term.target)
+
+            elif isinstance(term, MenaiCFGBranchTerm):
+                stack.append(term.true_block)
+                stack.append(term.false_block)
+
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                stack.extend(t for t in term.targets if t is not None)
+                stack.append(term.default_block)
+
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                stack.append(term.target)
+
+        return region
+
+    def _pre_header(
+        self,
+        func: MenaiCFGFunction,
+        header: MenaiCFGBlock,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+    ) -> MenaiCFGBlock | None:
+        """
+        Return the loop header's pre-header block, or None if there is not
+        exactly one.
+
+        The pre-header is the unique predecessor of the header that is not a
+        back-edge block (a block whose terminator is one of the loop's
+        self-loops).  For a MenaiIRLoop the header has exactly one such
+        predecessor: the block that computes the loop's initial values.
+        """
+        back_edge_ids = {
+            block.id for block in func.blocks
+            if any(block.terminator is self_loop for self_loop in self_loops)
+        }
+
+        candidates = [
+            pred for pred in header.predecessors
+            if pred.id not in back_edge_ids
+        ]
+
+        if len(candidates) != 1:
+            return None
+
+        return candidates[0]
 
     def _param_ids_by_index(
         self, entry: MenaiCFGBlock,

@@ -559,8 +559,11 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Enumerate the call sites that contribute to a callee's parameter facts,
         as (callee_function, argument_values, internal) triples.
 
-        A direct self-recursive tail call (MenaiCFGSelfLoopTerm) targets the
-        enclosing function itself.
+        A direct self-recursive tail call (a MenaiCFGSelfLoopTerm with no
+        param_vals) targets the enclosing function itself.  A MenaiIRLoop
+        back-edge (a SelfLoopTerm with param_vals set) is *not* a call: its
+        args feed the loop's own phi nodes, not the enclosing function's
+        parameters, so it contributes no call site.
 
         `internal` is True for a call site within the caller's own
         strongly-connected component of the call graph, i.e. inside a recursion
@@ -587,7 +590,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 if callee is not None:
                     result.append((callee, term.args, self._scc_of[id(callee)] == caller_scc))
 
-            elif isinstance(term, MenaiCFGSelfLoopTerm):
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is None:
                 result.append((info.func, term.args, True))
 
         return result

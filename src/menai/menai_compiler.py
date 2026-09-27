@@ -33,6 +33,7 @@ from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.ir.menai_ir_builder import MenaiIRBuilder
 from menai.ir.menai_ir_inliner import MenaiIRInliner
+from menai.ir.menai_ir_letrec_to_loop import MenaiIRLetrecToLoop
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 from menai.ir.menai_ir_optimizer import MenaiIROptimizer
 from menai.menai_value import MenaiValue
@@ -69,6 +70,7 @@ class MenaiCompiler:
         self.ir_builder = MenaiIRBuilder()
         self._ir_inliner = MenaiIRInliner()
         self.ir_passes: list[MenaiIROptimizationPass] = [
+            MenaiIRLetrecToLoop(),
             self._ir_inliner,
             MenaiIROptimizer(),
         ]

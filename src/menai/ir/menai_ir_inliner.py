@@ -69,6 +69,8 @@ from menai.ir.menai_ir import (
     MenaiIRLambda,
     MenaiIRLet,
     MenaiIRLetrec,
+    MenaiIRLoop,
+    MenaiIRRecur,
     MenaiIRQuote,
     MenaiIRReturn,
     MenaiIRVariable,
@@ -143,6 +145,15 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         if isinstance(ir, MenaiIRCall):
             return self._opt_call(ir, scope_stack, letrec_names)
+
+        if isinstance(ir, MenaiIRLoop):
+            return self._opt_loop(ir, scope_stack, letrec_names)
+
+        if isinstance(ir, MenaiIRRecur):
+            return MenaiIRRecur(
+                arg_plans=[self._opt(a, scope_stack, letrec_names) for a in ir.arg_plans],
+                is_tail_call=ir.is_tail_call,
+            )
 
         if isinstance(ir, MenaiIRReturn):
             return MenaiIRReturn(
@@ -314,6 +325,29 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             is_tail_call=ir.is_tail_call,
             is_builtin=ir.is_builtin,
             builtin_name=ir.builtin_name,
+        )
+
+    def _opt_loop(
+        self,
+        ir: MenaiIRLoop,
+        scope_stack: list[dict[str, MenaiIRLambda | None]],
+        letrec_names: set[str],
+    ) -> MenaiIRExpr:
+        """
+        Walk a loop, optimising its init plans and body.
+
+        The loop params are bound inside the body but are not statically-known
+        lambdas, so they do not enter the scope stack: a call whose function
+        position is a loop param must not resolve to an inlinable target.  A
+        call to a lambda bound outside the loop still resolves normally.
+        """
+        opt_init = [self._opt(init, scope_stack, letrec_names) for init in ir.init_plans]
+        opt_body = self._opt(ir.body_plan, scope_stack, letrec_names)
+        return MenaiIRLoop(
+            params=ir.params,
+            init_plans=opt_init,
+            body_plan=opt_body,
+            in_tail_position=ir.in_tail_position,
         )
 
     def _resolve_target(
@@ -548,6 +582,13 @@ def _has_captures_of_params(ir: MenaiIRExpr, params: set[str]) -> bool:
     if isinstance(ir, MenaiIRBuildStruct):
         return any(_has_captures_of_params(f, params) for f in ir.field_plans)
 
+    if isinstance(ir, MenaiIRLoop):
+        return (any(_has_captures_of_params(init, params) for init in ir.init_plans)
+                or _has_captures_of_params(ir.body_plan, params))
+
+    if isinstance(ir, MenaiIRRecur):
+        return any(_has_captures_of_params(a, params) for a in ir.arg_plans)
+
     return False
 
 
@@ -615,6 +656,14 @@ def _count_param_uses(ir: MenaiIRExpr, param: str, shadowed: set[str]) -> int:
     if isinstance(ir, MenaiIRBuildStruct):
         return sum(_count_param_uses(f, param, shadowed) for f in ir.field_plans)
 
+    if isinstance(ir, MenaiIRLoop):
+        inner = shadowed | set(ir.params)
+        return (sum(_count_param_uses(init, param, shadowed) for init in ir.init_plans)
+                + _count_param_uses(ir.body_plan, param, inner))
+
+    if isinstance(ir, MenaiIRRecur):
+        return sum(_count_param_uses(a, param, shadowed) for a in ir.arg_plans)
+
     raise TypeError(f"_count_param_uses: unhandled IR node type {type(ir).__name__}")
 
 
@@ -667,6 +716,13 @@ def _count_nodes(ir: MenaiIRExpr) -> int:
 
     if isinstance(ir, MenaiIRBuildStruct):
         return 1 + sum(_count_nodes(f) for f in ir.field_plans)
+
+    if isinstance(ir, MenaiIRLoop):
+        return (1 + sum(_count_nodes(init) for init in ir.init_plans)
+                + _count_nodes(ir.body_plan))
+
+    if isinstance(ir, MenaiIRRecur):
+        return 1 + sum(_count_nodes(a) for a in ir.arg_plans)
 
     raise TypeError(f"_count_nodes: unhandled IR node type {type(ir).__name__}")
 
@@ -763,6 +819,20 @@ def _substitute(
         return MenaiIRBuildStruct(
             struct_type=ir.struct_type,
             field_plans=[_substitute(f, param_map, shadowed) for f in ir.field_plans],
+        )
+
+    if isinstance(ir, MenaiIRLoop):
+        return MenaiIRLoop(
+            params=ir.params,
+            init_plans=[_substitute(init, param_map, shadowed) for init in ir.init_plans],
+            body_plan=_substitute(ir.body_plan, param_map, shadowed | set(ir.params)),
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, MenaiIRRecur):
+        return MenaiIRRecur(
+            arg_plans=[_substitute(a, param_map, shadowed) for a in ir.arg_plans],
+            is_tail_call=ir.is_tail_call,
         )
 
     raise TypeError(f"_substitute: unhandled IR node type {type(ir).__name__}")

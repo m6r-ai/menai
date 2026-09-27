@@ -27,6 +27,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGJumpTerm,
     MenaiCFGPhiInstr,
     MenaiCFGReturnTerm,
+    MenaiCFGSelfLoopTerm,
     MenaiCFGValue,
     relink_predecessors,
     remap_term,
@@ -111,6 +112,10 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
                 if term.false_block.id in pred_map:
                     pred_map[term.false_block.id].append(block)
 
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                if term.target.id in pred_map:
+                    pred_map[term.target.id].append(block)
+
         def is_empty(block: MenaiCFGBlock) -> bool:
             return (
                 block.id != entry_id
@@ -183,8 +188,8 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
                     if pred.id in bypass:
                         actual_preds = pred_map.get(pred.id, [])
                         for actual_pred in actual_preds:
-                            remapped = _find_non_empty_pred(actual_pred, bypass, pred_map)
-                            new_incoming.append((val, remapped))
+                            for remapped in _find_non_empty_preds(actual_pred, bypass, pred_map):
+                                new_incoming.append((val, remapped))
 
                     else:
                         new_incoming.append((val, pred))
@@ -378,19 +383,32 @@ def _max_value_id(func: MenaiCFGFunction) -> int:
     return max_id
 
 
-def _find_non_empty_pred(
+def _find_non_empty_preds(
     block: MenaiCFGBlock,
     bypass: dict[int, MenaiCFGBlock],
     pred_map: dict[int, list[MenaiCFGBlock]],
-) -> MenaiCFGBlock:
-    """Walk up the predecessor chain until we find a non-bypassed block."""
+) -> list[MenaiCFGBlock]:
+    """
+    Walk up the predecessor chain until non-bypassed blocks are found.
+
+    Returns every non-bypassed predecessor reachable by threading through
+    bypassed blocks.  A bypassed block with more than one predecessor
+    contributes all of them: dropping any would leave a phi missing an
+    incoming entry for a real predecessor.
+    """
+    result: list[MenaiCFGBlock] = []
     seen: set[int] = set()
-    while block.id in bypass and block.id not in seen:
-        seen.add(block.id)
-        preds = pred_map.get(block.id, [])
-        if not preds:
-            break
+    stack = [block]
+    while stack:
+        current = stack.pop()
+        if current.id not in bypass:
+            result.append(current)
+            continue
 
-        block = preds[0]
+        if current.id in seen:
+            continue
 
-    return block
+        seen.add(current.id)
+        stack.extend(pred_map.get(current.id, []))
+
+    return result

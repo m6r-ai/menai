@@ -179,6 +179,40 @@ class MenaiIRBuildStruct:
     field_plans: list['MenaiIRExpr']
 
 
+@dataclass
+class MenaiIRLoop:
+    """
+    Plan for compiling a tail-recursive loop.
+
+    Produced by the letrec-to-loop conversion pass from a single-binding
+    letrec whose lambda is self-referencing and whose body is a single tail
+    call to that lambda.  The loop-carried variables (params) are bound to
+    the initial argument expressions; the body is the lambda's body with
+    self-referencing tail calls replaced by MenaiIRRecur nodes.
+
+    The CFG builder lowers this to an inline loop in the enclosing function:
+    loop params become phi nodes in a loop-entry block and each MenaiIRRecur
+    becomes a MenaiCFGSelfLoopTerm back-edge.
+    """
+    params: list[str]
+    init_plans: list['MenaiIRExpr']
+    body_plan: 'MenaiIRExpr'
+    in_tail_position: bool
+
+
+@dataclass
+class MenaiIRRecur:
+    """
+    Plan for compiling a loop back-edge (recur).
+
+    Replaces self-referencing tail calls inside a MenaiIRLoop body.  The CFG
+    builder lowers this to a MenaiCFGSelfLoopTerm whose param_vals are the
+    loop's phi results and whose target is the loop-entry block.
+    """
+    arg_plans: list['MenaiIRExpr']
+    is_tail_call: bool
+
+
 # Union type for all expression plans
 MenaiIRExpr = (  # pylint: disable=invalid-name
     MenaiIRConstant |
@@ -196,5 +230,7 @@ MenaiIRExpr = (  # pylint: disable=invalid-name
     MenaiIRBuildSet |
     MenaiIRBuildVector |
     MenaiIRBuildStruct |
-    MenaiIRReturn
+    MenaiIRReturn |
+    MenaiIRLoop |
+    MenaiIRRecur
 )

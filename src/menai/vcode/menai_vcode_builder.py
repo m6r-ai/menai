@@ -162,17 +162,42 @@ class MenaiVCodeBuilder:
                 freevar_regs[instr.var_name] = self._reg(instr.result)
                 free_var_reg_ids.append(self._reg(instr.result).id)
 
-        # Collect register IDs of values hoisted into the preamble by LICM.
-        # When a SelfLoopTerm has an explicit target, the entry block is a
-        # preamble containing loop-invariant instructions.  Values defined
-        # there that are used in the loop body must survive across the
-        # back-edge, so the slot allocator treats them as permanently live.
+        # Collect register IDs of values defined outside a loop but used
+        # inside it.  Such a value must survive across the back-edge, so the
+        # slot allocator treats it as permanently live.  Each loop is handled
+        # independently because a function may contain several loops (e.g. an
+        # inlined higher-order function's loop alongside the caller's own),
+        # each with its own preamble.
         hoisted_reg_ids: list[int] = []
+        seen_headers: set[int] = set()
         for block in func.blocks:
             term = block.terminator
-            if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
-                hoisted_reg_ids = self._hoisted_value_ids(func)
-                break
+            if not isinstance(term, MenaiCFGSelfLoopTerm) or term.target is None:
+                continue
+
+            header = term.target
+            if header.id in seen_headers:
+                continue
+
+            seen_headers.add(header.id)
+            for reg_id in self._hoisted_value_ids(func, header):
+                if reg_id not in hoisted_reg_ids:
+                    hoisted_reg_ids.append(reg_id)
+
+        # Loop-carried variables of a MenaiIRLoop back-edge.  Each param_val is
+        # a phi result in the loop-entry block, written by the back-edge move
+        # and read at the top of the next iteration.  They are collected
+        # separately from hoisted values because the slot allocator treats them
+        # like function params: fixed slots, live from the start of the
+        # function, never reused.
+        loop_param_reg_ids: list[int] = []
+        for block in func.blocks:
+            term = block.terminator
+            if isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is not None:
+                for param_val in term.param_vals:
+                    reg_id = self._reg(param_val).id
+                    if reg_id not in loop_param_reg_ids:
+                        loop_param_reg_ids.append(reg_id)
 
         for block in rpo:
             term = block.terminator
@@ -186,6 +211,16 @@ class MenaiVCodeBuilder:
             elif isinstance(term, MenaiCFGSwitchTerm):
                 successors = [t for t in term.targets if t is not None]
                 successors.append(term.default_block)
+
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is not None:
+                # A MenaiIRLoop back-edge targets the loop-entry block, whose
+                # phis are the loop-carried variables.  The back-edge must
+                # supply the phi arm for this block, so the loop-entry block is
+                # a phi-move successor here.  A function-level self-loop
+                # (param_vals is None) updates the function's param registers
+                # directly and contributes no phi moves.
+                assert term.target is not None
+                successors = [term.target]
 
             for succ in successors:
                 for instr in succ.instrs:
@@ -294,30 +329,44 @@ class MenaiVCodeBuilder:
                 for arg in term.args:
                     max_reg_id = max(max_reg_id, arg.id)
 
-                # Emit moves for all params before jumping.  Always emitting
-                # these (even for unchanged params, where src == dst) is
-                # essential for correct liveness: the allocator uses the
-                # instruction list to compute last-use indices, so a param
-                # whose slot was reused mid-body must have a use recorded here
-                # or its slot will be freed too early.  The peephole pass
-                # eliminates any move that resolves to the same slot.
-                for idx, arg_val in enumerate(term.args):
-                    param_reg = param_regs[idx]
-                    arg_reg = self._reg(arg_val)
-                    instrs.append(MenaiVCodeMove(dst=param_reg, src=arg_reg))
+                if term.param_vals is not None:
+                    # MenaiIRLoop back-edge.  The loop-carried variables are phi
+                    # results in the loop-entry block; the back-edge arm of each
+                    # phi is emitted as a phi move before this terminator (the
+                    # loop-entry block is a phi-move successor of this block).
+                    # Here we only track the register ids and emit the jump.
+                    for param_val in term.param_vals:
+                        max_reg_id = max(max_reg_id, param_val.id)
 
-                # Emit self-moves for free vars.  Free vars do not appear in
-                # the self-loop args (they are captured and never reassigned),
-                # but their slots must remain live to the back-edge for the
-                # same reason as params above.
-                for free_var in func.free_vars:
-                    fv_reg = freevar_regs[free_var]
-                    instrs.append(MenaiVCodeMove(dst=fv_reg, src=fv_reg))
-                    max_reg_id = max(max_reg_id, fv_reg.id)
+                    assert term.target is not None
+                    instrs.append(MenaiVCodeJump(label=labels[term.target.id], is_self_loop=True))
 
-                jump_label = labels[term.target.id] if term.target is not None else "__entry__"
+                else:
+                    # Function-level self-loop: move args into the function's
+                    # param registers.  Always emitting these (even for
+                    # unchanged params, where src == dst) is essential for
+                    # correct liveness: the allocator uses the instruction list
+                    # to compute last-use indices, so a param whose slot was
+                    # reused mid-body must have a use recorded here or its slot
+                    # will be freed too early.  The peephole pass eliminates any
+                    # move that resolves to the same slot.
+                    for idx, arg_val in enumerate(term.args):
+                        param_reg = param_regs[idx]
+                        arg_reg = self._reg(arg_val)
+                        instrs.append(MenaiVCodeMove(dst=param_reg, src=arg_reg))
 
-                instrs.append(MenaiVCodeJump(label=jump_label, is_self_loop=True))
+                    # Emit self-moves for free vars.  Free vars do not appear
+                    # in the self-loop args (they are captured and never
+                    # reassigned), but their slots must remain live to the
+                    # back-edge for the same reason as params above.
+                    for free_var in func.free_vars:
+                        fv_reg = freevar_regs[free_var]
+                        instrs.append(MenaiVCodeMove(dst=fv_reg, src=fv_reg))
+                        max_reg_id = max(max_reg_id, fv_reg.id)
+
+                    jump_label = labels[term.target.id] if term.target is not None else "__entry__"
+
+                    instrs.append(MenaiVCodeJump(label=jump_label, is_self_loop=True))
 
             elif isinstance(term, MenaiCFGRaiseTerm):
                 msg_reg = self._reg(term.message)
@@ -346,6 +395,7 @@ class MenaiVCodeBuilder:
             free_vars=list(func.free_vars),
             param_reg_ids=param_reg_ids,
             free_var_reg_ids=free_var_reg_ids,
+            loop_param_reg_ids=loop_param_reg_ids,
             hoisted_reg_ids=hoisted_reg_ids,
             is_variadic=func.is_variadic,
             binding_name=func.binding_name,
@@ -567,22 +617,35 @@ class MenaiVCodeBuilder:
     def _hoisted_value_ids(
         self,
         func: MenaiCFGFunction,
+        header: MenaiCFGBlock,
     ) -> list[int]:
         """
-        Return the SSA value ids of instructions hoisted into the preamble
-        (entry block) that are used in the loop body.  These values are
-        defined in the preamble but not reassigned by the self-loop, so
-        their slots must survive the back-edge — like free vars.
+        Return the SSA value ids of instructions defined outside the loop but
+        used inside it.  These values are not reassigned by the loop's
+        back-edge, but they must survive it, so their slots must stay live —
+        like free vars.
 
-        Only non-param/non-free-var instructions in the entry block that
-        produce a result are considered.  Param and free-var self-moves are
-        already emitted separately.
+        The loop region is the set of blocks reachable from the loop header.
+        A value is hoisted when it is defined in a block outside that region
+        and used in a block inside it.  Values defined in the loop region are
+        not included: they are recomputed each iteration.
+
+        Param and free-var definitions are excluded — the allocator handles
+        those separately.
         """
-        # Collect value ids defined in the preamble (entry block).
+        region = self._loop_region_ids(header)
+
+        # Collect value ids defined outside the loop region.
         preamble_ids: set[int] = set()
-        for instr in func.blocks[0].instrs:
-            result = getattr(instr, 'result', None)
-            if result is not None:
+        for block in func.blocks:
+            if block.id in region:
+                continue
+
+            for instr in block.instrs:
+                result = getattr(instr, 'result', None)
+                if result is None:
+                    continue
+
                 # Skip params and free vars — they are handled separately.
                 if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr)):
                     continue
@@ -592,20 +655,61 @@ class MenaiVCodeBuilder:
         if not preamble_ids:
             return []
 
-        # Collect value ids used in the loop body (all blocks except the
-        # entry/preamble block).
+        # Collect value ids used in the loop region.
         used_ids: set[int] = set()
         for block in func.blocks:
-            if block.id == func.blocks[0].id:
+            if block.id not in region:
                 continue
 
             for instr in block.instrs:
                 used_ids.update(value_ids_in_instr(instr))
 
-            # Check terminator args.
             term = block.terminator
             if term is not None:
                 used_ids.update(value_ids_in_term(term))
 
-        # Return preamble-defined ids that are used in the loop body.
         return sorted(preamble_ids & used_ids)
+
+    def _loop_region_ids(self, header: MenaiCFGBlock) -> set[int]:
+        """
+        Return the ids of the blocks that make up the loop headed by *header*.
+
+        The region is the header plus every block reachable from it by
+        following ordinary edges (jump, branch, switch).  A self-loop edge is
+        followed only when its target is already inside the region.
+
+        That restriction is what makes the region correct for nested and
+        sequential loops.  A loop's own back-edge targets its header, which is
+        in the region, so it is followed.  A nested loop's back-edge targets a
+        block inside the region, so it is followed too.  An *enclosing* loop's
+        back-edge targets a block outside the region (a block that precedes
+        this header), so it is not followed -- otherwise the whole enclosing
+        loop would be pulled into a nested loop's region, and a value defined
+        in the enclosing loop but used in the nested loop would be wrongly
+        treated as loop-local rather than hoisted.
+        """
+        region: set[int] = set()
+        stack = [header]
+        while stack:
+            block = stack.pop()
+            if block.id in region:
+                continue
+
+            region.add(block.id)
+            term = block.terminator
+            if isinstance(term, MenaiCFGJumpTerm):
+                stack.append(term.target)
+
+            elif isinstance(term, MenaiCFGBranchTerm):
+                stack.append(term.true_block)
+                stack.append(term.false_block)
+
+            elif isinstance(term, MenaiCFGSwitchTerm):
+                stack.extend(t for t in term.targets if t is not None)
+                stack.append(term.default_block)
+
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                if term.target.id in region:
+                    stack.append(term.target)
+
+        return region

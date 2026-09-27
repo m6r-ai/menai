@@ -23,6 +23,8 @@ from menai.ir.menai_ir import (
     MenaiIRLambda,
     MenaiIRLet,
     MenaiIRLetrec,
+    MenaiIRLoop,
+    MenaiIRRecur,
     MenaiIRQuote,
     MenaiIRReturn,
     MenaiIRVariable,
@@ -141,6 +143,13 @@ class MenaiIRUseCounter:
 
         elif isinstance(ir, MenaiIRLetrec):
             self._walk_letrec(ir, result, scope_stack, current_frame_id)
+
+        elif isinstance(ir, MenaiIRLoop):
+            self._walk_loop(ir, result, scope_stack, current_frame_id)
+
+        elif isinstance(ir, MenaiIRRecur):
+            for arg in ir.arg_plans:
+                self._walk(arg, result, scope_stack, current_frame_id)
 
         elif isinstance(ir, MenaiIRIf):
             self._walk(ir.condition_plan, result, scope_stack, current_frame_id)
@@ -280,3 +289,28 @@ class MenaiIRUseCounter:
             self._walk(value_plan, result, inner_stack, current_frame_id)
 
         self._walk(ir.body_plan, result, inner_stack, current_frame_id)
+
+    def _walk_loop(
+        self,
+        ir: MenaiIRLoop,
+        result: IRUseCounts,
+        scope_stack: list[dict[str, tuple[int, int]]],
+        current_frame_id: int,
+    ) -> None:
+        """
+        Walk a loop node.
+
+        Init plans are walked in the current scope (like let binding values).
+        The loop params create a new scope level (like let bindings), and the
+        body is walked with that scope.  Like let, a loop does not create a new
+        frame.
+        """
+        for init_plan in ir.init_plans:
+            self._walk(init_plan, result, scope_stack, current_frame_id)
+
+        loop_scope: dict[str, tuple[int, int]] = {
+            name: (current_frame_id, id(ir))
+            for name in ir.params
+        }
+        body_stack = scope_stack + [loop_scope]
+        self._walk(ir.body_plan, result, body_stack, current_frame_id)

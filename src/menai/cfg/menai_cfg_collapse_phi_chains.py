@@ -42,6 +42,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
     MenaiCFGFunction,
     MenaiCFGInstr,
+    MenaiCFGJumpTerm,
     MenaiCFGPhiInstr,
     MenaiCFGValue,
     relink_predecessors,
@@ -84,18 +85,40 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
 
         return func, changed_overall
 
+    @staticmethod
+    def _is_pass_through(block: MenaiCFGBlock) -> bool:
+        """
+        Return True if a block is a pass-through: it contains only phi
+        instructions and ends in an unconditional jump.
+
+        Collapsing a phi chain through a non-pass-through block is unsound:
+        the intermediate block does real work, so control still flows through
+        it and the intermediate phi's predecessor blocks are not predecessors
+        of the consuming block.
+        """
+        if block.patch_instrs:
+            return False
+
+        if not isinstance(block.terminator, MenaiCFGJumpTerm):
+            return False
+
+        return all(isinstance(instr, MenaiCFGPhiInstr) for instr in block.instrs)
+
     def _run_one_round(self, func: MenaiCFGFunction) -> bool:
         """
         Execute one round of phi-chain collapsing.
 
         Returns True if any change was made.
         """
-        # Build a map: value id → the phi instruction that defines it.
+        # Build a map: value id → the phi instruction that defines it, and a
+        # map: value id → the block containing that phi.
         phi_defs: dict[int, MenaiCFGPhiInstr] = {}
+        phi_blocks: dict[int, MenaiCFGBlock] = {}
         for block in func.blocks:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGPhiInstr):
                     phi_defs[instr.result.id] = instr
+                    phi_blocks[instr.result.id] = block
 
         if not phi_defs:
             return False
@@ -169,6 +192,20 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
                         continue
 
                     src_phi = phi_defs[incoming_val.id]
+
+                    # The collapse is only valid when the intermediate phi's
+                    # block is a pass-through: it contains nothing but phi
+                    # instructions and an unconditional jump.  Only then is the
+                    # intermediate block bypassed on every path, so the
+                    # consuming phi's incoming entries can be replaced by the
+                    # intermediate phi's entries.  If the intermediate block
+                    # does real work (e.g. a loop pre-header that computes the
+                    # loop's initial values), control still flows through it and
+                    # the expanded predecessor blocks would not be predecessors
+                    # of the consuming block.
+                    if not self._is_pass_through(phi_blocks[incoming_val.id]):
+                        expanded_incoming.append((incoming_val, pred_block))
+                        continue
 
                     # Conflict check: would any of src_phi's predecessor blocks
                     # already appear in the final phi (from non-candidate entries

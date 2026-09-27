@@ -166,9 +166,25 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     for slot_idx, reg_id in enumerate(fixed_reg_ids):
         slots[reg_id] = slot_idx
 
+    # Loop-carried variables of a MenaiIRLoop are like function params: they
+    # are written by the back-edge moves and read at the top of the next
+    # iteration, so they get fixed slots that are live from the start of the
+    # function and never reused.  Pre-assigning their slots (rather than
+    # letting the linear scan allocate them at their defining move) keeps them
+    # from colliding with a closure result or a capture register that is read
+    # after the closure is written.
+    next_loop_slot = len(fixed_reg_ids)
+    for reg_id in func.loop_param_reg_ids:
+        if reg_id not in slots:
+            slots[reg_id] = next_loop_slot
+            next_loop_slot += 1
+
+    fixed_reg_id_set |= set(func.loop_param_reg_ids)
+
     # Phase 2: linear scan allocation for all other registers.  Fixed slots
-    # (params and free vars) are permanently live and never released for reuse.
-    live: set[int] = set(fixed_reg_ids)
+    # (params, free vars, and loop-carried variables) are permanently live and
+    # never released for reuse.
+    live: set[int] = set(fixed_reg_ids) | set(func.loop_param_reg_ids)
     current_def: dict[int, int] = {}
 
     def _free_slot() -> int:
@@ -387,6 +403,9 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
                 continue
 
+            if not _has_no_other_use(func.instrs, reg_id, reg_def, move_idx):
+                continue
+
             barrier = False
             for scan_idx in range(reg_def + 1, move_idx):
                 scan_instr = func.instrs[scan_idx]
@@ -451,6 +470,9 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
                 continue
 
+            if not _has_no_other_use(func.instrs, reg_id, reg_def, move_idx):
+                continue
+
             reads_param = False
             for scan_idx in range(reg_def + 1, move_idx):
                 scan_instr = func.instrs[scan_idx]
@@ -496,6 +518,9 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
 
         reg_def = _active_def(reg_defs, reg_id, move_idx)
         if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
+            continue
+
+        if not _has_no_other_use(func.instrs, reg_id, reg_def, move_idx):
             continue
 
         barrier = False
@@ -591,6 +616,30 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     # MenaiVCodeJump, MenaiVCodeRaise: no register references.
     return [], []
+
+
+def _has_no_other_use(
+    instrs: list[MenaiVCodeInstr],
+    reg_id: int,
+    reg_def: int,
+    move_idx: int,
+) -> bool:
+    """
+    Return True if `reg_id` is used by no instruction strictly between its
+    definition at `reg_def` and the move at `move_idx`.
+
+    Combined with a check that the move at `move_idx` is the register's last
+    use, this establishes that the move is the register's *only* use.  Slot
+    coalescing (Phases 3b, 3c, 4) requires a single-use source: if the source
+    feeds more than one move, writing its definition straight into one
+    destination's slot would clobber a value another move still needs.
+    """
+    for scan_idx in range(reg_def + 1, move_idx):
+        _, scan_uses = _defs_uses(instrs[scan_idx])
+        if reg_id in scan_uses:
+            return False
+
+    return True
 
 
 def _active_def(

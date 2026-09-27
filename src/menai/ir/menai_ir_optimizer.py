@@ -23,6 +23,8 @@ from menai.ir.menai_ir import (
     MenaiIRLambda,
     MenaiIRLet,
     MenaiIRLetrec,
+    MenaiIRLoop,
+    MenaiIRRecur,
     MenaiIRQuote,
     MenaiIRReturn,
     MenaiIRVariable,
@@ -82,6 +84,15 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
         if isinstance(ir, MenaiIRCall):
             return self._opt_call(ir, frame_stack)
+
+        if isinstance(ir, MenaiIRLoop):
+            return self._opt_loop(ir, frame_stack)
+
+        if isinstance(ir, MenaiIRRecur):
+            return MenaiIRRecur(
+                arg_plans=[self._opt(a, frame_stack) for a in ir.arg_plans],
+                is_tail_call=ir.is_tail_call,
+            )
 
         if isinstance(ir, MenaiIRBuildList):
             return MenaiIRBuildList(
@@ -381,6 +392,16 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
             for f in ir.field_plans:
                 refs |= MenaiIROptimizer._collect_used_names(f, bound)
 
+        elif isinstance(ir, MenaiIRLoop):
+            for init in ir.init_plans:
+                refs |= MenaiIROptimizer._collect_used_names(init, bound)
+
+            refs |= MenaiIROptimizer._collect_used_names(ir.body_plan, bound | set(ir.params))
+
+        elif isinstance(ir, MenaiIRRecur):
+            for a in ir.arg_plans:
+                refs |= MenaiIROptimizer._collect_used_names(a, bound)
+
         elif isinstance(ir, MenaiIRError):
             refs |= MenaiIROptimizer._collect_used_names(ir.message, bound)
 
@@ -394,4 +415,13 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
             is_tail_call=ir.is_tail_call,
             is_builtin=ir.is_builtin,
             builtin_name=ir.builtin_name,
+        )
+
+    def _opt_loop(self, ir: MenaiIRLoop, frame_stack: list[int]) -> MenaiIRLoop:
+        """Optimize the init plans and body of a loop."""
+        return MenaiIRLoop(
+            params=ir.params,
+            init_plans=[self._opt(init, frame_stack) for init in ir.init_plans],
+            body_plan=self._opt(ir.body_plan, frame_stack),
+            in_tail_position=ir.in_tail_position,
         )

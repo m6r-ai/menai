@@ -45,6 +45,8 @@ from menai.ir.menai_ir import (
     MenaiIRError,
     MenaiIRIf,
     MenaiIRLambda,
+    MenaiIRLoop,
+    MenaiIRRecur,
     MenaiIRLet,
     MenaiIRLetrec,
     MenaiIRQuote,
@@ -97,6 +99,10 @@ class _FunctionState:
     block_counter: int = 0
     self_value: 'MenaiCFGValue | None' = None  # SSA value of the function's own self-capture
                                                 # free var, set for letrec-bound lambdas only.
+    loop_context: 'tuple[MenaiCFGBlock, list[MenaiCFGValue]] | None' = None
+    # When inside a MenaiIRLoop, holds (loop_entry_block, param_ssa_values) so
+    # that MenaiIRRecur can emit a SelfLoopTerm with the correct target and
+    # destination values.  None at all other times.
 
     def new_value(self, hint: str = "") -> MenaiCFGValue:
         """Allocate a new SSA value with an optional hint for debugging."""
@@ -215,6 +221,12 @@ class MenaiCFGBuilder:
 
         if isinstance(ir, MenaiIRLetrec):
             return self._build_letrec(ir, block, scope, state, tail)
+
+        if isinstance(ir, MenaiIRLoop):
+            return self._build_loop(ir, block, scope, state, tail)
+
+        if isinstance(ir, MenaiIRRecur):
+            return self._build_recur(ir, block, scope, state)
 
         if isinstance(ir, MenaiIRLambda):
             return self._build_lambda_expr(ir, block, scope, state)
@@ -525,6 +537,102 @@ class MenaiCFGBuilder:
 
         # Build the body with all letrec names in scope.
         return self._build_expr(ir.body_plan, block, letrec_scope, state, tail=tail)
+
+    def _build_loop(
+        self, ir: MenaiIRLoop, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
+    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        """
+        Build a MenaiIRLoop as an inline loop in the current function.
+
+        The init plans are evaluated in the current scope, producing SSA
+        values that become the initial values of the loop-carried variables.
+        A new block is created as the loop entry point.  The loop params are
+        bound to fresh phi results in the loop entry block, and the body is
+        built starting from that block.
+
+        MenaiIRRecur nodes in the body emit MenaiCFGSelfLoopTerm with
+        param_vals set to the loop param SSA values and target set to the
+        loop entry block.
+        """
+        # Evaluate init plans in the current scope.
+        init_vals: list[MenaiCFGValue] = []
+        for init_plan in ir.init_plans:
+            init_val, block = self._build_expr(init_plan, block, scope, state, tail=False)
+            init_vals.append(init_val)
+
+        # Create the loop entry block.  The block before the loop jumps to it.
+        loop_entry = state.new_block("loop_entry")
+        pre_loop_block = block
+        block.terminator = MenaiCFGJumpTerm(target=loop_entry)
+
+        # Create phi nodes for the loop params in the loop entry block.  Each
+        # phi merges the init value (from the pre-loop block) with the
+        # back-edge value (from the recur block, filled in by _build_recur).
+        param_vals: list[MenaiCFGValue] = []
+        loop_scope = scope.child()
+        for i, param_name in enumerate(ir.params):
+            param_val = state.new_value(param_name)
+            loop_entry.instrs.append(MenaiCFGPhiInstr(
+                result=param_val,
+                incoming=[(init_vals[i], pre_loop_block)],
+            ))
+            param_vals.append(param_val)
+            loop_scope.bind(param_name, param_val)
+
+        # Save the previous loop context and set the new one.  Nested loops
+        # restore the outer context when they finish.
+        prev_loop_context = state.loop_context
+        state.loop_context = (loop_entry, param_vals)
+
+        # Build the body starting from the loop entry block.
+        result_val, current_block = self._build_expr(
+            ir.body_plan, loop_entry, loop_scope, state, tail=tail
+        )
+
+        # Restore the previous loop context.
+        state.loop_context = prev_loop_context
+
+        # In tail position the loop's result is the function's result, so an
+        # unterminated block gets a return.  In non-tail position the block
+        # must fall through so the enclosing expression can consume the value.
+        if current_block.terminator is None and tail:
+            current_block.terminator = MenaiCFGReturnTerm(value=result_val)
+
+        return result_val, current_block
+
+    def _build_recur(
+        self, ir: MenaiIRRecur, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState
+    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        """
+        Build a loop back-edge (MenaiIRRecur) as a MenaiCFGSelfLoopTerm.
+
+        The recur's args are moved into the loop param SSA values, and control
+        jumps to the loop entry block.
+        """
+        assert state.loop_context is not None, (
+            "MenaiCFGBuilder: MenaiIRRecur encountered outside a MenaiIRLoop"
+        )
+        loop_entry, param_vals = state.loop_context
+
+        arg_vals: list[MenaiCFGValue] = []
+        for arg_plan in ir.arg_plans:
+            arg_val, block = self._build_expr(arg_plan, block, scope, state, tail=False)
+            arg_vals.append(arg_val)
+
+        # Add the back-edge block as a predecessor to each phi node.
+        for i, param_val in enumerate(param_vals):
+            for instr in loop_entry.instrs:
+                if isinstance(instr, MenaiCFGPhiInstr) and instr.result is param_val:
+                    instr.incoming.append((arg_vals[i], block))
+                    break
+
+        block.terminator = MenaiCFGSelfLoopTerm(
+            args=arg_vals,
+            param_vals=param_vals,
+            target=loop_entry,
+        )
+        placeholder = state.new_value("recur")
+        return placeholder, block
 
     def _build_lambda_expr(
         self, ir: MenaiIRLambda, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState,
@@ -872,5 +980,9 @@ class MenaiCFGBuilder:
                 term.true_block.predecessors.append(block)
                 term.false_block.predecessors.append(block)
 
-            # ReturnTerm, TailCallTerm, TailApplyTerm, SelfLoopTerm,
-            # RaiseTerm have no successors.
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+                term.target.predecessors.append(block)
+
+            # ReturnTerm, TailCallTerm, TailApplyTerm, RaiseTerm have no
+            # successors.  A SelfLoopTerm with no target (a function-level
+            # self-loop) jumps to the entry block, which is already reachable.

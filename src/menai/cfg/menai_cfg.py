@@ -403,16 +403,25 @@ class MenaiCFGSelfLoopTerm:
     """
     Direct self-recursive tail call.
 
-    The callee is the enclosing function itself.  `args` are the new
-    argument values, in parameter order.  The VM codegen lowers this to
-    JUMP (after storing args into the parameter slots).
+    The callee is the enclosing function itself, or (when ``param_vals`` is
+    set) a MenaiIRLoop whose loop-carried variables are being updated.  `args`
+    are the new argument values, in parameter order.  The VM codegen lowers
+    this to JUMP (after storing args into the destination slots).
 
     `target` is the block the self-loop jumps to.  When None (the default),
     the self-loop targets the entry block (block 0).  When set (by the type
-    propagation pass's loop-invariant guard hoisting), the self-loop targets
-    a loop-entry block that skips hoisted guards in the preamble.
+    propagation pass's loop-invariant guard hoisting, by loop rotation, or by
+    the CFG builder's MenaiIRLoop lowering), the self-loop targets a
+    loop-entry block that skips hoisted guards in the preamble.
+
+    `param_vals` is the list of destination SSA values for the back-edge
+    moves.  When None (the default), the VCode builder uses the function's
+    parameter registers (from MenaiCFGParamInstr in the entry block).  When
+    set (by the CFG builder's MenaiIRLoop lowering), these are the
+    loop-carried variable SSA values that the back-edge moves write to.
     """
     args: list[MenaiCFGValue]
+    param_vals: list['MenaiCFGValue'] | None = None
     target: 'MenaiCFGBlock | None' = None
 
 
@@ -713,7 +722,7 @@ def remap_term(
         if new_target is term.target:
             return term
 
-        return MenaiCFGSelfLoopTerm(args=term.args, target=new_target)
+        return MenaiCFGSelfLoopTerm(args=term.args, param_vals=term.param_vals, target=new_target)
 
     return term
 
