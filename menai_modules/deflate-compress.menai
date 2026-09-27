@@ -147,9 +147,10 @@
             (lambda (lst acc)
               (if (list-null? lst)
                   acc
-                  (bl-count (list-rest lst)
-                            (dict-set acc (list-first lst)
-                                      (integer+ (dict-get acc (list-first lst) 0) 1))))))
+                  (let ((lst-head (list-first lst)))
+                    (bl-count (list-rest lst)
+                              (dict-set acc lst-head
+                                        (integer+ (dict-get acc lst-head 0) 1)))))))
            (next-codes
             (lambda (bl maxlen)
               (letrec ((loop (lambda (len code acc)
