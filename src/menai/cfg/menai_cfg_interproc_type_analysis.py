@@ -616,7 +616,16 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         while True:
             changed = False
             for block in func.blocks:
-                block_facts = dict(self._block_incoming(block, facts, param_facts, value_defs, info))
+                # Merge the global per-value facts with this block's incoming
+                # facts, block-local winning.  A phi's incoming value may be
+                # defined in a block that dominates a predecessor rather than
+                # in the predecessor itself, so it is absent from the
+                # predecessor's outgoing facts; without the global facts the
+                # phi would join it as BOTTOM and lose a proven type.  A value
+                # refined by a struct-is-instance? branch exists only in the
+                # block-local facts, which therefore take precedence.
+                block_facts = dict(facts)
+                block_facts.update(self._block_incoming(block, facts, param_facts, value_defs, info))
                 for instr in block.instrs:
                     if not isinstance(instr, _VALUE_INSTR_TYPES):
                         continue

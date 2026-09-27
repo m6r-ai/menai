@@ -760,3 +760,55 @@ class TestAmbiguousInnerParameter:
 
     def test_ambiguous_inner_parameter_result_correct(self, menai):
         assert menai.evaluate_and_format(AMBIGUOUS_INNER_PARAM_SRC) == "888"
+
+
+def _non_entry_guard_count(cfg) -> int:
+    """Count guard instructions in blocks other than a function's entry block."""
+    n = 0
+    for func in collect_functions(cfg):
+        for block in func.blocks[1:]:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGGuardInstr):
+                    n += 1
+
+    return n
+
+
+LOOP_CARRIED_FACT_SRC = """
+(letrec ((outer (lambda (limit)
+                  (letrec ((search (lambda (lo hi)
+                                     (if (integer<=? (integer- hi lo) 1)
+                                         lo
+                                         (let ((mid (integer+ lo (integer/ (integer- hi lo) 2))))
+                                           (if (integer=? mid lo)
+                                               (search mid hi)
+                                               (search lo mid)))))))
+                    (search 0 limit)))))
+  (list outer))
+"""
+
+
+class TestLoopCarriedValueFact:
+    """
+    A loop-carried value whose only proven-typed definition is in a block that
+    dominates the back-edge predecessor, rather than in the predecessor itself,
+    still receives its proven type.
+
+    `search`'s `hi` parameter is fed `mid`, which is computed in the loop body
+    before the branch.  The two self-loop back-edge blocks contain no
+    instructions of their own, so `hi`'s incoming value is defined in a block
+    that dominates the back-edge block rather than in the back-edge block.  The
+    join must still see `mid`'s integer fact, so no runtime guard is needed for
+    `hi` inside the loop.
+
+    `outer` is never called, so its own `limit` parameter is unconstrained and
+    its guard is retained; the guards that matter here are the ones inside the
+    loop, which must be absent.
+    """
+
+    def test_loop_carried_value_has_no_guard(self):
+        cfg = _build_cfg(LOOP_CARRIED_FACT_SRC)
+        assert _non_entry_guard_count(cfg) == 0
+
+    def test_loop_carried_value_result_correct(self, menai):
+        assert menai.evaluate_and_format(LOOP_CARRIED_FACT_SRC.replace("(list outer)", "(outer 8)")) == "0"

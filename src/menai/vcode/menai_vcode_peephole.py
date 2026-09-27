@@ -1332,8 +1332,14 @@ def _inline_jump_to_return(
                 i = j + 1
                 continue
 
-            result.append(instr)
-            i += 1
+            # The whole run of consecutive labels is one unit: if any label
+            # in it is live, every label in the run and the RETURN that
+            # follows must be kept.  Dropping the RETURN because a later
+            # label in the same run is not itself targeted would leave the
+            # live label with no instruction after it, so a jump to it would
+            # resolve past the end of the function.
+            result.extend(rewritten[i:j])
+            i = j
             continue
 
         result.append(instr)
