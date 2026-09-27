@@ -736,7 +736,15 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         args).  These params are loop-invariant, just like free vars.  All
         self-loops of one loop pass the same number of args, so the first
         self-loop's arity is representative.
+
+        A MenaiIRLoop back-edge (``param_vals`` is not None) updates the
+        loop-carried phi values rather than the function's params, so none of
+        the function's params are reassigned by it and all of them are
+        unchanged.
         """
+        if self_loops[0].param_vals is not None:
+            return set(param_ids.values())
+
         n_args = len(self_loops[0].args)
         return {
             param_id for index, param_id in param_ids.items()

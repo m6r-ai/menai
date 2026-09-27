@@ -51,13 +51,20 @@ def _loop_function(code, name: str):
 
     A self-recursive letrec whose recursion is a tail call is lowered to a
     loop and then inlined into its caller, so the loop may not exist as a
-    separate code object.  When no code object is named `name`, the loop has
-    been inlined into the top-level code object, which is returned instead.
+    separate code object.  When no code object is named `name`, the code
+    object that actually contains the loop (a backward jump) is returned.
     """
     queue = [code]
     while queue:
         co = queue.pop(0)
         if name in co.name:
+            return co
+        queue.extend(co.code_objects)
+
+    queue = [code]
+    while queue:
+        co = queue.pop(0)
+        if _self_loop_target(co) is not None:
             return co
         queue.extend(co.code_objects)
 
@@ -195,6 +202,49 @@ class TestLoopInvariantComputationHoisting:
         body_adds = [i for i in add_indices if i >= target]
         assert len(body_adds) >= 1, (
             "loop-variant INTEGER_ADD must remain in the loop body"
+        )
+
+    def test_loop_invariant_builtin_on_outer_value_hoisted(self):
+        """
+        (lambda (b)
+          (letrec ((loop (lambda (i acc)
+                           (if (integer>=? i (bytes-length b))
+                               acc
+                               (loop (integer+ i 1)
+                                     (integer+ acc (bytes-ref b i)))))))
+            (loop 0 0)))
+
+        The loop is lowered to a loop-entry block with a pre-header.  `b` is
+        a param the loop does not reassign, so `(bytes-length b)` is
+        loop-invariant and must be hoisted out of the loop header (only the
+        INTEGER_GTE_P test should remain in the loop).  In particular, loop
+        rotation must not duplicate the hoisted computation into the rotated
+        test.
+        """
+        src = """
+        (lambda (b)
+          (letrec ((loop (lambda (i acc)
+                           (if (integer>=? i (bytes-length b))
+                               acc
+                               (loop (integer+ i 1)
+                                     (integer+ acc (bytes-ref b i)))))))
+            (loop 0 0)))
+        """
+        code = _compile(src)
+        loop_fn = _loop_function(code, "loop")
+        target = _self_loop_target(loop_fn)
+        assert target is not None
+        # BYTES_LENGTH appears once, before the loop entry, and the loop does
+        # not re-execute it (the rotated test does not duplicate it).
+        length_indices = [
+            i for i, instr in enumerate(loop_fn.instructions)
+            if unpack_instruction(instr).opcode == int(Opcode.BYTES_LENGTH)
+        ]
+        assert len(length_indices) == 1, (
+            "loop-invariant BYTES_LENGTH must be hoisted exactly once"
+        )
+        assert target > length_indices[0], (
+            "self-loop must skip the hoisted BYTES_LENGTH"
         )
 
     def test_function_without_self_loop_unaffected(self):
