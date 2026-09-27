@@ -425,13 +425,14 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
 
     # Phase 3c: back-propagate param slot assignments across call barriers.
     # Phase 3b treats any call/apply as a barrier because those instructions
-    # clobber the outgoing zone.  A param slot, however, is never part of the
-    # outgoing zone (which lives at local_count + offset, strictly above every
-    # param, capture, and local slot), so a call cannot read or write the
-    # caller's param slot.  The only way a param slot's value can be observed
-    # between a temp's definition and the back-edge move is by an instruction
-    # in this same function that reads it — which is exactly what condition 4
-    # below checks.
+    # clobber the outgoing zone.  A fixed slot (a function param or a
+    # loop-carried variable), however, is never part of the outgoing zone
+    # (which lives at local_count + offset, strictly above every param,
+    # capture, local, and loop-carried slot), so a call cannot read or write
+    # it.  The only way the destination slot's value can be observed between a
+    # temp's definition and the back-edge move is by an instruction in this
+    # same function that reads it — which is exactly what condition 3 below
+    # checks.
     #
     # This lets a loop-carried temp whose definition is separated from the
     # back-edge move by a call (e.g. a predicate call in the loop body) still
@@ -463,7 +464,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_id in fixed_reg_id_set:
                 continue
 
-            if param_slot >= len(func.params):
+            if move.dst.id not in fixed_reg_id_set:
                 continue
 
             reg_def = _active_def(reg_defs, reg_id, move_idx)
