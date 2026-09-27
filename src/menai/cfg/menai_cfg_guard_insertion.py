@@ -138,10 +138,13 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         predecessor's outgoing types agree on T.  If any predecessor has
         a different type, or has no outgoing type for that value (meaning
         the value is unknown on that path), the type is unknown at the
-        join point.
+        join point and the analysis fact is used instead.
 
-        Values not present in any predecessor's outgoing types fall back
-        to the analysis facts.
+        The analysis fact is the pass's baseline knowledge: it is a
+        path-insensitive over-approximation, so it is sound to rely on it
+        wherever the predecessor agreement proves nothing.  A value absent
+        from every predecessor's outgoing types, or present but not agreed
+        on, therefore falls back to the analysis facts.
         """
         result: dict[int, str | None] = {}
 
@@ -164,7 +167,11 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
                     agreed_type = None
                     break
 
-            result[val_id] = agreed_type
+            # A None here means the predecessors did not agree, which is not
+            # the same as the value being untyped: fall back to the analysis
+            # fact so a value the analysis proved is not re-guarded merely
+            # because one predecessor's outgoing set did not mention it.
+            result[val_id] = agreed_type if agreed_type is not None else types.get(val_id)
 
         for val_id, fact_type in types.items():
             if val_id not in result:
