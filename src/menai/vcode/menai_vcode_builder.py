@@ -630,6 +630,12 @@ class MenaiVCodeBuilder:
         and used in a block inside it.  Values defined in the loop region are
         not included: they are recomputed each iteration.
 
+        A phi arm is not a use in the block that holds the phi.  Phi
+        elimination materialises each arm as a move in the arm's predecessor
+        block, so an arm supplied by a predecessor outside the region is used
+        outside the region and must not count as a loop-internal use.  Only
+        arms whose predecessor is itself inside the region are loop-internal.
+
         Param and free-var definitions are excluded — the allocator handles
         those separately.
         """
@@ -662,6 +668,13 @@ class MenaiVCodeBuilder:
                 continue
 
             for instr in block.instrs:
+                if isinstance(instr, MenaiCFGPhiInstr):
+                    for inc_val, inc_pred in instr.incoming:
+                        if inc_pred.id in region:
+                            used_ids.add(inc_val.id)
+
+                    continue
+
                 used_ids.update(value_ids_in_instr(instr))
 
             term = block.terminator
