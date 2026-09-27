@@ -42,6 +42,15 @@ duplicated test blocks are the reason the backend identifies self-loop
 back-edges by a flag on the jump rather than by a single shared
 `__entry__` label.
 
+A function may contain more than one loop — whether sequential (a loop after
+another) or nested (a loop inside another loop's body).  Each loop is rotated
+independently, innermost first: rotating an inner loop only adds a block
+inside its own body and retargets its own back-edges, so it cannot invalidate
+the analysis of an enclosing loop.  Rotating an outer loop first would move
+the region boundaries an inner loop's analysis depends on, so inner-first
+ordering avoids having to re-derive every loop's structure after each
+rotation.
+
 The rotated test is a full copy of the header block's test instructions
 (everything except the param and free-var definitions), not just the branch
 condition.  The header block also holds the guards and intermediate
@@ -53,7 +62,9 @@ back-edge moves update in place.
 
 Applicability
 -------------
-The pass handles the canonical shape only:
+The pass handles the canonical shape only.  Each loop is considered on its
+own; a function with several loops has each rotatable one rotated and the
+rest left alone:
 
   - one or more `MenaiCFGSelfLoopTerm` terminators, all sharing a single
     loop header (a tail-recursive loop with both arms of a branch calling
@@ -115,15 +126,38 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
     def _optimize_function(
         self, func: MenaiCFGFunction,
     ) -> tuple[MenaiCFGFunction, bool]:
-        """Rotate a self-loop if the function has the canonical loop shape."""
-        self_loops = self._find_self_loops(func)
-        if self_loops is None:
-            return func, False
+        """
+        Rotate every rotatable loop in the function.
 
+        A function may contain more than one loop — sequential loops, nested
+        loops, or both.  Each loop is rotated independently, innermost first,
+        so that rotating an inner loop (which only adds a block inside its own
+        body and retargets its own back-edges) cannot invalidate the structure
+        an enclosing loop's analysis was derived from.
+        """
+        changed = False
+        for loop in self._find_loops(func):
+            if self._rotate_loop(func, loop):
+                changed = True
+
+        return func, changed
+
+    def _rotate_loop(
+        self,
+        func: MenaiCFGFunction,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+    ) -> bool:
+        """
+        Rotate a single loop, given its self-loop terminators.
+
+        Returns True if the loop was rotated.  The loop's header, body, and
+        test are re-derived from the current CFG, so this is safe to call
+        after other loops in the same function have been rotated.
+        """
         header = self._self_loop_header(func, self_loops[0])
 
         if not isinstance(header.terminator, MenaiCFGBranchTerm):
-            return func, False
+            return False
 
         branch = header.terminator
         body = branch.false_block
@@ -138,22 +172,22 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         for self_loop in self_loops:
             self_loop_block = self._self_loop_block(func, self_loop)
             if self_loop_block is None or self_loop_block.id not in body_region:
-                return func, False
+                return False
 
         if self._is_rotated(self_loops, header, body):
-            return func, False
+            return False
 
         test_instrs = self._header_test_instrs(header)
         if not test_instrs:
-            return func, False
+            return False
 
         if not self._operands_safe_at_back_edge(func, test_instrs, header):
-            return func, False
+            return False
 
         if self._test_results_used_by_body(
             func, test_instrs, body_region, self_loops,
         ):
-            return func, False
+            return False
 
         # Build one rotated test block per self-loop: a copy of the header
         # test with fresh SSA result ids, terminated by a branch with the
@@ -193,34 +227,54 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
             self_loop.target = continue_block
 
         relink_predecessors(func)
-        return func, True
+        return True
 
-    def _find_self_loops(
+    def _find_loops(
         self, func: MenaiCFGFunction,
-    ) -> list[MenaiCFGSelfLoopTerm] | None:
+    ) -> list[list[MenaiCFGSelfLoopTerm]]:
         """
-        Return the function's self-loop terminators, or None.
+        Return the function's loops, each as the list of its self-loop
+        terminators, ordered innermost first.
 
         A tail-recursive loop can have more than one back-edge: when both
         arms of a branch in the body tail-call the enclosing function, each
-        arm gets its own SelfLoopTerm.  Returns None when there are no
-        self-loops, or when they do not all share one loop header (which
-        would mean more than one distinct loop, not a single rotatable one).
+        arm gets its own SelfLoopTerm, and all of them share the loop's
+        header.  Self-loops are therefore grouped by the header they target.
+
+        A function may contain several loops (sequential, nested, or both),
+        so each group is a distinct loop rather than evidence of an
+        unrotatable shape.  Groups are returned innermost first so that a
+        nested loop is rotated before the loop that encloses it.
         """
-        found: list[MenaiCFGSelfLoopTerm] = []
+        groups: dict[int, list[MenaiCFGSelfLoopTerm]] = {}
+        headers: dict[int, MenaiCFGBlock] = {}
         for block in func.blocks:
             if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
-                found.append(block.terminator)
+                header = self._self_loop_header(func, block.terminator)
+                groups.setdefault(header.id, []).append(block.terminator)
+                headers[header.id] = header
 
-        if not found:
-            return None
+        # Order innermost first: a loop whose header lies inside another
+        # loop's body region is nested within it, so it must be rotated
+        # first.  A loop's nesting depth is the number of other loop headers
+        # whose body region contains its header.
+        def depth(header_id: int) -> int:
+            """Count how many other loops enclose the loop with this header."""
+            count = 0
+            for other_id, other_header in headers.items():
+                if other_id == header_id:
+                    continue
 
-        header = self._self_loop_header(func, found[0])
-        for self_loop in found[1:]:
-            if self._self_loop_header(func, self_loop) is not header:
-                return None
+                if not isinstance(other_header.terminator, MenaiCFGBranchTerm):
+                    continue
 
-        return found
+                region = self._body_region(other_header.terminator.false_block, other_header)
+                if header_id in region:
+                    count += 1
+
+            return count
+
+        return [groups[h] for h in sorted(groups, key=depth, reverse=True)]
 
     def _self_loop_header(
         self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,

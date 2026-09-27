@@ -71,6 +71,25 @@ def _has_backward_unconditional_jump(code) -> bool:
     return False
 
 
+def _count_backward_conditional_jumps(code) -> int:
+    """
+    Return the number of conditional jumps whose target is earlier in the
+    instruction list (rotated back-edges), across `code` and its nested code
+    objects.
+    """
+    n = 0
+    for i, instr in enumerate(code.instructions):
+        op = unpack_instruction(instr)
+        if op.opcode in (int(Opcode.JUMP_IF_FALSE), int(Opcode.JUMP_IF_TRUE)):
+            if op.src1 < i:
+                n += 1
+
+    for nested in code.code_objects:
+        n += _count_backward_conditional_jumps(nested)
+
+    return n
+
+
 def _count_op(code, opcode) -> int:
     """Count occurrences of `opcode` in `code` and all nested code objects."""
     n = sum(1 for i in code.instructions if unpack_instruction(i).opcode == opcode)
@@ -515,3 +534,79 @@ class TestMultipleBackEdgesRotated:
         assert not _has_backward_unconditional_jump(fn), (
             "neither of merge's back-edges may be an unconditional jump"
         )
+
+
+class TestMultipleLoopsInOneFunction:
+    """Every loop in a function is rotated, not just the first one found."""
+
+    TWO_SEQUENTIAL_LOOPS = """
+        (let ((f (lambda (xs) (letrec ((go (lambda (l a)
+                                            (if (list-null? l) a
+                                                (go (list-rest l) (integer+ a (list-first l)))))))
+                                  (go xs 0))))
+              (g (lambda (xs) (letrec ((go (lambda (l a)
+                                            (if (list-null? l) a
+                                                (go (list-rest l) (integer+ a 1))))))
+                                  (go xs 0)))))
+          (integer+ (f (list 1 2 3)) (g (list 4 5 6))))
+        """
+
+    NESTED_LOOPS = """
+        (let ((h (lambda (m)
+                   (letrec ((inner (lambda (k a)
+                                     (if (integer<=? k 0)
+                                         a
+                                         (inner (integer- k 1) (integer+ a k))))))
+                     (inner m 0)))))
+          (letrec ((outer (lambda (n acc)
+                            (if (integer<=? n 0)
+                                acc
+                                (outer (integer- n 1) (integer+ acc (h n)))))))
+            (outer 3 0)))
+        """
+
+    def test_two_sequential_loops_both_rotated(self):
+        """
+        Two small self-loops are inlined into one enclosing function, so it
+        contains two sequential loops.  Every loop must be rotated, not just
+        the first: an unrotated loop leaves an unconditional backward jump, so
+        a function with two loops must have no backward unconditional jump and
+        exactly two backward conditional jumps.
+        """
+        code = _compile(self.TWO_SEQUENTIAL_LOOPS)
+        fn = _loop_function(code, "f")
+        assert not _has_backward_unconditional_jump(fn), (
+            "every loop in the function must be rotated, not just the first"
+        )
+        assert _count_backward_conditional_jumps(fn) == 2, (
+            "each of the two loops must have a conditional back-edge"
+        )
+
+    def test_two_sequential_loops_correct_results(self):
+        """End-to-end: a function with two sequential loops must be correct."""
+        from menai import Menai
+        menai = Menai()
+
+        assert menai.evaluate(self.TWO_SEQUENTIAL_LOOPS) == 9
+
+    def test_nested_loops_both_rotated(self):
+        """
+        A loop whose body contains another loop must have both rotated.  The
+        inner loop is rotated first, so rotating it cannot invalidate the
+        outer loop's analysis.  Both back-edges must become conditional.
+        """
+        code = _compile(self.NESTED_LOOPS)
+        fn = _loop_function(code, "outer")
+        assert not _has_backward_unconditional_jump(fn), (
+            "neither the outer nor the nested inner loop may be left unrotated"
+        )
+        assert _count_backward_conditional_jumps(fn) == 2, (
+            "each of the two nested loops must have a conditional back-edge"
+        )
+
+    def test_nested_loops_correct_results(self):
+        """End-to-end: a function with a nested loop must be correct."""
+        from menai import Menai
+        menai = Menai()
+
+        assert menai.evaluate(self.NESTED_LOOPS) == 10
