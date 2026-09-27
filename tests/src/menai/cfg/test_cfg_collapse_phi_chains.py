@@ -405,23 +405,25 @@ class TestDuplicatePredConflict:
 
 class TestMultipleConsumers:
 
-    def test_two_consumers_both_expanded(self):
+    def test_branching_intermediate_block_not_collapsed(self):
         """
-        Two independent consumers of the same intermediate phi v1:
+        A branching intermediate block must not be collapsed through.
 
-            entry: branch cond -> left_join / right_join
             A: jump -> join1
             B: jump -> join1
             join1: %v1 = phi [(%a, A), (%b, B)]
+                   branch cond -> left_join / right_join
             C: jump -> left_join
             left_join:  %v2 = phi [(%v1, join1), (%c, C)]  -> return %v2
             D: jump -> right_join
             right_join: %v3 = phi [(%v1, join1), (%d, D)]  -> return %v3
 
-        v1 is used only as phi incoming in left_join and right_join.
-        Both consumers should absorb v1's entries; v1 is then removed.
-        This test calls _optimize_function directly so reachability is not
-        checked -- dead-block elimination does not run.
+        join1 does real work (it branches), so it is not a pass-through
+        block.  Control reaches left_join through join1, so left_join's
+        predecessor is join1, not A or B.  Absorbing v1's entries into
+        left_join's phi would claim A and B are its predecessors, which is
+        false -- the resulting phi would be malformed.  The collapse must
+        therefore be skipped.
         """
         va = v("a"); vb = v("b"); vc = v("c"); vd = v("d")
         v1 = v("v1"); v2 = v("v2"); v3 = v("v3")
@@ -453,8 +455,6 @@ class TestMultipleConsumers:
         block_b.terminator = MenaiCFGJumpTerm(target=join1)
         block_c.terminator = MenaiCFGJumpTerm(target=left_join)
         block_d.terminator = MenaiCFGJumpTerm(target=right_join)
-        # join1 branches to left_join or right_join depending on some condition;
-        # for this unit test we just need the phi structure, so use a branch.
         vcond = v("cond")
         join1.terminator = MenaiCFGBranchTerm(
             cond=vcond, true_block=left_join, false_block=right_join
@@ -462,22 +462,12 @@ class TestMultipleConsumers:
 
         f = func(block_a, block_b, block_c, block_d, join1, left_join, right_join)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
-        assert changed
+        new_f, _ = MenaiCFGCollapsePhiChains()._optimize_function(f)
 
-        # v1 should be gone -- both consumers have absorbed its entries.
-        assert v1.id not in phi_result_ids(new_f)
-        assert v1.id not in all_phi_incoming_value_ids(new_f)
-
-        # left_join's phi should now have entries from A, B, C.
-        lj_new = next(b for b in new_f.blocks if b.id == 6)
-        phi2 = next(i for i in lj_new.instrs if isinstance(i, MenaiCFGPhiInstr))
-        assert {p.id for _, p in phi2.incoming} == {1, 2, 3}
-
-        # right_join's phi should now have entries from A, B, D.
-        rj_new = next(b for b in new_f.blocks if b.id == 7)
-        phi3 = next(i for i in rj_new.instrs if isinstance(i, MenaiCFGPhiInstr))
-        assert {p.id for _, p in phi3.incoming} == {1, 2, 4}
+        # v1 is still referenced: the collapse through the branching join1 is
+        # not performed.
+        assert v1.id in phi_result_ids(new_f)
+        assert v1.id in all_phi_incoming_value_ids(new_f)
 
 
 # ---------------------------------------------------------------------------
