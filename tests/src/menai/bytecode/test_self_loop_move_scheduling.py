@@ -31,15 +31,23 @@ def _count_op(code, opcode) -> int:
     return n
 
 
-def _find_lambda(code, name: str):
-    """Return the first nested code object whose name contains `name`."""
+def _loop_function(code, name: str):
+    """
+    Return the code object holding the self-loop named `name`.
+
+    A self-recursive letrec whose recursion is a tail call is lowered to a
+    loop and then inlined into its caller, so the loop may not exist as a
+    separate code object.  When no code object is named `name`, the loop has
+    been inlined into the top-level code object, which is returned instead.
+    """
     for co in code.code_objects:
         if name in co.name:
             return co
-        r = _find_lambda(co, name)
-        if r is not None:
+        r = _loop_function(co, name)
+        if r is not None and r is not co:
             return r
-    return None
+
+    return code
 
 
 def _compile(src: str):
@@ -77,8 +85,7 @@ class TestSelfLoopMoveSchedulingBasic:
           (loop (list #t #t #t) #t))
         """
         code = _compile(src)
-        loop = _find_lambda(code, "loop")
-        assert loop is not None, "loop lambda not found"
+        loop = _loop_function(code, "loop")
         # The MOVE for lst should be eliminated by the scheduling + coalescing.
         # At most one MOVE remains (for prev, if it wasn't coalesced).
         assert _count_op(loop, Opcode.MOVE) <= 1
@@ -151,7 +158,7 @@ class TestSelfLoopMoveSchedulingNoSelfLoop:
         """
         src = '(lambda (x) (if (boolean? x) "yes" "no"))'
         code = _compile(src)
-        lam = _find_lambda(code, "lambda")
+        lam = _loop_function(code, "lambda")
         assert lam is not None
         # No self-loop, no moves to schedule.
         assert _count_op(lam, Opcode.MOVE) == 0
@@ -181,8 +188,7 @@ class TestSelfLoopMoveSchedulingWithGuard:
           (sum (list 1 2 3 4 5) 0))
         """
         code = _compile(src)
-        loop = _find_lambda(code, "sum")
-        assert loop is not None, "sum lambda not found"
+        loop = _loop_function(code, "sum")
         # The MOVE for lst should be eliminated.
         assert _count_op(loop, Opcode.MOVE) == 0
 
@@ -279,8 +285,7 @@ class TestLoopCarriedParamCoalescing:
           (my-filter (lambda (x) ($integer>? x 0)) (vector -1 2 -3 4)))
         """
         code = _compile(src)
-        loop = _find_lambda(code, "loop")
-        assert loop is not None, "loop lambda not found"
+        loop = _loop_function(code, "loop")
         # The back-edge MOVE for `i` is gone; the only remaining MOVE is the
         # list-prepend staging for the call argument.
         assert _count_op(loop, Opcode.MOVE) <= 1
@@ -330,8 +335,7 @@ class TestPhiArgumentCoalescing:
           (my-filter (lambda (x) ($integer>? x 0)) (vector -1 2 -3 4)))
         """
         code = _compile(src)
-        loop = _find_lambda(code, "loop")
-        assert loop is not None, "loop lambda not found"
+        loop = _loop_function(code, "loop")
         # The list-prepend result is written straight into the accumulator
         # slot, so the only MOVE left is the call-argument staging.
         assert _count_op(loop, Opcode.MOVE) == 1

@@ -130,10 +130,11 @@ class TestCallCounting:
 
         The compiler folds the recursive tail call into a backward jump, so the
         function is entered once and loops internally.  The call count reflects
-        that: one entry, many iterations.
+        that: one entry, many iterations.  The function is reached through
+        `apply` so that it is not inlined and keeps its own code object.
         """
         _, code, _, call_counts = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 4))"
+            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (apply f (list 4)))"
         )
         visits = list(walk_code_objects(code))
         by_name = {v.code.name: call_counts[v.code_ordinal] for v in visits}

@@ -27,17 +27,24 @@ def _compile(src: str):
     return MenaiCompiler().compile(src)
 
 
-def _find_lambda(code, name: str):
-    """Return the first nested code object whose name contains `name`."""
+def _loop_function(code, name: str):
+    """
+    Return the code object holding the self-loop named `name`.
+
+    A self-recursive letrec whose recursion is a tail call is lowered to a
+    loop and then inlined into its caller, so the loop may not exist as a
+    separate code object.  When no code object is named `name`, the loop has
+    been inlined into the top-level code object, which is returned instead.
+    """
     for co in code.code_objects:
         if name in co.name:
             return co
 
-        r = _find_lambda(co, name)
-        if r is not None:
+        r = _loop_function(co, name)
+        if r is not None and r is not co:
             return r
 
-    return None
+    return code
 
 
 def _count_op(code, opcode) -> int:
@@ -84,8 +91,7 @@ class TestJumpThreadingBasic:
         intermediate label+JUMP are removed, reducing the JUMP count.
         """
         code = _compile(_COLLECT_SRC)
-        collect = _find_lambda(code, "collect")
-        assert collect is not None, "collect lambda not found"
+        collect = _loop_function(code, "collect")
         # The loop-back block's JUMP to __entry__ should be threaded away.
         # Count JUMP opcodes — the only JUMP should be the self-loop back-edge.
         # Without threading there would be an additional JUMP for the

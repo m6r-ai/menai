@@ -724,14 +724,18 @@ class TestBacktrace:
         assert name == "<module>"
 
     def test_backtrace_shows_recursive_function(self, menai):
-        """A runtime error inside a recursive function shows the function name in the backtrace."""
+        """
+        A runtime error inside a recursive function shows the function name in
+        the backtrace.  The function is reached through `apply` so that it is
+        not inlined and remains a distinct frame.
+        """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-ref lst 100)
                                     (recurse (integer- n 1) lst)))))
-              (recurse 3 (list 1 2 3)))
+              (apply recurse (list 3 (list 1 2 3))))
             """)
 
         err = exc_info.value
@@ -775,14 +779,18 @@ class TestBacktrace:
         assert "<lambda" in name
 
     def test_backtrace_includes_source_line(self, menai):
-        """The backtrace includes the source line where each function is defined."""
+        """
+        The backtrace includes the source line where each function is defined.
+        The function is reached through `apply` so that it is not inlined and
+        remains a distinct frame.
+        """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-ref lst 100)
                                     (recurse (integer- n 1) lst)))))
-              (recurse 3 (list 1 2 3)))
+              (apply recurse (list 3 (list 1 2 3))))
             """)
 
         err = exc_info.value
@@ -811,14 +819,18 @@ class TestBacktrace:
         assert len(err.backtrace) >= 1
 
     def test_backtrace_formatted_in_error_message(self, menai):
-        """The backtrace is formatted in the error message string."""
+        """
+        The backtrace is formatted in the error message string.  The function
+        is reached through `apply` so that it is not inlined and remains a
+        distinct frame.
+        """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-ref lst 100)
                                     (recurse (integer- n 1) lst)))))
-              (recurse 3 (list 1 2 3)))
+              (apply recurse (list 3 (list 1 2 3))))
             """)
 
         msg = str(exc_info.value)
@@ -826,14 +838,18 @@ class TestBacktrace:
         assert "recurse" in msg
 
     def test_backtrace_strips_params_suffix(self, menai):
-        """The formatted backtrace strips the (N params) suffix from function names."""
+        """
+        The formatted backtrace strips the (N params) suffix from function
+        names.  The function is reached through `apply` so that it is not
+        inlined and remains a distinct frame.
+        """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-ref lst 100)
                                     (recurse (integer- n 1) lst)))))
-              (recurse 3 (list 1 2 3)))
+              (apply recurse (list 3 (list 1 2 3))))
             """)
 
         msg = str(exc_info.value)

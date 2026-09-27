@@ -464,12 +464,16 @@ class TestIntegration:
         A self-recursive letrec that also captures an outer variable should
         not need PATCH_CLOSURE for the self-capture (only for the outer
         capture, which is handled by the bytecode builder directly).
+
+        The loop is invoked through `apply` so that it is reached indirectly
+        and survives as a separate code object; a direct call would be inlined
+        and the loop's free vars would no longer be observable.
         """
         src = """
         (letrec ((limit 100000)
                  (loop (lambda (n)
                           (if (integer>=? n limit) n (loop (integer+ n 1))))))
-          (loop 0))
+          (apply loop (list 0)))
         """
         code = self._compile(src)
         # The loop function should have no self-capture free var.

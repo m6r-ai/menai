@@ -25,15 +25,23 @@ def _compile(src: str):
     return MenaiCompiler().compile(src)
 
 
-def _find_lambda(code, name: str):
-    """Find a nested code object by name (BFS through all code objects)."""
+def _loop_function(code, name: str):
+    """
+    Return the code object holding the self-loop named `name`.
+
+    A self-recursive letrec whose recursion is a tail call is lowered to a
+    loop and then inlined into its caller, so the loop may not exist as a
+    separate code object.  When no code object is named `name`, the loop has
+    been inlined into the top-level code object, which is returned instead.
+    """
     queue = [code]
     while queue:
         co = queue.pop(0)
         if name in co.name:
             return co
         queue.extend(co.code_objects)
-    raise AssertionError(f"lambda {name!r} not found")
+
+    return code
 
 
 def _has_backward_conditional_jump(code) -> bool:
@@ -99,7 +107,7 @@ class TestLoopRotation:
           (sum-list (list 1 2 3 4 5) 0))
         """
         code = _compile(src)
-        fn = _find_lambda(code, "sum-list")
+        fn = _loop_function(code, "sum-list")
         assert _has_backward_conditional_jump(fn), (
             "rotated loop must have a conditional back-edge"
         )
@@ -123,7 +131,7 @@ class TestLoopRotation:
           (sum-list (list 1 2 3 4 5) 0))
         """
         code = _compile(src)
-        fn = _find_lambda(code, "sum-list")
+        fn = _loop_function(code, "sum-list")
         assert _count_op(fn, Opcode.LIST_NULL_P) == 2, (
             "rotated loop must have both the entry test and the bottom test"
         )
@@ -202,7 +210,7 @@ class TestLoopRotation:
           (count-down 10))
         """
         code = _compile(src)
-        fn = _find_lambda(code, "count-down")
+        fn = _loop_function(code, "count-down")
         assert _has_backward_conditional_jump(fn)
 
     def test_count_down_correct_results(self):
@@ -231,7 +239,7 @@ class TestLoopRotation:
           (even? 10))
         """
         code = _compile(src)
-        even_fn = _find_lambda(code, "even?")
+        even_fn = _loop_function(code, "even?")
         assert not _has_backward_conditional_jump(even_fn)
         assert not _has_backward_unconditional_jump(even_fn)
 
@@ -307,7 +315,7 @@ class TestMultiBlockBodyRotation:
           (count-mismatch 0 0))
         """
         code = _compile(src)
-        fn = _find_lambda(code, "count-mismatch")
+        fn = _loop_function(code, "count-mismatch")
         assert _has_backward_conditional_jump(fn), (
             "rotated loop must have a conditional back-edge"
         )
@@ -335,7 +343,7 @@ class TestMultiBlockBodyRotation:
           (count-mismatch 0 0))
         """
         code = _compile(src)
-        fn = _find_lambda(code, "count-mismatch")
+        fn = _loop_function(code, "count-mismatch")
         assert _count_op(fn, Opcode.INTEGER_GTE_P) == 2, (
             "rotated loop must have both the entry test and the bottom test"
         )
@@ -411,7 +419,7 @@ class TestMultipleBackEdgesRotated:
           (scan 0))
         """
         code = _compile(src)
-        fn = _find_lambda(code, "scan")
+        fn = _loop_function(code, "scan")
         assert _has_backward_conditional_jump(fn), (
             "a loop with multiple back-edges must be rotated"
         )
@@ -436,7 +444,7 @@ class TestMultipleBackEdgesRotated:
           (scan 0))
         """
         code = _compile(src)
-        fn = _find_lambda(code, "scan")
+        fn = _loop_function(code, "scan")
         assert _count_op(fn, Opcode.INTEGER_GTE_P) == 3, (
             "rotated loop must have the entry test plus one test per back-edge"
         )
@@ -500,7 +508,7 @@ class TestMultipleBackEdgesRotated:
         code = _compile(
             "(sort-list (lambda (x y) (integer<? x y)) (list 3 1 2 5 4))"
         )
-        fn = _find_lambda(code, "merge")
+        fn = _loop_function(code, "merge")
         assert _has_backward_conditional_jump(fn), (
             "merge's loop must be rotated"
         )

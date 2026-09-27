@@ -45,15 +45,23 @@ def _compile(src: str):
     return MenaiCompiler().compile(src)
 
 
-def _find_lambda(code, name: str):
-    """Find a nested code object by name (BFS through all code objects)."""
+def _loop_function(code, name: str):
+    """
+    Return the code object holding the self-loop named `name`.
+
+    A self-recursive letrec whose recursion is a tail call is lowered to a
+    loop and then inlined into its caller, so the loop may not exist as a
+    separate code object.  When no code object is named `name`, the loop has
+    been inlined into the top-level code object, which is returned instead.
+    """
     queue = [code]
     while queue:
         co = queue.pop(0)
         if name in co.name:
             return co
         queue.extend(co.code_objects)
-    raise AssertionError(f"lambda {name!r} not found")
+
+    return code
 
 
 def _self_loop_target(code) -> int | None:
@@ -106,7 +114,7 @@ class TestLoopInvariantComputationHoisting:
           (loop 0 0))
         """
         code = _compile(src)
-        loop_fn = _find_lambda(code, "loop")
+        loop_fn = _loop_function(code, "loop")
         assert _count_op(loop_fn, Opcode.STRING_LENGTH) == 1
         target = _self_loop_target(loop_fn)
         assert target is not None
@@ -142,7 +150,7 @@ class TestLoopInvariantComputationHoisting:
           (loop 0 0))
         """
         code = _compile(src)
-        loop_fn = _find_lambda(code, "loop")
+        loop_fn = _loop_function(code, "loop")
         target = _self_loop_target(loop_fn)
         assert target is not None
         # The LOAD_CONST for the constant 1 should be before the self-loop target.
@@ -176,7 +184,7 @@ class TestLoopInvariantComputationHoisting:
           (loop 0 0))
         """
         code = _compile(src)
-        loop_fn = _find_lambda(code, "loop")
+        loop_fn = _loop_function(code, "loop")
         target = _self_loop_target(loop_fn)
         assert target is not None
         add_indices = [
@@ -199,7 +207,7 @@ class TestLoopInvariantComputationHoisting:
           (even? 10))
         """
         code = _compile(src)
-        even_fn = _find_lambda(code, "even?")
+        even_fn = _loop_function(code, "even?")
         assert _self_loop_target(even_fn) is None
 
     def test_correct_results_with_hoisted_computation(self):
@@ -321,7 +329,7 @@ class TestGuardHoisting:
           (apply-moves 0 (flip 3)))
         """
         code = _compile(src)
-        am = _find_lambda(code, "apply-moves")
+        am = _loop_function(code, "apply-moves")
         assert _count_op(am, Opcode.ASSERT_LIST) == 1
         target = _self_loop_target(am)
         assert target is not None
@@ -347,7 +355,7 @@ class TestGuardHoisting:
           (search-loop 0))
         """
         code = _compile(src)
-        sl = _find_lambda(code, "search-loop")
+        sl = _loop_function(code, "search-loop")
         # The guard is not hoisted out of the loop.  The loop is rotated, so
         # the guard appears twice: once in the entry test and once in the
         # rotated test at the bottom of the loop.  Both execute inside the
@@ -383,7 +391,7 @@ class TestGuardHoisting:
           (search-loop (flip 3) (flip 4)))
         """
         code = _compile(src)
-        sl = _find_lambda(code, "search-loop")
+        sl = _loop_function(code, "search-loop")
         assert _count_op(sl, Opcode.ASSERT_INTEGER) == 2
         target = _self_loop_target(sl)
         assert target is not None
@@ -509,7 +517,7 @@ class TestGuardHoisting:
           (loop (integer- (vector-length v) 1) (flip 3)))
         """
         code = _compile(src)
-        loop_fn = _find_lambda(code, "loop")
+        loop_fn = _loop_function(code, "loop")
         assert _count_op(loop_fn, Opcode.ASSERT_LIST) == 1
         target = _self_loop_target(loop_fn)
         assert target is not None
