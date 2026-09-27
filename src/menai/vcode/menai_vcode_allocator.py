@@ -403,7 +403,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
                 continue
 
-            if not _has_no_other_use(func.instrs, reg_id, reg_def, move_idx):
+            if not _has_no_other_move(func.instrs, reg_id, reg_def, move_idx):
                 continue
 
             barrier = False
@@ -471,7 +471,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
                 continue
 
-            if not _has_no_other_use(func.instrs, reg_id, reg_def, move_idx):
+            if not _has_no_other_move(func.instrs, reg_id, reg_def, move_idx):
                 continue
 
             reads_param = False
@@ -521,7 +521,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
             continue
 
-        if not _has_no_other_use(func.instrs, reg_id, reg_def, move_idx):
+        if not _has_no_other_move(func.instrs, reg_id, reg_def, move_idx):
             continue
 
         barrier = False
@@ -619,24 +619,33 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     return [], []
 
 
-def _has_no_other_use(
+def _has_no_other_move(
     instrs: list[MenaiVCodeInstr],
     reg_id: int,
     reg_def: int,
     move_idx: int,
 ) -> bool:
     """
-    Return True if `reg_id` is used by no instruction strictly between its
-    definition at `reg_def` and the move at `move_idx`.
+    Return True if `reg_id` feeds no move other than the one at `move_idx`
+    strictly between its definition at `reg_def` and that move.
 
     Combined with a check that the move at `move_idx` is the register's last
-    use, this establishes that the move is the register's *only* use.  Slot
-    coalescing (Phases 3b, 3c, 4) requires a single-use source: if the source
-    feeds more than one move, writing its definition straight into one
-    destination's slot would clobber a value another move still needs.
+    use, this establishes that the move is the register's only *move* use.
+    Slot coalescing (Phases 3b, 3c, 4) requires that: if the source feeds
+    another move, writing its definition straight into one destination's slot
+    would clobber a value the other move still needs.
+
+    Non-move reads of the register are harmless.  Coalescing writes the
+    source's value into the destination slot, and a read before the move
+    simply observes that value there; only another move would overwrite the
+    destination slot before it is consumed.
     """
     for scan_idx in range(reg_def + 1, move_idx):
-        _, scan_uses = _defs_uses(instrs[scan_idx])
+        scan_instr = instrs[scan_idx]
+        if not isinstance(scan_instr, MenaiVCodeMove):
+            continue
+
+        _, scan_uses = _defs_uses(scan_instr)
         if reg_id in scan_uses:
             return False
 
