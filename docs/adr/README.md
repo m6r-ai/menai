@@ -99,3 +99,5 @@ What costs, risks, or constraints does this decision impose?
 | [0028](0028-instruction-tracing-by-ordinal.md) | Instruction tracing keyed by walk-order ordinals | Accepted |
 | [0029](0029-predicate-fold-locally-proven-only.md) | Type-predicate folding is restricted to locally-proven arguments | Accepted |
 | [0030](0030-exception-blocks-emitted-last.md) | Exception blocks are laid out after the normal path | Accepted |
+| [0031](0031-inliner-does-not-inline-recursive-calls.md) | The IR inliner does not inline recursive or mutually-recursive calls | Accepted |
+| [0032](0032-single-binding-tail-recursive-letrecs-become-loops.md) | Single-binding tail-recursive letrecs are converted to loops before inlining | Accepted |

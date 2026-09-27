@@ -180,6 +180,33 @@ The reason: immutability makes passes composable and makes bugs easier to isolat
 that mutates its input can corrupt the tree in ways that only manifest later in an
 unrelated pass.
 
+### The IR inliner does not inline recursive or mutually-recursive calls
+
+The IR inliner refuses to inline a call to a `letrec`-bound function made from within
+that `letrec` group. This is the recursion guard: a `letrec` group is a single
+strongly-connected component (ADR-0008), so a same-group call may be recursive, and
+inlining a self-recursive body would not terminate the pass's fixed-point loop.
+
+The guard is scoped to the enclosing group. The group's binding names are reset when
+descending into a nested `let` body, so a `letrec`-bound function is inlinable at call
+sites outside its own group. A direct lambda application (`((lambda ...) arg)`) is
+exempt.
+
+See [ADR-0031](docs/adr/0031-inliner-does-not-inline-recursive-calls.md).
+
+### Single-binding tail-recursive letrecs are converted to loops before inlining
+
+`MenaiIRLetrecToLoop` converts a `letrec` with a single self-referencing binding whose
+body is a single tail call to that binding into a `MenaiIRLoop`, replacing the
+self-calls with `MenaiIRRecur` back-edges. It runs before the inliner so the inliner
+can see and inline calls inside the loop body.
+
+Only single-binding letrecs are converted. A self-recursive function that shares a
+`letrec` group with other bindings is not converted; moving it into its own
+single-binding `letrec` makes it eligible.
+
+See [ADR-0032](docs/adr/0032-single-binding-tail-recursive-letrecs-become-loops.md).
+
 ### CFG passes declare their scope via their base class
 
 CFG optimisation passes operate at module scope: a pass is handed the root
