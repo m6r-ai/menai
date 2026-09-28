@@ -16,6 +16,8 @@ from __future__ import annotations
 from menai.cfg.menai_cfg import (
     MenaiCFGPhiInstr,
     MenaiCFGSelfLoopTerm,
+    blocks_by_id,
+    predecessors,
 )
 from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
 from menai.ir.menai_ir import (
@@ -95,7 +97,7 @@ class TestLoopLowering:
         assert term.param_vals is not None
         assert len(term.param_vals) == 1
         assert term.target is not None
-        assert term.target.label == "loop_entry"
+        assert blocks_by_id(cfg)[term.target].label == "loop_entry"
 
     def test_back_edge_targets_loop_entry(self):
         """The self-loop's target is the loop-entry block."""
@@ -105,7 +107,7 @@ class TestLoopLowering:
             b.terminator for b in cfg.blocks
             if isinstance(b.terminator, MenaiCFGSelfLoopTerm)
         )
-        assert term.target is loop_entry
+        assert term.target == loop_entry.id
 
     def test_phi_incoming_has_init_and_back_edge(self):
         """The param phi merges the init value and the back-edge value."""
@@ -119,7 +121,7 @@ class TestLoopLowering:
         cfg = MenaiCFGBuilder().build(_make_loop())
         loop_entry = next(b for b in cfg.blocks if b.label == "loop_entry")
         # Predecessors: the pre-loop block (jump in) and the recur block (back-edge).
-        assert len(loop_entry.predecessors) == 2
+        assert len(predecessors(cfg, loop_entry)) == 2
 
     def test_param_vals_match_phi_results(self):
         """The back-edge param_vals are the loop-entry phi results."""
