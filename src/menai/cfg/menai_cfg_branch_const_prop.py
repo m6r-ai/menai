@@ -130,6 +130,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGValue,
     MenaiCFGInstr,
     MenaiCFGTerminator,
+    blocks_by_id,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
@@ -265,10 +266,10 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
             # check each target individually.
             if isinstance(terminal, MenaiCFGBranchTerm) and phi_used_outside:
                 true_safe = not _is_value_used_in_subtree(
-                    terminal.true_block, phi.result, block
+                    func, terminal.true_block, phi.result, block.id
                 )
                 false_safe = not _is_value_used_in_subtree(
-                    terminal.false_block, phi.result, block
+                    func, terminal.false_block, phi.result, block.id
                 )
 
             else:
@@ -352,7 +353,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                             else terminal.false_block
                         )
                         target_uses_phi = _is_value_used_in_subtree(
-                            target, phi.result, block
+                            func, target, phi.result, block.id
                         )
                         if target_uses_phi:
                             # Keep the phi (needed for the value), but update
@@ -405,6 +406,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                                 incoming=keep,
                             )
                             block = replace(block, instrs=tuple(new_instrs))
+                            rewrites[block.id] = block
                             changed = True
                             continue
 
@@ -762,27 +764,31 @@ def _is_value_used_outside(
 
 
 def _is_value_used_in_subtree(
-    entry: MenaiCFGBlock,
+    func: MenaiCFGFunction,
+    entry_id: int,
     value: MenaiCFGValue,
-    exclude_block: MenaiCFGBlock,
+    exclude_id: int,
 ) -> bool:
     """
     Return True if the given SSA value is used by any block reachable from
-    entry (excluding exclude_block and blocks that jump back to it).
+    the block with id `entry_id` (excluding `exclude_id` and blocks that jump
+    back to it).
 
     Performs a BFS from entry, following jump and branch targets, but not
-    self-loop or raise terminators.  Stops at exclude_block to avoid
+    self-loop or raise terminators.  Stops at exclude_id to avoid
     scanning the join block itself.
     """
+    by_id = blocks_by_id(func)
     visited: set[int] = set()
-    queue: list[MenaiCFGBlock] = [entry]
+    queue: list[int] = [entry_id]
 
     while queue:
-        block = queue.pop()
-        if block.id in visited or block.id == exclude_block.id:
+        block_id = queue.pop()
+        if block_id in visited or block_id == exclude_id:
             continue
 
-        visited.add(block.id)
+        visited.add(block_id)
+        block = by_id[block_id]
 
         for instr in block.instrs:
             for arg in _instr_args(instr):
@@ -795,9 +801,9 @@ def _is_value_used_in_subtree(
                 if arg.id == value.id:
                     return True
 
-            for target in _term_targets(term):
-                if target.id not in visited and target.id != exclude_block.id:
-                    queue.append(target)
+            for target_id in _term_target_ids(term):
+                if target_id not in visited and target_id != exclude_id:
+                    queue.append(target_id)
 
     return False
 
@@ -864,8 +870,8 @@ def _term_args(term: MenaiCFGTerminator) -> list[MenaiCFGValue]:
     return []
 
 
-def _term_targets(term: MenaiCFGTerminator) -> list[MenaiCFGBlock]:
-    """Return all block targets from a terminator."""
+def _term_target_ids(term: MenaiCFGTerminator) -> list[int]:
+    """Return all target block ids from a terminator."""
     if isinstance(term, MenaiCFGJumpTerm):
         return [term.target]
 

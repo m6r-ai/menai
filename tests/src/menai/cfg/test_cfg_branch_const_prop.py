@@ -31,13 +31,10 @@ from menai.cfg.menai_cfg import (
 )
 from menai.cfg.menai_cfg_branch_const_prop import MenaiCFGBranchConstProp
 from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.menai_value import MenaiBoolean, MenaiInteger
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _vid = 2000
 
@@ -49,29 +46,21 @@ def v(hint: str = "") -> MenaiCFGValue:
 
 
 def block(bid: int, *instrs, patch_instrs=None, terminator=None, label: str = "block") -> MenaiCFGBlock:
-    b = MenaiCFGBlock(id=bid, label=label)
-    b.instrs = list(instrs)
-    b.patch_instrs = patch_instrs or []
-    b.terminator = terminator
-    return b
+    return MenaiCFGBlock(
+        id=bid,
+        label=label,
+        instrs=tuple(instrs),
+        patch_instrs=tuple(patch_instrs or ()),
+        terminator=terminator,
+    )
 
 
 def func(*blocks, params=None, free_vars=None) -> MenaiCFGFunction:
-    f = MenaiCFGFunction(blocks=list(blocks), params=params or [], free_vars=free_vars or [])
-    _link(f)
-    return f
-
-
-def _link(f: MenaiCFGFunction) -> None:
-    for b in f.blocks:
-        b.predecessors = []
-    for b in f.blocks:
-        t = b.terminator
-        if isinstance(t, MenaiCFGJumpTerm):
-            t.target.predecessors.append(b)
-        elif isinstance(t, MenaiCFGBranchTerm):
-            t.true_block.predecessors.append(b)
-            t.false_block.predecessors.append(b)
+    return MenaiCFGFunction(
+        blocks=tuple(blocks),
+        params=tuple(params or ()),
+        free_vars=tuple(free_vars or ()),
+    )
 
 
 TRUE  = MenaiBoolean(True)
@@ -102,34 +91,37 @@ class TestSingleTrueArm:
         body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        then_block = block(2, MenaiCFGConstInstr(result=vtrue, value=TRUE), label="then")
-        else_block = block(3, MenaiCFGBuiltinInstr(result=vr, op="pred", args=[]), label="else")
+        then_block = block(
+            2, MenaiCFGConstInstr(result=vtrue, value=TRUE),
+            terminator=MenaiCFGJumpTerm(target=4), label="then",
+        )
+        else_block = block(
+            3, MenaiCFGBuiltinInstr(result=vr, op="pred", args=[]),
+            terminator=MenaiCFGJumpTerm(target=4), label="else",
+        )
 
         join = block(
             4,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, then_block), (vr, else_block)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, 2), (vr, 3)]),
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-
-        then_block.terminator = MenaiCFGJumpTerm(target=join)
-        else_block.terminator = MenaiCFGJumpTerm(target=join)
 
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=then_block, false_block=else_block),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=2, false_block=3),
             label="entry",
         )
         f = func(entry, then_block, else_block, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # then_block should now jump directly to body, not join.
         then_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(then_new.terminator, MenaiCFGJumpTerm)
-        assert then_new.terminator.target.id == body.id
+        assert then_new.terminator.target == 10
 
         # join had two arms; one was constant so the phi collapses to a single
         # entry, which the pass eliminates — branch condition becomes %r directly.
@@ -161,34 +153,37 @@ class TestSingleFalseArm:
         body  = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        then_block = block(2, MenaiCFGConstInstr(result=vfalse, value=FALSE), label="then")
-        else_block = block(3, MenaiCFGBuiltinInstr(result=vr, op="pred", args=[]), label="else")
+        then_block = block(
+            2, MenaiCFGConstInstr(result=vfalse, value=FALSE),
+            terminator=MenaiCFGJumpTerm(target=4), label="then",
+        )
+        else_block = block(
+            3, MenaiCFGBuiltinInstr(result=vr, op="pred", args=[]),
+            terminator=MenaiCFGJumpTerm(target=4), label="else",
+        )
 
         join = block(
             4,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vfalse, then_block), (vr, else_block)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vfalse, 2), (vr, 3)]),
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-
-        then_block.terminator = MenaiCFGJumpTerm(target=join)
-        else_block.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=then_block, false_block=else_block),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=2, false_block=3),
             label="entry",
         )
         f = func(entry, then_block, else_block, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         then_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(then_new.terminator, MenaiCFGJumpTerm)
-        assert then_new.terminator.target.id == exit_.id
+        assert then_new.terminator.target == 11
 
         # Single remaining arm — phi eliminated, branch condition is %r directly.
         join_new = next(b for b in new_f.blocks if b.id == 4)
@@ -213,44 +208,41 @@ class TestMixedArms:
         body  = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        b_t1 = block(1, MenaiCFGConstInstr(result=vt1, value=TRUE),  label="t1")
-        b_t2 = block(2, MenaiCFGConstInstr(result=vt2, value=TRUE),  label="t2")
-        b_f1 = block(3, MenaiCFGConstInstr(result=vf1, value=FALSE), label="f1")
-        b_r  = block(4, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="r")
+        b_t1 = block(1, MenaiCFGConstInstr(result=vt1, value=TRUE), terminator=MenaiCFGJumpTerm(target=5), label="t1")
+        b_t2 = block(2, MenaiCFGConstInstr(result=vt2, value=TRUE), terminator=MenaiCFGJumpTerm(target=5), label="t2")
+        b_f1 = block(3, MenaiCFGConstInstr(result=vf1, value=FALSE), terminator=MenaiCFGJumpTerm(target=5), label="f1")
+        b_r  = block(4, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=5), label="r")
 
         join = block(
             5,
             MenaiCFGPhiInstr(
                 result=vphi,
-                incoming=[(vt1, b_t1), (vt2, b_t2), (vf1, b_f1), (vr, b_r)],
+                incoming=[(vt1, 1), (vt2, 2), (vf1, 3), (vr, 4)],
             ),
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-
-        for b in (b_t1, b_t2, b_f1, b_r):
-            b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=b_t1, false_block=b_t2),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, b_t1, b_t2, b_f1, b_r, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         def term_target(bid):
             b = next(b for b in new_f.blocks if b.id == bid)
             assert isinstance(b.terminator, MenaiCFGJumpTerm)
-            return b.terminator.target.id
+            return b.terminator.target
 
-        assert term_target(1) == body.id
-        assert term_target(2) == body.id
-        assert term_target(3) == exit_.id
+        assert term_target(1) == 10
+        assert term_target(2) == 10
+        assert term_target(3) == 11
 
         # One non-constant arm remains — phi eliminated, branch uses %r directly.
         join_new = next(b for b in new_f.blocks if b.id == 5)
@@ -278,43 +270,43 @@ class TestAllArmsConstant:
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
         preds = [
-            block(i + 1, MenaiCFGConstInstr(result=vt[i], value=TRUE), label=f"p{i}")
+            block(
+                i + 1, MenaiCFGConstInstr(result=vt[i], value=TRUE),
+                terminator=MenaiCFGJumpTerm(target=5), label=f"p{i}",
+            )
             for i in range(4)
         ]
 
         join = block(
             5,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vt[i], preds[i]) for i in range(4)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vt[i], i + 1) for i in range(4)]),
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-
-        for p in preds:
-            p.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=preds[0], false_block=preds[1]),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, *preds, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         for p in preds:
             p_new = next(b for b in new_f.blocks if b.id == p.id)
             assert isinstance(p_new.terminator, MenaiCFGJumpTerm)
-            assert p_new.terminator.target.id == body.id
+            assert p_new.terminator.target == 10
 
         join_new = next(b for b in new_f.blocks if b.id == 5)
         assert not any(isinstance(i, MenaiCFGPhiInstr) for i in join_new.instrs)
         # Stale branch replaced with a jump to true_block so the block is
         # structurally valid; it is now unreachable (all predecessors re-wired).
         assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
-        assert join_new.terminator.target.id == body.id
+        assert join_new.terminator.target == 10
 
 
 # ---------------------------------------------------------------------------
@@ -333,29 +325,26 @@ class TestNonConstantPhi:
         body  = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        block_a = block(1, MenaiCFGBuiltinInstr(result=va, op="p1", args=[]), label="A")
-        block_b = block(2, MenaiCFGBuiltinInstr(result=vb, op="p2", args=[]), label="B")
+        block_a = block(1, MenaiCFGBuiltinInstr(result=va, op="p1", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vb, op="p2", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
 
@@ -376,29 +365,26 @@ class TestPhiIntoReturn:
         """
         vtrue = v("true"); vr = v("r"); vphi = v("phi")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), label="A")
-        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, block_a), (vr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, 1), (vr, 2)]),
             terminator=MenaiCFGReturnTerm(value=vphi),
             label="join",
         )
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # block_a must now return True directly, not jump to join.
@@ -423,29 +409,26 @@ class TestPhiIntoReturn:
         """
         vtrue = v("true"); vfalse = v("false"); vphi = v("phi")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vtrue,  value=TRUE),  label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=vfalse, value=FALSE), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vtrue,  value=TRUE), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vfalse, value=FALSE), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, block_a), (vfalse, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, 1), (vfalse, 2)]),
             terminator=MenaiCFGReturnTerm(value=vphi),
             label="join",
         )
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         a_new = next(b for b in new_f.blocks if b.id == 1)
@@ -479,30 +462,27 @@ class TestPatchInstrs:
         body  = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), label="A")
-        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, block_a), (vr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, 1), (vr, 2)]),
             patch_instrs=[MenaiCFGPatchClosureInstr(closure=vclosure, capture_index=0, value=vpatch_val)],
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
 
@@ -526,30 +506,27 @@ class TestMultipleInstrsInJoin:
         body  = block(10, terminator=MenaiCFGReturnTerm(value=v("p")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("q")), label="exit")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), label="A")
-        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, block_a), (vr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, 1), (vr, 2)]),
             MenaiCFGBuiltinInstr(result=vx, op="some_builtin", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
 
@@ -582,52 +559,43 @@ class TestFixedPoint:
         exit1 = block(21, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit1")
         exit2 = block(22, terminator=MenaiCFGReturnTerm(value=v("z")), label="exit2")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vtrue_a, value=TRUE), label="A")
-        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
-        block_c = block(3, MenaiCFGConstInstr(result=vtrue_c, value=TRUE), label="C")
+        block_a = block(1, MenaiCFGConstInstr(result=vtrue_a, value=TRUE), terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, MenaiCFGConstInstr(result=vtrue_c, value=TRUE), terminator=MenaiCFGJumpTerm(target=5), label="C")
 
         join2 = block(
             5,
-            MenaiCFGPhiInstr(result=v2, incoming=[(vtrue_c, block_c), (v1, None)]),  # join1 set below
+            MenaiCFGPhiInstr(result=v2, incoming=[(vtrue_c, 3), (v1, 4)]),
+            terminator=MenaiCFGBranchTerm(cond=v2, true_block=20, false_block=22),
             label="join2",
         )
-        join2.terminator = MenaiCFGBranchTerm(cond=v2, true_block=body, false_block=exit2)
 
         join1 = block(
             4,
-            MenaiCFGPhiInstr(result=v1, incoming=[(vtrue_a, block_a), (vr, block_b)]),
+            MenaiCFGPhiInstr(result=v1, incoming=[(vtrue_a, 1), (vr, 2)]),
+            terminator=MenaiCFGBranchTerm(cond=v1, true_block=5, false_block=21),
             label="join1",
         )
-        join1.terminator = MenaiCFGBranchTerm(cond=v1, true_block=join2, false_block=exit1)
-
-        # Fix up the join2 phi incoming reference to join1.
-        join2.instrs[0] = MenaiCFGPhiInstr(
-            result=v2, incoming=[(vtrue_c, block_c), (v1, join1)]
-        )
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        block_c.terminator = MenaiCFGJumpTerm(target=join2)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, block_c, join1, join2, body, exit1, exit2)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target.id == join2.id
+        assert a_new.terminator.target == 5
 
         c_new = next(b for b in new_f.blocks if b.id == 3)
         assert isinstance(c_new.terminator, MenaiCFGJumpTerm)
-        assert c_new.terminator.target.id == body.id
+        assert c_new.terminator.target == 20
 
 
 # ---------------------------------------------------------------------------
@@ -646,22 +614,20 @@ class TestNestedLambda:
         body  = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        child_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), label="A")
-        child_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+        child_a = block(1, MenaiCFGConstInstr(result=vtrue, value=TRUE), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        child_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="B")
         child_join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, child_a), (vr, child_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vtrue, 1), (vr, 2)]),
+            terminator=MenaiCFGBranchTerm(cond=vphi, true_block=10, false_block=11),
             label="join",
         )
-        child_join.terminator = MenaiCFGBranchTerm(cond=vphi, true_block=body, false_block=exit_)
-        child_a.terminator = MenaiCFGJumpTerm(target=child_join)
-        child_b.terminator = MenaiCFGJumpTerm(target=child_join)
 
         vcond = v("cond")
         child_entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=child_a, false_block=child_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         child_func = func(child_entry, child_a, child_b, child_join, body, exit_)
@@ -671,7 +637,7 @@ class TestNestedLambda:
         parent_entry = block(0, mk, terminator=MenaiCFGReturnTerm(value=v_closure), label="entry")
         parent_f = func(parent_entry)
 
-        new_parent, changed = MenaiCFGBranchConstProp().optimize(parent_f)
+        new_parent, changed = MenaiCFGBranchConstProp().optimize(parent_f, MenaiCFGContext())
         assert changed
 
         mk_new = next(
@@ -681,7 +647,7 @@ class TestNestedLambda:
         child_new = mk_new.function
         child_a_new = next(b for b in child_new.blocks if b.id == 1)
         assert isinstance(child_a_new.terminator, MenaiCFGJumpTerm)
-        assert child_a_new.terminator.target.id == body.id
+        assert child_a_new.terminator.target == 10
 
 
 # ---------------------------------------------------------------------------
@@ -711,11 +677,12 @@ class TestEndToEnd:
         ir, _ = MenaiIROptimizer().optimize(ir)
         cfg = MenaiCFGBuilder().build(ir)
 
+        context = MenaiCFGContext()
         changed = True
         while changed:
             changed = False
             for p in passes:
-                cfg, c = p.optimize(cfg)
+                cfg, c = p.optimize(cfg, context)
                 changed = changed or c
         return cfg
 
@@ -1044,40 +1011,37 @@ class TestPredicateBranchFullElimination:
         body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone1, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=vnone2, value=MenaiNone()), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone1, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vnone2, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone1, block_a), (vnone2, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone1, 1), (vnone2, 2)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # Both defining blocks should jump directly to body (true_block).
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target.id == body.id
+        assert a_new.terminator.target == 10
 
         b_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
-        assert b_new.terminator.target.id == body.id
+        assert b_new.terminator.target == 10
 
         # Join block should have no phi, no predicate, and a stale jump.
         join_new = next(b for b in new_f.blocks if b.id == 3)
@@ -1098,41 +1062,38 @@ class TestPredicateBranchFullElimination:
         body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vstr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, 1), (vstr, 2)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # #none arm → true_block.
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target.id == body.id
+        assert a_new.terminator.target == 10
 
         # "str" arm → false_block.
         b_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
-        assert b_new.terminator.target.id == exit_.id
+        assert b_new.terminator.target == 11
 
         # Join block should have no phi, no predicate.
         join_new = next(b for b in new_f.blocks if b.id == 3)
@@ -1171,47 +1132,43 @@ class TestPredicateBranchPartialElimination:
         )
         true_block = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="true")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=vs1, value=MenaiString("s1")), label="B")
-        block_c = block(3, MenaiCFGConstInstr(result=vs2, value=MenaiString("s2")), label="C")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vs1, value=MenaiString("s1")), terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, MenaiCFGConstInstr(result=vs2, value=MenaiString("s2")), terminator=MenaiCFGJumpTerm(target=4), label="C")
 
         join = block(
             4,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vs1, block_b), (vs2, block_c)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, 1), (vs1, 2), (vs2, 3)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
-        block_c.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, block_c, join, true_block, false_block)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # #none arm → true_block (safe).
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target.id == true_block.id
+        assert a_new.terminator.target == 10
 
         # String arms stay in phi (not re-wired).
         b_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
-        assert b_new.terminator.target.id == join.id
+        assert b_new.terminator.target == 4
 
         c_new = next(b for b in new_f.blocks if b.id == 3)
         assert isinstance(c_new.terminator, MenaiCFGJumpTerm)
-        assert c_new.terminator.target.id == join.id
+        assert c_new.terminator.target == 4
 
         # Join block: phi has only the two string arms, predicate and branch
         # replaced with a direct jump to false_block (all remaining arms
@@ -1221,7 +1178,7 @@ class TestPredicateBranchPartialElimination:
         assert len(phi_new.incoming) == 2
         assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
         assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
-        assert join_new.terminator.target.id == false_block.id
+        assert join_new.terminator.target == 11
 
     def test_none_predicate_phi_used_in_false_branch_single_remaining(self):
         """
@@ -1247,41 +1204,38 @@ class TestPredicateBranchPartialElimination:
         )
         true_block = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="true")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vstr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, 1), (vstr, 2)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, true_block, false_block)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # #none arm → true_block.
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target.id == true_block.id
+        assert a_new.terminator.target == 10
 
         # B still jumps to join.
         b_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
-        assert b_new.terminator.target.id == join.id
+        assert b_new.terminator.target == 3
 
         # Join block: phi stays (trivial but needed — false_block uses its
         # result).  Predicate and branch replaced with a direct jump to
@@ -1292,7 +1246,7 @@ class TestPredicateBranchPartialElimination:
         assert phi_new.incoming[0][0].id == vstr.id
         assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
         assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
-        assert join_new.terminator.target.id == false_block.id
+        assert join_new.terminator.target == 11
 
     def test_none_predicate_phi_used_in_true_branch(self):
         """
@@ -1319,47 +1273,43 @@ class TestPredicateBranchPartialElimination:
         )
         false_block = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="false")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=vs1, value=MenaiString("s1")), label="B")
-        block_c = block(3, MenaiCFGConstInstr(result=vs2, value=MenaiString("s2")), label="C")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vs1, value=MenaiString("s1")), terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, MenaiCFGConstInstr(result=vs2, value=MenaiString("s2")), terminator=MenaiCFGJumpTerm(target=4), label="C")
 
         join = block(
             4,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vs1, block_b), (vs2, block_c)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, 1), (vs1, 2), (vs2, 3)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
-        block_c.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, block_c, join, true_block, false_block)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # String arms → false_block (safe).
         b_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(b_new.terminator, MenaiCFGJumpTerm)
-        assert b_new.terminator.target.id == false_block.id
+        assert b_new.terminator.target == 11
 
         c_new = next(b for b in new_f.blocks if b.id == 3)
         assert isinstance(c_new.terminator, MenaiCFGJumpTerm)
-        assert c_new.terminator.target.id == false_block.id
+        assert c_new.terminator.target == 11
 
         # #none arm stays in phi.
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target.id == join.id
+        assert a_new.terminator.target == 4
 
         # Join block: phi has only the #none arm, predicate and branch
         # replaced with a direct jump to true_block.
@@ -1368,7 +1318,7 @@ class TestPredicateBranchPartialElimination:
         assert len(phi_new.incoming) == 1
         assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in join_new.instrs)
         assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
-        assert join_new.terminator.target.id == true_block.id
+        assert join_new.terminator.target == 10
 
 
 class TestPredicateBranchNonQualifying:
@@ -1384,30 +1334,27 @@ class TestPredicateBranchNonQualifying:
         body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vstr, value=MenaiString("a")), label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=v("b"), value=MenaiString("b")), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vstr, value=MenaiString("a")), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=v("b"), value=MenaiString("b")), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vstr, block_a), (v("b"), block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vstr, 1), (v("b"), 2)]),
             MenaiCFGBuiltinInstr(result=vpred, op="string-length", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
 
@@ -1421,32 +1368,29 @@ class TestPredicateBranchNonQualifying:
         body = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="body")
         exit_ = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="exit")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGConstInstr(result=vstr, value=MenaiString("str")), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         from menai.cfg.menai_cfg import MenaiCFGGuardInstr
         join = block(
             3,
             MenaiCFGGuardInstr(value=vphi, expected_type="string"),
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vstr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, 1), (vstr, 2)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=body, false_block=exit_)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, body, exit_)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
 
@@ -1475,11 +1419,12 @@ class TestPredicateBranchEndToEnd:
         ir, _ = MenaiIROptimizer().optimize(ir)
         cfg = MenaiCFGBuilder().build(ir)
 
+        context = MenaiCFGContext()
         changed = True
         while changed:
             changed = False
             for p in passes:
-                cfg, c = p.optimize(cfg)
+                cfg, c = p.optimize(cfg, context)
                 changed = changed or c
         return cfg
 
@@ -1608,36 +1553,33 @@ class TestPredicateBranchSoleNonConstantArm:
         )
         true_block = block(10, terminator=MenaiCFGReturnTerm(value=v("x")), label="true")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, 1), (vr, 2)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, true_block, false_block)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # #none arm → true_block.
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target.id == true_block.id
+        assert a_new.terminator.target == 10
 
         # Join block must retain the phi (false_block still uses its result),
         # with only the non-constant arm remaining.  The predicate and branch
@@ -1670,29 +1612,26 @@ class TestPredicateBranchSoleNonConstantArm:
         )
         false_block = block(11, terminator=MenaiCFGReturnTerm(value=v("y")), label="false")
 
-        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), label="A")
-        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), label="B")
+        block_a = block(1, MenaiCFGConstInstr(result=vnone, value=MenaiNone()), terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, MenaiCFGBuiltinInstr(result=vr, op="p", args=[]), terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, block_a), (vr, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(vnone, 1), (vr, 2)]),
             MenaiCFGBuiltinInstr(result=vpred, op="none?", args=[vphi]),
+            terminator=MenaiCFGBranchTerm(cond=vpred, true_block=10, false_block=11),
             label="join",
         )
-        join.terminator = MenaiCFGBranchTerm(cond=vpred, true_block=true_block, false_block=false_block)
-
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         vcond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join, true_block, false_block)
 
-        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f)
+        new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
