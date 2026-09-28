@@ -39,6 +39,7 @@ from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
 from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
 from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlocks
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
@@ -151,6 +152,6 @@ class TestPassesDoNotMutateInput:
         func = _build_cfg(_SOURCES[source_key])
         before = _snapshot(func)
 
-        pass_.optimize(func)
+        pass_.optimize(func, MenaiCFGContext())
 
         assert _snapshot(func) == before, f"{name} mutated its input CFG"
