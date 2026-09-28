@@ -28,12 +28,9 @@ from menai.cfg.menai_cfg import (
 )
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.menai_value import MenaiInteger
 
-
-# ---------------------------------------------------------------------------
-# Helpers (mirrors test_cfg_optimizer.py style)
-# ---------------------------------------------------------------------------
 
 _vid = 1000  # start high to avoid clashes with test_cfg_optimizer.py globals
 
@@ -45,29 +42,21 @@ def v(hint: str = "") -> MenaiCFGValue:
 
 
 def block(id: int, *instrs, patch_instrs=None, terminator=None, label: str = "block") -> MenaiCFGBlock:
-    b = MenaiCFGBlock(id=id, label=label)
-    b.instrs = list(instrs)
-    b.patch_instrs = patch_instrs or []
-    b.terminator = terminator
-    return b
+    return MenaiCFGBlock(
+        id=id,
+        label=label,
+        instrs=tuple(instrs),
+        patch_instrs=tuple(patch_instrs or ()),
+        terminator=terminator,
+    )
 
 
 def func(*blocks, params=None, free_vars=None) -> MenaiCFGFunction:
-    f = MenaiCFGFunction(blocks=list(blocks), params=params or [], free_vars=free_vars or [])
-    _link(f)
-    return f
-
-
-def _link(f: MenaiCFGFunction) -> None:
-    for b in f.blocks:
-        b.predecessors = []
-    for b in f.blocks:
-        t = b.terminator
-        if isinstance(t, MenaiCFGJumpTerm):
-            t.target.predecessors.append(b)
-        elif isinstance(t, MenaiCFGBranchTerm):
-            t.true_block.predecessors.append(b)
-            t.false_block.predecessors.append(b)
+    return MenaiCFGFunction(
+        blocks=tuple(blocks),
+        params=tuple(params or ()),
+        free_vars=tuple(free_vars or ()),
+    )
 
 
 def phi_result_ids(f: MenaiCFGFunction):
@@ -114,30 +103,26 @@ class TestBasicChain:
         va = v("a"); vb = v("b"); vc = v("c")
         v1 = v("v1"); v2 = v("v2")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
-        block_c = block(3, terminator=None, label="C")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=5), label="C")
 
         join1 = block(
             4,
-            MenaiCFGPhiInstr(result=v1, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGJumpTerm(target=5),
             label="join1",
         )
         join2 = block(
             5,
-            MenaiCFGPhiInstr(result=v2, incoming=[(v1, join1), (vc, block_c)]),
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 4), (vc, 3)]),
             terminator=MenaiCFGReturnTerm(value=v2),
             label="join2",
         )
 
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        block_c.terminator = MenaiCFGJumpTerm(target=join2)
-        join1.terminator = MenaiCFGJumpTerm(target=join2)
-
         f = func(block_a, block_b, block_c, join1, join2)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         # join1's phi (v1) should be gone -- it is now unreferenced.
@@ -146,34 +131,32 @@ class TestBasicChain:
         # join2's phi should now have three incoming entries: A, B, C.
         join2_new = next(b for b in new_f.blocks if b.id == 5)
         phi2 = next(i for i in join2_new.instrs if isinstance(i, MenaiCFGPhiInstr))
-        pred_ids = {pred.id for _, pred in phi2.incoming}
+        pred_ids = {pred for _, pred in phi2.incoming}
         assert pred_ids == {1, 2, 3}, f"expected preds {{1,2,3}}, got {pred_ids}"
         assert len(phi2.incoming) == 3
 
     def test_no_change_when_no_phi_chain(self):
         """A single phi with non-phi incoming values is untouched."""
         va = v("a"); vb = v("b"); vphi = v("phi")
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="B")
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(va, 1), (vb, 2)]),
             terminator=MenaiCFGReturnTerm(value=vphi),
             label="join",
         )
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         cond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=cond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=cond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
 
@@ -196,30 +179,33 @@ class TestThreeLevelChain:
         va = v("a"); vb = v("b"); vc = v("c"); vd = v("d")
         v1 = v("v1"); v2 = v("v2"); v3 = v("v3")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
-        block_c = block(3, terminator=None, label="C")
-        block_d = block(4, terminator=None, label="D")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=5), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=5), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=6), label="C")
+        block_d = block(4, terminator=MenaiCFGJumpTerm(target=7), label="D")
 
-        join1 = block(5, MenaiCFGPhiInstr(result=v1, incoming=[(va, block_a), (vb, block_b)]), label="join1")
-        join2 = block(6, MenaiCFGPhiInstr(result=v2, incoming=[(v1, join1), (vc, block_c)]), label="join2")
+        join1 = block(
+            5,
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGJumpTerm(target=6),
+            label="join1",
+        )
+        join2 = block(
+            6,
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 5), (vc, 3)]),
+            terminator=MenaiCFGJumpTerm(target=7),
+            label="join2",
+        )
         join3 = block(
             7,
-            MenaiCFGPhiInstr(result=v3, incoming=[(v2, join2), (vd, block_d)]),
+            MenaiCFGPhiInstr(result=v3, incoming=[(v2, 6), (vd, 4)]),
             terminator=MenaiCFGReturnTerm(value=v3),
             label="join3",
         )
 
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        block_c.terminator = MenaiCFGJumpTerm(target=join2)
-        block_d.terminator = MenaiCFGJumpTerm(target=join3)
-        join1.terminator = MenaiCFGJumpTerm(target=join2)
-        join2.terminator = MenaiCFGJumpTerm(target=join3)
-
         f = func(block_a, block_b, block_c, block_d, join1, join2, join3)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert changed
 
         assert v1.id not in phi_result_ids(new_f)
@@ -227,7 +213,7 @@ class TestThreeLevelChain:
 
         join3_new = next(b for b in new_f.blocks if b.id == 7)
         phi3 = next(i for i in join3_new.instrs if isinstance(i, MenaiCFGPhiInstr))
-        pred_ids = {pred.id for _, pred in phi3.incoming}
+        pred_ids = {pred for _, pred in phi3.incoming}
         assert pred_ids == {1, 2, 3, 4}
         assert len(phi3.incoming) == 4
 
@@ -249,31 +235,26 @@ class TestPhiUsedOutsidePhi:
         va = v("a"); vb = v("b"); vc = v("c")
         v1 = v("v1"); v2 = v("v2")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
-        block_c = block(3, terminator=None, label="C")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=5), label="C")
 
         join1 = block(
             4,
-            MenaiCFGPhiInstr(result=v1, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
             terminator=MenaiCFGReturnTerm(value=v1),
             label="join1",
         )
         join2 = block(
             5,
-            MenaiCFGPhiInstr(result=v2, incoming=[(v1, join1), (vc, block_c)]),
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 4), (vc, 3)]),
             terminator=MenaiCFGReturnTerm(value=v2),
             label="join2",
         )
 
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        block_c.terminator = MenaiCFGJumpTerm(target=join2)
-        join1.terminator = MenaiCFGReturnTerm(value=v1)
-
         f = func(block_a, block_b, block_c, join1, join2)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert not changed, "phi with non-phi use must not be collapsed"
         assert v1.id in phi_result_ids(new_f)
 
@@ -285,31 +266,27 @@ class TestPhiUsedOutsidePhi:
         va = v("a"); vb = v("b"); vc = v("c")
         v1 = v("v1"); v2 = v("v2"); vr = v("r")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
-        block_c = block(3, terminator=None, label="C")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=5), label="C")
 
         join1 = block(
             4,
-            MenaiCFGPhiInstr(result=v1, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
             MenaiCFGBuiltinInstr(result=vr, op="not", args=[v1]),
+            terminator=MenaiCFGJumpTerm(target=5),
             label="join1",
         )
         join2 = block(
             5,
-            MenaiCFGPhiInstr(result=v2, incoming=[(v1, join1), (vc, block_c)]),
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 4), (vc, 3)]),
             terminator=MenaiCFGReturnTerm(value=v2),
             label="join2",
         )
 
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        block_c.terminator = MenaiCFGJumpTerm(target=join2)
-        join1.terminator = MenaiCFGJumpTerm(target=join2)
-
         f = func(block_a, block_b, block_c, join1, join2)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert not changed, "phi used in builtin must not be collapsed"
 
 
@@ -328,28 +305,26 @@ class TestZeroUsePhi:
         v_unused = v("unused")
         v_ret = v("ret")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=v_unused, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=v_unused, incoming=[(va, 1), (vb, 2)]),
             terminator=MenaiCFGReturnTerm(value=v_ret),
             label="join",
         )
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
 
         cond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=cond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=cond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, block_a, block_b, join)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert changed
         assert v_unused.id not in phi_result_ids(new_f), "zero-use phi should be removed"
 
@@ -371,29 +346,26 @@ class TestDuplicatePredConflict:
         va = v("a"); vb = v("b"); vc = v("c_from_A")
         v1 = v("v1"); v2 = v("v2")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="B")
 
         join1 = block(
             3,
-            MenaiCFGPhiInstr(result=v1, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGJumpTerm(target=4),
             label="join1",
         )
         # join2 already has an entry from A (vc), so expanding v1 would add A again.
         join2 = block(
             4,
-            MenaiCFGPhiInstr(result=v2, incoming=[(v1, join1), (vc, block_a)]),
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 3), (vc, 1)]),
             terminator=MenaiCFGReturnTerm(value=v2),
             label="join2",
         )
 
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        join1.terminator = MenaiCFGJumpTerm(target=join2)
-
         f = func(block_a, block_b, join1, join2)
 
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         # The collapse of v1 into join2 should be skipped due to the conflict.
         assert not changed, "conflict should prevent collapse"
         assert v1.id in phi_result_ids(new_f)
@@ -428,41 +400,34 @@ class TestMultipleConsumers:
         va = v("a"); vb = v("b"); vc = v("c"); vd = v("d")
         v1 = v("v1"); v2 = v("v2"); v3 = v("v3")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
-        block_c = block(3, terminator=None, label="C")
-        block_d = block(4, terminator=None, label="D")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=5), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=5), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=6), label="C")
+        block_d = block(4, terminator=MenaiCFGJumpTerm(target=7), label="D")
 
+        vcond = v("cond")
         join1 = block(
             5,
-            MenaiCFGPhiInstr(result=v1, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=6, false_block=7),
             label="join1",
         )
         left_join = block(
             6,
-            MenaiCFGPhiInstr(result=v2, incoming=[(v1, join1), (vc, block_c)]),
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 5), (vc, 3)]),
             terminator=MenaiCFGReturnTerm(value=v2),
             label="left_join",
         )
         right_join = block(
             7,
-            MenaiCFGPhiInstr(result=v3, incoming=[(v1, join1), (vd, block_d)]),
+            MenaiCFGPhiInstr(result=v3, incoming=[(v1, 5), (vd, 4)]),
             terminator=MenaiCFGReturnTerm(value=v3),
             label="right_join",
         )
 
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        block_c.terminator = MenaiCFGJumpTerm(target=left_join)
-        block_d.terminator = MenaiCFGJumpTerm(target=right_join)
-        vcond = v("cond")
-        join1.terminator = MenaiCFGBranchTerm(
-            cond=vcond, true_block=left_join, false_block=right_join
-        )
-
         f = func(block_a, block_b, block_c, block_d, join1, left_join, right_join)
 
-        new_f, _ = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, _ = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
 
         # v1 is still referenced: the collapse through the branching join1 is
         # not performed.
@@ -484,20 +449,21 @@ class TestNestedLambda:
         va = v("a"); vb = v("b"); vc = v("c")
         v1 = v("v1"); v2 = v("v2")
 
-        child_a = block(1, terminator=None, label="A")
-        child_b = block(2, terminator=None, label="B")
-        child_c = block(3, terminator=None, label="C")
-        child_join1 = block(4, MenaiCFGPhiInstr(result=v1, incoming=[(va, child_a), (vb, child_b)]), label="join1")
+        child_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        child_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        child_c = block(3, terminator=MenaiCFGJumpTerm(target=5), label="C")
+        child_join1 = block(
+            4,
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGJumpTerm(target=5),
+            label="join1",
+        )
         child_join2 = block(
             5,
-            MenaiCFGPhiInstr(result=v2, incoming=[(v1, child_join1), (vc, child_c)]),
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 4), (vc, 3)]),
             terminator=MenaiCFGReturnTerm(value=v2),
             label="join2",
         )
-        child_a.terminator = MenaiCFGJumpTerm(target=child_join1)
-        child_b.terminator = MenaiCFGJumpTerm(target=child_join1)
-        child_c.terminator = MenaiCFGJumpTerm(target=child_join2)
-        child_join1.terminator = MenaiCFGJumpTerm(target=child_join2)
         child_func = func(child_a, child_b, child_c, child_join1, child_join2)
 
         v_closure = v("closure")
@@ -505,7 +471,7 @@ class TestNestedLambda:
         parent_entry = block(0, mk, terminator=MenaiCFGReturnTerm(value=v_closure), label="entry")
         parent_f = func(parent_entry)
 
-        new_parent, changed = MenaiCFGCollapsePhiChains().optimize(parent_f)
+        new_parent, changed = MenaiCFGCollapsePhiChains().optimize(parent_f, MenaiCFGContext())
         assert changed
 
         mk_new = next(
@@ -526,31 +492,29 @@ class TestNoChange:
         v_c = v("c")
         entry = block(0, MenaiCFGConstInstr(result=v_c, value=MenaiInteger(1)), terminator=MenaiCFGReturnTerm(value=v_c))
         f = func(entry)
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert not changed
         assert new_f is f
 
     def test_genuine_two_predecessor_phi_unchanged(self):
         """A phi with two distinct non-phi incoming values is left alone."""
         va = v("a"); vb = v("b"); vphi = v("phi")
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="B")
         join = block(
             3,
-            MenaiCFGPhiInstr(result=vphi, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=vphi, incoming=[(va, 1), (vb, 2)]),
             terminator=MenaiCFGReturnTerm(value=vphi),
             label="join",
         )
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
         cond = v("cond")
         entry = block(
             0,
             MenaiCFGConstInstr(result=cond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=cond, true_block=block_a, false_block=block_b),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=1, false_block=2),
         )
         f = func(entry, block_a, block_b, join)
-        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f)
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
         assert not changed
 
 
@@ -589,34 +553,35 @@ class TestDownstreamIntegration:
         va = v("a"); vb = v("b"); vc = v("c")
         v1 = v("v1"); v2 = v("v2"); vcond = v("cond"); vcond2 = v("cond2")
 
-        block_a = block(1, terminator=None, label="A")
-        block_b = block(2, terminator=None, label="B")
-        block_c = block(3, terminator=None, label="C")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=5), label="C")
 
         join1 = block(
             4,
-            MenaiCFGPhiInstr(result=v1, incoming=[(va, block_a), (vb, block_b)]),
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGJumpTerm(target=5),
             label="join1",
         )
         join2 = block(
             5,
-            MenaiCFGPhiInstr(result=v2, incoming=[(v1, join1), (vc, block_c)]),
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 4), (vc, 3)]),
             terminator=MenaiCFGReturnTerm(value=v2),
             label="join2",
         )
-        block_a.terminator = MenaiCFGJumpTerm(target=join1)
-        block_b.terminator = MenaiCFGJumpTerm(target=join1)
-        block_c.terminator = MenaiCFGJumpTerm(target=join2)
-        join1.terminator = MenaiCFGJumpTerm(target=join2)
 
         # mid branches to B or C, making both reachable from entry.
-        mid = block(6, MenaiCFGConstInstr(result=vcond2, value=MenaiInteger(0)), label="mid")
-        mid.terminator = MenaiCFGBranchTerm(cond=vcond2, true_block=block_b, false_block=block_c)
+        mid = block(
+            6,
+            MenaiCFGConstInstr(result=vcond2, value=MenaiInteger(0)),
+            terminator=MenaiCFGBranchTerm(cond=vcond2, true_block=2, false_block=3),
+            label="mid",
+        )
 
         entry = block(
             0,
             MenaiCFGConstInstr(result=vcond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=block_a, false_block=mid),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=1, false_block=6),
             label="entry",
         )
         f = func(entry, mid, block_a, block_b, block_c, join1, join2)
@@ -625,7 +590,7 @@ class TestDownstreamIntegration:
         while changed:
             changed = False
             for pass_ in _ALL_PASSES:
-                f, c = pass_._optimize_function(f)
+                f, c = pass_._optimize_function(f, MenaiCFGContext())
                 changed = changed or c
 
         block_ids = {b.id for b in f.blocks}
@@ -677,11 +642,12 @@ class TestEndToEnd:
                 changed = changed or c
 
         cfg = MenaiCFGBuilder().build(ir)
+        context = MenaiCFGContext()
         changed = True
         while changed:
             changed = False
             for p in passes:
-                cfg, c = p.optimize(cfg)
+                cfg, c = p.optimize(cfg, context)
                 changed = changed or c
         return cfg
 
