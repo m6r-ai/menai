@@ -35,7 +35,10 @@ from menai.cfg.menai_cfg import (
     MenaiCFGStructGetIndexedInstr,
     MenaiCFGStructSetIndexedInstr,
 )
-from menai.cfg.menai_cfg_optimization_pass import collect_functions
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    collect_functions,
+)
 from menai.cfg.menai_cfg_type_fact import ANY, BOTTOM, TypeFact, join
 from menai.menai_compiler import MenaiCompiler
 from menai.menai_value import MenaiStructType, MenaiSymbol
@@ -52,8 +55,12 @@ def _build_cfg(source: str):
     for p in compiler.ir_passes:
         ir, _ = p.optimize(ir)
     cfg = compiler.cfg_builder.build(ir)
+    context = MenaiCFGContext()
     for p in compiler.cfg_passes:
-        cfg, _ = p.optimize(cfg)
+        while True:
+            cfg, changed = p.optimize(cfg, context)
+            if not changed:
+                break
 
     return cfg
 

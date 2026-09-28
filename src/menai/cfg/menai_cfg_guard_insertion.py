@@ -195,7 +195,17 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         Compute the known types at the entry of a block from its
         predecessors' outgoing types.  See the module docstring for the
         dominance scoping rules.
+
+        The entry block is special: its parameters' types are whatever the
+        analysis proved, never something inferred from a back-edge.  A
+        self-recursive function's entry block has the loop back-edge as a
+        predecessor, but the first invocation arrives from outside with an
+        unconstrained argument, so the back-edge's outgoing types must not be
+        propagated back to the entry.
         """
+        if block.id == func.entry().id:
+            return dict(types)
+
         preds = predecessors(func, block)
         if len(preds) == 1:
             pred = preds[0]

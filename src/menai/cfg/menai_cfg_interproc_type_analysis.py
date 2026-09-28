@@ -765,7 +765,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         so the refinement holds there too.
         """
         term = pred.terminator
-        if not isinstance(term, MenaiCFGBranchTerm) or term.true_block is not succ:
+        if not isinstance(term, MenaiCFGBranchTerm) or term.true_block != succ.id:
             return None
 
         cond_instr = value_defs.get(term.cond.id)
