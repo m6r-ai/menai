@@ -32,6 +32,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.cfg.menai_cfg_type_fact import ANY, TypeFact
 from menai.menai_compiler import MenaiCompiler
 from menai.menai_value import MenaiInteger, MenaiNone, MenaiString
@@ -47,33 +48,30 @@ def v(hint: str = "") -> MenaiCFGValue:
 
 
 def block(bid: int, *instrs, terminator=None, label: str = "block") -> MenaiCFGBlock:
-    b = MenaiCFGBlock(id=bid, label=label)
-    b.instrs = list(instrs)
-    b.terminator = terminator
-    return b
+    return MenaiCFGBlock(
+        id=bid,
+        label=label,
+        instrs=tuple(instrs),
+        terminator=terminator,
+    )
 
 
 def func(*blocks, params=None, type_facts=None) -> MenaiCFGFunction:
-    f = MenaiCFGFunction(blocks=list(blocks), params=params or [])
-    f.type_facts = type_facts or {}
-    _link(f)
-    return f
+    return MenaiCFGFunction(
+        blocks=tuple(blocks),
+        params=tuple(params or ()),
+    )
 
 
-def _link(f: MenaiCFGFunction) -> None:
-    for b in f.blocks:
-        b.predecessors = []
-    for b in f.blocks:
-        t = b.terminator
-        if isinstance(t, MenaiCFGJumpTerm):
-            t.target.predecessors.append(b)
-        elif isinstance(t, MenaiCFGBranchTerm):
-            t.true_block.predecessors.append(b)
-            t.false_block.predecessors.append(b)
+def _fold(
+    func_: MenaiCFGFunction,
+    type_facts=None,
+) -> tuple[MenaiCFGFunction, bool]:
+    context = MenaiCFGContext()
+    if type_facts:
+        context.set_facts(func_, type_facts)
 
-
-def _fold(func_: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
-    return MenaiCFGPredicateFold()._optimize_function(func_)
+    return MenaiCFGPredicateFold()._optimize_function(func_, context)
 
 
 class TestFoldLocallyProven:
@@ -92,17 +90,17 @@ class TestFoldLocallyProven:
             0,
             MenaiCFGConstInstr(result=vn, value=MenaiInteger(5)),
             MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vn]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=1, false_block=2),
             label="entry",
         )
-        f = func(entry, then, els, type_facts={vn.id: TypeFact(kind="integer")})
+        f = func(entry, then, els)
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={vn.id: TypeFact(kind="integer")})
         assert changed
 
         entry_new = new_f.blocks[0]
         assert isinstance(entry_new.terminator, MenaiCFGJumpTerm)
-        assert entry_new.terminator.target.id == then.id
+        assert entry_new.terminator.target == 1
         assert not any(isinstance(i, MenaiCFGBuiltinInstr) for i in entry_new.instrs)
 
     def test_none_predicate_false_folds_to_false_edge(self):
@@ -118,17 +116,17 @@ class TestFoldLocallyProven:
             0,
             MenaiCFGConstInstr(result=vn, value=MenaiInteger(5)),
             MenaiCFGBuiltinInstr(result=vp, op="none?", args=[vn]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=1, false_block=2),
             label="entry",
         )
-        f = func(entry, then, els, type_facts={vn.id: TypeFact(kind="integer")})
+        f = func(entry, then, els)
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={vn.id: TypeFact(kind="integer")})
         assert changed
 
         entry_new = new_f.blocks[0]
         assert isinstance(entry_new.terminator, MenaiCFGJumpTerm)
-        assert entry_new.terminator.target.id == els.id
+        assert entry_new.terminator.target == 2
 
 
 class TestNotFolded:
@@ -147,12 +145,12 @@ class TestNotFolded:
             0,
             MenaiCFGParamInstr(result=vparam, index=0, param_name="x"),
             MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vparam]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=1, false_block=2),
             label="entry",
         )
-        f = func(entry, then, els, params=["x"], type_facts={vparam.id: TypeFact(kind="integer")})
+        f = func(entry, then, els, params=["x"])
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={vparam.id: TypeFact(kind="integer")})
         assert not changed
         assert isinstance(new_f.blocks[0].terminator, MenaiCFGBranchTerm)
 
@@ -168,12 +166,12 @@ class TestNotFolded:
             MenaiCFGConstInstr(result=vfn, value=MenaiInteger(0)),
             MenaiCFGCallInstr(result=vcall, func=vfn, args=[]),
             MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vcall]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=1, false_block=2),
             label="entry",
         )
-        f = func(entry, then, els, type_facts={vcall.id: TypeFact(kind="integer")})
+        f = func(entry, then, els)
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={vcall.id: TypeFact(kind="integer")})
         assert not changed
 
     def test_unknown_fact_not_folded(self):
@@ -186,12 +184,12 @@ class TestNotFolded:
             0,
             MenaiCFGConstInstr(result=vn, value=MenaiInteger(5)),
             MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vn]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=1, false_block=2),
             label="entry",
         )
-        f = func(entry, then, els, type_facts={vn.id: ANY})
+        f = func(entry, then, els)
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={vn.id: ANY})
         assert not changed
 
 
@@ -212,29 +210,28 @@ class TestPhiProvenance:
         els = block(4, terminator=MenaiCFGReturnTerm(value=v("y")), label="else")
         join = block(
             2,
-            MenaiCFGPhiInstr(result=vm, incoming=[(va, block(0, label="A")), (vb, block(1, label="B"))]),
+            MenaiCFGPhiInstr(result=vm, incoming=[(va, 0), (vb, 1)]),
             MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vm]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=3, false_block=4),
             label="join",
         )
-        block_a = block(0, MenaiCFGConstInstr(result=va, value=MenaiInteger(1)), label="A")
-        block_b = block(1, MenaiCFGConstInstr(result=vb, value=MenaiInteger(2)), label="B")
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
+        block_a = block(0, MenaiCFGConstInstr(result=va, value=MenaiInteger(1)), terminator=MenaiCFGJumpTerm(target=2), label="A")
+        block_b = block(1, MenaiCFGConstInstr(result=vb, value=MenaiInteger(2)), terminator=MenaiCFGJumpTerm(target=2), label="B")
+        vc = v("c")
         entry = block(
             9,
-            MenaiCFGConstInstr(result=v("c"), value=MenaiInteger(0)),
-            terminator=MenaiCFGBranchTerm(cond=v("c"), true_block=block_a, false_block=block_b),
+            MenaiCFGConstInstr(result=vc, value=MenaiInteger(0)),
+            terminator=MenaiCFGBranchTerm(cond=vc, true_block=0, false_block=1),
             label="entry",
         )
-        f = func(entry, block_a, block_b, join, then, els, type_facts={va.id: TypeFact(kind="integer"), vb.id: TypeFact(kind="integer"), vm.id: TypeFact(kind="integer")})
+        f = func(entry, block_a, block_b, join, then, els)
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={va.id: TypeFact(kind="integer"), vb.id: TypeFact(kind="integer"), vm.id: TypeFact(kind="integer")})
         assert changed
 
         join_new = next(b for b in new_f.blocks if b.id == 2)
         assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
-        assert join_new.terminator.target.id == then.id
+        assert join_new.terminator.target == 3
 
     def test_phi_with_parameter_incoming_not_folded(self):
         """A phi with a parameter incoming is not locally proven."""
@@ -244,26 +241,25 @@ class TestPhiProvenance:
         vp = v("p")
         then = block(3, terminator=MenaiCFGReturnTerm(value=v("x")), label="then")
         els = block(4, terminator=MenaiCFGReturnTerm(value=v("y")), label="else")
-        block_a = block(0, MenaiCFGParamInstr(result=vparam, index=0, param_name="x"), label="A")
-        block_b = block(1, MenaiCFGConstInstr(result=vconst, value=MenaiInteger(2)), label="B")
+        block_a = block(0, MenaiCFGParamInstr(result=vparam, index=0, param_name="x"), terminator=MenaiCFGJumpTerm(target=2), label="A")
+        block_b = block(1, MenaiCFGConstInstr(result=vconst, value=MenaiInteger(2)), terminator=MenaiCFGJumpTerm(target=2), label="B")
         join = block(
             2,
-            MenaiCFGPhiInstr(result=vm, incoming=[(vparam, block_a), (vconst, block_b)]),
+            MenaiCFGPhiInstr(result=vm, incoming=[(vparam, 0), (vconst, 1)]),
             MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vm]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=3, false_block=4),
             label="join",
         )
-        block_a.terminator = MenaiCFGJumpTerm(target=join)
-        block_b.terminator = MenaiCFGJumpTerm(target=join)
+        vc = v("c")
         entry = block(
             9,
-            MenaiCFGConstInstr(result=v("c"), value=MenaiInteger(0)),
-            terminator=MenaiCFGBranchTerm(cond=v("c"), true_block=block_a, false_block=block_b),
+            MenaiCFGConstInstr(result=vc, value=MenaiInteger(0)),
+            terminator=MenaiCFGBranchTerm(cond=vc, true_block=0, false_block=1),
             label="entry",
         )
-        f = func(entry, block_a, block_b, join, then, els, params=["x"], type_facts={vparam.id: TypeFact(kind="integer"), vconst.id: TypeFact(kind="integer"), vm.id: TypeFact(kind="integer")})
+        f = func(entry, block_a, block_b, join, then, els, params=["x"])
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={vparam.id: TypeFact(kind="integer"), vconst.id: TypeFact(kind="integer"), vm.id: TypeFact(kind="integer")})
         assert not changed
 
 
@@ -285,17 +281,17 @@ class TestPredicateResultUsedElsewhere:
             MenaiCFGConstInstr(result=vn, value=MenaiInteger(5)),
             MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vn]),
             MenaiCFGBuiltinInstr(result=vuse, op="boolean-not", args=[vp]),
-            terminator=MenaiCFGBranchTerm(cond=vp, true_block=then, false_block=els),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=1, false_block=2),
             label="entry",
         )
-        f = func(entry, then, els, type_facts={vn.id: TypeFact(kind="integer")})
+        f = func(entry, then, els)
 
-        new_f, changed = _fold(f)
+        new_f, changed = _fold(f, type_facts={vn.id: TypeFact(kind="integer")})
         assert changed
 
         entry_new = new_f.blocks[0]
         assert isinstance(entry_new.terminator, MenaiCFGJumpTerm)
-        assert entry_new.terminator.target.id == then.id
+        assert entry_new.terminator.target == 1
         assert any(
             isinstance(i, MenaiCFGBuiltinInstr) and i.op == "integer?"
             for i in entry_new.instrs
