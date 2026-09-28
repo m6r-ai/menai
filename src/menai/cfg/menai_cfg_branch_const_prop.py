@@ -289,7 +289,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
             # if the target branch doesn't use the phi result.
             # For the return case, any known constant is re-wirable.
             const_arms: list[tuple[MenaiCFGBlock, MenaiCFGValue]] = []
-            keep: list[tuple[MenaiCFGValue, MenaiCFGBlock]] = []
+            keep: list[tuple[MenaiCFGValue, int]] = []
 
             for val, pred in phi.incoming:
                 if val.id in const_values and _is_rewirable(
@@ -298,7 +298,10 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                     const_values[val.id], terminal, predicate_name,
                     true_safe, false_safe,
                 ):
-                    def_block = def_block_map.get(val.id, pred)
+                    def_block = def_block_map.get(val.id)
+                    if def_block is None:
+                        def_block = blocks_by_id(func)[pred]
+
                     if isinstance(def_block.terminator, MenaiCFGJumpTerm):
                         const_arms.append((def_block, val))
 
@@ -611,7 +614,7 @@ def _rewire_predecessor(
     const_ssa_val: MenaiCFGValue,
     const_values: dict[int, MenaiValue],
     predicate_name: str | None,
-) -> None:
+) -> MenaiCFGBlock | None:
     """
     Replace def_block's unconditional jump terminator with the appropriate
     bypass terminator, determined by the join block's terminal type:
@@ -653,12 +656,11 @@ def _rewire_predecessor(
             terminator=MenaiCFGJumpTerm(target=target),
         )
 
-    else:
-        assert isinstance(terminal, MenaiCFGReturnTerm)
-        return replace(
-            def_block,
-            terminator=MenaiCFGReturnTerm(value=const_ssa_val),
-        )
+    assert isinstance(terminal, MenaiCFGReturnTerm)
+    return replace(
+        def_block,
+        terminator=MenaiCFGReturnTerm(value=const_ssa_val),
+    )
 
 
 _TYPE_PREDICATES: dict[str, tuple[type[MenaiValue], ...]] = {

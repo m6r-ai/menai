@@ -239,19 +239,22 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
             retarget[self_loop_block.id] = continue_block.id
 
         # Retarget each self-loop to its rotated test block.
-        new_blocks = [
-            replace(
+        def _retarget(block: MenaiCFGBlock) -> MenaiCFGBlock:
+            if block.id not in retarget:
+                return block
+
+            term = block.terminator
+            assert isinstance(term, MenaiCFGSelfLoopTerm)
+            return replace(
                 block,
                 terminator=MenaiCFGSelfLoopTerm(
-                    args=block.terminator.args,
-                    param_vals=block.terminator.param_vals,
+                    args=term.args,
+                    param_vals=term.param_vals,
                     target=retarget[block.id],
                 ),
             )
-            if block.id in retarget
-            else block
-            for block in new_blocks
-        ]
+
+        new_blocks = [_retarget(block) for block in new_blocks]
 
         return replace(func, blocks=tuple(new_blocks)), True
 

@@ -34,7 +34,9 @@ from dataclasses import dataclass, field, replace
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
     MenaiCFGFunction,
+    MenaiCFGInstr,
     MenaiCFGMakeClosureInstr,
+    MenaiCFGTerminator,
 )
 from menai.cfg.menai_cfg_type_fact import TypeFact
 

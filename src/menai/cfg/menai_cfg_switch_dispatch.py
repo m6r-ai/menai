@@ -67,8 +67,8 @@ _MIN_ARMS = 2
 _ChainMatch = tuple[  # pylint: disable=invalid-name
     MenaiCFGValue,
     'MenaiCFGConstInstr | None',
-    list[tuple[int, MenaiCFGBlock]],
-    MenaiCFGBlock,
+    list[tuple[int, int]],
+    int,
     list[MenaiCFGBlock],
 ]
 

@@ -306,23 +306,21 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         )
 
         # Retarget every self-loop to the new loop-entry block.
-        self_loop_block_ids = {
-            b.id for b in func.blocks
-            if isinstance(b.terminator, MenaiCFGSelfLoopTerm)
-        }
-        rebuilt = [
-            replace(
+        def _retarget(b: MenaiCFGBlock) -> MenaiCFGBlock:
+            term = b.terminator
+            if not isinstance(term, MenaiCFGSelfLoopTerm):
+                return b
+
+            return replace(
                 b,
                 terminator=MenaiCFGSelfLoopTerm(
-                    args=b.terminator.args,
-                    param_vals=b.terminator.param_vals,
+                    args=term.args,
+                    param_vals=term.param_vals,
                     target=loop_entry.id,
                 ),
             )
-            if b.id in self_loop_block_ids
-            else b
-            for b in new_blocks
-        ]
+
+        rebuilt = [_retarget(b) for b in new_blocks]
         rebuilt = [
             new_entry if b.id == entry.id else b for b in rebuilt
         ]

@@ -31,6 +31,8 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
+    MenaiCFGInstr,
+    MenaiCFGTerminator,
 )
 from menai.ir.menai_ir import (
     MenaiIRCall,
@@ -69,9 +71,9 @@ class _DraftBlock:
     """
     id: int
     label: str
-    instrs: list = field(default_factory=list)
-    patch_instrs: list = field(default_factory=list)
-    terminator: object | None = None
+    instrs: list[MenaiCFGInstr] = field(default_factory=list)
+    patch_instrs: list[MenaiCFGPatchClosureInstr] = field(default_factory=list)
+    terminator: MenaiCFGTerminator | None = None
 
 
 def _freeze_block(draft: _DraftBlock) -> MenaiCFGBlock:
@@ -134,7 +136,7 @@ class _FunctionState:
     block_counter: int = 0
     self_value: 'MenaiCFGValue | None' = None  # SSA value of the function's own self-capture
                                                 # free var, set for letrec-bound lambdas only.
-    loop_context: 'tuple[MenaiCFGBlock, list[MenaiCFGValue]] | None' = None
+    loop_context: 'tuple[_DraftBlock, list[MenaiCFGValue]] | None' = None
     # When inside a MenaiIRLoop, holds (loop_entry_block, param_ssa_values) so
     # that MenaiIRRecur can emit a SelfLoopTerm with the correct target and
     # destination values.  None at all other times.
@@ -145,7 +147,7 @@ class _FunctionState:
         self.value_counter += 1
         return v
 
-    def new_block(self, label: str) -> MenaiCFGBlock:
+    def new_block(self, label: str) -> _DraftBlock:
         """Allocate a new CFG block with the given label."""
         b = _DraftBlock(id=self.block_counter, label=label)
         self.block_counter += 1
@@ -216,11 +218,11 @@ class MenaiCFGBuilder:
     def _build_expr(
         self,
         ir: MenaiIRExpr,
-        block: MenaiCFGBlock,
+        block: _DraftBlock,
         scope: MenaiCFGScope,
         state: _FunctionState,
         tail: bool,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Emit instructions for `ir` into `block` (and successor blocks as
         needed), returning the SSA value that holds the result and the
@@ -300,32 +302,32 @@ class MenaiCFGBuilder:
         raise TypeError(f"MenaiCFGBuilder: unhandled IR node {type(ir).__name__}")
 
     def _build_constant(
-        self, ir: MenaiIRConstant, block: MenaiCFGBlock, state: _FunctionState
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRConstant, block: _DraftBlock, state: _FunctionState
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Build a CFG constant instruction from an IR constant."""
         result = state.new_value("const")
         block.instrs.append(MenaiCFGConstInstr(result=result, value=ir.value))
         return result, block
 
     def _build_empty_list(
-        self, block: MenaiCFGBlock, state: _FunctionState
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, block: _DraftBlock, state: _FunctionState
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Build a CFG constant instruction for an empty list literal."""
         result = state.new_value("empty_list")
         block.instrs.append(MenaiCFGConstInstr(result=result, value=MenaiList()))
         return result, block
 
     def _build_quote(
-        self, ir: MenaiIRQuote, block: MenaiCFGBlock, state: _FunctionState
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRQuote, block: _DraftBlock, state: _FunctionState
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Build a CFG constant instruction from a quoted value."""
         result = state.new_value("quoted")
         block.instrs.append(MenaiCFGConstInstr(result=result, value=ir.quoted_value))
         return result, block
 
     def _build_variable(
-        self, ir: MenaiIRVariable, block: MenaiCFGBlock, scope: MenaiCFGScope
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRVariable, block: _DraftBlock, scope: MenaiCFGScope
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Resolve a variable reference to a CFG value."""
         val = scope.lookup(ir.name)
         assert val is not None, (
@@ -334,8 +336,8 @@ class MenaiCFGBuilder:
         return val, block
 
     def _build_error(
-        self, ir: MenaiIRError, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRError, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Evaluate the error message and terminate the block with a raise."""
         # Evaluate the message expression, then terminate the block.
         # The returned placeholder value is never used (the block has no successors).
@@ -345,8 +347,8 @@ class MenaiCFGBuilder:
         return placeholder, block
 
     def _build_if(
-        self, ir: MenaiIRIf, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRIf, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Build conditional branching CFG from an if expression."""
         # If the condition is (boolean-not <inner>), emit <inner> as the branch
         # condition and swap then/else.  This avoids a BOOLEAN_NOT instruction
@@ -424,8 +426,8 @@ class MenaiCFGBuilder:
         return phi_result, join_block
 
     def _build_let(
-        self, ir: MenaiIRLet, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRLet, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Build a let-binding scope, evaluating bindings then the body in a child scope."""
         # Binding values are evaluated in the outer scope (parallel let).
         binding_vals: list[tuple[str, MenaiCFGValue]] = []
@@ -441,8 +443,8 @@ class MenaiCFGBuilder:
         return self._build_expr(ir.body_plan, block, body_scope, state, tail=tail)
 
     def _build_letrec(
-        self, ir: MenaiIRLetrec, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRLetrec, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a letrec in three phases.
 
@@ -579,8 +581,8 @@ class MenaiCFGBuilder:
         return self._build_expr(ir.body_plan, block, letrec_scope, state, tail=tail)
 
     def _build_loop(
-        self, ir: MenaiIRLoop, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRLoop, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a MenaiIRLoop as an inline loop in the current function.
 
@@ -641,8 +643,8 @@ class MenaiCFGBuilder:
         return result_val, current_block
 
     def _build_recur(
-        self, ir: MenaiIRRecur, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRRecur, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a loop back-edge (MenaiIRRecur) as a MenaiCFGSelfLoopTerm.
 
@@ -675,8 +677,8 @@ class MenaiCFGBuilder:
         return placeholder, block
 
     def _build_lambda_expr(
-        self, ir: MenaiIRLambda, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRLambda, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState,
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a lambda that appears as a value expression (not inside letrec).
 
@@ -796,8 +798,8 @@ class MenaiCFGBuilder:
         return state.freeze()
 
     def _build_call(
-        self, ir: MenaiIRCall, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRCall, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """Build a function call, delegating to builtin or user-call builders."""
         if ir.is_builtin:
             return self._build_builtin_call(ir, block, scope, state, tail)
@@ -834,8 +836,8 @@ class MenaiCFGBuilder:
         return result, block
 
     def _build_list(
-        self, ir: MenaiIRBuildList, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRBuildList, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState,
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a list literal.
 
@@ -853,8 +855,8 @@ class MenaiCFGBuilder:
         return result, block
 
     def _build_vector(
-        self, ir: MenaiIRBuildVector, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+        self, ir: MenaiIRBuildVector, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState,
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a vector literal.
 
@@ -880,10 +882,10 @@ class MenaiCFGBuilder:
     def _build_dict(
         self,
         ir: MenaiIRBuildDict,
-        block: MenaiCFGBlock,
+        block: _DraftBlock,
         scope: MenaiCFGScope,
         state: _FunctionState,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a dict literal.
 
@@ -904,10 +906,10 @@ class MenaiCFGBuilder:
     def _build_set(
         self,
         ir: MenaiIRBuildSet,
-        block: MenaiCFGBlock,
+        block: _DraftBlock,
         scope: MenaiCFGScope,
         state: _FunctionState,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a set literal.
 
@@ -927,10 +929,10 @@ class MenaiCFGBuilder:
     def _build_struct(
         self,
         ir: MenaiIRBuildStruct,
-        block: MenaiCFGBlock,
+        block: _DraftBlock,
         scope: MenaiCFGScope,
         state: _FunctionState,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Build a struct constructor call.
 
@@ -953,11 +955,11 @@ class MenaiCFGBuilder:
     def _build_builtin_call(
         self,
         ir: MenaiIRCall,
-        block: MenaiCFGBlock,
+        block: _DraftBlock,
         scope: MenaiCFGScope,
         state: _FunctionState,
         tail: bool = False,
-    ) -> tuple[MenaiCFGValue, MenaiCFGBlock]:
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
         Emit a builtin call.  Most builtins are never in tail position (they
         are opcode-backed primitives that return a value inline).
@@ -1001,4 +1003,3 @@ class MenaiCFGBuilder:
             args=arg_vals,
         ))
         return result, block
-
