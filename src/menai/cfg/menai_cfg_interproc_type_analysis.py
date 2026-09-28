@@ -224,13 +224,20 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self._saturate_unknown_externals(infos, info_of)
 
         changed = False
+        rewritten: dict[int, MenaiCFGFunction] = {}
         for info in infos:
             facts = self._intra_propagate(info, info.param_facts, info_of)
-            context.set_facts(info.func, facts)
+            original_id = id(info.func)
             new_func, func_changed = self._rewrite_field_access(info, facts)
             if func_changed:
+                rewritten[original_id] = new_func
                 info.func = new_func
                 changed = True
+
+            # Record the facts against the function that will be in the tree
+            # after the rewrite, so consumers keyed by function identity find
+            # them.
+            context.set_facts(info.func, facts)
 
         if not changed:
             return root, False
@@ -239,7 +246,6 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         # the first entry in `functions`; nested functions are reached through
         # the MakeClosure instructions of their parents, so the tree is rebuilt
         # bottom-up by replacing each function's nested closures.
-        rewritten = {id(i.func): i.func for i in infos}
         return _rebuild_function_tree(root, rewritten), True
 
     def _saturate_unknown_externals(
