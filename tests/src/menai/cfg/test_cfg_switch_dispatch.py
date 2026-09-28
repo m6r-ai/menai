@@ -17,6 +17,7 @@ Covers:
 """
 
 from menai.cfg.menai_cfg import MenaiCFGSwitchTerm
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.menai_compiler import MenaiCompiler
 from menai.menai import Menai
 from menai.menai_value import MenaiList, MenaiSymbol
@@ -37,8 +38,12 @@ def _build_cfg(source: str):
 
 def _run_passes(cfg):
     compiler = MenaiCompiler()
+    context = MenaiCFGContext()
     for p in compiler.cfg_passes:
-        cfg, _ = p.optimize(cfg)
+        while True:
+            cfg, changed = p.optimize(cfg, context)
+            if not changed:
+                break
 
     return cfg
 

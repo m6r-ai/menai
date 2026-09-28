@@ -722,7 +722,7 @@ class MenaiVCodeBuilder:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGPhiInstr):
                     for inc_val, inc_pred in instr.incoming:
-                        if inc_pred.id in region:
+                        if inc_pred in region:
                             used_ids.add(inc_val.id)
 
                     continue
