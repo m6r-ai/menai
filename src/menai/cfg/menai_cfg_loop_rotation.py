@@ -174,7 +174,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
             if self_loop_block is None or self_loop_block.id not in body_region:
                 return False
 
-        if self._is_rotated(self_loops, header, body):
+        if self._is_rotated(func, self_loops):
             return False
 
         test_instrs = self._header_test_instrs(header)
@@ -342,32 +342,55 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
 
     def _is_rotated(
         self,
+        func: MenaiCFGFunction,
         self_loops: list[MenaiCFGSelfLoopTerm],
-        header: MenaiCFGBlock,
-        body: MenaiCFGBlock,
     ) -> bool:
         """
         Return True if the loop is already rotated.
 
-        A rotated loop has every self-loop target set to a block (other than
-        the header) whose terminator branches back to the body.  The original
-        unrotated header also branches to the body, so the self-loop target
-        is what distinguishes the two.  A partially rotated loop cannot occur
-        (the pass retargets all self-loops or none), so every self-loop is
-        checked and any unrotated one means the whole loop is unrotated.
+        Rotation retargets each self-loop to a fresh block holding a copy of
+        the header test.  That block is entered only by the back-edge, whereas
+        the unrotated header is also entered by the loop's entry path.  A
+        loop is therefore already rotated when its self-loop target cannot be
+        reached from the function entry without traversing the back-edge
+        itself.  A partially rotated loop cannot occur (the pass retargets
+        all self-loops or none), so every self-loop is checked and any
+        unrotated one means the whole loop is unrotated.
         """
         for self_loop in self_loops:
-            if self_loop.target is None or self_loop.target is header:
+            if self_loop.target is None:
                 return False
 
-            term = self_loop.target.terminator
-            if not isinstance(term, MenaiCFGBranchTerm):
-                return False
-
-            if term.false_block is not body or term.true_block is body:
+            self_loop_block = self._self_loop_block(func, self_loop)
+            reachable = self._reachable_without(func, self_loop_block)
+            if self_loop.target.id in reachable:
                 return False
 
         return True
+
+    def _reachable_without(
+        self,
+        func: MenaiCFGFunction,
+        avoid: MenaiCFGBlock | None,
+    ) -> set[int]:
+        """
+        Return the ids of blocks reachable from the function entry without
+        entering `avoid`.
+
+        Used to decide whether a self-loop target is entered by the loop's
+        entry path (reachable) or only by the back-edge (not reachable).
+        """
+        seen: set[int] = set()
+        stack = [func.entry()]
+        while stack:
+            block = stack.pop()
+            if block.id in seen or block is avoid:
+                continue
+
+            seen.add(block.id)
+            stack.extend(self._successors(block))
+
+        return seen
 
     def _header_test_instrs(
         self, header: MenaiCFGBlock,

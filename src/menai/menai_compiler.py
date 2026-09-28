@@ -6,6 +6,9 @@ It chains together all compilation passes in the correct order.
 """
 
 
+from collections.abc import Sequence
+from typing import Protocol, TypeVar
+
 from menai.ast.menai_ast import MenaiASTNode
 from menai.ast.menai_ast_builder import MenaiASTBuilder
 from menai.ast.menai_ast_constant_folder import MenaiASTConstantFolder
@@ -38,6 +41,16 @@ from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 from menai.ir.menai_ir_optimizer import MenaiIROptimizer
 from menai.menai_value import MenaiValue
 from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
+
+
+_Tree = TypeVar("_Tree")
+
+
+class _OptimizationPass(Protocol[_Tree]):
+    """A pass that transforms a tree and reports whether it changed."""
+
+    def optimize(self, tree: _Tree) -> tuple[_Tree, bool]:
+        """Transform the tree, returning it with a changed flag."""
 
 
 class MenaiCompiler:
@@ -172,13 +185,45 @@ class MenaiCompiler:
 
         ir = self.ir_builder.build(desugared_ast)
 
-        for ir_pass in self.ir_passes:
-            ir, _ = ir_pass.optimize(ir)
+        ir = self._run_optimization_passes(ir, self.ir_passes)
 
         cfg = self.cfg_builder.build(ir)
-        for cfg_pass in self.cfg_passes:
-            cfg, _ = cfg_pass.optimize(cfg)
+        cfg = self._run_optimization_passes(cfg, self.cfg_passes)
 
         vcode = self.vcode_builder.build(cfg)
         bytecode = self.bytecode_builder.build(vcode, name)
         return bytecode
+
+    def _run_optimization_passes(
+        self,
+        tree: _Tree,
+        passes: Sequence[_OptimizationPass[_Tree]],
+    ) -> _Tree:
+        """
+        Run each pass to its own fixed point, in list order.
+
+        A pass is called repeatedly until it reports no change, then the next
+        pass runs.  A pass is never revisited once it has converged, so a pass
+        that has nothing left to do is not re-run by a later pass's change.
+
+        This is deliberately not a whole-list fixed point: re-running the whole
+        list until a full sweep reports no change would re-run every converged
+        pass on every sweep, including the whole-program type analysis, and
+        roughly doubles CFG optimisation time for no additional benefit.  Each
+        pass's transformation is monotone or idempotent, so running each to its
+        own fixed point reaches the same result.
+
+        Args:
+            tree: The IR tree or CFG root to optimize.
+            passes: The passes to run, in order.
+
+        Returns:
+            The optimized tree.
+        """
+        for pass_ in passes:
+            while True:
+                tree, changed = pass_.optimize(tree)
+                if not changed:
+                    break
+
+        return tree

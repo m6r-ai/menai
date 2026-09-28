@@ -95,15 +95,16 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
             block_types = self._incoming_types(
                 block, outgoing_types, branch_true_types, types,
             )
+            present = self._existing_guards(block)
             new_instrs: list[MenaiCFGInstr] = []
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGBuiltinInstr):
-                    self._guard_builtin_args(instr, block_types, new_instrs)
+                    self._guard_builtin_args(instr, block_types, new_instrs, present)
 
                 new_instrs.append(instr)
 
-            self._guard_branch(block, block_types, new_instrs)
-            self._guard_switch(block, block_types, new_instrs)
+            self._guard_branch(block, block_types, new_instrs, present)
+            self._guard_switch(block, block_types, new_instrs, present)
 
             if len(new_instrs) != len(block.instrs):
                 block.instrs = new_instrs
@@ -204,13 +205,34 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         The guard helpers append to a scratch instruction list that is
         discarded: only their effect on `block_types` is wanted here.
         """
+        present = self._existing_guards(block)
         scratch: list[MenaiCFGInstr] = []
         for instr in block.instrs:
             if isinstance(instr, MenaiCFGBuiltinInstr):
-                self._guard_builtin_args(instr, block_types, scratch)
+                self._guard_builtin_args(instr, block_types, scratch, present)
 
-        self._guard_branch(block, block_types, scratch)
-        self._guard_switch(block, block_types, scratch)
+        self._guard_branch(block, block_types, scratch, present)
+        self._guard_switch(block, block_types, scratch, present)
+
+    @staticmethod
+    def _existing_guards(
+        block: MenaiCFGBlock,
+    ) -> set[tuple[int, str]]:
+        """
+        Return the (value id, expected type) pairs of guards already in a block.
+
+        A guard asserts its operand has the guard's expected type.  Keying by
+        the pair, rather than by value id alone, is what makes the pass
+        idempotent: a value that flows into builtins with different expected
+        types legitimately carries one guard per type, and each is suppressed
+        independently on a re-run.
+        """
+        present: set[tuple[int, str]] = set()
+        for instr in block.instrs:
+            if isinstance(instr, MenaiCFGGuardInstr):
+                present.add((instr.value.id, instr.expected_type))
+
+        return present
 
     @staticmethod
     def _meet_outgoing_types(
@@ -273,13 +295,16 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         instr: MenaiCFGBuiltinInstr,
         types: dict[int, str | None],
         new_instrs: list[MenaiCFGInstr],
+        present: set[tuple[int, str]],
     ) -> None:
         """
         Check the arguments of a builtin call and insert guards for any
         argument whose type is unknown but whose expected type is specific.
 
         Appends guard instructions to new_instrs as needed and updates the
-        types dict so that later uses see the guarded type.
+        types dict so that later uses see the guarded type.  A guard whose
+        (value id, expected type) pair is already present in the block is not
+        inserted again, which is what makes the pass idempotent.
         """
         sig = BUILTIN_TYPE_SIGNATURES.get(instr.op)
         if sig is None:
@@ -298,17 +323,23 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
             if known == expected:
                 continue
 
+            if (arg.id, expected) in present:
+                types[arg.id] = expected
+                continue
+
             new_instrs.append(MenaiCFGGuardInstr(
                 value=arg,
                 expected_type=expected,
             ))
             types[arg.id] = expected
+            present.add((arg.id, expected))
 
     @staticmethod
     def _guard_branch(
         block: MenaiCFGBlock,
         types: dict[int, str | None],
         new_instrs: list[MenaiCFGInstr],
+        present: set[tuple[int, str]],
     ) -> None:
         """
         Insert a boolean guard on a branch terminator's condition if its
@@ -324,17 +355,23 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         if cond_type == 'boolean':
             return
 
+        if (term.cond.id, 'boolean') in present:
+            types[term.cond.id] = 'boolean'
+            return
+
         new_instrs.append(MenaiCFGGuardInstr(
             value=term.cond,
             expected_type='boolean',
         ))
         types[term.cond.id] = 'boolean'
+        present.add((term.cond.id, 'boolean'))
 
     @staticmethod
     def _guard_switch(
         block: MenaiCFGBlock,
         types: dict[int, str | None],
         new_instrs: list[MenaiCFGInstr],
+        present: set[tuple[int, str]],
     ) -> None:
         """
         Insert an integer guard on a switch terminator's scrutinee if its
@@ -350,11 +387,16 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         if val_type == 'integer':
             return
 
+        if (term.value.id, 'integer') in present:
+            types[term.value.id] = 'integer'
+            return
+
         new_instrs.append(MenaiCFGGuardInstr(
             value=term.value,
             expected_type='integer',
         ))
         types[term.value.id] = 'integer'
+        present.add((term.value.id, 'integer'))
 
     def _refine_branch_types(
         self,
