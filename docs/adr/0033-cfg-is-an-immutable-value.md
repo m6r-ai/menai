@@ -62,6 +62,15 @@ The CFG is an immutable value. No CFG pass may mutate its input.
   analysis results, and any future state that is not part of the program. This
   is the home for shared cross-function structures that ADR-0020 deferred.
 
+- **A pass that rebuilds a function must carry its facts over.** The context
+  keys a function's facts by the function object's identity. A pass that
+  changes a function returns a new object, so the facts recorded against the
+  original would be orphaned and read as absent by the next pass. The
+  per-function base class re-keys the facts from the original to its
+  replacement whenever a function is rebuilt. Without this, a consumer such as
+  guard insertion silently loses the analysis results and re-inserts guards the
+  analysis had proven unnecessary.
+
 ## Relationship to ADR-0020
 
 ADR-0020 rejected, "for now", introducing a first-class module object as a home
