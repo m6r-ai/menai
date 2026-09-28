@@ -30,6 +30,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.menai_compiler import MenaiCompiler
 from menai.menai_value import MenaiInteger
 
@@ -43,6 +44,33 @@ def v(hint: str = "") -> MenaiCFGValue:
     global _vid
     _vid += 1
     return MenaiCFGValue(id=_vid, hint=hint)
+
+
+def block(
+    id: int,
+    *instrs,
+    patch_instrs=None,
+    terminator=None,
+    label: str = "block",
+) -> MenaiCFGBlock:
+    """Build a MenaiCFGBlock."""
+    return MenaiCFGBlock(
+        id=id,
+        label=label,
+        instrs=tuple(instrs),
+        patch_instrs=tuple(patch_instrs or ()),
+        terminator=terminator,
+    )
+
+
+def func(*blocks, params=None, free_vars=None, binding_name=None) -> MenaiCFGFunction:
+    """Build a MenaiCFGFunction from blocks."""
+    return MenaiCFGFunction(
+        blocks=tuple(blocks),
+        params=tuple(params or ()),
+        free_vars=tuple(free_vars or ()),
+        binding_name=binding_name,
+    )
 
 
 def _count_free_vars(func: MenaiCFGFunction) -> int:
@@ -76,24 +104,19 @@ class TestSelfCaptureElimination:
         # The body is a self-loop (no reference to the capture).
         param = v("n")
         fv_self = v("self")
-        child = MenaiCFGFunction(
-            params=["n"],
-            free_vars=["self"],
-            binding_name="loop",
-        )
-        child_entry = MenaiCFGBlock(id=0, label="entry")
-        child_entry.instrs = [
+        child_entry = block(
+            0,
             MenaiCFGParamInstr(result=param, index=0, param_name="n"),
             MenaiCFGFreeVarInstr(result=fv_self, index=0, var_name="self"),
-        ]
-        child_entry.terminator = MenaiCFGSelfLoopTerm(args=[param])
-        child.blocks = [child_entry]
+            terminator=MenaiCFGSelfLoopTerm(args=[param]),
+            label="entry",
+        )
+        child = func(child_entry, params=["n"], free_vars=["self"], binding_name="loop")
 
         # Parent function: make closure + patch closure for self-capture.
         closure_val = v("loop")
-        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
-        parent_entry = MenaiCFGBlock(id=0, label="entry")
-        parent_entry.instrs = [
+        parent_entry = block(
+            0,
             MenaiCFGMakeClosureInstr(
                 result=closure_val,
                 function=child,
@@ -105,18 +128,19 @@ class TestSelfCaptureElimination:
                 capture_index=0,
                 value=closure_val,
             ),
-        ]
-        parent_entry.terminator = MenaiCFGReturnTerm(value=closure_val)
-        parent.blocks = [parent_entry]
+            terminator=MenaiCFGReturnTerm(value=closure_val),
+            label="entry",
+        )
+        parent = func(parent_entry)
 
-        new_parent, changed = _pass._optimize_function(parent)
+        new_parent, changed = _pass._optimize_function(parent, MenaiCFGContext())
 
         assert changed
         mc = _find_make_closure(new_parent)
         assert mc is not None
         assert mc.needs_patching is False
         assert len(mc.captures) == 0
-        assert mc.function.free_vars == []
+        assert mc.function.free_vars == ()
 
         # No PatchClosureInstrs should remain.
         patches = [
@@ -137,30 +161,22 @@ class TestSelfCaptureElimination:
         param = v("n")
         fv_self = v("self")
         fv_outer = v("limit")
-        child = MenaiCFGFunction(
-            params=["n"],
-            free_vars=["self", "limit"],
-            binding_name="loop",
-        )
-        child_entry = MenaiCFGBlock(id=0, label="entry")
-        child_entry.instrs = [
+        cmp_result = v("cmp")
+        child_entry = block(
+            0,
             MenaiCFGParamInstr(result=param, index=0, param_name="n"),
             MenaiCFGFreeVarInstr(result=fv_self, index=0, var_name="self"),
             MenaiCFGFreeVarInstr(result=fv_outer, index=1, var_name="limit"),
-        ]
-        # Body uses fv_outer (limit) in a builtin but not fv_self.
-        cmp_result = v("cmp")
-        child_entry.instrs.append(MenaiCFGBuiltinInstr(
-            result=cmp_result, op="integer>=?", args=[param, fv_outer],
-        ))
-        child_entry.terminator = MenaiCFGSelfLoopTerm(args=[param])
-        child.blocks = [child_entry]
+            MenaiCFGBuiltinInstr(result=cmp_result, op="integer>=?", args=[param, fv_outer]),
+            terminator=MenaiCFGSelfLoopTerm(args=[param]),
+            label="entry",
+        )
+        child = func(child_entry, params=["n"], free_vars=["self", "limit"], binding_name="loop")
 
         outer_cap = v("limit_val")
         closure_val = v("loop")
-        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
-        parent_entry = MenaiCFGBlock(id=0, label="entry")
-        parent_entry.instrs = [
+        parent_entry = block(
+            0,
             MenaiCFGMakeClosureInstr(
                 result=closure_val,
                 function=child,
@@ -172,11 +188,12 @@ class TestSelfCaptureElimination:
                 capture_index=0,
                 value=closure_val,
             ),
-        ]
-        parent_entry.terminator = MenaiCFGReturnTerm(value=closure_val)
-        parent.blocks = [parent_entry]
+            terminator=MenaiCFGReturnTerm(value=closure_val),
+            label="entry",
+        )
+        parent = func(parent_entry)
 
-        new_parent, changed = _pass._optimize_function(parent)
+        new_parent, changed = _pass._optimize_function(parent, MenaiCFGContext())
 
         assert changed
         mc = _find_make_closure(new_parent)
@@ -184,7 +201,7 @@ class TestSelfCaptureElimination:
         assert mc.needs_patching is False
         assert len(mc.captures) == 1
         assert mc.captures[0] is outer_cap
-        assert mc.function.free_vars == ["limit"]
+        assert mc.function.free_vars == ("limit",)
 
         # The surviving FreeVar should be renumbered to index 0.
         fvs = [
@@ -202,24 +219,19 @@ class TestSelfCaptureElimination:
         """
         param = v("n")
         fv_self = v("self")
-        child = MenaiCFGFunction(
-            params=["n"],
-            free_vars=["self"],
-            binding_name="loop",
-        )
-        child_entry = MenaiCFGBlock(id=0, label="entry")
         # The FreeVarInstr's result (fv_self) is referenced by the return.
-        child_entry.instrs = [
+        child_entry = block(
+            0,
             MenaiCFGParamInstr(result=param, index=0, param_name="n"),
             MenaiCFGFreeVarInstr(result=fv_self, index=0, var_name="self"),
-        ]
-        child_entry.terminator = MenaiCFGReturnTerm(value=fv_self)
-        child.blocks = [child_entry]
+            terminator=MenaiCFGReturnTerm(value=fv_self),
+            label="entry",
+        )
+        child = func(child_entry, params=["n"], free_vars=["self"], binding_name="loop")
 
         closure_val = v("loop")
-        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
-        parent_entry = MenaiCFGBlock(id=0, label="entry")
-        parent_entry.instrs = [
+        parent_entry = block(
+            0,
             MenaiCFGMakeClosureInstr(
                 result=closure_val,
                 function=child,
@@ -231,48 +243,45 @@ class TestSelfCaptureElimination:
                 capture_index=0,
                 value=closure_val,
             ),
-        ]
-        parent_entry.terminator = MenaiCFGReturnTerm(value=closure_val)
-        parent.blocks = [parent_entry]
+            terminator=MenaiCFGReturnTerm(value=closure_val),
+            label="entry",
+        )
+        parent = func(parent_entry)
 
-        new_parent, changed = _pass._optimize_function(parent)
+        new_parent, changed = _pass._optimize_function(parent, MenaiCFGContext())
 
         assert not changed
         mc = _find_make_closure(new_parent)
         assert mc is not None
         assert mc.needs_patching is True
-        assert mc.function.free_vars == ["self"]
+        assert mc.function.free_vars == ("self",)
 
     def test_no_captures_no_change(self):
         """A function with no captures should be unchanged."""
         param = v("n")
-        child = MenaiCFGFunction(
-            params=["n"],
-            free_vars=[],
-            binding_name="loop",
-        )
-        child_entry = MenaiCFGBlock(id=0, label="entry")
-        child_entry.instrs = [
+        child_entry = block(
+            0,
             MenaiCFGParamInstr(result=param, index=0, param_name="n"),
-        ]
-        child_entry.terminator = MenaiCFGReturnTerm(value=param)
-        child.blocks = [child_entry]
+            terminator=MenaiCFGReturnTerm(value=param),
+            label="entry",
+        )
+        child = func(child_entry, params=["n"], free_vars=[], binding_name="loop")
 
         closure_val = v("loop")
-        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
-        parent_entry = MenaiCFGBlock(id=0, label="entry")
-        parent_entry.instrs = [
+        parent_entry = block(
+            0,
             MenaiCFGMakeClosureInstr(
                 result=closure_val,
                 function=child,
                 captures=[],
                 needs_patching=False,
             ),
-        ]
-        parent_entry.terminator = MenaiCFGReturnTerm(value=closure_val)
-        parent.blocks = [parent_entry]
+            terminator=MenaiCFGReturnTerm(value=closure_val),
+            label="entry",
+        )
+        parent = func(parent_entry)
 
-        new_parent, changed = _pass._optimize_function(parent)
+        new_parent, changed = _pass._optimize_function(parent, MenaiCFGContext())
 
         assert not changed
 
@@ -292,51 +301,46 @@ class TestCrossBlockPatchRemoval:
         """
         param = v("n")
         fv_self = v("self")
-        child = MenaiCFGFunction(
-            params=["n"],
-            free_vars=["self"],
-            binding_name="loop",
-        )
-        child_entry = MenaiCFGBlock(id=0, label="entry")
-        child_entry.instrs = [
+        child_entry = block(
+            0,
             MenaiCFGParamInstr(result=param, index=0, param_name="n"),
             MenaiCFGFreeVarInstr(result=fv_self, index=0, var_name="self"),
-        ]
-        child_entry.terminator = MenaiCFGSelfLoopTerm(args=[param])
-        child.blocks = [child_entry]
+            terminator=MenaiCFGSelfLoopTerm(args=[param]),
+            label="entry",
+        )
+        child = func(child_entry, params=["n"], free_vars=["self"], binding_name="loop")
 
         closure_val = v("loop")
-        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
-        entry = MenaiCFGBlock(id=0, label="entry")
-        entry.instrs = [
+        tail = block(
+            1,
+            MenaiCFGPatchClosureInstr(
+                closure=closure_val,
+                capture_index=0,
+                value=closure_val,
+            ),
+            terminator=MenaiCFGReturnTerm(value=closure_val),
+            label="tail",
+        )
+        entry = block(
+            0,
             MenaiCFGMakeClosureInstr(
                 result=closure_val,
                 function=child,
                 captures=[],
                 needs_patching=True,
             ),
-        ]
-        entry.terminator = MenaiCFGJumpTerm(target=MenaiCFGBlock(id=1, label="tail"))
+            terminator=MenaiCFGJumpTerm(target=1),
+            label="entry",
+        )
+        parent = func(entry, tail)
 
-        tail = MenaiCFGBlock(id=1, label="tail")
-        tail.instrs = [
-            MenaiCFGPatchClosureInstr(
-                closure=closure_val,
-                capture_index=0,
-                value=closure_val,
-            ),
-        ]
-        tail.terminator = MenaiCFGReturnTerm(value=closure_val)
-        entry.terminator.target = tail
-        parent.blocks = [entry, tail]
-
-        new_parent, changed = _pass._optimize_function(parent)
+        new_parent, changed = _pass._optimize_function(parent, MenaiCFGContext())
 
         assert changed
         mc = _find_make_closure(new_parent)
         assert mc is not None
         assert mc.needs_patching is False
-        assert mc.function.free_vars == []
+        assert mc.function.free_vars == ()
 
         # The patch in the later block must be gone.
         patches = [
@@ -355,37 +359,21 @@ class TestCrossBlockPatchRemoval:
         param = v("n")
         fv_self = v("self")
         fv_sibling = v("other")
-        child = MenaiCFGFunction(
-            params=["n"],
-            free_vars=["self", "other"],
-            binding_name="loop",
-        )
-        child_entry = MenaiCFGBlock(id=0, label="entry")
-        child_entry.instrs = [
+        child_entry = block(
+            0,
             MenaiCFGParamInstr(result=param, index=0, param_name="n"),
             MenaiCFGFreeVarInstr(result=fv_self, index=0, var_name="self"),
             MenaiCFGFreeVarInstr(result=fv_sibling, index=1, var_name="other"),
-        ]
-        child_entry.instrs.append(MenaiCFGBuiltinInstr(
-            result=v("cmp"), op="integer>=?", args=[param, fv_sibling],
-        ))
-        child_entry.terminator = MenaiCFGSelfLoopTerm(args=[param])
-        child.blocks = [child_entry]
+            MenaiCFGBuiltinInstr(result=v("cmp"), op="integer>=?", args=[param, fv_sibling]),
+            terminator=MenaiCFGSelfLoopTerm(args=[param]),
+            label="entry",
+        )
+        child = func(child_entry, params=["n"], free_vars=["self", "other"], binding_name="loop")
 
         other_val = v("other_val")
         closure_val = v("loop")
-        parent = MenaiCFGFunction(params=[], free_vars=[], binding_name=None)
-        entry = MenaiCFGBlock(id=0, label="entry")
-        entry.instrs = [
-            MenaiCFGMakeClosureInstr(
-                result=closure_val,
-                function=child,
-                captures=[],
-                needs_patching=True,
-            ),
-        ]
-        tail = MenaiCFGBlock(id=1, label="tail")
-        tail.instrs = [
+        tail = block(
+            1,
             MenaiCFGPatchClosureInstr(
                 closure=closure_val,
                 capture_index=0,
@@ -396,12 +384,23 @@ class TestCrossBlockPatchRemoval:
                 capture_index=1,
                 value=other_val,
             ),
-        ]
-        tail.terminator = MenaiCFGReturnTerm(value=closure_val)
-        entry.terminator = MenaiCFGJumpTerm(target=tail)
-        parent.blocks = [entry, tail]
+            terminator=MenaiCFGReturnTerm(value=closure_val),
+            label="tail",
+        )
+        entry = block(
+            0,
+            MenaiCFGMakeClosureInstr(
+                result=closure_val,
+                function=child,
+                captures=[],
+                needs_patching=True,
+            ),
+            terminator=MenaiCFGJumpTerm(target=1),
+            label="entry",
+        )
+        parent = func(entry, tail)
 
-        new_parent, changed = _pass._optimize_function(parent)
+        new_parent, changed = _pass._optimize_function(parent, MenaiCFGContext())
 
         assert changed
         # The dead self-capture's patch is removed; the live sibling's patch
