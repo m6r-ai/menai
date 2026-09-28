@@ -29,7 +29,10 @@ from menai.cfg.menai_cfg import (
     MenaiCFGReturnTerm,
     MenaiCFGValue,
 )
-from menai.cfg.menai_cfg_optimization_pass import collect_functions
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    collect_functions,
+)
 from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlocks
 from menai.menai import Menai
 from menai.menai_compiler import MenaiCompiler
@@ -66,7 +69,7 @@ class TestStablePartition:
             _return_block(2),
             _raise_block(3),
         ])
-        new_func, changed = MenaiCFGOrderExceptionBlocks().optimize(func)
+        new_func, changed = MenaiCFGOrderExceptionBlocks().optimize(func, MenaiCFGContext())
         assert changed is True
         assert [b.id for b in new_func.blocks] == [0, 2, 1, 3]
 
@@ -76,7 +79,7 @@ class TestStablePartition:
             _return_block(0),
             _raise_block(1),
         ])
-        new_func, _ = MenaiCFGOrderExceptionBlocks().optimize(func)
+        new_func, _ = MenaiCFGOrderExceptionBlocks().optimize(func, MenaiCFGContext())
         assert new_func.blocks[0].id == 0
 
     def test_raise_entry_block_stays_first(self):
@@ -85,20 +88,20 @@ class TestStablePartition:
             _raise_block(0),
             _return_block(1),
         ])
-        new_func, _ = MenaiCFGOrderExceptionBlocks().optimize(func)
+        new_func, _ = MenaiCFGOrderExceptionBlocks().optimize(func, MenaiCFGContext())
         assert [b.id for b in new_func.blocks] == [0, 1]
 
     def test_no_raise_block_unchanged(self):
         """A function with no raise block reports no change."""
         func = _function([_return_block(0), _return_block(1)])
-        new_func, changed = MenaiCFGOrderExceptionBlocks().optimize(func)
+        new_func, changed = MenaiCFGOrderExceptionBlocks().optimize(func, MenaiCFGContext())
         assert changed is False
         assert [b.id for b in new_func.blocks] == [0, 1]
 
     def test_already_last_reports_no_change(self):
         """A raise block already at the end reports no change."""
         func = _function([_return_block(0), _raise_block(1)])
-        new_func, changed = MenaiCFGOrderExceptionBlocks().optimize(func)
+        new_func, changed = MenaiCFGOrderExceptionBlocks().optimize(func, MenaiCFGContext())
         assert changed is False
         assert [b.id for b in new_func.blocks] == [0, 1]
 
@@ -123,7 +126,7 @@ class TestStablePartition:
                 ),
             ],
         )
-        new_outer, changed = MenaiCFGOrderExceptionBlocks().optimize(outer)
+        new_outer, changed = MenaiCFGOrderExceptionBlocks().optimize(outer, MenaiCFGContext())
         assert changed is True
         new_inner = collect_functions(new_outer)[1]
         assert [b.id for b in new_inner.blocks] == [0, 2, 1]
