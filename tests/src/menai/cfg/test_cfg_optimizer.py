@@ -23,6 +23,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.menai_value import MenaiInteger
 
 
@@ -47,35 +48,22 @@ def block(
     label: str = "block",
 ) -> MenaiCFGBlock:
     """Build a MenaiCFGBlock."""
-    b = MenaiCFGBlock(id=id, label=label)
-    b.instrs = list(instrs)
-    b.patch_instrs = patch_instrs or []
-    b.terminator = terminator
-    return b
+    return MenaiCFGBlock(
+        id=id,
+        label=label,
+        instrs=tuple(instrs),
+        patch_instrs=tuple(patch_instrs or ()),
+        terminator=terminator,
+    )
 
 
 def func(*blocks, params=None, free_vars=None) -> MenaiCFGFunction:
-    """Build a MenaiCFGFunction from blocks, linking predecessors."""
-    f = MenaiCFGFunction(
-        blocks=list(blocks),
-        params=params or [],
-        free_vars=free_vars or [],
+    """Build a MenaiCFGFunction from blocks."""
+    return MenaiCFGFunction(
+        blocks=tuple(blocks),
+        params=tuple(params or ()),
+        free_vars=tuple(free_vars or ()),
     )
-    _link(f)
-    return f
-
-
-def _link(f: MenaiCFGFunction) -> None:
-    """Recompute predecessor lists from terminators."""
-    for b in f.blocks:
-        b.predecessors = []
-    for b in f.blocks:
-        t = b.terminator
-        if isinstance(t, MenaiCFGJumpTerm):
-            t.target.predecessors.append(b)
-        elif isinstance(t, MenaiCFGBranchTerm):
-            t.true_block.predecessors.append(b)
-            t.false_block.predecessors.append(b)
 
 
 def block_ids(f: MenaiCFGFunction) -> list:
@@ -83,7 +71,7 @@ def block_ids(f: MenaiCFGFunction) -> list:
 
 
 def phi_incoming_pred_ids(phi: MenaiCFGPhiInstr) -> list:
-    return [pred.id for _, pred in phi.incoming]
+    return [pred for _, pred in phi.incoming]
 
 
 def first_phi(b: MenaiCFGBlock) -> MenaiCFGPhiInstr:
@@ -102,8 +90,8 @@ class TestEmptyBlockBypass:
         """
         v_c = v("c")
         target = block(2, terminator=MenaiCFGReturnTerm(value=v_c), label="target")
-        empty = block(1, terminator=MenaiCFGJumpTerm(target=target), label="empty")
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=empty), label="entry")
+        empty = block(1, terminator=MenaiCFGJumpTerm(target=2), label="empty")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, empty, target)
 
         new_f, changed = _pass._bypass_empty_blocks(f)
@@ -111,13 +99,13 @@ class TestEmptyBlockBypass:
         assert 1 not in block_ids(new_f), "empty block should be removed"
         # entry's terminator should now point to target directly.
         assert isinstance(new_f.blocks[0].terminator, MenaiCFGJumpTerm)
-        assert new_f.blocks[0].terminator.target.id == 2
+        assert new_f.blocks[0].terminator.target == 2
 
     def test_entry_block_not_bypassed(self):
         """The entry block (blocks[0]) is never bypassed even if empty."""
         v_c = v("c")
         target = block(1, terminator=MenaiCFGReturnTerm(value=v_c), label="target")
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=target), label="entry")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, target)
 
         new_f, changed = _pass._bypass_empty_blocks(f)
@@ -130,16 +118,16 @@ class TestEmptyBlockBypass:
         """
         v_c = v("c")
         target = block(3, terminator=MenaiCFGReturnTerm(value=v_c), label="target")
-        empty2 = block(2, terminator=MenaiCFGJumpTerm(target=target), label="empty2")
-        empty1 = block(1, terminator=MenaiCFGJumpTerm(target=empty2), label="empty1")
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=empty1), label="entry")
+        empty2 = block(2, terminator=MenaiCFGJumpTerm(target=3), label="empty2")
+        empty1 = block(1, terminator=MenaiCFGJumpTerm(target=2), label="empty1")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, empty1, empty2, target)
 
         new_f, changed = _pass._bypass_empty_blocks(f)
         assert changed
         assert 1 not in block_ids(new_f)
         assert 2 not in block_ids(new_f)
-        assert new_f.blocks[0].terminator.target.id == 3
+        assert new_f.blocks[0].terminator.target == 3
 
     def test_branch_targets_remapped(self):
         """
@@ -155,18 +143,18 @@ class TestEmptyBlockBypass:
         v_result = v("result")
 
         join = block(3, terminator=MenaiCFGReturnTerm(value=v_result), label="join")
-        then_empty = block(1, terminator=MenaiCFGJumpTerm(target=join), label="then_empty")
+        then_empty = block(1, terminator=MenaiCFGJumpTerm(target=3), label="then_empty")
         else_real = block(
             2,
             MenaiCFGConstInstr(result=v_result, value=MenaiInteger(99)),
-            terminator=MenaiCFGJumpTerm(target=join),
+            terminator=MenaiCFGJumpTerm(target=3),
             label="else_real",
         )
         entry = block(
             0,
             MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
             terminator=MenaiCFGBranchTerm(
-                cond=v_cond, true_block=then_empty, false_block=else_real
+                cond=v_cond, true_block=1, false_block=2
             ),
             label="entry",
         )
@@ -177,7 +165,7 @@ class TestEmptyBlockBypass:
         assert 1 not in block_ids(new_f), "then_empty must be removed"
         branch = new_f.blocks[0].terminator
         assert isinstance(branch, MenaiCFGBranchTerm)
-        assert branch.true_block.id == 3, "true_block should now point to join"
+        assert branch.true_block == 3, "true_block should now point to join"
 
     def test_branch_target_with_phi_not_bypassed(self):
         """
@@ -196,15 +184,18 @@ class TestEmptyBlockBypass:
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=v_phi, incoming=[]),  # incoming set below
+            MenaiCFGPhiInstr(
+                result=v_phi,
+                incoming=[(v_then, 1), (v_else, 2)],
+            ),
             terminator=MenaiCFGReturnTerm(value=v_phi),
             label="join",
         )
-        then_empty = block(1, terminator=MenaiCFGJumpTerm(target=join), label="then_empty")
+        then_empty = block(1, terminator=MenaiCFGJumpTerm(target=3), label="then_empty")
         else_real = block(
             2,
             MenaiCFGConstInstr(result=v_else, value=MenaiInteger(99)),
-            terminator=MenaiCFGJumpTerm(target=join),
+            terminator=MenaiCFGJumpTerm(target=3),
             label="else_real",
         )
         entry = block(
@@ -212,12 +203,9 @@ class TestEmptyBlockBypass:
             MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
             MenaiCFGConstInstr(result=v_then, value=MenaiInteger(0)),
             terminator=MenaiCFGBranchTerm(
-                cond=v_cond, true_block=then_empty, false_block=else_real
+                cond=v_cond, true_block=1, false_block=2
             ),
             label="entry",
-        )
-        join.instrs[0] = MenaiCFGPhiInstr(
-            result=v_phi, incoming=[(v_then, then_empty), (v_else, else_real)]
         )
         f = func(entry, then_empty, else_real, join)
 
@@ -238,11 +226,11 @@ class TestEmptyBlockBypass:
 
         join = block(
             3,
-            MenaiCFGPhiInstr(result=v_phi, incoming=[]),  # incoming filled below
+            MenaiCFGPhiInstr(result=v_phi, incoming=[(v_val, 1)]),
             terminator=MenaiCFGReturnTerm(value=v_phi),
             label="join",
         )
-        then_empty = block(1, terminator=MenaiCFGJumpTerm(target=join), label="then_empty")
+        then_empty = block(1, terminator=MenaiCFGJumpTerm(target=3), label="then_empty")
 
         # entry jumps to then_empty; then_empty is empty and jumps to join.
         # The phi should list then_empty as predecessor, which we want to
@@ -250,12 +238,8 @@ class TestEmptyBlockBypass:
         entry = block(
             0,
             MenaiCFGConstInstr(result=v_val, value=MenaiInteger(1)),
-            terminator=MenaiCFGJumpTerm(target=then_empty),
+            terminator=MenaiCFGJumpTerm(target=1),
             label="entry",
-        )
-        # Set up phi incoming to reference then_empty.
-        join.instrs[0] = MenaiCFGPhiInstr(
-            result=v_phi, incoming=[(v_val, then_empty)]
         )
         f = func(entry, then_empty, join)
 
@@ -266,7 +250,7 @@ class TestEmptyBlockBypass:
         phi = first_phi(join_new)
         assert len(phi.incoming) == 1
         # The incoming predecessor should now be entry (id=0), not then_empty (id=1).
-        assert phi.incoming[0][1].id == 0, "phi predecessor should be re-labelled to entry"
+        assert phi.incoming[0][1] == 0, "phi predecessor should be re-labelled to entry"
 
     def test_non_empty_block_not_bypassed(self):
         """A block with instructions is not bypassed."""
@@ -278,7 +262,7 @@ class TestEmptyBlockBypass:
             terminator=MenaiCFGReturnTerm(value=v_r),
             label="real",
         )
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=real), label="entry")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, real)
 
         new_f, changed = _pass._bypass_empty_blocks(f)
@@ -293,10 +277,10 @@ class TestEmptyBlockBypass:
         patched = block(
             1,
             patch_instrs=[MenaiCFGPatchClosureInstr(closure=v_c, capture_index=0, value=v_val)],
-            terminator=MenaiCFGJumpTerm(target=target),
+            terminator=MenaiCFGJumpTerm(target=2),
             label="patched",
         )
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=patched), label="entry")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, patched, target)
 
         new_f, changed = _pass._bypass_empty_blocks(f)
@@ -336,7 +320,9 @@ class TestFixedPoint:
         v_f = v("f")
         v_cond = v("cond")
 
-        then_b = block(1, label="then")
+        then_b = block(
+            1, terminator=MenaiCFGJumpTerm(target=3), label="then",
+        )
         else_b = block(
             2,
             MenaiCFGConstInstr(result=v_f, value=MenaiInteger(0)),
@@ -348,23 +334,23 @@ class TestFixedPoint:
             terminator=MenaiCFGReturnTerm(value=v_then),
             label="join",
         )
-        then_b.terminator = MenaiCFGJumpTerm(target=join_b)
 
         entry = block(
             0,
             MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
             terminator=MenaiCFGBranchTerm(
-                cond=v_cond, true_block=then_b, false_block=else_b
+                cond=v_cond, true_block=1, false_block=2
             ),
             label="entry",
         )
         f = func(entry, then_b, else_b, join_b)
 
+        context = MenaiCFGContext()
         changed = True
         while changed:
             changed = False
             for pass_ in _ALL_PASSES:
-                f, c = pass_._optimize_function(f)
+                f, c = pass_._optimize_function(f, context)
                 changed = changed or c
         new_f = f
 
@@ -398,11 +384,12 @@ class TestFixedPoint:
         )
         f = func(entry)
 
+        context = MenaiCFGContext()
         changed = True
         while changed:
             changed = False
             for pass_ in _ALL_PASSES:
-                f, c = pass_._optimize_function(f)
+                f, c = pass_._optimize_function(f, context)
                 changed = changed or c
         new_f = f
 
@@ -420,7 +407,7 @@ class TestTrivialReturnInlining:
         """
         v_r = v("r")
         return_block = block(1, terminator=MenaiCFGReturnTerm(value=v_r), label="ret")
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=return_block), label="entry")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, return_block)
 
         new_f, changed = _pass._inline_trivial_returns(f)
@@ -443,7 +430,7 @@ class TestTrivialReturnInlining:
             terminator=MenaiCFGReturnTerm(value=v_c),
             label="const_ret",
         )
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=const_ret), label="entry")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, const_ret)
 
         new_f, changed = _pass._inline_trivial_returns(f)
@@ -471,12 +458,12 @@ class TestTrivialReturnInlining:
             terminator=MenaiCFGReturnTerm(value=v_c),
             label="shared_ret",
         )
-        pred_a = block(1, terminator=MenaiCFGJumpTerm(target=shared_ret), label="pred_a")
-        pred_b = block(2, terminator=MenaiCFGJumpTerm(target=shared_ret), label="pred_b")
+        pred_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="pred_a")
+        pred_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="pred_b")
         entry = block(
             0,
             MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=pred_a, false_block=pred_b),
+            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, pred_a, pred_b, shared_ret)
@@ -506,7 +493,7 @@ class TestTrivialReturnInlining:
         entry = block(
             0,
             MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=ret_block, false_block=other),
+            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=1, false_block=2),
             label="entry",
         )
         f = func(entry, ret_block, other)
@@ -526,7 +513,7 @@ class TestTrivialReturnInlining:
             terminator=MenaiCFGReturnTerm(value=v_r),
             label="ret",
         )
-        entry = block(0, terminator=MenaiCFGJumpTerm(target=ret_block), label="entry")
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
         f = func(entry, ret_block)
 
         new_f, changed = _pass._inline_trivial_returns(f)
@@ -555,22 +542,19 @@ class TestTrivialReturnInlining:
 
         ret_block = block(
             3,
-            MenaiCFGPhiInstr(result=v_phi, incoming=[]),
+            MenaiCFGPhiInstr(result=v_phi, incoming=[(v_val_a, 1)]),
             terminator=MenaiCFGReturnTerm(value=v_phi),
             label="ret",
         )
-        pred_a = block(1, terminator=MenaiCFGJumpTerm(target=ret_block), label="pred_a")
-        pred_b = block(2, terminator=MenaiCFGJumpTerm(target=ret_block), label="pred_b")
+        pred_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="pred_a")
+        pred_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="pred_b")
         entry = block(
             0,
             MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
-            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=pred_a, false_block=pred_b),
+            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=1, false_block=2),
             label="entry",
         )
         # Only pred_a is listed in the phi — pred_b is intentionally absent.
-        ret_block.instrs[0] = MenaiCFGPhiInstr(
-            result=v_phi, incoming=[(v_val_a, pred_a)]
-        )
         f = func(entry, pred_a, pred_b, ret_block)
 
         new_f, changed = _pass._inline_trivial_returns(f)
@@ -656,11 +640,12 @@ class TestIntegration:
     def _build_cfg(self, source: str):
         """Compile source to CFG and run CFG optimization passes."""
         cfg = self._build_cfg_raw(source)
+        context = MenaiCFGContext()
         changed = True
         while changed:
             changed = False
             for pass_ in _ALL_PASSES:
-                cfg, c = pass_.optimize(cfg)
+                cfg, c = pass_.optimize(cfg, context)
                 changed = changed or c
         return cfg
 

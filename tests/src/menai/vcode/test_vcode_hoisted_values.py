@@ -27,7 +27,6 @@ from menai.cfg.menai_cfg import (
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
     MenaiCFGValue,
-    relink_predecessors,
 )
 from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 
@@ -59,42 +58,60 @@ def _nested_loop_function() -> MenaiCFGFunction:
     y = _v(3, "y")
     c2 = _v(4, "c2")
 
-    entry = MenaiCFGBlock(id=0, label="entry")
-    entry.instrs = [
-        MenaiCFGParamInstr(result=lst, index=0, param_name="lst"),
-        MenaiCFGBuiltinInstr(result=x, op="list-first", args=[lst]),
-    ]
-
-    outer_hdr = MenaiCFGBlock(id=1, label="outer_hdr")
-
-    outer_body = MenaiCFGBlock(id=2, label="outer_body")
-    outer_body.instrs = [
-        MenaiCFGBuiltinInstr(result=y, op="list-rest", args=[lst]),
-    ]
-
-    inner_hdr = MenaiCFGBlock(id=3, label="inner_hdr")
-    inner_body = MenaiCFGBlock(id=6, label="inner_body")
-    inner_exit = MenaiCFGBlock(id=5, label="inner_exit")
-    exit_block = MenaiCFGBlock(id=4, label="exit")
-
-    entry.terminator = MenaiCFGJumpTerm(target=outer_hdr)
-    outer_hdr.terminator = MenaiCFGBranchTerm(
-        cond=c1, true_block=exit_block, false_block=outer_body,
+    entry = MenaiCFGBlock(
+        id=0,
+        label="entry",
+        instrs=(
+            MenaiCFGParamInstr(result=lst, index=0, param_name="lst"),
+            MenaiCFGBuiltinInstr(result=x, op="list-first", args=[lst]),
+        ),
+        terminator=MenaiCFGJumpTerm(target=1),
     )
-    outer_body.terminator = MenaiCFGJumpTerm(target=inner_hdr)
-    inner_hdr.terminator = MenaiCFGBranchTerm(
-        cond=c2, true_block=inner_exit, false_block=inner_body,
-    )
-    inner_body.terminator = MenaiCFGSelfLoopTerm(args=[], target=inner_hdr)
-    inner_exit.terminator = MenaiCFGSelfLoopTerm(args=[y], target=outer_hdr)
-    exit_block.terminator = MenaiCFGReturnTerm(value=x)
 
-    func = MenaiCFGFunction(params=["lst"], binding_name="outer")
-    func.blocks = [
-        entry, outer_hdr, outer_body, inner_hdr, inner_body, inner_exit, exit_block,
-    ]
-    relink_predecessors(func)
-    return func
+    outer_hdr = MenaiCFGBlock(
+        id=1,
+        label="outer_hdr",
+        terminator=MenaiCFGBranchTerm(cond=c1, true_block=4, false_block=2),
+    )
+
+    outer_body = MenaiCFGBlock(
+        id=2,
+        label="outer_body",
+        instrs=(
+            MenaiCFGBuiltinInstr(result=y, op="list-rest", args=[lst]),
+        ),
+        terminator=MenaiCFGJumpTerm(target=3),
+    )
+
+    inner_hdr = MenaiCFGBlock(
+        id=3,
+        label="inner_hdr",
+        terminator=MenaiCFGBranchTerm(cond=c2, true_block=5, false_block=6),
+    )
+    inner_body = MenaiCFGBlock(
+        id=6,
+        label="inner_body",
+        terminator=MenaiCFGSelfLoopTerm(args=[], target=3),
+    )
+    inner_exit = MenaiCFGBlock(
+        id=5,
+        label="inner_exit",
+        terminator=MenaiCFGSelfLoopTerm(args=[y], target=1),
+    )
+    exit_block = MenaiCFGBlock(
+        id=4,
+        label="exit",
+        terminator=MenaiCFGReturnTerm(value=x),
+    )
+
+    return MenaiCFGFunction(
+        blocks=(
+            entry, outer_hdr, outer_body, inner_hdr, inner_body, inner_exit,
+            exit_block,
+        ),
+        params=("lst",),
+        binding_name="outer",
+    )
 
 
 class TestHoistedValueClassification:
@@ -128,5 +145,5 @@ class TestHoistedValueClassification:
         """
         func = _nested_loop_function()
         inner_hdr = next(b for b in func.blocks if b.id == 3)
-        region = MenaiVCodeBuilder()._loop_region_ids(inner_hdr)
+        region = MenaiVCodeBuilder()._loop_region_ids(func, inner_hdr)
         assert 5 in region

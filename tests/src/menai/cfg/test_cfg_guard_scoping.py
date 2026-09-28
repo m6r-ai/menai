@@ -23,9 +23,9 @@ from menai.cfg.menai_cfg import (
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
     MenaiCFGValue,
-    relink_predecessors,
 )
 from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
+from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.menai_compiler import MenaiCompiler
 
 
@@ -191,40 +191,51 @@ class TestLoopHeaderGuardScoping:
         k = _v(5, "k")
         y3 = _v(6, "y3")
 
-        entry = MenaiCFGBlock(id=0, label="entry")
-        entry.instrs = [
-            MenaiCFGParamInstr(result=lst, index=0, param_name="lst"),
-            MenaiCFGBuiltinInstr(result=x, op="list-first", args=[lst]),
-            MenaiCFGBuiltinInstr(result=one, op="integer+", args=[x, x]),
-            MenaiCFGBuiltinInstr(result=y0, op="integer+", args=[one, one]),
-        ]
-
-        preheader = MenaiCFGBlock(id=1, label="preheader")
-
-        header = MenaiCFGBlock(id=2, label="loop_entry")
-        header.instrs = [
-            MenaiCFGBuiltinInstr(result=y2, op="integer+", args=[x, one]),
-        ]
-
-        body = MenaiCFGBlock(id=3, label="body")
-        body.instrs = [
-            MenaiCFGBuiltinInstr(result=y3, op="integer+", args=[k, one]),
-        ]
-
-        exit_block = MenaiCFGBlock(id=4, label="exit")
-
-        entry.terminator = MenaiCFGJumpTerm(target=preheader)
-        preheader.terminator = MenaiCFGJumpTerm(target=header)
-        header.terminator = MenaiCFGBranchTerm(
-            cond=y2, true_block=exit_block, false_block=body,
+        entry = MenaiCFGBlock(
+            id=0,
+            label="entry",
+            instrs=(
+                MenaiCFGParamInstr(result=lst, index=0, param_name="lst"),
+                MenaiCFGBuiltinInstr(result=x, op="list-first", args=[lst]),
+                MenaiCFGBuiltinInstr(result=one, op="integer+", args=[x, x]),
+                MenaiCFGBuiltinInstr(result=y0, op="integer+", args=[one, one]),
+            ),
+            terminator=MenaiCFGJumpTerm(target=1),
         )
-        body.terminator = MenaiCFGSelfLoopTerm(args=[], target=header)
-        exit_block.terminator = MenaiCFGReturnTerm(value=y2)
 
-        func = MenaiCFGFunction(params=["lst"], binding_name="loop")
-        func.blocks = [entry, preheader, header, body, exit_block]
-        relink_predecessors(func)
-        return func
+        preheader = MenaiCFGBlock(
+            id=1, label="preheader", terminator=MenaiCFGJumpTerm(target=2),
+        )
+
+        header = MenaiCFGBlock(
+            id=2,
+            label="loop_entry",
+            instrs=(
+                MenaiCFGBuiltinInstr(result=y2, op="integer+", args=[x, one]),
+            ),
+            terminator=MenaiCFGBranchTerm(
+                cond=y2, true_block=4, false_block=3,
+            ),
+        )
+
+        body = MenaiCFGBlock(
+            id=3,
+            label="body",
+            instrs=(
+                MenaiCFGBuiltinInstr(result=y3, op="integer+", args=[k, one]),
+            ),
+            terminator=MenaiCFGSelfLoopTerm(args=[], target=2),
+        )
+
+        exit_block = MenaiCFGBlock(
+            id=4, label="exit", terminator=MenaiCFGReturnTerm(value=y2),
+        )
+
+        return MenaiCFGFunction(
+            blocks=(entry, preheader, header, body, exit_block),
+            params=("lst",),
+            binding_name="loop",
+        )
 
     def test_guard_proven_before_loop_not_repeated_at_header(self):
         """
@@ -233,7 +244,7 @@ class TestLoopHeaderGuardScoping:
         the header.  There must be exactly one guard on %x.
         """
         func = self._loop_with_header_use()
-        MenaiCFGGuardInsertion()._optimize_function(func)
+        func, _ = MenaiCFGGuardInsertion()._optimize_function(func, MenaiCFGContext())
         assert _guards_for(func, 1) == 1, (
             "the guard on %x must be inserted once, not repeated at the "
             "loop header or in the body"
@@ -247,5 +258,5 @@ class TestLoopHeaderGuardScoping:
         at the header for %x or %one.
         """
         func = self._loop_with_header_use()
-        MenaiCFGGuardInsertion()._optimize_function(func)
+        func, _ = MenaiCFGGuardInsertion()._optimize_function(func, MenaiCFGContext())
         assert _count_guards(func) == 5
