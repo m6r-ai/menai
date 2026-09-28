@@ -180,11 +180,11 @@ class MenaiVCodeBuilder:
                 continue
 
             header = term.target
-            if header.id in seen_headers:
+            if header in seen_headers:
                 continue
 
-            seen_headers.add(header.id)
-            for reg_id in self._hoisted_value_ids(func, header):
+            seen_headers.add(header)
+            for reg_id in self._hoisted_value_ids(func, by_id[header]):
                 if reg_id not in hoisted_reg_ids:
                     hoisted_reg_ids.append(reg_id)
 

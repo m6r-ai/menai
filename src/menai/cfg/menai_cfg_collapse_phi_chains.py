@@ -184,7 +184,7 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
                 # We compute it upfront from all non-candidate entries plus
                 # the expanded entries of each candidate entry.
                 non_candidate_preds = {
-                    pred.id
+                    pred
                     for val, pred in instr.incoming
                     if val.id not in candidates
                 }

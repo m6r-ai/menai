@@ -646,7 +646,9 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 # refined by a struct-is-instance? branch exists only in the
                 # block-local facts, which therefore take precedence.
                 block_facts = dict(facts)
-                block_facts.update(self._block_incoming(block, facts, param_facts, value_defs, info))
+                block_facts.update(self._block_incoming(
+                    func, block, facts, param_facts, value_defs, info,
+                ))
                 for instr in block.instrs:
                     if not isinstance(instr, _VALUE_INSTR_TYPES):
                         continue

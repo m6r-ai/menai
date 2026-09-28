@@ -663,7 +663,7 @@ class MenaiCFGBuilder:
         for i, param_val in enumerate(param_vals):
             for instr in loop_entry.instrs:
                 if isinstance(instr, MenaiCFGPhiInstr) and instr.result is param_val:
-                    instr.incoming.append((arg_vals[i], block))
+                    instr.incoming.append((arg_vals[i], block.id))
                     break
 
         block.terminator = MenaiCFGSelfLoopTerm(
