@@ -62,6 +62,26 @@ class MenaiCFGContext:
         """Record the type facts for `func`."""
         self.type_facts[id(func)] = facts
 
+    def migrate_facts(
+        self,
+        old_func: MenaiCFGFunction,
+        new_func: MenaiCFGFunction,
+    ) -> None:
+        """
+        Carry a function's type facts over to its replacement.
+
+        A per-function pass rebuilds the functions it changes, so the facts
+        recorded against the original object would otherwise be lost.  The
+        facts are keyed by the original object's id, so they must be re-keyed
+        to the replacement's id before the next pass reads them.
+        """
+        if old_func is new_func:
+            return
+
+        facts = self.type_facts.pop(id(old_func), None)
+        if facts is not None:
+            self.type_facts[id(new_func)] = facts
+
 
 def replace_block_instrs(
     block: MenaiCFGBlock,
@@ -172,7 +192,9 @@ class MenaiCFGPerFunctionPass(MenaiCFGOptimizationPass):
             A tuple of (new_root, changed) where changed is True if the pass
             made at least one transformation anywhere in the function tree.
         """
+        original = root
         root, changed = self._optimize_function(root, context)
+        context.migrate_facts(original, root)
         root, nested_changed = self._optimize_nested(root, context)
         return root, changed or nested_changed
 
