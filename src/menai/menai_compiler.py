@@ -22,9 +22,16 @@ from menai.ast.menai_lexer import MenaiLexer
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.bytecode.menai_bytecode_builder import MenaiBytecodeBuilder
 from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
+from menai.cfg.menai_cfg_branch_const_prop import MenaiCFGBranchConstProp
 from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
 from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
+from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
+from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAnalysis
+from menai.cfg.menai_cfg_licm import MenaiCFGLICM
+from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
 from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlocks
+from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
+from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.cfg.menai_cfg import MenaiCFGFunction
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext, MenaiCFGOptimizationPass
@@ -82,11 +89,17 @@ class MenaiCompiler:
             MenaiIROptimizer(),
         ]
         self.cfg_builder = MenaiCFGBuilder()
+        self._interproc_type_analysis = MenaiCFGInterprocTypeAnalysis()
         self.cfg_passes: list[MenaiCFGOptimizationPass] = [
-            # TEMPORARY: only the passes converted to the immutable CFG model
-            # are enabled while the rest of the CFG layer is migrated.
             MenaiCFGCollapsePhiChains(),
+            MenaiCFGBranchConstProp(),
+            MenaiCFGSimplifyBlocks(),
             MenaiCFGSwitchDispatch(),
+            self._interproc_type_analysis,
+            MenaiCFGPredicateFold(),
+            MenaiCFGGuardInsertion(),
+            MenaiCFGLICM(),
+            MenaiCFGLoopRotation(),
             MenaiCFGDeadCaptures(),
             MenaiCFGOrderExceptionBlocks(),
         ]

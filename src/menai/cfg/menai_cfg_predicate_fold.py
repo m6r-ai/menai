@@ -41,6 +41,8 @@ type-identity test rather than a kind test and needs struct-type resolution;
 it is not handled here.
 """
 
+from dataclasses import replace
+
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES, TYPE_PREDICATES
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
@@ -56,11 +58,14 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeVectorInstr,
     MenaiCFGPhiInstr,
     MenaiCFGStructSetIndexedInstr,
-    relink_predecessors,
     value_ids_in_instr,
     value_ids_in_term,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+    replace_block,
+)
 from menai.cfg.menai_cfg_type_fact import TypeFact
 
 
@@ -72,29 +77,38 @@ class MenaiCFGPredicateFold(MenaiCFGPerFunctionPass):
     See the module docstring for the algorithm and the locally-proven rule.
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """Fold predicates to a fixed point within the function."""
         changed_overall = False
 
         while True:
-            if not self._run_one_round(func):
+            func, round_changed = self._run_one_round(func, context)
+            if not round_changed:
                 break
 
             changed_overall = True
-            relink_predecessors(func)
 
         return func, changed_overall
 
-    def _run_one_round(self, func: MenaiCFGFunction) -> bool:
+    def _run_one_round(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Fold every foldable predicate in the function once.
 
-        Returns True if any predicate was folded.
+        Returns the (possibly new) function and whether any predicate was folded.
         """
         changed = False
         value_defs = _value_defs(func)
         local = _local_values(value_defs)
         used = _referenced_value_ids(func)
+        type_facts = context.facts_for(func)
 
         for block in func.blocks:
             term = block.terminator
@@ -109,22 +123,29 @@ class MenaiCFGPredicateFold(MenaiCFGPerFunctionPass):
             if arg.id not in local:
                 continue
 
-            fact = func.type_facts.get(arg.id)
+            fact = type_facts.get(arg.id)
             result = _evaluate_predicate(pred_instr.op, fact)
             if result is None:
                 continue
 
             target = term.true_block if result else term.false_block
-            block.terminator = MenaiCFGJumpTerm(target=target)
 
             # The predicate result is no longer consumed by the branch.  Drop
             # the instruction when nothing else uses its value.
+            new_instrs = list(block.instrs)
             if used.get(pred_instr.result.id, 0) <= 1:
-                block.instrs.remove(pred_instr)
+                new_instrs.remove(pred_instr)
+
+            new_block = replace(
+                block,
+                instrs=tuple(new_instrs),
+                terminator=MenaiCFGJumpTerm(target=target),
+            )
+            func = replace_block(func, new_block)
 
             changed = True
 
-        return changed
+        return func, changed
 
 
 def _branch_predicate(

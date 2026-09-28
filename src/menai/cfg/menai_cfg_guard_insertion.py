@@ -62,8 +62,14 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFunction,
     MenaiCFGGuardInstr,
     MenaiCFGSwitchTerm,
+    predecessors,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+    replace_block_instrs,
+    replace_blocks,
+)
 
 class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
     """
@@ -72,28 +78,37 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
     See module docstring for the algorithm description.
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """Insert guards where type-specific operations receive unknown-typed operands."""
-        return func, self._insert_guards(func)
+        return self._insert_guards(func, context)
 
-    def _insert_guards(self, func: MenaiCFGFunction) -> bool:
+    def _insert_guards(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Insert guard instructions where type-specific builtins receive
         operands of unknown type.  See the module docstring for the
         dominance scoping rules.
 
-        Returns True if any guards were inserted.
+        Returns the (possibly new) function and whether any guards were inserted.
         """
         types: dict[int, str | None] = {
-            val_id: fact.kind for val_id, fact in func.type_facts.items()
+            val_id: fact.kind for val_id, fact in context.facts_for(func).items()
         }
 
         outgoing_types, branch_true_types = self._compute_block_types(func, types)
 
         changed = False
+        new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             block_types = self._incoming_types(
-                block, outgoing_types, branch_true_types, types,
+                func, block, outgoing_types, branch_true_types, types,
             )
             present = self._existing_guards(block)
             new_instrs: list[MenaiCFGInstr] = []
@@ -107,10 +122,15 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
             self._guard_switch(block, block_types, new_instrs, present)
 
             if len(new_instrs) != len(block.instrs):
-                block.instrs = new_instrs
+                block = replace_block_instrs(block, tuple(new_instrs))
                 changed = True
 
-        return changed
+            new_blocks.append(block)
+
+        if changed:
+            func = replace_blocks(func, tuple(new_blocks))
+
+        return func, changed
 
     def _compute_block_types(
         self,
@@ -151,7 +171,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
 
             for block in func.blocks:
                 block_types = self._incoming_types(
-                    block, outgoing_types, branch_true_types, types,
+                    func, block, outgoing_types, branch_true_types, types,
                 )
                 self._apply_transfer(block, block_types)
                 new_outgoing[block.id] = block_types
@@ -165,6 +185,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
 
     def _incoming_types(
         self,
+        func: MenaiCFGFunction,
         block: MenaiCFGBlock,
         outgoing_types: dict[int, dict[int, str | None]],
         branch_true_types: dict[int, dict[int, str | None]],
@@ -175,14 +196,14 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         predecessors' outgoing types.  See the module docstring for the
         dominance scoping rules.
         """
-        preds = block.predecessors
+        preds = predecessors(func, block)
         if len(preds) == 1:
             pred = preds[0]
             term = pred.terminator
             if (
                 pred.id in branch_true_types
                 and isinstance(term, MenaiCFGBranchTerm)
-                and block.id == term.true_block.id
+                and block.id == term.true_block
             ):
                 return dict(branch_true_types[pred.id])
 

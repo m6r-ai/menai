@@ -79,6 +79,8 @@ The pass mutates the CFG in place — it moves instructions between block.instrs
 lists and may create a new block — and returns the same MenaiCFGFunction.
 """
 
+from dataclasses import replace
+
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
 from menai.cfg.menai_cfg import (
     MenaiCFGApplyInstr,
@@ -103,9 +105,14 @@ from menai.cfg.menai_cfg import (
     MenaiCFGSelfLoopTerm,
     MenaiCFGSwitchTerm,
     MenaiCFGValue,
+    blocks_by_id,
+    predecessors,
     value_ids_in_instr,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+)
 from menai.menai_value import (
     MenaiBoolean,
     MenaiBytes,
@@ -179,7 +186,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
     """
 
     def _optimize_function(
-        self, func: MenaiCFGFunction,
+        self, func: MenaiCFGFunction, context: MenaiCFGContext,
     ) -> tuple[MenaiCFGFunction, bool]:
         """Hoist loop-invariant instructions from a self-loop into a preamble."""
         self_loops = self._find_self_loop(func)
@@ -223,14 +230,16 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         # pre-header and any earlier blocks) are outside the loop; hoisting an
         # instruction out of one of those into the pre-header would move it
         # across a use and break dominance.
-        loop_block_ids = self._loop_block_ids(header)
+        loop_block_ids = self._loop_block_ids(func, header)
 
         # Collect hoistable instructions from blocks inside the loop.
         preamble_instrs: list[MenaiCFGInstr] = []
         seen_guards: set[tuple[int, str]] = set()
 
+        new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             if block.id not in loop_block_ids:
+                new_blocks.append(block)
                 continue
 
             remaining: list[MenaiCFGInstr] = []
@@ -248,7 +257,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
                 else:
                     remaining.append(instr)
 
-            block.instrs = remaining
+            new_blocks.append(replace(block, instrs=tuple(remaining)))
 
         if not preamble_instrs:
             return func, False
@@ -258,12 +267,20 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             # pre-header, before its terminator.  The self-loop already targets
             # the header, which the pre-header dominates, so the hoisted
             # instructions run once and the back-edge skips them.
-            pre_header.instrs.extend(preamble_instrs)
-            return func, True
+            new_blocks = [
+                replace(b, instrs=b.instrs + tuple(preamble_instrs))
+                if b.id == pre_header.id
+                else b
+                for b in new_blocks
+            ]
+            return replace(func, blocks=tuple(new_blocks)), True
 
         # Function-level self-loop: the header is the entry block, so split it
         # into a preamble (param/free-var definitions plus hoisted instructions)
         # and a new loop-entry block that the self-loop targets.
+        # The entry block in `new_blocks` already has the hoisted instructions
+        # removed; use it as the source for the split.
+        entry = next(b for b in new_blocks if b.id == entry.id)
         def_instrs: list[MenaiCFGInstr] = [
             instr for instr in entry.instrs
             if isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
@@ -275,22 +292,43 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         ]
 
         # Preamble: param/free-var definitions, then hoisted instructions.
-        entry.instrs = def_instrs + preamble_instrs
+        loop_entry_id = self._next_block_id(func)
+        new_entry = replace(
+            entry,
+            instrs=tuple(def_instrs + preamble_instrs),
+            terminator=MenaiCFGJumpTerm(target=loop_entry_id),
+        )
         loop_entry = MenaiCFGBlock(
-            id=self._next_block_id(func),
+            id=loop_entry_id,
             label="loop_entry",
-            instrs=loop_instrs,
+            instrs=tuple(loop_instrs),
             terminator=entry.terminator,
         )
 
-        entry.terminator = MenaiCFGJumpTerm(target=loop_entry)
+        # Retarget every self-loop to the new loop-entry block.
+        self_loop_block_ids = {
+            b.id for b in func.blocks
+            if isinstance(b.terminator, MenaiCFGSelfLoopTerm)
+        }
+        rebuilt = [
+            replace(
+                b,
+                terminator=MenaiCFGSelfLoopTerm(
+                    args=b.terminator.args,
+                    param_vals=b.terminator.param_vals,
+                    target=loop_entry.id,
+                ),
+            )
+            if b.id in self_loop_block_ids
+            else b
+            for b in new_blocks
+        ]
+        rebuilt = [
+            new_entry if b.id == entry.id else b for b in rebuilt
+        ]
+        rebuilt.append(loop_entry)
 
-        func.blocks.append(loop_entry)
-
-        for self_loop in self_loops:
-            self_loop.target = loop_entry
-
-        return func, True
+        return replace(func, blocks=tuple(rebuilt)), True
 
     def _compute_invariant_values(
         self,
@@ -644,10 +682,13 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
     ) -> MenaiCFGBlock:
         """Return the header a self-loop targets (the entry block when unset)."""
-        return self_loop.target if self_loop.target is not None else func.entry()
+        if self_loop.target is None:
+            return func.entry()
+
+        return blocks_by_id(func)[self_loop.target]
 
     def _loop_block_ids(
-        self, header: MenaiCFGBlock,
+        self, func: MenaiCFGFunction, header: MenaiCFGBlock,
     ) -> set[int]:
         """
         Return the ids of the blocks that are inside the loop.
@@ -660,13 +701,15 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         block, so blocks that precede it are excluded.
         """
         region: set[int] = set()
-        stack = [header]
+        by_id = blocks_by_id(func)
+        stack = [header.id]
         while stack:
-            block = stack.pop()
-            if block.id in region:
+            block_id = stack.pop()
+            if block_id in region:
                 continue
 
-            region.add(block.id)
+            region.add(block_id)
+            block = by_id[block_id]
             term = block.terminator
             if isinstance(term, MenaiCFGJumpTerm):
                 stack.append(term.target)
@@ -705,7 +748,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         }
 
         candidates = [
-            pred for pred in header.predecessors
+            pred for pred in predecessors(func, header)
             if pred.id not in back_edge_ids
         ]
 

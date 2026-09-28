@@ -19,22 +19,28 @@ Two sub-passes run to a joint fixed point:
 """
 
 
+from dataclasses import replace
+
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
     MenaiCFGBranchTerm,
     MenaiCFGConstInstr,
     MenaiCFGFunction,
+    MenaiCFGInstr,
     MenaiCFGJumpTerm,
     MenaiCFGPhiInstr,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
     MenaiCFGValue,
-    relink_predecessors,
+    predecessors,
     remap_term,
     value_ids_in_instr,
     value_ids_in_term,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+)
 
 
 class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
@@ -64,7 +70,11 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
       inlined, T is removed from the function.
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         changed = False
 
         func, c = self._bypass_empty_blocks(func)
@@ -102,19 +112,19 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
         for block in func.blocks:
             term = block.terminator
             if isinstance(term, MenaiCFGJumpTerm):
-                if term.target.id in pred_map:
-                    pred_map[term.target.id].append(block)
+                if term.target in pred_map:
+                    pred_map[term.target].append(block)
 
             elif isinstance(term, MenaiCFGBranchTerm):
-                if term.true_block.id in pred_map:
-                    pred_map[term.true_block.id].append(block)
+                if term.true_block in pred_map:
+                    pred_map[term.true_block].append(block)
 
-                if term.false_block.id in pred_map:
-                    pred_map[term.false_block.id].append(block)
+                if term.false_block in pred_map:
+                    pred_map[term.false_block].append(block)
 
             elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
-                if term.target.id in pred_map:
-                    pred_map[term.target.id].append(block)
+                if term.target in pred_map:
+                    pred_map[term.target].append(block)
 
         def is_empty(block: MenaiCFGBlock) -> bool:
             return (
@@ -139,7 +149,7 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
                 seen.add(block.id)
                 assert isinstance(block.terminator, MenaiCFGJumpTerm)
-                next_b = block_map.get(block.terminator.target.id)
+                next_b = block_map.get(block.terminator.target)
                 if next_b is None:
                     break
 
@@ -152,7 +162,7 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
             while is_empty(block) and block.id not in seen:
                 seen.add(block.id)
                 assert isinstance(block.terminator, MenaiCFGJumpTerm)
-                next_b = block_map.get(block.terminator.target.id)
+                next_b = block_map.get(block.terminator.target)
                 if next_b is None:
                     break
 
@@ -160,60 +170,59 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
             return block
 
-        bypass: dict[int, MenaiCFGBlock] = {}
+        bypass: dict[int, int] = {}
         for block in func.blocks:
             if is_empty(block):
                 target = ultimate_target(block)
                 if target.id != block.id and not (
                     has_phi(target) and chain_has_branch_predecessor(block)
                 ):
-                    bypass[block.id] = target
+                    bypass[block.id] = target.id
 
         if not bypass:
             return func, False
 
-        def remap_block(b: MenaiCFGBlock) -> MenaiCFGBlock:
-            return bypass.get(b.id, b)
+        def remap_block(block_id: int) -> int:
+            return bypass.get(block_id, block_id)
 
+        new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             if block.id in bypass:
                 continue
 
-            for i, instr in enumerate(block.instrs):
+            new_instrs: list[MenaiCFGInstr] = []
+            for instr in block.instrs:
                 if not isinstance(instr, MenaiCFGPhiInstr):
+                    new_instrs.append(instr)
                     continue
 
-                new_incoming: list[tuple[MenaiCFGValue, MenaiCFGBlock]] = []
+                new_incoming: list[tuple[MenaiCFGValue, int]] = []
                 for val, pred in instr.incoming:
-                    if pred.id in bypass:
-                        actual_preds = pred_map.get(pred.id, [])
+                    if pred in bypass:
+                        actual_preds = pred_map.get(pred, [])
                         for actual_pred in actual_preds:
                             for remapped in _find_non_empty_preds(actual_pred, bypass, pred_map):
-                                new_incoming.append((val, remapped))
+                                new_incoming.append((val, remapped.id))
 
                     else:
                         new_incoming.append((val, pred))
 
-                block.instrs[i] = MenaiCFGPhiInstr(
+                new_instrs.append(MenaiCFGPhiInstr(
                     result=instr.result,
                     incoming=new_incoming,
-                )
+                ))
 
+            terminator = block.terminator
             if block.terminator is not None:
-                block.terminator = remap_term(block.terminator, remap_block)
+                terminator = remap_term(block.terminator, remap_block)
 
-        new_blocks = [b for b in func.blocks if b.id not in bypass]
-        new_func = MenaiCFGFunction(
-            blocks=new_blocks,
-            params=func.params,
-            free_vars=func.free_vars,
-            is_variadic=func.is_variadic,
-            binding_name=func.binding_name,
-            source_line=func.source_line,
-            source_file=func.source_file,
-        )
-        relink_predecessors(new_func)
-        return new_func, True
+            new_blocks.append(replace(
+                block,
+                instrs=tuple(new_instrs),
+                terminator=terminator,
+            ))
+
+        return replace(func, blocks=tuple(new_blocks)), True
 
     def _inline_trivial_returns(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         """
@@ -281,6 +290,10 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
         changed = False
         inlined_block_ids: set[int] = set()
+        # Rebuilt predecessors, keyed by block id.  A predecessor may be
+        # modified for more than one target, so accumulate changes here and
+        # rebuild each block once at the end.
+        rebuilt: dict[int, MenaiCFGBlock] = {}
 
         for target in list(func.blocks):
             content = trivial_return_content(target)
@@ -291,9 +304,9 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
             # Find predecessors that reach target via an unconditional jump.
             jump_preds = [
-                b for b in target.predecessors
+                b for b in predecessors(func, target)
                 if isinstance(b.terminator, MenaiCFGJumpTerm)
-                and b.terminator.target.id == target.id
+                and b.terminator.target == target.id
             ]
 
             if not jump_preds:
@@ -301,54 +314,54 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
             actually_inlined: set[int] = set()
             for pred in jump_preds:
+                pred = rebuilt.get(pred.id, pred)
                 if isinstance(instr, MenaiCFGConstInstr):
                     # Duplicate the const with a fresh SSA value.
                     new_val = fresh_value(instr.result.hint)
-                    pred.instrs.append(
-                        MenaiCFGConstInstr(result=new_val, value=instr.value)
+                    pred = replace(
+                        pred,
+                        instrs=pred.instrs + (
+                            MenaiCFGConstInstr(result=new_val, value=instr.value),
+                        ),
+                        terminator=MenaiCFGReturnTerm(value=new_val),
                     )
-                    pred.terminator = MenaiCFGReturnTerm(value=new_val)
 
                 elif isinstance(instr, MenaiCFGPhiInstr):
                     # Each predecessor already holds its contributing value.
                     # Look up the incoming entry for this predecessor.
                     contributing = next(
-                        (val for val, blk in instr.incoming if blk.id == pred.id),
+                        (val for val, blk in instr.incoming if blk == pred.id),
                         None,
                     )
                     if contributing is None:
                         # Predecessor not listed in phi incomings — skip.
                         continue
 
-                    pred.terminator = MenaiCFGReturnTerm(value=contributing)
+                    pred = replace(pred, terminator=MenaiCFGReturnTerm(value=contributing))
 
                 else:
-                    pred.terminator = MenaiCFGReturnTerm(value=return_term.value)
+                    pred = replace(pred, terminator=MenaiCFGReturnTerm(value=return_term.value))
 
+                rebuilt[pred.id] = pred
                 actually_inlined.add(pred.id)
                 changed = True
 
             # Remove target if every predecessor was a jump predecessor that
             # we just inlined, and no predecessor reaches target via a branch
             # or other non-jump edge.
-            if (len(actually_inlined) == len(jump_preds) and len(jump_preds) == len(target.predecessors)):
+            if (len(actually_inlined) == len(jump_preds)
+                    and len(jump_preds) == len(predecessors(func, target))):
                 inlined_block_ids.add(target.id)
 
         if not changed:
             return func, False
 
-        new_blocks = [b for b in func.blocks if b.id not in inlined_block_ids]
-        new_func = MenaiCFGFunction(
-            blocks=new_blocks,
-            params=func.params,
-            free_vars=func.free_vars,
-            is_variadic=func.is_variadic,
-            binding_name=func.binding_name,
-            source_line=func.source_line,
-            source_file=func.source_file,
-        )
-        relink_predecessors(new_func)
-        return new_func, True
+        new_blocks = [
+            rebuilt.get(b.id, b)
+            for b in func.blocks
+            if b.id not in inlined_block_ids
+        ]
+        return replace(func, blocks=tuple(new_blocks)), True
 
 
 def _max_value_id(func: MenaiCFGFunction) -> int:
@@ -385,7 +398,7 @@ def _max_value_id(func: MenaiCFGFunction) -> int:
 
 def _find_non_empty_preds(
     block: MenaiCFGBlock,
-    bypass: dict[int, MenaiCFGBlock],
+    bypass: dict[int, int],
     pred_map: dict[int, list[MenaiCFGBlock]],
 ) -> list[MenaiCFGBlock]:
     """

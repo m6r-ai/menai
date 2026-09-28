@@ -75,6 +75,8 @@ no definition-site fact, so reading the global facts alone would miss it.
 The pass mutates the CFG in place and returns the same root function.
 """
 
+from dataclasses import replace
+
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
     MenaiCFGApplyInstr,
@@ -103,8 +105,13 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
+    predecessors,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGWholeProgramPass, collect_functions
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGWholeProgramPass,
+    collect_functions,
+)
 from menai.cfg.menai_cfg_type_fact import ANY, TypeFact, BOTTOM, fact_for_value, join
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
 from menai.menai_value import MenaiBoolean, MenaiStructType, MenaiSymbol
@@ -188,7 +195,11 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self._scc_of: dict[int, int] = {}
         self._grounded_sccs: set[int] = set()
 
-    def _optimize_module(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_module(
+        self,
+        root: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """Run the interprocedural analysis and rewrite struct field access."""
         functions = collect_functions(root)
         parent_of = _parent_map(root)
@@ -215,11 +226,21 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         changed = False
         for info in infos:
             facts = self._intra_propagate(info, info.param_facts, info_of)
-            info.func.type_facts = facts
-            if self._rewrite_field_access(info, facts):
+            context.set_facts(info.func, facts)
+            new_func, func_changed = self._rewrite_field_access(info, facts)
+            if func_changed:
+                info.func = new_func
                 changed = True
 
-        return root, changed
+        if not changed:
+            return root, False
+
+        # Rebuild the function tree with the rewritten functions.  The root is
+        # the first entry in `functions`; nested functions are reached through
+        # the MakeClosure instructions of their parents, so the tree is rebuilt
+        # bottom-up by replacing each function's nested closures.
+        rewritten = {id(i.func): i.func for i in infos}
+        return _rebuild_function_tree(root, rewritten), True
 
     def _saturate_unknown_externals(
         self,
@@ -643,6 +664,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
     def _block_incoming(
         self,
+        func: MenaiCFGFunction,
         block: MenaiCFGBlock,
         facts: dict[int, TypeFact],
         param_facts: list[TypeFact],
@@ -662,11 +684,12 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         A block reached from a struct-is-instance? true edge inherits the
         refined struct type of the predicate's argument.
         """
-        if not block.predecessors:
+        preds = predecessors(func, block)
+        if not preds:
             return self._entry_facts(block, param_facts)
 
         result: dict[int, TypeFact] = {}
-        for pred in block.predecessors:
+        for pred in preds:
             pred_facts = self._outgoing_facts(pred, facts)
             refinement = self._true_edge_refinement(pred, block, value_defs, info)
             if refinement is not None:
@@ -1021,7 +1044,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self,
         info: _FunctionInfo,
         facts: dict[int, TypeFact],
-    ) -> bool:
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Rewrite struct-get/struct-set calls to their index-based forms where the
         receiver's struct type and the field index are both known.
@@ -1031,19 +1054,23 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         struct-is-instance? branch refinement has no definition-site fact, so
         the refinement must be visible here for the rewrite to fire.
 
-        Returns True if any instruction was rewritten.
+        Returns the (possibly new) function and whether any instruction was
+        rewritten.
         """
         func = info.func
         changed = False
         value_defs = _value_defs(func)
         orphaned_symbols: set[int] = set()
+        new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             # Merge the global per-value facts with this block's incoming facts,
             # block-local winning: a value defined in this block has only a
             # global fact, while a value refined by a struct-is-instance? branch
             # has a refined fact that exists only in the block-local facts.
             block_facts = dict(facts)
-            block_facts.update(self._block_incoming(block, facts, info.param_facts, value_defs, info))
+            block_facts.update(self._block_incoming(
+                func, block, facts, info.param_facts, value_defs, info,
+            ))
             new_instrs: list = []
             for instr in block.instrs:
                 if not isinstance(instr, MenaiCFGBuiltinInstr):
@@ -1081,15 +1108,22 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
                 changed = True
 
-            block.instrs = new_instrs
+            new_blocks.append(replace(block, instrs=tuple(new_instrs)))
 
+        if not changed:
+            return func, False
+
+        func = replace(func, blocks=tuple(new_blocks))
         if orphaned_symbols:
-            self._remove_dead_consts(func, orphaned_symbols)
+            func = self._remove_dead_consts(func, orphaned_symbols)
 
-        return changed
+        return func, True
 
     @staticmethod
-    def _remove_dead_consts(func: MenaiCFGFunction, candidates: set[int]) -> None:
+    def _remove_dead_consts(
+        func: MenaiCFGFunction,
+        candidates: set[int],
+    ) -> MenaiCFGFunction:
         """
         Remove constant instructions defining an orphaned value that has no
         remaining uses anywhere in the function.
@@ -1102,16 +1136,24 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         referenced = _referenced_value_ids(func)
         dead = candidates - referenced
         if not dead:
-            return
+            return func
 
-        for block in func.blocks:
-            block.instrs = [
-                instr for instr in block.instrs
-                if not (
-                    isinstance(instr, MenaiCFGConstInstr)
-                    and instr.result.id in dead
+        return replace(
+            func,
+            blocks=tuple(
+                replace(
+                    block,
+                    instrs=tuple(
+                        instr for instr in block.instrs
+                        if not (
+                            isinstance(instr, MenaiCFGConstInstr)
+                            and instr.result.id in dead
+                        )
+                    ),
                 )
-            ]
+                for block in func.blocks
+            ),
+        )
 
     @staticmethod
     def _resolve_field_index(
@@ -1156,6 +1198,51 @@ def _parent_map(
                     result[id(instr.function)] = (func, instr)
 
     return result
+
+
+def _rebuild_function_tree(
+    root: MenaiCFGFunction,
+    rewritten: dict[int, MenaiCFGFunction],
+) -> MenaiCFGFunction:
+    """
+    Rebuild a function tree, substituting rewritten functions.
+
+    `rewritten` maps the id of an original function to its rewritten
+    replacement.  Each function's blocks are rebuilt with any MakeClosure
+    instruction's nested function replaced by its rewritten form, and the
+    function itself is replaced by its rewritten form when present.  The
+    rewrite only changes block contents, never the tree's shape, so the
+    substitution is a straight walk of the original tree.
+    """
+    def rebuild(func: MenaiCFGFunction) -> MenaiCFGFunction:
+        original_id = id(func)
+        new_blocks: list[MenaiCFGBlock] = []
+        for block in func.blocks:
+            new_instrs = []
+            block_changed = False
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGMakeClosureInstr):
+                    new_child = rebuild(instr.function)
+                    if new_child is not instr.function:
+                        instr = MenaiCFGMakeClosureInstr(
+                            result=instr.result,
+                            function=new_child,
+                            captures=instr.captures,
+                            needs_patching=instr.needs_patching,
+                        )
+                        block_changed = True
+
+                new_instrs.append(instr)
+
+            if block_changed:
+                block = replace(block, instrs=tuple(new_instrs))
+
+            new_blocks.append(block)
+
+        func = replace(func, blocks=tuple(new_blocks))
+        return rewritten.get(original_id, func)
+
+    return rebuild(root)
 
 
 def _free_var_callee(

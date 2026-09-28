@@ -84,6 +84,8 @@ loop (whose self-loop target blocks are copies of the header test) is
 detected and skipped.
 """
 
+from dataclasses import replace
+
 from menai.cfg.menai_cfg import (
     MenaiCFGApplyInstr,
     MenaiCFGBlock,
@@ -109,10 +111,13 @@ from menai.cfg.menai_cfg import (
     MenaiCFGStructSetIndexedInstr,
     MenaiCFGSwitchTerm,
     MenaiCFGValue,
-    relink_predecessors,
+    blocks_by_id,
     value_ids_in_instr,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+)
 
 
 class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
@@ -124,7 +129,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
     """
 
     def _optimize_function(
-        self, func: MenaiCFGFunction,
+        self, func: MenaiCFGFunction, context: MenaiCFGContext,
     ) -> tuple[MenaiCFGFunction, bool]:
         """
         Rotate every rotatable loop in the function.
@@ -137,7 +142,8 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         """
         changed = False
         for loop in self._find_loops(func):
-            if self._rotate_loop(func, loop):
+            func, rotated = self._rotate_loop(func, loop)
+            if rotated:
                 changed = True
 
         return func, changed
@@ -146,21 +152,23 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         self,
         func: MenaiCFGFunction,
         self_loops: list[MenaiCFGSelfLoopTerm],
-    ) -> bool:
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Rotate a single loop, given its self-loop terminators.
 
-        Returns True if the loop was rotated.  The loop's header, body, and
-        test are re-derived from the current CFG, so this is safe to call
-        after other loops in the same function have been rotated.
+        Returns the (possibly new) function and whether the loop was rotated.
+        The loop's header, body, and test are re-derived from the current CFG,
+        so this is safe to call after other loops in the same function have
+        been rotated.
         """
+        by_id = blocks_by_id(func)
         header = self._self_loop_header(func, self_loops[0])
 
         if not isinstance(header.terminator, MenaiCFGBranchTerm):
-            return False
+            return func, False
 
         branch = header.terminator
-        body = branch.false_block
+        body = by_id[branch.false_block]
 
         # Canonical shape: the header branch's false target is the entry of
         # the loop body, and every self-loop terminates that body.  The body
@@ -168,26 +176,26 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         # what matters is that each self-loop block is reachable from the
         # body entry without passing back through the header, so the body is
         # a region entered at `body` and exited by the self-loops.
-        body_region = self._body_region(body, header)
+        body_region = self._body_region(func, body, header)
         for self_loop in self_loops:
             self_loop_block = self._self_loop_block(func, self_loop)
             if self_loop_block is None or self_loop_block.id not in body_region:
-                return False
+                return func, False
 
         if self._is_rotated(func, self_loops):
-            return False
+            return func, False
 
         test_instrs = self._header_test_instrs(header)
         if not test_instrs:
-            return False
+            return func, False
 
         if not self._operands_safe_at_back_edge(func, test_instrs, header):
-            return False
+            return func, False
 
         if self._test_results_used_by_body(
             func, test_instrs, body_region, self_loops,
         ):
-            return False
+            return func, False
 
         # Build one rotated test block per self-loop: a copy of the header
         # test with fresh SSA result ids, terminated by a branch with the
@@ -198,6 +206,8 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         # unconditional jump, which is exactly what rotation removes.
         next_id = self._max_value_id(func) + 1
         next_block_id = self._next_block_id(func)
+        new_blocks: list[MenaiCFGBlock] = list(func.blocks)
+        retarget: dict[int, int] = {}
         for self_loop in self_loops:
             remap: dict[int, MenaiCFGValue] = {}
             for instr in test_instrs:
@@ -206,9 +216,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
                     remap[result.id] = MenaiCFGValue(id=next_id, hint=result.hint)
                     next_id += 1
 
-            new_instrs = [
+            new_instrs = tuple(
                 self._clone_with_remap(instr, remap) for instr in test_instrs
-            ]
+            )
             new_cond = remap.get(branch.cond.id, branch.cond)
 
             continue_block = MenaiCFGBlock(
@@ -218,16 +228,32 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
                 terminator=MenaiCFGBranchTerm(
                     cond=new_cond,
                     true_block=branch.true_block,
-                    false_block=body,
+                    false_block=body.id,
                 ),
             )
             next_block_id += 1
 
-            func.blocks.append(continue_block)
-            self_loop.target = continue_block
+            new_blocks.append(continue_block)
+            self_loop_block = self._self_loop_block(func, self_loop)
+            assert self_loop_block is not None
+            retarget[self_loop_block.id] = continue_block.id
 
-        relink_predecessors(func)
-        return True
+        # Retarget each self-loop to its rotated test block.
+        new_blocks = [
+            replace(
+                block,
+                terminator=MenaiCFGSelfLoopTerm(
+                    args=block.terminator.args,
+                    param_vals=block.terminator.param_vals,
+                    target=retarget[block.id],
+                ),
+            )
+            if block.id in retarget
+            else block
+            for block in new_blocks
+        ]
+
+        return replace(func, blocks=tuple(new_blocks)), True
 
     def _find_loops(
         self, func: MenaiCFGFunction,
@@ -268,7 +294,11 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
                 if not isinstance(other_header.terminator, MenaiCFGBranchTerm):
                     continue
 
-                region = self._body_region(other_header.terminator.false_block, other_header)
+                region = self._body_region(
+                    func,
+                    blocks_by_id(func)[other_header.terminator.false_block],
+                    other_header,
+                )
                 if header_id in region:
                     count += 1
 
@@ -280,7 +310,10 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
     ) -> MenaiCFGBlock:
         """Return the header a self-loop targets (the entry block when unset)."""
-        return self_loop.target if self_loop.target is not None else func.entry()
+        if self_loop.target is None:
+            return func.entry()
+
+        return blocks_by_id(func)[self_loop.target]
 
     def _self_loop_block(
         self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
@@ -292,9 +325,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
 
         return None
 
-    def _successors(self, block: MenaiCFGBlock) -> list[MenaiCFGBlock]:
+    def _successors(self, block: MenaiCFGBlock) -> list[int]:
         """
-        Return the blocks a block's terminator can transfer control to.
+        Return the ids of the blocks a block's terminator can transfer control to.
 
         A self-loop terminator contributes no successor here: it always
         targets the loop header, which the region walk excludes.
@@ -317,7 +350,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         return []
 
     def _body_region(
-        self, body_entry: MenaiCFGBlock, header: MenaiCFGBlock,
+        self, func: MenaiCFGFunction, body_entry: MenaiCFGBlock, header: MenaiCFGBlock,
     ) -> set[int]:
         """
         Return the ids of the blocks forming the loop body region.
@@ -328,15 +361,16 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         header, which is excluded anyway).  A single-block body yields a
         one-element set.
         """
+        by_id = blocks_by_id(func)
         region: set[int] = set()
-        stack = [body_entry]
+        stack = [body_entry.id]
         while stack:
-            block = stack.pop()
-            if block.id in region or block is header:
+            block_id = stack.pop()
+            if block_id in region or block_id == header.id:
                 continue
 
-            region.add(block.id)
-            stack.extend(self._successors(block))
+            region.add(block_id)
+            stack.extend(self._successors(by_id[block_id]))
 
         return region
 
@@ -363,7 +397,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
 
             self_loop_block = self._self_loop_block(func, self_loop)
             reachable = self._reachable_without(func, self_loop_block)
-            if self_loop.target.id in reachable:
+            if self_loop.target in reachable:
                 return False
 
         return True
@@ -380,15 +414,16 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         Used to decide whether a self-loop target is entered by the loop's
         entry path (reachable) or only by the back-edge (not reachable).
         """
+        by_id = blocks_by_id(func)
         seen: set[int] = set()
-        stack = [func.entry()]
+        stack = [func.entry().id]
         while stack:
-            block = stack.pop()
-            if block.id in seen or block is avoid:
+            block_id = stack.pop()
+            if block_id in seen or (avoid is not None and block_id == avoid.id):
                 continue
 
-            seen.add(block.id)
-            stack.extend(self._successors(block))
+            seen.add(block_id)
+            stack.extend(self._successors(by_id[block_id]))
 
         return seen
 

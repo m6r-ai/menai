@@ -104,6 +104,8 @@ Example — return case, the (and A B) pattern:
 """
 
 
+from dataclasses import replace
+
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
     MenaiCFGApplyInstr,
@@ -128,9 +130,11 @@ from menai.cfg.menai_cfg import (
     MenaiCFGValue,
     MenaiCFGInstr,
     MenaiCFGTerminator,
-    relink_predecessors,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+)
 from menai.menai_value import (
     MenaiBoolean,
     MenaiBytes,
@@ -183,19 +187,20 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
     to it).
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         changed_overall = False
 
         while True:
             def_block_map = _build_def_block_map(func)
-            round_changed = self._run_one_round(func, def_block_map)
+            func, round_changed = self._run_one_round(func, def_block_map)
             if not round_changed:
                 break
 
             changed_overall = True
-
-        if changed_overall:
-            relink_predecessors(func)
 
         return func, changed_overall
 
@@ -203,7 +208,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
         self,
         func: MenaiCFGFunction,
         def_block_map: dict[int, 'MenaiCFGBlock'],
-    ) -> bool:
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Execute one round of constant propagation.
 
@@ -222,12 +227,19 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
            the phi result are re-wired; the rest stay in the phi so the value
            remains available.
 
-        Returns True if any change was made.
+        Returns the (possibly new) function and whether any change was made.
         """
         const_values: dict[int, MenaiValue] = _collect_const_values(func)
         changed = False
 
+        # Accumulated block rewrites, keyed by block id.  A block may be
+        # rewritten more than once in a round (e.g. as a join block and as a
+        # defining block), so all rewrites are applied to this map and the
+        # function is rebuilt once at the end.
+        rewrites: dict[int, MenaiCFGBlock] = {}
+
         for block in func.blocks:
+            block = rewrites.get(block.id, block)
             result = _qualifying_phi_terminal(block)
             if result is None:
                 continue
@@ -300,9 +312,12 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
 
             # Re-wire each constant defining block to bypass this join block.
             for def_block, const_ssa_val in const_arms:
-                _rewire_predecessor(
+                def_block = rewrites.get(def_block.id, def_block)
+                new_def_block = _rewire_predecessor(
                     def_block, terminal, const_ssa_val, const_values, predicate_name
                 )
+                if new_def_block is not None:
+                    rewrites[new_def_block.id] = new_def_block
 
             # Update the phi's incoming list to only the non-constant arms.
             if keep:
@@ -342,19 +357,26 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                         if target_uses_phi:
                             # Keep the phi (needed for the value), but update
                             # its incoming list to only the remaining arms.
-                            block.instrs[block.instrs.index(phi)] = MenaiCFGPhiInstr(
+                            new_instrs = list(block.instrs)
+                            new_instrs[new_instrs.index(phi)] = MenaiCFGPhiInstr(
                                 result=phi.result,
                                 incoming=keep,
                             )
                             # Replace predicate + branch with a direct jump.
-                            block.instrs.remove(pred_instr)
-                            block.terminator = MenaiCFGJumpTerm(target=target)
+                            new_instrs.remove(pred_instr)
+                            block = replace(
+                                block,
+                                instrs=tuple(new_instrs),
+                                terminator=MenaiCFGJumpTerm(target=target),
+                            )
 
                         else:
                             # Target doesn't need the phi — remove it and
                             # re-wire the sole remaining defining block directly.
-                            block.instrs.remove(phi)
-                            block.instrs.remove(pred_instr)
+                            new_instrs = list(block.instrs)
+                            new_instrs.remove(phi)
+                            new_instrs.remove(pred_instr)
+                            block = replace(block, instrs=tuple(new_instrs))
                             sole_def_block = def_block_map.get(sole_val.id)
                             if (
                                 sole_def_block is not None
@@ -362,9 +384,11 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                                     sole_def_block.terminator, MenaiCFGJumpTerm
                                 )
                             ):
-                                sole_def_block.terminator = (
-                                    MenaiCFGJumpTerm(target=target)
+                                sole_def_block = replace(
+                                    rewrites.get(sole_def_block.id, sole_def_block),
+                                    terminator=MenaiCFGJumpTerm(target=target),
                                 )
+                                rewrites[sole_def_block.id] = sole_def_block
 
                     else:
                         # The sole remaining value is not a statically-known
@@ -375,39 +399,53 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                         # downstream code still needs the merged value and the
                         # phi must be retained with its reduced incoming list.
                         if phi_used_outside:
-                            block.instrs[block.instrs.index(phi)] = MenaiCFGPhiInstr(
+                            new_instrs = list(block.instrs)
+                            new_instrs[new_instrs.index(phi)] = MenaiCFGPhiInstr(
                                 result=phi.result,
                                 incoming=keep,
                             )
+                            block = replace(block, instrs=tuple(new_instrs))
                             changed = True
                             continue
 
-                        block.instrs.remove(phi)
+                        new_instrs = list(block.instrs)
+                        new_instrs.remove(phi)
                         if pred_instr is not None:
-                            block.instrs[block.instrs.index(pred_instr)] = (
+                            new_instrs[new_instrs.index(pred_instr)] = (
                                 MenaiCFGBuiltinInstr(
                                     result=pred_instr.result,
                                     op=pred_instr.op,
                                     args=[sole_val],
                                 )
                             )
+                            block = replace(block, instrs=tuple(new_instrs))
 
                         elif isinstance(terminal, MenaiCFGBranchTerm):
-                            block.terminator = MenaiCFGBranchTerm(
-                                cond=sole_val,
-                                true_block=terminal.true_block,
-                                false_block=terminal.false_block,
+                            block = replace(
+                                block,
+                                instrs=tuple(new_instrs),
+                                terminator=MenaiCFGBranchTerm(
+                                    cond=sole_val,
+                                    true_block=terminal.true_block,
+                                    false_block=terminal.false_block,
+                                ),
                             )
 
                         else:
                             assert isinstance(terminal, MenaiCFGReturnTerm)
-                            block.terminator = MenaiCFGReturnTerm(value=sole_val)
+                            block = replace(
+                                block,
+                                instrs=tuple(new_instrs),
+                                terminator=MenaiCFGReturnTerm(value=sole_val),
+                            )
 
                 else:
-                    block.instrs[block.instrs.index(phi)] = MenaiCFGPhiInstr(
+                    new_instrs = list(block.instrs)
+                    new_instrs[new_instrs.index(phi)] = MenaiCFGPhiInstr(
                         result=phi.result,
                         incoming=keep,
                     )
+                    block = replace(block, instrs=tuple(new_instrs))
 
                     # When the phi feeds a predicate and all remaining arms
                     # are known constants that evaluate to the same predicate
@@ -430,8 +468,13 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                                 terminal.true_block if results.pop()
                                 else terminal.false_block
                             )
-                            block.instrs.remove(pred_instr)
-                            block.terminator = MenaiCFGJumpTerm(target=target)
+                            new_instrs = list(block.instrs)
+                            new_instrs.remove(pred_instr)
+                            block = replace(
+                                block,
+                                instrs=tuple(new_instrs),
+                                terminator=MenaiCFGJumpTerm(target=target),
+                            )
 
             else:
                 # All arms were constant — all predecessors have been re-wired
@@ -444,18 +487,31 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                 # Note: this can only happen when phi_used_outside is False
                 # (or when there's no predicate), because if the phi result is
                 # used outside this block, at least one arm will be kept.
-                block.instrs.remove(phi)
+                new_instrs = list(block.instrs)
+                new_instrs.remove(phi)
                 if pred_instr is not None:
-                    block.instrs.remove(pred_instr)
+                    new_instrs.remove(pred_instr)
 
                 if isinstance(terminal, MenaiCFGBranchTerm):
-                    block.terminator = MenaiCFGJumpTerm(target=terminal.true_block)
+                    block = replace(
+                        block,
+                        instrs=tuple(new_instrs),
+                        terminator=MenaiCFGJumpTerm(target=terminal.true_block),
+                    )
+
+                else:
+                    block = replace(block, instrs=tuple(new_instrs))
 
                 # For ReturnTerm the existing terminator is already valid as-is.
 
+            rewrites[block.id] = block
             changed = True
 
-        return changed
+        if not changed:
+            return func, False
+
+        new_blocks = tuple(rewrites.get(b.id, b) for b in func.blocks)
+        return replace(func, blocks=new_blocks), True
 
 
 def _build_def_block_map(func: MenaiCFGFunction) -> dict[int, 'MenaiCFGBlock']:
@@ -571,7 +627,7 @@ def _rewire_predecessor(
     terminator is left unchanged.
     """
     if not isinstance(def_block.terminator, MenaiCFGJumpTerm):
-        return
+        return None
 
     if isinstance(terminal, MenaiCFGBranchTerm):
         menai_val = const_values[const_ssa_val.id]
@@ -582,18 +638,25 @@ def _rewire_predecessor(
             result = isinstance(menai_val, MenaiBoolean) and menai_val.value
 
         target = terminal.true_block if result else terminal.false_block
-        def_block.terminator = MenaiCFGJumpTerm(target=target)
         # The constant instruction is now dead — its result was only ever
         # consumed by the phi, which has been removed.  Drop it so the
         # vcode builder does not emit a spurious LOAD_* instruction.
-        def_block.instrs = [
+        new_instrs = tuple(
             i for i in def_block.instrs
             if not (isinstance(i, MenaiCFGConstInstr) and i.result.id == const_ssa_val.id)
-        ]
+        )
+        return replace(
+            def_block,
+            instrs=new_instrs,
+            terminator=MenaiCFGJumpTerm(target=target),
+        )
 
     else:
         assert isinstance(terminal, MenaiCFGReturnTerm)
-        def_block.terminator = MenaiCFGReturnTerm(value=const_ssa_val)
+        return replace(
+            def_block,
+            terminator=MenaiCFGReturnTerm(value=const_ssa_val),
+        )
 
 
 _TYPE_PREDICATES: dict[str, tuple[type[MenaiValue], ...]] = {
