@@ -83,6 +83,13 @@ ADR-0020's actual decision — that a pass's scope is declared by its base class
 `MenaiCFGPerFunctionPass` or `MenaiCFGWholeProgramPass` — is unchanged and
 remains in force. Only its YAGNI deferral of a shared-structures home is lifted.
 
+## Relationship to ADR-0034
+
+This ADR is an instance of the general standard stated in ADR-0034: every
+compiler phase is a pure function over immutable values. The CFG was the first
+layer brought into conformance; the IR, VCode, and bytecode models, and the
+front end, are the remaining work.
+
 ## Alternatives considered
 
 ### Keep the CFG mutable and rely on discipline

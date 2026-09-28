@@ -102,3 +102,4 @@ What costs, risks, or constraints does this decision impose?
 | [0031](0031-inliner-does-not-inline-recursive-calls.md) | The IR inliner does not inline recursive or mutually-recursive calls | Accepted |
 | [0032](0032-single-binding-tail-recursive-letrecs-become-loops.md) | Single-binding tail-recursive letrecs are converted to loops before inlining | Accepted |
 | [0033](0033-cfg-is-an-immutable-value.md) | The CFG is an immutable value | Accepted |
+| [0034](0034-the-compiler-is-expressible-in-menai.md) | The compiler is expressible in Menai | Accepted |
