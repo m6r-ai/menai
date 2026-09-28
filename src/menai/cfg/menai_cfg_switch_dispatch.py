@@ -38,6 +38,7 @@ guards inserted for them).  The integer guard for the switch scrutinee is
 also handled by guard insertion.
 """
 
+from dataclasses import replace
 
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
@@ -48,11 +49,16 @@ from menai.cfg.menai_cfg import (
     MenaiCFGInstr,
     MenaiCFGSwitchTerm,
     MenaiCFGValue,
+    blocks_by_id,
+    predecessors,
     value_ids_in_instr,
     value_ids_in_term,
-    relink_predecessors,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+    replace_blocks,
+)
 from menai.menai_value import MenaiInteger
 
 
@@ -72,18 +78,22 @@ class MenaiCFGSwitchDispatch(MenaiCFGPerFunctionPass):
     Rewrite integer-equality branch chains into dense switch terminators.
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         changed = False
 
         for entry in list(func.blocks):
             if not any(b.id == entry.id for b in func.blocks):
                 continue
 
-            chain = _match_chain(entry)
+            chain = _match_chain(func, entry)
             if chain is None:
                 continue
 
-            scrutinee, scrut_const_instr, arms, default_block, test_blocks = chain
+            scrutinee, scrut_const_instr, arms, default_block_id, test_blocks = chain
 
             if len(arms) < _MIN_ARMS or not _is_dense(arms):
                 continue
@@ -91,30 +101,33 @@ class MenaiCFGSwitchDispatch(MenaiCFGPerFunctionPass):
             if not _values_unreferenced_elsewhere(func, test_blocks):
                 continue
 
-            _rewrite(entry, scrut_const_instr, scrutinee, arms, default_block)
+            new_entry = _rewrite(
+                entry, scrut_const_instr, scrutinee, arms, default_block_id,
+            )
 
             test_ids = {b.id for b in test_blocks}
             entry_pos = next(i for i, b in enumerate(func.blocks) if b.id == entry.id)
-            func.blocks = [b for b in func.blocks if b.id not in test_ids]
-            entry_pos = min(entry_pos, len(func.blocks))
-            func.blocks.insert(entry_pos, entry)
+            blocks = [b for b in func.blocks if b.id not in test_ids]
+            entry_pos = min(entry_pos, len(blocks))
+            blocks.insert(entry_pos, new_entry)
+            func = replace_blocks(func, tuple(blocks))
 
-            relink_predecessors(func)
             changed = True
 
         return func, changed
 
 
-def _match_chain(entry: MenaiCFGBlock) -> _ChainMatch | None:
+def _match_chain(func: MenaiCFGFunction, entry: MenaiCFGBlock) -> _ChainMatch | None:
     """
     Follow the false edges from `entry`, collecting (literal, then_block)
     arms while each block matches the integer-equality test pattern.
 
-    Returns (scrutinee, scrut_const_instr, arms, default_block, test_blocks)
+    Returns (scrutinee, scrut_const_instr, arms, default_block_id, test_blocks)
     or None.  `scrut_const_instr` is the entry block's const instruction
     defining the scrutinee when the scrutinee is a per-block constant
     (None when it is a value defined elsewhere).
     """
+    by_id = blocks_by_id(func)
     term = entry.terminator
     if not isinstance(term, MenaiCFGBranchTerm):
         return None
@@ -122,7 +135,7 @@ def _match_chain(entry: MenaiCFGBlock) -> _ChainMatch | None:
     scrutinee: MenaiCFGValue | None = None
     scrut_const_val: int | None = None
     scrut_const_instr: MenaiCFGConstInstr | None = None
-    arms: list[tuple[int, MenaiCFGBlock]] = []
+    arms: list[tuple[int, int]] = []
     seen_literals: set[int] = set()
     test_blocks: list[MenaiCFGBlock] = []
     visited: set[int] = set()
@@ -137,15 +150,16 @@ def _match_chain(entry: MenaiCFGBlock) -> _ChainMatch | None:
         if arm is None:
             break
 
-        literal, then_block, scrut, const_val, const_instr = arm
+        literal, then_block_id, scrut, const_val, const_instr = arm
 
         # Interior test blocks must be reachable only through the chain —
         # an outside predecessor would lose its path when the block is removed.
         if block is not entry:
-            if len(block.predecessors) != 1 or block.predecessors[0] is not test_blocks[-1]:
+            preds = predecessors(func, block)
+            if len(preds) != 1 or preds[0] is not test_blocks[-1]:
                 break
 
-        if any(then_block.id == t.id for t in test_blocks) or then_block is block:
+        if any(then_block_id == t.id for t in test_blocks) or then_block_id == block.id:
             break
 
         if literal in seen_literals:
@@ -156,13 +170,13 @@ def _match_chain(entry: MenaiCFGBlock) -> _ChainMatch | None:
             scrut_const_val = const_val
             scrut_const_instr = const_instr
 
-        arms.append((literal, then_block))
+        arms.append((literal, then_block_id))
         test_blocks.append(block)
         seen_literals.add(literal)
 
         nxt = block.terminator
         assert isinstance(nxt, MenaiCFGBranchTerm)
-        block = nxt.false_block
+        block = by_id[nxt.false_block]
 
     if scrutinee is None or not test_blocks:
         return None
@@ -170,18 +184,18 @@ def _match_chain(entry: MenaiCFGBlock) -> _ChainMatch | None:
     # The chain must terminate somewhere that is not a removed test block.
     last_term = test_blocks[-1].terminator
     assert isinstance(last_term, MenaiCFGBranchTerm)
-    default_block = last_term.false_block
-    if any(default_block.id == t.id for t in test_blocks):
+    default_block_id = last_term.false_block
+    if any(default_block_id == t.id for t in test_blocks):
         return None
 
-    return scrutinee, scrut_const_instr, arms, default_block, test_blocks
+    return scrutinee, scrut_const_instr, arms, default_block_id, test_blocks
 
 
 def _match_test_block(
     block: MenaiCFGBlock,
     expected_scrutinee: MenaiCFGValue | None,
     expected_const_val: int | None,
-) -> tuple[int, MenaiCFGBlock, MenaiCFGValue, 'int | None', 'MenaiCFGConstInstr | None'] | None:
+) -> tuple[int, int, MenaiCFGValue, 'int | None', 'MenaiCFGConstInstr | None'] | None:
     """
     Match a single block against the test pattern:
 
@@ -189,8 +203,9 @@ def _match_test_block(
         builtin integer=? [scrutinee, literal]
         branch %eq → then / next
 
-    Returns (literal, then_block, scrutinee, scrut_const_val, scrut_const_instr)
-    or None.  The scrutinee const, when present, must head the block.
+    Returns (literal, then_block_id, scrutinee, scrut_const_val,
+    scrut_const_instr) or None.  The scrutinee const, when present, must head
+    the block.
     """
     if block.patch_instrs:
         return None
@@ -262,7 +277,7 @@ def _match_test_block(
     return literal, term.true_block, scrut, scrut_const_val, scrut_const_instr
 
 
-def _is_dense(arms: list[tuple[int, MenaiCFGBlock]]) -> bool:
+def _is_dense(arms: list[tuple[int, int]]) -> bool:
     """Return True when the literals span a dense enough range to tabulate."""
     lo = min(k for k, _ in arms)
     hi = max(k for k, _ in arms)
@@ -309,29 +324,31 @@ def _rewrite(
     entry: MenaiCFGBlock,
     scrut_const_instr: MenaiCFGConstInstr | None,
     scrutinee: MenaiCFGValue,
-    arms: list[tuple[int, MenaiCFGBlock]],
-    default_block: MenaiCFGBlock,
-) -> None:
+    arms: list[tuple[int, int]],
+    default_block_id: int,
+) -> MenaiCFGBlock:
     """
-    Rewrite `entry` in place: keep the scrutinee const (when the scrutinee is
-    defined here) and replace the terminator with the switch.  All existing
-    references to `entry` remain valid.
+    Return a copy of `entry` keeping the scrutinee const (when the scrutinee is
+    defined here) and with the terminator replaced by the switch.
     """
     lo = min(k for k, _ in arms)
     hi = max(k for k, _ in arms)
 
-    targets: list[MenaiCFGBlock | None] = [None] * (hi - lo + 1)
-    for k, then_block in arms:
-        targets[k - lo] = then_block
+    targets: list[int | None] = [None] * (hi - lo + 1)
+    for k, then_block_id in arms:
+        targets[k - lo] = then_block_id
 
     new_instrs: list[MenaiCFGInstr] = []
     if scrut_const_instr is not None:
         new_instrs.append(scrut_const_instr)
 
-    entry.instrs = new_instrs
-    entry.terminator = MenaiCFGSwitchTerm(
-        value=scrutinee,
-        min=lo,
-        targets=targets,
-        default_block=default_block,
+    return replace(
+        entry,
+        instrs=tuple(new_instrs),
+        terminator=MenaiCFGSwitchTerm(
+            value=scrutinee,
+            min=lo,
+            targets=targets,
+            default_block=default_block_id,
+        ),
     )

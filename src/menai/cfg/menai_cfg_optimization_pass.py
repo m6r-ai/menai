@@ -2,9 +2,16 @@
 Menai CFG optimization pass base classes.
 
 Passes operate at module scope: a pass is handed the root MenaiCFGFunction
-and returns a (possibly new) root together with a flag indicating whether any
-changes were made.  The pass manager uses that flag to drive fixed-point
-iteration.
+and a MenaiCFGContext, and returns a (possibly new) root together with a flag
+indicating whether any changes were made.  The pass manager uses that flag to
+drive fixed-point iteration.
+
+The CFG is an immutable value (ADR-0033): a pass must not mutate the function
+it is handed.  It returns a new function when it changes anything.
+
+The context carries state that is not part of the program: the type facts
+produced by the interprocedural analysis and consumed by the passes that
+depend on it.  It is threaded through the pipeline alongside the CFG.
 
 There is no separate module object.  The module is the root function plus
 every function reachable from it through MenaiCFGMakeClosureInstr
@@ -22,7 +29,73 @@ Two pass contracts are provided:
   implement _optimize_module and own their own traversal and write-back.
 """
 
-from menai.cfg.menai_cfg import MenaiCFGFunction, MenaiCFGMakeClosureInstr
+from dataclasses import dataclass, field, replace
+
+from menai.cfg.menai_cfg import (
+    MenaiCFGBlock,
+    MenaiCFGFunction,
+    MenaiCFGMakeClosureInstr,
+)
+from menai.cfg.menai_cfg_type_fact import TypeFact
+
+
+@dataclass
+class MenaiCFGContext:
+    """
+    Cross-pass state threaded through the CFG pipeline.
+
+    The context is not part of the program value; it carries analysis output
+    that passes produce and consume.  It is keyed by function identity so that
+    a fact set computed for one function is not confused with another's.
+
+    `type_facts` maps a function's id to that function's per-value type facts.
+    It is written by the interprocedural type analysis and read by guard
+    insertion and predicate folding.
+    """
+    type_facts: dict[int, dict[int, TypeFact]] = field(default_factory=dict)
+
+    def facts_for(self, func: MenaiCFGFunction) -> dict[int, TypeFact]:
+        """Return the type facts recorded for `func`, or an empty map."""
+        return self.type_facts.get(id(func), {})
+
+    def set_facts(self, func: MenaiCFGFunction, facts: dict[int, TypeFact]) -> None:
+        """Record the type facts for `func`."""
+        self.type_facts[id(func)] = facts
+
+
+def replace_block_instrs(
+    block: MenaiCFGBlock,
+    instrs: tuple[MenaiCFGInstr, ...],
+) -> MenaiCFGBlock:
+    """Return a copy of `block` with a new instruction list."""
+    return replace(block, instrs=instrs)
+
+
+def replace_block_terminator(
+    block: MenaiCFGBlock,
+    terminator: MenaiCFGTerminator | None,
+) -> MenaiCFGBlock:
+    """Return a copy of `block` with a new terminator."""
+    return replace(block, terminator=terminator)
+
+
+def replace_blocks(
+    func: MenaiCFGFunction,
+    blocks: tuple[MenaiCFGBlock, ...],
+) -> MenaiCFGFunction:
+    """Return a copy of `func` with a new block list."""
+    return replace(func, blocks=blocks)
+
+
+def replace_block(
+    func: MenaiCFGFunction,
+    block: MenaiCFGBlock,
+) -> MenaiCFGFunction:
+    """Return a copy of `func` with `block` replacing the block of the same id."""
+    return replace(
+        func,
+        blocks=tuple(block if b.id == block.id else b for b in func.blocks),
+    )
 
 
 def collect_functions(root: MenaiCFGFunction) -> list[MenaiCFGFunction]:
@@ -57,7 +130,11 @@ class MenaiCFGOptimizationPass:
     MenaiCFGPerFunctionPass and MenaiCFGWholeProgramPass.
     """
 
-    def optimize(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def optimize(
+        self,
+        root: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Transform the module rooted at `root`, returning the new root and a
         flag indicating whether any changes were made.
@@ -75,7 +152,11 @@ class MenaiCFGPerFunctionPass(MenaiCFGOptimizationPass):
     write-back of any nested function that a pass replaces.
     """
 
-    def optimize(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def optimize(
+        self,
+        root: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Transform `root` and all nested lambda functions it contains.
 
@@ -85,16 +166,21 @@ class MenaiCFGPerFunctionPass(MenaiCFGOptimizationPass):
 
         Args:
             root: The root function to optimize.
+            context: Cross-pass state.
 
         Returns:
             A tuple of (new_root, changed) where changed is True if the pass
             made at least one transformation anywhere in the function tree.
         """
-        root, changed = self._optimize_function(root)
-        root, nested_changed = self._optimize_nested(root)
+        root, changed = self._optimize_function(root, context)
+        root, nested_changed = self._optimize_nested(root, context)
         return root, changed or nested_changed
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Transform a single flat CFG function, returning an optimized version.
 
@@ -103,6 +189,7 @@ class MenaiCFGPerFunctionPass(MenaiCFGOptimizationPass):
 
         Args:
             func: The CFG function to optimize.
+            context: Cross-pass state.
 
         Returns:
             A tuple of (new_func, changed) where changed is True if the pass
@@ -112,30 +199,48 @@ class MenaiCFGPerFunctionPass(MenaiCFGOptimizationPass):
         """
         raise NotImplementedError
 
-    def _optimize_nested(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_nested(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Recursively optimize all MenaiCFGFunction objects embedded in
         MenaiCFGMakeClosureInstr instructions anywhere in `func`.
 
         When a nested lambda is optimized and returns a new function object,
-        the MakeClosure instruction is updated in place.
+        the containing block is rebuilt with a new MakeClosure instruction.
 
-        Returns `func` (possibly with mutated MakeClosure instructions) and
-        a flag indicating whether any nested function was changed.
+        Returns `func` (possibly with rebuilt blocks) and a flag indicating
+        whether any nested function was changed.
         """
         changed = False
+        new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
-            for i, instr in enumerate(block.instrs):
+            new_instrs: list[MenaiCFGInstr] = []
+            block_changed = False
+            for instr in block.instrs:
                 if isinstance(instr, MenaiCFGMakeClosureInstr):
-                    new_child, child_changed = self.optimize(instr.function)
+                    new_child, child_changed = self.optimize(instr.function, context)
                     if child_changed:
-                        block.instrs[i] = MenaiCFGMakeClosureInstr(
+                        instr = MenaiCFGMakeClosureInstr(
                             result=instr.result,
                             function=new_child,
                             captures=instr.captures,
                             needs_patching=instr.needs_patching,
                         )
                         changed = True
+                        block_changed = True
+
+                new_instrs.append(instr)
+
+            if block_changed:
+                block = replace_block_instrs(block, tuple(new_instrs))
+
+            new_blocks.append(block)
+
+        if changed:
+            func = replace_blocks(func, tuple(new_blocks))
 
         return func, changed
 
@@ -150,13 +255,21 @@ class MenaiCFGWholeProgramPass(MenaiCFGOptimizationPass):
     instructions.
     """
 
-    def optimize(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def optimize(
+        self,
+        root: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Transform the module rooted at `root`, delegating to _optimize_module.
         """
-        return self._optimize_module(root)
+        return self._optimize_module(root, context)
 
-    def _optimize_module(self, root: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_module(
+        self,
+        root: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Transform the module rooted at `root`, returning the new root and a
         flag indicating whether any changes were made.

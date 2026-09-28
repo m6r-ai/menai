@@ -7,9 +7,8 @@ consume this representation.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from menai.cfg.menai_cfg_type_fact import TypeFact
 from menai.menai_value import MenaiValue, MenaiStructType
 
 
@@ -298,8 +297,8 @@ class MenaiCFGPhiInstr:
     %result = phi [(%value_from_block, block), ...]
 
     Standard SSA phi node.  Each entry pairs an incoming SSA value with the
-    predecessor block it comes from.  For Menai, phi nodes appear only at
-    `if` join points (one phi per if expression).
+    id of the predecessor block it comes from.  For Menai, phi nodes appear
+    only at `if` join points (one phi per if expression).
 
     VM codegen: both predecessor blocks leave their value on the stack, so
     the phi emits no instructions — the join block simply continues.
@@ -307,7 +306,7 @@ class MenaiCFGPhiInstr:
     Native codegen: maps directly to an LLVM phi instruction.
     """
     result: MenaiCFGValue
-    incoming: list[tuple[MenaiCFGValue, 'MenaiCFGBlock']]
+    incoming: list[tuple[MenaiCFGValue, int]]
 
 
 # Union of all non-terminator instruction types.
@@ -336,8 +335,8 @@ MenaiCFGInstr = (  # pylint: disable=invalid-name
 
 @dataclass
 class MenaiCFGJumpTerm:
-    """Unconditional jump to `target`."""
-    target: 'MenaiCFGBlock'
+    """Unconditional jump to the block with id `target`."""
+    target: int
 
 
 @dataclass
@@ -345,12 +344,13 @@ class MenaiCFGBranchTerm:
     """
     Conditional branch on `cond`.
 
-    Jumps to `true_block` if cond is truthy, `false_block` otherwise.
+    Jumps to `true_block` if cond is truthy, `false_block` otherwise.  Both are
+    block ids.
     Lowered to JUMP_IF_FALSE by the VM codegen.
     """
     cond: MenaiCFGValue
-    true_block: 'MenaiCFGBlock'
-    false_block: 'MenaiCFGBlock'
+    true_block: int
+    false_block: int
 
 
 @dataclass
@@ -359,15 +359,15 @@ class MenaiCFGSwitchTerm:
     Dense integer switch on `value`.
 
     Lowered to the SWITCH_INTEGER opcode by the VM codegen.  `targets[i]` is the
-    block jumped to when the scrutinee equals `min + i`; entries may be None,
-    meaning that value falls through to `default_block`.  The scrutinee is
+    id of the block jumped to when the scrutinee equals `min + i`; entries may be
+    None, meaning that value falls through to `default_block`.  The scrutinee is
     guaranteed integer (an integer guard is inserted by MenaiCFGGuardInsertion
     when the type is not statically known), so no runtime type dispatch is needed.
     """
     value: MenaiCFGValue
     min: int
-    targets: list['MenaiCFGBlock | None']
-    default_block: 'MenaiCFGBlock'
+    targets: list[int | None]
+    default_block: int
 
 
 @dataclass
@@ -422,7 +422,7 @@ class MenaiCFGSelfLoopTerm:
     """
     args: list[MenaiCFGValue]
     param_vals: list['MenaiCFGValue'] | None = None
-    target: 'MenaiCFGBlock | None' = None
+    target: int | None = None
 
 
 @dataclass
@@ -448,7 +448,7 @@ MenaiCFGTerminator = (  # pylint: disable=invalid-name
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class MenaiCFGBlock:
     """
     A basic block: a maximal straight-line sequence of instructions with a
@@ -462,15 +462,16 @@ class MenaiCFGBlock:
     patch_instrs: MenaiCFGPatchClosureInstr instructions for letrec fixup,
                   emitted after `instrs` but before the terminator
     terminator  : the block's single exit instruction (set by the builder)
-    predecessors: blocks that have an edge to this block (filled in by the
-                  builder after all blocks are created)
+
+    A block is an immutable value.  A pass that changes a block constructs a
+    new one; it must not modify an existing block.  Predecessors are not stored
+    on the block: they are derived from the terminators by `predecessors`.
     """
     id: int
     label: str
-    instrs: list[MenaiCFGInstr] = field(default_factory=list)
-    patch_instrs: list[MenaiCFGPatchClosureInstr] = field(default_factory=list)
+    instrs: tuple[MenaiCFGInstr, ...] = ()
+    patch_instrs: tuple[MenaiCFGPatchClosureInstr, ...] = ()
     terminator: MenaiCFGTerminator | None = None
-    predecessors: list['MenaiCFGBlock'] = field(default_factory=list)
 
     def __repr__(self) -> str:
         lines = [f"block {self.id} ({self.label}):"]
@@ -486,7 +487,7 @@ class MenaiCFGBlock:
         return "\n".join(lines)
 
 
-@dataclass
+@dataclass(frozen=True)
 class MenaiCFGFunction:
     """
     The CFG for a single lambda (or the top-level module body).
@@ -505,18 +506,19 @@ class MenaiCFGFunction:
                    detection and debug names)
     source_line  : source line where the lambda is defined
     source_file  : source file where the lambda is defined
-    type_facts   : per-value type facts computed by the interprocedural type
-                   analysis pass and consumed by the guard insertion pass.
-                   Transient analysis output, not part of the program structure.
+
+    A function is an immutable value.  A pass that changes a function
+    constructs a new one.  Per-value type facts are analysis output, not part
+    of the program structure, so they are not stored here; they travel
+    alongside the CFG in the pass context.
     """
-    blocks: list[MenaiCFGBlock] = field(default_factory=list)
-    params: list[str] = field(default_factory=list)
-    free_vars: list[str] = field(default_factory=list)
+    blocks: tuple[MenaiCFGBlock, ...] = ()
+    params: tuple[str, ...] = ()
+    free_vars: tuple[str, ...] = ()
     is_variadic: bool = False
     binding_name: str | None = None
     source_line: int = 0
     source_file: str = ""
-    type_facts: dict[int, TypeFact] = field(default_factory=dict)
 
     def entry(self) -> MenaiCFGBlock:
         """The entry block (always the first block)."""
@@ -596,7 +598,7 @@ def _fmt_instr(instr: MenaiCFGInstr) -> str:
         return f"guard {instr.value} is {instr.expected_type}"
 
     if isinstance(instr, MenaiCFGPhiInstr):
-        parts = ", ".join(f"{v} <- block{b.id}" for v, b in instr.incoming)
+        parts = ", ".join(f"{v} <- block{b}" for v, b in instr.incoming)
         return f"{instr.result} = phi [{parts}]"
 
     return f"<unknown instr {type(instr).__name__}>"
@@ -605,18 +607,18 @@ def _fmt_instr(instr: MenaiCFGInstr) -> str:
 def _fmt_term(term: MenaiCFGTerminator) -> str:
     """One-line human-readable representation of a terminator."""
     if isinstance(term, MenaiCFGJumpTerm):
-        return f"jump block{term.target.id}"
+        return f"jump block{term.target}"
 
     if isinstance(term, MenaiCFGBranchTerm):
-        return (f"branch {term.cond} → block{term.true_block.id} / "
-                f"block{term.false_block.id}")
+        return (f"branch {term.cond} → block{term.true_block} / "
+                f"block{term.false_block}")
 
     if isinstance(term, MenaiCFGSwitchTerm):
         arms = ", ".join(
-            f"{term.min + i}: block{t.id}" if t is not None else f"{term.min + i}: default"
+            f"{term.min + i}: block{t}" if t is not None else f"{term.min + i}: default"
             for i, t in enumerate(term.targets)
         )
-        return f"switch {term.value} min={term.min} [{arms}] default=block{term.default_block.id}"
+        return f"switch {term.value} min={term.min} [{arms}] default=block{term.default_block}"
 
     if isinstance(term, MenaiCFGReturnTerm):
         return f"return {term.value}"
@@ -628,7 +630,7 @@ def _fmt_term(term: MenaiCFGTerminator) -> str:
         return f"tail_apply {term.func} {term.arg_list}"
 
     if isinstance(term, MenaiCFGSelfLoopTerm):
-        target = f" → block{term.target.id}" if term.target is not None else ""
+        target = f" → block{term.target}" if term.target is not None else ""
         return f"self_loop{_fmt_values(term.args)}{target}"
 
     if isinstance(term, MenaiCFGRaiseTerm):
@@ -637,57 +639,66 @@ def _fmt_term(term: MenaiCFGTerminator) -> str:
     return f"<unknown term {type(term).__name__}>"
 
 
-def relink_predecessors(func: MenaiCFGFunction) -> None:
+def blocks_by_id(func: MenaiCFGFunction) -> dict[int, MenaiCFGBlock]:
+    """Return a map from block id to block for every block in `func`."""
+    return {block.id: block for block in func.blocks}
+
+
+def successor_ids(term: MenaiCFGTerminator | None) -> list[int]:
     """
-    Recompute the `predecessors` list for every block in `func` from scratch.
+    Return the ids of the blocks a terminator can transfer control to.
 
-    Called after any structural change to the CFG.  Mutates the predecessor
-    lists in place.
+    A `MenaiCFGSelfLoopTerm` with no target transfers control to the entry
+    block (id 0); callers that need that edge must account for it, so the
+    entry-block edge is included here as id 0.
     """
-    for block in func.blocks:
-        block.predecessors = []
+    if term is None:
+        return []
 
-    for block in func.blocks:
-        term = block.terminator
-        if isinstance(term, MenaiCFGJumpTerm):
-            _safe_add_pred(term.target, block, func)
+    if isinstance(term, MenaiCFGJumpTerm):
+        return [term.target]
 
-        elif isinstance(term, MenaiCFGBranchTerm):
-            _safe_add_pred(term.true_block, block, func)
-            _safe_add_pred(term.false_block, block, func)
+    if isinstance(term, MenaiCFGBranchTerm):
+        return [term.true_block, term.false_block]
 
-        elif isinstance(term, MenaiCFGSwitchTerm):
-            for target in term.targets:
-                if target is not None:
-                    _safe_add_pred(target, block, func)
+    if isinstance(term, MenaiCFGSwitchTerm):
+        targets = [t for t in term.targets if t is not None]
+        targets.append(term.default_block)
+        return targets
 
-            _safe_add_pred(term.default_block, block, func)
+    if isinstance(term, MenaiCFGSelfLoopTerm):
+        return [term.target if term.target is not None else 0]
 
-        elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
-            _safe_add_pred(term.target, block, func)
+    return []
 
 
-def _safe_add_pred(
-    target: MenaiCFGBlock,
-    pred: MenaiCFGBlock,
-    func: MenaiCFGFunction,
-) -> None:
-    """Append a predecessor to a block only if the block still exists in the function."""
-    if any(b.id == target.id for b in func.blocks):
-        target.predecessors.append(pred)
+def predecessors(func: MenaiCFGFunction, block: MenaiCFGBlock) -> list[MenaiCFGBlock]:
+    """
+    Return the blocks that have an edge to `block`.
+
+    Derived from the terminators rather than stored, so it cannot go stale.
+    The result is in block-list order.  A block is not its own predecessor
+    unless it has an explicit self-edge (a `MenaiCFGSelfLoopTerm` targeting
+    itself is not possible, but a jump to itself is).
+    """
+    return [
+        candidate
+        for candidate in func.blocks
+        if block.id in successor_ids(candidate.terminator)
+    ]
 
 
 def remap_term(
     term: MenaiCFGTerminator | None,
-    remap_block: Callable[[MenaiCFGBlock], MenaiCFGBlock],
+    remap_block: Callable[[int], int],
 ) -> MenaiCFGTerminator | None:
-    """Return a new terminator with all block references remapped."""
+    """Return a new terminator with all block-id references remapped."""
     if term is None:
         return None
 
     if isinstance(term, MenaiCFGJumpTerm):
         new_target = remap_block(term.target)
-        if new_target is term.target:
+        if new_target == term.target:
             return term
 
         return MenaiCFGJumpTerm(target=new_target)
@@ -695,7 +706,7 @@ def remap_term(
     if isinstance(term, MenaiCFGBranchTerm):
         new_true = remap_block(term.true_block)
         new_false = remap_block(term.false_block)
-        if new_true is term.true_block and new_false is term.false_block:
+        if new_true == term.true_block and new_false == term.false_block:
             return term
 
         return MenaiCFGBranchTerm(
@@ -707,7 +718,7 @@ def remap_term(
     if isinstance(term, MenaiCFGSwitchTerm):
         new_targets = [remap_block(t) if t is not None else None for t in term.targets]
         new_default = remap_block(term.default_block)
-        if all(nt is t for nt, t in zip(new_targets, term.targets)) and new_default is term.default_block:
+        if new_targets == term.targets and new_default == term.default_block:
             return term
 
         return MenaiCFGSwitchTerm(
@@ -719,7 +730,7 @@ def remap_term(
 
     if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
         new_target = remap_block(term.target)
-        if new_target is term.target:
+        if new_target == term.target:
             return term
 
         return MenaiCFGSelfLoopTerm(args=term.args, param_vals=term.param_vals, target=new_target)

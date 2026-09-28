@@ -45,11 +45,15 @@ from menai.cfg.menai_cfg import (
     MenaiCFGJumpTerm,
     MenaiCFGPhiInstr,
     MenaiCFGValue,
-    relink_predecessors,
     value_ids_in_instr,
     value_ids_in_term,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+    replace_block_instrs,
+    replace_blocks,
+)
 
 
 class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
@@ -66,22 +70,23 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
     an unconditional jump) become empty and will be eliminated by
     MenaiCFGSimplifyBlocks in the next pass.
 
-    Mutates block.instrs in place.
+    Rebuilds any block whose instruction list changes; the input is not mutated.
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         changed_overall = False
 
         # Iterate to fixed point: each round may expose new candidates.
         while True:
-            round_changed = self._run_one_round(func)
+            func, round_changed = self._run_one_round(func)
             if not round_changed:
                 break
 
             changed_overall = True
-
-        if changed_overall:
-            relink_predecessors(func)
 
         return func, changed_overall
 
@@ -104,11 +109,11 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
 
         return all(isinstance(instr, MenaiCFGPhiInstr) for instr in block.instrs)
 
-    def _run_one_round(self, func: MenaiCFGFunction) -> bool:
+    def _run_one_round(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         """
         Execute one round of phi-chain collapsing.
 
-        Returns True if any change was made.
+        Returns the (possibly new) function and whether any change was made.
         """
         # Build a map: value id → the phi instruction that defines it, and a
         # map: value id → the block containing that phi.
@@ -121,7 +126,7 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
                     phi_blocks[instr.result.id] = block
 
         if not phi_defs:
-            return False
+            return func, False
 
         # Count all uses of each phi result, distinguishing phi-incoming
         # uses from all other uses.
@@ -161,11 +166,12 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
         }
 
         if not candidates:
-            return False
+            return func, False
 
         changed = False
 
         # Phase 1: expand candidate phi references in consuming phis.
+        new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             new_instrs: list[MenaiCFGInstr] = []
             for instr in block.instrs:
@@ -183,7 +189,7 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
                     if val.id not in candidates
                 }
 
-                expanded_incoming: list[tuple[MenaiCFGValue, MenaiCFGBlock]] = []
+                expanded_incoming: list[tuple[MenaiCFGValue, int]] = []
                 instr_changed = False
 
                 for incoming_val, pred_block in instr.incoming:
@@ -210,8 +216,8 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
                     # Conflict check: would any of src_phi's predecessor blocks
                     # already appear in the final phi (from non-candidate entries
                     # or from already-expanded candidate entries)?
-                    already_present = {b.id for _, b in expanded_incoming}
-                    src_pred_ids = {b.id for _, b in src_phi.incoming}
+                    already_present = {b for _, b in expanded_incoming}
+                    src_pred_ids = {b for _, b in src_phi.incoming}
                     if already_present & src_pred_ids or non_candidate_preds & src_pred_ids:
                         # Conflict: keep this entry unexpanded.
                         expanded_incoming.append((incoming_val, pred_block))
@@ -229,22 +235,29 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
                 else:
                     new_instrs.append(instr)
 
-            block.instrs = new_instrs
+            new_blocks.append(replace_block_instrs(block, tuple(new_instrs)))
 
         if not changed:
             # No expansions happened, but there may be zero-use candidates
             # to remove. Check for those.
             dead = {vid for vid in candidates if total_uses[vid] == 0}
             if dead:
-                for block in func.blocks:
-                    block.instrs = [
-                        instr for instr in block.instrs
-                        if not (isinstance(instr, MenaiCFGPhiInstr) and instr.result.id in dead)
-                    ]
+                pruned = tuple(
+                    replace_block_instrs(
+                        block,
+                        tuple(
+                            instr for instr in block.instrs
+                            if not (
+                                isinstance(instr, MenaiCFGPhiInstr)
+                                and instr.result.id in dead
+                            )
+                        ),
+                    )
+                    for block in func.blocks
+                )
+                return replace_blocks(func, pruned), True
 
-                return True
-
-            return False
+            return func, False
 
         # Phase 2: remove phi instructions that are now unreferenced.
         # Recount uses after the expansions to find newly-dead phis.
@@ -261,10 +274,18 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
         }
 
         if dead_phis:
-            for block in func.blocks:
-                block.instrs = [
-                    instr for instr in block.instrs
-                    if not (isinstance(instr, MenaiCFGPhiInstr) and instr.result.id in dead_phis)
-                ]
+            new_blocks = [
+                replace_block_instrs(
+                    block,
+                    tuple(
+                        instr for instr in block.instrs
+                        if not (
+                            isinstance(instr, MenaiCFGPhiInstr)
+                            and instr.result.id in dead_phis
+                        )
+                    ),
+                )
+                for block in func.blocks
+            ]
 
-        return True
+        return replace_blocks(func, tuple(new_blocks)), True

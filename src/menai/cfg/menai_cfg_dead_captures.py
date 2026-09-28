@@ -25,7 +25,10 @@ simplification, type propagation with guard insertion and hoisting).
 """
 
 
+from dataclasses import replace
+
 from menai.cfg.menai_cfg import (
+    MenaiCFGBlock,
     MenaiCFGInstr,
     MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
@@ -34,7 +37,12 @@ from menai.cfg.menai_cfg import (
     value_ids_in_instr,
     value_ids_in_term,
 )
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+    replace_block_instrs,
+    replace_blocks,
+)
 
 
 class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
@@ -46,7 +54,11 @@ class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
     and updates the parent's closure-creation instructions to match.
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         changed = False
 
         # Track dead capture indices per closure, and the old-to-new index
@@ -57,6 +69,7 @@ class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
         dead_patches: dict[int, set[int]] = {}
         old_to_new_map: dict[int, dict[int, int]] = {}
 
+        new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             # Build the new instruction list, processing MakeClosureInstrs
             # and filtering/renumbering PatchClosureInstrs in a single pass.
@@ -93,7 +106,10 @@ class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
                 else:
                     new_instrs.append(instr)
 
-            block.instrs = new_instrs
+            new_blocks.append(replace_block_instrs(block, tuple(new_instrs)))
+
+        if changed:
+            func = replace_blocks(func, tuple(new_blocks))
 
         return func, changed
 
@@ -156,11 +172,17 @@ class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
                 ),
             )
 
-        child.blocks[0].instrs = new_entry_instrs
-        child.free_vars = [
-            name for i, name in enumerate(child.free_vars)
-            if i not in dead_indices
-        ]
+        new_entry = replace_block_instrs(child.blocks[0], tuple(new_entry_instrs))
+        child = replace_blocks(
+            replace(
+                child,
+                free_vars=tuple(
+                    name for i, name in enumerate(child.free_vars)
+                    if i not in dead_indices
+                ),
+            ),
+            (new_entry, *child.blocks[1:]),
+        )
 
         # Update MakeClosureInstr: remove dead outer captures.
         # Outer captures start at index (len(old_free_vars) - len(captures)).

@@ -57,6 +57,35 @@ from menai.menai_value import MenaiList, Menai_VECTOR_EMPTY
 
 
 @dataclass
+class _DraftBlock:
+    """
+    A mutable block used only while the builder is constructing a function.
+
+    The builder emits instructions and terminators incrementally, which is far
+    simpler against a mutable block than against the frozen MenaiCFGBlock.  The
+    draft is converted to a frozen MenaiCFGBlock when the function is finalised,
+    so no draft ever escapes the builder.  The frozen CFG is the value that
+    passes see (ADR-0033).
+    """
+    id: int
+    label: str
+    instrs: list = field(default_factory=list)
+    patch_instrs: list = field(default_factory=list)
+    terminator: object | None = None
+
+
+def _freeze_block(draft: _DraftBlock) -> MenaiCFGBlock:
+    """Convert a builder draft block into a frozen MenaiCFGBlock."""
+    return MenaiCFGBlock(
+        id=draft.id,
+        label=draft.label,
+        instrs=tuple(draft.instrs),
+        patch_instrs=tuple(draft.patch_instrs),
+        terminator=draft.terminator,
+    )
+
+
+@dataclass
 class MenaiCFGScope:
     """
     A single lexical scope frame mapping variable names to SSA values.
@@ -94,7 +123,13 @@ class _FunctionState:
     Isolated per lambda so that nested lambdas get their own counters and
     block lists.
     """
-    function: MenaiCFGFunction
+    blocks: list[_DraftBlock] = field(default_factory=list)
+    params: list[str] = field(default_factory=list)
+    free_vars: list[str] = field(default_factory=list)
+    is_variadic: bool = False
+    binding_name: str | None = None
+    source_line: int = 0
+    source_file: str = ""
     value_counter: int = 0
     block_counter: int = 0
     self_value: 'MenaiCFGValue | None' = None  # SSA value of the function's own self-capture
@@ -112,10 +147,22 @@ class _FunctionState:
 
     def new_block(self, label: str) -> MenaiCFGBlock:
         """Allocate a new CFG block with the given label."""
-        b = MenaiCFGBlock(id=self.block_counter, label=label)
+        b = _DraftBlock(id=self.block_counter, label=label)
         self.block_counter += 1
-        self.function.blocks.append(b)
+        self.blocks.append(b)
         return b
+
+    def freeze(self) -> MenaiCFGFunction:
+        """Convert the accumulated draft blocks into a frozen MenaiCFGFunction."""
+        return MenaiCFGFunction(
+            blocks=tuple(_freeze_block(b) for b in self.blocks),
+            params=tuple(self.params),
+            free_vars=tuple(self.free_vars),
+            is_variadic=self.is_variadic,
+            binding_name=self.binding_name,
+            source_line=self.source_line,
+            source_file=self.source_file,
+        )
 
 
 class MenaiCFGBuilder:
@@ -151,13 +198,7 @@ class MenaiCFGBuilder:
         Returns:
             MenaiCFGFunction for the top-level module body.
         """
-        func = MenaiCFGFunction(
-            params=[],
-            free_vars=[],
-            is_variadic=False,
-            binding_name=None,
-        )
-        state = _FunctionState(function=func)
+        state = _FunctionState()
         entry = state.new_block("entry")
         scope = MenaiCFGScope()
 
@@ -170,8 +211,7 @@ class MenaiCFGBuilder:
         if current_block.terminator is None:
             current_block.terminator = MenaiCFGReturnTerm(value=result_val)
 
-        self._link_predecessors(func)
-        return func
+        return state.freeze()
 
     def _build_expr(
         self,
@@ -334,8 +374,8 @@ class MenaiCFGBuilder:
 
         block.terminator = MenaiCFGBranchTerm(
             cond=cond_val,
-            true_block=else_block if negate else then_block,
-            false_block=then_block if negate else else_block,
+            true_block=(else_block if negate else then_block).id,
+            false_block=(then_block if negate else else_block).id,
         )
 
         # Build then branch.
@@ -362,10 +402,10 @@ class MenaiCFGBuilder:
         join_block = state.new_block("join")
 
         if then_falls_through:
-            then_exit.terminator = MenaiCFGJumpTerm(target=join_block)
+            then_exit.terminator = MenaiCFGJumpTerm(target=join_block.id)
 
         if else_falls_through:
-            else_exit.terminator = MenaiCFGJumpTerm(target=join_block)
+            else_exit.terminator = MenaiCFGJumpTerm(target=join_block.id)
 
         # If only one branch reaches join, the value is unambiguous — no phi.
         # The join block will be empty and SimplifyBlocks will eliminate it.
@@ -379,7 +419,7 @@ class MenaiCFGBuilder:
         phi_result = state.new_value("if_result")
         join_block.instrs.append(MenaiCFGPhiInstr(
             result=phi_result,
-            incoming=[(then_val, then_exit), (else_val, else_exit)],
+            incoming=[(then_val, then_exit.id), (else_val, else_exit.id)],
         ))
         return phi_result, join_block
 
@@ -563,7 +603,7 @@ class MenaiCFGBuilder:
         # Create the loop entry block.  The block before the loop jumps to it.
         loop_entry = state.new_block("loop_entry")
         pre_loop_block = block
-        block.terminator = MenaiCFGJumpTerm(target=loop_entry)
+        block.terminator = MenaiCFGJumpTerm(target=loop_entry.id)
 
         # Create phi nodes for the loop params in the loop entry block.  Each
         # phi merges the init value (from the pre-loop block) with the
@@ -574,7 +614,7 @@ class MenaiCFGBuilder:
             param_val = state.new_value(param_name)
             loop_entry.instrs.append(MenaiCFGPhiInstr(
                 result=param_val,
-                incoming=[(init_vals[i], pre_loop_block)],
+                incoming=[(init_vals[i], pre_loop_block.id)],
             ))
             param_vals.append(param_val)
             loop_scope.bind(param_name, param_val)
@@ -629,7 +669,7 @@ class MenaiCFGBuilder:
         block.terminator = MenaiCFGSelfLoopTerm(
             args=arg_vals,
             param_vals=param_vals,
-            target=loop_entry,
+            target=loop_entry.id,
         )
         placeholder = state.new_value("recur")
         return placeholder, block
@@ -711,7 +751,7 @@ class MenaiCFGBuilder:
         Returns:
             A fully-built MenaiCFGFunction for this lambda.
         """
-        func = MenaiCFGFunction(
+        state = _FunctionState(
             params=list(ir.params),
             free_vars=list(ir.sibling_free_vars + ir.outer_free_vars),
             is_variadic=ir.is_variadic,
@@ -719,7 +759,6 @@ class MenaiCFGBuilder:
             source_line=ir.source_line,
             source_file=ir.source_file,
         )
-        state = _FunctionState(function=func)
         entry = state.new_block("entry")
 
         # Build the lambda's own scope: params first, then captured free vars.
@@ -754,8 +793,7 @@ class MenaiCFGBuilder:
         if current_block.terminator is None:
             current_block.terminator = MenaiCFGReturnTerm(value=result_val)
 
-        self._link_predecessors(func)
-        return func
+        return state.freeze()
 
     def _build_call(
         self, ir: MenaiIRCall, block: MenaiCFGBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
@@ -776,7 +814,7 @@ class MenaiCFGBuilder:
         if tail:
             # Detect direct self-recursive tail call.
             if (isinstance(ir.func_plan, MenaiIRVariable)
-                    and ir.func_plan.name == state.function.binding_name
+                    and ir.func_plan.name == state.binding_name
                     and state.self_value is not None
                     and func_val is state.self_value):
                 block.terminator = MenaiCFGSelfLoopTerm(args=arg_vals)
@@ -964,25 +1002,3 @@ class MenaiCFGBuilder:
         ))
         return result, block
 
-    def _link_predecessors(self, func: MenaiCFGFunction) -> None:
-        """
-        Populate the `predecessors` list on every block in `func`.
-
-        Called once after all blocks in a function have been created and
-        their terminators set.
-        """
-        for block in func.blocks:
-            term = block.terminator
-            if isinstance(term, MenaiCFGJumpTerm):
-                term.target.predecessors.append(block)
-
-            elif isinstance(term, MenaiCFGBranchTerm):
-                term.true_block.predecessors.append(block)
-                term.false_block.predecessors.append(block)
-
-            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
-                term.target.predecessors.append(block)
-
-            # ReturnTerm, TailCallTerm, TailApplyTerm, RaiseTerm have no
-            # successors.  A SelfLoopTerm with no target (a function-level
-            # self-loop) jumps to the entry block, which is already reachable.

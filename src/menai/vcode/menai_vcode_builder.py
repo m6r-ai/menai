@@ -72,6 +72,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
+    blocks_by_id,
     result_id_in_instr,
     value_ids_in_instr,
     value_ids_in_term,
@@ -137,6 +138,7 @@ class MenaiVCodeBuilder:
         # Reset the register cache — reg ids are only unique within a function.
         self._reg_cache = {}
 
+        by_id = blocks_by_id(func)
         rpo = self._rpo(func)
 
         # Pre-compute phi moves: for each block, the list of (dst, src) moves
@@ -203,7 +205,7 @@ class MenaiVCodeBuilder:
 
         for block in rpo:
             term = block.terminator
-            successors: list[MenaiCFGBlock] = []
+            successors: list[int] = []
             if isinstance(term, MenaiCFGJumpTerm):
                 successors = [term.target]
 
@@ -231,13 +233,13 @@ class MenaiVCodeBuilder:
 
                 successors = []
 
-            for succ in successors:
-                for instr in succ.instrs:
+            for succ_id in successors:
+                for instr in by_id[succ_id].instrs:
                     if not isinstance(instr, MenaiCFGPhiInstr):
                         break
 
                     for inc_val, inc_pred in instr.incoming:
-                        if inc_pred.id == block.id:
+                        if inc_pred == block.id:
                             dst = self._reg(instr.result)
                             src = self._reg(inc_val)
                             phi_moves[block.id].append((dst, src))
@@ -299,26 +301,26 @@ class MenaiVCodeBuilder:
             elif isinstance(term, MenaiCFGJumpTerm):
                 target = term.target
                 # Omit the jump if the target is the immediately next block.
-                if next_block is None or next_block.id != target.id:
-                    instrs.append(MenaiVCodeJump(label=labels[target.id]))
+                if next_block is None or next_block.id != target:
+                    instrs.append(MenaiVCodeJump(label=labels[target]))
 
             elif isinstance(term, MenaiCFGBranchTerm):
                 cond = self._reg(term.cond)
                 max_reg_id = max(max_reg_id, term.cond.id)
                 next_id = next_block.id if next_block is not None else -1
 
-                if next_id == term.false_block.id:
+                if next_id == term.false_block:
                     # False block falls through — emit JUMP_IF_TRUE to true block.
-                    instrs.append(MenaiVCodeJumpIfTrue(cond=cond, label=labels[term.true_block.id]))
+                    instrs.append(MenaiVCodeJumpIfTrue(cond=cond, label=labels[term.true_block]))
 
-                elif next_id == term.true_block.id:
+                elif next_id == term.true_block:
                     # True block falls through — emit JUMP_IF_FALSE to false block.
-                    instrs.append(MenaiVCodeJumpIfFalse(cond=cond, label=labels[term.false_block.id]))
+                    instrs.append(MenaiVCodeJumpIfFalse(cond=cond, label=labels[term.false_block]))
 
                 else:
                     # Neither falls through — emit conditional + unconditional jump.
-                    instrs.append(MenaiVCodeJumpIfFalse(cond=cond, label=labels[term.false_block.id]))
-                    instrs.append(MenaiVCodeJump(label=labels[term.true_block.id]))
+                    instrs.append(MenaiVCodeJumpIfFalse(cond=cond, label=labels[term.false_block]))
+                    instrs.append(MenaiVCodeJump(label=labels[term.true_block]))
 
             elif isinstance(term, MenaiCFGTailCallTerm):
                 instrs.append(MenaiVCodeTailCall(
@@ -354,7 +356,7 @@ class MenaiVCodeBuilder:
                         max_reg_id = max(max_reg_id, param_val.id)
 
                     assert term.target is not None
-                    instrs.append(MenaiVCodeJump(label=labels[term.target.id], is_self_loop=True))
+                    instrs.append(MenaiVCodeJump(label=labels[term.target], is_self_loop=True))
 
                 else:
                     # Function-level self-loop: move args into the function's
@@ -379,7 +381,7 @@ class MenaiVCodeBuilder:
                         instrs.append(MenaiVCodeMove(dst=fv_reg, src=fv_reg))
                         max_reg_id = max(max_reg_id, fv_reg.id)
 
-                    jump_label = labels[term.target.id] if term.target is not None else "__entry__"
+                    jump_label = labels[term.target] if term.target is not None else "__entry__"
 
                     instrs.append(MenaiVCodeJump(label=jump_label, is_self_loop=True))
 
@@ -390,11 +392,11 @@ class MenaiVCodeBuilder:
 
             elif isinstance(term, MenaiCFGSwitchTerm):
                 src_reg = self._reg(term.value)
-                default = labels[term.default_block.id]
+                default = labels[term.default_block]
                 instrs.append(MenaiVCodeSwitch(
                     src=src_reg,
                     min=term.min,
-                    labels=[labels[t.id] if t is not None else default for t in term.targets],
+                    labels=[labels[t] if t is not None else default for t in term.targets],
                     default_label=default,
                 ))
                 max_reg_id = max(max_reg_id, term.value.id)
@@ -593,12 +595,14 @@ class MenaiVCodeBuilder:
         """
         visited: set = set()
         post_order: list[MenaiCFGBlock] = []
+        by_id = blocks_by_id(func)
 
-        def dfs(block: MenaiCFGBlock) -> None:
-            if block.id in visited:
+        def dfs(block_id: int) -> None:
+            if block_id in visited:
                 return
 
-            visited.add(block.id)
+            visited.add(block_id)
+            block = by_id[block_id]
             term = block.terminator
             if isinstance(term, MenaiCFGJumpTerm):
                 dfs(term.target)
@@ -619,7 +623,7 @@ class MenaiVCodeBuilder:
 
             post_order.append(block)
 
-        dfs(func.entry())
+        dfs(func.entry().id)
         post_order.reverse()
 
         exception_ids = self._exception_block_ids(func)
@@ -687,7 +691,7 @@ class MenaiVCodeBuilder:
         Param and free-var definitions are excluded — the allocator handles
         those separately.
         """
-        region = self._loop_region_ids(header)
+        region = self._loop_region_ids(func, header)
 
         # Collect value ids defined outside the loop region.
         preamble_ids: set[int] = set()
@@ -737,7 +741,7 @@ class MenaiVCodeBuilder:
                 if (
                     isinstance(term, MenaiCFGSelfLoopTerm)
                     and term.target is not None
-                    and term.target.id not in region
+                    and term.target not in region
                 ):
                     continue
 
@@ -745,7 +749,7 @@ class MenaiVCodeBuilder:
 
         return sorted(preamble_ids & used_ids)
 
-    def _loop_region_ids(self, header: MenaiCFGBlock) -> set[int]:
+    def _loop_region_ids(self, func: MenaiCFGFunction, header: MenaiCFGBlock) -> set[int]:
         """
         Return the ids of the blocks that make up the loop headed by *header*.
 
@@ -763,14 +767,16 @@ class MenaiVCodeBuilder:
         in the enclosing loop but used in the nested loop would be wrongly
         treated as loop-local rather than hoisted.
         """
+        by_id = blocks_by_id(func)
         region: set[int] = set()
-        stack = [header]
+        stack = [header.id]
         while stack:
-            block = stack.pop()
-            if block.id in region:
+            block_id = stack.pop()
+            if block_id in region:
                 continue
 
-            region.add(block.id)
+            region.add(block_id)
+            block = by_id[block_id]
             term = block.terminator
             if isinstance(term, MenaiCFGJumpTerm):
                 stack.append(term.target)
@@ -784,7 +790,7 @@ class MenaiVCodeBuilder:
                 stack.append(term.default_block)
 
             elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
-                if term.target.id in region:
+                if term.target in region:
                     stack.append(term.target)
 
         return region

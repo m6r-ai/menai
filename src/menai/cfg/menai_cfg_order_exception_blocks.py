@@ -25,7 +25,11 @@ makes it the final authority on that ordering.
 """
 
 from menai.cfg.menai_cfg import MenaiCFGFunction, MenaiCFGRaiseTerm
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGPerFunctionPass
+from menai.cfg.menai_cfg_optimization_pass import (
+    MenaiCFGContext,
+    MenaiCFGPerFunctionPass,
+    replace_blocks,
+)
 
 
 class MenaiCFGOrderExceptionBlocks(MenaiCFGPerFunctionPass):
@@ -33,7 +37,11 @@ class MenaiCFGOrderExceptionBlocks(MenaiCFGPerFunctionPass):
     Move raise-terminated blocks to the end of the function's block list.
     """
 
-    def _optimize_function(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
+    def _optimize_function(
+        self,
+        func: MenaiCFGFunction,
+        context: MenaiCFGContext,
+    ) -> tuple[MenaiCFGFunction, bool]:
         """
         Stably partition `func.blocks` into the entry block, then other normal
         blocks, then raise-terminated blocks.
@@ -58,5 +66,4 @@ class MenaiCFGOrderExceptionBlocks(MenaiCFGPerFunctionPass):
         if all(new is old for new, old in zip(reordered, func.blocks)):
             return func, False
 
-        func.blocks = reordered
-        return func, True
+        return replace_blocks(func, tuple(reordered)), True
