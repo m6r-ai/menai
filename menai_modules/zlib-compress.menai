@@ -33,9 +33,10 @@
       (letrec ((loop (lambda (i a bb)
                        (if (integer>=? i (bytes-length b))
                            (integer-bit-or (integer-bit-shift-left bb 16) a)
-                           (loop (integer+ i 1)
-                                 (integer% (integer+ a (bytes-ref b i)) adler-modulus)
-                                 (integer% (integer+ bb a (bytes-ref b i)) adler-modulus))))))
+                           (let ((next-byte (bytes-ref b i)))
+                             (loop (integer+ i 1)
+                                   (integer% (integer+ a next-byte) adler-modulus)
+                                   (integer% (integer+ bb a next-byte) adler-modulus)))))))
         (loop 0 1 0))))
 
    ; The two-byte zlib header: CMF = 0x78, FLG = 0x9c.
