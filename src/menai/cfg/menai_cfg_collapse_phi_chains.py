@@ -228,7 +228,7 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
 
                 if instr_changed:
                     new_instrs.append(
-                        MenaiCFGPhiInstr(result=instr.result, incoming=expanded_incoming)
+                        MenaiCFGPhiInstr(result=instr.result, incoming=tuple(expanded_incoming))
                     )
                     changed = True
 

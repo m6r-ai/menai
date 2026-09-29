@@ -348,7 +348,7 @@ def _rewrite(
         terminator=MenaiCFGSwitchTerm(
             value=scrutinee,
             min=lo,
-            targets=targets,
+            targets=tuple(targets),
             default_block=default_block_id,
         ),
     )

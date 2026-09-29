@@ -328,13 +328,18 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         PyErr_Clear();
     }
 
-    /* ncap — length of free_vars list */
+    /* ncap — length of free_vars sequence */
     PyObject *fv = PyObject_GetAttrString(py_code, "free_vars");
     if (!fv) {
         goto fail;
     }
 
-    co->ncap = PyList_GET_SIZE(fv);
+    co->ncap = PySequence_Size(fv);
+    if (co->ncap < 0) {
+        Py_DECREF(fv);
+        goto fail;
+    }
+
     Py_DECREF(fv);
 
     /* param_names — strdup each parameter name string */
@@ -343,32 +348,38 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         goto fail;
     }
 
-    co->nparam_names = PyList_GET_SIZE(py_param_names);
+    PyObject *param_names_seq = PySequence_Fast(py_param_names, "param_names must be a sequence");
+    Py_DECREF(py_param_names);
+    if (!param_names_seq) {
+        goto fail;
+    }
+
+    co->nparam_names = PySequence_Fast_GET_SIZE(param_names_seq);
     if (co->nparam_names > 0) {
         co->param_names = (char **)calloc((size_t)co->nparam_names, sizeof(char *));
         if (!co->param_names) {
-            Py_DECREF(py_param_names);
+            Py_DECREF(param_names_seq);
             PyErr_NoMemory();
             goto fail;
         }
 
         for (ssize_t i = 0; i < co->nparam_names; i++) {
-            const char *s = PyUnicode_AsUTF8(PyList_GET_ITEM(py_param_names, i));
+            const char *s = PyUnicode_AsUTF8(PySequence_Fast_GET_ITEM(param_names_seq, i));
             if (!s) {
-                Py_DECREF(py_param_names);
+                Py_DECREF(param_names_seq);
                 goto fail;
             }
 
             co->param_names[i] = strdup(s);
             if (!co->param_names[i]) {
-                Py_DECREF(py_param_names);
+                Py_DECREF(param_names_seq);
                 PyErr_NoMemory();
                 goto fail;
             }
         }
     }
 
-    Py_DECREF(py_param_names);
+    Py_DECREF(param_names_seq);
 
     /* instructions — copy the packed array.array buffer */
     PyObject *instrs_obj = PyObject_GetAttrString(py_code, "instructions");
@@ -414,26 +425,32 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         goto fail;
     }
 
-    co->nchildren = PyList_GET_SIZE(py_children);
+    PyObject *children_seq = PySequence_Fast(py_children, "code_objects must be a sequence");
+    Py_DECREF(py_children);
+    if (!children_seq) {
+        goto fail;
+    }
+
+    co->nchildren = PySequence_Fast_GET_SIZE(children_seq);
     if (co->nchildren > 0) {
         co->children = (MenaiCodeObject **)calloc(
             (size_t)co->nchildren, sizeof(MenaiCodeObject *));
         if (!co->children) {
-            Py_DECREF(py_children);
+            Py_DECREF(children_seq);
             PyErr_NoMemory();
             goto fail;
         }
 
         for (ssize_t i = 0; i < co->nchildren; i++) {
-            co->children[i] = menai_code_object_from_python_rec(vs, PyList_GET_ITEM(py_children, i), next_code, next_instr, ctx);
+            co->children[i] = menai_code_object_from_python_rec(vs, PySequence_Fast_GET_ITEM(children_seq, i), next_code, next_instr, ctx);
             if (!co->children[i]) {
-                Py_DECREF(py_children);
+                Py_DECREF(children_seq);
                 goto fail;
             }
         }
     }
 
-    Py_DECREF(py_children);
+    Py_DECREF(children_seq);
 
     /*
      * constants — convert each slow Python value to a fast MenaiValue *.
@@ -443,21 +460,27 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         goto fail;
     }
 
-    co->nconst = PyList_GET_SIZE(py_constants);
+    PyObject *constants_seq = PySequence_Fast(py_constants, "constants must be a sequence");
+    Py_DECREF(py_constants);
+    if (!constants_seq) {
+        goto fail;
+    }
+
+    co->nconst = PySequence_Fast_GET_SIZE(constants_seq);
     if (co->nconst > 0) {
         co->constants = (MenaiValue **)calloc(
             (size_t)co->nconst, sizeof(MenaiValue *));
         if (!co->constants) {
-            Py_DECREF(py_constants);
+            Py_DECREF(constants_seq);
             PyErr_NoMemory();
             goto fail;
         }
 
         for (ssize_t i = 0; i < co->nconst; i++) {
-            PyObject *orig = PyList_GET_ITEM(py_constants, i);
+            PyObject *orig = PySequence_Fast_GET_ITEM(constants_seq, i);
             MenaiValue *fast = slow_value_to_menai_value(vs, orig, ctx);
             if (!fast) {
-                Py_DECREF(py_constants);
+                Py_DECREF(constants_seq);
                 goto fail;
             }
 
@@ -465,28 +488,39 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         }
     }
 
-    Py_DECREF(py_constants);
+    Py_DECREF(constants_seq);
 
-    /* jump_tables — list of (min, default_target, targets) for SWITCH_INTEGER */
+    /* jump_tables — sequence of (min, default_target, targets) for SWITCH_INTEGER */
     PyObject *py_jt = PyObject_GetAttrString(py_code, "jump_tables");
     if (!py_jt) {
         PyErr_Clear();
         return co;
     }
 
-    if (py_jt != Py_None && PyList_Check(py_jt) && PyList_GET_SIZE(py_jt) > 0) {
-        co->njt = (int)PyList_GET_SIZE(py_jt);
+    PyObject *jt_seq = NULL;
+    if (py_jt != Py_None) {
+        jt_seq = PySequence_Fast(py_jt, "jump_tables must be a sequence");
+        if (!jt_seq) {
+            Py_DECREF(py_jt);
+            goto fail;
+        }
+    }
+
+    if (jt_seq && PySequence_Fast_GET_SIZE(jt_seq) > 0) {
+        co->njt = (int)PySequence_Fast_GET_SIZE(jt_seq);
         co->jump_tables = (MenaiJumpTable *)calloc(
             (size_t)co->njt, sizeof(MenaiJumpTable));
         if (!co->jump_tables) {
+            Py_DECREF(jt_seq);
             Py_DECREF(py_jt);
             PyErr_NoMemory();
             goto fail;
         }
 
         for (int i = 0; i < co->njt; i++) {
-            PyObject *entry = PyList_GET_ITEM(py_jt, i);
+            PyObject *entry = PySequence_Fast_GET_ITEM(jt_seq, i);
             if (!PyTuple_Check(entry) || PyTuple_GET_SIZE(entry) != 3) {
+                Py_DECREF(jt_seq);
                 Py_DECREF(py_jt);
                 PyErr_SetString(PyExc_TypeError, "jump_tables entries must be 3-tuples");
                 goto fail;
@@ -496,6 +530,7 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
             long t_default = PyLong_AsLong(PyTuple_GET_ITEM(entry, 1));
             PyObject *targets = PyTuple_GET_ITEM(entry, 2);
             if (PyErr_Occurred() || !PySequence_Check(targets)) {
+                Py_DECREF(jt_seq);
                 Py_DECREF(py_jt);
                 if (!PyErr_Occurred()) {
                     PyErr_SetString(PyExc_TypeError, "jump table targets must be a sequence");
@@ -510,6 +545,7 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
             co->jump_tables[i].targets = (int *)malloc(
                 (size_t)count * sizeof(int));
             if (!co->jump_tables[i].targets) {
+                Py_DECREF(jt_seq);
                 Py_DECREF(py_jt);
                 PyErr_NoMemory();
                 goto fail;
@@ -518,6 +554,7 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
             for (Py_ssize_t j = 0; j < count; j++) {
                 PyObject *t = PySequence_GetItem(targets, j);
                 if (!t) {
+                    Py_DECREF(jt_seq);
                     Py_DECREF(py_jt);
                     goto fail;
                 }
@@ -525,6 +562,7 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
                 long v = PyLong_AsLong(t);
                 Py_DECREF(t);
                 if (PyErr_Occurred()) {
+                    Py_DECREF(jt_seq);
                     Py_DECREF(py_jt);
                     goto fail;
                 }
@@ -534,6 +572,7 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         }
     }
 
+    Py_XDECREF(jt_seq);
     Py_DECREF(py_jt);
 
     return co;

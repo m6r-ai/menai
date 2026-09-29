@@ -98,7 +98,7 @@ class MenaiCFGBuiltinInstr:
     """
     result: MenaiCFGValue
     op: str
-    args: list[MenaiCFGValue]
+    args: tuple[MenaiCFGValue, ...]
 
 
 @dataclass
@@ -110,7 +110,7 @@ class MenaiCFGCallInstr:
     """
     result: MenaiCFGValue
     func: MenaiCFGValue
-    args: list[MenaiCFGValue]
+    args: tuple[MenaiCFGValue, ...]
 
 
 @dataclass
@@ -140,7 +140,7 @@ class MenaiCFGMakeClosureInstr:
     """
     result: MenaiCFGValue
     function: 'MenaiCFGFunction'
-    captures: list[MenaiCFGValue]
+    captures: tuple[MenaiCFGValue, ...]
     needs_patching: bool = False
     # When True, the VM must create a mutable closure object (MAKE_CLOSURE)
     # even if `captures` is empty, because PATCH_CLOSURE instructions will
@@ -161,7 +161,7 @@ class MenaiCFGMakeStructInstr:
     """
     result: MenaiCFGValue
     struct_type: MenaiStructType
-    args: list[MenaiCFGValue]
+    args: tuple[MenaiCFGValue, ...]
 
 
 @dataclass
@@ -175,7 +175,7 @@ class MenaiCFGMakeListInstr:
     a single call.
     """
     result: MenaiCFGValue
-    args: list[MenaiCFGValue]
+    args: tuple[MenaiCFGValue, ...]
 
 
 @dataclass
@@ -189,7 +189,7 @@ class MenaiCFGMakeVectorInstr:
     a single call.
     """
     result: MenaiCFGValue
-    args: list[MenaiCFGValue]
+    args: tuple[MenaiCFGValue, ...]
 
 
 @dataclass
@@ -202,7 +202,7 @@ class MenaiCFGMakeSetInstr:
     zone and allocating the set in a single call.
     """
     result: MenaiCFGValue
-    args: list[MenaiCFGValue]
+    args: tuple[MenaiCFGValue, ...]
 
 
 @dataclass
@@ -215,7 +215,7 @@ class MenaiCFGMakeDictInstr:
     (k0, v0, k1, v1, ...) and allocating the dict in a single call.
     """
     result: MenaiCFGValue
-    pairs: list[tuple[MenaiCFGValue, MenaiCFGValue]]
+    pairs: tuple[tuple[MenaiCFGValue, MenaiCFGValue], ...]
 
 
 @dataclass
@@ -306,7 +306,7 @@ class MenaiCFGPhiInstr:
     Native codegen: maps directly to an LLVM phi instruction.
     """
     result: MenaiCFGValue
-    incoming: list[tuple[MenaiCFGValue, int]]
+    incoming: tuple[tuple[MenaiCFGValue, int], ...]
 
 
 # Union of all non-terminator instruction types.
@@ -366,7 +366,7 @@ class MenaiCFGSwitchTerm:
     """
     value: MenaiCFGValue
     min: int
-    targets: list[int | None]
+    targets: tuple[int | None, ...]
     default_block: int
 
 
@@ -384,7 +384,7 @@ class MenaiCFGTailCallTerm:
     Lowered to TAIL_CALL by the VM codegen.
     """
     func: MenaiCFGValue
-    args: list[MenaiCFGValue]
+    args: tuple[MenaiCFGValue, ...]
 
 
 @dataclass
@@ -420,8 +420,8 @@ class MenaiCFGSelfLoopTerm:
     set (by the CFG builder's MenaiIRLoop lowering), these are the
     loop-carried variable SSA values that the back-edge moves write to.
     """
-    args: list[MenaiCFGValue]
-    param_vals: list['MenaiCFGValue'] | None = None
+    args: tuple[MenaiCFGValue, ...]
+    param_vals: tuple['MenaiCFGValue', ...] | None = None
     target: int | None = None
 
 
@@ -540,7 +540,7 @@ class MenaiCFGFunction:
         return "\n".join(lines)
 
 
-def _fmt_values(vs: list[MenaiCFGValue]) -> str:
+def _fmt_values(vs: tuple[MenaiCFGValue, ...]) -> str:
     """Format a list of CFG values as a bracketed comma-separated string."""
     return "[" + ", ".join(str(v) for v in vs) + "]"
 
@@ -716,7 +716,7 @@ def remap_term(
         )
 
     if isinstance(term, MenaiCFGSwitchTerm):
-        new_targets = [remap_block(t) if t is not None else None for t in term.targets]
+        new_targets = tuple(remap_block(t) if t is not None else None for t in term.targets)
         new_default = remap_block(term.default_block)
         if new_targets == term.targets and new_default == term.default_block:
             return term

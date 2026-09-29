@@ -421,7 +421,7 @@ class MenaiCFGBuilder:
         phi_result = state.new_value("if_result")
         join_block.instrs.append(MenaiCFGPhiInstr(
             result=phi_result,
-            incoming=[(then_val, then_exit.id), (else_val, else_exit.id)],
+            incoming=((then_val, then_exit.id), (else_val, else_exit.id)),
         ))
         return phi_result, join_block
 
@@ -504,7 +504,7 @@ class MenaiCFGBuilder:
             make_instr = MenaiCFGMakeClosureInstr(
                 result=closure_val,
                 function=child_func,
-                captures=outer_captures,
+                captures=tuple(outer_captures),
                 needs_patching=has_sibling_captures,
             )
             block.instrs.append(make_instr)
@@ -616,7 +616,7 @@ class MenaiCFGBuilder:
             param_val = state.new_value(param_name)
             loop_entry.instrs.append(MenaiCFGPhiInstr(
                 result=param_val,
-                incoming=[(init_vals[i], pre_loop_block.id)],
+                incoming=((init_vals[i], pre_loop_block.id),),
             ))
             param_vals.append(param_val)
             loop_scope.bind(param_name, param_val)
@@ -663,14 +663,17 @@ class MenaiCFGBuilder:
 
         # Add the back-edge block as a predecessor to each phi node.
         for i, param_val in enumerate(param_vals):
-            for instr in loop_entry.instrs:
+            for instr_idx, instr in enumerate(loop_entry.instrs):
                 if isinstance(instr, MenaiCFGPhiInstr) and instr.result is param_val:
-                    instr.incoming.append((arg_vals[i], block.id))
+                    loop_entry.instrs[instr_idx] = MenaiCFGPhiInstr(
+                        result=instr.result,
+                        incoming=instr.incoming + ((arg_vals[i], block.id),),
+                    )
                     break
 
         block.terminator = MenaiCFGSelfLoopTerm(
-            args=arg_vals,
-            param_vals=param_vals,
+            args=tuple(arg_vals),
+            param_vals=tuple(param_vals),
             target=loop_entry.id,
         )
         placeholder = state.new_value("recur")
@@ -718,7 +721,7 @@ class MenaiCFGBuilder:
             block.instrs.append(MenaiCFGMakeClosureInstr(
                 result=result,
                 function=child_func,
-                captures=outer_captures,
+                captures=tuple(outer_captures),
                 needs_patching=True,
             ))
             assert self._letrec_deferred_patches is not None
@@ -735,7 +738,7 @@ class MenaiCFGBuilder:
         block.instrs.append(MenaiCFGMakeClosureInstr(
             result=result,
             function=child_func,
-            captures=captures,
+            captures=tuple(captures),
         ))
         return result, block
 
@@ -819,11 +822,11 @@ class MenaiCFGBuilder:
                     and ir.func_plan.name == state.binding_name
                     and state.self_value is not None
                     and func_val is state.self_value):
-                block.terminator = MenaiCFGSelfLoopTerm(args=arg_vals)
+                block.terminator = MenaiCFGSelfLoopTerm(args=tuple(arg_vals))
                 placeholder = state.new_value("self_loop")
                 return placeholder, block
 
-            block.terminator = MenaiCFGTailCallTerm(func=func_val, args=arg_vals)
+            block.terminator = MenaiCFGTailCallTerm(func=func_val, args=tuple(arg_vals))
             placeholder = state.new_value("tail_call")
             return placeholder, block
 
@@ -831,7 +834,7 @@ class MenaiCFGBuilder:
         block.instrs.append(MenaiCFGCallInstr(
             result=result,
             func=func_val,
-            args=arg_vals,
+            args=tuple(arg_vals),
         ))
         return result, block
 
@@ -851,7 +854,7 @@ class MenaiCFGBuilder:
             elem_vals.append(elem_val)
 
         result = state.new_value("list")
-        block.instrs.append(MenaiCFGMakeListInstr(result=result, args=elem_vals))
+        block.instrs.append(MenaiCFGMakeListInstr(result=result, args=tuple(elem_vals)))
         return result, block
 
     def _build_vector(
@@ -876,7 +879,7 @@ class MenaiCFGBuilder:
             elem_vals.append(elem_val)
 
         result = state.new_value("vector")
-        block.instrs.append(MenaiCFGMakeVectorInstr(result=result, args=elem_vals))
+        block.instrs.append(MenaiCFGMakeVectorInstr(result=result, args=tuple(elem_vals)))
         return result, block
 
     def _build_dict(
@@ -900,7 +903,7 @@ class MenaiCFGBuilder:
             pair_vals.append((key_val, val_val))
 
         result = state.new_value("dict")
-        block.instrs.append(MenaiCFGMakeDictInstr(result=result, pairs=pair_vals))
+        block.instrs.append(MenaiCFGMakeDictInstr(result=result, pairs=tuple(pair_vals)))
         return result, block
 
     def _build_set(
@@ -923,7 +926,7 @@ class MenaiCFGBuilder:
             elem_vals.append(elem_val)
 
         result = state.new_value("set")
-        block.instrs.append(MenaiCFGMakeSetInstr(result=result, args=elem_vals))
+        block.instrs.append(MenaiCFGMakeSetInstr(result=result, args=tuple(elem_vals)))
         return result, block
 
     def _build_struct(
@@ -948,7 +951,7 @@ class MenaiCFGBuilder:
         block.instrs.append(MenaiCFGMakeStructInstr(
             result=result,
             struct_type=ir.struct_type,
-            args=field_vals,
+            args=tuple(field_vals),
         ))
         return result, block
 
@@ -1000,6 +1003,6 @@ class MenaiCFGBuilder:
         block.instrs.append(MenaiCFGBuiltinInstr(
             result=result,
             op=ir.builtin_name,
-            args=arg_vals,
+            args=tuple(arg_vals),
         ))
         return result, block

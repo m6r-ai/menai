@@ -648,20 +648,20 @@ class CodeObject:
     instructions: 'array.array[int]'
 
     # Constant pool (for LOAD_CONST)
-    constants: list[MenaiValue]
+    constants: tuple[MenaiValue, ...]
 
     # Nested code objects (for lambdas/closures)
-    code_objects: list['CodeObject']
+    code_objects: tuple['CodeObject', ...]
 
     # Jump tables (for SWITCH_INTEGER): each entry is (min, default_target, targets)
     # where targets[i] is the instruction index for the value min + i and
     # default_target is the instruction index for any other value (below min,
     # above max, or bignum).  The opcode's src1 field indexes this list.
-    jump_tables: list[tuple[int, int, 'array.array[int]']] = field(default_factory=list)
+    jump_tables: tuple[tuple[int, int, 'array.array[int]'], ...] = field(default_factory=tuple)
 
     # Function metadata
-    free_vars: list[str] = field(default_factory=list)  # Free variables to capture
-    param_names: list[str] = field(default_factory=list)  # Parameter names (in order, parallel to param_count)
+    free_vars: tuple[str, ...] = field(default_factory=tuple)  # Free variables to capture
+    param_names: tuple[str, ...] = field(default_factory=tuple)  # Parameter names (in order, parallel to param_count)
     param_count: int = 0  # Number of parameters (for functions)
     local_count: int = 0  # Number of local variables
     outgoing_arg_slots: int = 0  # Max args passed in any single call

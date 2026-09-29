@@ -209,7 +209,7 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
                 new_instrs.append(MenaiCFGPhiInstr(
                     result=instr.result,
-                    incoming=new_incoming,
+                    incoming=tuple(new_incoming),
                 ))
 
             terminator = block.terminator

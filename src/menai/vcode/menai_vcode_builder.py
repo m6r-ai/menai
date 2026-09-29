@@ -325,7 +325,7 @@ class MenaiVCodeBuilder:
             elif isinstance(term, MenaiCFGTailCallTerm):
                 instrs.append(MenaiVCodeTailCall(
                     func=self._reg(term.func),
-                    args=[self._reg(a) for a in term.args],
+                    args=tuple(self._reg(a) for a in term.args),
                 ))
                 max_reg_id = max(max_reg_id, term.func.id,
                                  *(a.id for a in term.args) if term.args else [-1])
@@ -396,7 +396,7 @@ class MenaiVCodeBuilder:
                 instrs.append(MenaiVCodeSwitch(
                     src=src_reg,
                     min=term.min,
-                    labels=[labels[t] if t is not None else default for t in term.targets],
+                    labels=tuple(labels[t] if t is not None else default for t in term.targets),
                     default_label=default,
                 ))
                 max_reg_id = max(max_reg_id, term.value.id)
@@ -407,13 +407,13 @@ class MenaiVCodeBuilder:
                 )
 
         return MenaiVCodeFunction(
-            instrs=instrs,
-            params=list(func.params),
-            free_vars=list(func.free_vars),
-            param_reg_ids=param_reg_ids,
-            free_var_reg_ids=free_var_reg_ids,
-            loop_param_reg_ids=loop_param_reg_ids,
-            hoisted_reg_ids=hoisted_reg_ids,
+            instrs=tuple(instrs),
+            params=tuple(func.params),
+            free_vars=tuple(func.free_vars),
+            param_reg_ids=tuple(param_reg_ids),
+            free_var_reg_ids=tuple(free_var_reg_ids),
+            loop_param_reg_ids=tuple(loop_param_reg_ids),
+            hoisted_reg_ids=tuple(hoisted_reg_ids),
             is_variadic=func.is_variadic,
             binding_name=func.binding_name,
             reg_count=max_reg_id + 1,
@@ -444,14 +444,14 @@ class MenaiVCodeBuilder:
 
         if isinstance(instr, MenaiCFGBuiltinInstr):
             dst = self._reg(instr.result)
-            args = [self._reg(a) for a in instr.args]
+            args = tuple(self._reg(a) for a in instr.args)
             instrs.append(MenaiVCodeBuiltin(dst=dst, op=instr.op, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGCallInstr):
             dst = self._reg(instr.result)
             func_reg = self._reg(instr.func)
-            args = [self._reg(a) for a in instr.args]
+            args = tuple(self._reg(a) for a in instr.args)
             instrs.append(MenaiVCodeCall(dst=dst, func=func_reg, args=args))
             return max(max_reg_id, dst.id, func_reg.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id, func_reg.id)
 
@@ -464,7 +464,7 @@ class MenaiVCodeBuilder:
 
         if isinstance(instr, MenaiCFGMakeClosureInstr):
             dst = self._reg(instr.result)
-            captures = [self._reg(c) for c in instr.captures]
+            captures = tuple(self._reg(c) for c in instr.captures)
             child_vcode = self._lower_function(instr.function)
             instrs.append(MenaiVCodeMakeClosure(
                 dst=dst, function=child_vcode, captures=captures, needs_patching=instr.needs_patching
@@ -479,7 +479,7 @@ class MenaiVCodeBuilder:
 
         if isinstance(instr, MenaiCFGMakeStructInstr):
             dst = self._reg(instr.result)
-            args = [self._reg(a) for a in instr.args]
+            args = tuple(self._reg(a) for a in instr.args)
             instrs.append(MenaiVCodeMakeStruct(dst=dst, struct_type=instr.struct_type, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
 
@@ -504,25 +504,25 @@ class MenaiVCodeBuilder:
 
         if isinstance(instr, MenaiCFGMakeListInstr):
             dst = self._reg(instr.result)
-            args = [self._reg(a) for a in instr.args]
+            args = tuple(self._reg(a) for a in instr.args)
             instrs.append(MenaiVCodeMakeList(dst=dst, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGMakeVectorInstr):
             dst = self._reg(instr.result)
-            args = [self._reg(a) for a in instr.args]
+            args = tuple(self._reg(a) for a in instr.args)
             instrs.append(MenaiVCodeMakeVector(dst=dst, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGMakeSetInstr):
             dst = self._reg(instr.result)
-            args = [self._reg(a) for a in instr.args]
+            args = tuple(self._reg(a) for a in instr.args)
             instrs.append(MenaiVCodeMakeSet(dst=dst, args=args))
             return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGMakeDictInstr):
             dst = self._reg(instr.result)
-            pairs = [(self._reg(k), self._reg(v)) for k, v in instr.pairs]
+            pairs = tuple((self._reg(k), self._reg(v)) for k, v in instr.pairs)
             instrs.append(MenaiVCodeMakeDict(dst=dst, pairs=pairs))
             all_regs = [r for k, v in pairs for r in (k, v)]
             return max(max_reg_id, dst.id, *(r.id for r in all_regs)) if all_regs else max(max_reg_id, dst.id)

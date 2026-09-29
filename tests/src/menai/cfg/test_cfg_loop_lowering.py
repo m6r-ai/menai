@@ -132,4 +132,4 @@ class TestLoopLowering:
             b.terminator for b in cfg.blocks
             if isinstance(b.terminator, MenaiCFGSelfLoopTerm)
         )
-        assert term.param_vals == [phi.result]
+        assert term.param_vals == (phi.result,)

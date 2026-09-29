@@ -627,7 +627,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
 
 def _has_no_other_move(
-    instrs: list[MenaiVCodeInstr],
+    instrs: tuple[MenaiVCodeInstr, ...],
     reg_id: int,
     reg_def: int,
     move_idx: int,

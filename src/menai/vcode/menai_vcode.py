@@ -90,7 +90,7 @@ class MenaiVCodeBuiltin:
     """
     dst: MenaiVCodeReg
     op: str
-    args: list[MenaiVCodeReg]
+    args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
@@ -98,14 +98,14 @@ class MenaiVCodeCall:
     """dst = call func(args...)"""
     dst: MenaiVCodeReg
     func: MenaiVCodeReg
-    args: list[MenaiVCodeReg]
+    args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
 class MenaiVCodeTailCall:
     """tail_call func(args...)  — no result, terminates the function."""
     func: MenaiVCodeReg
-    args: list[MenaiVCodeReg]
+    args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
@@ -135,7 +135,7 @@ class MenaiVCodeMakeClosure:
     """
     dst: MenaiVCodeReg
     function: 'MenaiVCodeFunction'
-    captures: list[MenaiVCodeReg]
+    captures: tuple[MenaiVCodeReg, ...]
     needs_patching: bool = False
 
 
@@ -152,7 +152,7 @@ class MenaiVCodeMakeStruct:
     """
     dst: MenaiVCodeReg
     struct_type: MenaiStructType
-    args: list[MenaiVCodeReg]
+    args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
@@ -165,7 +165,7 @@ class MenaiVCodeMakeList:
     allocates the list in a single call.
     """
     dst: MenaiVCodeReg
-    args: list[MenaiVCodeReg]
+    args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
@@ -178,7 +178,7 @@ class MenaiVCodeMakeVector:
     allocates the vector in a single call.
     """
     dst: MenaiVCodeReg
-    args: list[MenaiVCodeReg]
+    args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
@@ -191,7 +191,7 @@ class MenaiVCodeMakeSet:
     allocates the set in a single call.
     """
     dst: MenaiVCodeReg
-    args: list[MenaiVCodeReg]
+    args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
@@ -204,7 +204,7 @@ class MenaiVCodeMakeDict:
     MAKE_DICT, which allocates the dict in a single call.
     """
     dst: MenaiVCodeReg
-    pairs: list[tuple[MenaiVCodeReg, MenaiVCodeReg]]
+    pairs: tuple[tuple[MenaiVCodeReg, MenaiVCodeReg], ...]
 
 
 @dataclass
@@ -288,7 +288,7 @@ class MenaiVCodeSwitch:
     """
     src: MenaiVCodeReg
     min: int
-    labels: list[str]
+    labels: tuple[str, ...]
     default_label: str
 
 
@@ -376,13 +376,13 @@ class MenaiVCodeFunction:
     self-loop back-edge), so the slot allocator assigns them fixed slots that
     are never reused for loop-body temporaries.
     """
-    instrs: list[MenaiVCodeInstr] = field(default_factory=list)
-    params: list[str] = field(default_factory=list)
-    free_vars: list[str] = field(default_factory=list)
-    param_reg_ids: list[int] = field(default_factory=list)
-    free_var_reg_ids: list[int] = field(default_factory=list)
-    loop_param_reg_ids: list[int] = field(default_factory=list)
-    hoisted_reg_ids: list[int] = field(default_factory=list)
+    instrs: tuple[MenaiVCodeInstr, ...] = field(default_factory=tuple)
+    params: tuple[str, ...] = field(default_factory=tuple)
+    free_vars: tuple[str, ...] = field(default_factory=tuple)
+    param_reg_ids: tuple[int, ...] = field(default_factory=tuple)
+    free_var_reg_ids: tuple[int, ...] = field(default_factory=tuple)
+    loop_param_reg_ids: tuple[int, ...] = field(default_factory=tuple)
+    hoisted_reg_ids: tuple[int, ...] = field(default_factory=tuple)
     is_variadic: bool = False
     binding_name: str | None = None
     reg_count: int = 0
@@ -406,7 +406,7 @@ class MenaiVCodeFunction:
         return "\n".join(lines)
 
 
-def _fmt_regs(regs: list[MenaiVCodeReg]) -> str:
+def _fmt_regs(regs: tuple[MenaiVCodeReg, ...]) -> str:
     """Format a list of VCode registers as a bracketed comma-separated string."""
     return "[" + ", ".join(str(r) for r in regs) + "]"
 

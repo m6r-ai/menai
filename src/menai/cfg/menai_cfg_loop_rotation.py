@@ -571,9 +571,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
             """Remap a single SSA value."""
             return remap.get(value.id, value)
 
-        def rvs(values: list[MenaiCFGValue]) -> list[MenaiCFGValue]:
-            """Remap a list of SSA values."""
-            return [rv(v) for v in values]
+        def rvs(values: tuple[MenaiCFGValue, ...]) -> tuple[MenaiCFGValue, ...]:
+            """Remap a sequence of SSA values."""
+            return tuple(rv(v) for v in values)
 
         if isinstance(instr, MenaiCFGConstInstr):
             return MenaiCFGConstInstr(result=rv(instr.result), value=instr.value)
@@ -618,7 +618,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         if isinstance(instr, MenaiCFGMakeDictInstr):
             return MenaiCFGMakeDictInstr(
                 result=rv(instr.result),
-                pairs=[(rv(k), rv(v)) for k, v in instr.pairs],
+                pairs=tuple((rv(k), rv(v)) for k, v in instr.pairs),
             )
 
         if isinstance(instr, MenaiCFGStructGetIndexedInstr):
@@ -640,7 +640,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         if isinstance(instr, MenaiCFGPhiInstr):
             return MenaiCFGPhiInstr(
                 result=rv(instr.result),
-                incoming=[(rv(v), block) for v, block in instr.incoming],
+                incoming=tuple((rv(v), block) for v, block in instr.incoming),
             )
 
         raise TypeError(

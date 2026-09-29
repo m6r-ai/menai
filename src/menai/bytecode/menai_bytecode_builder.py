@@ -299,12 +299,12 @@ class MenaiBytecodeBuilder:
         self._emit_vcode(func, ctx)
         return CodeObject(
             instructions=ctx.instructions,
-            constants=ctx.constants,
-            jump_tables=[
+            constants=tuple(ctx.constants),
+            jump_tables=tuple(
                 (t_min, t_default, array.array('Q', targets))
                 for t_min, t_default, targets in ctx.jump_tables
-            ],
-            code_objects=ctx.code_objects,
+            ),
+            code_objects=tuple(ctx.code_objects),
             param_count=0,
             local_count=slot_map.local_count,
             outgoing_arg_slots=max(slot_map.slot_count - slot_map.local_count, ctx.max_outgoing_args),
@@ -694,12 +694,12 @@ class MenaiBytecodeBuilder:
 
         return CodeObject(
             instructions=child_ctx.instructions,
-            constants=child_ctx.constants,
-            jump_tables=[
+            constants=tuple(child_ctx.constants),
+            jump_tables=tuple(
                 (t_min, t_default, array.array('Q', targets))
                 for t_min, t_default, targets in child_ctx.jump_tables
-            ],
-            code_objects=child_ctx.code_objects,
+            ),
+            code_objects=tuple(child_ctx.code_objects),
             free_vars=func.free_vars,
             param_names=func.params,
             param_count=param_count,

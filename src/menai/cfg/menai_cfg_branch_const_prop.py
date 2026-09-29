@@ -364,7 +364,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                             new_instrs = list(block.instrs)
                             new_instrs[new_instrs.index(phi)] = MenaiCFGPhiInstr(
                                 result=phi.result,
-                                incoming=keep,
+                                incoming=tuple(keep),
                             )
                             # Replace predicate + branch with a direct jump.
                             new_instrs.remove(pred_instr)
@@ -406,7 +406,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                             new_instrs = list(block.instrs)
                             new_instrs[new_instrs.index(phi)] = MenaiCFGPhiInstr(
                                 result=phi.result,
-                                incoming=keep,
+                                incoming=tuple(keep),
                             )
                             block = replace(block, instrs=tuple(new_instrs))
                             rewrites[block.id] = block
@@ -420,7 +420,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                                 MenaiCFGBuiltinInstr(
                                     result=pred_instr.result,
                                     op=pred_instr.op,
-                                    args=[sole_val],
+                                    args=(sole_val,),
                                 )
                             )
                             block = replace(block, instrs=tuple(new_instrs))
@@ -448,7 +448,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                     new_instrs = list(block.instrs)
                     new_instrs[new_instrs.index(phi)] = MenaiCFGPhiInstr(
                         result=phi.result,
-                        incoming=keep,
+                        incoming=tuple(keep),
                     )
                     block = replace(block, instrs=tuple(new_instrs))
 

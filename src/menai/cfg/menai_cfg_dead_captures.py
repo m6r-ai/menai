@@ -204,7 +204,7 @@ class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
         new_mc = MenaiCFGMakeClosureInstr(
             result=mc.result,
             function=child,
-            captures=new_captures,
+            captures=tuple(new_captures),
             needs_patching=has_live_sibling,
         )
 

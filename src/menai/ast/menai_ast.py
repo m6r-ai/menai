@@ -17,7 +17,7 @@ from menai.menai_value import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTNode(ABC):
     """
     Abstract base class for all Menai AST nodes.
@@ -46,7 +46,7 @@ class MenaiASTNode(ABC):
         """Describe the value."""
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTNone(MenaiASTNode):
     """Represents the #none literal in the AST."""
 
@@ -64,7 +64,7 @@ class MenaiASTNone(MenaiASTNode):
         return isinstance(other, MenaiASTNone)
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTBoolean(MenaiASTNode):
     """Represents boolean values in AST."""
     value: bool
@@ -83,7 +83,7 @@ class MenaiASTBoolean(MenaiASTNode):
         return self.value == other.value
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTInteger(MenaiASTNode):
     """Represents integer values in AST."""
     value: int
@@ -102,7 +102,7 @@ class MenaiASTInteger(MenaiASTNode):
         return self.value == other.value
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTFloat(MenaiASTNode):
     """Represents floating-point values in AST."""
     value: float
@@ -121,7 +121,7 @@ class MenaiASTFloat(MenaiASTNode):
         return self.value == other.value
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTComplex(MenaiASTNode):
     """Represents complex number values in AST."""
     value: complex
@@ -140,7 +140,7 @@ class MenaiASTComplex(MenaiASTNode):
         return self.value == other.value
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTString(MenaiASTNode):
     """Represents string values in AST."""
     value: str
@@ -187,7 +187,7 @@ class MenaiASTString(MenaiASTNode):
         return self.value == other.value
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTBytes(MenaiASTNode):
     """Represents bytes values in AST."""
     value: bytes
@@ -211,7 +211,7 @@ class MenaiASTBytes(MenaiASTNode):
         return self.value == other.value
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTSymbol(MenaiASTNode):
     """Represents symbols that require environment lookup in AST."""
     name: str
@@ -238,7 +238,7 @@ class MenaiASTSymbol(MenaiASTNode):
         return f'MenaiASTSymbol({self.name!r})'
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTList(MenaiASTNode):
     """Represents lists of Menai AST nodes."""
     elements: tuple[MenaiASTNode, ...] = ()
@@ -282,7 +282,7 @@ class MenaiASTList(MenaiASTNode):
         return self.elements[index]
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTListLiteral(MenaiASTNode):
     """
     A fully-constant list literal produced by the constant folder.
@@ -304,7 +304,7 @@ class MenaiASTListLiteral(MenaiASTNode):
         return "(" + " ".join(e.describe() for e in self.elements) + ")"
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTSet(MenaiASTNode):
     """
     A fully-constant set literal produced by the constant folder.
@@ -326,7 +326,7 @@ class MenaiASTSet(MenaiASTNode):
         return "{" + " ".join(e.describe() for e in self.elements) + "}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTVector(MenaiASTNode):
     """
     A fully-constant vector literal produced by the constant folder.
@@ -348,7 +348,7 @@ class MenaiASTVector(MenaiASTNode):
         return "#vector(" + " ".join(e.describe() for e in self.elements) + ")"
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTDict(MenaiASTNode):
     """
     Represents a dict literal in the AST.
@@ -383,7 +383,7 @@ class MenaiASTDict(MenaiASTNode):
         return isinstance(other, MenaiASTDict) and self.pairs == other.pairs
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTStruct(MenaiASTNode):
     """
     Represents a (struct (field ...)) special form in the AST.
@@ -420,7 +420,7 @@ class MenaiASTStruct(MenaiASTNode):
         return self.tag == other.tag
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTNamespace(MenaiASTNode):
     """
     Represents a resolved module namespace in the AST.
@@ -462,7 +462,7 @@ class MenaiASTNamespace(MenaiASTNode):
         return f"(namespace {keys})"
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiASTConstant(MenaiASTNode):
     """
     An AST leaf wrapping an already-constructed runtime value.

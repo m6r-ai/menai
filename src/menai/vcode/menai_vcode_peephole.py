@@ -247,20 +247,20 @@ def _replace_reg(
         return MenaiVCodeBuiltin(
             dst=instr.dst,
             op=instr.op,
-            args=[new_reg if r.id == old_id else r for r in instr.args],
+            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeCall):
         return MenaiVCodeCall(
             dst=instr.dst,
             func=new_reg if instr.func.id == old_id else instr.func,
-            args=[new_reg if r.id == old_id else r for r in instr.args],
+            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeTailCall):
         return MenaiVCodeTailCall(
             func=new_reg if instr.func.id == old_id else instr.func,
-            args=[new_reg if r.id == old_id else r for r in instr.args],
+            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeApply):
@@ -280,7 +280,7 @@ def _replace_reg(
         return MenaiVCodeMakeClosure(
             dst=instr.dst,
             function=instr.function,
-            captures=[new_reg if r.id == old_id else r for r in instr.captures],
+            captures=tuple(new_reg if r.id == old_id else r for r in instr.captures),
             needs_patching=instr.needs_patching,
         )
 
@@ -295,37 +295,37 @@ def _replace_reg(
         return MenaiVCodeMakeStruct(
             dst=instr.dst,
             struct_type=instr.struct_type,
-            args=[new_reg if r.id == old_id else r for r in instr.args],
+            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeMakeList):
         return MenaiVCodeMakeList(
             dst=instr.dst,
-            args=[new_reg if r.id == old_id else r for r in instr.args],
+            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeMakeVector):
         return MenaiVCodeMakeVector(
             dst=instr.dst,
-            args=[new_reg if r.id == old_id else r for r in instr.args],
+            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeMakeSet):
         return MenaiVCodeMakeSet(
             dst=instr.dst,
-            args=[new_reg if r.id == old_id else r for r in instr.args],
+            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeMakeDict):
         return MenaiVCodeMakeDict(
             dst=instr.dst,
-            pairs=[
+            pairs=tuple(
                 (
                     new_reg if k.id == old_id else k,
                     new_reg if v.id == old_id else v,
                 )
                 for k, v in instr.pairs
-            ],
+            ),
         )
 
     if isinstance(instr, MenaiVCodeStructGetIndexed):
@@ -359,7 +359,7 @@ def _replace_reg(
         return MenaiVCodeSwitch(
             src=new_reg if instr.src.id == old_id else instr.src,
             min=instr.min,
-            labels=list(instr.labels),
+            labels=instr.labels,
             default_label=instr.default_label,
         )
 
@@ -466,7 +466,7 @@ def coalesce_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
         new_instrs.append(result)
 
     return MenaiVCodeFunction(
-        instrs=new_instrs,
+        instrs=tuple(new_instrs),
         params=func.params,
         free_vars=func.free_vars,
         param_reg_ids=func.param_reg_ids,
@@ -581,7 +581,7 @@ def schedule_self_loop_moves(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
         return func
 
     return MenaiVCodeFunction(
-        instrs=instrs,
+        instrs=tuple(instrs),
         params=func.params,
         free_vars=func.free_vars,
         param_reg_ids=func.param_reg_ids,
@@ -730,7 +730,7 @@ def peephole(func: MenaiVCodeFunction, slot_map: SlotMap) -> MenaiVCodeFunction:
         return func
 
     return MenaiVCodeFunction(
-        instrs=instrs,
+        instrs=tuple(instrs),
         params=func.params,
         free_vars=func.free_vars,
         param_reg_ids=func.param_reg_ids,
@@ -1183,7 +1183,7 @@ def _thread_jumps(
 
         elif isinstance(instr, MenaiVCodeSwitch):
             new_default = redirect.get(instr.default_label, instr.default_label)
-            new_labels = [redirect.get(l, l) for l in instr.labels]
+            new_labels = tuple(redirect.get(l, l) for l in instr.labels)
             if new_default != instr.default_label or any(
                 nl != l for nl, l in zip(new_labels, instr.labels)
             ):

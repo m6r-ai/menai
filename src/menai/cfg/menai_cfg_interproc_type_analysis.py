@@ -540,7 +540,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     @staticmethod
     def _join_arg_facts(
         callee: _FunctionInfo,
-        args: list,
+        args: tuple[MenaiCFGValue, ...],
         facts: dict[int, TypeFact],
         internal: bool,
     ) -> bool:
@@ -581,7 +581,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     def _call_sites(
         self,
         info: _FunctionInfo,
-    ) -> list[tuple[MenaiCFGFunction, list, bool]]:
+    ) -> list[tuple[MenaiCFGFunction, tuple[MenaiCFGValue, ...], bool]]:
         """
         Enumerate the call sites that contribute to a callee's parameter facts,
         as (callee_function, argument_values, internal) triples.
@@ -602,7 +602,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Return-fact propagation is unaffected: a function's return value
         genuinely is the join over every path, recursive ones included.
         """
-        result: list[tuple[MenaiCFGFunction, list, bool]] = []
+        result: list[tuple[MenaiCFGFunction, tuple[MenaiCFGValue, ...], bool]] = []
         caller_scc = self._scc_of[id(info.func)]
         for block in info.func.blocks:
             for instr in block.instrs:
