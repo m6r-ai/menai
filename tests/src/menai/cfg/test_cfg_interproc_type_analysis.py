@@ -23,6 +23,11 @@ Covers:
  10. A parameter fed two different struct types by two functions inside the
      same recursion component is ambiguous, so its field access stays
      symbol-based and the result is correct.
+ 11. A function that escapes — stored in a container and fetched back out, or
+     captured by a closure that escapes — may be called from a call site the
+     analysis cannot resolve, so its parameter is not proven and its field
+     access stays symbol-based.  A call with a value of another type raises a
+     type error rather than reading a non-struct as a struct.
 """
 
 import pytest
@@ -773,7 +778,7 @@ LOOP_CARRIED_FACT_SRC = """
                                                (search mid hi)
                                                (search lo mid)))))))
                     (search 0 limit)))))
-  (list outer))
+  (outer 8))
 """
 
 
@@ -790,9 +795,9 @@ class TestLoopCarriedValueFact:
     join must still see `mid`'s integer fact, so no runtime guard is needed for
     `hi` inside the loop.
 
-    `outer` is never called, so its own `limit` parameter is unconstrained and
-    its guard is retained; the guards that matter here are the ones inside the
-    loop, which must be absent.
+    `outer` is called with an integer, so its `limit` parameter is proven and
+    the fact reaches `search`'s `hi` through the call.  No guard is needed
+    anywhere in the loop.
     """
 
     def test_loop_carried_value_has_no_guard(self):
@@ -800,4 +805,128 @@ class TestLoopCarriedValueFact:
         assert _non_entry_guard_count(cfg) == 0
 
     def test_loop_carried_value_result_correct(self, menai):
-        assert menai.evaluate_and_format(LOOP_CARRIED_FACT_SRC.replace("(list outer)", "(outer 8)")) == "0"
+        assert menai.evaluate_and_format(LOOP_CARRIED_FACT_SRC) == "0"
+
+
+ESCAPE_VIA_CONTAINER_SRC = """
+(letrec ((point (struct (x y)))
+         (get-x (lambda (p)
+                  (let ((a (struct-get p 'x))
+                        (b (struct-get p 'x))
+                        (c (struct-get p 'x))
+                        (d (struct-get p 'x))
+                        (e (struct-get p 'x))
+                        (f (struct-get p 'x))
+                        (g (struct-get p 'x))
+                        (h (struct-get p 'x)))
+                    (integer+ a b c d e f g h)))))
+  (let* ((direct (get-x (point 1 2)))
+         (boxed (list get-x))
+         (fetched ((list-first boxed) "hello")))
+    (list direct fetched)))
+"""
+
+
+ESCAPE_VIA_CAPTURE_SRC = """
+(letrec ((point (struct (x y)))
+         (get-x (lambda (p)
+                  (let ((a (struct-get p 'x))
+                        (b (struct-get p 'x))
+                        (c (struct-get p 'x))
+                        (d (struct-get p 'x))
+                        (e (struct-get p 'x))
+                        (f (struct-get p 'x))
+                        (g (struct-get p 'x))
+                        (h (struct-get p 'x)))
+                    (integer+ a b c d e f g h))))
+         (wrapper (lambda (v) (get-x v))))
+  (let ((direct (get-x (point 1 2))))
+    wrapper))
+"""
+
+# A function stored into a vector with vector-set and fetched back out with
+# vector-ref.  Every builtin that moves a value into or out of a container must
+# be covered, not only the list ones.
+ESCAPE_VIA_VECTOR_SRC = """
+(letrec ((point (struct (x y)))
+         (get-x (lambda (p)
+                  (let ((a (struct-get p 'x))
+                        (b (struct-get p 'x))
+                        (c (struct-get p 'x))
+                        (d (struct-get p 'x))
+                        (e (struct-get p 'x))
+                        (f (struct-get p 'x))
+                        (g (struct-get p 'x))
+                        (h (struct-get p 'x)))
+                    (integer+ a b c d e f g h)))))
+  (let* ((direct (get-x (point 1 2)))
+         (boxed (vector-set (vector #f) 0 get-x))
+         (fetched ((vector-ref boxed 0) "hello")))
+    (list direct fetched)))
+"""
+
+# A function returned to the host.  The host may call it with a value of any
+# type, so its parameter must not be proven even though its only in-program
+# call site passes a Point.  The direct call's result feeds the returned value
+# so the call site survives dead-binding elimination.
+ESCAPE_VIA_RETURN_SRC = """
+(letrec ((point (struct (x y)))
+         (get-x (lambda (p)
+                  (let ((a (struct-get p 'x))
+                        (b (struct-get p 'x))
+                        (c (struct-get p 'x))
+                        (d (struct-get p 'x))
+                        (e (struct-get p 'x))
+                        (f (struct-get p 'x))
+                        (g (struct-get p 'x))
+                        (h (struct-get p 'x)))
+                    (integer+ a b c d e f g h)))))
+  (let ((direct (get-x (point 1 2))))
+    (if (integer=? direct 8)
+        get-x
+        (list direct))))
+"""
+
+
+class TestEscapingFunction:
+    """
+    A function that can be called from a call site the analysis cannot resolve
+    must not have its parameter type proven.
+
+    A function value stored in a container and fetched back out, or captured by
+    a closure that escapes, may be invoked with a value of any type.  The
+    analysis cannot see that call site, so the parameter must be left
+    unconstrained: the field access stays symbol-based and its guard is kept.
+    Proving the type from the visible call sites alone would rewrite the access
+    to an index and omit the guard, so a call with a value of another type would
+    read a non-struct as a struct.
+    """
+
+    def test_container_fetched_function_stays_symbol_based(self):
+        cfg = _build_cfg(ESCAPE_VIA_CONTAINER_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_container_fetched_function_type_error_not_miscompile(self, menai):
+        with pytest.raises(MenaiError, match="type mismatch"):
+            menai.evaluate_and_format(ESCAPE_VIA_CONTAINER_SRC)
+
+    def test_captured_escaping_function_stays_symbol_based(self):
+        cfg = _build_cfg(ESCAPE_VIA_CAPTURE_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_vector_stored_function_stays_symbol_based(self):
+        cfg = _build_cfg(ESCAPE_VIA_VECTOR_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_returned_function_stays_symbol_based(self):
+        cfg = _build_cfg(ESCAPE_VIA_RETURN_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_non_escaping_function_is_still_rewritten(self):
+        cfg = _build_cfg(MONOMORPHIC_SRC)
+        assert "struct-indexed-get" in _ops(cfg)
+        assert "struct-get" not in _ops(cfg)

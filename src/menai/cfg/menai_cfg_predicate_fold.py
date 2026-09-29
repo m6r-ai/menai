@@ -22,17 +22,14 @@ single-arm phi whose value is the bytes-read-u24-be result.  The type analysis
 proves that result is an integer, so (none? <integer>) is #f and the branch is
 re-wired to the false edge; the none? check disappears.
 
-Locally-proven arguments only
------------------------------
-The pass folds a predicate only when its argument's fact is *locally proven* —
-derived solely from constants, value constructors, and builtins with a fixed
-result type within this function, combined through phi nodes.  A fact derived
-from a parameter, a free variable, or a call result is not used: the
-interprocedural analysis can compute such a fact more precisely than is sound
-when a function value escapes into a call it cannot resolve (for example a
-function passed to a higher-order prelude function that calls it with values of
-mixed type).  Restricting to locally-proven facts keeps the fold sound without
-depending on the precision of the interprocedural analysis.
+Soundness
+---------
+Any fact the interprocedural analysis reports may be consumed, including one
+derived from a parameter, a free variable, or a call result.  The analysis
+leaves the parameters of every function that can be reached from a call site it
+cannot resolve unconstrained, so it never reports a proven type for a parameter
+that can receive a value of another type.  Folding on such a fact therefore
+cannot delete a branch that must be taken at runtime.
 
 Scope
 -----
@@ -43,21 +40,13 @@ it is not handled here.
 
 from dataclasses import replace
 
-from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES, TYPE_PREDICATES
+from menai.bytecode.menai_type_signatures import TYPE_PREDICATES
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
     MenaiCFGBranchTerm,
     MenaiCFGBuiltinInstr,
-    MenaiCFGConstInstr,
     MenaiCFGFunction,
     MenaiCFGJumpTerm,
-    MenaiCFGMakeDictInstr,
-    MenaiCFGMakeListInstr,
-    MenaiCFGMakeSetInstr,
-    MenaiCFGMakeStructInstr,
-    MenaiCFGMakeVectorInstr,
-    MenaiCFGPhiInstr,
-    MenaiCFGStructSetIndexedInstr,
     value_ids_in_instr,
     value_ids_in_term,
 )
@@ -71,10 +60,10 @@ from menai.cfg.menai_cfg_type_fact import TypeFact
 
 class MenaiCFGPredicateFold(MenaiCFGPerFunctionPass):
     """
-    Fold type-predicate builtins whose argument's locally-proven type fact
-    determines the result, and re-wire the branch they feed.
+    Fold type-predicate builtins whose argument's proven type fact determines
+    the result, and re-wire the branch they feed.
 
-    See the module docstring for the algorithm and the locally-proven rule.
+    See the module docstring for the algorithm and the soundness argument.
     """
 
     def _optimize_function(
@@ -105,8 +94,6 @@ class MenaiCFGPredicateFold(MenaiCFGPerFunctionPass):
         Returns the (possibly new) function and whether any predicate was folded.
         """
         changed = False
-        value_defs = _value_defs(func)
-        local = _local_values(value_defs)
         used = _referenced_value_ids(func)
         type_facts = context.facts_for(func)
 
@@ -120,9 +107,6 @@ class MenaiCFGPredicateFold(MenaiCFGPerFunctionPass):
                 continue
 
             arg = pred_instr.args[0]
-            if arg.id not in local:
-                continue
-
             fact = type_facts.get(arg.id)
             result = _evaluate_predicate(pred_instr.op, fact)
             if result is None:
@@ -180,84 +164,6 @@ def _evaluate_predicate(op: str, fact: TypeFact | None) -> bool | None:
         return None
 
     return fact.kind == TYPE_PREDICATES[op]
-
-
-def _value_defs(func: MenaiCFGFunction) -> dict[int, object]:
-    """Map each defined SSA value id in a function to its defining instruction."""
-    result: dict[int, object] = {}
-    for block in func.blocks:
-        for instr in block.instrs:
-            result_id = getattr(instr, 'result', None)
-            if result_id is not None:
-                result[result_id.id] = instr
-
-    return result
-
-
-def _local_values(value_defs: dict[int, object]) -> set[int]:
-    """
-    Return the ids of values whose type fact is locally proven.
-
-    A value is locally proven when its type is fixed by its own definition and
-    the definitions it depends on, without reference to a parameter, a free
-    variable, or a call result:
-
-      - a constant, a list/vector/set/dict/struct constructor, or a builtin
-        whose signature fixes its result type;
-      - a struct-set-indexed whose receiver is locally proven (it preserves the
-        receiver's struct type);
-      - a phi whose incoming values are all locally proven.
-
-    Every other value — a parameter, a free variable, a call or apply result, a
-    builtin whose result type is unknown, or a phi with any non-local incoming —
-    is not locally proven.
-    """
-    local: set[int] = set()
-    changed = True
-    while changed:
-        changed = False
-        for val_id, instr in value_defs.items():
-            if val_id in local:
-                continue
-
-            if _definition_is_local(instr, local):
-                local.add(val_id)
-                changed = True
-
-    return local
-
-
-def _definition_is_local(instr: object, local: set[int]) -> bool:
-    """
-    Return True if an instruction's result is locally proven, given the set of
-    value ids already known to be locally proven.
-    """
-    if isinstance(instr, MenaiCFGConstInstr):
-        return True
-
-    if isinstance(
-        instr,
-        (
-            MenaiCFGMakeListInstr,
-            MenaiCFGMakeVectorInstr,
-            MenaiCFGMakeSetInstr,
-            MenaiCFGMakeDictInstr,
-            MenaiCFGMakeStructInstr,
-        ),
-    ):
-        return True
-
-    if isinstance(instr, MenaiCFGBuiltinInstr):
-        sig = BUILTIN_TYPE_SIGNATURES.get(instr.op)
-        return sig is not None and sig[1] is not None
-
-    if isinstance(instr, MenaiCFGStructSetIndexedInstr):
-        return instr.struct.id in local
-
-    if isinstance(instr, MenaiCFGPhiInstr):
-        return all(val.id in local for val, _ in instr.incoming)
-
-    return False
 
 
 def _referenced_value_ids(func: MenaiCFGFunction) -> dict[int, int]:

@@ -97,9 +97,11 @@ What costs, risks, or constraints does this decision impose?
 | [0026](0026-single-builtin-table.md) | A single table describes each opcode-backed builtin | Accepted |
 | [0027](0027-recursion-cycle-parameter-grounding.md) | Recursion-cycle parameter grounding in the interprocedural type analysis | Accepted |
 | [0028](0028-instruction-tracing-by-ordinal.md) | Instruction tracing keyed by walk-order ordinals | Accepted |
-| [0029](0029-predicate-fold-locally-proven-only.md) | Type-predicate folding is restricted to locally-proven arguments | Accepted |
+| [0029](0029-predicate-fold-locally-proven-only.md) | Type-predicate folding is restricted to locally-proven arguments | Superseded by ADR-0036 |
 | [0030](0030-exception-blocks-emitted-last.md) | Exception blocks are laid out after the normal path | Accepted |
 | [0031](0031-inliner-does-not-inline-recursive-calls.md) | The IR inliner does not inline recursive or mutually-recursive calls | Accepted |
 | [0032](0032-single-binding-tail-recursive-letrecs-become-loops.md) | Single-binding tail-recursive letrecs are converted to loops before inlining | Accepted |
 | [0033](0033-cfg-is-an-immutable-value.md) | The CFG is an immutable value | Accepted |
 | [0034](0034-the-compiler-is-expressible-in-menai.md) | The compiler is expressible in Menai | Accepted |
+| [0035](0035-function-provenance-must-follow-containers.md) | Function provenance must follow containers | Accepted |
+| [0036](0036-predicate-fold-may-consume-interprocedural-facts.md) | Type-predicate folding may consume interprocedural facts | Accepted |

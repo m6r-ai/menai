@@ -122,6 +122,60 @@ _STRUCT_PRESERVING_OPS = {'struct-set'}
 # Builtins that read or write a struct field by symbol name.
 _FIELD_BY_SYMBOL_OPS = {'struct-get', 'struct-set'}
 
+# Builtins through which a function can enter or leave a container.  Maps the
+# builtin name to the argument positions whose contents may reach the result:
+# a function value at one of these positions (or inside a container at one of
+# these positions) may later be fetched back out of the result and called, so
+# it is part of the result's provenance.
+#
+# Three shapes are covered, and all three matter:
+#   - a value stored into a container (list-prepend, dict-set, vector-set, ...);
+#   - an element fetched out of a container (list-first, dict-get, vector-ref,
+#     ...);
+#   - a container built from other containers, where the result's contents are
+#     drawn from an operand (list-concat, set-union, list->set, list-slice, ...).
+#
+# A builtin that only compares against or removes a value (list-member?,
+# set-remove, ...) still contributes its container argument: a function in the
+# input container may be in the result container.
+#
+# This table must list every builtin that can move a value into or out of a
+# container.  A missing entry is not a missed optimisation: it lets a function
+# that does escape appear not to, so its parameter facts stay over-precise and
+# a field access on them can be rewritten unsoundly.
+_CONTAINER_FLOW_OPS = {
+    'list-prepend': (1,),
+    'list-append': (1,),
+    'list-first': (0,),
+    'list-last': (0,),
+    'list-rest': (0,),
+    'list-ref': (0,),
+    'list-index': (0,),
+    'list-slice': (0,),
+    'list-remove': (0,),
+    'list-concat': (0, 1),
+    'list->set': (0,),
+    'list->vector': (0,),
+    'dict-set': (1, 2),
+    'dict-get': (0,),
+    'dict-keys': (0,),
+    'dict-values': (0,),
+    'dict-remove': (0,),
+    'dict-merge': (0, 1),
+    'set-add': (1,),
+    'set-remove': (0,),
+    'set-union': (0, 1),
+    'set-intersection': (0, 1),
+    'set-difference': (0, 1),
+    'set->list': (0,),
+    'vector-set': (2,),
+    'vector-ref': (0,),
+    'vector-slice': (0,),
+    'vector-concat': (0, 1),
+    'vector->list': (0,),
+    'struct-set': (1, 2),
+}
+
 # Instruction types that define a result SSA value.  Guard and patch
 # instructions are excluded: they have no result.
 _VALUE_INSTR_TYPES = (
@@ -145,9 +199,16 @@ _VALUE_INSTR_TYPES = (
 
 class _FunctionInfo:
     """
-    Per-function analysis state: the resolved callee of each call, the SSA
-    value that denotes each function, the current parameter facts, and the
+    Per-function analysis state: the possible callees of each call, the
+    functions each SSA value may denote, the current parameter facts, and the
     current return fact.
+
+    `callee_of_value` maps an SSA value id to the set of ids of the functions
+    that value may denote.  It is a *may* relation, not an exact one: a value
+    can denote more than one function when it is a phi of two closures, or when
+    it is fetched from a container holding more than one function.  A value
+    that denotes no known function is absent from the map.  Functions are
+    identified by `id(func)`, because `MenaiCFGFunction` is not hashable.
 
     Parameter facts are tracked from three sources.  `external_param_facts` is
     the join over call sites outside the function's recursion component;
@@ -174,7 +235,7 @@ class _FunctionInfo:
         self.func = func
         self.parent = parent
         self.parent_closure = parent_closure
-        self.callee_of_value: dict[int, MenaiCFGFunction] = {}
+        self.callee_of_value: dict[int, set[int]] = {}
         self.external_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.internal_param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.external_param_present: list[bool] = [False] * func.param_count()
@@ -222,6 +283,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         self._propagate_to_fixed_point(infos, info_of)
         self._saturate_unknown_externals(infos, info_of)
+        self._saturate_escaped(infos, info_of)
 
         changed = False
         rewritten: dict[int, MenaiCFGFunction] = {}
@@ -282,6 +344,115 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
             self._propagate_to_fixed_point(infos, info_of)
 
+    def _saturate_escaped(
+        self,
+        infos: list[_FunctionInfo],
+        info_of: dict[int, _FunctionInfo],
+    ) -> None:
+        """
+        Make the parameters of every escaping function unconstrained.
+
+        A function escapes when a value that may denote it is used as the
+        callee of a call the analysis cannot resolve, is passed as an argument
+        to such a call, is returned, or is captured by a closure that itself
+        escapes.  Such a function may be invoked from a call site the analysis
+        cannot see, with arguments of any type, so none of its parameters can
+        be assumed to have a type.
+
+        The parameters are forced to ANY and the fixed point is re-run, so the
+        unconstrained fact propagates forward through every call the escaped
+        function makes.  That forward propagation is what makes the analysis
+        transitive: a function called by an escaped function is reached with
+        ANY arguments and is degraded in turn, without escape having to be
+        propagated backwards through the call graph explicitly.
+        """
+        escaping = self._escaping_functions(infos)
+        if not escaping:
+            return
+
+        changed = False
+        for info in infos:
+            if id(info.func) not in escaping:
+                continue
+
+            func_changed = False
+            for index in range(info.func.param_count()):
+                if not info.external_param_facts[index].is_any():
+                    info.external_param_facts[index] = ANY
+                    info.external_param_present[index] = True
+                    func_changed = True
+
+            if func_changed:
+                changed = True
+                info.param_facts = self._effective_param_facts(info)
+
+        if changed:
+            self._propagate_to_fixed_point(infos, info_of)
+
+    def _escaping_functions(self, infos: list[_FunctionInfo]) -> set[int]:
+        """
+        Return the ids of the functions that may be called from a call site the
+        analysis cannot resolve.
+
+        A value escapes when it occupies a position from which it can be
+        invoked by code the analysis cannot see: the callee of an unresolved
+        call, an argument to one, or a returned value.  A function escapes when
+        a value that may denote it is in an escaping position.
+
+        Escape is transitive through closures: a closure that escapes makes
+        everything it captures escape, because the closure's body may pass a
+        captured value to anything.  A value installed into a capture slot by
+        PATCH_CLOSURE is treated the same way.  The computation is therefore a
+        fixed point over the escaping values and the functions they may denote.
+
+        SSA value ids are unique only within a function, so escaping values are
+        keyed by (function id, value id) rather than by value id alone.
+        """
+        escaping_values: set[tuple[int, int]] = set()
+        for info in infos:
+            for value_id in _escaping_value_ids(info.func, info.callee_of_value):
+                escaping_values.add((id(info.func), value_id))
+
+        escaping: set[int] = set()
+        changed = True
+        while changed:
+            changed = False
+            for info in infos:
+                callee_of_value = info.callee_of_value
+                func_id = id(info.func)
+
+                for owner_id, value_id in escaping_values:
+                    if owner_id != func_id:
+                        continue
+
+                    for callee_id in callee_of_value.get(value_id, set()):
+                        if callee_id not in escaping:
+                            escaping.add(callee_id)
+                            changed = True
+
+                for block in info.func.blocks:
+                    for instr in block.instrs:
+                        if isinstance(instr, MenaiCFGMakeClosureInstr):
+                            if (func_id, instr.result.id) not in escaping_values:
+                                continue
+
+                            for capture in instr.captures:
+                                if (func_id, capture.id) not in escaping_values:
+                                    escaping_values.add((func_id, capture.id))
+                                    changed = True
+
+                        elif isinstance(instr, MenaiCFGPatchClosureInstr):
+                            # A patched value is reachable from the closure, so
+                            # it escapes when the closure does.
+                            if (func_id, instr.closure.id) not in escaping_values:
+                                continue
+
+                            if (func_id, instr.value.id) not in escaping_values:
+                                escaping_values.add((func_id, instr.value.id))
+                                changed = True
+
+        return escaping
+
     def _externally_grounded_sccs(self, infos: list[_FunctionInfo]) -> set[int]:
         """
         Return the ids of the recursion components that have an external entry.
@@ -293,9 +464,9 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         """
         grounded: set[int] = set()
         for info in infos:
-            for callee_func, _, internal in self._call_sites(info):
+            for callee_id, _, internal in self._call_sites(info):
                 if not internal:
-                    grounded.add(self._scc_of[id(callee_func)])
+                    grounded.add(self._scc_of[callee_id])
 
         return grounded
 
@@ -348,6 +519,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         the make_closure instruction in the parent.
         """
         parent_of = _parent_map(root)
+        name_of = {id(func): func.binding_name for func in functions}
         for func in functions:
             parent_entry = parent_of.get(id(func))
             parent_callees = (
@@ -359,26 +531,34 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 info_of[id(func)],
                 parent_entry[1] if parent_entry is not None else None,
                 parent_callees,
+                name_of,
             )
 
     def _resolve_callees(
         self,
         info: _FunctionInfo,
         parent_closure: MenaiCFGMakeClosureInstr | None,
-        parent_callees: dict[int, MenaiCFGFunction],
+        parent_callees: dict[int, set[int]],
+        name_of: dict[int, str | None],
     ) -> None:
         """
-        Determine which function each SSA value denotes, where it can be
-        resolved.
+        Determine which functions each SSA value may denote.
 
-        Three sources are followed:
+        Sources followed:
           - a make_closure result denotes its function;
-          - a phi whose incoming values all denote the same function denotes
-            that function;
+          - a phi denotes the union of the functions its incoming values denote;
           - a free variable denotes whatever function the corresponding
             capture denotes in the parent function.  This is how a function
             reaches a letrec sibling: the sibling is captured, not created
             locally;
+          - a container value denotes every function its elements denote, and a
+            value fetched from a container denotes every function the container
+            denotes.  This is what connects a function stored in a list or dict
+            to a call made through the value fetched back out of it.
+
+        The relation is a fixed point: container elements flow into the
+        container, out of it again, and through phis, so the map is iterated
+        until no value's set grows.
         """
         func = info.func
         callee_of_value = info.callee_of_value
@@ -386,15 +566,15 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         for block in func.blocks:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGMakeClosureInstr):
-                    callee_of_value[instr.result.id] = instr.function
+                    callee_of_value.setdefault(instr.result.id, set()).add(id(instr.function))
 
         if parent_closure is not None:
             for block in func.blocks:
                 for instr in block.instrs:
                     if isinstance(instr, MenaiCFGFreeVarInstr):
-                        resolved = _free_var_callee(instr, parent_closure, parent_callees)
-                        if resolved is not None:
-                            callee_of_value[instr.result.id] = resolved
+                        resolved = _free_var_callee(instr, parent_closure, parent_callees, name_of)
+                        if resolved:
+                            callee_of_value.setdefault(instr.result.id, set()).update(resolved)
 
         changed = True
         while changed:
@@ -404,41 +584,55 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                     if not isinstance(instr, _VALUE_INSTR_TYPES):
                         continue
 
-                    resolved = self._instr_callee(instr, callee_of_value)
-                    if resolved is not None and callee_of_value.get(instr.result.id) is not resolved:
-                        callee_of_value[instr.result.id] = resolved
+                    resolved = self._instr_callees(instr, callee_of_value)
+                    if resolved - callee_of_value.get(instr.result.id, set()):
+                        callee_of_value.setdefault(instr.result.id, set()).update(resolved)
                         changed = True
 
-    def _instr_callee(
+    def _instr_callees(
         self,
         instr: object,
-        callee_of_value: dict[int, MenaiCFGFunction],
-    ) -> MenaiCFGFunction | None:
-        """Resolve the function an instruction's result denotes, if any."""
+        callee_of_value: dict[int, set[int]],
+    ) -> set[int]:
+        """Resolve the functions an instruction's result may denote."""
         if isinstance(instr, MenaiCFGPhiInstr):
-            return self._phi_callee(instr, callee_of_value)
+            result: set[int] = set()
+            for incoming_val, _ in instr.incoming:
+                result |= callee_of_value.get(incoming_val.id, set())
 
-        return None
+            return result
 
-    @staticmethod
-    def _phi_callee(
-        instr: MenaiCFGPhiInstr,
-        callee_of_value: dict[int, MenaiCFGFunction],
-    ) -> MenaiCFGFunction | None:
-        """Return the common function denoted by all of a phi's incoming values."""
-        result: MenaiCFGFunction | None = None
-        for incoming_val, _ in instr.incoming:
-            resolved = callee_of_value.get(incoming_val.id)
-            if resolved is None:
-                return None
+        if isinstance(instr, MenaiCFGMakeListInstr):
+            return _union_of_args(instr.args, callee_of_value)
 
-            if result is None:
-                result = resolved
+        if isinstance(instr, MenaiCFGMakeVectorInstr):
+            return _union_of_args(instr.args, callee_of_value)
 
-            elif result is not resolved:
-                return None
+        if isinstance(instr, MenaiCFGMakeSetInstr):
+            return _union_of_args(instr.args, callee_of_value)
 
-        return result
+        if isinstance(instr, MenaiCFGMakeStructInstr):
+            return _union_of_args(instr.args, callee_of_value)
+
+        if isinstance(instr, MenaiCFGMakeDictInstr):
+            result = set()
+            for key, val in instr.pairs:
+                result |= callee_of_value.get(key.id, set())
+                result |= callee_of_value.get(val.id, set())
+
+            return result
+
+        if isinstance(instr, MenaiCFGBuiltinInstr):
+            flow_indices = _CONTAINER_FLOW_OPS.get(instr.op)
+            if flow_indices is not None:
+                result = set()
+                for index in flow_indices:
+                    if index < len(instr.args):
+                        result |= callee_of_value.get(instr.args[index].id, set())
+
+                return result
+
+        return set()
 
     def _propagate_to_fixed_point(
         self,
@@ -499,9 +693,8 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 result = join(result, facts.get(term.value.id, BOTTOM))
 
             elif isinstance(term, MenaiCFGTailCallTerm):
-                callee = info.callee_of_value.get(term.func.id)
-                if callee is not None:
-                    result = join(result, info_of[id(callee)].return_fact)
+                for callee_id in info.callee_of_value.get(term.func.id, set()):
+                    result = join(result, info_of[callee_id].return_fact)
 
             elif isinstance(term, MenaiCFGSelfLoopTerm):
                 result = join(result, info.return_fact)
@@ -529,8 +722,8 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Returns True if any parameter fact changed.
         """
         changed = False
-        for callee_func, args, internal in self._call_sites(info):
-            callee = info_of[id(callee_func)]
+        for callee_id, args, internal in self._call_sites(info):
+            callee = info_of[callee_id]
             if self._join_arg_facts(callee, args, facts, internal):
                 callee.param_facts = self._effective_param_facts(callee)
                 changed = True
@@ -581,10 +774,14 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     def _call_sites(
         self,
         info: _FunctionInfo,
-    ) -> list[tuple[MenaiCFGFunction, tuple[MenaiCFGValue, ...], bool]]:
+    ) -> list[tuple[int, tuple[MenaiCFGValue, ...], bool]]:
         """
         Enumerate the call sites that contribute to a callee's parameter facts,
-        as (callee_function, argument_values, internal) triples.
+        as (callee_id, argument_values, internal) triples.
+
+        A call whose callee may denote more than one function contributes one
+        call site per possible callee: the call really can reach any of them,
+        so each must receive the argument facts.
 
         A direct self-recursive tail call (a MenaiCFGSelfLoopTerm with no
         param_vals) targets the enclosing function itself.  A MenaiIRLoop
@@ -602,23 +799,21 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Return-fact propagation is unaffected: a function's return value
         genuinely is the join over every path, recursive ones included.
         """
-        result: list[tuple[MenaiCFGFunction, tuple[MenaiCFGValue, ...], bool]] = []
+        result: list[tuple[int, tuple[MenaiCFGValue, ...], bool]] = []
         caller_scc = self._scc_of[id(info.func)]
         for block in info.func.blocks:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGCallInstr):
-                    callee = info.callee_of_value.get(instr.func.id)
-                    if callee is not None:
-                        result.append((callee, instr.args, self._scc_of[id(callee)] == caller_scc))
+                    for callee_id in info.callee_of_value.get(instr.func.id, set()):
+                        result.append((callee_id, instr.args, self._scc_of[callee_id] == caller_scc))
 
             term = block.terminator
             if isinstance(term, MenaiCFGTailCallTerm):
-                callee = info.callee_of_value.get(term.func.id)
-                if callee is not None:
-                    result.append((callee, term.args, self._scc_of[id(callee)] == caller_scc))
+                for callee_id in info.callee_of_value.get(term.func.id, set()):
+                    result.append((callee_id, term.args, self._scc_of[callee_id] == caller_scc))
 
             elif isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is None:
-                result.append((info.func, term.args, True))
+                result.append((id(info.func), term.args, True))
 
         return result
 
@@ -890,11 +1085,11 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             return self._free_var_fact(instr, info)
 
         if isinstance(instr, MenaiCFGCallInstr):
-            callee = info.callee_of_value.get(instr.func.id)
-            if callee is not None:
-                return info_of[id(callee)].return_fact
+            result = BOTTOM
+            for callee_id in info.callee_of_value.get(instr.func.id, set()):
+                result = join(result, info_of[callee_id].return_fact)
 
-            return BOTTOM
+            return result
 
         if isinstance(instr, MenaiCFGBuiltinInstr):
             return self._builtin_fact(instr, facts)
@@ -1256,10 +1451,11 @@ def _rebuild_function_tree(
 def _free_var_callee(
     instr: MenaiCFGFreeVarInstr,
     parent_closure: MenaiCFGMakeClosureInstr,
-    parent_callees: dict[int, MenaiCFGFunction],
-) -> MenaiCFGFunction | None:
+    parent_callees: dict[int, set[int]],
+    name_of: dict[int, str | None],
+) -> set[int]:
     """
-    Resolve a free variable to the function its capture denotes.
+    Resolve a free variable to the functions its capture may denote.
 
     A free variable's index is a position in the child function's free_vars
     list.  The list is ordered sibling free vars first, then outer free vars.
@@ -1269,8 +1465,8 @@ def _free_var_callee(
 
     Sibling free vars are not in the captures list; they are installed by
     PATCH_CLOSURE after all sibling closures exist.  A sibling free var is
-    resolved by finding the parent value that denotes the sibling function of
-    the same name.
+    resolved by finding the parent value that may denote a function of the same
+    name.  `name_of` maps a function id to its binding name for that lookup.
     """
     free_vars = parent_closure.function.free_vars
     captures = parent_closure.captures
@@ -1278,13 +1474,92 @@ def _free_var_callee(
 
     if instr.index >= outer_start:
         captured = captures[instr.index - outer_start]
-        return parent_callees.get(captured.id)
+        return set(parent_callees.get(captured.id, set()))
 
-    for func in parent_callees.values():
-        if func.binding_name == instr.var_name:
-            return func
+    result: set[int] = set()
+    for callees in parent_callees.values():
+        for func_id in callees:
+            if name_of.get(func_id) == instr.var_name:
+                result.add(func_id)
 
-    return None
+    return result
+
+
+def _union_of_args(
+    args: tuple[MenaiCFGValue, ...],
+    callee_of_value: dict[int, set[int]],
+) -> set[int]:
+    """Return the union of the functions a sequence of values may denote."""
+    result: set[int] = set()
+    for arg in args:
+        result |= callee_of_value.get(arg.id, set())
+
+    return result
+
+
+def _escaping_value_ids(
+    func: MenaiCFGFunction,
+    callee_of_value: dict[int, set[int]],
+) -> set[int]:
+    """
+    Return the ids of the values in `func` that occupy an escaping position.
+
+    A value escapes when it can be invoked by code the analysis cannot see.
+    That is the case when it is:
+
+      - the callee of a call or apply whose callee is not resolved: the value is
+        invoked there, and the analysis cannot see the call site;
+      - an argument to a call or apply whose callee is not resolved, because the
+        unresolved callee may invoke it;
+      - a returned value, because the caller may invoke it.  This includes the
+        module body's result, which the host receives and may invoke.
+
+    A resolved call is not an escape: the analysis sees that call site, so the
+    callee is a known function whose parameters are propagated normally, and the
+    arguments reach known parameters.  If a resolved callee itself escapes for
+    some other reason, its parameters are degraded and the degradation reaches
+    the arguments through the ordinary fixed point.
+
+    A value installed into a closure's capture slot does not escape by itself:
+    it becomes reachable from the closure, and escapes only if the closure does.
+    That is handled by the transitive closure rule in `_escaping_functions`.
+
+    `callee_of_value` is the function's resolved-callee map, used to tell a
+    resolved call site from an unresolved one.
+    """
+    escaping: set[int] = set()
+
+    def is_resolved(value_id: int) -> bool:
+        """True if the value denotes at least one known function."""
+        return bool(callee_of_value.get(value_id))
+
+    for block in func.blocks:
+        for instr in block.instrs:
+            if isinstance(instr, MenaiCFGCallInstr):
+                if not is_resolved(instr.func.id):
+                    escaping.add(instr.func.id)
+                    for arg in instr.args:
+                        escaping.add(arg.id)
+
+            elif isinstance(instr, MenaiCFGApplyInstr):
+                escaping.add(instr.func.id)
+                escaping.add(instr.arg_list.id)
+
+        term = block.terminator
+        if isinstance(term, MenaiCFGReturnTerm):
+            escaping.add(term.value.id)
+
+        elif isinstance(term, MenaiCFGTailCallTerm):
+            if not is_resolved(term.func.id):
+                escaping.add(term.func.id)
+                for arg in term.args:
+                    escaping.add(arg.id)
+
+        elif isinstance(term, MenaiCFGTailApplyTerm):
+            escaping.add(term.func.id)
+            escaping.add(term.arg_list.id)
+
+    return escaping
 
 
 def _join_param(target: list[TypeFact], index: int, fact: TypeFact) -> bool:
@@ -1410,7 +1685,11 @@ def _call_graph_sccs(infos: list[_FunctionInfo]) -> dict[int, int]:
     call graph cannot exhaust the Python recursion limit.
     """
     graph: dict[int, list[int]] = {
-        id(info.func): [id(callee) for callee in info.callee_of_value.values()]
+        id(info.func): [
+            callee_id
+            for callees in info.callee_of_value.values()
+            for callee_id in callees
+        ]
         for info in infos
     }
 

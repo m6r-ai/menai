@@ -248,23 +248,38 @@ runtime path is used. It never changes observable behaviour.
 See [ADR-0021](docs/adr/0021-interprocedural-type-analysis.md) and
 [ADR-0027](docs/adr/0027-recursion-cycle-parameter-grounding.md).
 
-### Predicate folding consumes only locally-proven facts
+### Function provenance must follow containers
 
-`MenaiCFGPredicateFold` folds a type predicate (`none?`, `integer?`, ...) only
-when its argument's type fact is derived locally — from constants, value
-constructors, and builtins whose signature fixes the result type, combined
-through phi nodes. A fact derived from a parameter, a free variable, or a call
-result is never used, however precise the interprocedural analysis reports it.
+The interprocedural type analysis resolves which function a call denotes before
+it can attribute a call site to a callee. A function value that reaches a call
+by a route the resolution does not follow is invisible: the call contributes no
+call site, the callee's parameter is never degraded by it, and the reported type
+can be more precise than reality. A fact that is more precise than reality is a
+miscompile, not a missed optimisation, because the struct field rewrite and
+guard insertion both consume it.
 
-The reason is that the interprocedural analysis does not resolve calls through
-function-valued parameters. A function value that escapes into an unresolved
-call can be called with values of any type, but the analysis does not see those
-call sites and so does not degrade the function's parameter facts. Consuming
-such a fact to fold a predicate deletes a branch that must be taken at runtime,
-which changes behaviour. Locally-proven facts do not depend on the analysis's
-precision, so the fold is sound without escape analysis.
+Containers are such a route. A function stored in a list, dict, set, vector, or
+struct and fetched back out can be called, so the provenance relation must
+follow values into and out of containers. Every builtin that can move a value
+into or out of a container must be accounted for in `_CONTAINER_FLOW_OPS`; a
+missing entry lets a function that does escape appear not to, which is a
+miscompile.
 
-See [ADR-0029](docs/adr/0029-predicate-fold-locally-proven-only.md).
+A function whose value can reach a call site the analysis cannot resolve has its
+parameters left unconstrained. This includes a function returned to the host,
+because the host may call it with a value of any type.
+
+See [ADR-0035](docs/adr/0035-function-provenance-must-follow-containers.md).
+
+### Predicate folding may consume any fact the analysis reports
+
+`MenaiCFGPredicateFold` folds a type predicate (`none?`, `integer?`, ...) when
+the analysis proves its argument's type, including facts derived from
+parameters, free variables, and call results. This is sound because the
+analysis leaves the parameters of every escaping function unconstrained; see
+the invariant above.
+
+See [ADR-0036](docs/adr/0036-predicate-fold-may-consume-interprocedural-facts.md).
 
 ### Menai is pure — dead code elimination is always safe
 

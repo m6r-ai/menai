@@ -1,7 +1,12 @@
 # ADR-0029: Type-predicate folding is restricted to locally-proven arguments
 
 Date: 2026-09-24  
-Status: Accepted
+Status: Superseded by ADR-0036 (2026-09-29)
+
+The decision to restrict folding to locally-proven facts is superseded: the
+interprocedural facts are now sound (ADR-0035), so the restriction is lifted
+(ADR-0036). The analysis of the gap remains in force, except for the claim that
+it was latent for guard insertion — it was reachable and caused a VM crash.
 
 ## Context
 

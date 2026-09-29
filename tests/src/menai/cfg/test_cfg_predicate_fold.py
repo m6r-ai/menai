@@ -2,13 +2,14 @@
 Tests for MenaiCFGPredicateFold.
 
 Covers:
-  1. A type predicate on a locally-proven value is folded to the taken branch
-     (both the true and the false outcome).
-  2. A predicate on a parameter-derived value is not folded.
-  3. A predicate on a call result is not folded.
-  4. A predicate whose argument's fact is unknown (ANY) is not folded.
-  5. A phi whose incoming values are all locally proven is locally proven; a
-     phi with a parameter incoming is not.
+  1. A type predicate on a proven value is folded to the taken branch (both the
+     true and the false outcome).
+  2. A predicate on a parameter-derived value is folded when the analysis
+     proves the parameter's type, and left alone when it does not.
+  3. A predicate on a call result is folded when the result's type is proven.
+  4. A predicate whose argument's fact is unknown (ANY) or absent is not folded.
+  5. A phi's fact is the join of its incoming values' facts: it is proven when
+     every incoming is, and not otherwise.
   6. A predicate whose result is used outside the branch keeps its instruction
      but the branch is still re-wired.
   7. End-to-end: the deflate prefix-key pattern folds its none? check, and a
@@ -129,13 +130,21 @@ class TestFoldLocallyProven:
         assert entry_new.terminator.target == 2
 
 
-class TestNotFolded:
-    """Predicates whose argument's fact is not locally proven are left alone."""
+class TestInterprocedurallyDerived:
+    """
+    A predicate folds on any proven fact, including one derived from a
+    parameter or a call result.
 
-    def test_parameter_argument_not_folded(self):
+    The interprocedural analysis leaves the parameters of every function that
+    can be reached from a call site it cannot resolve unconstrained, so a fact
+    it reports for a parameter or a call result is sound: no value of another
+    type can reach the argument at runtime.
+    """
+
+    def test_parameter_argument_folded(self):
         """
-        A parameter's fact is interprocedurally derived, so even when the
-        analysis reports a type, the predicate is not folded.
+        entry: %x = param 0; %p = integer?(%x); branch %p → then / else
+        %x is proven integer, so integer? is #t and the branch jumps to then.
         """
         vparam = v("x")
         vp = v("p")
@@ -151,11 +160,14 @@ class TestNotFolded:
         f = func(entry, then, els, params=["x"])
 
         new_f, changed = _fold(f, type_facts={vparam.id: TypeFact(kind="integer")})
-        assert not changed
-        assert isinstance(new_f.blocks[0].terminator, MenaiCFGBranchTerm)
+        assert changed
 
-    def test_call_result_argument_not_folded(self):
-        """A call result's type is not proven locally, so the predicate stays."""
+        entry_new = new_f.blocks[0]
+        assert isinstance(entry_new.terminator, MenaiCFGJumpTerm)
+        assert entry_new.terminator.target == 1
+
+    def test_call_result_argument_folded(self):
+        """A call result proven integer folds the predicate that tests it."""
         vfn = v("fn")
         vcall = v("call")
         vp = v("p")
@@ -172,7 +184,15 @@ class TestNotFolded:
         f = func(entry, then, els)
 
         new_f, changed = _fold(f, type_facts={vcall.id: TypeFact(kind="integer")})
-        assert not changed
+        assert changed
+
+        entry_new = new_f.blocks[0]
+        assert isinstance(entry_new.terminator, MenaiCFGJumpTerm)
+        assert entry_new.terminator.target == 1
+
+
+class TestNotFolded:
+    """Predicates whose argument's fact determines nothing are left alone."""
 
     def test_unknown_fact_not_folded(self):
         """A locally-proven value whose fact is ANY determines nothing."""
@@ -194,12 +214,12 @@ class TestNotFolded:
 
 
 class TestPhiProvenance:
-    """A phi is locally proven only when every incoming value is."""
+    """A phi's fact is the join of its incoming values' facts."""
 
     def test_phi_of_locals_is_folded(self):
         """
         join: %m = phi [%a ← blockA, %b ← blockB]; %p = integer?(%m)
-        Both incoming values are constants, so the phi is locally proven and
+        Both incoming values are constants, so the phi is proven integer and
         the predicate folds.
         """
         va = v("a")
@@ -234,7 +254,11 @@ class TestPhiProvenance:
         assert join_new.terminator.target == 3
 
     def test_phi_with_parameter_incoming_not_folded(self):
-        """A phi with a parameter incoming is not locally proven."""
+        """
+        join: %m = phi [%x ← blockA, %k ← blockB]; %p = integer?(%m)
+        %x is a parameter proven integer and %k is a constant, so the phi is
+        proven integer and the predicate folds.
+        """
         vparam = v("x")
         vconst = v("k")
         vm = v("m")
@@ -260,7 +284,45 @@ class TestPhiProvenance:
         f = func(entry, block_a, block_b, join, then, els, params=["x"])
 
         new_f, changed = _fold(f, type_facts={vparam.id: TypeFact(kind="integer"), vconst.id: TypeFact(kind="integer"), vm.id: TypeFact(kind="integer")})
+        assert changed
+
+        join_new = next(b for b in new_f.blocks if b.id == 2)
+        assert isinstance(join_new.terminator, MenaiCFGJumpTerm)
+        assert join_new.terminator.target == 3
+
+    def test_phi_with_unproven_incoming_not_folded(self):
+        """
+        join: %m = phi [%x ← blockA, %k ← blockB]; %p = integer?(%m)
+        %x is a parameter with no proven type, so the phi is not proven and
+        the predicate stays.
+        """
+        vparam = v("x")
+        vconst = v("k")
+        vm = v("m")
+        vp = v("p")
+        then = block(3, terminator=MenaiCFGReturnTerm(value=v("x")), label="then")
+        els = block(4, terminator=MenaiCFGReturnTerm(value=v("y")), label="else")
+        block_a = block(0, MenaiCFGParamInstr(result=vparam, index=0, param_name="x"), terminator=MenaiCFGJumpTerm(target=2), label="A")
+        block_b = block(1, MenaiCFGConstInstr(result=vconst, value=MenaiInteger(2)), terminator=MenaiCFGJumpTerm(target=2), label="B")
+        join = block(
+            2,
+            MenaiCFGPhiInstr(result=vm, incoming=[(vparam, 0), (vconst, 1)]),
+            MenaiCFGBuiltinInstr(result=vp, op="integer?", args=[vm]),
+            terminator=MenaiCFGBranchTerm(cond=vp, true_block=3, false_block=4),
+            label="join",
+        )
+        vc = v("c")
+        entry = block(
+            9,
+            MenaiCFGConstInstr(result=vc, value=MenaiInteger(0)),
+            terminator=MenaiCFGBranchTerm(cond=vc, true_block=0, false_block=1),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join, then, els, params=["x"])
+
+        new_f, changed = _fold(f, type_facts={vconst.id: TypeFact(kind="integer"), vm.id: ANY})
         assert not changed
+        assert isinstance(next(b for b in new_f.blocks if b.id == 2).terminator, MenaiCFGBranchTerm)
 
 
 class TestPredicateResultUsedElsewhere:
