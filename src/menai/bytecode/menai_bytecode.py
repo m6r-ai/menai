@@ -274,7 +274,7 @@ class Opcode(IntEnum):
     SET_TO_LIST = _op(198, 1)           # r_dest = (set->list r_src0)
 
     # Struct operations
-    MAKE_STRUCT = _op(199, 2)           # MAKE_STRUCT type_idx arity — pops arity field regs, pushes MenaiStruct
+    MAKE_STRUCT = _op(199, 2)           # r_dest = MAKE_STRUCT src0, src1 — slot holding the struct type descriptor, field count
     STRUCT_P = _op(200, 1)              # r_dest = (struct? r_src0)
     STRUCT_IS_INSTANCE_P = _op(201, 2)  # r_dest = (struct-is-instance? r_src0 r_src1) — tag check, src0=struct, src1=structtype
     STRUCT_GET = _op(202, 2)            # r_dest = (struct-get r_src0 field_sym) - field access by symbol name
@@ -598,6 +598,15 @@ class Instruction:
 
         if opcode == Opcode.MAKE_CLOSURE:
             return f"{rn(self.dest)} = MAKE_CLOSURE x{self.src0}"
+
+        if opcode in (Opcode.MAKE_LIST, Opcode.MAKE_SET, Opcode.MAKE_VECTOR):
+            return f"{rn(self.dest)} = {name} {rn(self.src0)}, {self.src1}"
+
+        if opcode == Opcode.MAKE_DICT:
+            return f"{rn(self.dest)} = MAKE_DICT {rn(self.src0)}, {self.src1}"
+
+        if opcode == Opcode.MAKE_STRUCT:
+            return f"{rn(self.dest)} = MAKE_STRUCT {rn(self.src0)}, {self.src1}"
 
         if opcode == Opcode.PATCH_CLOSURE:
             return f"PATCH_CLOSURE {rn(self.src0)}, {self.src1}, {rn(self.src2)}"
