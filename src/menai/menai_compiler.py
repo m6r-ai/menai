@@ -69,25 +69,25 @@ class MenaiCompiler:
         Args:
             module_loader: Optional module loader for resolving imports.
         """
-        self.module_loader = module_loader
+        self._module_loader = module_loader
 
-        self.lexer = MenaiLexer()
+        self._lexer = MenaiLexer()
 
-        self.ast_builder = MenaiASTBuilder()
-        self.ast_semantic_analyzer = MenaiASTSemanticAnalyzer()
-        self.ast_module_resolver = MenaiASTModuleResolver(module_loader)
-        self.ast_prelude_injector = MenaiASTPreludeInjector()
-        self.ast_desugarer = MenaiASTDesugarer()
+        self._ast_builder = MenaiASTBuilder()
+        self._ast_semantic_analyzer = MenaiASTSemanticAnalyzer()
+        self._ast_module_resolver = MenaiASTModuleResolver(module_loader)
+        self._ast_prelude_injector = MenaiASTPreludeInjector()
+        self._ast_desugarer = MenaiASTDesugarer()
         self.ast_passes: list[MenaiASTOptimizationPass] = [
             MenaiASTConstantFolder(),
         ]
-        self.ir_builder = MenaiIRBuilder()
+        self._ir_builder = MenaiIRBuilder()
         self.ir_passes: list[MenaiIROptimizationPass] = [
             MenaiIRLetrecToLoop(),
             MenaiIRInliner(),
             MenaiIROptimizer(),
         ]
-        self.cfg_builder = MenaiCFGBuilder()
+        self._cfg_builder = MenaiCFGBuilder()
         self.cfg_passes: list[MenaiCFGOptimizationPass] = [
             MenaiCFGCollapsePhiChains(),
             MenaiCFGBranchConstProp(),
@@ -101,8 +101,8 @@ class MenaiCompiler:
             MenaiCFGDeadCaptures(),
             MenaiCFGOrderExceptionBlocks(),
         ]
-        self.vcode_builder = MenaiVCodeBuilder()
-        self.bytecode_builder = MenaiBytecodeBuilder()
+        self._vcode_builder = MenaiVCodeBuilder()
+        self._bytecode_builder = MenaiBytecodeBuilder()
 
     def compile_to_resolved_ast(
         self, source: str, source_file: str = "", is_program: bool = True
@@ -129,14 +129,14 @@ class MenaiCompiler:
         Returns:
             Fully resolved AST (all imports replaced with module ASTs)
         """
-        tokens = self.lexer.lex(source)
-        ast = self.ast_builder.build(tokens, source, source_file)
-        checked_ast = self.ast_semantic_analyzer.analyze(ast, source)
+        tokens = self._lexer.lex(source)
+        ast = self._ast_builder.build(tokens, source, source_file)
+        checked_ast = self._ast_semantic_analyzer.analyze(ast, source)
         if is_program:
-            resolved_ast = self.ast_module_resolver.resolve_program(checked_ast)
+            resolved_ast = self._ast_module_resolver.resolve_program(checked_ast)
 
         else:
-            resolved_ast = self.ast_module_resolver.resolve(checked_ast)
+            resolved_ast = self._ast_module_resolver.resolve(checked_ast)
 
         return resolved_ast
 
@@ -163,14 +163,56 @@ class MenaiCompiler:
             Compiled bytecode ready for execution
         """
         resolved_ast = self.compile_to_resolved_ast(source, name)
+        cfg = self._compile_to_cfg(resolved_ast, inject)
 
+        vcode = self._vcode_builder.build(cfg)
+        bytecode = self._bytecode_builder.build(vcode, name)
+        return bytecode
+
+    def compile_to_cfg(
+        self,
+        source: str,
+        inject: tuple[str, MenaiValue] | None = None,
+    ) -> MenaiCFGFunction:
+        """
+        Compile Menai source code to a CFG, stopping before VCode.
+
+        This runs the complete pipeline up to and including the CFG
+        optimisation passes.  It is the seam for inspecting the optimised
+        CFG without lowering it further.
+
+        Args:
+            source: Menai source code as a string
+            inject: Optional (binding name, value) pair, as for compile.
+
+        Returns:
+            The optimised CFG for the program
+        """
+        resolved_ast = self.compile_to_resolved_ast(source)
+        return self._compile_to_cfg(resolved_ast, inject)
+
+    def _compile_to_cfg(
+        self,
+        resolved_ast: MenaiASTNode,
+        inject: tuple[str, MenaiValue] | None,
+    ) -> MenaiCFGFunction:
+        """
+        Run the desugar-through-CFG stages on a resolved AST.
+
+        Args:
+            resolved_ast: A fully resolved AST from compile_to_resolved_ast.
+            inject: Optional (binding name, value) pair, as for compile.
+
+        Returns:
+            The optimised CFG for the program
+        """
         # The user program is desugared on its own and then wrapped in the
         # prelude's cached desugared bindings.  The prelude is identical for
         # every compilation, so desugaring it once and reusing the result
         # avoids re-desugaring it on every compile.  The program's temporary
         # counter starts above the prelude's so generated names cannot collide.
-        self.ast_desugarer.temp_counter = MenaiASTPreludeInjector.prelude_temp_count()
-        desugared_program = self.ast_desugarer.desugar(resolved_ast)
+        self._ast_desugarer.temp_counter = MenaiASTPreludeInjector.prelude_temp_count()
+        desugared_program = self._ast_desugarer.desugar(resolved_ast)
 
         # The host binding sits above the prelude and below the program, so the
         # program sees both and the host binding shadows nothing in the prelude.
@@ -182,16 +224,14 @@ class MenaiCompiler:
         for ast_pass in self.ast_passes:
             desugared_ast = ast_pass.optimize(desugared_ast)
 
-        ir = self.ir_builder.build(desugared_ast)
+        ir = self._ir_builder.build(desugared_ast)
 
         ir = self._run_optimization_passes(ir, self.ir_passes)
 
-        cfg = self.cfg_builder.build(ir)
+        cfg = self._cfg_builder.build(ir)
         cfg = self._run_cfg_passes(cfg)
 
-        vcode = self.vcode_builder.build(cfg)
-        bytecode = self.bytecode_builder.build(vcode, name)
-        return bytecode
+        return cfg
 
     def _run_cfg_passes(self, cfg: MenaiCFGFunction) -> MenaiCFGFunction:
         """

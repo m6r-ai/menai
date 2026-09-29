@@ -17,7 +17,6 @@ Covers:
 """
 
 from menai.cfg.menai_cfg import MenaiCFGSwitchTerm
-from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext
 from menai.menai_compiler import MenaiCompiler
 from menai.menai import Menai
 from menai.menai_value import MenaiList, MenaiSymbol
@@ -26,26 +25,7 @@ from menai.menai_value import MenaiList, MenaiSymbol
 def _build_cfg(source: str):
     """Compile source through the full CFG pass pipeline and return the CFG."""
     compiler = MenaiCompiler()
-    resolved = compiler.compile_to_resolved_ast(source, "<test>")
-    desugared = compiler.ast_desugarer.desugar(resolved)
-    for p in compiler.ast_passes:
-        desugared = p.optimize(desugared)
-    ir = compiler.ir_builder.build(desugared)
-    for p in compiler.ir_passes:
-        ir, _ = p.optimize(ir)
-    return compiler.cfg_builder.build(ir), compiler
-
-
-def _run_passes(cfg):
-    compiler = MenaiCompiler()
-    context = MenaiCFGContext()
-    for p in compiler.cfg_passes:
-        while True:
-            cfg, changed = p.optimize(cfg, context)
-            if not changed:
-                break
-
-    return cfg
+    return compiler.compile_to_cfg(source)
 
 
 CHAIN_SRC = """
@@ -97,14 +77,12 @@ class TestChainToSwitch:
 
     def test_cascading_chain_becomes_switch(self):
         """A four-arm integer if-chain produces exactly one switch terminator."""
-        cfg, _ = _build_cfg(CHAIN_SRC)
-        cfg = _run_passes(cfg)
+        cfg = _build_cfg(CHAIN_SRC)
         assert _count_switches(cfg) == 1
 
     def test_switch_shape(self):
         """The switch spans literals 1..4 with the correct default target."""
-        cfg, _ = _build_cfg(CHAIN_SRC)
-        cfg = _run_passes(cfg)
+        cfg = _build_cfg(CHAIN_SRC)
 
         for block in cfg.blocks:
             term = block.terminator
@@ -118,14 +96,12 @@ class TestChainToSwitch:
 
     def test_sparse_chain_not_transformed(self):
         """A chain spanning 1 and 1000 is too sparse to tabulate."""
-        cfg, _ = _build_cfg(SPARSE_SRC)
-        cfg = _run_passes(cfg)
+        cfg = _build_cfg(SPARSE_SRC)
         assert _count_switches(cfg) == 0
 
     def test_single_arm_not_transformed(self):
         """A single integer=? test is not a chain and is left alone."""
-        cfg, _ = _build_cfg(SINGLE_SRC)
-        cfg = _run_passes(cfg)
+        cfg = _build_cfg(SINGLE_SRC)
         assert _count_switches(cfg) == 0
 
 
