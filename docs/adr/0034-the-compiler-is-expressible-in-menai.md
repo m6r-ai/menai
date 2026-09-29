@@ -17,56 +17,35 @@ modify the compiler using Menai's own machinery.
 
 The goal imposes a standard on the Python implementation, because a component
 that cannot be expressed as a pure function over values can never be ported.
-The standard has two parts:
-
-- **Models are values.** A data structure passed between phases must be
-  immutable, so that a phase cannot alter its input.
-- **Transformations are pure functions.** A phase takes a value and returns a
-  new value. It must not mutate its input, and it must not depend on hidden
-  state that survives between calls.
-
-ADR-0033 applied this standard to the CFG. This ADR states it for the whole
-compiler and records where each layer currently stands, so the remaining work
-is visible rather than rediscovered.
 
 ## Decision
 
-Every compiler phase is a pure function over immutable values. This is the
-standard the whole compiler holds itself to, not a CFG-specific rule.
+Every compiler phase is a pure function over immutable values:
 
-Conformance is not uniform today. The current state, verified by inspection and
-by running each phase against a structural snapshot of its input:
+- **Models are values.** A data structure passed between phases is immutable,
+  so a phase cannot alter its input.
+- **Transformations are pure functions.** A phase takes a value and returns a
+  new value. It does not mutate its input, and it does not depend on hidden
+  state that survives between calls.
 
-| Layer | Model | Transformations |
-|-------|-------|-----------------|
-| AST | frozen | pure |
-| IR | mutable | pure |
-| CFG | frozen | pure |
-| VCode | mostly mutable (only the register type is frozen) | pure |
-| Bytecode | mutable | pure |
-| Builders (IR, CFG, VCode, bytecode) | n/a | pure |
-| Slot allocator | n/a | pure |
-| Lexer | n/a | **stateful** |
-| Parser | n/a | **stateful** |
+This is the standard the whole compiler holds itself to, not a rule for one
+layer. It applies to the representations (AST, IR, CFG, VCode, bytecode), to
+the builders and analyses that transform them, and to the front end.
 
-Two things follow from this table.
+### Enforcing it
 
-First, the property that actually matters for Menai-expressibility — that
-transformations are pure functions of their input — already holds everywhere
-except the lexer and the parser. Every pass and every builder takes a value and
-returns a result without mutating it.
+A model's sequence fields are declared as tuples and every construction site
+passes a tuple, so a model's contents cannot be mutated in place. The type
+checker enforces this: a list passed where a tuple is declared is a static
+error. Each layer also has an immutability test that snapshots a model, runs a
+phase over it, and asserts the input is unchanged.
 
-Second, immutability is enforced by the model in only two of the five
-representations. The IR, VCode, and bytecode models are immutable by convention
-rather than by construction: nothing prevents a future pass from mutating them.
-The AST and CFG show the intended pattern.
-
-The remaining work is therefore:
-
-- Freeze the IR, VCode, and bytecode models, following the AST and CFG pattern.
-- Make the lexer and parser pure. Both are classic stateful designs: the lexer
-  holds a cursor and a token accumulator as instance state, and the parser
-  holds a position cursor. These are redesigns, not mechanical changes.
+Freezing the models — making a frozen dataclass, so that rebinding a field
+raises — was considered and rejected. It is not needed for the invariant the
+tuples provide, and it cannot be applied conditionally: the type checker
+requires the `frozen` argument to be a literal, so a model is either always
+frozen or never. Always freezing costs roughly four times as much to construct
+as a plain dataclass, and the compiler constructs a great many of them.
 
 ## Relationship to other ADRs
 
@@ -75,19 +54,15 @@ CFG an immutable value. Both are instances of this standard, adopted before the
 general principle was articulated. This ADR does not supersede them; it is the
 general statement they are instances of.
 
-ADR-0005's rule is a rule for passes, and it holds: the IR passes return new
-trees. It is not enforced by the IR model, which remains mutable. Freezing the
-IR model would make the rule structural, as it already is for the AST and CFG.
-
 ## Alternatives considered
 
 ### Treat immutability as a CFG-specific fix
 
 The CFG refactor (ADR-0033) could be regarded as a one-off, with no general
-standard. This would leave the IR, VCode, and bytecode models mutable by
-convention, and would leave the asymmetry between layers unexplained: a reader
-would have no way to tell whether the AST being frozen and the IR not was a
-decision or an accident. Rejected.
+standard. This would leave the other models mutable by convention and the
+asymmetry between layers unexplained: a reader would have no way to tell
+whether one layer being frozen and another not was a decision or an accident.
+Rejected.
 
 ### Require purity only of the optimisation passes
 
@@ -96,14 +71,23 @@ standard to them would leave the builders and the front end unconstrained, and
 those are the components that must be ported for the compiler to be expressible
 in Menai. Rejected.
 
-### Enforce the standard with a type system rather than convention
+### Coerce sequence fields to tuples during construction
 
-Python cannot express "this function does not mutate its argument". The
-practical enforcement is frozen dataclasses, which make mutation a runtime
-error, plus tests that snapshot a phase's input and assert it is unchanged.
-This is what the AST and CFG layers do, and what the remaining layers should
-adopt. A stricter guarantee would require a different implementation language,
-which is the very thing this ADR is working towards.
+A `__post_init__` that converts a model's sequence fields to tuples would make
+the invariant hold however the model is constructed, rather than relying on
+every construction site to pass a tuple. It was rejected on measured cost: it
+roughly doubles the cost of constructing a model, and it does not remove the
+need for the tests. Declaring the fields as tuples and letting the type checker
+find the construction sites achieves the same result at no runtime cost.
+
+### Freeze the models
+
+Making each model a frozen dataclass would make rebinding a field raise, which
+the tuple fields do not prevent. It was rejected because it cannot be applied
+conditionally — the type checker requires the `frozen` argument to be a literal
+— so it would cost roughly four times as much to construct a model on every
+compilation, in exchange for catching a mistake that the immutability tests
+already catch.
 
 ## Consequences
 
@@ -111,17 +95,17 @@ which is the very thing this ADR is working towards.
 
 - The standard is explicit, so a new phase's author knows what is required and
   a reviewer knows what to check.
-- The existing asymmetries between layers become legible: the table states
-  which layers conform and which do not.
-- The remaining work is enumerated, so it can be planned and tracked.
-- The property that matters most — pure transformations — is already met, so
-  the remaining work is narrower than the goal might suggest.
+- The CFG refactor and the IR tree immutability rule become instances of a
+  single stated principle rather than isolated decisions.
+- The property that matters most for Menai-expressibility — that
+  transformations are pure functions of their input — is achievable without
+  paying a cost on every compilation, because freezing is a verification-time
+  check rather than a runtime one.
 
 ### Negative
 
-- Freezing the IR, VCode, and bytecode models touches every construction site
-  in those layers, as the CFG change did.
-- Making the lexer and parser pure is a genuine redesign of stateful algorithms,
-  and is the largest remaining piece of work.
-- The standard is enforced by convention and tests, not by the type system, so
-  a new phase can violate it without the compiler complaining.
+- Rebinding a model's field is not prevented, only mutating its contents. A
+  phase that reassigns a field of a model it was handed is caught by the
+  immutability tests rather than by the model itself.
+- The standard is enforced by the type checker and the tests, not by the model,
+  so a phase written in a way the type checker cannot see can still violate it.

@@ -52,7 +52,7 @@ class MenaiIRLet:
 
     Bindings are (name, value_plan) pairs.
     """
-    bindings: list[tuple[str, 'MenaiIRExpr']]  # (name, value_plan)
+    bindings: tuple[tuple[str, 'MenaiIRExpr'], ...]  # (name, value_plan)
     body_plan: 'MenaiIRExpr'
     in_tail_position: bool
 
@@ -66,7 +66,7 @@ class MenaiIRLetrec:
     is guaranteed to be a single fully-mutually-recursive group of lambdas.
     All non-recursive and non-lambda bindings have been hoisted to let forms.
     """
-    bindings: list[tuple[str, 'MenaiIRExpr']]  # (name, value_plan)
+    bindings: tuple[tuple[str, 'MenaiIRExpr'], ...]  # (name, value_plan)
     body_plan: 'MenaiIRExpr'
     in_tail_position: bool
 
@@ -77,12 +77,12 @@ class MenaiIRLambda:
     Plan for compiling a lambda expression.
 
     """
-    params: list[str]
+    params: tuple[str, ...]
     body_plan: 'MenaiIRExpr'
-    sibling_free_vars: list[str]       # Names captured from the immediately enclosing letrec group
-    sibling_free_var_plans: list['MenaiIRExpr']  # Plans for loading sibling captures
-    outer_free_vars: list[str]         # Names captured from outside the enclosing letrec group
-    outer_free_var_plans: list['MenaiIRExpr']    # Plans for loading outer captures
+    sibling_free_vars: tuple[str, ...]       # Names captured from the immediately enclosing letrec group
+    sibling_free_var_plans: tuple['MenaiIRExpr', ...]  # Plans for loading sibling captures
+    outer_free_vars: tuple[str, ...]         # Names captured from outside the enclosing letrec group
+    outer_free_var_plans: tuple['MenaiIRExpr', ...]    # Plans for loading outer captures
     param_count: int
     is_variadic: bool  # True if last param is a rest parameter
     binding_name: str | None = None  # Name if bound in let/letrec (for recursion detection)
@@ -94,7 +94,7 @@ class MenaiIRLambda:
 class MenaiIRCall:
     """Plan for compiling a function call."""
     func_plan: 'MenaiIRExpr'
-    arg_plans: list['MenaiIRExpr']
+    arg_plans: tuple['MenaiIRExpr', ...]
     is_tail_call: bool
     is_builtin: bool
     builtin_name: str | None  # Builtin name if is_builtin=True, else None
@@ -110,7 +110,7 @@ class MenaiIRBuildList:
     The VM codegen lowers it to LOAD_EMPTY_LIST followed by N LIST_APPEND
     register ops, accumulating the result in a single register slot.
     """
-    element_plans: list['MenaiIRExpr']
+    element_plans: tuple['MenaiIRExpr', ...]
 
 
 @dataclass
@@ -135,7 +135,7 @@ class MenaiIRBuildDict:
     (via MenaiASTDict).  The VM codegen lowers it to MAKE_DICT, staging the
     pairs into the outgoing zone and allocating the dict in a single call.
     """
-    pair_plans: list[tuple['MenaiIRExpr', 'MenaiIRExpr']]
+    pair_plans: tuple[tuple['MenaiIRExpr', 'MenaiIRExpr'], ...]
 
 
 @dataclass
@@ -150,7 +150,7 @@ class MenaiIRBuildSet:
     outgoing zone and allocating the set in a single call.  Duplicate elements
     are resolved at runtime by MAKE_SET.
     """
-    element_plans: list['MenaiIRExpr']
+    element_plans: tuple['MenaiIRExpr', ...]
 
 
 @dataclass
@@ -162,7 +162,7 @@ class MenaiIRBuildVector:
     MAKE_VECTOR, staging element values into the outgoing zone and
     allocating the vector in a single call.
     """
-    element_plans: list['MenaiIRExpr']
+    element_plans: tuple['MenaiIRExpr', ...]
 
 
 @dataclass
@@ -176,7 +176,7 @@ class MenaiIRBuildStruct:
     new MenaiStruct instance.
     """
     struct_type: MenaiStructType
-    field_plans: list['MenaiIRExpr']
+    field_plans: tuple['MenaiIRExpr', ...]
 
 
 @dataclass
@@ -194,8 +194,8 @@ class MenaiIRLoop:
     loop params become phi nodes in a loop-entry block and each MenaiIRRecur
     becomes a MenaiCFGSelfLoopTerm back-edge.
     """
-    params: list[str]
-    init_plans: list['MenaiIRExpr']
+    params: tuple[str, ...]
+    init_plans: tuple['MenaiIRExpr', ...]
     body_plan: 'MenaiIRExpr'
     in_tail_position: bool
 
@@ -209,7 +209,7 @@ class MenaiIRRecur:
     builder lowers this to a MenaiCFGSelfLoopTerm whose param_vals are the
     loop's phi results and whose target is the loop-entry block.
     """
-    arg_plans: list['MenaiIRExpr']
+    arg_plans: tuple['MenaiIRExpr', ...]
     is_tail_call: bool
 
 

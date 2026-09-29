@@ -96,14 +96,14 @@ class TestLoopNodeWalks:
         loop = _make_loop()
         result, _ = MenaiIRInliner().optimize(loop)
         assert isinstance(result, MenaiIRLoop)
-        assert result.params == ["n"]
+        assert result.params == ("n",)
 
     def test_optimizer_walks_loop(self):
         """The optimizer traverses a loop without raising and preserves it."""
         loop = _make_loop()
         result, _ = MenaiIROptimizer().optimize(loop)
         assert isinstance(result, MenaiIRLoop)
-        assert result.params == ["n"]
+        assert result.params == ("n",)
 
     def test_use_counter_walks_loop(self):
         """The use counter traverses a loop and counts its param uses."""

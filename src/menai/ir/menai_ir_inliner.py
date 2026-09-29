@@ -151,7 +151,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         if isinstance(ir, MenaiIRRecur):
             return MenaiIRRecur(
-                arg_plans=[self._opt(a, scope_stack, letrec_names) for a in ir.arg_plans],
+                arg_plans=tuple(self._opt(a, scope_stack, letrec_names) for a in ir.arg_plans),
                 is_tail_call=ir.is_tail_call,
             )
 
@@ -162,29 +162,29 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         if isinstance(ir, MenaiIRBuildList):
             return MenaiIRBuildList(
-                element_plans=[self._opt(e, scope_stack, letrec_names) for e in ir.element_plans],
+                element_plans=tuple(self._opt(e, scope_stack, letrec_names) for e in ir.element_plans),
             )
 
         if isinstance(ir, MenaiIRBuildDict):
             return MenaiIRBuildDict(
-                pair_plans=[(self._opt(k, scope_stack, letrec_names), self._opt(v, scope_stack, letrec_names))
-                            for k, v in ir.pair_plans],
+                pair_plans=tuple((self._opt(k, scope_stack, letrec_names), self._opt(v, scope_stack, letrec_names))
+                                 for k, v in ir.pair_plans),
             )
 
         if isinstance(ir, MenaiIRBuildSet):
             return MenaiIRBuildSet(
-                element_plans=[self._opt(e, scope_stack, letrec_names) for e in ir.element_plans],
+                element_plans=tuple(self._opt(e, scope_stack, letrec_names) for e in ir.element_plans),
             )
 
         if isinstance(ir, MenaiIRBuildVector):
             return MenaiIRBuildVector(
-                element_plans=[self._opt(e, scope_stack, letrec_names) for e in ir.element_plans],
+                element_plans=tuple(self._opt(e, scope_stack, letrec_names) for e in ir.element_plans),
             )
 
         if isinstance(ir, MenaiIRBuildStruct):
             return MenaiIRBuildStruct(
                 struct_type=ir.struct_type,
-                field_plans=[self._opt(f, scope_stack, letrec_names) for f in ir.field_plans],
+                field_plans=tuple(self._opt(f, scope_stack, letrec_names) for f in ir.field_plans),
             )
 
         if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList, MenaiIRError)):
@@ -219,7 +219,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         opt_body = self._opt(ir.body_plan, child_stack, set())
 
         return MenaiIRLet(
-            bindings=opt_bindings,
+            bindings=tuple(opt_bindings),
             body_plan=opt_body,
             in_tail_position=ir.in_tail_position,
         )
@@ -251,7 +251,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         opt_body = self._opt(ir.body_plan, child_stack, names)
 
         return MenaiIRLetrec(
-            bindings=opt_bindings,
+            bindings=tuple(opt_bindings),
             body_plan=opt_body,
             in_tail_position=ir.in_tail_position,
         )
@@ -321,7 +321,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         return MenaiIRCall(
             func_plan=self._opt(ir.func_plan, scope_stack, letrec_names),
-            arg_plans=[self._opt(a, scope_stack, letrec_names) for a in ir.arg_plans],
+            arg_plans=tuple(self._opt(a, scope_stack, letrec_names) for a in ir.arg_plans),
             is_tail_call=ir.is_tail_call,
             is_builtin=ir.is_builtin,
             builtin_name=ir.builtin_name,
@@ -341,7 +341,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         position is a loop param must not resolve to an inlinable target.  A
         call to a lambda bound outside the loop still resolves normally.
         """
-        opt_init = [self._opt(init, scope_stack, letrec_names) for init in ir.init_plans]
+        opt_init = tuple(self._opt(init, scope_stack, letrec_names) for init in ir.init_plans)
         opt_body = self._opt(ir.body_plan, scope_stack, letrec_names)
         return MenaiIRLoop(
             params=ir.params,
@@ -433,7 +433,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def _inline(
         self,
         target: MenaiIRLambda,
-        arg_plans: list[MenaiIRExpr],
+        arg_plans: tuple[MenaiIRExpr, ...],
         is_tail_call: bool,
     ) -> MenaiIRExpr:
         """
@@ -462,7 +462,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             rest_args = arg_plans[min_arity:]
             param_map[target.params[min_arity]] = self._bind_argument(
                 target.params[min_arity],
-                MenaiIRBuildList(element_plans=rest_args),
+                MenaiIRBuildList(element_plans=tuple(rest_args)),
                 target.body_plan,
                 captured_bindings,
             )
@@ -492,7 +492,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         if captured_bindings:
             return MenaiIRLet(
-                bindings=captured_bindings,
+                bindings=tuple(captured_bindings),
                 body_plan=result,
                 in_tail_position=is_tail_call,
             )
@@ -783,7 +783,7 @@ def _substitute(
     if isinstance(ir, MenaiIRCall):
         return MenaiIRCall(
             func_plan=_substitute(ir.func_plan, param_map, shadowed),
-            arg_plans=[_substitute(a, param_map, shadowed) for a in ir.arg_plans],
+            arg_plans=tuple(_substitute(a, param_map, shadowed) for a in ir.arg_plans),
             is_tail_call=ir.is_tail_call,
             is_builtin=ir.is_builtin,
             builtin_name=ir.builtin_name,
@@ -796,42 +796,42 @@ def _substitute(
 
     if isinstance(ir, MenaiIRBuildList):
         return MenaiIRBuildList(
-            element_plans=[_substitute(e, param_map, shadowed) for e in ir.element_plans],
+            element_plans=tuple(_substitute(e, param_map, shadowed) for e in ir.element_plans),
         )
 
     if isinstance(ir, MenaiIRBuildDict):
         return MenaiIRBuildDict(
-            pair_plans=[(_substitute(k, param_map, shadowed), _substitute(v, param_map, shadowed))
-                        for k, v in ir.pair_plans],
+            pair_plans=tuple((_substitute(k, param_map, shadowed), _substitute(v, param_map, shadowed))
+                             for k, v in ir.pair_plans),
         )
 
     if isinstance(ir, MenaiIRBuildSet):
         return MenaiIRBuildSet(
-            element_plans=[_substitute(e, param_map, shadowed) for e in ir.element_plans],
+            element_plans=tuple(_substitute(e, param_map, shadowed) for e in ir.element_plans),
         )
 
     if isinstance(ir, MenaiIRBuildVector):
         return MenaiIRBuildVector(
-            element_plans=[_substitute(e, param_map, shadowed) for e in ir.element_plans],
+            element_plans=tuple(_substitute(e, param_map, shadowed) for e in ir.element_plans),
         )
 
     if isinstance(ir, MenaiIRBuildStruct):
         return MenaiIRBuildStruct(
             struct_type=ir.struct_type,
-            field_plans=[_substitute(f, param_map, shadowed) for f in ir.field_plans],
+            field_plans=tuple(_substitute(f, param_map, shadowed) for f in ir.field_plans),
         )
 
     if isinstance(ir, MenaiIRLoop):
         return MenaiIRLoop(
             params=ir.params,
-            init_plans=[_substitute(init, param_map, shadowed) for init in ir.init_plans],
+            init_plans=tuple(_substitute(init, param_map, shadowed) for init in ir.init_plans),
             body_plan=_substitute(ir.body_plan, param_map, shadowed | set(ir.params)),
             in_tail_position=ir.in_tail_position,
         )
 
     if isinstance(ir, MenaiIRRecur):
         return MenaiIRRecur(
-            arg_plans=[_substitute(a, param_map, shadowed) for a in ir.arg_plans],
+            arg_plans=tuple(_substitute(a, param_map, shadowed) for a in ir.arg_plans),
             is_tail_call=ir.is_tail_call,
         )
 
@@ -848,10 +848,10 @@ def _substitute_let(
     binding_names = {name for name, _ in ir.bindings}
 
     values_shadowed = shadowed | binding_names if is_letrec else shadowed
-    opt_bindings = [
+    opt_bindings = tuple(
         (name, _substitute(value, param_map, values_shadowed))
         for name, value in ir.bindings
-    ]
+    )
 
     if is_letrec:
         opt_body = _substitute(ir.body_plan, param_map, shadowed | binding_names)

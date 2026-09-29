@@ -121,7 +121,7 @@ class TestConvertible:
         result, changed = MenaiIRLetrecToLoop().optimize(letrec)
         assert changed is True
         assert isinstance(result, MenaiIRLoop)
-        assert result.params == ["n"]
+        assert result.params == ("n",)
         assert len(result.init_plans) == 1
         assert result.in_tail_position is True
 

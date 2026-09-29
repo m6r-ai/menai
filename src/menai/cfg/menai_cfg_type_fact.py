@@ -70,7 +70,7 @@ _VALUE_TYPE_MAP = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass
 class TypeFact:
     """
     What is statically known about the type of an SSA value.

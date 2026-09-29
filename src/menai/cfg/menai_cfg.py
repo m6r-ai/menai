@@ -448,7 +448,7 @@ MenaiCFGTerminator = (  # pylint: disable=invalid-name
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiCFGBlock:
     """
     A basic block: a maximal straight-line sequence of instructions with a
@@ -487,7 +487,7 @@ class MenaiCFGBlock:
         return "\n".join(lines)
 
 
-@dataclass(frozen=True)
+@dataclass
 class MenaiCFGFunction:
     """
     The CFG for a single lambda (or the top-level module body).

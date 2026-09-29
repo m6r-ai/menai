@@ -141,8 +141,8 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
             assert lam is not None
             new_body = self._convert_body(lam.body_plan, name)
             return MenaiIRLoop(
-                params=list(lam.params),
-                init_plans=init_args,
+                params=tuple(lam.params),
+                init_plans=tuple(init_args),
                 body_plan=new_body,
                 in_tail_position=ir.in_tail_position,
             ), True
@@ -159,7 +159,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
         changed = changed or c
 
         return MenaiIRLetrec(
-            bindings=opt_bindings,
+            bindings=tuple(opt_bindings),
             body_plan=opt_body,
             in_tail_position=ir.in_tail_position,
         ), changed
@@ -265,7 +265,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
         if loop_name is not None and not ir.is_builtin:
             if isinstance(ir.func_plan, MenaiIRVariable) and ir.func_plan.name == loop_name:
                 return MenaiIRRecur(
-                    arg_plans=list(ir.arg_plans),
+                    arg_plans=tuple(ir.arg_plans),
                     is_tail_call=ir.is_tail_call,
                 ), True
 
@@ -279,7 +279,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
 
         return MenaiIRCall(
             func_plan=opt_func,
-            arg_plans=opt_args,
+            arg_plans=tuple(opt_args),
             is_tail_call=ir.is_tail_call,
             is_builtin=ir.is_builtin,
             builtin_name=ir.builtin_name,
@@ -298,7 +298,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
         changed = changed or c
 
         return MenaiIRLet(
-            bindings=opt_bindings,
+            bindings=tuple(opt_bindings),
             body_plan=opt_body,
             in_tail_position=ir.in_tail_position,
         ), changed
@@ -354,7 +354,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
 
         return MenaiIRLoop(
             params=ir.params,
-            init_plans=opt_init,
+            init_plans=tuple(opt_init),
             body_plan=opt_body,
             in_tail_position=ir.in_tail_position,
         ), changed
@@ -368,7 +368,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
             opt_elems.append(opt)
             changed = changed or c
 
-        return MenaiIRBuildList(element_plans=opt_elems), changed
+        return MenaiIRBuildList(element_plans=tuple(opt_elems)), changed
 
     def _opt_build_dict(self, ir: MenaiIRBuildDict, loop_name: str | None) -> tuple[MenaiIRExpr, bool]:
         """Walk a dict literal, passing loop_name through to its keys and values."""
@@ -380,7 +380,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
             opt_pairs.append((opt_k, opt_v))
             changed = changed or c1 or c2
 
-        return MenaiIRBuildDict(pair_plans=opt_pairs), changed
+        return MenaiIRBuildDict(pair_plans=tuple(opt_pairs)), changed
 
     def _opt_build_set(self, ir: MenaiIRBuildSet, loop_name: str | None) -> tuple[MenaiIRExpr, bool]:
         """Walk a set literal, passing loop_name through to its elements."""
@@ -391,7 +391,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
             opt_elems.append(opt)
             changed = changed or c
 
-        return MenaiIRBuildSet(element_plans=opt_elems), changed
+        return MenaiIRBuildSet(element_plans=tuple(opt_elems)), changed
 
     def _opt_build_vector(self, ir: MenaiIRBuildVector, loop_name: str | None) -> tuple[MenaiIRExpr, bool]:
         """Walk a vector literal, passing loop_name through to its elements."""
@@ -402,7 +402,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
             opt_elems.append(opt)
             changed = changed or c
 
-        return MenaiIRBuildVector(element_plans=opt_elems), changed
+        return MenaiIRBuildVector(element_plans=tuple(opt_elems)), changed
 
     def _opt_build_struct(self, ir: MenaiIRBuildStruct, loop_name: str | None) -> tuple[MenaiIRExpr, bool]:
         """Walk a struct constructor, passing loop_name through to its fields."""
@@ -413,7 +413,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
             opt_fields.append(opt)
             changed = changed or c
 
-        return MenaiIRBuildStruct(struct_type=ir.struct_type, field_plans=opt_fields), changed
+        return MenaiIRBuildStruct(struct_type=ir.struct_type, field_plans=tuple(opt_fields)), changed
 
 
 def _nested_lambda_references_name(ir: MenaiIRExpr, name: str) -> bool:

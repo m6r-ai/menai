@@ -56,7 +56,7 @@ def _builtin(name: str) -> MenaiIRVariable:
 def _builtin_call(name: str, args: list, tail: bool = False) -> MenaiIRCall:
     return MenaiIRCall(
         func_plan=_builtin('$' + name),
-        arg_plans=args,
+        arg_plans=tuple(args),
         is_tail_call=tail,
         is_builtin=True,
         builtin_name=name,
@@ -66,7 +66,7 @@ def _builtin_call(name: str, args: list, tail: bool = False) -> MenaiIRCall:
 def _user_call(func: MenaiIRVariable, args: list, tail: bool = False) -> MenaiIRCall:
     return MenaiIRCall(
         func_plan=func,
-        arg_plans=args,
+        arg_plans=tuple(args),
         is_tail_call=tail,
         is_builtin=False,
         builtin_name=None,
@@ -88,20 +88,20 @@ class TestStaleOuterFreeVarPruning:
     def test_single_stale_outer_free_var_pruned(self):
         """Lambda captures 'unused' and 'used'; only 'used' survives."""
         lam = MenaiIRLambda(
-            params=['x'],
+            params=('x',),
             body_plan=MenaiIRReturn(
                 value_plan=_builtin_call('integer+', [_local('x'), _local('used')])
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=['used', 'unused'],
-            outer_free_var_plans=[_local('used'), _local('unused')],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=('used', 'unused'),
+            outer_free_var_plans=(_local('used'), _local('unused')),
             param_count=1,
             is_variadic=False,
             binding_name='f',
         )
         ir = MenaiIRLet(
-            bindings=[('f', lam)],
+            bindings=(('f', lam),),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('f'), [_int_const(42)], tail=True)
             ),
@@ -134,20 +134,20 @@ class TestStaleOuterFreeVarPruning:
     def test_all_outer_free_vars_stale_pruned(self):
         """When all outer free vars are stale, the lists become empty."""
         lam = MenaiIRLambda(
-            params=['x'],
+            params=('x',),
             body_plan=MenaiIRReturn(
                 value_plan=_builtin_call('integer+', [_local('x'), _int_const(1)])
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=['stale1', 'stale2'],
-            outer_free_var_plans=[_local('stale1'), _local('stale2')],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=('stale1', 'stale2'),
+            outer_free_var_plans=(_local('stale1'), _local('stale2')),
             param_count=1,
             is_variadic=False,
             binding_name='f',
         )
         ir = MenaiIRLet(
-            bindings=[('f', lam)],
+            bindings=(('f', lam),),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('f'), [_int_const(42)], tail=True)
             ),
@@ -172,28 +172,28 @@ class TestStaleOuterFreeVarPruning:
 
         opt_lam = find_lambda(result)
         assert opt_lam is not None
-        assert opt_lam.outer_free_vars == []
-        assert opt_lam.outer_free_var_plans == []
+        assert opt_lam.outer_free_vars == ()
+        assert opt_lam.outer_free_var_plans == ()
 
     def test_no_pruning_when_all_captures_used(self):
         """No captures are pruned when all are referenced in the body."""
         lam = MenaiIRLambda(
-            params=['x'],
+            params=('x',),
             body_plan=MenaiIRReturn(
                 value_plan=_builtin_call('integer+', [
                     _local('x'), _builtin_call('integer+', [_local('a'), _local('b')])
                 ])
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=['a', 'b'],
-            outer_free_var_plans=[_local('a'), _local('b')],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=('a', 'b'),
+            outer_free_var_plans=(_local('a'), _local('b')),
             param_count=1,
             is_variadic=False,
             binding_name='f',
         )
         ir = MenaiIRLet(
-            bindings=[('f', lam)],
+            bindings=(('f', lam),),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('f'), [_int_const(42)], tail=True)
             ),
@@ -218,7 +218,7 @@ class TestStaleOuterFreeVarPruning:
 
         opt_lam = find_lambda(result)
         assert opt_lam is not None
-        assert opt_lam.outer_free_vars == ['a', 'b']
+        assert opt_lam.outer_free_vars == ('a', 'b')
         assert len(opt_lam.outer_free_var_plans) == 2
 
 
@@ -232,50 +232,50 @@ class TestStaleSiblingFreeVarPruning:
     def test_stale_sibling_free_var_pruned(self):
         """Letrec lambda captures 'sibling-used' and 'sibling-stale'; only used survives."""
         lam = MenaiIRLambda(
-            params=['x'],
+            params=('x',),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('sibling-used'), [_local('x')], tail=True)
             ),
-            sibling_free_vars=['sibling-used', 'sibling-stale'],
-            sibling_free_var_plans=[_local('sibling-used'), _local('sibling-stale')],
-            outer_free_vars=[],
-            outer_free_var_plans=[],
+            sibling_free_vars=('sibling-used', 'sibling-stale'),
+            sibling_free_var_plans=(_local('sibling-used'), _local('sibling-stale')),
+            outer_free_vars=(),
+            outer_free_var_plans=(),
             param_count=1,
             is_variadic=False,
             binding_name='f',
         )
         sibling_used = MenaiIRLambda(
-            params=['y'],
+            params=('y',),
             body_plan=MenaiIRReturn(
                 value_plan=_builtin_call('integer+', [_local('y'), _int_const(1)])
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=[],
-            outer_free_var_plans=[],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=(),
+            outer_free_var_plans=(),
             param_count=1,
             is_variadic=False,
             binding_name='sibling-used',
         )
         sibling_stale = MenaiIRLambda(
-            params=['z'],
+            params=('z',),
             body_plan=MenaiIRReturn(
                 value_plan=_builtin_call('integer+', [_local('z'), _int_const(2)])
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=[],
-            outer_free_var_plans=[],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=(),
+            outer_free_var_plans=(),
             param_count=1,
             is_variadic=False,
             binding_name='sibling-stale',
         )
         ir = MenaiIRLetrec(
-            bindings=[
+            bindings=(
                 ('f', lam),
                 ('sibling-used', sibling_used),
                 ('sibling-stale', sibling_stale),
-            ],
+            ),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('f'), [_int_const(42)], tail=True)
             ),
@@ -331,46 +331,46 @@ class TestNestedLambdaCapturesRespected:
         to 'helper' live.
         """
         inner = MenaiIRLambda(
-            params=['y'],
+            params=('y',),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('helper'), [_local('y')], tail=True)
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=['helper'],
-            outer_free_var_plans=[_local('helper')],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=('helper',),
+            outer_free_var_plans=(_local('helper'),),
             param_count=1,
             is_variadic=False,
             binding_name=None,
         )
         outer = MenaiIRLambda(
-            params=['x'],
+            params=('x',),
             body_plan=MenaiIRReturn(
                 value_plan=inner
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=['helper'],
-            outer_free_var_plans=[_local('helper')],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=('helper',),
+            outer_free_var_plans=(_local('helper'),),
             param_count=1,
             is_variadic=False,
             binding_name='outer',
         )
         helper = MenaiIRLambda(
-            params=['z'],
+            params=('z',),
             body_plan=MenaiIRReturn(
                 value_plan=_builtin_call('integer+', [_local('z'), _local('offset')])
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=['offset'],
-            outer_free_var_plans=[_local('offset')],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=('offset',),
+            outer_free_var_plans=(_local('offset'),),
             param_count=1,
             is_variadic=False,
             binding_name='helper',
         )
         ir = MenaiIRLet(
-            bindings=[('offset', _int_const(1)), ('helper', helper), ('outer', outer)],
+            bindings=(('offset', _int_const(1)), ('helper', helper), ('outer', outer)),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('outer'), [_int_const(42)], tail=True)
             ),
@@ -411,24 +411,24 @@ class TestShadowingRespected:
     def test_shadowed_capture_pruned(self):
         """A let binding shadows the capture; the capture is stale."""
         lam = MenaiIRLambda(
-            params=['x'],
+            params=('x',),
             body_plan=MenaiIRLet(
-                bindings=[('captured', _int_const(99))],
+                bindings=(('captured', _int_const(99)),),
                 body_plan=MenaiIRReturn(
                     value_plan=_builtin_call('integer+', [_local('x'), _local('captured')])
                 ),
                 in_tail_position=True,
             ),
-            sibling_free_vars=[],
-            sibling_free_var_plans=[],
-            outer_free_vars=['captured'],
-            outer_free_var_plans=[_local('captured')],
+            sibling_free_vars=(),
+            sibling_free_var_plans=(),
+            outer_free_vars=('captured',),
+            outer_free_var_plans=(_local('captured'),),
             param_count=1,
             is_variadic=False,
             binding_name='f',
         )
         ir = MenaiIRLet(
-            bindings=[('f', lam)],
+            bindings=(('f', lam),),
             body_plan=MenaiIRReturn(
                 value_plan=_user_call(_local('f'), [_int_const(42)], tail=True)
             ),
@@ -453,8 +453,8 @@ class TestShadowingRespected:
 
         opt_lam = find_lambda(result)
         assert opt_lam is not None
-        assert opt_lam.outer_free_vars == []
-        assert opt_lam.outer_free_var_plans == []
+        assert opt_lam.outer_free_vars == ()
+        assert opt_lam.outer_free_var_plans == ()
 
 
 # ---------------------------------------------------------------------------

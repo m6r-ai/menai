@@ -249,7 +249,7 @@ class MenaiIRBuilder:
         args_plan = self._analyze_expression(args_expr, ctx, in_tail_position=False)
         return MenaiIRCall(
             func_plan=func_plan,
-            arg_plans=[func_plan, args_plan],
+            arg_plans=(func_plan, args_plan),
             is_tail_call=in_tail_position,
             is_builtin=True,
             builtin_name='apply'
@@ -347,7 +347,7 @@ class MenaiIRBuilder:
         ctx.pop_scope()
 
         return MenaiIRLet(
-            bindings=analyzed_bindings,
+            bindings=tuple(analyzed_bindings),
             body_plan=body_plan,
             in_tail_position=in_tail_position
         )
@@ -395,7 +395,7 @@ class MenaiIRBuilder:
         ctx.pop_scope()
 
         return MenaiIRLetrec(
-            bindings=binding_plans,
+            bindings=tuple(binding_plans),
             body_plan=body_plan,
             in_tail_position=in_tail_position
         )
@@ -445,12 +445,12 @@ class MenaiIRBuilder:
         ]
 
         return MenaiIRLambda(
-            params=param_names,
+            params=tuple(param_names),
             body_plan=body_plan,
-            sibling_free_vars=sibling_free_vars,
-            sibling_free_var_plans=sibling_free_var_plans,
-            outer_free_vars=outer_free_vars,
-            outer_free_var_plans=outer_free_var_plans,
+            sibling_free_vars=tuple(sibling_free_vars),
+            sibling_free_var_plans=tuple(sibling_free_var_plans),
+            outer_free_vars=tuple(outer_free_vars),
+            outer_free_var_plans=tuple(outer_free_var_plans),
             param_count=len(param_names),
             is_variadic=is_variadic,
             binding_name=ctx.current_binding_name,
@@ -469,45 +469,45 @@ class MenaiIRBuilder:
         # The desugarer places the MenaiASTStruct node directly in function position.
         if func_type is MenaiASTStruct:
             struct_node = cast(MenaiASTStruct, func_expr)
-            field_plans = [
+            field_plans = tuple(
                 self._analyze_expression(arg, ctx, in_tail_position=False)
                 for arg in arg_exprs
-            ]
+            )
             return MenaiIRBuildStruct(struct_type=struct_node.to_runtime_value(), field_plans=field_plans)
 
         if func_type is MenaiASTSymbol and cast(MenaiASTSymbol, func_expr).name in self._builtin_names:
             dollar_name = cast(MenaiASTSymbol, func_expr).name
             # (list e1 ... eN) — emit a flat MenaiIRBuildList node.
             if dollar_name == 'list':
-                element_plans = [self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs]
+                element_plans = tuple(self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs)
                 return MenaiIRBuildList(element_plans=element_plans)
 
             # (dict k1 v1 k2 v2 ...) — emit a flat MenaiIRBuildDict node.
             # The semantic analyser guarantees an even argument count.
             if dollar_name == 'dict':
                 assert len(arg_exprs) % 2 == 0, "dict: odd arg count should have been caught by semantic analyser"
-                pair_plans = [
+                pair_plans = tuple(
                     (self._analyze_expression(arg_exprs[i], ctx, in_tail_position=False),
                      self._analyze_expression(arg_exprs[i + 1], ctx, in_tail_position=False))
                     for i in range(0, len(arg_exprs), 2)
-                ]
+                )
                 return MenaiIRBuildDict(pair_plans=pair_plans)
 
             # (set e1 ... eN) — emit a flat MenaiIRBuildSet node.
             if dollar_name == 'set':
-                element_plans = [self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs]
+                element_plans = tuple(self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs)
                 return MenaiIRBuildSet(element_plans=element_plans)
 
             # (vector e1 ... eN) — emit a flat MenaiIRBuildVector node.
             if dollar_name == 'vector':
-                element_plans = [self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs]
+                element_plans = tuple(self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs)
                 return MenaiIRBuildVector(element_plans=element_plans)
 
             # Strip the $ prefix — the rest of the pipeline (codegen etc.)
             # uses the bare opcode name.
             # 'list', 'dict', 'set', and 'vector' are plain builtin names (no $ prefix).
             builtin_name = dollar_name[1:] if dollar_name.startswith('$') else dollar_name
-            arg_plans = [self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs]
+            arg_plans = tuple(self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs)
             return MenaiIRCall(
                 func_plan=MenaiIRVariable(name=dollar_name),
                 arg_plans=arg_plans,
@@ -517,7 +517,7 @@ class MenaiIRBuilder:
             )
 
         func_plan: MenaiIRExpr = self._analyze_expression(func_expr, ctx, in_tail_position=False)
-        arg_plans = [self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs]
+        arg_plans = tuple(self._analyze_expression(arg, ctx, in_tail_position=False) for arg in arg_exprs)
 
         return MenaiIRCall(
             func_plan=func_plan,
