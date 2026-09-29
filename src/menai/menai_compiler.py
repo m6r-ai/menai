@@ -82,20 +82,18 @@ class MenaiCompiler:
             MenaiASTConstantFolder(),
         ]
         self.ir_builder = MenaiIRBuilder()
-        self._ir_inliner = MenaiIRInliner()
         self.ir_passes: list[MenaiIROptimizationPass] = [
             MenaiIRLetrecToLoop(),
-            self._ir_inliner,
+            MenaiIRInliner(),
             MenaiIROptimizer(),
         ]
         self.cfg_builder = MenaiCFGBuilder()
-        self._interproc_type_analysis = MenaiCFGInterprocTypeAnalysis()
         self.cfg_passes: list[MenaiCFGOptimizationPass] = [
             MenaiCFGCollapsePhiChains(),
             MenaiCFGBranchConstProp(),
             MenaiCFGSimplifyBlocks(),
             MenaiCFGSwitchDispatch(),
-            self._interproc_type_analysis,
+            MenaiCFGInterprocTypeAnalysis(),
             MenaiCFGPredicateFold(),
             MenaiCFGGuardInsertion(),
             MenaiCFGLICM(),
