@@ -6,6 +6,7 @@ This module defines the SSA-form CFG IR that sits between the IR tree
 consume this representation.
 """
 
+import itertools
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -487,6 +488,9 @@ class MenaiCFGBlock:
         return "\n".join(lines)
 
 
+_fact_key_counter = itertools.count(1)
+
+
 @dataclass
 class MenaiCFGFunction:
     """
@@ -511,6 +515,12 @@ class MenaiCFGFunction:
     constructs a new one.  Per-value type facts are analysis output, not part
     of the program structure, so they are not stored here; they travel
     alongside the CFG in the pass context.
+
+    `fact_key` is the stable identity that keys that analysis output.  It is
+    assigned once, at construction, and preserved by `dataclasses.replace`, so
+    a function rebuilt by a pass keeps the identity its facts were recorded
+    under.  It must not be derived from `id()`, which is only valid while the
+    object is alive and can be reused by a later object once it is freed.
     """
     blocks: tuple[MenaiCFGBlock, ...] = ()
     params: tuple[str, ...] = ()
@@ -519,6 +529,12 @@ class MenaiCFGFunction:
     binding_name: str | None = None
     source_line: int = 0
     source_file: str = ""
+    fact_key: int | None = None
+
+    def __post_init__(self) -> None:
+        """Assign a stable identity when one was not carried in by a rebuild."""
+        if self.fact_key is None:
+            self.fact_key = next(_fact_key_counter)
 
     def entry(self) -> MenaiCFGBlock:
         """The entry block (always the first block)."""

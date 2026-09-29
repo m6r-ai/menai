@@ -50,39 +50,29 @@ class MenaiCFGContext:
     that passes produce and consume.  It is keyed by function identity so that
     a fact set computed for one function is not confused with another's.
 
-    `type_facts` maps a function's id to that function's per-value type facts.
-    It is written by the interprocedural type analysis and read by guard
-    insertion and predicate folding.
+    `type_facts` maps a function's `fact_key` to that function's per-value type
+    facts.  It is written by the interprocedural type analysis and read by
+    guard insertion and predicate folding.  The key is the function's stable
+    identity, not `id()`: a pass rebuilds a function it changes, and `id()` is
+    only valid while the original object is alive, so a rebuilt function would
+    otherwise look up the wrong entry (or none).  `fact_key` is preserved by
+    `dataclasses.replace`, so a rebuilt function keeps its facts.
     """
     type_facts: dict[int, dict[int, TypeFact]] = field(default_factory=dict)
 
     def facts_for(self, func: MenaiCFGFunction) -> dict[int, TypeFact]:
         """Return the type facts recorded for `func`, or an empty map."""
-        return self.type_facts.get(id(func), {})
+        if func.fact_key is None:
+            return {}
+
+        return self.type_facts.get(func.fact_key, {})
 
     def set_facts(self, func: MenaiCFGFunction, facts: dict[int, TypeFact]) -> None:
         """Record the type facts for `func`."""
-        self.type_facts[id(func)] = facts
-
-    def migrate_facts(
-        self,
-        old_func: MenaiCFGFunction,
-        new_func: MenaiCFGFunction,
-    ) -> None:
-        """
-        Carry a function's type facts over to its replacement.
-
-        A per-function pass rebuilds the functions it changes, so the facts
-        recorded against the original object would otherwise be lost.  The
-        facts are keyed by the original object's id, so they must be re-keyed
-        to the replacement's id before the next pass reads them.
-        """
-        if old_func is new_func:
+        if func.fact_key is None:
             return
 
-        facts = self.type_facts.pop(id(old_func), None)
-        if facts is not None:
-            self.type_facts[id(new_func)] = facts
+        self.type_facts[func.fact_key] = facts
 
 
 def replace_block_instrs(
@@ -194,9 +184,7 @@ class MenaiCFGPerFunctionPass(MenaiCFGOptimizationPass):
             A tuple of (new_root, changed) where changed is True if the pass
             made at least one transformation anywhere in the function tree.
         """
-        original = root
         root, changed = self._optimize_function(root, context)
-        context.migrate_facts(original, root)
         root, nested_changed = self._optimize_nested(root, context)
         return root, changed or nested_changed
 
