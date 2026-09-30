@@ -75,17 +75,19 @@
                              (list->vector (list-reverse acc))
                              (let ((p (integer+ start (integer* x bytes-per-pixel))))
                                (if (integer=? bpp 24)
-                                   (loop (integer+ x 1)
-                                         (list-prepend acc
-                                           (vector (bytes-nth b (integer+ p 2))
-                                                   (bytes-nth b (integer+ p 1))
-                                                   (bytes-nth b p))))
-                                   (loop (integer+ x 1)
-                                         (list-prepend acc
-                                           (vector (bytes-nth b (integer+ p 2))
-                                                   (bytes-nth b (integer+ p 1))
-                                                   (bytes-nth b p)
-                                                   (bytes-nth b (integer+ p 3)))))))))))
+                                   (let ((v (bytes-read-u24-le b p)))
+                                     (loop (integer+ x 1)
+                                           (list-prepend acc
+                                             (vector (integer-bit-shift-right v 16)
+                                                     (integer-bit-and (integer-bit-shift-right v 8) 255)
+                                                     (integer-bit-and v 255)))))
+                                   (let ((v (bytes-read-u32-le b p)))
+                                     (loop (integer+ x 1)
+                                           (list-prepend acc
+                                             (vector (integer-bit-and (integer-bit-shift-right v 16) 255)
+                                                     (integer-bit-and (integer-bit-shift-right v 8) 255)
+                                                     (integer-bit-and v 255)
+                                                     (integer-bit-shift-right v 24)))))))))))
           (loop 0 (list))))))
 
    ; Decode all rows into a vector ordered top-down.

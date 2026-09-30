@@ -66,20 +66,21 @@
             (error "bmp-encode: each pixel must be a vector of channels")
             (if (integer=? bpp 24)
                 (if (integer=? (list-length channels) 3)
-                    (bytes-append-u8
-                      (bytes-append-u8
-                        (bytes-append-u8 b (list-nth channels 2))
-                        (list-nth channels 1))
-                      (list-nth channels 0))
+                    (bytes-append-u24-le
+                      b
+                      (integer-bit-or
+                        (integer-bit-or (list-nth channels 2)
+                                        (integer-bit-shift-left (list-nth channels 1) 8))
+                        (integer-bit-shift-left (list-first channels) 16)))
                     (error "bmp-encode: a 24-bit pixel must have 3 channels"))
                 (if (integer=? (list-length channels) 4)
-                    (bytes-append-u8
-                      (bytes-append-u8
-                        (bytes-append-u8
-                          (bytes-append-u8 b (list-nth channels 2))
-                          (list-nth channels 1))
-                        (list-nth channels 0))
-                      (list-nth channels 3))
+                    (bytes-append-u32-le
+                      b
+                      (integer-bit-or
+                        (integer-bit-or (list-nth channels 2)
+                                        (integer-bit-shift-left (list-nth channels 1) 8))
+                        (integer-bit-or (integer-bit-shift-left (list-first channels) 16)
+                                        (integer-bit-shift-left (list-nth channels 3) 24))))
                     (error "bmp-encode: a 32-bit pixel must have 4 channels")))))))
 
    ; Write one row's pixels followed by its padding bytes.
