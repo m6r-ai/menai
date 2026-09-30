@@ -171,6 +171,7 @@ Options:
 | `--annotate` | Annotate the disassembly of every function in each Menai step with per-instruction execution shares |
 | `--top N` | Show top N entries in VM profile output (default: 40) |
 | `--no-color` | Disable ANSI colour output |
+| `--color` / `-c` | Force ANSI colour output even when stdout is not a terminal |
 
 ## Profiling
 

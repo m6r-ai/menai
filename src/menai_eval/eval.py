@@ -100,9 +100,9 @@ def build_module_path(source_path: Path | None) -> list[str]:
     return module_path
 
 
-def use_color(no_color: bool) -> bool:
+def use_color(no_color: bool, color: bool) -> bool:
     """Return True if ANSI colour output should be used."""
-    return not no_color and sys.stdout.isatty()
+    return (not no_color and sys.stdout.isatty()) or color
 
 
 def separator(color: bool) -> str:
@@ -440,6 +440,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable ANSI colour output",
     )
     parser.add_argument(
+        "--color",
+        "-c",
+        action="store_true",
+        help="Force ANSI colour output even when stdout is not a terminal",
+    )
+    parser.add_argument(
         "--raw",
         action="store_true",
         help="Render a string result as its literal contents instead of its quoted, escaped form",
@@ -456,7 +462,7 @@ def main() -> int:
         print("Error: --output requires --cprofile", file=sys.stderr)
         return 1
 
-    color = use_color(args.no_color)
+    color = use_color(args.no_color, args.color)
 
     source, source_path, name = read_source(args.input)
     module_path = build_module_path(source_path)

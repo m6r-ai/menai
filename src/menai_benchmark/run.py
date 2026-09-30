@@ -23,6 +23,11 @@ _SUITES_DIR = _BENCHMARK_DIR / "suites"
 _MENAI_MODULES_DIR = _REPO_ROOT / "menai_modules"
 
 
+def _use_color(no_color: bool, color: bool) -> bool:
+    """Return True if ANSI colour output should be used."""
+    return (not no_color and sys.stdout.isatty()) or color
+
+
 def discover_suites() -> list[tuple[Path, type[BenchmarkSuite]]]:
     """
     Discover all suite classes by scanning suites/*/suite.py.
@@ -119,7 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
             "python run.py --opcodes --opcodes-top 20  # limit opcode output\n"
             "python run.py --profile                   # per-function profiling (Menai only)\n"
             "python run.py --profile --profile-top 10  # limit profile output\n"
-            "python run.py --annotate                  # annotated disassembly (Menai only)"
+            "python run.py --annotate                  # annotated disassembly (Menai only)\n"
+            "python run.py --annotate --no-color       # disable colour in the reports\n"
+            "python run.py --annotate --color          # force colour when piping"
         ),
     )
     parser.add_argument(
@@ -198,6 +205,19 @@ def build_parser() -> argparse.ArgumentParser:
             "implementation."
         ),
     )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        dest="no_color",
+        help="Disable ANSI colour output in the profile and annotated reports.",
+    )
+    parser.add_argument(
+        "--color",
+        "-c",
+        action="store_true",
+        dest="color",
+        help="Force ANSI colour output even when stdout is not a terminal.",
+    )
     return parser
 
 
@@ -211,6 +231,7 @@ def run_suite(
     profile: bool,
     profile_top: int,
     annotate: bool,
+    color: bool,
 ) -> None:
     """
     Instantiate, run, and report a single benchmark suite.
@@ -228,6 +249,7 @@ def run_suite(
         profile:      If ``True``, enable per-function profiling during timed runs.
         profile_top:  Number of top functions to show per case in the profile output.
         annotate:     If ``True``, print the annotated disassembly per case.
+        color:        Whether the profile and annotated reports emit ANSI colour.
     """
     suite = suite_class()
     cases = suite.cases()
@@ -255,7 +277,7 @@ def run_suite(
     runner = BenchmarkRunner(suite, cases, menai, opcodes=opcodes, profile=profile or annotate)
     results, profile_results, trace_results = runner.run()
 
-    reporter = BenchmarkReporter()
+    reporter = BenchmarkReporter(color=color)
     reporter.report(suite.name, results)
 
     if opcodes:
@@ -293,6 +315,8 @@ def main() -> None:
     if args.case is not None and args.suite is None:
         parser.error("--case requires --suite")
 
+    color = _use_color(args.no_color, args.color)
+
     if args.suite is not None:
         found = find_suite(all_suites, args.suite)
         if found is None:
@@ -319,6 +343,7 @@ def main() -> None:
             profile=args.profile,
             profile_top=args.profile_top,
             annotate=args.annotate,
+            color=color,
         )
 
     if len(selected) > 1:

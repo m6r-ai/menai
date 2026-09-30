@@ -27,15 +27,12 @@ from menai import Menai, MenaiError
 from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
 from menai.menai_compiler import MenaiCompiler
 from menai.bytecode.menai_bytecode import Opcode, CodeObject
-from menai_render.menai_render_colour import cyan, green, grey, yellow
+from menai_render.menai_render_colour import green, grey, yellow
 from menai_render.menai_render_instruction import (
-    CONTROL_FLOW_OPCODES,
-    annotate_instruction,
     clean_name,
-    format_constant,
-    format_instruction,
-    jump_targets,
     instructions,
+    render_code_metadata,
+    render_instruction_lines,
 )
 
 
@@ -65,113 +62,13 @@ def disassemble_with_nested(code: CodeObject, depth: int = 0, name: str | None =
     output.append(f"{indent}{yellow('Function: ' + display_name, color)}")
     output.append(grey(f"{indent}{'-'*70}", color))
 
-    # Show code objects table
-    if code.code_objects:
-        output.append(f"{indent}{green('Code Objects: ' + str(len(code.code_objects)), color)}")
-        output.append(grey(f"{indent}{'-'*70}", color))
-        for i, nested in enumerate(code.code_objects):
-            nested_name = clean_name(nested.name) if nested.name else f"<lambda-{i}>"
-            loc_parts = []
-            if nested.source_file:
-                loc_parts.append(nested.source_file)
-
-            if nested.source_line and nested.source_line > 0:
-                loc_parts.append(f"line {nested.source_line}")
-
-            loc_str = f" [{':'.join(loc_parts)}]" if loc_parts else ""
-            coid = f"x{i}"
-            output.append(f"{indent}{cyan(f'{coid:>6}: {nested_name}{loc_str}', color)}")
-
-        output.append(grey(f"{indent}{'-'*70}", color))
-
-    # Show constants table
-    if code.constants:
-        output.append(f"{indent}{green('Constants: ' + str(len(code.constants)), color)}")
-        output.append(grey(f"{indent}{'-'*70}", color))
-        for i, const in enumerate(code.constants):
-            const_str = format_constant(const)
-            cid = f"k{i}"
-            output.append(f"{indent}{cyan(f'{cid:>6}: {const_str}', color)}")
-
-        output.append(grey(f"{indent}{'-'*70}", color))
-
-    # Show jump tables (for SWITCH_INTEGER)
-    if code.jump_tables:
-        output.append(f"{indent}{green('Jump Tables: ' + str(len(code.jump_tables)), color)}")
-        output.append(grey(f"{indent}{'-'*70}", color))
-        for j, (t_min, t_default, targets) in enumerate(code.jump_tables):
-            hi = t_min + len(targets) - 1
-            jid = f"jt{j}"
-            output.append(
-                f"{indent}{cyan(f'{jid:>6}: min={t_min}  default=@{t_default}  span={t_min}..{hi}', color)}"
-            )
-            for slot, target in enumerate(targets):
-                value = t_min + slot
-                if target == t_default:
-                    output.append(f"{indent}{cyan(f'       _ : @{target}  (default)', color)}")
-
-                else:
-                    output.append(f"{indent}{cyan(f'{value:>7} : @{target}', color)}")
-
-        output.append(grey(f"{indent}{'-'*70}", color))
-
-    # Show register map for params and captures (only when present)
-    param_count = code.param_count
-    if param_count:
-        output.append(f"{indent}{green('Inputs: ' + str(code.param_count), color)}")
-        output.append(grey(f"{indent}{'-'*70}", color))
-        for i, pname in enumerate(code.param_names):
-            rid = f"i{i}"
-            label = f"{rid:>6}: '{pname}'"
-            output.append(f"{indent}{cyan(label, color)}")
-
-        output.append(grey(f"{indent}{'-'*70}", color))
-
-    capture_count = len(code.free_vars)
-    if capture_count:
-        output.append(f"{indent}{green('Captured: ' + str(len(code.free_vars)), color)}")
-        output.append(grey(f"{indent}{'-'*70}", color))
-        for i, fname in enumerate(code.free_vars):
-            rid = f"c{i}"
-            label = f"{rid:>6}: '{fname}'"
-            output.append(f"{indent}{cyan(label, color)}")
-
-        output.append(grey(f"{indent}{'-'*70}", color))
-
-    locals_count = code.local_count - param_count - capture_count
-    if locals_count:
-        output.append(f"{indent}{green('Locals: ' + str(locals_count), color)}")
-        output.append(grey(f"{indent}{'-'*70}", color))
+    output.extend(render_code_metadata(code, indent, color))
 
     # Show annotated disassembly
     output.append(f"{indent}{green('Instructions: ' + str(len(code.instructions)), color)}")
     output.append(grey(f"{indent}{'-'*70}", color))
 
-    jump_target_indices = jump_targets(code)
-
-    for i, instr in enumerate(instructions(code)):
-        is_target = i in jump_target_indices
-        if is_target and i > 0:
-            output.append(f"{indent}")
-
-        annotation = annotate_instruction(instr, code)
-        instr_str = format_instruction(instr, i, code)
-
-        # For jump target lines, prepend "► " so the marker sits flush at the
-        # indent boundary and all subsequent columns remain aligned with
-        # non-target lines.
-        target_marker = "► " if is_target else "  "
-
-        if annotation:
-            output.append(f"{indent}{target_marker}{instr_str}{green(annotation, color)}")
-
-        else:
-            output.append(f"{indent}{target_marker}{instr_str}")
-
-        # Blank line after a control flow opcode, unless the next instruction is
-        # already a jump target (which will insert its own blank line above).
-        if instr.opcode in CONTROL_FLOW_OPCODES and (i + 1) not in jump_target_indices:
-            output.append(f"{indent}")
+    output.extend(render_instruction_lines(code, lambda _index, _instr: "", indent, color))
 
     output.append(f"{indent}{'-'*70}")                                    # plain: function closer
     output.append(f"{indent}")

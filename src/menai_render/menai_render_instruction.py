@@ -1,17 +1,20 @@
 """
 Instruction-level rendering shared by the bytecode rendering tools.
 
-These helpers turn a packed bytecode instruction into a human-readable,
-annotated line.  They are used by the disassembler and by the instruction
-tracer so that both render instructions identically.
+These helpers turn a code object's metadata and packed bytecode instructions
+into human-readable, annotated lines.  They are used by the disassembler and by
+the instruction tracer so that both render a code object identically: the same
+metadata tables, the same instruction formatting, and the same annotations.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from menai.menai_value import MenaiValue
 from menai.bytecode.menai_bytecode import CodeObject, Instruction, Opcode, reg_name, unpack_instruction
+from menai_render.menai_render_colour import cyan, green, grey
 
 _MAX_CONSTANT_LENGTH = 64
+_SECTION_WIDTH = 70
 
 
 # Opcodes after which a blank line is emitted, so that control-flow boundaries
@@ -172,3 +175,170 @@ def format_instruction(instr: Instruction, index: int, code: CodeObject) -> str:
     instr_str = f"{index:4}: {instr.format(code)}"
     # Pad to fixed width so annotations align; 48 chars covers the longest opcodes
     return instr_str.ljust(48)
+
+
+def render_code_metadata(code: CodeObject, indent: str = "", color: bool = False) -> list[str]:
+    """
+    Render a code object's metadata tables as lines.
+
+    Emits, in order and only when non-empty: the nested code objects table, the
+    constants table, the jump tables, the inputs (parameters), the captures
+    (free variables), and the local count.  Each section is headed by a
+    green title and closed by a grey rule, matching the disassembler's layout so
+    that the disassembler and the annotated trace present identical metadata.
+
+    Args:
+        code:   The code object whose metadata is rendered.
+        indent: Prefix prepended to every line (used for nested code objects).
+        color:  Whether to emit ANSI colour codes.
+
+    Returns:
+        The rendered lines.
+    """
+    lines: list[str] = []
+    rule = grey(f"{indent}{'-' * _SECTION_WIDTH}", color)
+
+    if code.code_objects:
+        lines.append(f"{indent}{green('Code Objects: ' + str(len(code.code_objects)), color)}")
+        lines.append(rule)
+        for i, nested in enumerate(code.code_objects):
+            nested_name = clean_name(nested.name) if nested.name else f"<lambda-{i}>"
+            loc_parts = []
+            if nested.source_file:
+                loc_parts.append(nested.source_file)
+
+            if nested.source_line and nested.source_line > 0:
+                loc_parts.append(f"line {nested.source_line}")
+
+            loc_str = f" [{':'.join(loc_parts)}]" if loc_parts else ""
+            coid = f"x{i}"
+            lines.append(f"{indent}{cyan(f'{coid:>6}: {nested_name}{loc_str}', color)}")
+
+        lines.append(rule)
+
+    if code.constants:
+        lines.append(f"{indent}{green('Constants: ' + str(len(code.constants)), color)}")
+        lines.append(rule)
+        for i, const in enumerate(code.constants):
+            const_str = format_constant(const)
+            cid = f"k{i}"
+            lines.append(f"{indent}{cyan(f'{cid:>6}: {const_str}', color)}")
+
+        lines.append(rule)
+
+    if code.jump_tables:
+        lines.append(f"{indent}{green('Jump Tables: ' + str(len(code.jump_tables)), color)}")
+        lines.append(rule)
+        for j, (t_min, t_default, targets) in enumerate(code.jump_tables):
+            hi = t_min + len(targets) - 1
+            jid = f"jt{j}"
+            lines.append(
+                f"{indent}{cyan(f'{jid:>6}: min={t_min}  default=@{t_default}  span={t_min}..{hi}', color)}"
+            )
+            for slot, target in enumerate(targets):
+                value = t_min + slot
+                if target == t_default:
+                    lines.append(f"{indent}{cyan(f'       _ : @{target}  (default)', color)}")
+
+                else:
+                    lines.append(f"{indent}{cyan(f'{value:>7} : @{target}', color)}")
+
+        lines.append(rule)
+
+    param_count = code.param_count
+    if param_count:
+        lines.append(f"{indent}{green('Inputs: ' + str(code.param_count), color)}")
+        lines.append(rule)
+        for i, pname in enumerate(code.param_names):
+            rid = f"i{i}"
+            label = f"{rid:>6}: '{pname}'"
+            lines.append(f"{indent}{cyan(label, color)}")
+
+        lines.append(rule)
+
+    capture_count = len(code.free_vars)
+    if capture_count:
+        lines.append(f"{indent}{green('Captured: ' + str(len(code.free_vars)), color)}")
+        lines.append(rule)
+        for i, fname in enumerate(code.free_vars):
+            rid = f"c{i}"
+            label = f"{rid:>6}: '{fname}'"
+            lines.append(f"{indent}{cyan(label, color)}")
+
+        lines.append(rule)
+
+    locals_count = code.local_count - param_count - capture_count
+    if locals_count:
+        lines.append(f"{indent}{green('Locals: ' + str(locals_count), color)}")
+        lines.append(rule)
+
+    return lines
+
+
+def render_instruction_lines(
+    code: CodeObject,
+    line_prefix: Callable[[int, Instruction], str],
+    indent: str = "",
+    color: bool = False,
+    dim_predicate: Callable[[int, Instruction], bool] | None = None,
+) -> list[str]:
+    """
+    Render a code object's instruction listing as lines.
+
+    Emits one line per instruction in instruction order.  A jump-target
+    instruction is preceded by a blank line and marked with a leading arrow
+    placed after any per-line prefix; a control-flow opcode is followed by a
+    blank line unless the next instruction is itself a jump target (which
+    inserts its own blank line above).  The annotation column is coloured green.
+
+    The per-line prefix is supplied by the caller so that the disassembler can
+    emit a bare listing while the annotated trace prepends an execution-count
+    and percentage column.  The marker and blank-line placement are identical in
+    both cases, so a traced instruction line lines up with the corresponding
+    disassembly line.
+
+    Args:
+        code:        The code object whose instructions are rendered.
+        line_prefix: Called with (index, instruction) and returns the leading
+                     column text for that line (may be empty).
+        indent:      Prefix prepended to every line (used for nested code objects).
+        color:       Whether to emit ANSI colour codes.
+        dim_predicate: When given, called with (index, instruction); a line for
+                     which it returns True is rendered entirely in grey, taking
+                     precedence over the annotation colour.  Used by the
+                     annotated trace to dim instructions that never executed.
+
+    Returns:
+        The rendered lines.
+    """
+    lines: list[str] = []
+    targets = jump_targets(code)
+
+    for i, instr in enumerate(instructions(code)):
+        is_target = i in targets
+        if is_target and i > 0:
+            lines.append(f"{indent}")
+
+        annotation = annotate_instruction(instr, code)
+        instr_str = format_instruction(instr, i, code)
+        prefix = line_prefix(i, instr)
+
+        # For jump target lines, prepend "► " so the marker sits flush after the
+        # prefix and all subsequent columns remain aligned with non-target lines.
+        target_marker = "\u25ba " if is_target else "  "
+
+        if dim_predicate is not None and dim_predicate(i, instr):
+            lines.append(grey(f"{indent}{prefix}{target_marker}{instr_str}{annotation}", color))
+
+        elif annotation:
+            lines.append(f"{indent}{prefix}{target_marker}{instr_str}{green(annotation, color)}")
+
+        else:
+            lines.append(f"{indent}{prefix}{target_marker}{instr_str}")
+
+        # Blank line after a control flow opcode, unless the next instruction is
+        # already a jump target (which will insert its own blank line above).
+        if instr.opcode in CONTROL_FLOW_OPCODES and (i + 1) not in targets:
+            lines.append(f"{indent}")
+
+    return lines

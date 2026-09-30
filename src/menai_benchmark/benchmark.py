@@ -285,6 +285,16 @@ class BenchmarkReporter:
     _COL_COUNT = 15
     _COL_PCT = 12
 
+    def __init__(self, color: bool = False) -> None:
+        """
+        Create a reporter.
+
+        Args:
+            color: Whether the per-function and annotated trace renderers should
+                   emit ANSI colour codes.
+        """
+        self._color = color
+
     def report(self, suite_name: str, results: list[CaseResult]) -> None:
         """Print a formatted timing table to stdout."""
         col_case = max(self._MIN_COL_CASE, max((len(r.case.name) for r in results), default=0))
@@ -388,7 +398,7 @@ class BenchmarkReporter:
             suite_name,
             "TRACES",
             trace_results,
-            lambda trace: render_function_summary(trace, color=False, top_n=top_n),
+            lambda trace: render_function_summary(trace, color=self._color, top_n=top_n),
         )
 
     def report_annotated(
@@ -406,7 +416,7 @@ class BenchmarkReporter:
             suite_name,
             "ANNOTATED TRACES",
             trace_results,
-            lambda trace: render_annotated(trace, color=False),
+            lambda trace: render_annotated(trace, color=self._color),
         )
 
     def _report_traces(

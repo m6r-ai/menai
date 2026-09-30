@@ -2,13 +2,17 @@
 Tests for trace rendering.
 
 The function summary ranks functions by instructions executed.  The annotated
-view's instruction lines must match the disassembler's instruction formatting
-and annotations, so that a hot spot found in a trace can be read directly
-against the disassembler output.
+view's instruction lines and metadata tables must match the disassembler's, so
+that a hot spot found in a trace can be read directly against the disassembler
+output.
 """
 
 from menai import Menai
-from menai_render.menai_render_instruction import annotate_instruction, format_instruction
+from menai_render.menai_render_instruction import (
+    annotate_instruction,
+    format_instruction,
+    render_code_metadata,
+)
 from menai_trace.menai_trace_data import resolve_trace
 from menai_trace.menai_trace_render import (
     render_annotated,
@@ -143,6 +147,80 @@ class TestRenderAnnotated:
         _, result = _traced_result()
         text = "\n".join(render_annotated(result, color=False))
         assert "Total instructions executed:" in text
+
+
+_METADATA_SOURCE = """
+(let ((offset 10))
+  (letrec ((f (lambda (n) (match n (0 "zero") (1 "one") (_ "many")))))
+    (let ((g (lambda (x) (integer+ x offset))))
+      (integer+ (g 5) (list-length (list (f 0) (f 1) (f 2)))))))
+"""
+
+
+def _traced_metadata():
+    """Compile, run, and resolve a trace for a program with rich code metadata."""
+    menai = Menai()
+    code = menai.compile(_METADATA_SOURCE)
+    menai.vm.enable_profiling()
+    menai.execute_raw(code)
+    instr_counts, call_counts = menai.vm.get_trace_data()
+    return code, resolve_trace(code, instr_counts, call_counts)
+
+
+class TestAnnotatedMetadata:
+    """The annotated view shows each function's metadata as the disassembler does."""
+
+    def test_constants_section_present(self):
+        """A function with a constant pool gets a Constants section."""
+        _, result = _traced_metadata()
+        text = "\n".join(render_annotated(result, color=False))
+        assert "Constants: 8" in text
+
+    def test_constant_entries_are_labelled(self):
+        """Constants are listed with their k-index and formatted value."""
+        _, result = _traced_metadata()
+        text = "\n".join(render_annotated(result, color=False))
+        assert "k0: integer 10" in text
+        assert 'k3: string "many"' in text
+
+    def test_jump_tables_section_present(self):
+        """A function with a SWITCH_INTEGER gets a Jump Tables section."""
+        _, result = _traced_metadata()
+        text = "\n".join(render_annotated(result, color=False))
+        assert "Jump Tables: 3" in text
+        assert "jt0: min=0  default=@8  span=0..1" in text
+
+    def test_inputs_section_present(self):
+        """A function with parameters gets an Inputs section naming each slot."""
+        _, result = _traced_metadata()
+        text = "\n".join(render_annotated(result, color=False))
+        assert "Inputs: 1" in text
+        assert "i0: 'x'" in text
+
+    def test_captured_section_present(self):
+        """A closure gets a Captured section naming each free variable."""
+        _, result = _traced_metadata()
+        text = "\n".join(render_annotated(result, color=False))
+        assert "Captured: 1" in text
+        assert "c0: 'offset'" in text
+
+    def test_locals_section_present(self):
+        """A function with locals gets a Locals section."""
+        _, result = _traced_metadata()
+        text = "\n".join(render_annotated(result, color=False))
+        assert "Locals:" in text
+
+    def test_metadata_matches_disassembler_for_each_function(self):
+        """Each function's metadata block matches the disassembler's exactly."""
+        code, result = _traced_metadata()
+        for function in result.functions:
+            expected = render_code_metadata(function.code)
+            if not expected:
+                continue
+
+            annotated = render_annotated(result, color=False)
+            for line in expected:
+                assert line in annotated
 
 
 _LOOP_SOURCE = """

@@ -24,7 +24,12 @@ python -m menai_eval.eval <file.menai> --profile --top 50    # show top 50 entri
 python -m menai_eval.eval <file.menai> --cprofile --sort time
 python -m menai_eval.eval <file.menai> --cprofile --output stats.prof
 python -m menai_eval.eval <file.menai> --raw                   # render string results literally
+python -m menai_eval.eval <file.menai> --annotate --color      # force colour when piping
 ```
+
+Reports are coloured when stdout is a terminal.  `--no-color` disables colour;
+`--color` / `-c` forces it on even when stdout is not a terminal (for example
+when piping into `less -R`).
 
 ## Profiling and tracing modes
 

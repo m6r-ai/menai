@@ -22,12 +22,19 @@ python run.py --opcodes --opcodes-top 20  # limit opcode output
 python run.py --profile              # per-function profiling (Menai only)
 python run.py --profile --profile-top 10  # limit profile output
 python run.py --annotate             # annotated disassembly (Menai only)
+python run.py --annotate --no-color  # disable colour in the reports
+python run.py --annotate --color     # force colour when piping
 ```
 
 `--suite` selects a single suite by exact name (case-insensitive); omit it to
 run every suite.  `--case` selects a single case within that suite by exact
 name (case-insensitive) and requires `--suite`.  A name that matches nothing
 is an error listing the available names.
+
+The per-function and annotated reports are coloured when stdout is a terminal.
+Pass `--no-color` to disable it (for example when redirecting to a file), or
+`--color` / `-c` to force it on even when stdout is not a terminal (for example
+when piping into `less -R`).
 
 ## Structure
 

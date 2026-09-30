@@ -21,7 +21,7 @@ from menai.menai_value import (
     MenaiStructType,
     MenaiSymbol,
 )
-from menai_disassemble.disassemble import format_constant
+from menai_render.menai_render_instruction import format_constant
 
 
 class TestScalarConstantFormatting:

@@ -6,20 +6,19 @@ Two views are provided:
   * A per-function summary, ranking functions by the number of instructions
     they executed and showing each function's share of the program total.
   * An annotated disassembly, which reuses the disassembler's instruction
-    formatting and annotations so that a traced instruction line matches the
-    corresponding disassembly line with a leading execution-count column added.
-    This lets a hot spot be read directly against the disassembler output.
+    formatting, annotations, and metadata tables so that a traced function
+    matches the corresponding disassembly function with a leading
+    execution-count column added.  This lets a hot spot be read directly against
+    the disassembler output.
 """
 
-from menai_render.menai_render_colour import green, grey, yellow
+from menai_render.menai_render_colour import grey, yellow
 from menai_render.menai_render_instruction import (
-    CONTROL_FLOW_OPCODES,
-    annotate_instruction,
     clean_name,
-    format_instruction,
-    jump_targets,
+    render_code_metadata,
+    render_instruction_lines,
 )
-from menai_trace.menai_trace_data import FunctionTrace, InstructionTrace, TraceResult
+from menai_trace.menai_trace_data import FunctionTrace, TraceResult
 
 _SEPARATOR_WIDTH = 70
 _COUNT_COL = 12
@@ -166,47 +165,27 @@ def _render_annotated_function(function: FunctionTrace, total_instr: int, color:
     lines.append(f"{'Instructions executed:':<24} {executed:>10,}   {share:>6.2f}% of total")
     lines.append("")
 
+    lines.extend(render_code_metadata(function.code, color=color))
+
     lines.append(f"{'Count':>{_COUNT_COL}} {'% of total':>11}    Instruction")
     lines.append(f"{'-' * _COUNT_COL} {'-' * 11}    {'-' * 48}")
 
-    targets = jump_targets(function.code)
+    counts = {trace.index: trace.count for trace in function.instructions}
 
-    for trace in function.instructions:
-        is_target = trace.index in targets
-        if is_target and trace.index > 0:
-            lines.append("")
-
-        # The marker sits before the count column so the numeric columns stay
-        # aligned with non-target lines.
-        marker = "\u25ba " if is_target else "  "
-        lines.append(_render_instruction(trace, function, total_instr, color, marker))
-
-        # Blank line after a control flow opcode, unless the next instruction is
-        # already a jump target (which inserts its own blank line above).
-        if trace.instruction.opcode in CONTROL_FLOW_OPCODES and (trace.index + 1) not in targets:
-            lines.append("")
+    lines.extend(
+        render_instruction_lines(
+            function.code,
+            lambda index, _instr: _count_prefix(counts[index], total_instr),
+            color=color,
+            dim_predicate=lambda index, _instr: counts[index] == 0,
+        )
+    )
 
     lines.append("")
     return lines
 
 
-def _render_instruction(
-    trace: InstructionTrace,
-    function: FunctionTrace,
-    total_instr: int,
-    color: bool,
-    target_marker: str = "  ",
-) -> str:
-    """Render one instruction line: count, percentage, then the disassembly line."""
-    pct = (trace.count / total_instr * 100.0) if total_instr > 0 else 0.0
-    instr_str = format_instruction(trace.instruction, trace.index, function.code)
-    annotation = annotate_instruction(trace.instruction, function.code)
-    prefix = f"{trace.count:>{_COUNT_COL},} {pct:>10.2f}%  {target_marker}"
-
-    if trace.count == 0:
-        return f"{grey(prefix + instr_str + annotation, color)}"
-
-    if annotation:
-        return f"{prefix}{instr_str}{green(annotation, color)}"
-
-    return f"{prefix}{instr_str}"
+def _count_prefix(count: int, total_instr: int) -> str:
+    """Return the leading execution-count and percentage column for a trace line."""
+    pct = (count / total_instr * 100.0) if total_instr > 0 else 0.0
+    return f"{count:>{_COUNT_COL},} {pct:>10.2f}%  "

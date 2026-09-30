@@ -29,9 +29,9 @@ _COUNT_COL = 15
 _PCT_COL = 12
 
 
-def _use_color(no_color: bool) -> bool:
+def _use_color(no_color: bool, color: bool) -> bool:
     """Return True if ANSI colour output should be used."""
-    return not no_color and sys.stdout.isatty()
+    return (not no_color and sys.stdout.isatty()) or color
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -419,9 +419,16 @@ Examples:
         help="Disable ANSI colour output"
     )
 
+    parser.add_argument(
+        "--color",
+        "-c",
+        action="store_true",
+        help="Force ANSI colour output even when stdout is not a terminal"
+    )
+
     args = parser.parse_args()
 
-    color = _use_color(args.no_color)
+    color = _use_color(args.no_color, args.color)
 
     pipeline_path: Path = args.pipeline
 
