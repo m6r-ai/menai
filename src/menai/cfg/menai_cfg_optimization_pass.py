@@ -39,6 +39,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTerminator,
 )
 from menai.cfg.menai_cfg_type_fact import TypeFact
+from menai.menai_value import MenaiStructType
 
 
 @dataclass
@@ -57,8 +58,20 @@ class MenaiCFGContext:
     only valid while the original object is alive, so a rebuilt function would
     otherwise look up the wrong entry (or none).  `fact_key` is preserved by
     `dataclasses.replace`, so a rebuilt function keeps its facts.
+
+    `struct_type_of_test` maps a function's `fact_key` to a map from the SSA
+    value id of a struct-is-instance? test's structtype argument to the
+    MenaiStructType that argument names.  It is written by the interprocedural
+    type analysis, which resolves the argument through the enclosing lexical
+    scope (a constant in the same function, or a free variable whose capture
+    chain bottoms out in an ancestor's constant).  It is read by struct
+    instance folding, which needs the resolved type to decide whether a test
+    is statically true.  Recording it here keeps the resolution in one place:
+    the analysis already performs it to refine the receiver's type on the true
+    edge, and a consumer must not re-derive it and drift.
     """
     type_facts: dict[int, dict[int, TypeFact]] = field(default_factory=dict)
+    struct_type_of_test: dict[int, dict[int, MenaiStructType]] = field(default_factory=dict)
 
     def facts_for(self, func: MenaiCFGFunction) -> dict[int, TypeFact]:
         """Return the type facts recorded for `func`, or an empty map."""
@@ -73,6 +86,29 @@ class MenaiCFGContext:
             return
 
         self.type_facts[func.fact_key] = facts
+
+    def record_struct_type_of_test(
+        self,
+        func: MenaiCFGFunction,
+        value_id: int,
+        struct_type: MenaiStructType,
+    ) -> None:
+        """Record the struct type named by a struct-is-instance? test's argument."""
+        if func.fact_key is None:
+            return
+
+        self.struct_type_of_test.setdefault(func.fact_key, {})[value_id] = struct_type
+
+    def struct_type_for_test(
+        self,
+        func: MenaiCFGFunction,
+        value_id: int,
+    ) -> MenaiStructType | None:
+        """Return the struct type named by a test's structtype argument, or None."""
+        if func.fact_key is None:
+            return None
+
+        return self.struct_type_of_test.get(func.fact_key, {}).get(value_id)
 
 
 def replace_block_instrs(

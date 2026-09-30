@@ -255,6 +255,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         """Initialise the per-compilation strongly-connected-component map."""
         self._scc_of: dict[int, int] = {}
         self._grounded_sccs: set[int] = set()
+        self._context: MenaiCFGContext | None = None
 
     def _optimize_module(
         self,
@@ -262,6 +263,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         context: MenaiCFGContext,
     ) -> tuple[MenaiCFGFunction, bool]:
         """Run the interprocedural analysis and rewrite struct field access."""
+        self._context = context
         functions = collect_functions(root)
         parent_of = _parent_map(root)
         info_of: dict[int, _FunctionInfo] = {}
@@ -987,6 +989,11 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         ):
             struct_type = self._struct_type_of_value(instr.args[1].id, value_defs, info)
             if struct_type is not None:
+                if self._context is not None:
+                    self._context.record_struct_type_of_test(
+                        info.func, instr.args[1].id, struct_type,
+                    )
+
                 return instr.args[0].id, TypeFact(kind='struct', struct_type=struct_type)
 
         return None
