@@ -658,7 +658,7 @@
    (string-index (lambda (s sub) ($string-index s sub)))
    (string-prefix? (lambda (s prefix) ($string-prefix? s prefix)))
    (string-suffix? (lambda (s suffix) ($string-suffix? s suffix)))
-   (string-ref (lambda (s i) ($string-ref s i)))
+   (string-get (lambda (s i) ($string-get s i)))
    (string-slice (lambda (str start . rest)
                    (if ($list-null? rest)
                        ($string-slice str start ($string-length str))
@@ -766,7 +766,7 @@
                                         #f)))))
                         (loop ($list-rest args) ($list-first args)))))))
    (bytes-length (lambda (b) ($bytes-length b)))
-   (bytes-ref (lambda (b i) ($bytes-ref b i)))
+   (bytes-get (lambda (b i) ($bytes-get b i)))
    (bytes-append-u8 (lambda (b v) ($bytes-append-u8 b v)))
    (bytes-slice (lambda (b start . rest)
                   (if ($list-null? rest)
@@ -871,13 +871,13 @@
                                  (if ($integer=? i ($bytes-length b))
                                      acc
                                      (loop ($integer+ i 1)
-                                           ($bytes-append-u8 acc (f ($bytes-ref b i))))))))
+                                           ($bytes-append-u8 acc (f ($bytes-get b i))))))))
                   (loop 0 ($string-hex->bytes "")))))
    (filter-bytes (lambda (f b)
                    (letrec ((loop (lambda (i acc)
                                     (if ($integer=? i ($bytes-length b))
                                         acc
-                                        (let ((byte ($bytes-ref b i)))
+                                        (let ((byte ($bytes-get b i)))
                                           (loop ($integer+ i 1)
                                                 (if (f byte)
                                                     ($bytes-append-u8 acc byte)
@@ -888,7 +888,7 @@
                                   (if ($integer=? i ($bytes-length b))
                                       acc
                                       (loop ($integer+ i 1)
-                                            (f acc ($bytes-ref b i)))))))
+                                            (f acc ($bytes-get b i)))))))
                    (loop 0 init))))
    (bytes-empty? (lambda (b) ($integer=? ($bytes-length b) 0)))
    (bytes-prefix? (lambda (b prefix)
@@ -973,8 +973,8 @@
                  (if ($list-null? rest)
                      ($list-slice lst start ($list-length lst))
                      ($list-slice lst start ($list-first rest)))))
-   (list-remove (lambda (lst elem) ($list-remove lst elem)))
-   (list-ref (lambda (lst i) ($list-ref lst i)))
+   (list-without (lambda (lst elem) ($list-without lst elem)))
+   (list-get (lambda (lst i) ($list-get lst i)))
    (list->string (lambda (lst . rest)
                    ($list->string lst
                                   (if ($list-null? rest) "" ($list-first rest)))))
@@ -987,7 +987,7 @@
                            (if ($list-null? lst)
                                acc
                                (loop ($list-rest ($list-rest lst))
-                                     ($dict-set acc
+                                     ($dict-with acc
                                                 ($list-first lst)
                                                 ($list-first ($list-rest lst))))))))
                  (loop args (dict))))))
@@ -1027,8 +1027,8 @@
                ($dict-get d
                           key
                           (if ($list-null? rest) #none ($list-first rest)))))
-   (dict-set (lambda (d key value) ($dict-set d key value)))
-   (dict-remove (lambda (d key) ($dict-remove d key)))
+   (dict-with (lambda (d key value) ($dict-with d key value)))
+   (dict-without (lambda (d key) ($dict-without d key)))
    (dict-has? (lambda (d key) ($dict-has? d key)))
    (dict-keys (lambda (d) ($dict-keys d)))
    (dict-values (lambda (d) ($dict-values d)))
@@ -1040,7 +1040,7 @@
                      (if ($list-null? elems)
                          acc
                          (loop ($list-rest elems)
-                               ($set-add acc ($list-first elems)))))))
+                               ($set-with acc ($list-first elems)))))))
             (loop args (set)))))
    (set? (lambda (x) ($set? x)))
    (set=? (lambda (. args)
@@ -1075,8 +1075,8 @@
                                          (inner ($list-rest lst)))))))
                         (outer args))))))
    (set-member? (lambda (s x) ($set-member? s x)))
-   (set-add (lambda (s x) ($set-add s x)))
-   (set-remove (lambda (s x) ($set-remove s x)))
+   (set-with (lambda (s x) ($set-with s x)))
+   (set-without (lambda (s x) ($set-without s x)))
    (set-length (lambda (s) ($set-length s)))
    (set-union (lambda (s1 s2) ($set-union s1 s2)))
    (set-intersection (lambda (s1 s2) ($set-intersection s1 s2)))
@@ -1086,7 +1086,7 @@
    (struct? (lambda (x) ($struct? x)))
    (struct-is-instance? (lambda (s t) ($struct-is-instance? s t)))
    (struct-get (lambda (s field) ($struct-get s field)))
-   (struct-set (lambda (s field val) ($struct-set s field val)))
+   (struct-with (lambda (s field val) ($struct-with s field val)))
    (struct=? (lambda (a b) ($struct=? a b)))
    (struct!=? (lambda (a b) ($struct!=? a b)))
    (struct-type (lambda (s) ($struct-type s)))
@@ -1192,7 +1192,7 @@
                               acc
                               (let*
                                 ((k ($list-first keys)) (v ($dict-get al k #none)))
-                                (loop ($list-rest keys) ($dict-set acc k (f k v))))))))
+                                (loop ($list-rest keys) ($dict-with acc k (f k v))))))))
                  (loop ($dict-keys al) (dict)))))
    (filter-dict (lambda (pred al)
                   (letrec
@@ -1202,7 +1202,7 @@
                                  (let*
                                    ((k ($list-first keys)) (v ($dict-get al k #none)))
                                    (if (pred k v)
-                                       (loop ($list-rest keys) ($dict-set acc k v))
+                                       (loop ($list-rest keys) ($dict-with acc k v))
                                        (loop ($list-rest keys) acc)))))))
                     (loop ($dict-keys al) (dict)))))
    (map-set (lambda (f s)
@@ -1223,9 +1223,9 @@
    (vector? (lambda (x) ($vector? x)))
    (vector=? (lambda (a b) ($vector=? a b)))
    (vector!=? (lambda (a b) ($vector!=? a b)))
-   (vector-ref (lambda (v i) ($vector-ref v i)))
+   (vector-get (lambda (v i) ($vector-get v i)))
    (vector-length (lambda (v) ($vector-length v)))
-   (vector-set (lambda (v i val) ($vector-set v i val)))
+   (vector-with (lambda (v i val) ($vector-with v i val)))
    (vector-slice (lambda (v start . rest)
                    (if ($list-null? rest)
                        ($vector-slice v start ($vector-length v))
@@ -1242,14 +1242,14 @@
                             (if ($integer=? i ($vector-length v))
                                 ($list->vector ($list-reverse acc))
                                 (loop ($integer+ i 1)
-                                      ($list-prepend acc (f ($vector-ref v i))))))))
+                                      ($list-prepend acc (f ($vector-get v i))))))))
                    (loop 0 (list)))))
    (filter-vector (lambda (pred v)
                    (letrec
                      ((loop (lambda (i acc)
                               (if ($integer<? i 0)
                                   ($list->vector acc)
-                                  (let ((elem ($vector-ref v i)))
+                                  (let ((elem ($vector-get v i)))
                                     (loop ($integer- i 1)
                                           (if (pred elem)
                                               ($list-prepend acc elem)
@@ -1261,14 +1261,14 @@
                              (if ($integer=? i ($vector-length v))
                                  acc
                                  (loop ($integer+ i 1)
-                                       (f acc ($vector-ref v i)))))))
+                                       (f acc ($vector-get v i)))))))
                     (loop 0 init))))
    (find-vector (lambda (pred v)
                   (letrec
                     ((loop (lambda (i)
                              (if ($integer=? i ($vector-length v))
                                  #none
-                                 (let ((elem ($vector-ref v i)))
+                                 (let ((elem ($vector-get v i)))
                                    (if (pred elem)
                                        elem
                                        (loop ($integer+ i 1))))))))
@@ -1278,7 +1278,7 @@
                     ((loop (lambda (i)
                              (if ($integer=? i ($vector-length v))
                                  #f
-                                 (if (pred ($vector-ref v i))
+                                 (if (pred ($vector-get v i))
                                      #t
                                      (loop ($integer+ i 1)))))))
                     (loop 0))))
@@ -1287,7 +1287,7 @@
                     ((loop (lambda (i)
                              (if ($integer=? i ($vector-length v))
                                  #t
-                                 (if (pred ($vector-ref v i))
+                                 (if (pred ($vector-get v i))
                                      (loop ($integer+ i 1))
                                      #f)))))
                     (loop 0))))
@@ -1421,7 +1421,7 @@
         "string-index" string-index
         "string-prefix?" string-prefix?
         "string-suffix?" string-suffix?
-        "string-ref" string-ref
+        "string-get" string-get
         "string-slice" string-slice
         "string->float" string->float
         "string->complex" string->complex
@@ -1446,8 +1446,8 @@
         "list-null?" list-null?
         "list-index" list-index
         "list-slice" list-slice
-        "list-remove" list-remove
-        "list-ref" list-ref
+        "list-without" list-without
+        "list-get" list-get
         "list->string" list->string
         "list->set" list->set
         "dict" dict
@@ -1455,8 +1455,8 @@
         "dict=?" dict=?
         "dict!=?" dict!=?
         "dict-get" dict-get
-        "dict-set" dict-set
-        "dict-remove" dict-remove
+        "dict-with" dict-with
+        "dict-without" dict-without
         "dict-has?" dict-has?
         "dict-keys" dict-keys
         "dict-values" dict-values
@@ -1467,8 +1467,8 @@
         "set=?" set=?
         "set!=?" set!=?
         "set-member?" set-member?
-        "set-add" set-add
-        "set-remove" set-remove
+        "set-with" set-with
+        "set-without" set-without
         "set-length" set-length
         "set-union" set-union
         "set-intersection" set-intersection
@@ -1478,7 +1478,7 @@
         "struct?" struct?
         "struct-is-instance?" struct-is-instance?
         "struct-get" struct-get
-        "struct-set" struct-set
+        "struct-with" struct-with
         "struct=?" struct=?
         "struct!=?" struct!=?
         "struct-type" struct-type
@@ -1511,7 +1511,7 @@
         "bytes<=?" bytes<=?
         "bytes>=?" bytes>=?
         "bytes-length" bytes-length
-        "bytes-ref" bytes-ref
+        "bytes-get" bytes-get
         "bytes-append-u8" bytes-append-u8
         "bytes-slice" bytes-slice
         "bytes-concat" bytes-concat
@@ -1609,9 +1609,9 @@
         "vector?" vector?
         "vector=?" vector=?
         "vector!=?" vector!=?
-        "vector-ref" vector-ref
+        "vector-get" vector-get
         "vector-length" vector-length
-        "vector-set" vector-set
+        "vector-with" vector-with
         "vector-slice" vector-slice
         "vector-concat" vector-concat
         "vector-empty?" vector-empty?

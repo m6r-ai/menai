@@ -116,61 +116,61 @@ class TestStructGet:
 
 
 # ---------------------------------------------------------------------------
-# 3. Functional update (struct-set)
+# 3. Functional update (struct-with)
 # ---------------------------------------------------------------------------
 
 class TestStructSet:
-    """Test struct-set functional update."""
+    """Test struct-with functional update."""
 
     def test_update_first_field(self, menai):
-        """struct-set updates the first field and returns a new struct."""
+        """struct-with updates the first field and returns a new struct."""
         result = menai.evaluate_and_format('''
         (let ((Point (struct (x y)))
               (p (Point 1 2)))
-          (struct-set p 'x 99))
+          (struct-with p 'x 99))
         ''')
         assert result == '(Point 99 2)'
 
     def test_update_last_field(self, menai):
-        """struct-set updates the last field and returns a new struct."""
+        """struct-with updates the last field and returns a new struct."""
         result = menai.evaluate_and_format('''
         (let ((Point (struct (x y)))
               (p (Point 1 2)))
-          (struct-set p 'y 99))
+          (struct-with p 'y 99))
         ''')
         assert result == '(Point 1 99)'
 
     def test_update_middle_field(self, menai):
-        """struct-set updates a middle field correctly."""
+        """struct-with updates a middle field correctly."""
         result = menai.evaluate_and_format('''
         (let ((RGB (struct (r g b)))
               (c (RGB 10 20 30)))
-          (struct-set c 'g 99))
+          (struct-with c 'g 99))
         ''')
         assert result == '(RGB 10 99 30)'
 
     def test_original_unchanged_after_set(self, menai):
-        """struct-set is a functional update — the original struct is unchanged."""
+        """struct-with is a functional update — the original struct is unchanged."""
         result = menai.evaluate_and_format('''
         (let ((Point (struct (x y)))
               (p (Point 1 2)))
-          (let ((p2 (struct-set p 'x 99)))
+          (let ((p2 (struct-with p 'x 99)))
             (list (struct-get p 'x) (struct-get p2 'x))))
         ''')
         assert result == '(1 99)'
 
     def test_set_unknown_field_raises_error(self, menai):
-        """struct-set raises an error for an unknown field name."""
+        """struct-with raises an error for an unknown field name."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-set p 'z 99))"
+                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-with p 'z 99))"
             )
         assert exc_info.value.error_code == VMErrorCode.STRUCT_FIELD_NOT_FOUND
 
     def test_set_on_non_struct_raises_error(self, menai):
-        """struct-set raises an error when called on a non-struct."""
+        """struct-with raises an error when called on a non-struct."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate("(struct-set 42 'x 1)")
+            menai.evaluate("(struct-with 42 'x 1)")
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
 
@@ -612,7 +612,7 @@ class TestStructHashability:
         result = menai.evaluate_and_format('''
         (let ((Point (struct (x y)))
               (p (Point 1 2)))
-          (set-length (set-add (set) p)))
+          (set-length (set-with (set) p)))
         ''')
         assert result == '1'
 
@@ -622,7 +622,7 @@ class TestStructHashability:
         (let ((Point (struct (x y)))
               (p1 (Point 1 2))
               (p2 (Point 1 2)))
-          (set-length (set-add (set-add (set) p1) p2)))
+          (set-length (set-with (set-with (set) p1) p2)))
         ''')
         assert result == '1'
 
@@ -632,7 +632,7 @@ class TestStructHashability:
         (let ((Point (struct (x y)))
               (p1 (Point 1 2))
               (p2 (Point 3 4)))
-          (set-length (set-add (set-add (set) p1) p2)))
+          (set-length (set-with (set-with (set) p1) p2)))
         ''')
         assert result == '2'
 
@@ -652,7 +652,7 @@ class TestStructHashability:
             menai.evaluate('''
             (let ((Container (struct (items)))
                   (c (Container (list 1 2 3))))
-              (set-add (set) c))
+              (set-with (set) c))
             ''')
 
     def test_struct_with_list_field_raises_error_as_dict_key(self, menai):
@@ -890,10 +890,10 @@ class TestStructErrors:
             menai.evaluate("(struct-get 42 'x)")
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
-    def test_struct_set_on_non_struct_raises_error(self, menai):
-        """struct-set raises an error when the first argument is not a struct."""
+    def test_struct_with_on_non_struct_raises_error(self, menai):
+        """struct-with raises an error when the first argument is not a struct."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate("(struct-set 42 'x 1)")
+            menai.evaluate("(struct-with 42 'x 1)")
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
     def test_struct_get_unknown_field_raises_error(self, menai):
@@ -904,11 +904,11 @@ class TestStructErrors:
             )
         assert exc_info.value.error_code == VMErrorCode.STRUCT_FIELD_NOT_FOUND
 
-    def test_struct_set_unknown_field_raises_error(self, menai):
-        """struct-set raises an error for an unknown field name."""
+    def test_struct_with_unknown_field_raises_error(self, menai):
+        """struct-with raises an error for an unknown field name."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-set p 'z 99))"
+                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-with p 'z 99))"
             )
         assert exc_info.value.error_code == VMErrorCode.STRUCT_FIELD_NOT_FOUND
 
@@ -928,18 +928,18 @@ class TestStructErrors:
             )
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
-    def test_struct_ref_is_not_callable(self, menai):
-        """struct-ref is a compiler-internal opcode and is not bound in the surface language."""
+    def test_struct_get_indexed_is_not_callable(self, menai):
+        """struct-get-indexed is a compiler-internal opcode and is not bound in the surface language."""
         with pytest.raises(MenaiEvalError):
             menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-ref p 0))"
+                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-get-indexed p 0))"
             )
 
-    def test_struct_set_ref_is_not_callable(self, menai):
-        """struct-set-ref is a compiler-internal opcode and is not bound in the surface language."""
+    def test_struct_with_indexed_is_not_callable(self, menai):
+        """struct-with-indexed is a compiler-internal opcode and is not bound in the surface language."""
         with pytest.raises(MenaiEvalError):
             menai.evaluate(
-                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-set-ref p 0 99))"
+                "(let ((Point (struct (x y))) (p (Point 1 2))) (struct-with-indexed p 0 99))"
             )
 
     def test_struct_get_unknown_field_raises_error(self, menai):
@@ -950,11 +950,11 @@ class TestStructErrors:
             )
         assert exc_info.value.error_code == VMErrorCode.STRUCT_FIELD_NOT_FOUND
 
-    def test_struct_set_unknown_field_raises_error_on_zero_field_struct(self, menai):
-        """struct-set raises an error for any field name on a zero-field struct."""
+    def test_struct_with_unknown_field_raises_error_on_zero_field_struct(self, menai):
+        """struct-with raises an error for any field name on a zero-field struct."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(
-                "(let ((Unit (struct ())) (u (Unit))) (struct-set u 'x 99))"
+                "(let ((Unit (struct ())) (u (Unit))) (struct-with u 'x 99))"
             )
         assert exc_info.value.error_code == VMErrorCode.STRUCT_FIELD_NOT_FOUND
 
@@ -1014,22 +1014,22 @@ class TestStructFirstClass:
         ''')
         assert result == '20'
 
-    def test_struct_set_as_first_class(self, menai):
-        """struct-set used as a first-class function."""
+    def test_struct_with_as_first_class(self, menai):
+        """struct-with used as a first-class function."""
         result = menai.evaluate_and_format('''
         (let ((Point (struct (x y)))
               (p (Point 1 2))
-              (updater struct-set))
+              (updater struct-with))
           (updater p 'x 99))
         ''')
         assert result == '(Point 99 2)'
 
-    def test_struct_set_stored_in_variable(self, menai):
-        """struct-set stored in a variable and used to update multiple structs."""
+    def test_struct_with_stored_in_variable(self, menai):
+        """struct-with stored in a variable and used to update multiple structs."""
         result = menai.evaluate_and_format('''
         (let ((Point (struct (x y)))
               (points (list (Point 1 2) (Point 3 4)))
-              (updater struct-set))
+              (updater struct-with))
           (map-list (lambda (p) (updater p 'x 0)) points))
         ''')
         assert result == '((Point 0 2) (Point 0 4))'
@@ -1179,7 +1179,7 @@ class TestStructDynamicConstruction:
                (d     (dict "point" point))
                (ctor  (dict-get d "point"))
                (pairs (list (list 1 2) (list 3 4) (list 5 6))))
-          (map-list (lambda (pair) (ctor (list-ref pair 0) (list-ref pair 1))) pairs))
+          (map-list (lambda (pair) (ctor (list-get pair 0) (list-get pair 1))) pairs))
         ''')
         assert result == '((point 1 2) (point 3 4) (point 5 6))'
 

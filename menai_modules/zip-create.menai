@@ -148,10 +148,10 @@
                      (let ((entry (list-first rest)))
                        (let ((built (build-local-entry entry)))
                          (let ((local-bytes (list-first built))
-                               (crc (list-ref built 1))
-                               (compressed-size (list-ref built 2))
-                               (uncompressed-size (list-ref built 3))
-                               (method (list-ref built 4)))
+                               (crc (list-get built 1))
+                               (compressed-size (list-get built 2))
+                               (uncompressed-size (list-get built 3))
+                               (method (list-get built 4)))
                            (loop (list-rest rest)
                                  (integer+ offset (bytes-length local-bytes))
                                  (bytes-concat local-acc local-bytes)
@@ -185,8 +185,8 @@
             (if (list? entries)
                 (let ((built (build-entries entries)))
                   (let ((local-bytes (list-first built))
-                        (central-bytes (list-ref built 1))
-                        (count (list-ref built 2)))
+                        (central-bytes (list-get built 1))
+                        (count (list-get built 2)))
                     (bytes-concat
                       local-bytes
                       central-bytes

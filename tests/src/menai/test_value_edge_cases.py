@@ -294,7 +294,7 @@ class TestMenaiValueEdgeCases:
         # Single character operations
         assert menai.evaluate('(string-length "a")') == 1
         assert menai.evaluate('(string-upcase "a")') == "A"
-        assert menai.evaluate('(string-ref "a" 0)') == "a"
+        assert menai.evaluate('(string-get "a" 0)') == "a"
 
         # Whitespace operations
         assert menai.evaluate('(string-trim "   ")') == ""

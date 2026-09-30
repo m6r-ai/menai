@@ -108,7 +108,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGPhiInstr,
     MenaiCFGSelfLoopTerm,
     MenaiCFGStructGetIndexedInstr,
-    MenaiCFGStructSetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
     MenaiCFGSwitchTerm,
     MenaiCFGValue,
     blocks_by_id,
@@ -626,8 +626,8 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
                 result=rv(instr.result), struct=rv(instr.struct), index=instr.index,
             )
 
-        if isinstance(instr, MenaiCFGStructSetIndexedInstr):
-            return MenaiCFGStructSetIndexedInstr(
+        if isinstance(instr, MenaiCFGStructWithIndexedInstr):
+            return MenaiCFGStructWithIndexedInstr(
                 result=rv(instr.result),
                 struct=rv(instr.struct),
                 index=instr.index,

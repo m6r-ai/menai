@@ -6,7 +6,7 @@
  * testing.  Each MenaiSetElement packages a value and its precomputed hash in
  * a single reference-counted allocation.  Because elements are individually
  * ref-counted, they can be shared between different versions of a set —
- * set-add and set-remove only create/replace the element that changes,
+ * set-with and set-without only create/replace the element that changes,
  * retaining (sharing) all unchanged elements from the source set.
  */
 #include <stdlib.h>

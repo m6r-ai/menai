@@ -6,7 +6,7 @@
  * lookup.  Each MenaiDictElement packages a key, value, and precomputed hash
  * in a single reference-counted allocation.  Because elements are individually
  * ref-counted, they can be shared between different versions of a dictionary —
- * dict-set and dict-remove only create/replace the element that changes,
+ * dict-with and dict-without only create/replace the element that changes,
  * retaining (sharing) all unchanged elements from the source dictionary.
  */
 #include <stdlib.h>

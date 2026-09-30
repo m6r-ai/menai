@@ -81,7 +81,7 @@ class TestZip:
         helpers.assert_evaluates_to(
             menai,
             '''(fold-list (lambda (acc pair)
-                            (dict-set acc (list-first pair) (list-first (list-rest pair))))
+                            (dict-with acc (list-first pair) (list-first (list-rest pair))))
                           (dict)
                           (list-zip (list "a" "b" "c") (list 1 2 3)))''',
             '{("a" 1) ("b" 2) ("c" 3)}'

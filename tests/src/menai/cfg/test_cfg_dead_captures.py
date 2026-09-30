@@ -518,7 +518,7 @@ class TestIntegration:
                     (letrec ((loop (lambda (i)
                                      (if (integer>=? i (string-length s))
                                          i
-                                         (let ((ch (string-ref s i)))
+                                         (let ((ch (string-get s i)))
                                            (if (or (string=? ch " ")
                                                (or (string=? ch "\t")
                                                (or (string=? ch "\n")

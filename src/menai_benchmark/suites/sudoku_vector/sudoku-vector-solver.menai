@@ -1,7 +1,7 @@
 ; Sudoku solver using backtracking search.
 ; Vector variant of the list-based sudoku-solver.menai: the board is a
 ; vector of 9 rows, each a vector of 9 integers, so cell access is O(1)
-; vector-ref and a cell update is one contiguous vector-set copy per level
+; vector-get and a cell update is one contiguous vector-with copy per level
 ; instead of list-slice/list-append/list-concat reconstruction.
 ; Empty cells are 0.
 
@@ -12,7 +12,7 @@
   (row-nonzero (lambda (board row c acc)
     (if (integer>=? c 9)
       acc
-      (let ((v (vector-ref (vector-ref board row) c)))
+      (let ((v (vector-get (vector-get board row) c)))
         (row-nonzero board row (integer+ c 1)
           (if (integer=? v 0) acc (list-prepend acc v)))))))
 
@@ -24,7 +24,7 @@
   (col-nonzero (lambda (board col r acc)
     (if (integer>=? r 9)
       acc
-      (let ((v (vector-ref (vector-ref board r) col)))
+      (let ((v (vector-get (vector-get board r) col)))
         (col-nonzero board col (integer+ r 1)
           (if (integer=? v 0) acc (list-prepend acc v)))))))
 
@@ -37,7 +37,7 @@
   (box-nonzero (lambda (board box-row box-col i acc)
     (if (integer>=? i 9)
       acc
-      (let ((v (vector-ref (vector-ref board (integer+ box-row (integer/ i 3)))
+      (let ((v (vector-get (vector-get board (integer+ box-row (integer/ i 3)))
                            (integer+ box-col (integer% i 3)))))
         (box-nonzero board box-row box-col (integer+ i 1)
           (if (integer=? v 0) acc (list-prepend acc v)))))))
@@ -60,7 +60,7 @@
   (find-empty-in-row (lambda (row-idx row-vector col)
     (if (integer>=? col 9)
       #none
-      (if (integer=? (vector-ref row-vector col) 0)
+      (if (integer=? (vector-get row-vector col) 0)
         (list row-idx col)
         (find-empty-in-row row-idx row-vector (integer+ col 1))))))
 
@@ -69,15 +69,15 @@
   (find-empty (lambda (board row)
     (if (integer>=? row 9)
       #none
-      (let ((found (find-empty-in-row row (vector-ref board row) 0)))
+      (let ((found (find-empty-in-row row (vector-get board row) 0)))
         (if (none? found)
           (find-empty board (integer+ row 1))
           found)))))
 
   ; Return a new board with `num` placed at (row, col).
   (set-cell (lambda (board row col num)
-    (vector-set board row
-      (vector-set (vector-ref board row) col num))))
+    (vector-with board row
+      (vector-with (vector-get board row) col num))))
 
   ; Try each candidate digit for the cell at (row, col).
   ; Returns the solved board on success, or #none if all candidates fail.
@@ -95,8 +95,8 @@
     (let ((empty (find-empty board 0)))
       (if (none? empty)
         board
-        (try-candidates board (list-first empty) (list-ref empty 1)
-          (set->list (candidates board (list-first empty) (list-ref empty 1))))))))
+        (try-candidates board (list-first empty) (list-get empty 1)
+          (set->list (candidates board (list-first empty) (list-get empty 1))))))))
 
   ; Format one cell: digit (or "." for empty) followed by a column separator.
   (format-cell (lambda (col val)
@@ -109,7 +109,7 @@
     (if (integer>=? c 9)
       acc
       (format-cells row (integer+ c 1)
-        (list-append acc (format-cell c (vector-ref row c)))))))
+        (list-append acc (format-cell c (vector-get row c)))))))
 
   ; Format one row, appending a horizontal divider after every third row.
   (format-row (lambda (row-idx row)
@@ -125,7 +125,7 @@
     (if (integer>=? r 9)
       acc
       (format-rows board (integer+ r 1)
-        (list-append acc (format-row r (vector-ref board r)))))))
+        (list-append acc (format-row r (vector-get board r)))))))
 
   ; Render a complete board as a printable string.
   (display-board (lambda (board)

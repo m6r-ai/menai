@@ -8,7 +8,7 @@ Covers:
      two different struct types (the receiver's type identity is not proven).
   3. Struct field access stays symbol-based when the receiver's type is not a
      struct at all.
-  4. struct-set through a parameter is rewritten to the indexed form.
+  4. struct-with through a parameter is rewritten to the indexed form.
   5. The rewritten and non-rewritten forms produce identical results.
   6. The type fact lattice join rules.
   7. Guards are eliminated for parameters whose types are proven, and kept
@@ -38,7 +38,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGConstInstr,
     MenaiCFGGuardInstr,
     MenaiCFGStructGetIndexedInstr,
-    MenaiCFGStructSetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
 )
 from menai.cfg.menai_cfg_optimization_pass import collect_functions
 from menai.cfg.menai_cfg_type_fact import ANY, BOTTOM, TypeFact, join
@@ -57,7 +57,7 @@ def _field_ops(cfg) -> list[tuple[str, list]]:
     Collect (op, args) for every struct field access in the module.
 
     Name-based accesses are reported under their builtin name ('struct-get',
-    'struct-set'); the index-based structural instructions the type analysis
+    'struct-with'); the index-based structural instructions the type analysis
     emits are reported as 'struct-indexed-get' and 'struct-indexed-set', so a caller can
     treat the two forms uniformly.
     """
@@ -67,10 +67,10 @@ def _field_ops(cfg) -> list[tuple[str, list]]:
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGStructGetIndexedInstr):
                     result.append(('struct-indexed-get', [instr.struct]))
-                elif isinstance(instr, MenaiCFGStructSetIndexedInstr):
+                elif isinstance(instr, MenaiCFGStructWithIndexedInstr):
                     result.append(('struct-indexed-set', [instr.struct, instr.value]))
                 elif isinstance(instr, MenaiCFGBuiltinInstr) and instr.op in {
-                    'struct-get', 'struct-set',
+                    'struct-get', 'struct-with',
                 }:
                     result.append((instr.op, instr.args))
 
@@ -177,25 +177,25 @@ class TestNonStructReceiver:
 
 STRUCT_SET_SRC = """
 (letrec ((point (struct (x y)))
-         (with-x (lambda (p) (struct-set p 'x 10))))
+         (with-x (lambda (p) (struct-with p 'x 10))))
   (with-x (point 1 2)))
 """
 
 
 class TestStructSetThroughParameter:
-    """struct-set through a proven parameter resolves to the indexed form."""
+    """struct-with through a proven parameter resolves to the indexed form."""
 
-    def test_struct_set_becomes_indexed_set(self):
+    def test_struct_with_becomes_indexed_set(self):
         cfg = _build_cfg(STRUCT_SET_SRC)
         assert 'struct-indexed-set' in _ops(cfg)
-        assert 'struct-set' not in _ops(cfg)
+        assert 'struct-with' not in _ops(cfg)
 
 
 class TestOrphanedSymbolConstantsRemoved:
     """
     The symbol constant that fed a rewritten field access is removed.
 
-    Once struct-get/struct-set is rewritten to its index-based form the field
+    Once struct-get/struct-with is rewritten to its index-based form the field
     symbol argument is no longer read by any instruction, so the constant that
     defined it is dead and must not survive into the backend.
     """
@@ -204,7 +204,7 @@ class TestOrphanedSymbolConstantsRemoved:
         cfg = _build_cfg(MONOMORPHIC_SRC)
         assert _symbol_const_count(cfg) == 0
 
-    def test_struct_set_symbol_constant_removed(self):
+    def test_struct_with_symbol_constant_removed(self):
         cfg = _build_cfg(STRUCT_SET_SRC)
         assert _symbol_const_count(cfg) == 0
 
@@ -378,7 +378,7 @@ class TestResultsUnchanged:
     def test_polymorphic_result(self, menai):
         assert menai.evaluate_and_format(POLYMORPHIC_SRC) == "4"
 
-    def test_struct_set_result(self, menai):
+    def test_struct_with_result(self, menai):
         assert menai.evaluate_and_format(STRUCT_SET_SRC) == "(point 10 2)"
 
 
@@ -416,24 +416,24 @@ REFINED_SET_RECEIVER_SRC = """
        (box (struct (item tag))))
   (let ((inner (struct-get (box (point 1 2) 9) 'item)))
     (if (struct-is-instance? inner point)
-        (struct-get (struct-set inner 'x 7) 'x)
+        (struct-get (struct-with inner 'x 7) 'x)
         0)))
 """
 
 
 class TestStructSetThroughRefinement:
     """
-    A struct-set on a receiver whose type is proven only by a refinement.
+    A struct-with on a receiver whose type is proven only by a refinement.
 
     Mirrors TestStructTypeThroughRefinement for the update form: the receiver's
     type comes from the struct-is-instance? test, so the rewrite must read the
     block-local refined facts.
     """
 
-    def test_struct_set_becomes_indexed_set(self):
+    def test_struct_with_becomes_indexed_set(self):
         cfg = _build_cfg(REFINED_SET_RECEIVER_SRC)
         assert 'struct-indexed-set' in _ops(cfg)
-        assert 'struct-set' not in _ops(cfg)
+        assert 'struct-with' not in _ops(cfg)
 
     def test_result(self, menai):
         assert menai.evaluate_and_format(REFINED_SET_RECEIVER_SRC) == "7"
@@ -844,8 +844,8 @@ ESCAPE_VIA_CAPTURE_SRC = """
     wrapper))
 """
 
-# A function stored into a vector with vector-set and fetched back out with
-# vector-ref.  Every builtin that moves a value into or out of a container must
+# A function stored into a vector with vector-with and fetched back out with
+# vector-get.  Every builtin that moves a value into or out of a container must
 # be covered, not only the list ones.
 ESCAPE_VIA_VECTOR_SRC = """
 (letrec ((point (struct (x y)))
@@ -860,8 +860,8 @@ ESCAPE_VIA_VECTOR_SRC = """
                         (h (struct-get p 'x)))
                     (integer+ a b c d e f g h)))))
   (let* ((direct (get-x (point 1 2)))
-         (boxed (vector-set (vector #f) 0 get-x))
-         (fetched ((vector-ref boxed 0) "hello")))
+         (boxed (vector-with (vector #f) 0 get-x))
+         (fetched ((vector-get boxed 0) "hello")))
     (list direct fetched)))
 """
 

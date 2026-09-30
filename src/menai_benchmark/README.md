@@ -226,7 +226,7 @@ easy (36 givens), medium (30), hard (25), expert (23).
 ### Sudoku (vector)
 Solves the same four sudoku puzzles as the sudoku_list suite, but the board is a
 vector of 9 row-vectors instead of a list of lists, so cell access is
-`vector-ref` and a cell update is a `vector-set` copy. The puzzles and iteration
+`vector-get` and a cell update is a `vector-with` copy. The puzzles and iteration
 counts are shared with the sudoku_list suite, which makes the Menai timings directly
 comparable across the two suites.
 

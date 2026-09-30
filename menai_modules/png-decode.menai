@@ -63,8 +63,8 @@
           (lambda (pos header idat-chunks palette transparency)
             (let ((result (read-chunk b pos)))
               (let ((typ (list-first result))
-                    (data (list-ref result 1))
-                    (next (list-ref result 2)))
+                    (data (list-get result 1))
+                    (next (list-get result 2)))
                 (if (string=? typ "IEND")
                     (dict "header" header
                           "idat" (apply bytes-concat (list-reverse idat-chunks))
@@ -75,11 +75,11 @@
                               (dict
                                 "width" (bytes-read-u32-be data 0)
                                 "height" (bytes-read-u32-be data 4)
-                                "bit-depth" (bytes-ref data 8)
-                                "colour-type" (bytes-ref data 9)
-                                "compression" (bytes-ref data 10)
-                                "filter" (bytes-ref data 11)
-                                "interlace" (bytes-ref data 12))
+                                "bit-depth" (bytes-get data 8)
+                                "colour-type" (bytes-get data 9)
+                                "compression" (bytes-get data 10)
+                                "filter" (bytes-get data 11)
+                                "interlace" (bytes-get data 12))
                               idat-chunks palette transparency)
                         (if (string=? typ "IDAT")
                             (loop next header (list-prepend idat-chunks data)
@@ -135,13 +135,13 @@
           (lambda (i acc)
             (if (integer>=? i (bytes-length filtered))
                 acc
-                (let ((x (bytes-ref filtered i))
+                (let ((x (bytes-get filtered i))
                       (a (if (integer>=? i bpp)
-                             (bytes-ref acc (integer- i bpp))
+                             (bytes-get acc (integer- i bpp))
                              0))
-                      (b (if (integer<? i (bytes-length prev)) (bytes-ref prev i) 0))
+                      (b (if (integer<? i (bytes-length prev)) (bytes-get prev i) 0))
                       (c (if (and (integer>=? i bpp) (integer<? (integer- i bpp) (bytes-length prev)))
-                             (bytes-ref prev (integer- i bpp))
+                             (bytes-get prev (integer- i bpp))
                              0)))
                   (let ((value
                          (if (integer=? filter-type 0)
@@ -173,7 +173,7 @@
             (lambda (y pos prev rows)
               (if (integer>=? y height)
                   (list-reverse rows)
-                  (let ((filter-type (bytes-ref raw pos))
+                  (let ((filter-type (bytes-get raw pos))
                         (row-start (integer+ pos 1)))
                     (let ((filtered (bytes-slice raw row-start (integer+ row-start row-bytes))))
                       (let ((row (unfilter-row filter-type filtered prev bpp)))
@@ -193,9 +193,9 @@
                    (integer->string index)
                    " is out of range"))
           (let ((base (integer* index 3)))
-            (vector (bytes-ref palette base)
-                    (bytes-ref palette (integer+ base 1))
-                    (bytes-ref palette (integer+ base 2)))))))
+            (vector (bytes-get palette base)
+                    (bytes-get palette (integer+ base 1))
+                    (bytes-get palette (integer+ base 2)))))))
 
    ; Alpha for a palette index from the tRNS payload, or 255 when absent or
    ; beyond the tRNS length.
@@ -204,7 +204,7 @@
       (if (none? transparency)
           255
           (if (integer<? index (bytes-length transparency))
-              (bytes-ref transparency index)
+              (bytes-get transparency index)
               255))))
 
    ; Convert one raw pixel (a list of `channels` byte values) into a normalised
@@ -212,22 +212,22 @@
    (normalise-pixel
     (lambda (colour-type pixel-bytes palette transparency)
       (if (integer=? colour-type 0)
-          (let ((g (list-ref pixel-bytes 0)))
+          (let ((g (list-get pixel-bytes 0)))
             (vector g g g))
           (if (integer=? colour-type 2)
-              (vector (list-ref pixel-bytes 0) (list-ref pixel-bytes 1) (list-ref pixel-bytes 2))
+              (vector (list-get pixel-bytes 0) (list-get pixel-bytes 1) (list-get pixel-bytes 2))
               (if (integer=? colour-type 3)
-                  (let* ((index (list-ref pixel-bytes 0))
+                  (let* ((index (list-get pixel-bytes 0))
                          (rgb (palette-entry palette index))
                          (alpha (palette-alpha transparency index)))
                     (if (integer=? alpha 255)
                         rgb
-                        (vector (vector-ref rgb 0) (vector-ref rgb 1) (vector-ref rgb 2) alpha)))
+                        (vector (vector-get rgb 0) (vector-get rgb 1) (vector-get rgb 2) alpha)))
                   (if (integer=? colour-type 4)
-                      (let ((g (list-ref pixel-bytes 0)))
-                        (vector g g g (list-ref pixel-bytes 1)))
-                      (vector (list-ref pixel-bytes 0) (list-ref pixel-bytes 1)
-                              (list-ref pixel-bytes 2) (list-ref pixel-bytes 3))))))))
+                      (let ((g (list-get pixel-bytes 0)))
+                        (vector g g g (list-get pixel-bytes 1)))
+                      (vector (list-get pixel-bytes 0) (list-get pixel-bytes 1)
+                              (list-get pixel-bytes 2) (list-get pixel-bytes 3))))))))
 
    ; Group a row's channel values into normalised pixels.
    (to-pixels
@@ -238,7 +238,7 @@
             (if (integer>=? i (bytes-length row))
                 (list->vector (list-reverse acc))
                 (let ((pixel-bytes
-                       (map-list (lambda (c) (bytes-ref row (integer+ i c)))
+                       (map-list (lambda (c) (bytes-get row (integer+ i c)))
                                  (range 0 channels))))
                   (loop (integer+ i channels)
                         (list-prepend acc

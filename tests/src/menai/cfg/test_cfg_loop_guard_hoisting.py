@@ -284,7 +284,7 @@ class TestGuardHoistingFromNonEntryBlocks:
                   (lambda (i)
                     (if (integer>=? i len)
                         i
-                        (if (string=? (string-ref s i) "-")
+                        (if (string=? (string-get s i) "-")
                             (scan (integer+ i 1))
                             (scan (integer+ i 1))))))
                  (len 10)
@@ -307,7 +307,7 @@ class TestGuardHoistingFromNonEntryBlocks:
                   (lambda (i)
                     (if (integer>=? i len)
                         i
-                        (if (string=? (string-ref s i) "-")
+                        (if (string=? (string-get s i) "-")
                             (scan (integer+ i 1))
                             (scan (integer+ i 1))))))
                  (len 10)

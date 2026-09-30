@@ -7,10 +7,18 @@ This section documents all builtin functions in Menai, organised by category.
 Menai follows a consistent naming convention for collection operations:
 
 - **Direct operations** are named `collection-X` with the collection as the first
-  argument: `(list-ref lst 0)`, `(dict-get d "key")`, `(set-member? s x)`
+  argument: `(list-get lst 0)`, `(dict-get d "key")`, `(set-member? s x)`
 - **Higher-order operations** are named `X-collection` with the function/predicate
   first and the collection last: `(map-list f lst)`, `(filter-dict pred d)`,
   `(fold-set f init s)`
+- **Reading an element** is always `collection-get`: `(string-get s i)`,
+  `(list-get lst i)`, `(bytes-get b i)`, `(vector-get v i)`, `(dict-get d k)`,
+  `(struct-get s 'field)`
+- **Updating a collection** uses `collection-with` to add or replace an element and
+  `collection-without` to remove one, since Menai is pure and the operation returns
+  a new collection rather than mutating: `(vector-with v i val)`, `(dict-with d k
+  val)`, `(struct-with s 'field val)`, `(set-with s x)`, `(set-without s x)`,
+  `(dict-without d k)`, `(list-without lst item)`
 
 The same convention applies to bytes (`bytes-X` / `X-bytes`).
 
@@ -274,7 +282,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 |----------|-------------|
 | `(string-concat a b ...)` | Concatenate strings |
 | `(string-length s)` | Length (character count) |
-| `(string-ref s i)` | Character at 0-based index → single-character string |
+| `(string-get s i)` | Character at 0-based index → single-character string |
 | `(string-slice s start [end])` | Substring; end is exclusive; `(string-slice "hello" 2)` → "llo" |
 | `(string-upcase s)` | Uppercase |
 | `(string-downcase s)` | Lowercase |
@@ -374,7 +382,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | `(list-first lst)` | First element |
 | `(list-rest lst)` | All elements after the first |
 | `(list-last lst)` | Last element |
-| `(list-ref lst i)` | Element at 0-based index |
+| `(list-get lst i)` | Element at 0-based index |
 
 ### Properties
 
@@ -389,7 +397,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | Function | Description |
 |----------|-------------|
 | `(list-reverse lst)` | Reverse the list |
-| `(list-remove lst item)` | Remove all occurrences of item |
+| `(list-without lst item)` | Remove all occurrences of item |
 | `(list-index lst item)` | 0-based index of first occurrence, or `#none` |
 | `(list-slice lst start [end])` | Sublist; end is exclusive |
 | `(list->string lst [separator])` | Concatenate list of strings |
@@ -476,8 +484,8 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 |----------|-------------|
 | `(dict key1 val1 key2 val2 ...)` | Create a dict |
 | `(dict-get d key [default])` | Get value; `→ #none` if missing and no default |
-| `(dict-set d key val)` | Return new dict with key set to val |
-| `(dict-remove d key)` | Return new dict with key removed |
+| `(dict-with d key val)` | Return new dict with key set to val |
+| `(dict-without d key)` | Return new dict with key removed |
 
 Keys in a dict are unique. A dict literal with a duplicate constant key is a
 compile-time error. Duplicate keys that are not compile-time constants are
@@ -539,8 +547,8 @@ position).
 | `(set a b ...)` | Create a set; duplicates silently dropped |
 | `(set-member? s x)` | `→ #t` if x is in s |
 | `(set-length s)` | Number of elements |
-| `(set-add s x)` | Return new set with x added (no-op if present) |
-| `(set-remove s x)` | Return new set with x removed (no-op if absent) |
+| `(set-with s x)` | Return new set with x added (no-op if present) |
+| `(set-without s x)` | Return new set with x removed (no-op if absent) |
 
 ### Set algebra
 
@@ -602,7 +610,7 @@ operations for ordered iteration.
 
 | Function | Description |
 |----------|-------------|
-| `(bytes-ref b i)` | Byte value (0–255) at 0-based index |
+| `(bytes-get b i)` | Byte value (0–255) at 0-based index |
 | `(bytes-length b)` | Number of bytes |
 | `(bytes-slice b start [end])` | Sub-sequence; end is exclusive; out of bounds raises an error |
 | `(bytes-concat b1 b2 ...)` | Concatenate; `(bytes-concat)` → empty bytes |
@@ -760,14 +768,14 @@ xor of 0xFFFFFFFF — the checksum used by zlib, PNG and ZIP.
 
 | Function | Description |
 |----------|-------------|
-| `(vector-ref v i)` | Element at 0-based index (O(1)) |
+| `(vector-get v i)` | Element at 0-based index (O(1)) |
 | `(vector-length v)` | Number of elements |
-| `(vector-set v i val)` | Return new vector with element at index i replaced |
+| `(vector-with v i val)` | Return new vector with element at index i replaced |
 
 ```menai
-(vector-ref (vector "a" "b" "c") 1)  → "b"
+(vector-get (vector "a" "b" "c") 1)  → "b"
 (vector-length (vector 1 2 3))       → 3
-(vector-set (vector 1 2 3) 1 10)     → #vector(1 10 3)
+(vector-with (vector 1 2 3) 1 10)    → #vector(1 10 3)
 ```
 
 ### Slicing
@@ -900,7 +908,7 @@ values:
 | Function | Description |
 |----------|-------------|
 | `(struct-get instance 'field)` | Get field value by symbol name |
-| `(struct-set instance 'field value)` | Return new struct with field updated (by symbol name) |
+| `(struct-with instance 'field value)` | Return new struct with field updated (by symbol name) |
 
 ```menai
 (let ((point (struct (x y))))
@@ -908,7 +916,7 @@ values:
     (struct-get p 'x)))              → 1
 (let ((point (struct (x y))))
   (let ((p (point 1 2)))
-    (struct-get (struct-set p 'x 10) 'x)))  → 10
+    (struct-get (struct-with p 'x 10) 'x)))  → 10
 ```
 
 ### Equality

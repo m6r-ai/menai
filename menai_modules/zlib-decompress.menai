@@ -26,14 +26,14 @@
                          (if (integer>=? i (bytes-length b))
                              (integer-bit-or (integer-bit-shift-left bb 16) a)
                              (loop (integer+ i 1)
-                                   (integer% (integer+ a (bytes-ref b i)) modulus)
-                                   (integer% (integer+ bb a (bytes-ref b i)) modulus))))))
+                                   (integer% (integer+ a (bytes-get b i)) modulus)
+                                   (integer% (integer+ bb a (bytes-get b i)) modulus))))))
           (loop 0 1 0)))))
 
    (check-header
     (lambda (b)
-      (let ((cmf (bytes-ref b 0))
-            (flg (bytes-ref b 1)))
+      (let ((cmf (bytes-get b 0))
+            (flg (bytes-get b 1)))
         (if (integer!=? (integer-bit-and cmf #x0f) 8)
             (error (string-concat
                      "Unsupported zlib stream: compression method "

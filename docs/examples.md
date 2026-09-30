@@ -108,13 +108,13 @@ A function that classifies a value:
 (letrec ((account (struct (balance))))
   (let ((make-account (lambda (initial) (account initial)))
         (deposit (lambda (acc amount)
-                   (struct-set acc 'balance
+                   (struct-with acc 'balance
                      (integer+ (struct-get acc 'balance) amount))))
         (withdraw (lambda (acc amount)
                    (let ((bal (struct-get acc 'balance)))
                      (if (integer<? bal amount)
                          (error "insufficient funds")
-                         (struct-set acc 'balance (integer- bal amount)))))))
+                         (struct-with acc 'balance (integer- bal amount)))))))
     (let ((acc (make-account 100)))
       (let ((acc (deposit acc 50)))
         (let ((acc (withdraw acc 30)))

@@ -77,15 +77,15 @@
                                (if (integer=? bpp 24)
                                    (loop (integer+ x 1)
                                          (list-prepend acc
-                                           (vector (bytes-ref b (integer+ p 2))
-                                                   (bytes-ref b (integer+ p 1))
-                                                   (bytes-ref b p))))
+                                           (vector (bytes-get b (integer+ p 2))
+                                                   (bytes-get b (integer+ p 1))
+                                                   (bytes-get b p))))
                                    (loop (integer+ x 1)
                                          (list-prepend acc
-                                           (vector (bytes-ref b (integer+ p 2))
-                                                   (bytes-ref b (integer+ p 1))
-                                                   (bytes-ref b p)
-                                                   (bytes-ref b (integer+ p 3)))))))))))
+                                           (vector (bytes-get b (integer+ p 2))
+                                                   (bytes-get b (integer+ p 1))
+                                                   (bytes-get b p)
+                                                   (bytes-get b (integer+ p 3)))))))))))
           (loop 0 (list))))))
 
    ; Decode all rows into a vector ordered top-down.

@@ -211,7 +211,7 @@ class TestLoopInvariantComputationHoisting:
                            (if (integer>=? i (bytes-length b))
                                acc
                                (loop (integer+ i 1)
-                                     (integer+ acc (bytes-ref b i)))))))
+                                     (integer+ acc (bytes-get b i)))))))
             (loop 0 0)))
 
         The loop is lowered to a loop-entry block with a pre-header.  `b` is
@@ -227,7 +227,7 @@ class TestLoopInvariantComputationHoisting:
                            (if (integer>=? i (bytes-length b))
                                acc
                                (loop (integer+ i 1)
-                                     (integer+ acc (bytes-ref b i)))))))
+                                     (integer+ acc (bytes-get b i)))))))
             (loop 0 0)))
         """
         code = _compile(src)
@@ -556,7 +556,7 @@ class TestGuardHoisting:
                   (lambda (i acc)
                     (if (integer<? i 0)
                         (list->vector acc)
-                        (let ((elem (vector-ref v i)))
+                        (let ((elem (vector-get v i)))
                           (loop (integer- i 1)
                                 (if (integer=? (integer% i 2) 0)
                                     (list-prepend acc elem)
@@ -596,7 +596,7 @@ class TestGuardHoisting:
                   (lambda (i acc)
                     (if (integer<? i 0)
                         (list->vector acc)
-                        (let ((elem (vector-ref v i)))
+                        (let ((elem (vector-get v i)))
                           (loop (integer- i 1)
                                 (if (integer=? (integer% i 2) 0)
                                     (list-prepend acc elem)

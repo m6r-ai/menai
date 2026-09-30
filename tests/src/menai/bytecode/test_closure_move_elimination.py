@@ -79,7 +79,7 @@ class TestClosureMoveElimination:
         src = """
             (let ((offset 4))
               (lambda (apply-f face)
-                (let ((center (list-ref face offset)))
+                (let ((center (list-get face offset)))
                   (list-length
                     (apply-f (lambda (s) (integer!=? s center)) face)))))
         """
@@ -94,7 +94,7 @@ class TestClosureMoveElimination:
         result = menai.evaluate("""
             (let ((count-mismatched
                     (lambda (face)
-                      (let ((center (list-ref face 4)))
+                      (let ((center (list-get face 4)))
                         (list-length
                           (filter-list (lambda (s) (integer!=? s center)) face))))))
               (count-mismatched (list 1 1 1 1 1 2 2 3)))
@@ -116,7 +116,7 @@ class TestClosureMoveElimination:
         src = """
             (let ((offset 4))
               (lambda (apply-f face)
-                (let ((center (list-ref face offset)))
+                (let ((center (list-get face offset)))
                   (list-length
                     (apply-f face (lambda (s) (integer!=? s center)))))))
         """
@@ -139,7 +139,7 @@ class TestClosureMoveElimination:
         src = """
             (let ((offset 0))
               (lambda (apply-f lst)
-                (let ((threshold (list-ref lst offset)))
+                (let ((threshold (list-get lst offset)))
                   (let ((pred (lambda (x) (integer<? x threshold))))
                     (let ((mapped (apply-f (lambda (x) (integer+ x 1)) lst)))
                       (list-length (apply-f pred mapped)))))))

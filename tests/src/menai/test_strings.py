@@ -266,26 +266,26 @@ class TestStrings:
 
     @pytest.mark.parametrize("expression,expected", [
         # String character reference
-        ('(string-ref "hello" 0)', '"h"'),
-        ('(string-ref "hello" 1)', '"e"'),
-        ('(string-ref "hello" 4)', '"o"'),
+        ('(string-get "hello" 0)', '"h"'),
+        ('(string-get "hello" 1)', '"e"'),
+        ('(string-get "hello" 4)', '"o"'),
 
         # Unicode character reference
-        ('(string-ref "世界" 0)', '"世"'),
-        ('(string-ref "世界" 1)', '"界"'),
-        ('(string-ref "café" 3)', '"é"'),
+        ('(string-get "世界" 0)', '"世"'),
+        ('(string-get "世界" 1)', '"界"'),
+        ('(string-get "café" 3)', '"é"'),
     ])
-    def test_string_ref(self, menai, expression, expected):
-        """Test string-ref function."""
+    def test_string_get(self, menai, expression, expected):
+        """Test string-get function."""
         assert menai.evaluate_and_format(expression) == expected
 
-    def test_string_ref_index_errors(self, menai):
-        """Test string-ref with invalid indices."""
+    def test_string_get_index_errors(self, menai):
+        """Test string-get with invalid indices."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(string-ref "hello" 5)')  # Index out of range
+            menai.evaluate('(string-get "hello" 5)')  # Index out of range
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(string-ref "hello" -1)')  # Negative index
+            menai.evaluate('(string-get "hello" -1)')  # Negative index
 
     @pytest.mark.parametrize("expression,expected", [
         # String index search
@@ -773,7 +773,7 @@ class TestStrings:
             menai.evaluate('(string-index "hello")')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(string-ref "hello")')
+            menai.evaluate('(string-get "hello")')
 
         # string-slice requires 2 or 3 arguments (not 1)
         with pytest.raises(MenaiEvalError):

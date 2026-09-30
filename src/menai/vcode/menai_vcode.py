@@ -223,9 +223,9 @@ class MenaiVCodeStructGetIndexed:
 
 
 @dataclass
-class MenaiVCodeStructSetIndexed:
+class MenaiVCodeStructWithIndexed:
     """
-    dst = struct_set_indexed(struct, index, value)
+    dst = struct_with_indexed(struct, index, value)
 
     Returns a new struct with the field at `index` set to `value`.  `index` is
     a register holding the field index; the VCode builder materialises the
@@ -333,7 +333,7 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodeMakeSet
     | MenaiVCodeMakeDict
     | MenaiVCodeStructGetIndexed
-    | MenaiVCodeStructSetIndexed
+    | MenaiVCodeStructWithIndexed
     | MenaiVCodeJump
     | MenaiVCodeJumpIfTrue
     | MenaiVCodeJumpIfFalse
@@ -460,10 +460,10 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
         return f"{instr.dst} = MAKE_DICT {[(str(k), str(v)) for k, v in instr.pairs]}"
 
     if isinstance(instr, MenaiVCodeStructGetIndexed):
-        return f"{instr.dst} = STRUCT_INDEXED_GET {instr.struct} [{instr.index}]"
+        return f"{instr.dst} = STRUCT_GET_INDEXED {instr.struct} [{instr.index}]"
 
-    if isinstance(instr, MenaiVCodeStructSetIndexed):
-        return f"{instr.dst} = STRUCT_INDEXED_SET {instr.struct} [{instr.index}] = {instr.value}"
+    if isinstance(instr, MenaiVCodeStructWithIndexed):
+        return f"{instr.dst} = STRUCT_WITH_INDEXED {instr.struct} [{instr.index}] = {instr.value}"
 
     if isinstance(instr, MenaiVCodeJump):
         return f"JUMP {instr.label}"

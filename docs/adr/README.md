@@ -105,3 +105,4 @@ What costs, risks, or constraints does this decision impose?
 | [0034](0034-the-compiler-is-expressible-in-menai.md) | The compiler is expressible in Menai | Accepted |
 | [0035](0035-function-provenance-must-follow-containers.md) | Function provenance must follow containers | Accepted |
 | [0036](0036-predicate-fold-may-consume-interprocedural-facts.md) | Type-predicate folding may consume interprocedural facts | Accepted |
+| [0037](0037-collection-access-verbs.md) | Element access verbs — `-get`, `-with`, and `-without` | Accepted |

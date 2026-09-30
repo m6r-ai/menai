@@ -63,7 +63,7 @@ words, sorted by frequency:
     (lambda (words)
       (fold-list
         (lambda (acc word)
-          (dict-set acc word
+          (dict-with acc word
             (integer+ 1 (dict-get acc word 0))))
         (dict) words)))
 
@@ -72,7 +72,7 @@ words, sorted by frequency:
       (let* ((words (string->list (string-downcase text) " "))
              (counts (count-words words))
              (pairs (sort-list
-                       (lambda (a b) (integer>? (list-ref a 1) (list-ref b 1)))
+                       (lambda (a b) (integer>? (list-get a 1) (list-get b 1)))
                        (map-list (lambda (key)
                                    (list key (dict-get counts key)))
                                  (dict-keys counts)))))

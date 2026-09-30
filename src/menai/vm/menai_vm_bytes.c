@@ -94,12 +94,6 @@ alloc_menai_bytes_from_concat(MenaiVMState *vs, MenaiBytes *a, MenaiBytes *b)
     return obj;
 }
 
-MenaiInteger *
-menai_bytes_ref(MenaiVMState *vs, MenaiValue *b, ssize_t i)
-{
-    return alloc_menai_integer_from_long(vs, (long)((MenaiBytes *)b)->data[i]);
-}
-
 MenaiBytes *
 alloc_menai_bytes_from_append_u8(MenaiVMState *vs, MenaiBytes *b, uint8_t value)
 {

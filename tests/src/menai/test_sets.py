@@ -89,10 +89,10 @@ class TestSetConstructionErrors:
         with pytest.raises(MenaiEvalError):
             tool.evaluate("(set (list 1 2))")
 
-    def test_set_add_rejects_list_element(self, tool):
-        """Test that set-add rejects unhashable elements."""
+    def test_set_with_rejects_list_element(self, tool):
+        """Test that set-with rejects unhashable elements."""
         with pytest.raises(MenaiEvalError):
-            tool.evaluate("(set-add (set 1 2) (list 3 4))")
+            tool.evaluate("(set-with (set 1 2) (list 3 4))")
 
     def test_list_to_set_rejects_list_element(self, tool):
         """Test that list->set rejects lists containing unhashable elements."""
@@ -260,64 +260,64 @@ class TestSetLength:
 
 
 class TestSetAdd:
-    """Test set-add operation."""
+    """Test set-with operation."""
 
     def test_add_new_element(self, tool):
         """Test adding a new element to a set."""
-        result = tool.evaluate_and_format("(set-add (set 1 2) 3)")
+        result = tool.evaluate_and_format("(set-with (set 1 2) 3)")
         assert result == "#{1 2 3}"
 
     def test_add_existing_element(self, tool):
         """Test adding an existing element is a no-op."""
-        result = tool.evaluate_and_format("(set-add (set 1 2 3) 2)")
+        result = tool.evaluate_and_format("(set-with (set 1 2 3) 2)")
         assert result == "#{1 2 3}"
 
     def test_add_to_empty_set(self, tool):
         """Test adding to an empty set."""
-        result = tool.evaluate_and_format("(set-add (set) 42)")
+        result = tool.evaluate_and_format("(set-with (set) 42)")
         assert result == "#{42}"
 
     def test_add_preserves_immutability(self, tool):
-        """Test that set-add returns a new set, leaving original unchanged."""
+        """Test that set-with returns a new set, leaving original unchanged."""
         result = tool.evaluate_and_format(
-            "(let* ((s (set 1 2)) (_ (set-add s 3))) s)"
+            "(let* ((s (set 1 2)) (_ (set-with s 3))) s)"
         )
         assert result == "#{1 2}"
 
     def test_add_wrong_type(self, tool):
-        """Test that set-add rejects non-set first argument."""
+        """Test that set-with rejects non-set first argument."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            tool.evaluate("(set-add (list 1 2 3) 4)")
+            tool.evaluate("(set-with (list 1 2 3) 4)")
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
 
 class TestSetRemove:
-    """Test set-remove operation."""
+    """Test set-without operation."""
 
     def test_remove_existing_element(self, tool):
         """Test removing an element that is present."""
-        result = tool.evaluate_and_format("(set-remove (set 1 2 3) 2)")
+        result = tool.evaluate_and_format("(set-without (set 1 2 3) 2)")
         assert result == "#{1 3}"
 
     def test_remove_absent_element(self, tool):
         """Test removing an element that is absent is a no-op."""
-        result = tool.evaluate_and_format("(set-remove (set 1 2 3) 99)")
+        result = tool.evaluate_and_format("(set-without (set 1 2 3) 99)")
         assert result == "#{1 2 3}"
 
     def test_remove_from_empty_set(self, tool):
         """Test removing from an empty set is a no-op."""
-        result = tool.evaluate_and_format("(set-remove (set) 1)")
+        result = tool.evaluate_and_format("(set-without (set) 1)")
         assert result == "#{}"
 
     def test_remove_last_element(self, tool):
         """Test removing the only element produces empty set."""
-        result = tool.evaluate_and_format("(set-remove (set 42) 42)")
+        result = tool.evaluate_and_format("(set-without (set 42) 42)")
         assert result == "#{}"
 
     def test_remove_wrong_type(self, tool):
-        """Test that set-remove rejects non-set first argument."""
+        """Test that set-without rejects non-set first argument."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            tool.evaluate("(set-remove (list 1 2 3) 1)")
+            tool.evaluate("(set-without (list 1 2 3) 1)")
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
 

@@ -33,7 +33,7 @@
       (letrec ((loop (lambda (i a bb)
                        (if (integer>=? i (bytes-length b))
                            (integer-bit-or (integer-bit-shift-left bb 16) a)
-                           (let ((next-byte (bytes-ref b i)))
+                           (let ((next-byte (bytes-get b i)))
                              (loop (integer+ i 1)
                                    (integer% (integer+ a next-byte) adler-modulus)
                                    (integer% (integer+ bb a next-byte) adler-modulus)))))))

@@ -3891,7 +3891,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_STRING_REF: {
+        case OP_STRING_GET: {
             MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
@@ -4325,7 +4325,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_BYTES_REF: {
+        case OP_BYTES_GET: {
             MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
@@ -5713,7 +5713,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_VECTOR_REF: {
+        case OP_VECTOR_GET: {
             MenaiVector *v = (MenaiVector *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
@@ -5736,7 +5736,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_VECTOR_SET: {
+        case OP_VECTOR_WITH: {
             MenaiVector *v = (MenaiVector *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
@@ -6041,7 +6041,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_LIST_REF: {
+        case OP_LIST_GET: {
             MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
@@ -6388,7 +6388,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_LIST_REMOVE: {
+        case OP_LIST_WITHOUT: {
             MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *item = frame_regs[src1];
@@ -6704,7 +6704,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_DICT_SET: {
+        case OP_DICT_WITH: {
             /* src0=dict, src1=key, src2=value */
             MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
@@ -6778,7 +6778,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_DICT_REMOVE: {
+        case OP_DICT_WITHOUT: {
             MenaiDict *a = (MenaiDict *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *key = frame_regs[src1];
@@ -6948,7 +6948,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_SET_ADD: {
+        case OP_SET_WITH: {
             MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *item = frame_regs[src1];
@@ -7008,7 +7008,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_SET_REMOVE: {
+        case OP_SET_WITHOUT: {
             MenaiSet *a = (MenaiSet *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *item = frame_regs[src1];
@@ -7544,7 +7544,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_STRUCT_INDEXED_GET: {
+        case OP_STRUCT_GET_INDEXED: {
             /* src1 holds a MenaiInteger field index */
             MenaiValue *val = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
@@ -7574,7 +7574,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_STRUCT_SET: {
+        case OP_STRUCT_WITH: {
             MenaiStruct *sval = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSymbol *field_sym = (MenaiSymbol *)frame_regs[src1];
@@ -7601,7 +7601,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_STRUCT_INDEXED_SET: {
+        case OP_STRUCT_WITH_INDEXED: {
             MenaiStruct *sval = (MenaiStruct *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *fi_io = (MenaiInteger *)frame_regs[src1];

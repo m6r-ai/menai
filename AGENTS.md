@@ -527,6 +527,26 @@ Sudoku, Rubik's Cube). Vectors are not pattern-matchable and not hashable.
 There is no literal syntax; vectors are created via `(vector ...)`.
 See [ADR-0018](docs/adr/0018-vector-type.md).
 
+### Element access verbs are `-get`, `-with`, and `-without`
+
+Element access uses `-get` to read an element by index or key, for scalar sequences
+and containers alike (`string-get`, `list-get`, `bytes-get`, `vector-get`,
+`dict-get`, `struct-get`). It uses `-with` to add or replace an element and
+`-without` to remove one, only where a functional single-element update exists
+(`vector-with`, `dict-with`, `struct-with`, `set-with`, `set-without`,
+`dict-without`, `list-without`); there is no `string-with` or `bytes-with`.
+
+`-ref`, `-set`, `-add`, and `-remove` are not part of the element-access vocabulary.
+`-ref` was dropped because it does not generalise to keyed access. `-set`, `-add`,
+and `-remove` were dropped because they connote mutation, which Menai does not have:
+these operations return a new container. Do not reintroduce any of them.
+
+Set algebra (`set-union`, `set-intersection`, `set-difference`) and positional list
+construction (`list-prepend`, `list-append`) keep their names: they are nouns or
+positional descriptions, not mutation verbs.
+
+See [ADR-0037](docs/adr/0037-collection-access-verbs.md).
+
 ### Strict numeric typing
 
 There is no implicit coercion between `integer`, `float`, and `complex`. All arithmetic

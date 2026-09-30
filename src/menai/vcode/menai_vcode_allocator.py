@@ -75,7 +75,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
     MenaiVCodeStructGetIndexed,
-    MenaiVCodeStructSetIndexed,
+    MenaiVCodeStructWithIndexed,
     MenaiVCodeReg,
     MenaiVCodeReturn,
     MenaiVCodeRaise,
@@ -607,7 +607,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, MenaiVCodeStructGetIndexed):
         return [instr.dst.id], [instr.struct.id, instr.index.id]
 
-    if isinstance(instr, MenaiVCodeStructSetIndexed):
+    if isinstance(instr, MenaiVCodeStructWithIndexed):
         return [instr.dst.id], [instr.struct.id, instr.index.id, instr.value.id]
 
     if isinstance(instr, MenaiVCodeJumpIfTrue):

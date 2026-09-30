@@ -157,46 +157,46 @@ class TestDictGetErrors:
 
 
 class TestDictSet:
-    """Test dict-set operation."""
+    """Test dict-with operation."""
 
-    def test_dict_set_new_key(self, tool):
+    def test_dict_with_new_key(self, tool):
         """Test setting a new key."""
-        result = tool.evaluate('(dict-set (dict "name" "Alice") "age" 30)')
+        result = tool.evaluate('(dict-with (dict "name" "Alice") "age" 30)')
         assert result == {"name": "Alice", "age": 30}
 
-    def test_dict_set_existing_key(self, tool):
+    def test_dict_with_existing_key(self, tool):
         """Test updating an existing key."""
-        result = tool.evaluate('(dict-set (dict "name" "Alice" "age" 30) "age" 31)')
+        result = tool.evaluate('(dict-with (dict "name" "Alice" "age" 30) "age" 31)')
         assert result == {"name": "Alice", "age": 31}
 
-    def test_dict_set_immutable(self, tool):
-        """Test that dict-set doesn't modify original."""
+    def test_dict_with_immutable(self, tool):
+        """Test that dict-with doesn't modify original."""
         result = tool.evaluate('''
             (let* ((original (dict "name" "Alice" "age" 30))
-                  (updated (dict-set original "age" 31)))
+                  (updated (dict-with original "age" 31)))
               (list (dict-get original "age") (dict-get updated "age")))
         ''')
         assert result == [30, 31]
 
-    def test_dict_set_preserves_order(self, tool):
-        """Test that dict-set preserves insertion order when updating."""
-        result = tool.evaluate('(dict-set (dict "a" 1 "b" 2 "c" 3) "b" 20)')
+    def test_dict_with_preserves_order(self, tool):
+        """Test that dict-with preserves insertion order when updating."""
+        result = tool.evaluate('(dict-with (dict "a" 1 "b" 2 "c" 3) "b" 20)')
         keys = list(result.keys())
         assert keys == ["a", "b", "c"]
 
 
 class TestDictSetErrors:
-    """Test dict-set error cases."""
+    """Test dict-with error cases."""
 
-    def test_dict_set_wrong_arg_count(self, tool):
+    def test_dict_with_wrong_arg_count(self, tool):
         """Test error with wrong number of arguments."""
         with pytest.raises(MenaiEvalError, match="wrong number of arguments"):
-            tool.evaluate('(dict-set (dict "a" 1) "b")')
+            tool.evaluate('(dict-with (dict "a" 1) "b")')
 
-    def test_dict_set_not_dict(self, tool):
+    def test_dict_with_not_dict(self, tool):
         """Test error when first argument is not a dict."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            tool.evaluate('(dict-set "not-dict" "key" "value")')
+            tool.evaluate('(dict-with "not-dict" "key" "value")')
 
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
@@ -307,40 +307,40 @@ class TestDictValuesErrors:
 
 
 class TestDictRemove:
-    """Test dict-remove operation."""
+    """Test dict-without operation."""
 
-    def test_dict_remove_existing_key(self, tool):
+    def test_dict_without_existing_key(self, tool):
         """Test removing an existing key."""
-        result = tool.evaluate('(dict-remove (dict "name" "Alice" "age" 30 "city" "NYC") "age")')
+        result = tool.evaluate('(dict-without (dict "name" "Alice" "age" 30 "city" "NYC") "age")')
         assert result == {"name": "Alice", "city": "NYC"}
 
-    def test_dict_remove_missing_key(self, tool):
+    def test_dict_without_missing_key(self, tool):
         """Test removing a non-existent key (no-op)."""
-        result = tool.evaluate('(dict-remove (dict "name" "Alice") "age")')
+        result = tool.evaluate('(dict-without (dict "name" "Alice") "age")')
         assert result == {"name": "Alice"}
 
-    def test_dict_remove_immutable(self, tool):
-        """Test that dict-remove doesn't modify original."""
+    def test_dict_without_immutable(self, tool):
+        """Test that dict-without doesn't modify original."""
         result = tool.evaluate('''
             (let* ((original (dict "name" "Alice" "age" 30))
-                   (removed (dict-remove original "age")))
+                   (removed (dict-without original "age")))
               (list (dict-has? original "age") (dict-has? removed "age")))
         ''')
         assert result == [True, False]
 
 
 class TestDictRemoveErrors:
-    """Test dict-remove error cases."""
+    """Test dict-without error cases."""
 
-    def test_dict_remove_wrong_arg_count(self, tool):
+    def test_dict_without_wrong_arg_count(self, tool):
         """Test error with wrong number of arguments."""
         with pytest.raises(MenaiEvalError, match="wrong number of arguments"):
-            tool.evaluate('(dict-remove (dict "a" 1))')
+            tool.evaluate('(dict-without (dict "a" 1))')
 
-    def test_dict_remove_not_dict(self, tool):
+    def test_dict_without_not_dict(self, tool):
         """Test error when first argument is not a dict."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            tool.evaluate('(dict-remove (list 1 2) "key")')
+            tool.evaluate('(dict-without (list 1 2) "key")')
 
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
@@ -544,9 +544,9 @@ class TestDictComplexScenarios:
         """Test transforming dict through multiple operations."""
         result = tool.evaluate('''
             (let ((data (dict "a" 1 "b" 2 "c" 3)))
-              (let* ((with-d (dict-set data "d" 4))
-                     (without-b (dict-remove with-d "b"))
-                     (updated-c (dict-set without-b "c" 30)))
+              (let* ((with-d (dict-with data "d" 4))
+                     (without-b (dict-without with-d "b"))
+                     (updated-c (dict-with without-b "c" 30)))
                 updated-c))
         ''')
         assert result == {"a": 1, "c": 30, "d": 4}
@@ -566,7 +566,7 @@ class TestDictComplexScenarios:
         result = tool.evaluate('''
             (let* ((pairs (list (list "name" "Alice") (list "age" 30) (list "city" "NYC"))))
               (fold-list (lambda (acc pair)
-                      (dict-set acc (list-first pair) (list-first (list-rest pair))))
+                      (dict-with acc (list-first pair) (list-first (list-rest pair))))
                     (dict)
                     pairs))
         ''')
@@ -634,20 +634,20 @@ class TestDictLength:
         assert result == 1
 
     def test_length_after_dict_set(self, tool):
-        """Test length after adding entries with dict-set."""
+        """Test length after adding entries with dict-with."""
         result = tool.evaluate('''
             (let ((a1 (dict "a" 1)))
-              (let ((a2 (dict-set a1 "b" 2)))
-                (let ((a3 (dict-set a2 "c" 3)))
+              (let ((a2 (dict-with a1 "b" 2)))
+                (let ((a3 (dict-with a2 "c" 3)))
                   (dict-length a3))))
         ''')
         assert result == 3
 
     def test_length_after_dict_remove(self, tool):
-        """Test length after removing entries with dict-remove."""
+        """Test length after removing entries with dict-without."""
         result = tool.evaluate('''
             (let ((a1 (dict "a" 1 "b" 2 "c" 3)))
-              (dict-length (dict-remove a1 "b")))
+              (dict-length (dict-without a1 "b")))
         ''')
         assert result == 2
 

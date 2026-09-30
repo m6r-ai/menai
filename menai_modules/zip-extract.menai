@@ -70,7 +70,7 @@
               (dict
                 "entries" (map-list
                             (lambda (e)
-                              (dict-set e "content"
+                              (dict-with e "content"
                                         (if (dict-get e "is-directory")
                                             #none
                                             (entry-content b e decompress))))

@@ -1778,7 +1778,6 @@ menai_vector_final(MenaiVMState *vs, MenaiVector *self)
 MenaiVector *alloc_menai_vector_from_slice(MenaiVMState *vs, MenaiVector *v, ssize_t start, ssize_t end);
 MenaiVector *alloc_menai_vector_from_concat(MenaiVMState *vs, MenaiVector *a, MenaiVector *b);
 MenaiVector *alloc_menai_vector_from_set(MenaiVMState *vs, MenaiVector *v, ssize_t index, MenaiValue *val);
-MenaiValue *menai_vector_ref(MenaiVMState *vs, MenaiVector *v, ssize_t i);
 
 static inline int
 menai_vector_equal(MenaiVector *a, MenaiVector *b)

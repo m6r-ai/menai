@@ -63,7 +63,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGStructGetIndexedInstr,
-    MenaiCFGStructSetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
     MenaiCFGPhiInstr,
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
@@ -97,7 +97,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeSet,
     MenaiVCodeMakeDict,
     MenaiVCodeStructGetIndexed,
-    MenaiVCodeStructSetIndexed,
+    MenaiVCodeStructWithIndexed,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
     MenaiVCodeGuard,
@@ -248,7 +248,7 @@ class MenaiVCodeBuilder:
         instrs: list[MenaiVCodeInstr] = []
         # Seed the register counter above every SSA value id in the function.
         # Lowering allocates synthetic registers (e.g. the field-index constant
-        # for struct-get-indexed / struct-set-indexed) with ids of
+        # for struct-get-indexed / struct-with-indexed) with ids of
         # max_reg_id + 1.  Seeding from the function-wide maximum guarantees
         # those ids cannot collide with any SSA value id, including ids that
         # are only reached later in the RPO walk.
@@ -491,13 +491,13 @@ class MenaiVCodeBuilder:
             instrs.append(MenaiVCodeStructGetIndexed(dst=dst, struct=struct_reg, index=index_reg))
             return max(max_reg_id, dst.id, struct_reg.id, index_reg.id)
 
-        if isinstance(instr, MenaiCFGStructSetIndexedInstr):
+        if isinstance(instr, MenaiCFGStructWithIndexedInstr):
             dst = self._reg(instr.result)
             struct_reg = self._reg(instr.struct)
             value_reg = self._reg(instr.value)
             index_reg = MenaiVCodeReg(id=max(max_reg_id, dst.id, struct_reg.id, value_reg.id) + 1, hint="index")
             instrs.append(MenaiVCodeLoadConst(dst=index_reg, value=MenaiInteger(value=instr.index)))
-            instrs.append(MenaiVCodeStructSetIndexed(
+            instrs.append(MenaiVCodeStructWithIndexed(
                 dst=dst, struct=struct_reg, index=index_reg, value=value_reg,
             ))
             return max(max_reg_id, dst.id, struct_reg.id, value_reg.id, index_reg.id)

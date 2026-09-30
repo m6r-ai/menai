@@ -16,17 +16,17 @@
     (lambda (date-str)
       (let ((parts (string->list date-str "-")))
         (list
-          (string->number (list-ref parts 0))  ; year
-          (string->number (list-ref parts 1))  ; month
-          (string->number (list-ref parts 2))  ; day
+          (string->number (list-get parts 0))  ; year
+          (string->number (list-get parts 1))  ; month
+          (string->number (list-get parts 2))  ; day
         ))))
 
   ; Format date list (year month day) to ISO string "YYYY-MM-DD"
   (format-date
     (lambda (date-list)
-      (let ((year (list-ref date-list 0))
-            (month (list-ref date-list 1))
-            (day (list-ref date-list 2)))
+      (let ((year (list-get date-list 0))
+            (month (list-get date-list 1))
+            (day (list-get date-list 2)))
         (string-concat
           (integer->string year)
           "-"
@@ -43,9 +43,9 @@
   (day-of-week
     (lambda (date-str)
       (let* ((date (parse-date date-str))
-             (year (list-ref date 0))
-             (month (list-ref date 1))
-             (day (list-ref date 2))
+             (year (list-get date 0))
+             (month (list-get date 1))
+             (day (list-get date 2))
              (adj-month (if (integer<=? month 2) (integer+ month 12) month))
              (adj-year (if (integer<=? month 2) (integer- year 1) year))
              (century (integer/ adj-year 100))
@@ -127,9 +127,9 @@
   (add-one-day
     (lambda (date-str)
       (let* ((date (parse-date date-str))
-             (year (list-ref date 0))
-             (month (list-ref date 1))
-             (day (list-ref date 2))
+             (year (list-get date 0))
+             (month (list-get date 1))
+             (day (list-get date 2))
              (max-day (days-in-month year month)))
         (if (integer<? day max-day)
             ; Same month
@@ -144,9 +144,9 @@
   (subtract-one-day
     (lambda (date-str)
       (let* ((date (parse-date date-str))
-             (year (list-ref date 0))
-             (month (list-ref date 1))
-             (day (list-ref date 2)))
+             (year (list-get date 0))
+             (month (list-get date 1))
+             (day (list-get date 2)))
         (if (integer>? day 1)
             ; Same month
             (format-date (list year month (integer- day 1)))
@@ -238,12 +238,12 @@
     (lambda (date1 date2)
       (let* ((d1 (parse-date date1))
              (d2 (parse-date date2))
-             (y1 (list-ref d1 0))
-             (m1 (list-ref d1 1))
-             (day1 (list-ref d1 2))
-             (y2 (list-ref d2 0))
-             (m2 (list-ref d2 1))
-             (day2 (list-ref d2 2)))
+             (y1 (list-get d1 0))
+             (m1 (list-get d1 1))
+             (day1 (list-get d1 2))
+             (y2 (list-get d2 0))
+             (m2 (list-get d2 1))
+             (day2 (list-get d2 2)))
         (if (integer!=? y1 y2)
             (if (integer<? y1 y2) -1 1)
             (if (integer!=? m1 m2)

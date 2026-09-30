@@ -486,7 +486,7 @@ class TestConditionals:
         # Invalid string index prevention
         helpers.assert_evaluates_to(
             menai,
-            '(if (integer<? (string-length "hi") 5) "short string" (string-ref "hi" 10))',
+            '(if (integer<? (string-length "hi") 5) "short string" (string-get "hi" 10))',
             '"short string"'
         )
 

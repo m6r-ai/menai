@@ -388,7 +388,7 @@ class TestEndToEnd:
               (let ((key (prefix-key b i)))
                 (if (none? key)
                     table
-                    (dict-set table key
+                    (dict-with table key
                               (list-prepend (dict-get table key (list)) i)))))))
           f)
         """

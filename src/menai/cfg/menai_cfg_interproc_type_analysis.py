@@ -60,7 +60,7 @@ where the receiver's struct type identity is proven and the field argument is a
 constant symbol:
 
     (struct-get p 'x)   ->  struct_get_indexed p, <index>
-    (struct-set p 'x v) ->  struct_set_indexed p, <index>, v
+    (struct-with p 'x v) ->  struct_with_indexed p, <index>, v
 
 The index is resolved from the MenaiStructType's field order.  A struct-get
 whose receiver's type is not proven, or whose field argument is not a constant
@@ -97,7 +97,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGPatchClosureInstr,
     MenaiCFGPhiInstr,
     MenaiCFGStructGetIndexedInstr,
-    MenaiCFGStructSetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
@@ -117,10 +117,10 @@ from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
 from menai.menai_value import MenaiBoolean, MenaiStructType, MenaiSymbol
 
 # Builtins whose result is a struct of the same type as their first argument.
-_STRUCT_PRESERVING_OPS = {'struct-set'}
+_STRUCT_PRESERVING_OPS = {'struct-with'}
 
 # Builtins that read or write a struct field by symbol name.
-_FIELD_BY_SYMBOL_OPS = {'struct-get', 'struct-set'}
+_FIELD_BY_SYMBOL_OPS = {'struct-get', 'struct-with'}
 
 # Builtins through which a function can enter or leave a container.  Maps the
 # builtin name to the argument positions whose contents may reach the result:
@@ -129,14 +129,14 @@ _FIELD_BY_SYMBOL_OPS = {'struct-get', 'struct-set'}
 # it is part of the result's provenance.
 #
 # Three shapes are covered, and all three matter:
-#   - a value stored into a container (list-prepend, dict-set, vector-set, ...);
-#   - an element fetched out of a container (list-first, dict-get, vector-ref,
+#   - a value stored into a container (list-prepend, dict-with, vector-with, ...);
+#   - an element fetched out of a container (list-first, dict-get, vector-get,
 #     ...);
 #   - a container built from other containers, where the result's contents are
 #     drawn from an operand (list-concat, set-union, list->set, list-slice, ...).
 #
 # A builtin that only compares against or removes a value (list-member?,
-# set-remove, ...) still contributes its container argument: a function in the
+# set-without, ...) still contributes its container argument: a function in the
 # input container may be in the result container.
 #
 # This table must list every builtin that can move a value into or out of a
@@ -149,31 +149,31 @@ _CONTAINER_FLOW_OPS = {
     'list-first': (0,),
     'list-last': (0,),
     'list-rest': (0,),
-    'list-ref': (0,),
+    'list-get': (0,),
     'list-index': (0,),
     'list-slice': (0,),
-    'list-remove': (0,),
+    'list-without': (0,),
     'list-concat': (0, 1),
     'list->set': (0,),
     'list->vector': (0,),
-    'dict-set': (1, 2),
+    'dict-with': (1, 2),
     'dict-get': (0,),
     'dict-keys': (0,),
     'dict-values': (0,),
-    'dict-remove': (0,),
+    'dict-without': (0,),
     'dict-merge': (0, 1),
-    'set-add': (1,),
-    'set-remove': (0,),
+    'set-with': (1,),
+    'set-without': (0,),
     'set-union': (0, 1),
     'set-intersection': (0, 1),
     'set-difference': (0, 1),
     'set->list': (0,),
-    'vector-set': (2,),
-    'vector-ref': (0,),
+    'vector-with': (2,),
+    'vector-get': (0,),
     'vector-slice': (0,),
     'vector-concat': (0, 1),
     'vector->list': (0,),
-    'struct-set': (1, 2),
+    'struct-with': (1, 2),
 }
 
 # Instruction types that define a result SSA value.  Guard and patch
@@ -192,7 +192,7 @@ _VALUE_INSTR_TYPES = (
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGStructGetIndexedInstr,
-    MenaiCFGStructSetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
     MenaiCFGPhiInstr,
 )
 
@@ -1060,7 +1060,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         if isinstance(instr, MenaiCFGStructGetIndexedInstr):
             return ANY
 
-        if isinstance(instr, MenaiCFGStructSetIndexedInstr):
+        if isinstance(instr, MenaiCFGStructWithIndexedInstr):
             receiver = facts.get(instr.struct.id, BOTTOM)
             if receiver.kind == 'struct':
                 return receiver
@@ -1256,7 +1256,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         facts: dict[int, TypeFact],
     ) -> tuple[MenaiCFGFunction, bool]:
         """
-        Rewrite struct-get/struct-set calls to their index-based forms where the
+        Rewrite struct-get/struct-with calls to their index-based forms where the
         receiver's struct type and the field index are both known.
 
         The receiver's type is read from the block-local facts, not the global
@@ -1309,7 +1309,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                     ))
 
                 else:
-                    new_instrs.append(MenaiCFGStructSetIndexedInstr(
+                    new_instrs.append(MenaiCFGStructWithIndexedInstr(
                         result=instr.result,
                         struct=instr.args[0],
                         index=index,
@@ -1372,7 +1372,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         value_defs: dict[int, object],
     ) -> int | None:
         """
-        Return the constant field index for a struct-get/struct-set call, or
+        Return the constant field index for a struct-get/struct-with call, or
         None if the receiver's struct type or the field name is not known.
         """
         if len(instr.args) < 2:

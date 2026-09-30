@@ -47,16 +47,16 @@ _MODULE_SOURCE = """
             (if (integer=? bpp 24)
                 (bytes-append-u8
                   (bytes-append-u8
-                    (bytes-append-u8 b (list-ref channels 2))
-                    (list-ref channels 1))
-                  (list-ref channels 0))
+                    (bytes-append-u8 b (list-get channels 2))
+                    (list-get channels 1))
+                  (list-get channels 0))
                 (bytes-append-u8
                   (bytes-append-u8
                     (bytes-append-u8
-                      (bytes-append-u8 b (list-ref channels 2))
-                      (list-ref channels 1))
-                    (list-ref channels 0))
-                  (list-ref channels 3)))))))
+                      (bytes-append-u8 b (list-get channels 2))
+                      (list-get channels 1))
+                    (list-get channels 0))
+                  (list-get channels 3)))))))
    (encode-row
     (lambda (b row width bpp)
       (if (vector? row)
@@ -64,7 +64,7 @@ _MODULE_SOURCE = """
                            (if (integer>=? x width)
                                acc
                                (loop (integer+ x 1)
-                                     (encode-pixel acc (vector-ref row x) bpp))))))
+                                     (encode-pixel acc (vector-get row x) bpp))))))
             (let ((padded (loop 0 b)))
               (letrec ((pad (lambda (n acc)
                               (if (integer>=? n (row-padding width bpp))
@@ -80,7 +80,7 @@ _MODULE_SOURCE = """
                              (if (integer>=? y height)
                                  acc
                                  (loop (integer+ y 1)
-                                       (encode-row acc (vector-ref ordered y) width bpp))))))
+                                       (encode-row acc (vector-get ordered y) width bpp))))))
               (loop 0 b)))
           (error "pixels must be a vector of rows"))))
    (encode-header

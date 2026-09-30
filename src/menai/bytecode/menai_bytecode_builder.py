@@ -64,7 +64,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeSet,
     MenaiVCodeMakeStruct,
     MenaiVCodeStructGetIndexed,
-    MenaiVCodeStructSetIndexed,
+    MenaiVCodeStructWithIndexed,
     MenaiVCodeMove,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
@@ -383,7 +383,7 @@ class MenaiBytecodeBuilder:
 
             if isinstance(instr, MenaiVCodeStructGetIndexed):
                 ctx.emit(
-                    Opcode.STRUCT_INDEXED_GET,
+                    Opcode.STRUCT_GET_INDEXED,
                     ctx.slot_of(instr.struct),
                     ctx.slot_of(instr.index),
                     dest=ctx.slot_of(instr.dst),
@@ -391,9 +391,9 @@ class MenaiBytecodeBuilder:
                 i += 1
                 continue
 
-            if isinstance(instr, MenaiVCodeStructSetIndexed):
+            if isinstance(instr, MenaiVCodeStructWithIndexed):
                 ctx.emit(
-                    Opcode.STRUCT_INDEXED_SET,
+                    Opcode.STRUCT_WITH_INDEXED,
                     ctx.slot_of(instr.struct),
                     ctx.slot_of(instr.index),
                     dest=ctx.slot_of(instr.dst),

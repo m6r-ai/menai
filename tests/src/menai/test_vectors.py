@@ -61,33 +61,33 @@ class TestVectors:
             menai.evaluate('(vector=? 42 (vector 1))')
 
     @pytest.mark.parametrize("expression,expected", [
-        ('(vector-ref (vector 1 2 3) 0)', '1'),
-        ('(vector-ref (vector 1 2 3) 2)', '3'),
-        ('(vector-ref (vector "a" "b") 1)', '"b"'),
-        ('(vector-ref (vector (vector 1) (vector 2)) 1)', '#vector(2)'),
+        ('(vector-get (vector 1 2 3) 0)', '1'),
+        ('(vector-get (vector 1 2 3) 2)', '3'),
+        ('(vector-get (vector "a" "b") 1)', '"b"'),
+        ('(vector-get (vector (vector 1) (vector 2)) 1)', '#vector(2)'),
     ])
-    def test_vector_ref(self, menai, expression, expected):
+    def test_vector_get(self, menai, expression, expected):
         """Test O(1) indexed access."""
         assert menai.evaluate_and_format(expression) == expected
 
-    def test_vector_ref_out_of_bounds(self, menai):
-        """Test that vector-ref rejects out-of-bounds indices."""
+    def test_vector_get_out_of_bounds(self, menai):
+        """Test that vector-get rejects out-of-bounds indices."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-ref (vector 1 2 3) 3)')
+            menai.evaluate('(vector-get (vector 1 2 3) 3)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-ref (vector 1 2 3) -1)')
+            menai.evaluate('(vector-get (vector 1 2 3) -1)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-ref (vector) 0)')
+            menai.evaluate('(vector-get (vector) 0)')
 
-    def test_vector_ref_requires_vector(self, menai):
-        """Test that vector-ref rejects non-vector arguments."""
+    def test_vector_get_requires_vector(self, menai):
+        """Test that vector-get rejects non-vector arguments."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-ref (list 1 2 3) 0)')
+            menai.evaluate('(vector-get (list 1 2 3) 0)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-ref 42 0)')
+            menai.evaluate('(vector-get 42 0)')
 
     @pytest.mark.parametrize("expression,expected", [
         ('(vector-length (vector))', '0'),
@@ -99,30 +99,30 @@ class TestVectors:
         assert menai.evaluate_and_format(expression) == expected
 
     @pytest.mark.parametrize("expression,expected", [
-        ('(vector-set (vector 1 2 3) 0 10)', '#vector(10 2 3)'),
-        ('(vector-set (vector 1 2 3) 2 30)', '#vector(1 2 30)'),
-        ('(vector-set (vector 1) 0 "x")', '#vector("x")'),
+        ('(vector-with (vector 1 2 3) 0 10)', '#vector(10 2 3)'),
+        ('(vector-with (vector 1 2 3) 2 30)', '#vector(1 2 30)'),
+        ('(vector-with (vector 1) 0 "x")', '#vector("x")'),
     ])
-    def test_vector_set(self, menai, expression, expected):
+    def test_vector_with(self, menai, expression, expected):
         """Test functional update returns a new vector."""
         assert menai.evaluate_and_format(expression) == expected
 
-    def test_vector_set_original_unchanged(self, menai):
-        """Test that vector-set does not modify the original vector."""
-        assert menai.evaluate_and_format('(let ((v (vector 1 2 3))) (vector-set v 1 20))') == '#vector(1 20 3)'
+    def test_vector_with_original_unchanged(self, menai):
+        """Test that vector-with does not modify the original vector."""
+        assert menai.evaluate_and_format('(let ((v (vector 1 2 3))) (vector-with v 1 20))') == '#vector(1 20 3)'
         assert menai.evaluate_and_format(
             '(let ((v (vector 1 2 3)))'
-            '  (let ((ignored (vector-set v 1 20)))'
+            '  (let ((ignored (vector-with v 1 20)))'
             '    v))'
         ) == '#vector(1 2 3)'
 
-    def test_vector_set_out_of_bounds(self, menai):
-        """Test that vector-set rejects out-of-bounds indices."""
+    def test_vector_with_out_of_bounds(self, menai):
+        """Test that vector-with rejects out-of-bounds indices."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-set (vector 1 2 3) 3 9)')
+            menai.evaluate('(vector-with (vector 1 2 3) 3 9)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-set (vector 1 2 3) -1 9)')
+            menai.evaluate('(vector-with (vector 1 2 3) -1 9)')
 
     @pytest.mark.parametrize("expression,expected", [
         ('(vector-slice (vector 1 2 3 4 5) 0 0)', '#vector()'),

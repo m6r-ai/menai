@@ -7,12 +7,12 @@
 
   ; Return the set of digits already placed in the given row.
   (row-set (lambda (board row)
-    (list->set (filter-list (lambda (v) (integer!=? v 0)) (list-ref board row)))))
+    (list->set (filter-list (lambda (v) (integer!=? v 0)) (list-get board row)))))
 
   ; Return the set of digits already placed in the given column.
   (col-set (lambda (board col)
     (list->set (filter-list (lambda (v) (integer!=? v 0))
-      (map-list (lambda (r) (list-ref r col)) board)))))
+      (map-list (lambda (r) (list-get r col)) board)))))
 
   ; Return the set of digits already placed in the 3x3 box containing (row, col).
   (box-set (lambda (board row col)
@@ -37,7 +37,7 @@
   (find-empty-in-row (lambda (row-idx row col)
     (if (integer>=? col 9)
       #none
-      (if (integer=? (list-ref row col) 0)
+      (if (integer=? (list-get row col) 0)
         (list row-idx col)
         (find-empty-in-row row-idx row (integer+ col 1))))))
 
@@ -46,14 +46,14 @@
   (find-empty (lambda (board row)
     (if (integer>=? row 9)
       #none
-      (let ((found (find-empty-in-row row (list-ref board row) 0)))
+      (let ((found (find-empty-in-row row (list-get board row) 0)))
         (if (none? found)
           (find-empty board (integer+ row 1))
           found)))))
 
   ; Return a new board with `num` placed at (row, col).
   (set-cell (lambda (board row col num)
-    (let* ((old-row (list-ref board row))
+    (let* ((old-row (list-get board row))
            (new-row (list-concat (list-append (list-slice old-row 0 col) num)
                                  (list-slice old-row (integer+ col 1) 9))))
       (list-concat (list-append (list-slice board 0 row) new-row)
@@ -75,8 +75,8 @@
     (let ((empty (find-empty board 0)))
       (if (none? empty)
         board
-        (try-candidates board (list-first empty) (list-ref empty 1)
-          (set->list (candidates board (list-first empty) (list-ref empty 1))))))))
+        (try-candidates board (list-first empty) (list-get empty 1)
+          (set->list (candidates board (list-first empty) (list-get empty 1))))))))
 
   ; Format one cell: digit (or "." for empty) followed by a column separator.
   (format-cell (lambda (col val)
@@ -88,7 +88,7 @@
   (format-row (lambda (row-idx row)
     (let* ((cells (map-list
                     (lambda (pair)
-                      (format-cell (list-first pair) (list-ref pair 1)))
+                      (format-cell (list-first pair) (list-get pair 1)))
                     (list-zip (range 0 9) row)))
            (row-str (string-concat "| " (list->string cells "")))
            (div (if (integer=? (integer% (integer+ row-idx 1) 3) 0)
@@ -100,7 +100,7 @@
   (display-board (lambda (board)
     (let ((rows (map-list
                   (lambda (pair)
-                    (format-row (list-first pair) (list-ref pair 1)))
+                    (format-row (list-first pair) (list-get pair 1)))
                   (list-zip (range 0 9) board))))
       (string-concat "+-------+-------+-------+\n"
                      (list->string rows "\n"))))))

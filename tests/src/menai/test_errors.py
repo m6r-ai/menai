@@ -326,17 +326,17 @@ class TestErrors:
         """Test that index out of range causes evaluation errors."""
         # List index out of range
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate("(list-ref (list 1 2 3) 3)")
+            menai.evaluate("(list-get (list 1 2 3) 3)")
 
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate("(list-ref (list 1 2 3) -1)")
+            menai.evaluate("(list-get (list 1 2 3) -1)")
 
         # String index out of range
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate('(string-ref "hello" 5)')
+            menai.evaluate('(string-get "hello" 5)')
 
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate('(string-ref "hello" -1)')
+            menai.evaluate('(string-get "hello" -1)')
 
     def test_conditional_type_errors(self, menai):
         """Test that conditional expressions with wrong types cause evaluation errors."""
@@ -716,7 +716,7 @@ class TestBacktrace:
     def test_top_level_error_has_module_frame(self, menai):
         """A top-level runtime error has a single <module> frame in the backtrace."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate("(list-ref (list 1 2 3) 10)")
+            menai.evaluate("(list-get (list 1 2 3) 10)")
 
         err = exc_info.value
         assert len(err.backtrace) == 1
@@ -733,7 +733,7 @@ class TestBacktrace:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
-                                    (list-ref lst 100)
+                                    (list-get lst 100)
                                     (recurse (integer- n 1) lst)))))
               (apply recurse (list 3 (list 1 2 3))))
             """)
@@ -751,7 +751,7 @@ class TestBacktrace:
                                   (if (list-null? lst)
                                       0
                                      (integer+ (if (integer<? (list-length lst) 2)
-                                                   (list-ref lst 100)
+                                                   (list-get lst 100)
                                                    0)
                                                 (check-all (list-rest lst)))))))
              (check-all (list 1 2 3)))
@@ -770,7 +770,7 @@ class TestBacktrace:
                                 (if (integer<=? x 0)
                                     (f (list 1 2 3))
                                     (wrapper f (integer- x 1))))))
-              (wrapper (lambda (lst) (list-ref lst 10)) 2))
+              (wrapper (lambda (lst) (list-get lst 10)) 2))
             """)
 
         err = exc_info.value
@@ -788,7 +788,7 @@ class TestBacktrace:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
-                                    (list-ref lst 100)
+                                    (list-get lst 100)
                                     (recurse (integer- n 1) lst)))))
               (apply recurse (list 3 (list 1 2 3))))
             """)
@@ -828,7 +828,7 @@ class TestBacktrace:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
-                                    (list-ref lst 100)
+                                    (list-get lst 100)
                                     (recurse (integer- n 1) lst)))))
               (apply recurse (list 3 (list 1 2 3))))
             """)
@@ -847,7 +847,7 @@ class TestBacktrace:
             menai.evaluate("""
             (letrec ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
-                                    (list-ref lst 100)
+                                    (list-get lst 100)
                                     (recurse (integer- n 1) lst)))))
               (apply recurse (list 3 (list 1 2 3))))
             """)
