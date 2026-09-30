@@ -86,19 +86,19 @@ class TestMenaiCollectionEdgeCases:
         test_list = "(list 10 20 30)"
 
         # Valid indices
-        assert menai.evaluate(f"(list-get {test_list} 0)") == 10
-        assert menai.evaluate(f"(list-get {test_list} 1)") == 20
-        assert menai.evaluate(f"(list-get {test_list} 2)") == 30
+        assert menai.evaluate(f"(list-nth {test_list} 0)") == 10
+        assert menai.evaluate(f"(list-nth {test_list} 1)") == 20
+        assert menai.evaluate(f"(list-nth {test_list} 2)") == 30
 
         # Invalid indices should raise errors
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate(f"(list-get {test_list} 3)")
+            menai.evaluate(f"(list-nth {test_list} 3)")
 
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate(f"(list-get {test_list} -1)")
+            menai.evaluate(f"(list-nth {test_list} -1)")
 
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate("(list-get () 0)")
+            menai.evaluate("(list-nth () 0)")
 
     def test_take_drop_boundary_conditions(self, menai):
         """Test take and drop with boundary conditions."""
@@ -141,10 +141,10 @@ class TestMenaiCollectionEdgeCases:
         # Operations on mixed-type lists
         assert menai.evaluate(f"(list-length {mixed_list})") == 5
         assert menai.evaluate(f"(list-first {mixed_list})") == 1
-        assert menai.evaluate(f'(list-get {mixed_list} 1)') == "hello"
-        assert menai.evaluate(f"(list-get {mixed_list} 2)") is True
-        assert menai.evaluate(f"(list-get {mixed_list} 3)") == 3.14
-        assert menai.evaluate(f"(list-get {mixed_list} 4)") == [2, 3]
+        assert menai.evaluate(f'(list-nth {mixed_list} 1)') == "hello"
+        assert menai.evaluate(f"(list-nth {mixed_list} 2)") is True
+        assert menai.evaluate(f"(list-nth {mixed_list} 3)") == 3.14
+        assert menai.evaluate(f"(list-nth {mixed_list} 4)") == [2, 3]
 
         # Membership tests with mixed types
         assert menai.evaluate(f"(list-member? {mixed_list} 1)") is True
@@ -169,11 +169,11 @@ class TestMenaiCollectionEdgeCases:
         # Operations on nested structure
         assert menai.evaluate(f"(list-length {nested})") == 3
         assert menai.evaluate(f"(list-first {nested})") == [1, 2]
-        assert menai.evaluate(f"(list-get {nested} 1)") == [3, 4]
+        assert menai.evaluate(f"(list-nth {nested} 1)") == [3, 4]
 
         # Access nested elements
         assert menai.evaluate(f"(list-first (list-first {nested}))") == 1
-        assert menai.evaluate(f"(list-first (list-get {nested} 1))") == 3
+        assert menai.evaluate(f"(list-first (list-nth {nested} 1))") == 3
 
         # Deeply nested structure
         deep_nested = "(list (list (list 1)))"
@@ -195,7 +195,7 @@ class TestMenaiCollectionEdgeCases:
         assert menai.evaluate("(list-length (range 1 1001))") == 1000
         assert menai.evaluate("(list-first (range 1 1001))") == 1
         assert menai.evaluate("(list-last (range 1 1001))") == 1000
-        assert menai.evaluate("(list-get (range 1 1001) 999)") == 1000
+        assert menai.evaluate("(list-nth (range 1 1001) 999)") == 1000
 
         # Take/drop on large list
         assert menai.evaluate("(list-length (list-slice (range 1 1001) 0 100))") == 100

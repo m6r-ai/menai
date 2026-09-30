@@ -83,20 +83,20 @@
               (expect-pass "stored mode emits a stored block"
                            (lambda ()
                              (let ((stream (compress (string->bytes "abc") "stored")))
-                               (assert-equal (integer-bit-and (bytes-get stream 0) 6) 0))))
+                               (assert-equal (integer-bit-and (bytes-nth stream 0) 6) 0))))
               (expect-pass "fixed mode emits a fixed Huffman block"
                            (lambda ()
                              (let ((stream (compress (string->bytes "abc") "fixed")))
-                               (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-get stream 0) 6) 1) 1))))
+                               (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-nth stream 0) 6) 1) 1))))
               (expect-pass "dynamic mode emits a dynamic Huffman block"
                            (lambda ()
                              (let ((stream (compress (string->bytes "abc") "dynamic")))
-                               (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-get stream 0) 6) 1) 2))))
+                               (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-nth stream 0) 6) 1) 2))))
               (expect-pass "every mode sets the final-block bit"
                            (lambda ()
-                             (and (assert-equal (integer-bit-and (bytes-get (compress (string->bytes "abc") "stored") 0) 1) 1)
-                                  (and (assert-equal (integer-bit-and (bytes-get (compress (string->bytes "abc") "fixed") 0) 1) 1)
-                                       (assert-equal (integer-bit-and (bytes-get (compress (string->bytes "abc") "dynamic") 0) 1) 1)))))
+                             (and (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") "stored") 0) 1) 1)
+                                  (and (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") "fixed") 0) 1) 1)
+                                       (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") "dynamic") 0) 1) 1)))))
               (expect-pass "auto never exceeds the smallest single-mode output"
                            (lambda ()
                              (let ((input (string->bytes "hello hello hello hello hello")))

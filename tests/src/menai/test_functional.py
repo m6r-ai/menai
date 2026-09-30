@@ -599,8 +599,8 @@ class TestFunctional:
                            (lambda (x) (integer+ x 10))
                            (lambda (x) (integer* x x)))))
           (list ((list-first funcs) 5)
-                ((list-get funcs 1) 5)
-                ((list-get funcs 2) 5)))
+                ((list-nth funcs 1) 5)
+                ((list-nth funcs 2) 5)))
         '''
         helpers.assert_evaluates_to(menai, function_list, '(10 15 25)')
 

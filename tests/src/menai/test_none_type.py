@@ -217,7 +217,7 @@ def test_match_value_from_dict_get(menai):
 # ---------------------------------------------------------------------------
 
 def test_none_stored_in_list(menai):
-    assert evaluate(menai, "(list-get (list 1 #none 3) 1)") == "#none"
+    assert evaluate(menai, "(list-nth (list 1 #none 3) 1)") == "#none"
 
 
 def test_none_stored_in_dict_value(menai):

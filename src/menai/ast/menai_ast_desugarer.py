@@ -1737,9 +1737,9 @@ class MenaiASTDesugarer:
             # Generate temp var for this element
             elem_temp = self._gen_temp()
 
-            # Extract element: (list-get temp_var i)
+            # Extract element: (list-nth temp_var i)
             elem_value = MenaiASTList((
-                MenaiASTSymbol('$list-get'),
+                MenaiASTSymbol('$list-nth'),
                 MenaiASTSymbol(temp_var),
                 MenaiASTInteger(i)
             ))
@@ -1826,7 +1826,7 @@ class MenaiASTDesugarer:
             Properly nested if/let structure
         """
         # Build: (if length_test
-        #          (let ((#:tmp-2 (list-get x 0)) ...)
+        #          (let ((#:tmp-2 (list-nth x 0)) ...)
         #            (if (and elem-test-1 elem-test-2 ...)
         #                (let ((a #:tmp-2) (b #:tmp-3) ...)
         #                  result)
@@ -1967,9 +1967,9 @@ class MenaiASTDesugarer:
             elem_pattern = pattern.elements[i]
             elem_temp = self._gen_temp()
 
-            # Extract element: (list-get temp_var i)
+            # Extract element: (list-nth temp_var i)
             elem_value = MenaiASTList((
-                MenaiASTSymbol('$list-get'),
+                MenaiASTSymbol('$list-nth'),
                 MenaiASTSymbol(temp_var),
                 MenaiASTInteger(i)
             ))

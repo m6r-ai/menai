@@ -141,7 +141,7 @@ class TestBytesLength:
 
 
 class TestBytesRef:
-    """Test bytes-get."""
+    """Test bytes-nth."""
 
     @pytest.mark.parametrize("hex_str,offset,expected", [
         ("504b0304", 0, 80),
@@ -151,15 +151,15 @@ class TestBytesRef:
         ("ff", 0, 255),
         ("00", 0, 0),
     ])
-    def test_bytes_get(self, menai, hex_str, offset, expected):
-        """bytes-get returns the byte value at the given offset."""
-        assert menai.evaluate(f'(bytes-get (string-hex->bytes "{hex_str}") {offset})') == expected
+    def test_bytes_nth(self, menai, hex_str, offset, expected):
+        """bytes-nth returns the byte value at the given offset."""
+        assert menai.evaluate(f'(bytes-nth (string-hex->bytes "{hex_str}") {offset})') == expected
 
     @pytest.mark.parametrize("offset", [-1, 4, 100])
-    def test_bytes_get_out_of_bounds(self, menai, offset):
-        """bytes-get raises error on out-of-bounds offset."""
+    def test_bytes_nth_out_of_bounds(self, menai, offset):
+        """bytes-nth raises error on out-of-bounds offset."""
         with pytest.raises(MenaiEvalError, match="out of bounds"):
-            menai.evaluate(f'(bytes-get (string-hex->bytes "504b0304") {offset})')
+            menai.evaluate(f'(bytes-nth (string-hex->bytes "504b0304") {offset})')
 
 
 class TestBytesAppendU8:
@@ -679,20 +679,20 @@ class TestBytesTypeErrors:
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
     @pytest.mark.parametrize("expr", [
-        '(bytes-get "hello" 0)',
-        '(bytes-get 42 0)',
+        '(bytes-nth "hello" 0)',
+        '(bytes-nth 42 0)',
     ])
-    def test_bytes_get_type_error(self, menai, expr):
-        """bytes-get raises error on non-bytes arguments."""
+    def test_bytes_nth_type_error(self, menai, expr):
+        """bytes-nth raises error on non-bytes arguments."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate(expr)
 
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
-    def test_bytes_get_non_integer_offset(self, menai):
-        """bytes-get raises error when offset is not an integer."""
+    def test_bytes_nth_non_integer_offset(self, menai):
+        """bytes-nth raises error when offset is not an integer."""
         with pytest.raises(MenaiEvalError, match="type mismatch"):
-            menai.evaluate('(bytes-get (string-hex->bytes "504b") "x")')
+            menai.evaluate('(bytes-nth (string-hex->bytes "504b") "x")')
 
     def test_bytes_slice_non_integer_args(self, menai):
         """bytes-slice raises error when start/end are not integers."""
@@ -1454,10 +1454,10 @@ class TestIntegerToLongOverflowOffsets(TestIntegerToLongOverflow):
     FOUR_BYTES = '(string-hex->bytes "01020304")'
     EIGHT_BYTES = '(string-hex->bytes "0102030405060708")'
 
-    def test_bytes_get_bigint_offset(self, menai):
-        """bytes-get rejects a bigint offset that does not fit in a C long."""
+    def test_bytes_nth_bigint_offset(self, menai):
+        """bytes-nth rejects a bigint offset that does not fit in a C long."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate(f'(bytes-get {self.FOUR_BYTES} {self.BIG_POS})')
+            menai.evaluate(f'(bytes-nth {self.FOUR_BYTES} {self.BIG_POS})')
 
     def test_bytes_slice_bigint_start(self, menai):
         """bytes-slice rejects a bigint start index that does not fit in a C long."""

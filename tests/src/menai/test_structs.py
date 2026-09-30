@@ -1179,7 +1179,7 @@ class TestStructDynamicConstruction:
                (d     (dict "point" point))
                (ctor  (dict-get d "point"))
                (pairs (list (list 1 2) (list 3 4) (list 5 6))))
-          (map-list (lambda (pair) (ctor (list-get pair 0) (list-get pair 1))) pairs))
+          (map-list (lambda (pair) (ctor (list-nth pair 0) (list-nth pair 1))) pairs))
         ''')
         assert result == '((point 1 2) (point 3 4) (point 5 6))'
 

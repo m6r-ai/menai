@@ -56,7 +56,7 @@
            (expect-pass "file entry is not flagged as a directory"
                         (lambda ()
                           (let ((r (entries (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000"))))
-                            (assert-equal (dict-get (list-get (dict-get r "entries") 1) "is-directory") #f))))))
+                            (assert-equal (dict-get (list-nth (dict-get r "entries") 1) "is-directory") #f))))))
 
        (list "errors"
          (list

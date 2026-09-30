@@ -106,9 +106,9 @@ class TestGuardScoping:
         """
         (lambda (n s)
           (if (integer>=? n 0)
-              (if (string=? (string-get s n) "-")
+              (if (string=? (string-nth s n) "-")
                   (integer+ n 1)
-                  (if (string=? (string-get s n) "+")
+                  (if (string=? (string-nth s n) "+")
                       (integer+ n 1)
                       n))
               n))
@@ -123,9 +123,9 @@ class TestGuardScoping:
         src = """
         (lambda (n s)
           (if (integer>=? n 0)
-              (if (string=? (string-get s n) "-")
+              (if (string=? (string-nth s n) "-")
                   (integer+ n 1)
-                  (if (string=? (string-get s n) "+")
+                  (if (string=? (string-nth s n) "+")
                       (integer+ n 1)
                       n))
               n))

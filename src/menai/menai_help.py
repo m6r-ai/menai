@@ -159,7 +159,7 @@ Syntax: (operator arg1 arg2 ...)
 - Ordered comparison: (string<? "apple" "banana"), (string>? "b" "a"), (string<=? "a" "a"), (string>=? "b" "a")
 - String ordering is Unicode codepoint order (same as Python str), not locale-aware collation
 - Basic: (string-concat "hello" " " "world"), (string-length "hello")
-- Access: (string-get "hello" 1) → "e" (character at 0-based index)
+- Access: (string-nth "hello" 1) → "e" (character at 0-based index)
 - Manipulation: (string-slice "hello" 1 4), (string-slice "hello" 2) → "llo", (string-upcase "hello"), (string-downcase "HELLO")
 - Utilities: (string-trim "  hello  ") → "hello", (string-trim-left "  hello  ") → "hello  ", (string-trim-right "  hello  ") → "  hello", (string-replace "banana" "a" "o") → "bonono" (replaces all occurrences)
 - Search predicates: (string-prefix? "hello" "he"), (string-suffix? "hello" "lo")
@@ -186,7 +186,7 @@ Syntax: (operator arg1 arg2 ...)
 - Access: (list-first (list 1 2 3)) → 1
 - Access: (list-rest (list 1 2 3)) → (2 3)
 - Access: (list-last (list 1 2 3)) → 3
-- Indexed access: (list-get (list "a" "b" "c") 1) → "b" (0-based index)
+- Indexed access: (list-nth (list "a" "b" "c") 1) → "b" (0-based index)
 - Properties: (list-length (list 1 2 3)), (list-null? (list)), (list-member? (list 1 2 3) 2)
 - Utilities: (list-reverse (list 1 2 3)), (list-without (list 1 2 3 2 4) 2), (list-index (list 1 2 3) 2) → 1, (list-index (list 1 2 3) 42) → #none (not found)
 - Slicing: (list-slice lst start) → from start to end, (list-slice lst start end) → from start to end (exclusive)
@@ -280,7 +280,7 @@ Syntax: (operator arg1 arg2 ...)
 - Ordered comparison: (bytes<? a b), (bytes>? a b), (bytes<=? a b), (bytes>=? a b) — lexicographic, variadic 2+ args
 - Construction: (string-hex->bytes "504b0304") → bytes from hex string, (string->bytes "hello") → UTF-8 encoded bytes, (list->bytes (list 80 75)) → bytes from integer list (0–255)
 - Conversion: (bytes->string-hex b) → hex string, (bytes->string b) → UTF-8 string (raises error on invalid UTF-8), (bytes->list b) → list of integers
-- Access: (bytes-get b 0) → integer 0–255 at 0-based index, (bytes-length b) → integer
+- Access: (bytes-nth b 0) → integer 0–255 at 0-based index, (bytes-length b) → integer
 - Slicing: (bytes-slice b start) → from start to end, (bytes-slice b start end) → from start to end (exclusive); out of bounds raises an error
 - Concatenation: (bytes-concat b1 b2 ...) → variadic, (bytes-concat) → empty bytes
 - Append single byte: (bytes-append-u8 b 255) → new bytes with byte appended (value must be 0–255)
@@ -328,7 +328,7 @@ Syntax: (operator arg1 arg2 ...)
 - Construction: (vector 1 2 3) → #vector(1 2 3), (vector) → #vector(); no literal syntax
 - Type predicate: (vector? x) → #t
 - Equality: (vector=? a b), (vector!=? a b) — element-wise, order matters
-- Access: (vector-get v i) → element at 0-based index (O(1)); (vector-length v) → integer
+- Access: (vector-nth v i) → element at 0-based index (O(1)); (vector-length v) → integer
 - Functional update: (vector-with v i val) → new vector with element at index i replaced (original unchanged)
 - Slicing: (vector-slice v start) → from start to end, (vector-slice v start end) → from start to end (exclusive); out of bounds raises an error (matching list-slice); shares backing array
 - Concatenation: (vector-concat a b) → new vector with elements of a followed by b

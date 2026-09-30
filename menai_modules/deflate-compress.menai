@@ -111,7 +111,7 @@
    (find-base-index
     (lambda (bases value)
       (letrec ((loop (lambda (i)
-                       (if (integer<=? (vector-get bases i) value)
+                       (if (integer<=? (vector-nth bases i) value)
                            i
                            (loop (integer- i 1))))))
         (loop (integer- (vector-length bases) 1)))))
@@ -121,16 +121,16 @@
     (lambda (length)
       (let ((idx (find-base-index length-base length)))
         (list (integer+ 257 idx)
-              (integer- length (vector-get length-base idx))
-              (vector-get length-extra idx)))))
+              (integer- length (vector-nth length-base idx))
+              (vector-nth length-extra idx)))))
 
    ; Encode a match distance (1-32768) as (list <symbol> <extra-bits> <extra-count>).
    (encode-distance
     (lambda (distance)
       (let ((idx (find-base-index distance-base distance)))
         (list idx
-              (integer- distance (vector-get distance-base idx))
-              (vector-get distance-extra idx)))))
+              (integer- distance (vector-nth distance-base idx))
+              (vector-nth distance-extra idx)))))
 
    ; Compute canonical Huffman codes from a list of code lengths.
    ; Returns a list of (list <code> <length>) indexed by symbol, following the
@@ -179,8 +179,8 @@
    ; Emit one symbol's Huffman code using a symbol-code list.
    (write-symbol
     (lambda (w codes symbol)
-      (let ((entry (list-get codes symbol)))
-        (write-bits w (list-first entry) (list-get entry 1)))))
+      (let ((entry (list-nth codes symbol)))
+        (write-bits w (list-first entry) (list-nth entry 1)))))
 
    ; --- LZ77 matching -------------------------------------------------------
 
@@ -242,8 +242,8 @@
                                (let ((c (list-first cands)))
                                  (if (integer>? (integer- i c) window-size)
                                      (list best-len best-dist)
-                                     (if (integer=? (bytes-get b (integer+ c best-len))
-                                                    (bytes-get b (integer+ i best-len)))
+                                     (if (integer=? (bytes-nth b (integer+ c best-len))
+                                                    (bytes-nth b (integer+ i best-len)))
                                          (let ((len (common-prefix b c i limit)))
                                            (if (integer>? len best-len)
                                                (loop (list-rest cands) len (integer- i c)
@@ -278,14 +278,14 @@
                      (list-reverse acc)
                      (let ((match (find-match b i table)))
                        (let ((len (list-first match))
-                             (dist (list-get match 1)))
+                             (dist (list-nth match 1)))
                          (if (integer>=? len min-match)
                              (loop (integer+ i len)
                                    (add-candidates b i len table)
                                    (list-prepend acc (list "match" len dist)))
                              (loop (integer+ i 1)
                                    (add-candidate b i table)
-                                   (list-prepend acc (list "lit" (bytes-get b i)))))))))))
+                                   (list-prepend acc (list "lit" (bytes-nth b i)))))))))))
         (loop 0 (dict) (list)))))
 
    ; --- Huffman code-length construction ------------------------------------
@@ -320,7 +320,7 @@
                              (if (integer? payload)
                                  (dict-with acc payload depth)
                                  (walk (list-first payload) (integer+ depth 1)
-                                       (walk (list-get payload 1) (integer+ depth 1) acc))))))
+                                       (walk (list-nth payload 1) (integer+ depth 1) acc))))))
               (fold-list (lambda (acc node) (walk (list-first node) 0 acc))
                          depths-acc nodes))))
          ; Pop the lightest node from the two weight-ordered queues and return
@@ -332,8 +332,8 @@
                 (list (list-first internals) leaves (list-rest internals))
                 (if (list-null? internals)
                     (list (list-first leaves) (list-rest leaves) internals)
-                    (if (integer<=? (list-get (list-first leaves) 1)
-                                    (list-get (list-first internals) 1))
+                    (if (integer<=? (list-nth (list-first leaves) 1)
+                                    (list-nth (list-first internals) 1))
                         (list (list-first leaves) (list-rest leaves) internals)
                         (list (list-first internals) leaves (list-rest internals)))))))
          (merge
@@ -342,20 +342,20 @@
                 (if (list-null? leaves) (list-first internals) (list-first leaves))
                 (let ((p1 (pop-min leaves internals)))
                   (let ((n1 (list-first p1))
-                        (leaves1 (list-get p1 1))
-                        (internals1 (list-get p1 2)))
+                        (leaves1 (list-nth p1 1))
+                        (internals1 (list-nth p1 2)))
                     (let ((p2 (pop-min leaves1 internals1)))
                       (let ((n2 (list-first p2))
-                            (leaves2 (list-get p2 1))
-                            (internals2 (list-get p2 2)))
-                        (let ((merged (list (list (list-get n1 0) (list-get n2 0))
-                                            (integer+ (list-get n1 1) (list-get n2 1)))))
+                            (leaves2 (list-nth p2 1))
+                            (internals2 (list-nth p2 2)))
+                        (let ((merged (list (list (list-nth n1 0) (list-nth n2 0))
+                                            (integer+ (list-nth n1 1) (list-nth n2 1)))))
                           (merge leaves2 (list-append internals2 merged)
                                  (integer- remaining 1)))))))))))
         (let ((active (active-symbols 0 freqs (list))))
           (if (list-null? active)
               (map-list (lambda (f) 0) freqs)
-              (let ((sorted-leaves (sort-list (lambda (a b) (integer<? (list-get a 1) (list-get b 1))) active)))
+              (let ((sorted-leaves (sort-list (lambda (a b) (integer<? (list-nth a 1) (list-nth b 1))) active)))
                 (let ((depth-map (depths (list (merge sorted-leaves (list)
                                                       (list-length sorted-leaves)))
                                          (dict))))
@@ -416,16 +416,16 @@
                            (let ((tok (list-first toks)))
                              (if (string=? (list-first tok) "lit")
                                  (loop (list-rest toks)
-                                       (write-symbol st lit-codes (list-get tok 1)))
-                                 (let ((len (list-get tok 1))
-                                       (dist (list-get tok 2)))
+                                       (write-symbol st lit-codes (list-nth tok 1)))
+                                 (let ((len (list-nth tok 1))
+                                       (dist (list-nth tok 2)))
                                    (let ((le (encode-length len)))
                                      (let ((st2 (write-symbol st lit-codes (list-first le))))
-                                       (let ((st3 (write-bits st2 (list-get le 1) (list-get le 2))))
+                                       (let ((st3 (write-bits st2 (list-nth le 1) (list-nth le 2))))
                                          (let ((de (encode-distance dist)))
                                            (let ((st4 (write-symbol st3 dist-codes (list-first de))))
                                              (loop (list-rest toks)
-                                                   (write-bits st4 (list-get de 1) (list-get de 2)))))))))))))))
+                                                   (write-bits st4 (list-nth de 1) (list-nth de 2)))))))))))))))
         (loop tokens w))))
 
    ; Encode a fixed Huffman block (BTYPE = 01).
@@ -454,16 +454,16 @@
                      (let ((tok (list-first toks)))
                        (if (string=? (list-first tok) "lit")
                            (loop (list-rest toks)
-                                 (bump lit-freqs (list-get tok 1))
+                                 (bump lit-freqs (list-nth tok 1))
                                  dist-freqs)
-                           (let ((le (encode-length (list-get tok 1)))
-                                 (de (encode-distance (list-get tok 2))))
+                           (let ((le (encode-length (list-nth tok 1)))
+                                 (de (encode-distance (list-nth tok 2))))
                              (loop (list-rest toks)
                                    (bump lit-freqs (list-first le))
                                    (bump dist-freqs (list-first de))))))))))
         (let ((result (loop tokens (dict-with (dict) 256 1) (dict))))
           (let ((lit-map (list-first result))
-                (dist-map (list-get result 1)))
+                (dist-map (list-nth result 1)))
             (list (map-list (lambda (i) (dict-get lit-map i 0)) (range 0 286))
                   (map-list (lambda (i) (dict-get dist-map i 0)) (range 0 30))))))))
 
@@ -475,7 +475,7 @@
       (letrec ((loop (lambda (n)
                        (if (integer<=? n minimum)
                            minimum
-                           (if (integer=? (list-get lengths (integer- n 1)) 0)
+                           (if (integer=? (list-nth lengths (integer- n 1)) 0)
                                (loop (integer- n 1))
                                n)))))
         (loop (list-length lengths)))))
@@ -574,7 +574,7 @@
                        (if (integer>=? i count)
                            st
                            (loop (integer+ i 1)
-                                 (write-bits st (list-get cl-lengths (vector-get code-length-order i)) 3))))))
+                                 (write-bits st (list-nth cl-lengths (vector-nth code-length-order i)) 3))))))
         (loop 0 w))))
 
    ; Write the run-length encoded code lengths using the code-length code.
@@ -587,8 +587,8 @@
                            (let ((item (list-first lst)))
                              (loop (list-rest lst)
                                    (write-bits (write-symbol st cl-codes (list-first item))
-                                               (list-get item 1)
-                                               (list-get item 2))))))))
+                                               (list-nth item 1)
+                                               (list-nth item 2))))))))
         (loop items w))))
 
    ; Determine the number of code-length code lengths to transmit (HCLEN + 4):
@@ -599,7 +599,7 @@
       (letrec ((loop (lambda (n)
                        (if (integer<=? n 4)
                            4
-                           (if (integer=? (list-get cl-lengths (vector-get code-length-order (integer- n 1))) 0)
+                           (if (integer=? (list-nth cl-lengths (vector-nth code-length-order (integer- n 1))) 0)
                                (loop (integer- n 1))
                                n)))))
         (loop 19))))
@@ -611,7 +611,7 @@
     (lambda (w tokens final)
       (let ((freqs (count-frequencies tokens)))
         (let ((lit-freqs (list-first freqs))
-              (dist-freqs (list-get freqs 1)))
+              (dist-freqs (list-nth freqs 1)))
           (let ((lit-lengths (clamp-lengths (build-code-lengths lit-freqs)))
                 (dist-lengths (clamp-lengths (build-code-lengths dist-freqs))))
             (let ((num-lit (trimmed-count lit-lengths 257))
@@ -621,8 +621,8 @@
                                           (list-slice dist-lengths 0 num-dist)))))
               (let ((cl (build-code-length-code items)))
                 (let ((cl-lengths (list-first cl))
-                      (cl-codes (list-get cl 1))
-                      (cl-items (list-get cl 2)))
+                      (cl-codes (list-nth cl 1))
+                      (cl-items (list-nth cl 2)))
                   (let ((hclen-count (code-length-count cl-lengths)))
                     (let ((w1 (write-block-header w final 2)))
                       (let ((w2 (write-bits w1 (integer- num-lit 257) 5)))

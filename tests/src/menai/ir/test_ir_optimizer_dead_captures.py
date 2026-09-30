@@ -473,8 +473,8 @@ class TestDeadCapturePruningIntegration:
                              (letrec ((loop (lambda (j)
                                               (if (integer>=? j len)
                                                   j
-                                                  (if (or (string=? (string-get s j) "-")
-                                                          (is-digit? (string-get s j)))
+                                                  (if (or (string=? (string-nth s j) "-")
+                                                          (is-digit? (string-nth s j)))
                                                       (loop (integer+ j 1))
                                                       j)))))
                                (loop i)))))
@@ -513,7 +513,7 @@ class TestDeadCapturePruningIntegration:
                  (letrec ((loop (lambda (j)
                                   (if (integer>=? j len)
                                       j
-                                      (let ((ch (string-get s j)))
+                                      (let ((ch (string-nth s j)))
                                         (if (or (string=? ch "-")
                                             (or (string=? ch "+")
                                             (or (string=? ch ".")

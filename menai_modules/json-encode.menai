@@ -37,8 +37,8 @@
    (escape-control
     (lambda (code)
       (string-concat "\\u00"
-                     (string-get hex-digits (integer/ code 16))
-                     (string-get hex-digits (integer% code 16)))))
+                     (string-nth hex-digits (integer/ code 16))
+                     (string-nth hex-digits (integer% code 16)))))
 
    ; Escape one character of a string body, returning its JSON source text.
    (escape-char
@@ -64,7 +64,7 @@
                        (if (integer>=? i (string-length s))
                            (list-prepend acc "\"")
                            (loop (integer+ i 1)
-                                 (list-prepend acc (escape-char (string-get s i))))))))
+                                 (list-prepend acc (escape-char (string-nth s i))))))))
         (list->string (list-reverse (loop 0 (list "\"")))))))
 
    ; Normalise a float's textual form for JSON: drop a "+" immediately after
@@ -76,7 +76,7 @@
           (if (none? e-pos)
               text
               (if (and (integer<? (integer+ e-pos 1) (string-length text))
-                       (string=? (string-get text (integer+ e-pos 1)) "+"))
+                       (string=? (string-nth text (integer+ e-pos 1)) "+"))
                   (string-concat (string-slice text 0 (integer+ e-pos 1))
                                  (string-slice text (integer+ e-pos 2) (string-length text)))
                   text))))))
@@ -87,7 +87,7 @@
       (letrec ((loop (lambda (i)
                        (if (integer>=? i (string-length text))
                            #none
-                           (let ((ch (string-get text i)))
+                           (let ((ch (string-nth text i)))
                              (if (or (string=? ch "e") (string=? ch "E"))
                                  i
                                  (loop (integer+ i 1))))))))

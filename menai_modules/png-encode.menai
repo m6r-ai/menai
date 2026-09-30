@@ -76,7 +76,7 @@
                                (if (integer>=? c channels)
                                    acc
                                    (loop (integer+ c 1)
-                                         (list-prepend acc (vector-get pixel c)))))))
+                                         (list-prepend acc (vector-nth pixel c)))))))
                 (list-reverse (loop 0 (list))))
               (error (string-concat
                        "png-encode: each pixel must have "
@@ -102,14 +102,14 @@
                                        acc
                                        (loop (integer+ x 1)
                                              (list-concat acc
-                                                          (encode-pixel (vector-get row x)
+                                                          (encode-pixel (vector-nth row x)
                                                                         channels)))))))
                     (loop 0 (list 0))))))
              (loop
               (lambda (y acc)
                 (if (integer>=? y height)
                     (apply bytes-concat (list-reverse acc))
-                    (let ((row (vector-get pixels y)))
+                    (let ((row (vector-nth pixels y)))
                       (if (vector? row)
                           (if (integer=? (vector-length row) width)
                               (loop (integer+ y 1)

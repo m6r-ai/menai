@@ -3891,7 +3891,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_STRING_GET: {
+        case OP_STRING_NTH: {
             MenaiString *a = (MenaiString *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
@@ -4325,7 +4325,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_BYTES_GET: {
+        case OP_BYTES_NTH: {
             MenaiBytes *b = (MenaiBytes *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
@@ -5713,7 +5713,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_VECTOR_GET: {
+        case OP_VECTOR_NTH: {
             MenaiVector *v = (MenaiVector *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *idx_val = (MenaiInteger *)frame_regs[src1];
@@ -6041,7 +6041,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_LIST_GET: {
+        case OP_LIST_NTH: {
             MenaiList *a = (MenaiList *)frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiInteger *b = (MenaiInteger *)frame_regs[src1];

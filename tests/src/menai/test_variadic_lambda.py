@@ -215,7 +215,7 @@ class TestVariadicLambdaHigherOrder:
         (let ((ops (list (lambda (. args) (fold-list integer+ 0 args))
                          (lambda (. args) (fold-list integer* 1 args)))))
           (list ((list-first ops) 1 2 3)
-                ((list-get ops 1) 2 3 4)))
+                ((list-nth ops 1) 2 3 4)))
         '''
         assert menai.evaluate_and_format(expr) == '(6 24)'
 

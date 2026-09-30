@@ -109,7 +109,7 @@
                        (if (integer=? remaining 0)
                            (list-reverse acc)
                            (let ((result (read-central-entry b pos)))
-                             (loop (list-get result 1)
+                             (loop (list-nth result 1)
                                    (integer- remaining 1)
                                    (list-prepend acc (list-first result))))))))
         (loop offset count (list)))))

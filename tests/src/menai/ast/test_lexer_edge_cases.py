@@ -261,7 +261,7 @@ class TestMenaiLexerEdgeCases:
         # Symbols with special characters (if allowed)
         special_symbols = [
             "string-length",    # Hyphenated
-            "list-get",         # Hyphenated
+            "list-nth",         # Hyphenated
             "string->number",   # Arrow notation
             "integer->string",  # Arrow notation
             "string=?",         # Question mark

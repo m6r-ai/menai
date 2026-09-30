@@ -57,13 +57,13 @@ New features:
 - Reworked the module system and introduced the `::` special form.
 - Removed `struct-ref` and `struct-set-ref` from the language.
 - Renamed the element access operations for consistency and to remove the mutation
-  connotation of `set`, `add`, and `remove`.  Reads are now `-get` for every indexed
-  and keyed type (`string-get`, `list-get`, `bytes-get`, `vector-get`, `dict-get`,
-  `struct-get`), additions and replacements are `-with` (`vector-with`, `dict-with`,
-  `struct-with`, `set-with`), and removals are `-without` (`set-without`,
-  `dict-without`, `list-without`).  This replaces `string-ref`, `list-ref`,
-  `bytes-ref`, `vector-ref`, `vector-set`, `dict-set`, `struct-set`, `set-add`,
-  `set-remove`, `dict-remove`, and `list-remove`.
+  connotation of `set`, `add`, and `remove`.  Positional reads are now `-nth`
+  (`string-nth`, `list-nth`, `bytes-nth`, `vector-nth`), keyed reads are `-get`
+  (`dict-get`, `struct-get`), additions and replacements are `-with` (`vector-with`,
+  `dict-with`, `struct-with`, `set-with`), and removals are `-without`
+  (`set-without`, `dict-without`, `list-without`).  This replaces `string-ref`,
+  `list-ref`, `bytes-ref`, `vector-ref`, `vector-set`, `dict-set`, `struct-set`,
+  `set-add`, `set-remove`, `dict-remove`, and `list-remove`.
 - Improved the inliner so it can inline `letrec`-containing bodies.
 - Improved performance of integer bitwise VM operations.
 - Improved the algorithmic performance of deflate, inflate and the Sudoku and

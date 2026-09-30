@@ -133,7 +133,7 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$string<=?',
         '$string>=?',
         '$string-concat',
-        '$string-get',
+        '$string-nth',
         '$string-slice',
         '$string-prefix?',
         '$string-suffix?',
@@ -252,7 +252,7 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$string<=?': self._fold_string_lte,
             '$string>=?': self._fold_string_gte,
             '$string-concat': self._fold_string_concat,
-            '$string-get': self._fold_string_get,
+            '$string-nth': self._fold_string_nth,
             '$string-slice': self._fold_string_slice,
             '$string-prefix?': self._fold_string_prefix,
             '$string-suffix?': self._fold_string_suffix,
@@ -1539,8 +1539,8 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
 
         return MenaiASTString(args[0].value + args[1].value)
 
-    def _fold_string_get(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
-        """Fold string-get: arg0 must be string, arg1 must be integer, returns single-char string."""
+    def _fold_string_nth(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold string-nth: arg0 must be string, arg1 must be integer, returns single-char string."""
         if not isinstance(args[0], MenaiASTString) or not isinstance(args[1], MenaiASTInteger):
             return None
 

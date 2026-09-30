@@ -25,7 +25,7 @@
 
    (get-sticker
      (lambda (face pos)
-       (list-get face pos)))
+       (list-nth face pos)))
 
    (rotate-face-cw
      (lambda (face)
@@ -253,7 +253,7 @@
 
    (move-face
      (lambda (move)
-       (string-get move 0)))
+       (string-nth move 0)))
 
    (same-face?
      (lambda (m1 m2)

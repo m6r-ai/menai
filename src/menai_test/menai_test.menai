@@ -110,7 +110,7 @@
                                                      (error (string-concat "test-find: no node named \"" segment "\""))
                                                      (let ((node (list-first lst)))
                                                        (if (string=? (list-first node) segment)
-                                                           (let ((thing (list-get node 1)))
+                                                           (let ((thing (list-nth node 1)))
                                                              (if (list-null? rest)
                                                                  (if (function? thing)
                                                                      thing

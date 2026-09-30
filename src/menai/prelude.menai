@@ -658,7 +658,7 @@
    (string-index (lambda (s sub) ($string-index s sub)))
    (string-prefix? (lambda (s prefix) ($string-prefix? s prefix)))
    (string-suffix? (lambda (s suffix) ($string-suffix? s suffix)))
-   (string-get (lambda (s i) ($string-get s i)))
+   (string-nth (lambda (s i) ($string-nth s i)))
    (string-slice (lambda (str start . rest)
                    (if ($list-null? rest)
                        ($string-slice str start ($string-length str))
@@ -766,7 +766,7 @@
                                         #f)))))
                         (loop ($list-rest args) ($list-first args)))))))
    (bytes-length (lambda (b) ($bytes-length b)))
-   (bytes-get (lambda (b i) ($bytes-get b i)))
+   (bytes-nth (lambda (b i) ($bytes-nth b i)))
    (bytes-append-u8 (lambda (b v) ($bytes-append-u8 b v)))
    (bytes-slice (lambda (b start . rest)
                   (if ($list-null? rest)
@@ -871,13 +871,13 @@
                                  (if ($integer=? i ($bytes-length b))
                                      acc
                                      (loop ($integer+ i 1)
-                                           ($bytes-append-u8 acc (f ($bytes-get b i))))))))
+                                           ($bytes-append-u8 acc (f ($bytes-nth b i))))))))
                   (loop 0 ($string-hex->bytes "")))))
    (filter-bytes (lambda (f b)
                    (letrec ((loop (lambda (i acc)
                                     (if ($integer=? i ($bytes-length b))
                                         acc
-                                        (let ((byte ($bytes-get b i)))
+                                        (let ((byte ($bytes-nth b i)))
                                           (loop ($integer+ i 1)
                                                 (if (f byte)
                                                     ($bytes-append-u8 acc byte)
@@ -888,7 +888,7 @@
                                   (if ($integer=? i ($bytes-length b))
                                       acc
                                       (loop ($integer+ i 1)
-                                            (f acc ($bytes-get b i)))))))
+                                            (f acc ($bytes-nth b i)))))))
                    (loop 0 init))))
    (bytes-empty? (lambda (b) ($integer=? ($bytes-length b) 0)))
    (bytes-prefix? (lambda (b prefix)
@@ -974,7 +974,7 @@
                      ($list-slice lst start ($list-length lst))
                      ($list-slice lst start ($list-first rest)))))
    (list-without (lambda (lst elem) ($list-without lst elem)))
-   (list-get (lambda (lst i) ($list-get lst i)))
+   (list-nth (lambda (lst i) ($list-nth lst i)))
    (list->string (lambda (lst . rest)
                    ($list->string lst
                                   (if ($list-null? rest) "" ($list-first rest)))))
@@ -1223,7 +1223,7 @@
    (vector? (lambda (x) ($vector? x)))
    (vector=? (lambda (a b) ($vector=? a b)))
    (vector!=? (lambda (a b) ($vector!=? a b)))
-   (vector-get (lambda (v i) ($vector-get v i)))
+   (vector-nth (lambda (v i) ($vector-nth v i)))
    (vector-length (lambda (v) ($vector-length v)))
    (vector-with (lambda (v i val) ($vector-with v i val)))
    (vector-slice (lambda (v start . rest)
@@ -1242,14 +1242,14 @@
                             (if ($integer=? i ($vector-length v))
                                 ($list->vector ($list-reverse acc))
                                 (loop ($integer+ i 1)
-                                      ($list-prepend acc (f ($vector-get v i))))))))
+                                      ($list-prepend acc (f ($vector-nth v i))))))))
                    (loop 0 (list)))))
    (filter-vector (lambda (pred v)
                    (letrec
                      ((loop (lambda (i acc)
                               (if ($integer<? i 0)
                                   ($list->vector acc)
-                                  (let ((elem ($vector-get v i)))
+                                  (let ((elem ($vector-nth v i)))
                                     (loop ($integer- i 1)
                                           (if (pred elem)
                                               ($list-prepend acc elem)
@@ -1261,14 +1261,14 @@
                              (if ($integer=? i ($vector-length v))
                                  acc
                                  (loop ($integer+ i 1)
-                                       (f acc ($vector-get v i)))))))
+                                       (f acc ($vector-nth v i)))))))
                     (loop 0 init))))
    (find-vector (lambda (pred v)
                   (letrec
                     ((loop (lambda (i)
                              (if ($integer=? i ($vector-length v))
                                  #none
-                                 (let ((elem ($vector-get v i)))
+                                 (let ((elem ($vector-nth v i)))
                                    (if (pred elem)
                                        elem
                                        (loop ($integer+ i 1))))))))
@@ -1278,7 +1278,7 @@
                     ((loop (lambda (i)
                              (if ($integer=? i ($vector-length v))
                                  #f
-                                 (if (pred ($vector-get v i))
+                                 (if (pred ($vector-nth v i))
                                      #t
                                      (loop ($integer+ i 1)))))))
                     (loop 0))))
@@ -1287,7 +1287,7 @@
                     ((loop (lambda (i)
                              (if ($integer=? i ($vector-length v))
                                  #t
-                                 (if (pred ($vector-get v i))
+                                 (if (pred ($vector-nth v i))
                                      (loop ($integer+ i 1))
                                      #f)))))
                     (loop 0))))
@@ -1421,7 +1421,7 @@
         "string-index" string-index
         "string-prefix?" string-prefix?
         "string-suffix?" string-suffix?
-        "string-get" string-get
+        "string-nth" string-nth
         "string-slice" string-slice
         "string->float" string->float
         "string->complex" string->complex
@@ -1447,7 +1447,7 @@
         "list-index" list-index
         "list-slice" list-slice
         "list-without" list-without
-        "list-get" list-get
+        "list-nth" list-nth
         "list->string" list->string
         "list->set" list->set
         "dict" dict
@@ -1511,7 +1511,7 @@
         "bytes<=?" bytes<=?
         "bytes>=?" bytes>=?
         "bytes-length" bytes-length
-        "bytes-get" bytes-get
+        "bytes-nth" bytes-nth
         "bytes-append-u8" bytes-append-u8
         "bytes-slice" bytes-slice
         "bytes-concat" bytes-concat
@@ -1609,7 +1609,7 @@
         "vector?" vector?
         "vector=?" vector=?
         "vector!=?" vector!=?
-        "vector-get" vector-get
+        "vector-nth" vector-nth
         "vector-length" vector-length
         "vector-with" vector-with
         "vector-slice" vector-slice

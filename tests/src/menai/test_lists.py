@@ -188,46 +188,46 @@ class TestLists:
 
     @pytest.mark.parametrize("expression,expected", [
         # List reference by index
-        ('(list-get (list "a" "b" "c") 0)', '"a"'),
-        ('(list-get (list "a" "b" "c") 1)', '"b"'),
-        ('(list-get (list "a" "b" "c") 2)', '"c"'),
+        ('(list-nth (list "a" "b" "c") 0)', '"a"'),
+        ('(list-nth (list "a" "b" "c") 1)', '"b"'),
+        ('(list-nth (list "a" "b" "c") 2)', '"c"'),
 
         # Mixed type list reference
-        ('(list-get (list 1 "hello" #t) 0)', '1'),
-        ('(list-get (list 1 "hello" #t) 1)', '"hello"'),
-        ('(list-get (list 1 "hello" #t) 2)', '#t'),
+        ('(list-nth (list 1 "hello" #t) 0)', '1'),
+        ('(list-nth (list 1 "hello" #t) 1)', '"hello"'),
+        ('(list-nth (list 1 "hello" #t) 2)', '#t'),
 
         # Nested list reference
-        ('(list-get (list (list 1 2) (list 3 4)) 0)', '(1 2)'),
-        ('(list-get (list (list 1 2) (list 3 4)) 1)', '(3 4)'),
+        ('(list-nth (list (list 1 2) (list 3 4)) 0)', '(1 2)'),
+        ('(list-nth (list (list 1 2) (list 3 4)) 1)', '(3 4)'),
     ])
-    def test_list_get_operation(self, menai, expression, expected):
-        """Test list-get operation for accessing elements by index."""
+    def test_list_nth_operation(self, menai, expression, expected):
+        """Test list-nth operation for accessing elements by index."""
         assert menai.evaluate_and_format(expression) == expected
 
-    def test_list_get_index_errors(self, menai):
-        """Test list-get with invalid indices."""
+    def test_list_nth_index_errors(self, menai):
+        """Test list-nth with invalid indices."""
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate('(list-get (list 1 2 3) 3)')  # Index too high
+            menai.evaluate('(list-nth (list 1 2 3) 3)')  # Index too high
 
         with pytest.raises(MenaiEvalError, match="index out of range"):
-            menai.evaluate('(list-get (list 1 2 3) -1)')  # Negative index
+            menai.evaluate('(list-nth (list 1 2 3) -1)')  # Negative index
 
-    def test_list_get_requires_list_argument(self, menai):
-        """Test that list-get requires a list as first argument."""
+    def test_list_nth_requires_list_argument(self, menai):
+        """Test that list-nth requires a list as first argument."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(list-get "hello" 0)')
-
-        with pytest.raises(MenaiEvalError):
-            menai.evaluate('(list-get 42 0)')
-
-    def test_list_get_requires_integer_index(self, menai):
-        """Test that list-get requires integer index."""
-        with pytest.raises(MenaiEvalError):
-            menai.evaluate('(list-get (list 1 2 3) "hello")')
+            menai.evaluate('(list-nth "hello" 0)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(list-get (list 1 2 3) 1.5)')
+            menai.evaluate('(list-nth 42 0)')
+
+    def test_list_nth_requires_integer_index(self, menai):
+        """Test that list-nth requires integer index."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(list-nth (list 1 2 3) "hello")')
+
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(list-nth (list 1 2 3) 1.5)')
 
     @pytest.mark.parametrize("expression,expected", [
         # Length of various lists
@@ -467,12 +467,12 @@ class TestLists:
         with pytest.raises(MenaiEvalError):
             menai.evaluate('(list-first (list 1) (list 2))')
 
-        # list-get requires exactly 2 arguments
+        # list-nth requires exactly 2 arguments
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(list-get (list 1 2 3))')
+            menai.evaluate('(list-nth (list 1 2 3))')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(list-get (list 1) 0 1)')
+            menai.evaluate('(list-nth (list 1) 0 1)')
 
         # slice requires 2 or 3 arguments
         with pytest.raises(MenaiEvalError):
@@ -559,7 +559,7 @@ class TestLists:
 
         helpers.assert_evaluates_to(
             menai,
-            f'(list-get {complex_list} 3)',
+            f'(list-nth {complex_list} 3)',
             '"hello"'
         )
 

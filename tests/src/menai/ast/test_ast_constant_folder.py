@@ -101,9 +101,9 @@ class TestConstantFolding:
         assert menai.evaluate('(string-concat "foo" "bar")') == "foobar"
         _assert_folded_to_constant(menai, '(string-concat "foo" "bar")')
 
-    def test_string_get(self, menai):
-        assert menai.evaluate('(string-get "hello" 1)') == "e"
-        _assert_folded_to_constant(menai, '(string-get "hello" 1)')
+    def test_string_nth(self, menai):
+        assert menai.evaluate('(string-nth "hello" 1)') == "e"
+        _assert_folded_to_constant(menai, '(string-nth "hello" 1)')
 
     def test_string_slice(self, menai):
         assert menai.evaluate('(string-slice "hello" 1 4)') == "ell"

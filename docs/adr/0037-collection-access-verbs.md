@@ -1,4 +1,4 @@
-# ADR-0037: Element access verbs — `-get`, `-with`, and `-without`
+# ADR-0037: Element access verbs — `-nth`, `-get`, `-with`, and `-without`
 
 Date: 2026-09-30  
 Status: Accepted
@@ -23,26 +23,33 @@ replaced. The names had drifted into an inconsistent set:
   languages (`set.add`, `set.remove`, `list.remove` all mutate), so they misdescribed
   purity in exactly the same way as `-set`.
 
-The split between `-ref` and `-get` also did not correspond to anything the user
-needs to act on. The type prefix already tells the reader whether access is
-positional or keyed, and whether a miss is an error or `#none`. Encoding that
-distinction a second time in the read verb added a rule to learn without adding
-information.
+Reads are not one operation. Positional access retrieves the element at position
+`n` of an *enumerable* sequence, while keyed access retrieves the value associated
+with a key in a *non-enumerable* mapping. A list, vector, string, or bytes value has
+a first and a last element and can be walked by position; a dict or struct has no
+first key and cannot be indexed by position. These are different operations and
+deserve different verbs.
 
-The two axes are not the same shape. `string` and `bytes` are sequences of scalars
-— a character or a byte, not a value drawn from the language's value universe —
-whereas `list`, `vector`, `dict`, and `struct` are containers of arbitrary values.
-Both kinds support element *read*, so one read verb covers both. Only the
+The positional family already existed. Lists expose `list-first` and `list-last`,
+naming the two endpoint positions. `nth` is the general case that sits between them
+(position 0, position `n`, position `n-1`), so a positional read verb completes a
+set the language already had rather than introducing a new concept.
+
+The two read axes are also not the same shape as the write axis. `string` and
+`bytes` are sequences of scalars — a character or a byte, not a value drawn from the
+language's value universe — whereas `list`, `vector`, `dict`, and `struct` are
+containers of arbitrary values. Positional read spans both kinds; only the
 containers support a functional single-element *update* in the surface language, so
-the write verb applies to a narrower set.
+the write verbs apply to a narrower set.
 
 ## Decision
 
-Element access uses one of two verbs:
+Element access uses one of three verbs:
 
-- **`-get`** reads an element by index or key. Used for scalar sequences and
-  containers alike, positional or keyed:
-  `string-get`, `list-get`, `bytes-get`, `vector-get`, `dict-get`, `struct-get`.
+- **`-nth`** reads the element at a position in an enumerable sequence:
+  `string-nth`, `list-nth`, `bytes-nth`, `vector-nth`.
+- **`-get`** reads the value associated with a key in a non-enumerable mapping:
+  `dict-get`, `struct-get`.
 - **`-with`** produces a new container with one element added or replaced, and
   **`-without`** produces a new container with one element removed. Used only where a
   functional single-element update exists: `vector-with`, `dict-with`, `struct-with`,
@@ -59,20 +66,25 @@ Set algebra (`set-union`, `set-intersection`, `set-difference`) and positional l
 construction (`list-prepend`, `list-append`) keep their names: they are nouns or
 positional descriptions, not mutation verbs.
 
-The internal indexed struct operations are also reordered from `STRUCT_INDEXED_GET` /
+The internal indexed struct operations are reworked from `STRUCT_INDEXED_GET` /
 `STRUCT_INDEXED_SET` to `STRUCT_GET_INDEXED` / `STRUCT_WITH_INDEXED`, so the
 operation verb precedes the qualifier consistently.
 
 ## Alternatives considered
 
-### Keep `-ref` for positional reads, rename only `-set`
+### One `-get` verb for both positional and keyed reads
 
-`-ref` is the idiomatic Lisp/Scheme verb for integer-indexed access and is the
-incumbent (it had the larger number of call sites). Keeping it would have been the
-smaller change. Rejected because `-ref` does not generalise to keyed access:
-`dict-ref` and `struct-ref` read wrong, so a uniform read verb could not be `-ref`.
-`-get` is the one verb that is correct for both positional and keyed access, so it
-is the only choice that yields genuine uniformity.
+A single read verb covering every type is the smallest vocabulary. Rejected because
+positional and keyed access are different operations: positional access indexes an
+enumerable sequence, keyed access looks up a non-enumerable mapping. Collapsing them
+hides the distinction and leaves `-get` meaning two things. `-nth` and `-get` name
+the two operations precisely.
+
+### Bare `nth` instead of `type-nth`
+
+Clojure exposes `nth` without a type prefix because it dispatches on the runtime
+value. Menai is statically typed and has no overloading, so a bare `nth` cannot be
+resolved to the right operation; the type prefix is required.
 
 ### Keep `-set`, document that it is a functional update
 
@@ -110,9 +122,11 @@ verbs, so they imply an in-place change that Menai does not perform.
 
 ### Positive
 
-- One read verb across every indexed and keyed type, and one write verb pair
-  (`-with`/`-without`) across every container that supports a functional update. The
-  rule is "`-get` to read, `-with`/`-without` to add or remove" with no exceptions.
+- One verb per operation: `-nth` to read by position, `-get` to read by key, and
+  `-with`/`-without` to add or remove. The rule is "`-nth` by position, `-get` by
+  key, `-with`/`-without` to update" with no exceptions.
+- `-nth` completes the positional accessor set that `list-first` and `list-last`
+  already established, rather than introducing a new concept.
 - The write verb no longer implies mutation, so it no longer contradicts the
   language's purity.
 - The operation name is identical at every layer — surface, `$`-primitive, opcode,
@@ -124,6 +138,9 @@ verbs, so they imply an in-place change that Menai does not perform.
 - `-ref` is the idiomatic Lisp verb and its removal makes Menai look slightly less
   like Scheme. This is consistent with Menai's stated position that it is
   Lisp-inspired but not a Lisp dialect.
+- `-nth` is a third read verb, so the read vocabulary is larger than a single `-get`
+  would have been. The extra verb buys precision: it distinguishes positional from
+  keyed access.
 - `-with` covers two shapes: a positional or keyed replacement that takes a position
   and a value (`vector-with v i val`), and a membership update that takes just an
   element (`set-with s x`). The type prefix disambiguates.

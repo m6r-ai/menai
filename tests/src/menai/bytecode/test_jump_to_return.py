@@ -65,7 +65,7 @@ _READ_BIT = """
     (if (integer>=? pos (bytes-length b))
         (error "unexpected end of input")
         (let ((value (integer-bit-and
-                       (integer-bit-shift-right (bytes-get b pos) bit)
+                       (integer-bit-shift-right (bytes-nth b pos) bit)
                        1)))
           (if (integer=? bit 7)
               (list value (dict "bytes" b "pos" (integer+ pos 1) "bit" 0))

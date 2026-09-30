@@ -130,7 +130,7 @@ _FIELD_BY_SYMBOL_OPS = {'struct-get', 'struct-with'}
 #
 # Three shapes are covered, and all three matter:
 #   - a value stored into a container (list-prepend, dict-with, vector-with, ...);
-#   - an element fetched out of a container (list-first, dict-get, vector-get,
+#   - an element fetched out of a container (list-first, dict-get, vector-nth,
 #     ...);
 #   - a container built from other containers, where the result's contents are
 #     drawn from an operand (list-concat, set-union, list->set, list-slice, ...).
@@ -149,7 +149,7 @@ _CONTAINER_FLOW_OPS = {
     'list-first': (0,),
     'list-last': (0,),
     'list-rest': (0,),
-    'list-get': (0,),
+    'list-nth': (0,),
     'list-index': (0,),
     'list-slice': (0,),
     'list-without': (0,),
@@ -169,7 +169,7 @@ _CONTAINER_FLOW_OPS = {
     'set-difference': (0, 1),
     'set->list': (0,),
     'vector-with': (2,),
-    'vector-get': (0,),
+    'vector-nth': (0,),
     'vector-slice': (0,),
     'vector-concat': (0, 1),
     'vector->list': (0,),

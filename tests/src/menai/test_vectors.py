@@ -61,33 +61,33 @@ class TestVectors:
             menai.evaluate('(vector=? 42 (vector 1))')
 
     @pytest.mark.parametrize("expression,expected", [
-        ('(vector-get (vector 1 2 3) 0)', '1'),
-        ('(vector-get (vector 1 2 3) 2)', '3'),
-        ('(vector-get (vector "a" "b") 1)', '"b"'),
-        ('(vector-get (vector (vector 1) (vector 2)) 1)', '#vector(2)'),
+        ('(vector-nth (vector 1 2 3) 0)', '1'),
+        ('(vector-nth (vector 1 2 3) 2)', '3'),
+        ('(vector-nth (vector "a" "b") 1)', '"b"'),
+        ('(vector-nth (vector (vector 1) (vector 2)) 1)', '#vector(2)'),
     ])
-    def test_vector_get(self, menai, expression, expected):
+    def test_vector_nth(self, menai, expression, expected):
         """Test O(1) indexed access."""
         assert menai.evaluate_and_format(expression) == expected
 
-    def test_vector_get_out_of_bounds(self, menai):
-        """Test that vector-get rejects out-of-bounds indices."""
+    def test_vector_nth_out_of_bounds(self, menai):
+        """Test that vector-nth rejects out-of-bounds indices."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-get (vector 1 2 3) 3)')
+            menai.evaluate('(vector-nth (vector 1 2 3) 3)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-get (vector 1 2 3) -1)')
+            menai.evaluate('(vector-nth (vector 1 2 3) -1)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-get (vector) 0)')
+            menai.evaluate('(vector-nth (vector) 0)')
 
-    def test_vector_get_requires_vector(self, menai):
-        """Test that vector-get rejects non-vector arguments."""
+    def test_vector_nth_requires_vector(self, menai):
+        """Test that vector-nth rejects non-vector arguments."""
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-get (list 1 2 3) 0)')
+            menai.evaluate('(vector-nth (list 1 2 3) 0)')
 
         with pytest.raises(MenaiEvalError):
-            menai.evaluate('(vector-get 42 0)')
+            menai.evaluate('(vector-nth 42 0)')
 
     @pytest.mark.parametrize("expression,expected", [
         ('(vector-length (vector))', '0'),

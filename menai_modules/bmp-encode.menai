@@ -68,18 +68,18 @@
                 (if (integer=? (list-length channels) 3)
                     (bytes-append-u8
                       (bytes-append-u8
-                        (bytes-append-u8 b (list-get channels 2))
-                        (list-get channels 1))
-                      (list-get channels 0))
+                        (bytes-append-u8 b (list-nth channels 2))
+                        (list-nth channels 1))
+                      (list-nth channels 0))
                     (error "bmp-encode: a 24-bit pixel must have 3 channels"))
                 (if (integer=? (list-length channels) 4)
                     (bytes-append-u8
                       (bytes-append-u8
                         (bytes-append-u8
-                          (bytes-append-u8 b (list-get channels 2))
-                          (list-get channels 1))
-                        (list-get channels 0))
-                      (list-get channels 3))
+                          (bytes-append-u8 b (list-nth channels 2))
+                          (list-nth channels 1))
+                        (list-nth channels 0))
+                      (list-nth channels 3))
                     (error "bmp-encode: a 32-bit pixel must have 4 channels")))))))
 
    ; Write one row's pixels followed by its padding bytes.
@@ -90,7 +90,7 @@
                            (if (integer>=? x width)
                                acc
                                (loop (integer+ x 1)
-                                     (encode-pixel acc (vector-get row x) bpp))))))
+                                     (encode-pixel acc (vector-nth row x) bpp))))))
             (let ((padded (loop 0 b)))
               (letrec ((pad (lambda (n acc)
                               (if (integer>=? n (row-padding width bpp))
@@ -110,7 +110,7 @@
                              (if (integer>=? y height)
                                  acc
                                  (loop (integer+ y 1)
-                                       (encode-row acc (vector-get ordered y) width bpp))))))
+                                       (encode-row acc (vector-nth ordered y) width bpp))))))
               (loop 0 b)))
           (error "bmp-encode: \"pixels\" must be a vector of rows"))))
 

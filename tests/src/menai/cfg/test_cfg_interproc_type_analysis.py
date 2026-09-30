@@ -845,7 +845,7 @@ ESCAPE_VIA_CAPTURE_SRC = """
 """
 
 # A function stored into a vector with vector-with and fetched back out with
-# vector-get.  Every builtin that moves a value into or out of a container must
+# vector-nth.  Every builtin that moves a value into or out of a container must
 # be covered, not only the list ones.
 ESCAPE_VIA_VECTOR_SRC = """
 (letrec ((point (struct (x y)))
@@ -861,7 +861,7 @@ ESCAPE_VIA_VECTOR_SRC = """
                     (integer+ a b c d e f g h)))))
   (let* ((direct (get-x (point 1 2)))
          (boxed (vector-with (vector #f) 0 get-x))
-         (fetched ((vector-get boxed 0) "hello")))
+         (fetched ((vector-nth boxed 0) "hello")))
     (list direct fetched)))
 """
 

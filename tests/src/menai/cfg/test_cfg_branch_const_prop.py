@@ -704,7 +704,7 @@ class TestEndToEnd:
              (letrec ((loop (lambda (i)
                               (if (integer>=? i (string-length s))
                                   i
-                                  (let ((ch (string-get s i)))
+                                  (let ((ch (string-nth s i)))
                                     (if (or (string=? ch " ")
                                         (or (string=? ch "\t")
                                         (or (string=? ch "\n")
@@ -787,7 +787,7 @@ class TestEndToEnd:
                     (letrec ((loop (lambda (i)
                                      (if (integer>=? i (string-length s))
                                          i
-                                         (let ((ch (string-get s i)))
+                                         (let ((ch (string-nth s i)))
                                            (if (or (string=? ch " ")
                                                (or (string=? ch "\t")
                                                (or (string=? ch "\n")
@@ -833,7 +833,7 @@ class TestEndToEnd:
                  (letrec ((loop (lambda (i)
                                   (if (integer>=? i (string-length s))
                                       i
-                                      (let ((ch (string-get s i)))
+                                      (let ((ch (string-nth s i)))
                                         (if (and (string!=? ch " ")
                                             (and (string!=? ch "\t")
                                             (and (string!=? ch "\n")
@@ -898,7 +898,7 @@ class TestEndToEnd:
                     (letrec ((loop (lambda (i)
                                      (if (integer>=? i (string-length s))
                                          i
-                                         (let ((ch (string-get s i)))
+                                         (let ((ch (string-nth s i)))
                                            (if (and (string!=? ch " ")
                                                (and (string!=? ch "\t")
                                                (and (string!=? ch "\n")

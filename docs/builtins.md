@@ -7,13 +7,14 @@ This section documents all builtin functions in Menai, organised by category.
 Menai follows a consistent naming convention for collection operations:
 
 - **Direct operations** are named `collection-X` with the collection as the first
-  argument: `(list-get lst 0)`, `(dict-get d "key")`, `(set-member? s x)`
+  argument: `(list-nth lst 0)`, `(dict-get d "key")`, `(set-member? s x)`
 - **Higher-order operations** are named `X-collection` with the function/predicate
   first and the collection last: `(map-list f lst)`, `(filter-dict pred d)`,
   `(fold-set f init s)`
-- **Reading an element** is always `collection-get`: `(string-get s i)`,
-  `(list-get lst i)`, `(bytes-get b i)`, `(vector-get v i)`, `(dict-get d k)`,
-  `(struct-get s 'field)`
+- **Reading by position** is `collection-nth` for an enumerable sequence:
+  `(string-nth s i)`, `(list-nth lst i)`, `(bytes-nth b i)`, `(vector-nth v i)`
+- **Reading by key** is `collection-get` for a non-enumerable mapping:
+  `(dict-get d k)`, `(struct-get s 'field)`
 - **Updating a collection** uses `collection-with` to add or replace an element and
   `collection-without` to remove one, since Menai is pure and the operation returns
   a new collection rather than mutating: `(vector-with v i val)`, `(dict-with d k
@@ -282,7 +283,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 |----------|-------------|
 | `(string-concat a b ...)` | Concatenate strings |
 | `(string-length s)` | Length (character count) |
-| `(string-get s i)` | Character at 0-based index → single-character string |
+| `(string-nth s i)` | Character at 0-based index → single-character string |
 | `(string-slice s start [end])` | Substring; end is exclusive; `(string-slice "hello" 2)` → "llo" |
 | `(string-upcase s)` | Uppercase |
 | `(string-downcase s)` | Lowercase |
@@ -382,7 +383,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | `(list-first lst)` | First element |
 | `(list-rest lst)` | All elements after the first |
 | `(list-last lst)` | Last element |
-| `(list-get lst i)` | Element at 0-based index |
+| `(list-nth lst i)` | Element at 0-based index |
 
 ### Properties
 
@@ -610,7 +611,7 @@ operations for ordered iteration.
 
 | Function | Description |
 |----------|-------------|
-| `(bytes-get b i)` | Byte value (0–255) at 0-based index |
+| `(bytes-nth b i)` | Byte value (0–255) at 0-based index |
 | `(bytes-length b)` | Number of bytes |
 | `(bytes-slice b start [end])` | Sub-sequence; end is exclusive; out of bounds raises an error |
 | `(bytes-concat b1 b2 ...)` | Concatenate; `(bytes-concat)` → empty bytes |
@@ -768,12 +769,12 @@ xor of 0xFFFFFFFF — the checksum used by zlib, PNG and ZIP.
 
 | Function | Description |
 |----------|-------------|
-| `(vector-get v i)` | Element at 0-based index (O(1)) |
+| `(vector-nth v i)` | Element at 0-based index (O(1)) |
 | `(vector-length v)` | Number of elements |
 | `(vector-with v i val)` | Return new vector with element at index i replaced |
 
 ```menai
-(vector-get (vector "a" "b" "c") 1)  → "b"
+(vector-nth (vector "a" "b" "c") 1)  → "b"
 (vector-length (vector 1 2 3))       → 3
 (vector-with (vector 1 2 3) 1 10)    → #vector(1 10 3)
 ```

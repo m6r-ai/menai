@@ -42,8 +42,8 @@
             (expect-pass "header check is a multiple of 31"
                          (lambda ()
                            (let ((stream (compress (string->bytes "payload"))))
-                             (let ((cmf (bytes-get stream 0))
-                                   (flg (bytes-get stream 1)))
+                             (let ((cmf (bytes-nth stream 0))
+                                   (flg (bytes-nth stream 1)))
                                (assert-equal (integer% (integer+ (integer* cmf 256) flg) 31) 0)))))))
 
         ; The trailer is the big-endian Adler-32 of the uncompressed data.
