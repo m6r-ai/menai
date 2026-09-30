@@ -45,6 +45,21 @@ New features:
 - Added binary floating point read, append, and write operations for bytes.
 - Added a peephole optimization that inlines an unconditional jump targeting a
   label immediately followed by a `RETURN`.
+- Added a struct instance folding optimization.  A `struct-is-instance?` test
+  whose receiver is proven to be a struct of exactly the tested type is folded
+  to `#t` and its branch re-wired.
+- Added a tracing/annotating profiler.  `menai-eval --annotate` renders every
+  function's disassembly with per-instruction execution counts and shares.
+- Added support for disassembling a module with `menai-disassemble`.
+- Made constant folding able to create vectors.
+- Added missing prelude functions.
+- Improved compiler diagnostics and parsing error messages.
+- Reworked the module system and introduced the `::` special form.
+- Removed `struct-ref` and `struct-set-ref` from the language.
+- Improved the inliner so it can inline `letrec`-containing bodies.
+- Improved performance of integer bitwise VM operations.
+- Improved the algorithmic performance of deflate, inflate and the Sudoku and
+  Rubik's cube benchmarks.
 
 Bug fixes:
 
@@ -69,6 +84,30 @@ Bug fixes:
 - Struct type recognition is now lexically scoped.  Two struct types with the same
   name in different scopes are distinct, and a struct type is not visible outside the
   binder that declares it.
+- Fixed a compiler register usage bug.
+- Fixed several soundness bugs in the type analysis, including a phi type-fact
+  bug and a struct field-access rewrite that could omit a required guard.
+- Fixed desugaring of `vector-slice`.
+- Fixed inliner shadowing and recursion-checker bugs.
+- Fixed a VM crash from deep recursion.
+- Fixed non-determinism in the compiler.
+- Fixed a type guard problem and regressions in loop-invariant code motion,
+  `MOVE` removal, loop rotation and type propagation.
+
+Internal structure changes:
+
+- Made the compiler purely functional.  Every phase is now a pure function over
+  immutable values, and the AST, IR, CFG, VCode and bytecode models are
+  immutable.  Each layer has an immutability test.
+- Made the CFG an immutable value.  Terminators reference blocks by id,
+  predecessors are derived rather than stored, and passes receive a context
+  carrying cross-pass state.
+- Reworked the CFG pass manager to run each pass to its own fixed point.
+- Renamed the standard library modules to a `format-operation` convention.
+- Removed the last elements of compiler global state.
+- Added ADRs recording the inliner recursion rule, letrec-to-loop conversion,
+  CFG immutability, compiler purity, function provenance through containers, and
+  predicate folding over interprocedural facts.
 
 ## v0.5.0 (2026-09-14)
 
