@@ -188,7 +188,7 @@ class TestAnnotatedMetadata:
         _, result = _traced_metadata()
         text = "\n".join(render_annotated(result, color=False))
         assert "Jump Tables: 3" in text
-        assert "jt0: min=0  default=@8  span=0..1" in text
+        assert "jt0: min=0  default=@7  span=0..1" in text
 
     def test_inputs_section_present(self):
         """A function with parameters gets an Inputs section naming each slot."""

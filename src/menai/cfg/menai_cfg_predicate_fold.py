@@ -5,7 +5,10 @@ A type-predicate builtin (none?, integer?, string?, ...) returns #t exactly
 when its argument's type is the predicate's type.  When the argument's type is
 proven, the predicate's result is known without a runtime check, and the branch
 it feeds can be re-wired to the taken target.  The predicate instruction is
-then dead (unless its result is used elsewhere) and is removed.
+then dead (unless its result is used elsewhere) and is removed, and any
+instruction that only fed the predicate is now dead too; the operand chain is
+swept by prune_dead_definitions so the fold leaves no orphaned instructions
+behind.
 
 This pass consumes the per-value type facts computed by
 MenaiCFGInterprocTypeAnalysis (stored on MenaiCFGFunction.type_facts) and runs
@@ -47,12 +50,11 @@ from menai.cfg.menai_cfg import (
     MenaiCFGBuiltinInstr,
     MenaiCFGFunction,
     MenaiCFGJumpTerm,
-    value_ids_in_instr,
-    value_ids_in_term,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
     MenaiCFGPerFunctionPass,
+    prune_dead_definitions,
     replace_block,
 )
 from menai.cfg.menai_cfg_type_fact import TypeFact
@@ -94,7 +96,6 @@ class MenaiCFGPredicateFold(MenaiCFGPerFunctionPass):
         Returns the (possibly new) function and whether any predicate was folded.
         """
         changed = False
-        used = _referenced_value_ids(func)
         type_facts = context.facts_for(func)
 
         for block in func.blocks:
@@ -114,20 +115,20 @@ class MenaiCFGPredicateFold(MenaiCFGPerFunctionPass):
 
             target = term.true_block if result else term.false_block
 
-            # The predicate result is no longer consumed by the branch.  Drop
-            # the instruction when nothing else uses its value.
-            new_instrs = list(block.instrs)
-            if used.get(pred_instr.result.id, 0) <= 1:
-                new_instrs.remove(pred_instr)
-
             new_block = replace(
                 block,
-                instrs=tuple(new_instrs),
                 terminator=MenaiCFGJumpTerm(target=target),
             )
             func = replace_block(func, new_block)
 
             changed = True
+
+        if changed:
+            # The folded predicate's result is no longer read by the branch, and
+            # the instructions that only fed the predicate are now dead too.
+            # Sweep them so the fold does not leave an orphaned operand chain
+            # for the bytecode to carry.
+            func, _ = prune_dead_definitions(func)
 
         return func, changed
 
@@ -164,31 +165,3 @@ def _evaluate_predicate(op: str, fact: TypeFact | None) -> bool | None:
         return None
 
     return fact.kind == TYPE_PREDICATES[op]
-
-
-def _referenced_value_ids(func: MenaiCFGFunction) -> dict[int, int]:
-    """
-    Return a count of how many times each SSA value is referenced.
-
-    Covers instruction operands, patch_closure operands, and terminator
-    operands.  A value's defining instruction is not itself a reference.
-    """
-    counts: dict[int, int] = {}
-
-    def add(val_id: int) -> None:
-        counts[val_id] = counts.get(val_id, 0) + 1
-
-    for block in func.blocks:
-        for instr in block.instrs:
-            for val_id in value_ids_in_instr(instr):
-                add(val_id)
-
-        for patch in block.patch_instrs:
-            add(patch.closure.id)
-            add(patch.value.id)
-
-        if block.terminator is not None:
-            for val_id in value_ids_in_term(block.terminator):
-                add(val_id)
-
-    return counts

@@ -62,7 +62,9 @@ Both condition shapes the analysis recognises are handled:
 The false edge of a folded branch becomes unreachable.  The now-dead block is
 left in place for MenaiCFGSimplifyBlocks (which runs earlier in the pipeline
 and is re-run by the pass manager's fixed-point loop on the next sweep) to
-remove; this pass only re-wires the branch and drops the test instruction.
+remove.  The test instruction and any instruction that only fed it are dead
+once the branch is re-wired; prune_dead_definitions sweeps them so the fold
+leaves no orphaned instructions behind.
 """
 
 from dataclasses import replace
@@ -76,12 +78,11 @@ from menai.cfg.menai_cfg import (
     MenaiCFGJumpTerm,
     MenaiCFGPhiInstr,
     predecessors,
-    value_ids_in_instr,
-    value_ids_in_term,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
     MenaiCFGPerFunctionPass,
+    prune_dead_definitions,
 )
 from menai.cfg.menai_cfg_type_fact import TypeFact, join
 
@@ -105,7 +106,6 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
             return func, False
 
         value_defs = _value_defs(func)
-        used = _reference_counts(func)
         # Map each block id to the block-local facts known at its entry, so a
         # test's receiver is read at the point the test executes even when the
         # test and the branch that consumes it are in different blocks.
@@ -115,10 +115,6 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
         }
 
         changed = False
-        # Collect the test instructions to remove, keyed by the block that
-        # defines them, so a test consumed across a block boundary is removed
-        # from its own block.
-        remove_from_block: dict[int, set[int]] = {}
         new_terminators: dict[int, MenaiCFGJumpTerm] = {}
 
         for block in func.blocks:
@@ -137,9 +133,6 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
             if not self._proves_test(func, test_instr, entry_facts[test_block.id], context):
                 continue
 
-            if used.get(test_instr.result.id, 0) <= 1:
-                remove_from_block.setdefault(test_block.id, set()).add(test_instr.result.id)
-
             new_terminators[block.id] = MenaiCFGJumpTerm(target=term.true_block)
             changed = True
 
@@ -148,22 +141,20 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
 
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
-            remove = remove_from_block.get(block.id)
-            if remove:
-                block = replace(
-                    block,
-                    instrs=tuple(
-                        instr for instr in block.instrs
-                        if getattr(getattr(instr, 'result', None), 'id', None) not in remove
-                    ),
-                )
-
             if block.id in new_terminators:
                 block = replace(block, terminator=new_terminators[block.id])
 
             new_blocks.append(block)
 
-        return replace(func, blocks=tuple(new_blocks)), True
+        func = replace(func, blocks=tuple(new_blocks))
+
+        # The folded test's result is no longer read by the branch, and the
+        # instructions that only fed the test are now dead too.  Sweep them so
+        # the fold does not leave an orphaned operand chain for the bytecode to
+        # carry.
+        func, _ = prune_dead_definitions(func)
+
+        return func, True
 
     def _block_local_facts(
         self,
@@ -408,31 +399,3 @@ def _outgoing_facts(
             result[result_value.id] = fact
 
     return result
-
-
-def _reference_counts(func: MenaiCFGFunction) -> dict[int, int]:
-    """
-    Return a count of how many times each SSA value is referenced.
-
-    Covers instruction operands, patch_closure operands, and terminator
-    operands.  A value's defining instruction is not itself a reference.
-    """
-    counts: dict[int, int] = {}
-
-    def add(val_id: int) -> None:
-        counts[val_id] = counts.get(val_id, 0) + 1
-
-    for block in func.blocks:
-        for instr in block.instrs:
-            for val_id in value_ids_in_instr(instr):
-                add(val_id)
-
-        for patch in block.patch_instrs:
-            add(patch.closure.id)
-            add(patch.value.id)
-
-        if block.terminator is not None:
-            for val_id in value_ids_in_term(block.terminator):
-                add(val_id)
-
-    return counts

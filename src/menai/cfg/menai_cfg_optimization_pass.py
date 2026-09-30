@@ -33,10 +33,15 @@ from dataclasses import dataclass, field, replace
 
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
+    MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
     MenaiCFGInstr,
     MenaiCFGMakeClosureInstr,
+    MenaiCFGParamInstr,
     MenaiCFGTerminator,
+    result_id_in_instr,
+    value_ids_in_instr,
+    value_ids_in_term,
 )
 from menai.cfg.menai_cfg_type_fact import TypeFact
 from menai.menai_value import MenaiStructType
@@ -166,6 +171,100 @@ def _collect(func: MenaiCFGFunction, result: list[MenaiCFGFunction]) -> None:
         for instr in block.instrs:
             if isinstance(instr, MenaiCFGMakeClosureInstr):
                 _collect(instr.function, result)
+
+
+def value_reference_counts(func: MenaiCFGFunction) -> dict[int, int]:
+    """
+    Return a count of how many times each SSA value is referenced in `func`.
+
+    Covers instruction operands, patch_closure operands, and terminator
+    operands.  A value's defining instruction is not itself a reference.
+
+    Counts are per function, not per block: a value defined in one block may be
+    referenced by a phi or a terminator in another, and a removal decision must
+    see every such reference.
+    """
+    counts: dict[int, int] = {}
+
+    def add(val_id: int) -> None:
+        counts[val_id] = counts.get(val_id, 0) + 1
+
+    for block in func.blocks:
+        for instr in block.instrs:
+            for val_id in value_ids_in_instr(instr):
+                add(val_id)
+
+        for patch in block.patch_instrs:
+            add(patch.closure.id)
+            add(patch.value.id)
+
+        if block.terminator is not None:
+            for val_id in value_ids_in_term(block.terminator):
+                add(val_id)
+
+    return counts
+
+
+def prune_dead_definitions(
+    func: MenaiCFGFunction,
+) -> tuple[MenaiCFGFunction, bool]:
+    """
+    Remove instructions whose defined value is never referenced, transitively.
+
+    A pass that deletes an instruction (e.g. a folded type test) leaves the
+    instructions that only fed it with one fewer use, and they may now be dead.
+    This removes those, and then any instructions that only fed them, to a
+    fixed point, so a fold does not leave an orphaned operand chain behind for
+    the bytecode to carry.
+
+    Removal is safe unconditionally because Menai is pure (ADR-0007): an
+    instruction whose result is never read has no observable effect.
+
+    MenaiCFGParamInstr and MenaiCFGFreeVarInstr are never removed even when
+    their result is unreferenced: they establish a parameter slot or a capture
+    load in the entry block, and the VM codegen depends on them even when the
+    value is unused (an unused parameter, or a capture the body never reads).
+    MenaiCFGGuardInstr and MenaiCFGPatchClosureInstr define no result, so they
+    are not candidates: a guard raises at runtime and a patch mutates a closure
+    during letrec fixup, and neither is dead code.
+
+    The counts are recomputed each round so that the decrements from one
+    removal are seen by the next; the loop terminates because each round either
+    removes at least one instruction or stops.
+    """
+    changed_overall = False
+
+    while True:
+        counts = value_reference_counts(func)
+        removed_any = False
+        new_blocks: list[MenaiCFGBlock] = []
+
+        for block in func.blocks:
+            kept: list[MenaiCFGInstr] = []
+            for instr in block.instrs:
+                result_id = result_id_in_instr(instr)
+                if (
+                    result_id is not None
+                    and counts.get(result_id, 0) == 0
+                    and not isinstance(instr, (MenaiCFGParamInstr, MenaiCFGFreeVarInstr))
+                ):
+                    removed_any = True
+                    continue
+
+                kept.append(instr)
+
+            if len(kept) != len(block.instrs):
+                block = replace(block, instrs=tuple(kept))
+
+            new_blocks.append(block)
+
+        if not removed_any:
+            break
+
+        func = replace(func, blocks=tuple(new_blocks))
+        changed_overall = True
+
+    return func, changed_overall
 
 
 class MenaiCFGOptimizationPass:
