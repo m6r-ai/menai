@@ -84,6 +84,14 @@ class MenaiCompiler:
         ]
         self._ir_builder = MenaiIRBuilder()
         self.ir_passes: list[MenaiIROptimizationPass] = [
+            # Dead-binding elimination runs before the inliner and the
+            # letrec-to-loop conversion.  The prelude is spliced into every
+            # program as a letrec, but a typical program reaches only a few of
+            # its bindings.  Pruning the unreachable ones first means the two
+            # expensive passes below walk the reachable program rather than the
+            # whole prelude.  Neither pass can make a dead binding live, so the
+            # result is unchanged.
+            MenaiIROptimizer(),
             MenaiIRLetrecToLoop(),
             MenaiIRInliner(),
             MenaiIROptimizer(),
