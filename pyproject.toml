@@ -42,6 +42,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 menai = ["*.menai", "py.typed"]
+menai_test = ["*.menai"]
 
 [tool.coverage.run]
 source = ["src"]
