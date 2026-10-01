@@ -45,6 +45,10 @@ New features:
 - Added binary floating point read, append, and write operations for bytes.
 - Added a peephole optimization that inlines an unconditional jump targeting a
   label immediately followed by a `RETURN`.
+- Added the `RETURN_IF_FALSE` and `RETURN_IF_TRUE` opcodes and a peephole
+  optimization that fuses a conditional jump leading directly to a `RETURN`
+  into a single conditional-return instruction.  A `RETURN` block that becomes
+  unreachable after the fusion is removed.
 - Added a struct instance folding optimization.  A `struct-is-instance?` test
   whose receiver is proven to be a struct of exactly the tested type is folded
   to `#t` and its branch re-wired.

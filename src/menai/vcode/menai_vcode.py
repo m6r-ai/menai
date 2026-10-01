@@ -299,6 +299,21 @@ class MenaiVCodeReturn:
 
 
 @dataclass
+class MenaiVCodeReturnIf:
+    """
+    Return value from the current function if a condition holds, else fall
+    through to the next instruction.
+
+    `when_true` selects the condition polarity: True lowers to RETURN_IF_TRUE
+    (return when cond is true), False lowers to RETURN_IF_FALSE (return when
+    cond is false).
+    """
+    cond: MenaiVCodeReg
+    value: MenaiVCodeReg
+    when_true: bool
+
+
+@dataclass
 class MenaiVCodeRaise:
     """Raise a runtime error with a value from a register."""
     message: MenaiVCodeReg
@@ -339,6 +354,7 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodeJumpIfFalse
     | MenaiVCodeSwitch
     | MenaiVCodeReturn
+    | MenaiVCodeReturnIf
     | MenaiVCodeRaise
     | MenaiVCodeGuard
 )
@@ -479,6 +495,10 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
 
     if isinstance(instr, MenaiVCodeReturn):
         return f"RETURN {instr.value}"
+
+    if isinstance(instr, MenaiVCodeReturnIf):
+        op = "RETURN_IF_TRUE" if instr.when_true else "RETURN_IF_FALSE"
+        return f"{op} {instr.cond}, {instr.value}"
 
     if isinstance(instr, MenaiVCodeRaise):
         return f"RAISE {instr.message}"

@@ -968,5 +968,153 @@ class TestPatchClosureValidation:
         assert "capture_slot" in exc_info.value.message
 
 
+class TestReturnIfValidation:
+    """Tests for RETURN_IF_FALSE / RETURN_IF_TRUE validation."""
+
+    def test_valid_return_if_false(self):
+        """A well-formed RETURN_IF_FALSE passes validation.
+
+        Sequence (local_count=2):
+          0: LOAD_TRUE dest=0       — r0=#t (condition)
+          1: LOAD_CONST dest=1, src0=0 — r1=42 (value)
+          2: RETURN_IF_FALSE src0=0, src1=1 — return r1 if r0 is false; falls through
+          3: RETURN src0=1          — fall-through terminal
+        """
+        code = CodeObject(
+            instructions=[
+                Instruction(Opcode.LOAD_TRUE, dest=0),              # 0: r0=#t
+                Instruction(Opcode.LOAD_CONST, dest=1, src0=0),     # 1: r1=42
+                Instruction(Opcode.RETURN_IF_FALSE, src0=0, src1=1),  # 2: conditional return
+                Instruction(Opcode.RETURN, src0=1),                 # 3: fall-through
+            ],
+            constants=[MenaiInteger(42)],
+            code_objects=[],
+            local_count=2,
+        )
+        validate_bytecode(code)
+
+    def test_valid_return_if_true(self):
+        """A well-formed RETURN_IF_TRUE passes validation.
+
+        Sequence (local_count=2):
+          0: LOAD_FALSE dest=0      — r0=#f (condition)
+          1: LOAD_CONST dest=1, src0=0 — r1=42 (value)
+          2: RETURN_IF_TRUE src0=0, src1=1 — return r1 if r0 is true; falls through
+          3: RETURN src0=1          — fall-through terminal
+        """
+        code = CodeObject(
+            instructions=[
+                Instruction(Opcode.LOAD_FALSE, dest=0),             # 0: r0=#f
+                Instruction(Opcode.LOAD_CONST, dest=1, src0=0),     # 1: r1=42
+                Instruction(Opcode.RETURN_IF_TRUE, src0=0, src1=1),  # 2: conditional return
+                Instruction(Opcode.RETURN, src0=1),                 # 3: fall-through
+            ],
+            constants=[MenaiInteger(42)],
+            code_objects=[],
+            local_count=2,
+        )
+        validate_bytecode(code)
+
+    def test_return_if_condition_register_out_of_bounds(self):
+        """RETURN_IF_FALSE with an out-of-bounds condition register is rejected.
+
+        local_count=1, so src0=5 is out of bounds.
+        """
+        code = CodeObject(
+            instructions=[
+                Instruction(Opcode.LOAD_CONST, dest=0, src0=0),     # 0: r0=42
+                Instruction(Opcode.RETURN_IF_FALSE, src0=5, src1=0),  # 1: cond reg out of bounds
+                Instruction(Opcode.RETURN, src0=0),                 # 2: fall-through
+            ],
+            constants=[MenaiInteger(42)],
+            code_objects=[],
+            local_count=1,
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_bytecode(code)
+        assert exc_info.value.error_type == ValidationErrorType.INVALID_VARIABLE_ACCESS
+        assert "Condition register" in exc_info.value.message
+
+    def test_return_if_value_register_out_of_bounds(self):
+        """RETURN_IF_TRUE with an out-of-bounds value register is rejected.
+
+        local_count=1, so src1=5 is out of bounds.
+        """
+        code = CodeObject(
+            instructions=[
+                Instruction(Opcode.LOAD_CONST, dest=0, src0=0),     # 0: r0=42
+                Instruction(Opcode.RETURN_IF_TRUE, src0=0, src1=5),   # 1: value reg out of bounds
+                Instruction(Opcode.RETURN, src0=0),                 # 2: fall-through
+            ],
+            constants=[MenaiInteger(42)],
+            code_objects=[],
+            local_count=1,
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_bytecode(code)
+        assert exc_info.value.error_type == ValidationErrorType.INVALID_VARIABLE_ACCESS
+        assert "Return value register" in exc_info.value.message
+
+    def test_return_if_condition_uninitialized(self):
+        """RETURN_IF_FALSE with an uninitialized condition register is rejected.
+
+        Slot 0 is never written before the conditional return.
+        """
+        code = CodeObject(
+            instructions=[
+                Instruction(Opcode.LOAD_CONST, dest=1, src0=0),     # 0: r1=42 (slot 0 not written)
+                Instruction(Opcode.RETURN_IF_FALSE, src0=0, src1=1),  # 1: cond reg uninitialized
+                Instruction(Opcode.RETURN, src0=1),                 # 2: fall-through
+            ],
+            constants=[MenaiInteger(42)],
+            code_objects=[],
+            local_count=2,
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_bytecode(code)
+        assert exc_info.value.error_type == ValidationErrorType.UNINITIALIZED_VARIABLE
+        assert "RETURN_IF condition register" in exc_info.value.message
+
+    def test_return_if_value_uninitialized(self):
+        """RETURN_IF_TRUE with an uninitialized value register is rejected.
+
+        Slot 1 is never written before the conditional return.
+        """
+        code = CodeObject(
+            instructions=[
+                Instruction(Opcode.LOAD_TRUE, dest=0),              # 0: r0=#t (slot 1 not written)
+                Instruction(Opcode.RETURN_IF_TRUE, src0=0, src1=1),   # 1: value reg uninitialized
+                Instruction(Opcode.RETURN, src0=0),                 # 2: fall-through
+            ],
+            constants=[],
+            code_objects=[],
+            local_count=2,
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_bytecode(code)
+        assert exc_info.value.error_type == ValidationErrorType.UNINITIALIZED_VARIABLE
+        assert "RETURN_IF value register" in exc_info.value.message
+
+    def test_return_if_fallthrough_requires_successor(self):
+        """A RETURN_IF at the end of the code with no fall-through is rejected.
+
+        The conditional return does not terminate control flow: when the
+        condition is not met execution falls through, so there must be a
+        successor instruction.
+        """
+        code = CodeObject(
+            instructions=[
+                Instruction(Opcode.LOAD_TRUE, dest=0),              # 0: r0=#t
+                Instruction(Opcode.RETURN_IF_FALSE, src0=0, src1=0),  # 1: no fall-through successor
+            ],
+            constants=[],
+            code_objects=[],
+            local_count=1,
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_bytecode(code)
+        assert exc_info.value.error_type == ValidationErrorType.MISSING_RETURN
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

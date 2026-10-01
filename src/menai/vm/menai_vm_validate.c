@@ -75,6 +75,8 @@ is_no_dest_opcode(int opcode)
     case OP_JUMP_IF_FALSE:
     case OP_JUMP_IF_TRUE:
     case OP_SWITCH_INTEGER:
+    case OP_RETURN_IF_FALSE:
+    case OP_RETURN_IF_TRUE:
     case OP_RAISE_ERROR:
         return 1;
     default:
@@ -320,6 +322,30 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
             }
         }
 
+        /* RETURN_IF_FALSE/RETURN_IF_TRUE: src0 (cond reg) and src1 (value reg)
+         * must both be < local_count */
+        if (opcode == OP_RETURN_IF_FALSE || opcode == OP_RETURN_IF_TRUE) {
+            if (src0 < 0 || src0 >= co->local_count) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "Condition register %d out of bounds (local_count: %d)",
+                         src0, co->local_count);
+                set_error(err, VERR_INVALID_VARIABLE_ACCESS,
+                          buf, i, opcode);
+                return MENAI_ERR_UNDEFINED_VARIABLE;
+            }
+
+            if (src1 < 0 || src1 >= co->local_count) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "Return value register %d out of bounds (local_count: %d)",
+                         src1, co->local_count);
+                set_error(err, VERR_INVALID_VARIABLE_ACCESS,
+                          buf, i, opcode);
+                return MENAI_ERR_UNDEFINED_VARIABLE;
+            }
+        }
+
         /* SWITCH_INTEGER: src0 (scrutinee register) < local_count, src1 (table
          * index) < njt, and every table target < code_len */
         if (opcode == OP_SWITCH_INTEGER) {
@@ -410,6 +436,12 @@ validate_control_flow(MenaiCodeObject *co, MenaiValidationError *err)
                 is_leader[src1] = 1;
             }
 
+            if (i + 1 < code_len) {
+                is_leader[i + 1] = 1;
+            }
+        }
+
+        if (opcode == OP_RETURN_IF_FALSE || opcode == OP_RETURN_IF_TRUE) {
             if (i + 1 < code_len) {
                 is_leader[i + 1] = 1;
             }
@@ -542,6 +574,10 @@ validate_control_flow(MenaiCodeObject *co, MenaiValidationError *err)
             succs[nsuccs++] = src0;
         } else if (opcode == OP_JUMP_IF_FALSE || opcode == OP_JUMP_IF_TRUE) {
             succs[nsuccs++] = src1;
+            if (end_idx + 1 < code_len) {
+                succs[nsuccs++] = end_idx + 1;
+            }
+        } else if (opcode == OP_RETURN_IF_FALSE || opcode == OP_RETURN_IF_TRUE) {
             if (end_idx + 1 < code_len) {
                 succs[nsuccs++] = end_idx + 1;
             }
@@ -865,6 +901,32 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "RETURN source register %d may be uninitialized", src0);
+                set_error(err, VERR_UNINITIALIZED_VARIABLE,
+                          buf, instr_idx, opcode);
+                result = MENAI_ERR_UNDEFINED_VARIABLE;
+                goto done;
+            }
+        }
+
+        /* Check RETURN_IF_FALSE/RETURN_IF_TRUE: condition and value registers
+         * must both be initialized */
+        if (opcode == OP_RETURN_IF_FALSE || opcode == OP_RETURN_IF_TRUE) {
+            if (!init_state_get_bit(cur, src0)) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "RETURN_IF condition register %d may be uninitialized",
+                         src0);
+                set_error(err, VERR_UNINITIALIZED_VARIABLE,
+                          buf, instr_idx, opcode);
+                result = MENAI_ERR_UNDEFINED_VARIABLE;
+                goto done;
+            }
+
+            if (!init_state_get_bit(cur, src1)) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "RETURN_IF value register %d may be uninitialized",
+                         src1);
                 set_error(err, VERR_UNINITIALIZED_VARIABLE,
                           buf, instr_idx, opcode);
                 result = MENAI_ERR_UNDEFINED_VARIABLE;

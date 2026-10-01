@@ -166,3 +166,33 @@ class TestInstructionLines:
         code = _code(instructions=[Instruction(opcode=Opcode.RETURN, src0=0)])
         lines = render_instruction_lines(code, lambda _i, _instr: "", indent="  ")
         assert lines[0].startswith("  ")
+
+
+class TestConditionalReturnRendering:
+    """RETURN_IF_FALSE / RETURN_IF_TRUE format and spacing."""
+
+    def test_return_if_false_format(self):
+        """RETURN_IF_FALSE renders its condition and value registers."""
+        code = _code(instructions=[
+            Instruction(opcode=Opcode.RETURN_IF_FALSE, src0=0, src1=1),
+        ], local_count=2)
+        lines = render_instruction_lines(code, lambda _i, _instr: "")
+        assert "RETURN_IF_FALSE l0, l1" in lines[0]
+
+    def test_return_if_true_format(self):
+        """RETURN_IF_TRUE renders its condition and value registers."""
+        code = _code(instructions=[
+            Instruction(opcode=Opcode.RETURN_IF_TRUE, src0=0, src1=1),
+        ], local_count=2)
+        lines = render_instruction_lines(code, lambda _i, _instr: "")
+        assert "RETURN_IF_TRUE l0, l1" in lines[0]
+
+    def test_return_if_is_control_flow(self):
+        """A conditional return is followed by a blank separation line."""
+        code = _code(instructions=[
+            Instruction(opcode=Opcode.RETURN_IF_FALSE, src0=0, src1=1),
+            Instruction(opcode=Opcode.RETURN, src0=0),
+        ], local_count=2)
+        lines = render_instruction_lines(code, lambda _i, _instr: "")
+        cond_index = next(i for i, ln in enumerate(lines) if "RETURN_IF_FALSE" in ln)
+        assert lines[cond_index + 1] == ""

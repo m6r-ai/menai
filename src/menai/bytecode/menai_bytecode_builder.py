@@ -71,6 +71,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeSwitch,
     MenaiVCodeReg,
     MenaiVCodeReturn,
+    MenaiVCodeReturnIf,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
 )
@@ -518,6 +519,12 @@ class MenaiBytecodeBuilder:
 
             if isinstance(instr, MenaiVCodeReturn):
                 ctx.emit(Opcode.RETURN, ctx.slot_of(instr.value))
+                i += 1
+                continue
+
+            if isinstance(instr, MenaiVCodeReturnIf):
+                opcode = Opcode.RETURN_IF_TRUE if instr.when_true else Opcode.RETURN_IF_FALSE
+                ctx.emit(opcode, ctx.slot_of(instr.cond), ctx.slot_of(instr.value))
                 i += 1
                 continue
 

@@ -429,8 +429,12 @@ class Opcode(IntEnum):
     BYTES_WRITE_F64_LE = _op(337, 3)    # r_dest = (bytes-write-f64-le r_src0 r_src1 r_src2)
     BYTES_WRITE_F64_BE = _op(338, 3)    # r_dest = (bytes-write-f64-be r_src0 r_src1 r_src2)
 
-    # Control flow (jump table).  Kept last so its value remains the highest opcode.
+    # Control flow (jump table)
     SWITCH_INTEGER = _op(339, 2)        # SWITCH_INTEGER r_src0, jt[src1] — dense integer jump table dispatch
+
+    # Conditional return — return a value if a condition holds, else fall through.
+    RETURN_IF_FALSE = _op(340, 2)       # RETURN_IF_FALSE r_src0, r_src1 — return r_src1 if r_src0 is false
+    RETURN_IF_TRUE = _op(341, 2)        # RETURN_IF_TRUE r_src0, r_src1 — return r_src1 if r_src0 is true
 
 
 # Packed instruction encoding
@@ -613,6 +617,12 @@ class Instruction:
 
         if opcode == Opcode.RETURN:
             return f"RETURN {rn(self.src0)}"
+
+        if opcode == Opcode.RETURN_IF_FALSE:
+            return f"RETURN_IF_FALSE {rn(self.src0)}, {rn(self.src1)}"
+
+        if opcode == Opcode.RETURN_IF_TRUE:
+            return f"RETURN_IF_TRUE {rn(self.src0)}, {rn(self.src1)}"
 
         if opcode == Opcode.CALL:
             return f"{rn(self.dest)} = CALL {rn(self.src0)}, {self.src1}"

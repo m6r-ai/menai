@@ -940,6 +940,62 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_RETURN_IF_FALSE: {
+            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
+            if (!cond->value) {
+                int val_reg = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+                MenaiValue *retval = frame_regs[val_reg];
+                menai_value_retain(retval);
+
+                int saved_return_dest = frame->return_dest;
+                menai_code_object_release(vs, frame->code_obj);
+                frame->code_obj = NULL;
+
+                frame--;
+                if (--frame_depth == 0) {
+                    /* Top-level return — exit the loop. */
+                    return retval;
+                }
+
+                /* Store result into caller's register window. */
+                menai_value_release(vs, regs[frame->base + saved_return_dest]);
+                regs[frame->base + saved_return_dest] = retval;
+
+                frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
+            }
+
+            break;
+        }
+
+        case OP_RETURN_IF_TRUE: {
+            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
+            if (cond->value) {
+                int val_reg = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+                MenaiValue *retval = frame_regs[val_reg];
+                menai_value_retain(retval);
+
+                int saved_return_dest = frame->return_dest;
+                menai_code_object_release(vs, frame->code_obj);
+                frame->code_obj = NULL;
+
+                frame--;
+                if (--frame_depth == 0) {
+                    /* Top-level return — exit the loop. */
+                    return retval;
+                }
+
+                /* Store result into caller's register window. */
+                menai_value_release(vs, regs[frame->base + saved_return_dest]);
+                regs[frame->base + saved_return_dest] = retval;
+
+                frame_regs = frame->frame_regs;
+                instrs = frame->instrs;
+            }
+
+            break;
+        }
+
         case OP_CALL: {
             MenaiValue *raw = frame_regs[src0];
             int arity = (int)((word >> SRC1_SHIFT) & FIELD_MASK);

@@ -21,6 +21,7 @@ _SECTION_WIDTH = 70
 # are visually separated in a listing.
 CONTROL_FLOW_OPCODES = frozenset({
     Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE, Opcode.CALL, Opcode.APPLY, Opcode.SWITCH_INTEGER,
+    Opcode.RETURN_IF_FALSE, Opcode.RETURN_IF_TRUE,
 })
 
 

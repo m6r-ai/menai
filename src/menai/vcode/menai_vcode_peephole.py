@@ -108,7 +108,50 @@ Sub-passes
 
    Does not require a SlotMap — operates entirely on label strings.
 
-The five post-allocation sub-passes are composed and iterated to a joint
+6. Conditional-return fusion
+   Replaces a conditional jump that leads directly to a RETURN with a
+   conditional-return instruction.  Two shapes are handled.
+
+   Pattern A — the conditional's target is a RETURN block:
+
+       JUMP_IF_FALSE cond, @L
+       <other arm>
+       @L: RETURN v
+
+   with:
+
+       RETURN_IF_FALSE cond, v
+       <other arm>
+       @L: RETURN v
+
+   Pattern B — the conditional is immediately followed by a RETURN:
+
+       JUMP_IF_TRUE cond, @T
+       RETURN v
+       ...
+       @T:
+
+   with:
+
+       RETURN_IF_FALSE cond, v
+       ...
+       @T:
+
+   In both cases the conditional jump is replaced by a conditional return:
+   when the branch would have been taken (Pattern A) or not taken (Pattern B,
+   where the fall-through returns), the fused instruction returns v directly.
+
+   This is the conditional analogue of jump-to-return inlining, which handles
+   only unconditional jumps.  A conditional jump to a RETURN cannot be
+   inlined by duplicating the RETURN on the fall-through path, but it can be
+   fused into a conditional return.
+
+   After fusion, a target label that is no longer referenced and is not
+   reachable by fall-through is dead, and its RETURN is removed along with it.
+
+   Does not require a SlotMap — operates entirely on labels and registers.
+
+The six post-allocation sub-passes are composed and iterated to a joint
 fixed point.
 
 Pre-allocation passes
@@ -166,6 +209,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMove,
     MenaiVCodeReg,
     MenaiVCodeReturn,
+    MenaiVCodeReturnIf,
     MenaiVCodeApply,
     MenaiVCodeBuiltin,
     MenaiVCodeCall,
@@ -366,6 +410,13 @@ def _replace_reg(
     if isinstance(instr, MenaiVCodeReturn):
         return MenaiVCodeReturn(
             value=new_reg if instr.value.id == old_id else instr.value,
+        )
+
+    if isinstance(instr, MenaiVCodeReturnIf):
+        return MenaiVCodeReturnIf(
+            cond=new_reg if instr.cond.id == old_id else instr.cond,
+            value=new_reg if instr.value.id == old_id else instr.value,
+            when_true=instr.when_true,
         )
 
     if isinstance(instr, MenaiVCodeRaise):
@@ -603,6 +654,7 @@ _BARRIER_TYPES = (
     MenaiVCodeJumpIfTrue,
     MenaiVCodeJumpIfFalse,
     MenaiVCodeReturn,
+    MenaiVCodeReturnIf,
     MenaiVCodeRaise,
 )
 
@@ -644,6 +696,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, MenaiVCodeReturn):
         return [], [instr.value.id]
+
+    if isinstance(instr, MenaiVCodeReturnIf):
+        return [], [instr.cond.id, instr.value.id]
 
     if isinstance(instr, MenaiVCodeRaise):
         return [], [instr.message.id]
@@ -724,6 +779,8 @@ def peephole(func: MenaiVCodeFunction, slot_map: SlotMap) -> MenaiVCodeFunction:
         instrs, c = _thread_jumps(instrs)
         changed = changed or c
         instrs, c = _inline_jump_to_return(instrs)
+        changed = changed or c
+        instrs, c = _fold_conditional_return(instrs)
         changed = changed or c
 
     if instrs is func.instrs:
@@ -1338,6 +1395,235 @@ def _inline_jump_to_return(
             # label in the same run is not itself targeted would leave the
             # live label with no instruction after it, so a jump to it would
             # resolve past the end of the function.
+            result.extend(rewritten[i:j])
+            i = j
+            continue
+
+        result.append(instr)
+        i += 1
+
+    return result, True
+
+
+def _fold_conditional_return(
+    instrs: list[MenaiVCodeInstr],
+) -> tuple[list[MenaiVCodeInstr], bool]:
+    """
+    Fuse a conditional jump that leads directly to a RETURN into a single
+    conditional-return instruction.
+
+    Two shapes are handled.  In both, the RETURN that the conditional reaches
+    is folded into the conditional, replacing the conditional jump with a
+    conditional return.
+
+    Pattern A — the conditional's target is a RETURN block:
+
+        JUMP_IF_FALSE cond, @L
+        <other arm>
+        @L: RETURN v
+
+    becomes:
+
+        RETURN_IF_FALSE cond, v
+        <other arm>
+        @L: RETURN v
+
+    Here the taken path returns v directly instead of jumping to a block whose
+    only content is `RETURN v`.  The `@L: RETURN v` block is left in place: it
+    remains correct for any other predecessor that jumps to @L, and when @L is
+    no longer targeted it is removed by the dead-label cleanup below.
+
+    Pattern B — the conditional is immediately followed by a RETURN:
+
+        JUMP_IF_TRUE cond, @T
+        RETURN v
+        ...
+        @T:
+
+    becomes:
+
+        RETURN_IF_FALSE cond, v
+        ...
+        @T:
+
+    Here the fall-through path returns v, so the polarity inverts: the fused
+    instruction returns when the branch would NOT have been taken.  The RETURN
+    is consumed by the fused instruction.  This shape is only matched when no
+    label sits between the conditional and the RETURN, so the RETURN is
+    reachable only by fall-through and no other predecessor can target it.
+
+    This is the conditional analogue of jump-to-return inlining, which handles
+    only unconditional jumps.  A conditional jump to a RETURN cannot be inlined
+    by duplicating the RETURN on the fall-through path, but it can be fused
+    into a conditional return, which is what this pass does.
+    """
+    # Map: label name -> the RETURN that immediately follows it (skipping any
+    # further consecutive labels).
+    label_to_return: dict[str, MenaiVCodeReturn] = {}
+
+    # Set of labels targeted by any jump or switch.  Used to decide whether a
+    # label between a conditional and a RETURN makes the RETURN reachable from
+    # elsewhere (in which case Pattern B must not consume it).
+    targeted_labels: set[str] = set()
+
+    for i, instr in enumerate(instrs):
+        if isinstance(instr, MenaiVCodeJump):
+            targeted_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeJumpIfTrue):
+            targeted_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeJumpIfFalse):
+            targeted_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeSwitch):
+            targeted_labels.add(instr.default_label)
+            targeted_labels.update(instr.labels)
+
+        if not isinstance(instr, MenaiVCodeLabel):
+            continue
+
+        j = i + 1
+        while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
+            j += 1
+
+        if j < len(instrs):
+            target = instrs[j]
+            if isinstance(target, MenaiVCodeReturn):
+                label_to_return[instr.name] = target
+
+    rewritten: list[MenaiVCodeInstr] = []
+    changed = False
+    i = 0
+
+    while i < len(instrs):
+        instr = instrs[i]
+
+        if not isinstance(instr, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
+            rewritten.append(instr)
+            i += 1
+            continue
+
+        # Pattern A: the conditional's target is a label immediately followed
+        # by a RETURN.  Fuse with that RETURN; the target block is left in
+        # place (and cleaned up later if it becomes dead).
+        if instr.label in label_to_return:
+            ret = label_to_return[instr.label]
+            rewritten.append(MenaiVCodeReturnIf(
+                cond=instr.cond,
+                value=ret.value,
+                when_true=isinstance(instr, MenaiVCodeJumpIfTrue),
+            ))
+            changed = True
+            i += 1
+            continue
+
+        # Pattern B: the conditional is immediately followed by a RETURN (no
+        # targeted label in between, so the RETURN is reachable only by
+        # fall-through), and the conditional's target label immediately
+        # follows the RETURN.  The fall-through path returns the value, so the
+        # polarity inverts: JUMP_IF_TRUE followed by RETURN becomes
+        # RETURN_IF_FALSE, and vice versa.  The intervening labels and the
+        # RETURN are consumed by the fused instruction, so its fall-through
+        # lands on the conditional's target.
+        j = i + 1
+        while j < len(instrs):
+            skipped = instrs[j]
+            if not isinstance(skipped, MenaiVCodeLabel):
+                break
+
+            if skipped.name in targeted_labels:
+                break
+
+            j += 1
+
+        fallthrough_ret: MenaiVCodeInstr | None = instrs[j] if j < len(instrs) else None
+        if isinstance(fallthrough_ret, MenaiVCodeReturn):
+            k = j + 1
+            target_follows_return = False
+            while k < len(instrs):
+                following = instrs[k]
+                if not isinstance(following, MenaiVCodeLabel):
+                    break
+
+                if following.name == instr.label:
+                    target_follows_return = True
+
+                k += 1
+
+            if target_follows_return:
+                rewritten.append(MenaiVCodeReturnIf(
+                    cond=instr.cond,
+                    value=fallthrough_ret.value,
+                    when_true=isinstance(instr, MenaiVCodeJumpIfFalse),
+                ))
+                changed = True
+                i = j + 1
+                continue
+
+        rewritten.append(instr)
+        i += 1
+
+    if not changed:
+        return instrs, False
+
+    # The fused conditional no longer jumps to @L, so @L may now be dead.  A
+    # label is live if some remaining jump/switch targets it, or if it is
+    # reachable by fall-through from the preceding non-label instruction.
+    live_labels: set[str] = set()
+
+    for instr in rewritten:
+        if isinstance(instr, MenaiVCodeJump):
+            live_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeJumpIfTrue):
+            live_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeJumpIfFalse):
+            live_labels.add(instr.label)
+
+        elif isinstance(instr, MenaiVCodeSwitch):
+            live_labels.add(instr.default_label)
+            live_labels.update(instr.labels)
+
+    prev: MenaiVCodeInstr | None = None
+    for instr in rewritten:
+        if isinstance(instr, MenaiVCodeLabel):
+            if prev is not None and not isinstance(prev, _no_fallthrough_types):
+                live_labels.add(instr.name)
+
+        else:
+            prev = instr
+
+    # Drop any run of consecutive labels followed by a RETURN when none of the
+    # labels is live.  The RETURN is then unreachable: it can only be entered
+    # through one of the dropped labels.
+    result: list[MenaiVCodeInstr] = []
+    i = 0
+    while i < len(rewritten):
+        instr = rewritten[i]
+
+        if isinstance(instr, MenaiVCodeLabel):
+            j = i
+            run_is_live = False
+            while j < len(rewritten):
+                label = rewritten[j]
+                if not isinstance(label, MenaiVCodeLabel):
+                    break
+
+                if label.name in live_labels:
+                    run_is_live = True
+
+                j += 1
+
+            if (
+                j < len(rewritten)
+                and isinstance(rewritten[j], MenaiVCodeReturn)
+                and not run_is_live
+            ):
+                i = j + 1
+                continue
+
             result.extend(rewritten[i:j])
             i = j
             continue
