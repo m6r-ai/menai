@@ -88,6 +88,7 @@ class Menai:
         Returns:
             The result as a raw MenaiValue
         """
+        self.vm.clear_cancellation()
         return self.vm.execute(code)
 
     def evaluate_raw(self, expression: str) -> 'MenaiValue':
@@ -100,6 +101,8 @@ class Menai:
         Returns:
             The result of evaluating the expression as MenaiValue
         """
+        self.vm.clear_cancellation()
+
         # Compile (lexing, parsing, semantic analysis, IR building, code generation)
         code = self.compiler.compile(expression)
 
@@ -174,6 +177,7 @@ class Menai:
         Returns:
             The raw MenaiValue result (caller inspects type and extracts value).
         """
+        self.vm.clear_cancellation()
         code = self.compile(expression, inject=(name, value))
         return self.vm.execute(code)
 

@@ -13,6 +13,7 @@ from menai.vm.menai_vm_c import execute as _c_vm_execute  # type: ignore[import-
 from menai.vm.menai_vm_c import state_alloc as _c_vm_state_alloc  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import state_free as _c_vm_state_free  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import cancel as _c_vm_cancel  # type: ignore[import-not-found]
+from menai.vm.menai_vm_c import clear_cancel as _c_vm_clear_cancel  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import enable_profiling as _c_vm_enable_profiling  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import get_profile_data as _c_vm_get_profile_data  # type: ignore[import-not-found]
 from menai.vm.menai_vm_c import get_timing_data as _c_vm_get_timing_data  # type: ignore[import-not-found]
@@ -55,6 +56,15 @@ class MenaiVM:
         check point in the C execution loop.
         """
         _c_vm_cancel(self._state)
+
+    def clear_cancellation(self) -> None:
+        """
+        Clear any pending cancellation request.
+
+        Called at the start of an evaluation so that a cancellation requested
+        while no evaluation was in flight does not affect the next one.
+        """
+        _c_vm_clear_cancel(self._state)
 
     def enable_profiling(self) -> None:
         """Reset profiling counters and enable per-opcode profiling."""

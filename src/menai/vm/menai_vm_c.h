@@ -1800,6 +1800,8 @@ int menai_vm_bridge_init(void);
 
 MenaiValue *menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code);
 
+void menai_vm_clear_cancel(MenaiVMState *vs);
+
 void menai_vm_cancel(MenaiVMState *vs);
 
 void menai_vm_enable_profiling(MenaiVMState *vs);

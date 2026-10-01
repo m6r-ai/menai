@@ -2020,9 +2020,6 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
         }
     }
 
-    /* Clear any stale cancellation from a previous call. */
-    vs->_cancel_flag = 0;
-
     uint64_t _t0, _t1;
 
     _t0 = perf_counter_ns();
@@ -2197,6 +2194,26 @@ menai_vm_bridge_init(void)
 fail:
     Py_XDECREF(slow_mod);
     return 0;
+}
+
+/*
+ * menai_vm_c_clear_cancel — Python-callable wrapper for menai_vm_clear_cancel.
+ *
+ * clear_cancel(state_capsule) atomically clears the cancellation flag in the
+ * VM state.  Called at the start of an evaluation so that a cancellation
+ * requested while no evaluation was in flight does not affect the next one.
+ *
+ */
+static PyObject *
+menai_vm_c_clear_cancel(PyObject *self, PyObject *capsule)
+{
+    MenaiVMState *vs = (MenaiVMState *)PyCapsule_GetPointer(capsule, "menai_vm_state");
+    if (!vs) {
+        return NULL;
+    }
+
+    menai_vm_clear_cancel(vs);
+    Py_RETURN_NONE;
 }
 
 /*
@@ -2654,6 +2671,12 @@ static PyMethodDef menai_vm_c_methods[] = {
         menai_vm_c_validate,
         METH_VARARGS,
         "Validate a Menai CodeObject without executing it."
+    },
+    {
+        "clear_cancel",
+        menai_vm_c_clear_cancel,
+        METH_O,
+        "Clear the cancellation flag in the VM state."
     },
     {
         "cancel",

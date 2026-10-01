@@ -7861,6 +7861,18 @@ error:
 }
 
 /*
+ * menai_vm_clear_cancel — atomically clear the cancellation flag.
+ *
+ * Called at the start of a new evaluation so that a cancellation requested
+ * while no evaluation was in flight does not affect the next one.
+ */
+void
+menai_vm_clear_cancel(MenaiVMState *vs)
+{
+    vs->_cancel_flag = 0;
+}
+
+/*
  * menai_vm_cancel — atomically set the cancellation flag in the VM state.
  * Thread-safe: may be called from a different thread while the VM is
  * executing (the GIL is released during execution).
