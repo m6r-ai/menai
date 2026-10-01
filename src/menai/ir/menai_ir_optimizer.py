@@ -34,6 +34,18 @@ from menai.ir.menai_ir_use_counter import MenaiIRUseCounter, IRUseCounts
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 
 
+def _same_sequence(new: tuple, old: tuple) -> bool:
+    """
+    Return True if two child sequences are element-wise identical by identity.
+
+    Used by the optimizer's smart constructors: a rebuilt node whose children
+    are all the same objects as before is unchanged, so the original node can be
+    returned instead of a fresh copy.  Identity is the right test because the
+    optimizer returns the input object itself for any subtree it did not change.
+    """
+    return len(new) == len(old) and all(a is b for a, b in zip(new, old))
+
+
 class MenaiIROptimizer(MenaiIROptimizationPass):
     """
     IR-level optimization pass.
@@ -89,40 +101,55 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
             return self._opt_loop(ir, frame_stack)
 
         if isinstance(ir, MenaiIRRecur):
-            return MenaiIRRecur(
-                arg_plans=tuple(self._opt(a, frame_stack) for a in ir.arg_plans),
-                is_tail_call=ir.is_tail_call,
-            )
+            arg_plans = tuple(self._opt(a, frame_stack) for a in ir.arg_plans)
+            if _same_sequence(arg_plans, ir.arg_plans):
+                return ir
+
+            return MenaiIRRecur(arg_plans=arg_plans, is_tail_call=ir.is_tail_call)
 
         if isinstance(ir, MenaiIRBuildList):
-            return MenaiIRBuildList(
-                element_plans=tuple(self._opt(e, frame_stack) for e in ir.element_plans),
-            )
+            element_plans = tuple(self._opt(e, frame_stack) for e in ir.element_plans)
+            if _same_sequence(element_plans, ir.element_plans):
+                return ir
+
+            return MenaiIRBuildList(element_plans=element_plans)
 
         if isinstance(ir, MenaiIRBuildDict):
-            return MenaiIRBuildDict(
-                pair_plans=tuple((self._opt(k, frame_stack), self._opt(v, frame_stack))
-                                 for k, v in ir.pair_plans),
-            )
+            pair_plans = tuple((self._opt(k, frame_stack), self._opt(v, frame_stack))
+                               for k, v in ir.pair_plans)
+            if all(new_k is old_k and new_v is old_v
+                   for (new_k, new_v), (old_k, old_v) in zip(pair_plans, ir.pair_plans)):
+                return ir
+
+            return MenaiIRBuildDict(pair_plans=pair_plans)
 
         if isinstance(ir, MenaiIRBuildSet):
-            return MenaiIRBuildSet(
-                element_plans=tuple(self._opt(e, frame_stack) for e in ir.element_plans),
-            )
+            element_plans = tuple(self._opt(e, frame_stack) for e in ir.element_plans)
+            if _same_sequence(element_plans, ir.element_plans):
+                return ir
+
+            return MenaiIRBuildSet(element_plans=element_plans)
 
         if isinstance(ir, MenaiIRBuildVector):
-            return MenaiIRBuildVector(
-                element_plans=tuple(self._opt(e, frame_stack) for e in ir.element_plans),
-            )
+            element_plans = tuple(self._opt(e, frame_stack) for e in ir.element_plans)
+            if _same_sequence(element_plans, ir.element_plans):
+                return ir
+
+            return MenaiIRBuildVector(element_plans=element_plans)
 
         if isinstance(ir, MenaiIRBuildStruct):
-            return MenaiIRBuildStruct(
-                struct_type=ir.struct_type,
-                field_plans=tuple(self._opt(f, frame_stack) for f in ir.field_plans),
-            )
+            field_plans = tuple(self._opt(f, frame_stack) for f in ir.field_plans)
+            if _same_sequence(field_plans, ir.field_plans):
+                return ir
+
+            return MenaiIRBuildStruct(struct_type=ir.struct_type, field_plans=field_plans)
 
         if isinstance(ir, MenaiIRReturn):
-            return MenaiIRReturn(value_plan=self._opt(ir.value_plan, frame_stack))
+            value_plan = self._opt(ir.value_plan, frame_stack)
+            if value_plan is ir.value_plan:
+                return ir
+
+            return MenaiIRReturn(value_plan=value_plan)
 
         if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList, MenaiIRError)):
             return ir
@@ -135,18 +162,29 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         counts = cast(IRUseCounts, self._counts)
 
         live: list[tuple[str, MenaiIRExpr]] = []
+        changed = False
         for binding in ir.bindings:
             name, value_plan, *_ = binding
             if counts.total_count(current_frame, id(binding)) == 0:
                 self._eliminations += 1
+                changed = True
                 continue
 
-            live.append((name, self._opt(value_plan, frame_stack)))
+            new_value_plan = self._opt(value_plan, frame_stack)
+            if new_value_plan is not value_plan:
+                changed = True
+
+            live.append((name, new_value_plan))
 
         opt_body = self._opt(ir.body_plan, frame_stack)
+        if opt_body is not ir.body_plan:
+            changed = True
 
         if not live:
             return opt_body
+
+        if not changed:
+            return ir
 
         return MenaiIRLet(
             bindings=tuple(live),
@@ -160,18 +198,29 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         counts = cast(IRUseCounts, self._counts)
 
         live: list[tuple[str, MenaiIRExpr]] = []
+        changed = False
         for binding in ir.bindings:
             name, value_plan, *_ = binding
             if counts.total_count(current_frame, id(binding)) == 0:
                 self._eliminations += 1
+                changed = True
                 continue
 
-            live.append((name, self._opt(value_plan, frame_stack)))
+            new_value_plan = self._opt(value_plan, frame_stack)
+            if new_value_plan is not value_plan:
+                changed = True
+
+            live.append((name, new_value_plan))
 
         opt_body = self._opt(ir.body_plan, frame_stack)
+        if opt_body is not ir.body_plan:
+            changed = True
 
         if not live:
             return opt_body
+
+        if not changed:
+            return ir
 
         return MenaiIRLetrec(
             bindings=tuple(live),
@@ -269,6 +318,11 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
                 return not_call
 
+        if (opt_condition is ir.condition_plan
+                and opt_then is ir.then_plan
+                and opt_else is ir.else_plan):
+            return ir
+
         return MenaiIRIf(
             condition_plan=opt_condition,
             then_plan=opt_then,
@@ -294,6 +348,7 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         sibling_fv_plans = ir.sibling_free_var_plans
         outer_fvs = ir.outer_free_vars
         outer_fv_plans = ir.outer_free_var_plans
+        pruned = False
 
         all_fv_names = sibling_fvs + outer_fvs
         if all_fv_names:
@@ -301,11 +356,15 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
             keep = [fv for fv in all_fv_names if fv in used_names]
             if len(keep) < len(all_fv_names):
                 self._eliminations += len(all_fv_names) - len(keep)
+                pruned = True
                 keep_set = set(keep)
                 sibling_fvs = tuple(fv for fv in sibling_fvs if fv in keep_set)
                 sibling_fv_plans = tuple(p for fv, p in zip(ir.sibling_free_vars, ir.sibling_free_var_plans) if fv in keep_set)
                 outer_fvs = tuple(fv for fv in outer_fvs if fv in keep_set)
                 outer_fv_plans = tuple(p for fv, p in zip(ir.outer_free_vars, ir.outer_free_var_plans) if fv in keep_set)
+
+        if not pruned and opt_body is ir.body_plan:
+            return ir
 
         return MenaiIRLambda(
             params=ir.params,
@@ -409,9 +468,14 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
     def _opt_call(self, ir: MenaiIRCall, frame_stack: list[int]) -> MenaiIRCall:
         """Optimize the function and argument plans of a call."""
+        func_plan = self._opt(ir.func_plan, frame_stack)
+        arg_plans = tuple(self._opt(a, frame_stack) for a in ir.arg_plans)
+        if func_plan is ir.func_plan and _same_sequence(arg_plans, ir.arg_plans):
+            return ir
+
         return MenaiIRCall(
-            func_plan=self._opt(ir.func_plan, frame_stack),
-            arg_plans=tuple(self._opt(a, frame_stack) for a in ir.arg_plans),
+            func_plan=func_plan,
+            arg_plans=arg_plans,
             is_tail_call=ir.is_tail_call,
             is_builtin=ir.is_builtin,
             builtin_name=ir.builtin_name,
@@ -419,9 +483,14 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
     def _opt_loop(self, ir: MenaiIRLoop, frame_stack: list[int]) -> MenaiIRLoop:
         """Optimize the init plans and body of a loop."""
+        init_plans = tuple(self._opt(init, frame_stack) for init in ir.init_plans)
+        body_plan = self._opt(ir.body_plan, frame_stack)
+        if _same_sequence(init_plans, ir.init_plans) and body_plan is ir.body_plan:
+            return ir
+
         return MenaiIRLoop(
             params=ir.params,
-            init_plans=tuple(self._opt(init, frame_stack) for init in ir.init_plans),
-            body_plan=self._opt(ir.body_plan, frame_stack),
+            init_plans=init_plans,
+            body_plan=body_plan,
             in_tail_position=ir.in_tail_position,
         )

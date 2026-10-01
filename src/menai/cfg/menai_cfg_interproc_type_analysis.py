@@ -106,7 +106,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
-    successor_ids,
+    predecessors_by_block,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
@@ -243,6 +243,8 @@ class _FunctionInfo:
         self.param_facts: list[TypeFact] = [BOTTOM] * func.param_count()
         self.return_fact: TypeFact = BOTTOM
         self.value_facts: dict[int, TypeFact] = {}
+        self.callee_ids: set[int] = set()
+        self.input_signature: object = None
 
 
 class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
@@ -281,6 +283,9 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         self._resolve_all_callees(root, functions, info_of)
 
+        for info in infos:
+            info.callee_ids = _all_callee_ids(info)
+
         self._scc_of = _call_graph_sccs(infos)
         self._grounded_sccs = self._externally_grounded_sccs(infos)
 
@@ -291,7 +296,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         changed = False
         rewritten: dict[int, MenaiCFGFunction] = {}
         for info in infos:
-            facts = self._intra_propagate(info, info.param_facts, info_of)
+            facts = self._intra_propagate_memoised(info, info_of)
             original_id = id(info.func)
             new_func, func_changed = self._rewrite_field_access(info, facts)
             if func_changed:
@@ -673,7 +678,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             info = info_of[func_id]
 
             previous_facts = info.value_facts
-            facts = self._intra_propagate(info, info.param_facts, info_of)
+            facts = self._intra_propagate_memoised(info, info_of)
             info.value_facts = facts
 
             for callee_id in self._propagate_call_args(info, facts, info_of):
@@ -874,6 +879,54 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         return result
 
+    def _intra_propagate_memoised(
+        self,
+        info: _FunctionInfo,
+        info_of: dict[int, _FunctionInfo],
+    ) -> dict[int, TypeFact]:
+        """
+        Return the function's per-value facts, recomputing only if its inputs
+        changed since the last computation.
+
+        A function's facts are a pure function of three inputs: its parameter
+        facts, the return facts of the functions it may call, and its parent's
+        per-value facts (read for free variables).  The worklist re-processes a
+        function whenever a dependency changed, but a dependency change does not
+        always change this function's facts — a caller re-enqueued because a
+        callee's return fact moved may still join to the same result.  Skipping
+        the recomputation when the inputs are unchanged therefore avoids
+        re-deriving facts that cannot have moved.
+        """
+        signature = self._input_signature(info, info_of)
+        if signature == info.input_signature:
+            return info.value_facts
+
+        facts = self._intra_propagate(info, info.param_facts, info_of)
+        info.input_signature = signature
+        return facts
+
+    @staticmethod
+    def _input_signature(
+        info: _FunctionInfo,
+        info_of: dict[int, _FunctionInfo],
+    ) -> object:
+        """
+        Return a hashable signature of the inputs that determine a function's
+        per-value facts.
+
+        The parent's facts are captured by the identity of its facts dict: the
+        parent is re-processed (and so its dict replaced) only when it is
+        enqueued, and a child is enqueued only when the parent's facts actually
+        changed, so identity is a sufficient proxy for the parent's contents.
+        """
+        parent_facts = id(info.parent.value_facts) if info.parent is not None else None
+        callee_returns = frozenset(
+            (callee_id,) + _fact_key(info_of[callee_id].return_fact)
+            for callee_id in info.callee_ids
+        )
+        params = tuple(_fact_key(fact) for fact in info.param_facts)
+        return (params, callee_returns, parent_facts)
+
     def _intra_propagate(
         self,
         info: _FunctionInfo,
@@ -891,7 +944,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         func = info.func
         facts: dict[int, TypeFact] = {}
         value_defs = _value_defs(func)
-        preds_by_block = _predecessors_by_block(func)
+        preds_by_block = predecessors_by_block(func)
 
         while True:
             changed = False
@@ -1326,7 +1379,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         func = info.func
         changed = False
         value_defs = _value_defs(func)
-        preds_by_block = _predecessors_by_block(func)
+        preds_by_block = predecessors_by_block(func)
         orphaned_symbols: set[int] = set()
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
@@ -1647,22 +1700,28 @@ def _value_defs(func: MenaiCFGFunction) -> dict[int, object]:
     return result
 
 
-def _predecessors_by_block(func: MenaiCFGFunction) -> dict[int, list[MenaiCFGBlock]]:
+def _all_callee_ids(info: _FunctionInfo) -> set[int]:
     """
-    Map each block id in a function to the blocks that have an edge to it.
+    Return every function id that some value in `info` may denote.
 
-    The per-block predecessor relation is derived from the terminators, so it
-    is a pure function of the function's blocks.  The intra-function fixed
-    point queries it for every block on every iteration, so it is computed once
-    here rather than re-derived by scanning every block's successors each time.
+    This is the union over all values of the per-value callee sets, i.e. the
+    functions whose return facts this function's call results depend on.
     """
-    result: dict[int, list[MenaiCFGBlock]] = {block.id: [] for block in func.blocks}
-    for block in func.blocks:
-        for successor_id in successor_ids(block.terminator):
-            if successor_id in result:
-                result[successor_id].append(block)
+    result: set[int] = set()
+    for callees in info.callee_of_value.values():
+        result |= callees
 
     return result
+
+
+def _fact_key(fact: TypeFact) -> tuple[str, MenaiStructType | None]:
+    """
+    Return a hashable key for a TypeFact.
+
+    TypeFact is a mutable dataclass and so is unhashable; its (kind,
+    struct_type) pair identifies it exactly and both components are hashable.
+    """
+    return (fact.kind, fact.struct_type)
 
 
 def _referenced_value_ids(func: MenaiCFGFunction) -> set[int]:

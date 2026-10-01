@@ -62,7 +62,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFunction,
     MenaiCFGGuardInstr,
     MenaiCFGSwitchTerm,
-    predecessors,
+    predecessors_by_block,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
@@ -102,13 +102,14 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
             val_id: fact.kind for val_id, fact in context.facts_for(func).items()
         }
 
-        outgoing_types, branch_true_types = self._compute_block_types(func, types)
+        preds_by_block = predecessors_by_block(func)
+        outgoing_types, branch_true_types = self._compute_block_types(func, types, preds_by_block)
 
         changed = False
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             block_types = self._incoming_types(
-                func, block, outgoing_types, branch_true_types, types,
+                func, block, preds_by_block, outgoing_types, branch_true_types, types,
             )
             present = self._existing_guards(block)
             new_instrs: list[MenaiCFGInstr] = []
@@ -136,6 +137,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         self,
         func: MenaiCFGFunction,
         types: dict[int, str | None],
+        preds_by_block: dict[int, list[MenaiCFGBlock]],
     ) -> tuple[dict[int, dict[int, str | None]], dict[int, dict[int, str | None]]]:
         """
         Compute each block's outgoing known types by iterating to a fixed
@@ -171,7 +173,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
 
             for block in func.blocks:
                 block_types = self._incoming_types(
-                    func, block, outgoing_types, branch_true_types, types,
+                    func, block, preds_by_block, outgoing_types, branch_true_types, types,
                 )
                 self._apply_transfer(block, block_types)
                 new_outgoing[block.id] = block_types
@@ -187,6 +189,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         self,
         func: MenaiCFGFunction,
         block: MenaiCFGBlock,
+        preds_by_block: dict[int, list[MenaiCFGBlock]],
         outgoing_types: dict[int, dict[int, str | None]],
         branch_true_types: dict[int, dict[int, str | None]],
         types: dict[int, str | None],
@@ -206,7 +209,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         if block.id == func.entry().id:
             return dict(types)
 
-        preds = predecessors(func, block)
+        preds = preds_by_block[block.id]
         if len(preds) == 1:
             pred = preds[0]
             term = pred.terminator

@@ -704,6 +704,27 @@ def predecessors(func: MenaiCFGFunction, block: MenaiCFGBlock) -> list[MenaiCFGB
     ]
 
 
+def predecessors_by_block(func: MenaiCFGFunction) -> dict[int, list[MenaiCFGBlock]]:
+    """
+    Map each block id in a function to the blocks that have an edge to it.
+
+    This is `predecessors` for every block at once.  `predecessors` rescans the
+    whole block list per query, so a pass that queries it for every block on
+    every iteration of a fixed point pays O(blocks) per query.  Building the map
+    once makes each query O(predecessors).
+
+    The relation is derived from the terminators, so it is a pure function of
+    the function's blocks and cannot go stale while the block list is unchanged.
+    """
+    result: dict[int, list[MenaiCFGBlock]] = {block.id: [] for block in func.blocks}
+    for candidate in func.blocks:
+        for successor_id in successor_ids(candidate.terminator):
+            if successor_id in result:
+                result[successor_id].append(candidate)
+
+    return result
+
+
 def remap_term(
     term: MenaiCFGTerminator | None,
     remap_block: Callable[[int], int],

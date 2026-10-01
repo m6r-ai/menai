@@ -26,6 +26,75 @@ from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
 
 
+# Builtin names recognised by the name-based rewrites below.  These are module
+# constants rather than per-call literals: `desugar` runs once per AST node, and
+# rebuilding the membership lists on every call allocates dozens of strings for
+# a test that almost always fails.
+_VARIADIC_ARITHMETIC = frozenset({
+    'integer+', 'integer-', 'integer*', 'integer/',
+    'float+', 'float-', 'float*', 'float/',
+    'complex+', 'complex-', 'complex*', 'complex/',
+})
+
+_FOLD_VARIADIC = frozenset({
+    'integer-bit-or', 'integer-bit-and', 'integer-bit-xor',
+    'integer-min', 'integer-max',
+    'float-min', 'float-max',
+    'list-concat',
+    'string-concat',
+    'bytes-concat',
+})
+
+_COMPARISON_CHAIN = frozenset({
+    'integer<?', 'integer>?', 'integer<=?', 'integer>=?',
+    'float<?',   'float>?',   'float<=?',   'float>=?',
+    'string<?',  'string>?',  'string<=?',  'string>=?',
+    'bytes<?',   'bytes>?',   'bytes<=?',   'bytes>=?',
+})
+
+_STRICT_EQUALITY = frozenset({
+    'boolean=?', 'integer=?', 'float=?', 'complex=?', 'string=?', 'list=?', 'dict=?', 'bytes=?',
+})
+
+_STRICT_INEQUALITY = frozenset({
+    'boolean!=?', 'integer!=?', 'float!=?', 'complex!=?', 'string!=?', 'list!=?', 'dict!=?', 'bytes!=?',
+})
+
+# Slice builtins whose end index defaults to the collection's length.
+_SLICE_LENGTH_FNS = {
+    'string-slice': 'string-length',
+    'list-slice': 'list-length',
+    'bytes-slice': 'bytes-length',
+    'vector-slice': 'vector-length',
+}
+
+
+def _constant_default(cls: type, value: Any, *, has_value: bool = True) -> Any:
+    """Return a factory building a default node of `cls` holding `value`."""
+    def build(*, line: int, column: int, source_file: str) -> MenaiASTNode:
+        if has_value:
+            return cls(value, line=line, column=column, source_file=source_file)
+
+        return cls(line=line, column=column, source_file=source_file)
+
+    return build
+
+
+# Builtins with an optional trailing argument whose omission is completed with a
+# constant default.  Maps the builtin name to a factory that builds the default
+# node at the call site's position.
+_CONSTANT_DEFAULTS = {
+    'integer->complex': _constant_default(MenaiASTInteger, 0),
+    'integer->string': _constant_default(MenaiASTInteger, 10),
+    'float->complex': _constant_default(MenaiASTFloat, 0.0),
+    'string->integer': _constant_default(MenaiASTInteger, 10),
+    'string->list': _constant_default(MenaiASTString, ""),
+    'list->string': _constant_default(MenaiASTString, ""),
+    'dict-get': _constant_default(MenaiASTNone, None, has_value=False),
+    'range': _constant_default(MenaiASTInteger, 1),
+}
+
+
 @dataclass(frozen=True)
 class _NamespaceBinding:
     """
@@ -410,18 +479,10 @@ class MenaiASTDesugarer:
                     )
 
                 # Constant-default completions.
-                constant_defaults: dict[str, MenaiASTNode] = {
-                    'integer->complex': MenaiASTInteger(0, line=expr.line, column=expr.column, source_file=expr.source_file),
-                    'integer->string': MenaiASTInteger(10, line=expr.line, column=expr.column, source_file=expr.source_file),
-                    'float->complex': MenaiASTFloat(0.0, line=expr.line, column=expr.column, source_file=expr.source_file),
-                    'string->integer': MenaiASTInteger(10, line=expr.line, column=expr.column, source_file=expr.source_file),
-                    'string->list': MenaiASTString("", line=expr.line, column=expr.column, source_file=expr.source_file),
-                    'list->string': MenaiASTString("", line=expr.line, column=expr.column, source_file=expr.source_file),
-                    'dict-get': MenaiASTNone(line=expr.line, column=expr.column, source_file=expr.source_file),
-                    'range': MenaiASTInteger(1, line=expr.line, column=expr.column, source_file=expr.source_file),
-                }
-                if name in constant_defaults and n_args == primitive_arity - 1:
-                    default = constant_defaults[name]
+                if name in _CONSTANT_DEFAULTS and n_args == primitive_arity - 1:
+                    default = _CONSTANT_DEFAULTS[name](
+                        line=expr.line, column=expr.column, source_file=expr.source_file
+                    )
                     desugared_args = [self.desugar(arg) for arg in expr.elements[1:]]
                     return self._make_list(
                         (self._make_symbol('$' + name, expr),) + tuple(desugared_args) + (default,),
@@ -430,13 +491,7 @@ class MenaiASTDesugarer:
                 # Computed-default completions: bind the collection to a temp to
                 # avoid double-evaluation, then synthesise the length call.
                 if name in ('string-slice', 'list-slice', 'bytes-slice', 'vector-slice') and n_args == 2:
-                    _slice_length_fns = {
-                        'string-slice': 'string-length',
-                        'list-slice': 'list-length',
-                        'bytes-slice': 'bytes-length',
-                        'vector-slice': 'vector-length',
-                    }
-                    length_fn = _slice_length_fns[name]
+                    length_fn = _SLICE_LENGTH_FNS[name]
                     coll_arg = self.desugar(expr.elements[1])
                     start_arg = self.desugar(expr.elements[2])
                     temp = self._gen_temp()
@@ -460,43 +515,23 @@ class MenaiASTDesugarer:
                     ), expr)
 
             # Check for typed variadic arithmetic operations
-            if name in [
-                'integer+', 'integer-', 'integer*', 'integer/',
-                'float+', 'float-', 'float*', 'float/',
-                'complex+', 'complex-', 'complex*', 'complex/',
-            ] and not self._is_shadowed(name):
+            if name in _VARIADIC_ARITHMETIC and not self._is_shadowed(name):
                 return self._desugar_variadic_arithmetic(expr)
 
             # Fold-reducible variadic operations
-            if name in [
-                'integer-bit-or', 'integer-bit-and', 'integer-bit-xor',
-                'integer-min', 'integer-max',
-                'float-min', 'float-max',
-                'list-concat',
-                'string-concat',
-                'bytes-concat',
-            ] and not self._is_shadowed(name):
+            if name in _FOLD_VARIADIC and not self._is_shadowed(name):
                 return self._desugar_fold_variadic(expr)
 
             # Variadic comparison chains (short-circuit with 'and' is correct)
-            if name in [
-                'integer<?', 'integer>?', 'integer<=?', 'integer>=?',
-                'float<?',   'float>?',   'float<=?',   'float>=?',
-                'string<?',  'string>?',  'string<=?',  'string>=?',
-                'bytes<?',   'bytes>?',   'bytes<=?',   'bytes>=?',
-            ] and not self._is_shadowed(name):
+            if name in _COMPARISON_CHAIN and not self._is_shadowed(name):
                 return self._desugar_comparison_chain(expr)
 
             # Strict equality predicates
-            if name in [
-                'boolean=?', 'integer=?', 'float=?', 'complex=?', 'string=?', 'list=?', 'dict=?', 'bytes=?'
-            ] and not self._is_shadowed(name):
+            if name in _STRICT_EQUALITY and not self._is_shadowed(name):
                 return self._desugar_strict_equality(expr)
 
             # Strict inequality predicates
-            if name in [
-                'boolean!=?', 'integer!=?', 'float!=?', 'complex!=?', 'string!=?', 'list!=?', 'dict!=?', 'bytes!=?'
-            ] and not self._is_shadowed(name):
+            if name in _STRICT_INEQUALITY and not self._is_shadowed(name):
                 return self._desugar_strict_inequality(expr)
 
             # Struct constructor call: (TypeName field1 field2 ...)

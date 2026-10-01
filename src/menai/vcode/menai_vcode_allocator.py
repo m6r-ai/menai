@@ -53,6 +53,7 @@ The allocator relies on this invariant to pre-assign fixed slots to those
 register ids without needing an explicit mapping.
 """
 
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 
 from menai.vcode.menai_vcode import (
@@ -134,23 +135,35 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     def_last_use: dict[int, int] = {}
     reg_defs: dict[int, list[int]] = {}
 
+    # The defs and uses of every instruction are computed once here and reused
+    # by every phase.  Each phase would otherwise re-derive them, and the
+    # last-use scan below would re-derive them once per scan step.
+    instr_defs: list[list[int]] = []
+    instr_uses: list[list[int]] = []
+    reg_uses: dict[int, list[int]] = {}
     for idx, instr in enumerate(func.instrs):
         defs, uses = _defs_uses(instr)
+        instr_defs.append(defs)
+        instr_uses.append(uses)
         for reg_id in defs:
             reg_defs.setdefault(reg_id, []).append(idx)
 
+        for reg_id in uses:
+            reg_uses.setdefault(reg_id, []).append(idx)
+
     # For each definition, find its last use: the last use of the same
     # register id at an index after this definition and before the next
-    # definition of the same register id (or end of list).
+    # definition of the same register id (or end of list).  Uses are indexed
+    # per register, so the last use before the next definition is found by
+    # bisecting the use list rather than scanning every instruction in between.
     for reg_id, def_indices in reg_defs.items():
+        uses = reg_uses.get(reg_id, [])
         for i, d in enumerate(def_indices):
             next_def = def_indices[i + 1] if i + 1 < len(def_indices) else len(func.instrs)
             last = d  # a definition with no uses dies immediately
-            for scan_idx in range(d + 1, next_def):
-                scan_instr = func.instrs[scan_idx]
-                _, scan_uses = _defs_uses(scan_instr)
-                if reg_id in scan_uses:
-                    last = scan_idx
+            pos = bisect_right(uses, d)
+            if pos < len(uses) and uses[pos] < next_def:
+                last = uses[bisect_left(uses, next_def) - 1]
 
             def_last_use[d] = last
 
@@ -218,7 +231,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         if isinstance(instr, MenaiVCodeLabel):
             continue
 
-        defs, uses = _defs_uses(instr)
+        defs, uses = instr_defs[idx], instr_uses[idx]
 
         # Kill any register being redefined — its previous definition's
         # lifetime ends here, freeing its slot for reuse.
@@ -410,7 +423,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
                 continue
 
-            if not _has_no_other_move(func.instrs, reg_id, reg_def, move_idx):
+            if not _has_no_other_move(func.instrs, instr_uses, reg_id, reg_def, move_idx):
                 continue
 
             barrier = False
@@ -420,7 +433,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
                     barrier = True
                     break
 
-                _, scan_uses = _defs_uses(scan_instr)
+                scan_uses = instr_uses[scan_idx]
                 if any(slots.get(u, -1) == param_slot for u in scan_uses):
                     barrier = True
                     break
@@ -478,13 +491,12 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
                 continue
 
-            if not _has_no_other_move(func.instrs, reg_id, reg_def, move_idx):
+            if not _has_no_other_move(func.instrs, instr_uses, reg_id, reg_def, move_idx):
                 continue
 
             reads_param = False
             for scan_idx in range(reg_def + 1, move_idx):
-                scan_instr = func.instrs[scan_idx]
-                _, scan_uses = _defs_uses(scan_instr)
+                scan_uses = instr_uses[scan_idx]
                 if any(slots.get(u, -1) == param_slot for u in scan_uses):
                     reads_param = True
                     break
@@ -528,7 +540,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         if reg_def is None or def_last_use.get(reg_def, reg_def) != move_idx:
             continue
 
-        if not _has_no_other_move(func.instrs, reg_id, reg_def, move_idx):
+        if not _has_no_other_move(func.instrs, instr_uses, reg_id, reg_def, move_idx):
             continue
 
         barrier = False
@@ -538,7 +550,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
                 barrier = True
                 break
 
-            _, scan_uses = _defs_uses(scan_instr)
+            scan_uses = instr_uses[scan_idx]
             if any(slots.get(u, -1) == dst_slot for u in scan_uses):
                 barrier = True
                 break
@@ -628,6 +640,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
 def _has_no_other_move(
     instrs: tuple[MenaiVCodeInstr, ...],
+    instr_uses: list[list[int]],
     reg_id: int,
     reg_def: int,
     move_idx: int,
@@ -652,7 +665,7 @@ def _has_no_other_move(
         if not isinstance(scan_instr, MenaiVCodeMove):
             continue
 
-        _, scan_uses = _defs_uses(scan_instr)
+        scan_uses = instr_uses[scan_idx]
         if reg_id in scan_uses:
             return False
 
