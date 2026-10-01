@@ -75,6 +75,7 @@ no definition-site fact, so reading the global facts alone would miss it.
 The pass mutates the CFG in place and returns the same root function.
 """
 
+from collections import deque
 from dataclasses import replace
 
 from menai.cfg.menai_cfg import (
@@ -105,7 +106,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
-    predecessors,
+    successor_ids,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
@@ -652,21 +653,75 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         type never reaches the parameters that read its fields.
 
         Each function's per-value facts are cached on its _FunctionInfo after
-        every iteration, so a child's free-var facts can be derived from its
-        parent's facts.  Functions are visited parents first, so the parent's
-        cache is already up to date when a child is processed.
-        """
-        changed = True
-        while changed:
-            changed = False
-            for info in infos:
-                facts = self._intra_propagate(info, info.param_facts, info_of)
-                info.value_facts = facts
-                if self._propagate_call_args(info, facts, info_of):
-                    changed = True
+        it is processed, so a child's free-var facts can be derived from its
+        parent's facts.  The initial worklist is in parents-first order, so a
+        parent's cache is normally up to date when its child is first processed.
 
-                if self._propagate_return_fact(info, facts, info_of):
-                    changed = True
+        The propagation is a worklist rather than a round-robin sweep: a
+        function is re-processed only when something it depends on changed.
+        The dependencies are a caller's argument facts flowing into a callee's
+        parameters, a callee's return fact flowing back to its callers, and a
+        parent's per-value facts flowing into its children's free variables.
+        """
+        callers_of, children_of = self._dependency_edges(infos)
+
+        worklist = deque(id(info.func) for info in infos)
+        queued = set(worklist)
+        while worklist:
+            func_id = worklist.popleft()
+            queued.discard(func_id)
+            info = info_of[func_id]
+
+            previous_facts = info.value_facts
+            facts = self._intra_propagate(info, info.param_facts, info_of)
+            info.value_facts = facts
+
+            for callee_id in self._propagate_call_args(info, facts, info_of):
+                if callee_id not in queued:
+                    worklist.append(callee_id)
+                    queued.add(callee_id)
+
+            if self._propagate_return_fact(info, facts, info_of):
+                for caller_id in callers_of[func_id]:
+                    if caller_id not in queued:
+                        worklist.append(caller_id)
+                        queued.add(caller_id)
+
+            if facts != previous_facts:
+                for child_id in children_of[func_id]:
+                    if child_id not in queued:
+                        worklist.append(child_id)
+                        queued.add(child_id)
+
+    def _dependency_edges(
+        self,
+        infos: list[_FunctionInfo],
+    ) -> tuple[dict[int, set[int]], dict[int, set[int]]]:
+        """
+        Build the reverse edges that drive the worklist fixed point.
+
+        Two cross-function dependencies are not captured by pushing into a
+        callee when a caller is processed:
+
+          - a caller reads its callees' return facts, so a change to a callee's
+            return fact must re-process the caller;
+          - a child reads its parent's per-value facts for its free variables,
+            so a change to a parent's facts must re-process the child.
+
+        Returns (callers_of, children_of), keyed by id(func).  `callers_of`
+        maps a function to the functions with a call site to it; `children_of`
+        maps a function to the functions nested within it.
+        """
+        callers_of: dict[int, set[int]] = {id(info.func): set() for info in infos}
+        children_of: dict[int, set[int]] = {id(info.func): set() for info in infos}
+        for info in infos:
+            for callee_id, _, _ in self._call_sites(info):
+                callers_of[callee_id].add(id(info.func))
+
+            if info.parent is not None:
+                children_of[id(info.parent.func)].add(id(info.func))
+
+        return callers_of, children_of
 
     def _propagate_return_fact(
         self,
@@ -712,7 +767,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         info: _FunctionInfo,
         facts: dict[int, TypeFact],
         info_of: dict[int, _FunctionInfo],
-    ) -> bool:
+    ) -> set[int]:
         """
         Join the fact of each call argument into the callee's parameter facts.
 
@@ -721,14 +776,14 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         internal facts.  The callee's effective parameter facts are then
         recomputed from the two and the presence of external call sites.
 
-        Returns True if any parameter fact changed.
+        Returns the ids of the callees whose parameter facts changed.
         """
-        changed = False
+        changed: set[int] = set()
         for callee_id, args, internal in self._call_sites(info):
             callee = info_of[callee_id]
             if self._join_arg_facts(callee, args, facts, internal):
                 callee.param_facts = self._effective_param_facts(callee)
-                changed = True
+                changed.add(callee_id)
 
         return changed
 
@@ -836,6 +891,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         func = info.func
         facts: dict[int, TypeFact] = {}
         value_defs = _value_defs(func)
+        preds_by_block = _predecessors_by_block(func)
 
         while True:
             changed = False
@@ -850,7 +906,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 # block-local facts, which therefore take precedence.
                 block_facts = dict(facts)
                 block_facts.update(self._block_incoming(
-                    func, block, facts, param_facts, value_defs, info,
+                    block, preds_by_block, facts, param_facts, value_defs, info,
                 ))
                 for instr in block.instrs:
                     if not isinstance(instr, _VALUE_INSTR_TYPES):
@@ -869,8 +925,8 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
     def _block_incoming(
         self,
-        func: MenaiCFGFunction,
         block: MenaiCFGBlock,
+        preds_by_block: dict[int, list[MenaiCFGBlock]],
         facts: dict[int, TypeFact],
         param_facts: list[TypeFact],
         value_defs: dict[int, object],
@@ -889,7 +945,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         A block reached from a struct-is-instance? true edge inherits the
         refined struct type of the predicate's argument.
         """
-        preds = predecessors(func, block)
+        preds = preds_by_block[block.id]
         if not preds:
             return self._entry_facts(block, param_facts)
 
@@ -1270,6 +1326,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         func = info.func
         changed = False
         value_defs = _value_defs(func)
+        preds_by_block = _predecessors_by_block(func)
         orphaned_symbols: set[int] = set()
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
@@ -1279,7 +1336,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             # has a refined fact that exists only in the block-local facts.
             block_facts = dict(facts)
             block_facts.update(self._block_incoming(
-                func, block, facts, info.param_facts, value_defs, info,
+                block, preds_by_block, facts, info.param_facts, value_defs, info,
             ))
             new_instrs: list = []
             for instr in block.instrs:
@@ -1586,6 +1643,24 @@ def _value_defs(func: MenaiCFGFunction) -> dict[int, object]:
         for instr in block.instrs:
             if isinstance(instr, _VALUE_INSTR_TYPES):
                 result[instr.result.id] = instr
+
+    return result
+
+
+def _predecessors_by_block(func: MenaiCFGFunction) -> dict[int, list[MenaiCFGBlock]]:
+    """
+    Map each block id in a function to the blocks that have an edge to it.
+
+    The per-block predecessor relation is derived from the terminators, so it
+    is a pure function of the function's blocks.  The intra-function fixed
+    point queries it for every block on every iteration, so it is computed once
+    here rather than re-derived by scanning every block's successors each time.
+    """
+    result: dict[int, list[MenaiCFGBlock]] = {block.id: [] for block in func.blocks}
+    for block in func.blocks:
+        for successor_id in successor_ids(block.terminator):
+            if successor_id in result:
+                result[successor_id].append(block)
 
     return result
 
