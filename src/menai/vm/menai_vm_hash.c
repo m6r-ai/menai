@@ -19,41 +19,6 @@
 #include "menai_vm_c.h"
 #include "menai_vm_crc32_tables.h"
 
-/*
- * Copy len bytes from s to d.
- *
- * The length is decomposed into 1, 2, 4 and then 8 byte chunks so that the
- * bulk of the copy is performed with the widest alignment-safe accesses.
- */
-static inline void
-hash_copy_bytes(void *d, const void *s, size_t len)
-{
-    uint8_t *d1 = (uint8_t *)d;
-    const uint8_t *s1 = (const uint8_t *)s;
-    if (len & 0x1) {
-        *d1++ = *s1++;
-    }
-
-    uint16_t *d2 = (uint16_t *)d1;
-    const uint16_t *s2 = (const uint16_t *)s1;
-    if (len & 0x2) {
-        *d2++ = *s2++;
-    }
-
-    uint32_t *d4 = (uint32_t *)d2;
-    const uint32_t *s4 = (const uint32_t *)s2;
-    if (len & 0x4) {
-        *d4++ = *s4++;
-    }
-
-    uint64_t *d8 = (uint64_t *)d4;
-    const uint64_t *s8 = (const uint64_t *)s4;
-    while (len & (~(size_t)0x07)) {
-        *d8++ = *s8++;
-        len -= 8;
-    }
-}
-
 #define HASH_SHA2_256_SIZE 32
 #define HASH_SHA2_256_WORDS 8
 #define HASH_SHA2_256_BLOCK 64
@@ -208,9 +173,10 @@ hash_sha2_256_transform(uint32_t *hash, const uint8_t *block)
      * there are no interactions between each 16-word block.
      */
     uint32_t w[16];
-    const uint32_t *nb = (const uint32_t *)block;
     for (int i = 0; i < 16; i++) {
-        w[i] = menai_u32_be_to_host(nb[i]);
+        uint32_t word;
+        memcpy(&word, block + i * 4, sizeof(word));
+        w[i] = menai_u32_be_to_host(word);
     }
 
     hash_sha2_256_expand(wv, 0, hash_sha2_256_k[0], w[0]);
@@ -276,7 +242,7 @@ menai_sha2_256(const uint8_t *data, size_t len, uint8_t *out)
     uint8_t block[HASH_SHA2_256_BLOCK];
     size_t rem = len - offset;
     if (rem > 0) {
-        hash_copy_bytes(block, data + offset, rem);
+        memcpy(block, data + offset, rem);
     }
 
     block[rem++] = 0x80;
@@ -287,8 +253,8 @@ menai_sha2_256(const uint8_t *data, size_t len, uint8_t *out)
     }
 
     memset(block + rem, 0, HASH_SHA2_256_BLOCK - 8 - rem);
-    uint64_t *bl = (uint64_t *)(block + HASH_SHA2_256_BLOCK - 8);
-    *bl = menai_u64_host_to_be((uint64_t)len << 3);
+    uint64_t bit_len = menai_u64_host_to_be((uint64_t)len << 3);
+    memcpy(block + HASH_SHA2_256_BLOCK - 8, &bit_len, sizeof(bit_len));
     hash_sha2_256_transform(h, block);
 
     for (int i = 0; i < HASH_SHA2_256_WORDS; i++) {
@@ -451,9 +417,10 @@ hash_sha2_512_transform(uint64_t *hash, const uint8_t *block)
     }
 
     uint64_t w[16];
-    const uint64_t *nb = (const uint64_t *)block;
     for (int i = 0; i < 16; i++) {
-        w[i] = menai_u64_be_to_host(nb[i]);
+        uint64_t word;
+        memcpy(&word, block + i * 8, sizeof(word));
+        w[i] = menai_u64_be_to_host(word);
     }
 
     hash_sha2_512_expand(wv, 0, hash_sha2_512_k[0], w[0]);
@@ -525,7 +492,7 @@ hash_sha2_512_common(const uint8_t *data, size_t len, uint8_t *out, const uint64
     uint8_t block[HASH_SHA2_512_BLOCK];
     size_t rem = len - offset;
     if (rem > 0) {
-        hash_copy_bytes(block, data + offset, rem);
+        memcpy(block, data + offset, rem);
     }
 
     block[rem++] = 0x80;
@@ -536,8 +503,8 @@ hash_sha2_512_common(const uint8_t *data, size_t len, uint8_t *out, const uint64
     }
 
     memset(block + rem, 0, HASH_SHA2_512_BLOCK - 8 - rem);
-    uint64_t *bl = (uint64_t *)(block + HASH_SHA2_512_BLOCK - 8);
-    *bl = menai_u64_host_to_be((uint64_t)len << 3);
+    uint64_t bit_len = menai_u64_host_to_be((uint64_t)len << 3);
+    memcpy(block + HASH_SHA2_512_BLOCK - 8, &bit_len, sizeof(bit_len));
     hash_sha2_512_transform(h, block);
 
     for (int i = 0; i < out_words; i++) {
@@ -754,10 +721,11 @@ hash_sha3_keccak(uint64_t *s, const uint8_t *block, size_t block_size)
     /*
      * Fold the block into the sponge.
      */
-    const uint64_t *b = (const uint64_t *)block;
     size_t num_words = block_size / sizeof(uint64_t);
     for (size_t i = 0; i < num_words; i++) {
-        s[i] ^= menai_u64_le_to_host(b[i]);
+        uint64_t word;
+        memcpy(&word, block + i * 8, sizeof(word));
+        s[i] ^= menai_u64_le_to_host(word);
     }
 
     /*
@@ -789,7 +757,7 @@ menai_sha3_256(const uint8_t *data, size_t len, uint8_t *out)
     uint8_t block[HASH_SHA3_256_BLOCK];
     size_t rem = len - offset;
     if (rem > 0) {
-        hash_copy_bytes(block, data + offset, rem);
+        memcpy(block, data + offset, rem);
     }
 
     block[rem] = 0x06;
