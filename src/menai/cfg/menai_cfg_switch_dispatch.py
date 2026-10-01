@@ -50,7 +50,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGSwitchTerm,
     MenaiCFGValue,
     blocks_by_id,
-    predecessors,
+    predecessors_by_block,
     value_ids_in_instr,
     value_ids_in_term,
 )
@@ -85,11 +85,22 @@ class MenaiCFGSwitchDispatch(MenaiCFGPerFunctionPass):
     ) -> tuple[MenaiCFGFunction, bool]:
         changed = False
 
+        # The block map, predecessor relation, and block-id set are queried for
+        # every entry block, so build them once rather than rescanning the block
+        # list per entry.  A successful rewrite replaces `func`, so they are
+        # rebuilt whenever that happens and never go stale.
+        by_id = blocks_by_id(func)
+        preds_by_block = predecessors_by_block(func)
+        current_ids = set(by_id)
+
         for entry in list(func.blocks):
-            if not any(b.id == entry.id for b in func.blocks):
+            # An earlier rewrite in this loop may have removed this entry block
+            # (it can be a test block of an earlier chain), in which case it is
+            # no longer part of `func` and must be skipped.
+            if entry.id not in current_ids:
                 continue
 
-            chain = _match_chain(func, entry)
+            chain = _match_chain(entry, by_id, preds_by_block)
             if chain is None:
                 continue
 
@@ -112,12 +123,19 @@ class MenaiCFGSwitchDispatch(MenaiCFGPerFunctionPass):
             blocks.insert(entry_pos, new_entry)
             func = replace_blocks(func, tuple(blocks))
 
+            by_id = blocks_by_id(func)
+            preds_by_block = predecessors_by_block(func)
+            current_ids = set(by_id)
             changed = True
 
         return func, changed
 
 
-def _match_chain(func: MenaiCFGFunction, entry: MenaiCFGBlock) -> _ChainMatch | None:
+def _match_chain(
+    entry: MenaiCFGBlock,
+    by_id: dict[int, MenaiCFGBlock],
+    preds_by_block: dict[int, list[MenaiCFGBlock]],
+) -> _ChainMatch | None:
     """
     Follow the false edges from `entry`, collecting (literal, then_block)
     arms while each block matches the integer-equality test pattern.
@@ -126,8 +144,11 @@ def _match_chain(func: MenaiCFGFunction, entry: MenaiCFGBlock) -> _ChainMatch | 
     or None.  `scrut_const_instr` is the entry block's const instruction
     defining the scrutinee when the scrutinee is a per-block constant
     (None when it is a value defined elsewhere).
+
+    `by_id` and `preds_by_block` are the function's block map and predecessor
+    relation, passed in so that a caller matching several entries does not
+    rebuild them per entry.
     """
-    by_id = blocks_by_id(func)
     term = entry.terminator
     if not isinstance(term, MenaiCFGBranchTerm):
         return None
@@ -155,7 +176,7 @@ def _match_chain(func: MenaiCFGFunction, entry: MenaiCFGBlock) -> _ChainMatch | 
         # Interior test blocks must be reachable only through the chain —
         # an outside predecessor would lose its path when the block is removed.
         if block is not entry:
-            preds = predecessors(func, block)
+            preds = preds_by_block[block.id]
             if len(preds) != 1 or preds[0] is not test_blocks[-1]:
                 break
 

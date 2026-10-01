@@ -162,7 +162,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         been rotated.
         """
         by_id = blocks_by_id(func)
-        header = self._self_loop_header(func, self_loops[0])
+        header = self._self_loop_header(func, self_loops[0], by_id)
 
         if not isinstance(header.terminator, MenaiCFGBranchTerm):
             return func, False
@@ -176,7 +176,7 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         # what matters is that each self-loop block is reachable from the
         # body entry without passing back through the header, so the body is
         # a region entered at `body` and exited by the self-loops.
-        body_region = self._body_region(func, body, header)
+        body_region = self._body_region(by_id, body, header)
         for self_loop in self_loops:
             self_loop_block = self._self_loop_block(func, self_loop)
             if self_loop_block is None or self_loop_block.id not in body_region:
@@ -277,9 +277,10 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         """
         groups: dict[int, list[MenaiCFGSelfLoopTerm]] = {}
         headers: dict[int, MenaiCFGBlock] = {}
+        by_id = blocks_by_id(func)
         for block in func.blocks:
             if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
-                header = self._self_loop_header(func, block.terminator)
+                header = self._self_loop_header(func, block.terminator, by_id)
                 groups.setdefault(header.id, []).append(block.terminator)
                 headers[header.id] = header
 
@@ -287,21 +288,25 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         # loop's body region is nested within it, so it must be rotated
         # first.  A loop's nesting depth is the number of other loop headers
         # whose body region contains its header.
+        #
+        # Each header's body region is computed once here, not once per
+        # (header, other_header) pair inside `depth`: the region depends only
+        # on the header, so recomputing it in the inner loop would make the
+        # depth computation quadratic in the number of loops.
+        regions: dict[int, set[int]] = {}
+        for header_id, header in headers.items():
+            if isinstance(header.terminator, MenaiCFGBranchTerm):
+                regions[header_id] = self._body_region(
+                    by_id, by_id[header.terminator.false_block], header,
+                )
+
         def depth(header_id: int) -> int:
             """Count how many other loops enclose the loop with this header."""
             count = 0
-            for other_id, other_header in headers.items():
+            for other_id, region in regions.items():
                 if other_id == header_id:
                     continue
 
-                if not isinstance(other_header.terminator, MenaiCFGBranchTerm):
-                    continue
-
-                region = self._body_region(
-                    func,
-                    blocks_by_id(func)[other_header.terminator.false_block],
-                    other_header,
-                )
                 if header_id in region:
                     count += 1
 
@@ -310,13 +315,21 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         return [groups[h] for h in sorted(groups, key=depth, reverse=True)]
 
     def _self_loop_header(
-        self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
+        self,
+        func: MenaiCFGFunction,
+        self_loop: MenaiCFGSelfLoopTerm,
+        by_id: dict[int, MenaiCFGBlock],
     ) -> MenaiCFGBlock:
-        """Return the header a self-loop targets (the entry block when unset)."""
+        """
+        Return the header a self-loop targets (the entry block when unset).
+
+        `by_id` is the function's block map, passed in so that a caller that
+        resolves several self-loops does not rebuild it per call.
+        """
         if self_loop.target is None:
             return func.entry()
 
-        return blocks_by_id(func)[self_loop.target]
+        return by_id[self_loop.target]
 
     def _self_loop_block(
         self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
@@ -353,7 +366,10 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         return []
 
     def _body_region(
-        self, func: MenaiCFGFunction, body_entry: MenaiCFGBlock, header: MenaiCFGBlock,
+        self,
+        by_id: dict[int, MenaiCFGBlock],
+        body_entry: MenaiCFGBlock,
+        header: MenaiCFGBlock,
     ) -> set[int]:
         """
         Return the ids of the blocks forming the loop body region.
@@ -363,8 +379,10 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         excluded; the self-loop back-edge is not followed (it targets the
         header, which is excluded anyway).  A single-block body yields a
         one-element set.
+
+        `by_id` is the function's block map, passed in so that a caller that
+        computes several regions does not rebuild it per call.
         """
-        by_id = blocks_by_id(func)
         region: set[int] = set()
         stack = [body_entry.id]
         while stack:

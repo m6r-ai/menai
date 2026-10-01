@@ -32,7 +32,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
     MenaiCFGValue,
-    predecessors,
+    predecessors_by_block,
     remap_term,
     value_ids_in_instr,
     value_ids_in_term,
@@ -290,6 +290,9 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
         changed = False
         inlined_block_ids: set[int] = set()
+        # The predecessor relation is queried for every target, so build it
+        # once rather than rescanning the block list per target.
+        preds_by_block = predecessors_by_block(func)
         # Rebuilt predecessors, keyed by block id.  A predecessor may be
         # modified for more than one target, so accumulate changes here and
         # rebuild each block once at the end.
@@ -304,7 +307,7 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
 
             # Find predecessors that reach target via an unconditional jump.
             jump_preds = [
-                b for b in predecessors(func, target)
+                b for b in preds_by_block[target.id]
                 if isinstance(b.terminator, MenaiCFGJumpTerm)
                 and b.terminator.target == target.id
             ]
@@ -350,7 +353,7 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
             # we just inlined, and no predecessor reaches target via a branch
             # or other non-jump edge.
             if (len(actually_inlined) == len(jump_preds)
-                    and len(jump_preds) == len(predecessors(func, target))):
+                    and len(jump_preds) == len(preds_by_block[target.id])):
                 inlined_block_ids.add(target.id)
 
         if not changed:

@@ -197,7 +197,8 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
 
         while True:
             def_block_map = _build_def_block_map(func)
-            func, round_changed = self._run_one_round(func, def_block_map)
+            by_id = blocks_by_id(func)
+            func, round_changed = self._run_one_round(func, def_block_map, by_id)
             if not round_changed:
                 break
 
@@ -209,6 +210,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
         self,
         func: MenaiCFGFunction,
         def_block_map: dict[int, 'MenaiCFGBlock'],
+        by_id: dict[int, MenaiCFGBlock],
     ) -> tuple[MenaiCFGFunction, bool]:
         """
         Execute one round of constant propagation.
@@ -300,7 +302,7 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                 ):
                     def_block = def_block_map.get(val.id)
                     if def_block is None:
-                        def_block = blocks_by_id(func)[pred]
+                        def_block = by_id[pred]
 
                     if isinstance(def_block.terminator, MenaiCFGJumpTerm):
                         const_arms.append((def_block, val))

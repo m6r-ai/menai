@@ -77,7 +77,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFunction,
     MenaiCFGJumpTerm,
     MenaiCFGPhiInstr,
-    predecessors,
+    predecessors_by_block,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
@@ -109,8 +109,11 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
         # Map each block id to the block-local facts known at its entry, so a
         # test's receiver is read at the point the test executes even when the
         # test and the branch that consumes it are in different blocks.
+        # The predecessor relation is queried for every block, so build it once
+        # rather than rescanning the block list per block.
+        preds_by_block = predecessors_by_block(func)
         entry_facts = {
-            block.id: self._block_local_facts(func, block, facts, context)
+            block.id: self._block_local_facts(func, block, preds_by_block, facts, context)
             for block in func.blocks
         }
 
@@ -160,6 +163,7 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
         self,
         func: MenaiCFGFunction,
         block: MenaiCFGBlock,
+        preds_by_block: dict[int, list[MenaiCFGBlock]],
         facts: dict[int, TypeFact],
         context: MenaiCFGContext,
     ) -> dict[int, TypeFact]:
@@ -174,13 +178,14 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
         refined receiver visible here.
         """
         block_facts = dict(facts)
-        block_facts.update(self._incoming_facts(func, block, facts, context))
+        block_facts.update(self._incoming_facts(func, block, preds_by_block, facts, context))
         return block_facts
 
     def _incoming_facts(
         self,
         func: MenaiCFGFunction,
         block: MenaiCFGBlock,
+        preds_by_block: dict[int, list[MenaiCFGBlock]],
         facts: dict[int, TypeFact],
         context: MenaiCFGContext,
     ) -> dict[int, TypeFact]:
@@ -194,7 +199,7 @@ class MenaiCFGStructInstanceFold(MenaiCFGPerFunctionPass):
         with multiple predecessors joins them, so a receiver proven on every
         incoming path is still recognised.
         """
-        preds = predecessors(func, block)
+        preds = preds_by_block[block.id]
         if not preds:
             return {}
 
