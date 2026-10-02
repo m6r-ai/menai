@@ -6,12 +6,12 @@ and no access to the filesystem, network, or any other external state.
 
 That last part is the whole point.  Menai is a computational language - you hand it
 values, it returns a value, and nothing else changes.  There is no filesystem to
-touch, no network to reach, and no state to corrupt.  Thsi means there's nothing to
+touch, no network to reach, and no state to corrupt.  This means there's nothing to
 sandbox and nothing to escape.  An AI can be given Menai and left to run it unsupervised,
 which is a much stronger guarantee than "we tried to block the dangerous parts".
 
 Menai doesn't do I/O itself, but it is designed to be embedded in software that does.
-The host reads the file, queries the clock, or writes the result; Menai does the
+The host reads the file, queries the clock, or writes the result - Menai does the
 computation in between.  This keeps the non-deterministic and stateful parts of a
 system outside the language, where they can be permissioned and reviewed.
 
@@ -22,8 +22,8 @@ and has zero dependencies on Humbug.
 
 ## What you can do with it
 
-Menai is not a toy.  The standard library in [`menai_modules/`](menai_modules/) is
-written entirely in Menai, and it implements real binary and text formats:
+Menai has a standard library in [`menai_modules/`](menai_modules/) is
+written entirely in Menai. It implements useful binary and text processing features:
 
 | Module | What it does |
 |--------|--------------|
