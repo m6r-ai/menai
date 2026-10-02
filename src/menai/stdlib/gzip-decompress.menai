@@ -1,0 +1,79 @@
+; gzip-decompress — decompresses a gzip stream (RFC 1952).
+;
+; A gzip stream is:
+;
+;   - a 2-byte magic number, 0x1f 0x8b.
+;   - a 1-byte compression method (CM), 8 = DEFLATE.
+;   - a 1-byte flags byte (FLG).
+;   - a 4-byte little-endian modification time (MTIME).
+;   - a 1-byte extra flags field (XFL).
+;   - a 1-byte operating system field (OS).
+;   - the DEFLATE data (handed to deflate-decompress).
+;   - a 4-byte little-endian CRC-32 of the uncompressed data.
+;   - a 4-byte little-endian ISIZE: the uncompressed size modulo 2^32.
+;
+; The magic number and compression method are verified.  The CRC-32 trailer is
+; verified against the decompressed data, and ISIZE is verified against the
+; decompressed size modulo 2^32.
+;
+; Optional header fields (FEXTRA, FNAME, FCOMMENT, FHCRC) are not supported and
+; raise an error, mirroring how zlib-decompress rejects preset dictionaries
+; rather than parsing them.
+
+(letrec
+  ((deflate-lib (import "deflate-decompress"))
+
+   (check-header
+    (lambda (b)
+      (if (integer!=? (bytes-nth b 0) #x1f)
+          (error "Not a gzip stream: bad magic number")
+          (if (integer!=? (bytes-nth b 1) #x8b)
+              (error "Not a gzip stream: bad magic number")
+              (if (integer!=? (bytes-nth b 2) 8)
+                  (error (string-concat
+                           "Unsupported gzip stream: compression method "
+                           (integer->string (bytes-nth b 2))
+                           " is not DEFLATE (8)"))
+                  (let ((flg (bytes-nth b 3)))
+                    (if (integer!=? (integer-bit-and flg #x04) 0)
+                        (error "Unsupported gzip stream: FEXTRA is not supported")
+                        (if (integer!=? (integer-bit-and flg #x08) 0)
+                            (error "Unsupported gzip stream: FNAME is not supported")
+                            (if (integer!=? (integer-bit-and flg #x10) 0)
+                                (error "Unsupported gzip stream: FCOMMENT is not supported")
+                                (if (integer!=? (integer-bit-and flg #x02) 0)
+                                    (error "Unsupported gzip stream: FHCRC is not supported")
+                                    #t))))))))))
+
+   ; Decompress a bytes value containing a complete gzip stream (10-byte
+   ; header, DEFLATE data, 8-byte CRC-32/ISIZE trailer) and return the
+   ; decompressed bytes.
+   (decompress
+    (lambda (b)
+      (if (bytes? b)
+          (if (integer<? (bytes-length b) 18)
+              (error "Not a gzip stream: too short")
+              (if (check-header b)
+                  (let ((decompress (:: deflate-lib decompress)))
+                    (let ((data (decompress (bytes-slice b 10 (integer- (bytes-length b) 8)))))
+                      (let ((expected-crc (bytes-read-u32-le b (integer- (bytes-length b) 8)))
+                            (actual-crc (bytes-crc32 data))
+                            (expected-size (bytes-read-u32-le b (integer- (bytes-length b) 4)))
+                            (actual-size (integer-bit-and (bytes-length data) #xffffffff)))
+                        (if (integer!=? expected-crc actual-crc)
+                            (error (string-concat
+                                     "gzip stream checksum mismatch: expected "
+                                     (integer->string expected-crc)
+                                     " but computed "
+                                     (integer->string actual-crc)))
+                            (if (integer!=? expected-size actual-size)
+                                (error (string-concat
+                                         "gzip stream size mismatch: expected "
+                                         (integer->string expected-size)
+                                         " but computed "
+                                         (integer->string actual-size)))
+                                data)))))
+                  (error "Malformed gzip stream: header check failed")))
+          (error "gzip-decompress: decompress expects a bytes value")))))
+
+  (export decompress))

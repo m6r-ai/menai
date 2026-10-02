@@ -9,6 +9,8 @@ New features:
   `Menai.stdlib_source`.
 - The module search path is now composed from explicit `--module-path` directories,
   the `MENAI_PATH` environment variable, and the source file's directory.
+- Added `extract-entry` and `extract-matches` operations to `zip-extract`.
+- Added 'gzip-compress` and `gzip-decompress` modules to the standard library.
 
 ## v0.6.0 (2026-10-01)
 

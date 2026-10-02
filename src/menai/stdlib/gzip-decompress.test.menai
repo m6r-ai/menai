@@ -1,0 +1,68 @@
+; Tests for gzip-decompress.menai
+
+(let ((gzip-mod (import "gzip-decompress"))
+      (t (import "menai_test")))
+  (let ((decompress (:: gzip-mod decompress))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests (list
+       (list "decompress"
+         (list
+           (expect-pass "decompresses a deflate stream"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+                            (assert-equal (bytes->string r) "hello world"))))
+           (expect-pass "decompresses an empty stream"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff03000000000000000000"))))
+                            (assert-equal (bytes-length r) 0))))
+           (expect-pass "decompresses a stored stream"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff010800f7ff6162636465666768502aefae08000000"))))
+                            (assert-equal (bytes->string r) "abcdefgh"))))))
+
+       (list "errors"
+         (list
+           (expect-fail "rejects non-bytes argument"
+                        (lambda ()
+                          (decompress "not bytes"))
+                        "expects a bytes value")
+           (expect-fail "rejects too-short input"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b08000000000000ff")))
+                        "too short")
+           (expect-fail "rejects a bad magic number"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1e8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
+                        "bad magic number")
+           (expect-fail "rejects non-DEFLATE compression method"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b07000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
+                        "not DEFLATE")
+           (expect-fail "rejects FEXTRA"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b08040000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
+                        "FEXTRA")
+           (expect-fail "rejects FNAME"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b08080000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
+                        "FNAME")
+           (expect-fail "rejects FCOMMENT"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b08100000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
+                        "FCOMMENT")
+           (expect-fail "rejects FHCRC"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b08020000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
+                        "FHCRC")
+           (expect-fail "rejects a checksum mismatch"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0e0b000000")))
+                        "checksum mismatch")
+           (expect-fail "rejects a size mismatch"
+                        (lambda ()
+                          (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b0c0000")))
+                        "size mismatch"))))))
+
+      (export tests))))

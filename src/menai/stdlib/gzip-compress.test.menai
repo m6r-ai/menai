@@ -1,0 +1,94 @@
+; Tests for gzip-compress.menai
+
+(let ((gzip-compress (import "gzip-compress"))
+      (gzip-decompress (import "gzip-decompress"))
+      (t (import "menai_test")))
+  (let ((compress (:: gzip-compress compress))
+        (decompress (:: gzip-decompress decompress))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Round-trips through gzip-decompress
+        (list "round-trips"
+          (list
+            (expect-pass "empty input"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "")))
+                                                  (string->bytes ""))))
+            (expect-pass "short text"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "hello world")))
+                                                  (string->bytes "hello world"))))
+            (expect-pass "repetitive text"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
+                                                  (string->bytes "abcabcabcabcabcabcabcabc"))))
+            (expect-pass "single byte"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "x")))
+                                                  (string->bytes "x"))))))
+
+        ; The header is well formed: the 0x1f8b magic, CM = 8 (DEFLATE), FLG = 0
+        ; (no optional fields), MTIME = 0, XFL = 0, OS = 0xff.
+        (list "header"
+          (list
+            (expect-pass "starts with the fixed 10-byte header"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes "payload"))))
+                             (assert-equal (bytes-slice stream 0 10)
+                                           (string-hex->bytes "1f8b08000000000000ff")))))))
+
+        ; The trailer is the little-endian CRC-32 of the uncompressed data
+        ; followed by the little-endian ISIZE.
+        (list "trailer"
+          (list
+            (expect-pass "crc-32 of empty input is 0"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes ""))))
+                             (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 8))
+                                           0))))
+            (expect-pass "crc-32 of a known payload"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes "hello world hello world hello world"))))
+                             (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 8))
+                                           #x0f42febb))))
+            (expect-pass "isize of a known payload"
+                         (lambda ()
+                           (let ((stream (compress (string->bytes "hello world hello world hello world"))))
+                             (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 4))
+                                           35))))))
+
+        ; Streams produced by other gzip implementations must decompress.
+        (list "interoperability"
+          (list
+            (expect-pass "decompresses a stream produced elsewhere"
+                         (lambda ()
+                           (assert-equal (bytes->string
+                                           (decompress (string-hex->bytes "1f8b08000000000002ffcb48cdc9c95728cf2fca4951c8c0ce0600bbfe420f23000000")))
+                                         "hello world hello world hello world")))))
+
+        ; The optional mode argument selects the DEFLATE block encoding.
+        (list "modes"
+          (list
+            (expect-pass "stored mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "stored"))
+                                                  (string->bytes "abcdefgh"))))
+            (expect-pass "fixed mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "fixed"))
+                                                  (string->bytes "abcdefgh"))))
+            (expect-pass "dynamic mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "dynamic"))
+                                                  (string->bytes "abcdefgh"))))
+            (expect-pass "auto mode round-trips"
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "auto"))
+                                                  (string->bytes "abcdefgh"))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-bytes argument"
+                         (lambda () (compress "not bytes"))
+                         "expects a bytes value")
+            (expect-fail "rejects an unknown mode"
+                         (lambda () (compress (string->bytes "abc") "bogus"))
+                         "unknown mode"))))))
+
+      (export tests))))

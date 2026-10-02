@@ -1,0 +1,47 @@
+; gzip-compress — compresses bytes to a gzip stream (RFC 1952).
+;
+; A gzip stream is:
+;
+;   - a 2-byte magic number, 0x1f 0x8b.
+;   - a 1-byte compression method (CM), 8 = DEFLATE.
+;   - a 1-byte flags byte (FLG).
+;   - a 4-byte little-endian modification time (MTIME).
+;   - a 1-byte extra flags field (XFL).
+;   - a 1-byte operating system field (OS).
+;   - the DEFLATE data (produced by deflate-compress).
+;   - a 4-byte little-endian CRC-32 of the uncompressed data.
+;   - a 4-byte little-endian ISIZE: the uncompressed size modulo 2^32.
+;
+; This module emits the fixed header 0x1f 0x8b 0x08 0x00 followed by MTIME 0,
+; XFL 0, and OS 0xff ("unknown").  FLG is 0, so no optional header fields
+; (FEXTRA, FNAME, FCOMMENT, FHCRC) are written.  Menai is pure and has no
+; clock, so MTIME cannot carry a real modification time; it is written as 0,
+; which is the deterministic choice made by reproducible-build gzip writers.
+
+(letrec
+  ((deflate-lib (import "deflate-compress"))
+
+   ; The fixed 10-byte gzip header: magic 0x1f 0x8b, CM 0x08 (DEFLATE),
+   ; FLG 0x00 (no optional fields), MTIME 0x00000000, XFL 0x00, OS 0xff.
+   (header (string-hex->bytes "1f8b08000000000000ff"))
+
+   ; Compress a bytes value into a complete gzip stream.  It is the inverse of
+   ; gzip-decompress's decompress: for every bytes value b,
+   ; (decompress (compress b)) reproduces b.
+   ;
+   ; The optional second argument selects the DEFLATE block encoding and is
+   ; passed straight through to deflate-compress ("auto", "stored", "fixed", or
+   ; "dynamic"); it defaults to "auto".  It does not affect decompression.
+   (compress
+    (lambda (b . rest)
+      (if (bytes? b)
+          (let ((mode (if (list-null? rest) "auto" (list-first rest))))
+            (let ((deflate (:: deflate-lib compress)))
+              (bytes-concat header
+                            (deflate b mode)
+                            (bytes-append-u32-le
+                              (bytes-append-u32-le (bytes-concat) (bytes-crc32 b))
+                              (integer-bit-and (bytes-length b) #xffffffff)))))
+          (error "gzip-compress: compress expects a bytes value")))))
+
+  (export compress))
