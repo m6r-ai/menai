@@ -72,8 +72,8 @@ underlying modules with `python -m`; use the console scripts.
   directories. `--filter TEXT` selects tests by name; `--verbose` shows passing tests too.
   This is the tool for running the standard library module tests:
   ```bash
-  menai-test menai_modules/                          # all module tests
-  menai-test menai_modules/json-decode.test.menai    # a single suite
+  menai-test src/menai/stdlib/                          # all module tests
+  menai-test src/menai/stdlib/json-decode.test.menai    # a single suite
   ```
 - `menai-eval <file>` — compiles and evaluates a `.menai` file (or an expression from
   stdin) and prints the result. `--cprofile` profiles the compiler; `--profile`,
@@ -141,12 +141,12 @@ it should not be added.
 ```text
 menai/
 ├── docs/                       # language manual (human + AI readable)
-├── menai_modules/              # standard library (.menai files)
 ├── pyproject.toml              # Python package configuration (setuptools backend)
 ├── setup.py                    # C VM extension build (platform-specific compile flags)
 ├── .github/workflows/          # CI (build+test on push) and release (cibuildwheel on tag)
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
+│   │   └── stdlib/             # standard library (.menai files)
 │   ├── menai_benchmark/        # performance benchmarking tool
 │   ├── menai_check/            # parenthesis balance checker
 │   ├── menai_disassemble/      # bytecode disassembler
@@ -397,6 +397,28 @@ Module and export names must avoid the names of the builtins and prelude functio
 the module itself uses. This is why the ZIP reader exports `entries` rather than the
 naturally-named `list`.
 
+### The module search path is composed by the library, not by each tool
+
+The standard library ships as package data inside the `menai` package, under
+`src/menai/stdlib/`, and is located through `importlib.resources` — the same mechanism
+the prelude uses. It is therefore present in a wheel install, not just a source
+checkout, and an agent can read a module's source (`Menai.stdlib_source`) to understand
+it.
+
+The search path is composed in a fixed precedence order by `Menai.build_module_path`:
+explicit directories first, then application library directories (`MENAI_PATH`, then
+the source file's directory), then the standard library. Resolution is
+first-match-wins, so an application library may shadow a standard library module of
+the same name.
+
+Tools must not build their own search path. Each tool composes the default through
+`Menai.build_module_path` and prepends its own `--module-path` directories; a tool
+that builds its own list breaks the precedence guarantee and can omit the standard
+library entirely.
+
+See [ADR-0038](docs/adr/0038-standard-library-packaging-and-location.md) and
+[ADR-0040](docs/adr/0040-module-search-path-and-application-libraries.md).
+
 ### Renaming a module requires a repo-wide text sweep, not just `.menai` files
 
 Module names appear in more places than the module files themselves. In particular
@@ -405,7 +427,7 @@ examples build Menai expressions as `'(let ((x (import "module-name"))) ...)'` s
 
 A rename is not complete until every occurrence of the old name has been found and
 updated. Search the whole repository (excluding `.git`, `venv`, and build artefacts),
-not just `menai_modules/` and `docs/`. Both the old module name and the old export
+not just `src/menai/stdlib/` and `docs/`. Both the old module name and the old export
 name must be swept, and the test-file naming convention (`<module>.test.menai`) must
 be applied to any renamed test file.
 

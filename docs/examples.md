@@ -124,7 +124,7 @@ A function that classifies a value:
 
 ## JSON decoder
 
-The `json-decode.menai` module in `menai_modules/` is a complete JSON decoder written
+The `json-decode.menai` module in the standard library is a complete JSON decoder written
 in Menai. It converts JSON strings to Menai values:
 
 | JSON | Menai |

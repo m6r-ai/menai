@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 import time
 from typing import Any
 
@@ -19,9 +18,6 @@ from menai_pipeline.pipeline_tools import (
     ClockTool, ConsoleTool, FilesystemTool,
     PipelineAuthorizationDenied, PipelineToolError,
 )
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
 
 @dataclass
 class StepResult:
@@ -387,6 +383,7 @@ def execute_pipeline(
     on_step_start: Callable[[str], None] | None = None,
     on_step_done: Callable[['StepResult'], None] | None = None,
     instrument: bool = False,
+    module_path: list[str] | None = None,
 ) -> PipelineResult:
     """
     Execute a pipeline, running each step in order.
@@ -403,15 +400,19 @@ def execute_pipeline(
             opcode histogram and instruction/call trace are collected and
             returned in PipelineResult.step_profiles.  Instrumentation does
             not change the pipeline's results.
+        module_path: Directories to prepend to the module search path, ahead of
+            the pipeline directory and the standard library.
 
     Returns:
         PipelineResult with per-step results, per-step VM profiles (when
         instrumenting), and overall success/failure
     """
-    menai = Menai(module_path=[
-        str(pipeline.directory),
-        str(_REPO_ROOT / "menai_modules"),
-    ])
+    search_path: list[str] = []
+    for directory in list(module_path or []) + Menai.build_module_path(str(pipeline.directory)):
+        if directory not in search_path:
+            search_path.append(directory)
+
+    menai = Menai(module_path=search_path)
 
     step_outputs: dict[str, str | bytes] = {}
     step_results: list[StepResult] = []

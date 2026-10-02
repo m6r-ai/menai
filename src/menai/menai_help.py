@@ -453,7 +453,9 @@ Syntax: (operator arg1 arg2 ...)
 - Private functions: bindings not named in the export form are private to the module
 - A module file is also a valid program: compiled directly (not imported) it evaluates to a dict mapping each export name to its value
 - Module names can include subdirectories: (e.g. import "lib/helpers")
-- Available modules can be found in the module search path directories
+- Modules are resolved from a search path: explicit --module-path directories, then MENAI_PATH application libraries and the source file's directory, then the standard library
+- The standard library (e.g. json-decode, png-decode, deflate-compress, zip-extract) ships with Menai and is always available; its source can be read to understand a module
+- An application library may shadow a standard library module of the same name
 
 ## Raising errors
 

@@ -1,7 +1,7 @@
 """Python-side checks for the deflate-compress module.
 
 These tests complement the in-language round-trip tests in
-``menai_modules/deflate-compress.test.menai`` by validating the compressor's
+``src/menai/stdlib/deflate-compress.test.menai`` by validating the compressor's
 output against an independent DEFLATE decoder (Python's ``zlib``).  This
 guards against a symmetric bug in the Menai ``deflate-compress``/
 ``deflate-decompress`` pair that a round-trip through the same implementation

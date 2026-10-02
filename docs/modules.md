@@ -96,13 +96,28 @@ bind the member to a local name in the importer:
 ## Module search path
 
 Modules are found by searching the module search path — a list of directories.
-The default search path includes the current directory (`.`) and the `menai_modules`
-directory. When embedding Menai, the search path can be configured:
+The path is composed of three layers, in precedence order:
+
+1. **Explicit directories** — a `module_path` argument to `Menai`, or a
+   `--module-path` flag on a tool. Highest precedence.
+2. **Application library directories** — the directories in the `MENAI_PATH`
+   environment variable (a colon-separated list, like `PATH`), then the source
+   file's own directory.
+3. **The standard library** — always searched last.
+
+Resolution is first-match-wins in this order, so an application library may
+shadow a standard library module of the same name.
+
+When embedding Menai, the search path can be configured explicitly. An explicit
+`module_path` is used verbatim, with no composition:
 
 ```menai
 ; In the Python API:
-; Menai(module_path=[".", "my_modules", "menai_modules"])
+; Menai(module_path=[".", "my_modules"])
 ```
+
+To compose the default path from its layers instead, use
+`Menai.build_module_path(source_dir)`.
 
 Module names can include subdirectories:
 
@@ -195,8 +210,10 @@ destructuring pattern head:
 
 ## Standard library modules
 
-The `menai_modules/` directory contains standard library modules. Currently this
-includes:
+The standard library ships inside the `menai` package, under `stdlib/`, and is
+always the lowest-precedence directory on the module search path. It is
+available in every installation, including a wheel installed with `pip install
+menai`. Currently it includes:
 
 - `bmp-decode.menai` — decodes uncompressed 24-bit and 32-bit BMP files (as
   bytes) to a dict containing the decoded header, a normalised top-down pixel
@@ -252,6 +269,6 @@ operation under the same name as the operation in its module name, so
 `json-decode` exports `decode`.  Operations that are inverses use a symmetric
 pair of names (`decode`/`encode`, `compress`/`decompress`); operations that are
 not inverses are named individually (`entries`, `extract`, `create`).  See
-[Module naming](module_naming.md) for the full convention.
+[ADR-0039](adr/0039-standard-library-module-naming.md) for the full convention.
 
 See [Examples](examples.md) for a walkthrough of the JSON decoder.

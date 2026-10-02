@@ -173,6 +173,7 @@ def _run_with_profile(
     on_step_start: Callable[[str], None] | None,
     on_step_done: Callable[[StepResult], None] | None,
     instrument: bool,
+    module_path: list[str],
 ) -> tuple[PipelineResult, str]:
     """
     Execute a pipeline under cProfile and return (result, profile_stats_string).
@@ -184,6 +185,7 @@ def _run_with_profile(
         on_step_start: Optional step-start callback forwarded to execute_pipeline
         on_step_done: Optional step-done callback forwarded to execute_pipeline
         instrument: Whether to enable VM profiling during execution
+        module_path: Directories to prepend to the module search path
 
     Returns:
         Tuple of (PipelineResult, formatted profile string)
@@ -195,6 +197,7 @@ def _run_with_profile(
         on_step_start=on_step_start,
         on_step_done=on_step_done,
         instrument=instrument,
+        module_path=module_path,
     )
     profiler.disable()
 
@@ -426,6 +429,15 @@ Examples:
         help="Force ANSI colour output even when stdout is not a terminal"
     )
 
+    parser.add_argument(
+        "--module-path",
+        action="append",
+        default=[],
+        metavar="DIR",
+        dest="module_path",
+        help="Prepend DIR to the module search path (repeatable)"
+    )
+
     args = parser.parse_args()
 
     color = _use_color(args.no_color, args.color)
@@ -496,6 +508,7 @@ Examples:
             on_step_start,
             on_step_done,
             instrument,
+            args.module_path,
         )
 
     else:
@@ -504,6 +517,7 @@ Examples:
             on_step_start=on_step_start,
             on_step_done=on_step_done,
             instrument=instrument,
+            module_path=args.module_path,
         )
 
     elapsed = time.monotonic() - start

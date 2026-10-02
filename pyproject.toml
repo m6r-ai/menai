@@ -41,7 +41,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-menai = ["*.menai", "py.typed"]
+menai = ["*.menai", "stdlib/*.menai", "py.typed"]
 menai_test = ["*.menai"]
 
 [tool.coverage.run]

@@ -13,7 +13,6 @@ from menai.menai_value import (
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _RUNNER_DIR = str(Path(__file__).resolve().parent)
-_MENAI_MODULES_DIR = str(_REPO_ROOT / "menai_modules")
 
 
 @dataclass
@@ -54,9 +53,14 @@ class NodeTree:
         return self.thunk_path is not None
 
 
-def _make_menai(test_file_dir: str) -> Menai:
+def _make_menai(test_file_dir: str, explicit: list[str]) -> Menai:
     """Create a Menai instance with the runner's support module on the path."""
-    return Menai(module_path=[_RUNNER_DIR, test_file_dir, _MENAI_MODULES_DIR])
+    module_path: list[str] = []
+    for directory in [_RUNNER_DIR] + list(explicit) + Menai.build_module_path(test_file_dir):
+        if directory not in module_path:
+            module_path.append(directory)
+
+    return Menai(module_path=module_path)
 
 
 def _parse_node_list(value: MenaiList, path: list[str]) -> list[NodeTree]:
@@ -192,6 +196,7 @@ def _run_leaf(
     path: list[str],
     expect_error: bool,
     expect_error_contains: str | None,
+    explicit: list[str],
 ) -> TestResult:
     """
     Execute a single leaf thunk in a fresh Menai VM.
@@ -212,7 +217,7 @@ def _run_leaf(
         f'        (thunk))))'
     )
 
-    menai = _make_menai(test_file_dir)
+    menai = _make_menai(test_file_dir, explicit)
     try:
         menai.evaluate_raw(expression)
 
@@ -248,6 +253,7 @@ def _run_tree(
     test_file_dir: str,
     name_filter: str | None,
     results: list[TestResult],
+    explicit: list[str],
 ) -> None:
     """Recursively walk the node tree, executing all matching leaves."""
     for node in nodes:
@@ -262,11 +268,12 @@ def _run_tree(
                 node.thunk_path,
                 node.expect_error,
                 node.expect_error_contains,
+                explicit,
             )
             results.append(result)
 
         else:
-            _run_tree(node.children, module_name, test_file_dir, name_filter, results)
+            _run_tree(node.children, module_name, test_file_dir, name_filter, results, explicit)
 
 
 def _print_results(
@@ -297,6 +304,7 @@ def _print_results(
 def run_file(
     test_file: Path,
     name_filter: str | None,
+    explicit: list[str] | None = None,
 ) -> list[TestResult]:
     """
     Execute all tests in a single *.test.menai file and return their results.
@@ -308,6 +316,7 @@ def run_file(
         test_file: Path to the *.test.menai file to run
         name_filter: Only run tests whose full path contains this text
             (case-insensitive), or None to run everything
+        explicit: Directories to prepend to the module search path, or None
 
     Returns:
         A list of TestResult, one per leaf test executed.
@@ -319,11 +328,11 @@ def run_file(
     module_name = test_file.stem
     test_file_dir = str(test_file.parent.resolve())
 
-    menai = _make_menai(test_file_dir)
+    menai = _make_menai(test_file_dir, explicit or [])
     nodes = _load_test_module(menai, module_name)
 
     results: list[TestResult] = []
-    _run_tree(nodes, module_name, test_file_dir, name_filter, results)
+    _run_tree(nodes, module_name, test_file_dir, name_filter, results, explicit or [])
     return results
 
 
@@ -331,12 +340,13 @@ def _run_file(
     test_file: Path,
     name_filter: str | None,
     verbose: bool,
+    explicit: list[str],
 ) -> RunStats:
     """Discover, execute, and report all tests in a single test file."""
     print(f"\n{test_file}")
 
     try:
-        results = run_file(test_file, name_filter)
+        results = run_file(test_file, name_filter, explicit)
 
     except (MenaiError, ValueError) as exc:
         print(f"  ERROR loading module: {exc}")
@@ -381,10 +391,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s menai_modules/            # run all tests under menai_modules/
-  %(prog)s menai_modules/json-decode.test.menai  # run a single file
-  %(prog)s menai_modules/ --filter "parse-string"  # filter by name
-  %(prog)s menai_modules/ --verbose  # show passing tests too
+  %(prog)s src/menai/stdlib/            # run all standard library tests
+  %(prog)s src/menai/stdlib/json-decode.test.menai  # run a single file
+  %(prog)s src/menai/stdlib/ --filter "parse-string"  # filter by name
+  %(prog)s src/menai/stdlib/ --verbose  # show passing tests too
 """,
     )
     parser.add_argument(
@@ -405,6 +415,14 @@ Examples:
         action="store_true",
         help="Show passing tests as well as failures",
     )
+    parser.add_argument(
+        "--module-path",
+        action="append",
+        default=[],
+        metavar="DIR",
+        dest="module_path",
+        help="Prepend DIR to the module search path (repeatable)",
+    )
 
     args = parser.parse_args()
 
@@ -416,7 +434,7 @@ Examples:
 
     total_stats = RunStats()
     for test_file in test_files:
-        stats = _run_file(test_file, args.name_filter, args.verbose)
+        stats = _run_file(test_file, args.name_filter, args.verbose, args.module_path)
         total_stats.add(stats)
 
     print(f"\n{'='*60}")

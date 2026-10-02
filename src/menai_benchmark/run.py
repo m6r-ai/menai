@@ -15,12 +15,9 @@ from menai_benchmark import (
     BenchmarkSuite,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
 _BENCHMARK_DIR = Path(__file__).resolve().parent
 
 _SUITES_DIR = _BENCHMARK_DIR / "suites"
-_MENAI_MODULES_DIR = _REPO_ROOT / "menai_modules"
 
 
 def _use_color(no_color: bool, color: bool) -> bool:
@@ -218,6 +215,14 @@ def build_parser() -> argparse.ArgumentParser:
         dest="color",
         help="Force ANSI colour output even when stdout is not a terminal.",
     )
+    parser.add_argument(
+        "--module-path",
+        action="append",
+        default=[],
+        metavar="DIR",
+        dest="module_path",
+        help="Prepend DIR to the module search path (repeatable).",
+    )
     return parser
 
 
@@ -232,6 +237,7 @@ def run_suite(
     profile_top: int,
     annotate: bool,
     color: bool,
+    module_path: list[str],
 ) -> None:
     """
     Instantiate, run, and report a single benchmark suite.
@@ -250,6 +256,8 @@ def run_suite(
         profile_top:  Number of top functions to show per case in the profile output.
         annotate:     If ``True``, print the annotated disassembly per case.
         color:        Whether the profile and annotated reports emit ANSI colour.
+        module_path:  Directories to prepend to the module search path, ahead of
+                      the suite directory and the standard library.
     """
     suite = suite_class()
     cases = suite.cases()
@@ -271,8 +279,12 @@ def run_suite(
         for case in cases:
             case.iterations = iterations
 
-    module_path = [str(suite_dir), str(_MENAI_MODULES_DIR)]
-    menai = Menai(module_path=module_path)
+    search_path: list[str] = []
+    for directory in list(module_path) + Menai.build_module_path(str(suite_dir)):
+        if directory not in search_path:
+            search_path.append(directory)
+
+    menai = Menai(module_path=search_path)
 
     runner = BenchmarkRunner(suite, cases, menai, opcodes=opcodes, profile=profile or annotate)
     results, profile_results, trace_results = runner.run()
@@ -344,6 +356,7 @@ def main() -> None:
             profile_top=args.profile_top,
             annotate=args.annotate,
             color=color,
+            module_path=args.module_path,
         )
 
     if len(selected) > 1:

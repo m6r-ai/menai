@@ -32,10 +32,11 @@ The two modes are complementary: cProfile covers the compiler (which is
 pure Python) but sees VM execution as a single opaque C frame, while opcode
 profiling covers the VM runtime but not the compiler.
 
-Module paths are resolved the same way as the disassembler and the pipeline
-runner: the file's own directory first, then the current working directory.
-When reading from stdin there is no file directory, so the current working
-directory is used.
+Modules are resolved from a search path composed of --module-path directories
+(highest precedence), then the file's own directory and the MENAI_PATH
+application library directories, then the standard library.  When reading from
+stdin there is no file directory, so the current working directory is used in
+its place.
 
 Usage:
     menai-eval <file.menai>
@@ -78,19 +79,21 @@ _COUNT_COL = 15
 _PCT_COL = 12
 
 
-def build_module_path(source_path: Path | None) -> list[str]:
+def build_module_path(source_path: Path | None, explicit: list[str]) -> list[str]:
     """
     Build a deduplicated module search path for the given source file.
 
-    Mirrors the strategy used by the disassembler and the pipeline runner:
-      1. The file's own directory (so bare module names resolve next to the file)
-      2. The current working directory (so project-root-relative import paths work)
+    Composes the path from its layers, highest precedence first:
+      1. Explicit directories from --module-path (in the order given)
+      2. Application library directories (MENAI_PATH, then the file's own
+         directory, then the current working directory)
+      3. The standard library
 
-    When source_path is None (stdin input) only the current working directory
-    is used.
+    When source_path is None (stdin input) the file's own directory is absent and
+    the current working directory is used.
     """
-    cwd = str(Path.cwd())
-    candidates = [str(source_path.parent.absolute()), cwd] if source_path is not None else [cwd]
+    source_dir = str(source_path.parent.absolute()) if source_path is not None else str(Path.cwd())
+    candidates = list(explicit) + Menai.build_module_path(source_dir)
 
     module_path: list[str] = []
     for directory in candidates:
@@ -450,6 +453,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Render a string result as its literal contents instead of its quoted, escaped form",
     )
+    parser.add_argument(
+        "--module-path",
+        action="append",
+        default=[],
+        metavar="DIR",
+        dest="module_path",
+        help="Prepend DIR to the module search path (repeatable)",
+    )
     return parser
 
 
@@ -465,7 +476,7 @@ def main() -> int:
     color = use_color(args.no_color, args.color)
 
     source, source_path, name = read_source(args.input)
-    module_path = build_module_path(source_path)
+    module_path = build_module_path(source_path, args.module_path)
 
     print("Initialising Menai (compiling prelude)...", file=sys.stderr)
     menai = Menai(module_path=module_path)

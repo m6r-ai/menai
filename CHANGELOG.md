@@ -2,6 +2,14 @@
 
 ## v0.7.0 (2026-10-01)
 
+New features:
+
+- The standard library is now packaged with Menai and available in a wheel install.
+  It lives in `src/menai/stdlib/` and can be read by an agent with
+  `Menai.stdlib_source`.
+- The module search path is now composed from explicit `--module-path` directories,
+  the `MENAI_PATH` environment variable, and the source file's directory.
+
 ## v0.6.0 (2026-10-01)
 
 New features:

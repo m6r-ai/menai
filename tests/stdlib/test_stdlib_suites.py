@@ -4,12 +4,13 @@ from pathlib import Path
 
 import pytest
 
+from menai import Menai
 from menai_test.test_run import run_file
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_MODULES_DIR = _REPO_ROOT / "menai_modules"
+_STDLIB_DIR = Menai.stdlib_path()
+assert _STDLIB_DIR is not None
 
-_TEST_FILES = sorted(_MODULES_DIR.glob("*.test.menai"))
+_TEST_FILES = sorted(_STDLIB_DIR.glob("*.test.menai"))
 
 
 @pytest.mark.parametrize("test_file", _TEST_FILES, ids=lambda p: p.stem)

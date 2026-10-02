@@ -8,16 +8,16 @@ and reports them with full isolation between tests.
 
 ```bash
 # Run all tests under a directory (recursive)
-menai-test menai_modules/
+menai-test src/menai/stdlib/
 
 # Run a single test file
-menai-test menai_modules/json-decode.test.menai
+menai-test src/menai/stdlib/json-decode.test.menai
 
 # Show passing tests as well as failures
-menai-test menai_modules/ --verbose
+menai-test src/menai/stdlib/ --verbose
 
 # Filter by name (case-insensitive substring match on full path)
-menai-test menai_modules/ --filter "parse-string"
+menai-test src/menai/stdlib/ --filter "parse-string"
 ```
 
 The runner exits with code 0 if all tests pass, non-zero if any fail.
@@ -143,7 +143,7 @@ Exports:
 ## Output format
 
 ```
-menai_modules/json-decode.test.menai
+src/menai/stdlib/json-decode.test.menai
   ✓  objects > empty object
   ✓  objects > single key
   ✗  strings > escapes > unicode

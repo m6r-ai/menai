@@ -189,6 +189,10 @@ def main() -> int:
     parser.add_argument('--trace', '-t', action='store_true', help='Also generate function call trace')
     parser.add_argument('--no-color', action='store_true', help='Disable ANSI colour output')
     parser.add_argument('--color', '-c', action='store_true', help='Force ANSI colour output')
+    parser.add_argument(
+        '--module-path', action='append', default=[], metavar='DIR', dest='module_path',
+        help='Prepend DIR to the module search path (repeatable)',
+    )
 
     args = parser.parse_args()
     color = (not args.no_color and not args.output and sys.stdout.isatty()) or args.color
@@ -236,16 +240,12 @@ def main() -> int:
         # Compile
         print(f"Compiling: {args.file}", file=sys.stderr)
 
-        # Build a deduplicated module search path:
-        #   1. The file's own directory (for bare imports like "calendar" when
-        #      the source file lives alongside its modules)
-        #   2. The current working directory (so that import paths written
-        #      relative to the project root, e.g. "tools/planner/calendar",
-        #      resolve correctly when the tool is run from the root)
+        # Build a deduplicated module search path: explicit --module-path
+        # directories first, then the file's own directory and MENAI_PATH
+        # application libraries, then the standard library.
         file_dir = str(source_path.parent.absolute())
-        cwd = str(Path.cwd())
         module_path: list[str] = []
-        for d in [file_dir, cwd]:
+        for d in list(args.module_path) + Menai.build_module_path(file_dir):
             if d not in module_path:
                 module_path.append(d)
 

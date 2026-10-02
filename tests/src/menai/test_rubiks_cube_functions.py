@@ -26,12 +26,11 @@ _SCRAMBLES: list[tuple[str, list[str]]] = [
 ]
 
 _SUITE_DIR = "src/menai_benchmark/suites/rubiks_list"
-_MODULES_DIR = "menai_modules"
 
 
 def _menai_with_rubiks() -> Menai:
     """Create a Menai instance with the rubiks_cube module on the path."""
-    return Menai(module_path=[_SUITE_DIR, _MODULES_DIR])
+    return Menai(module_path=[_SUITE_DIR] + Menai.build_module_path())
 
 
 def _rubiks_expr(body: str) -> str:

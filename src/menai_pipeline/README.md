@@ -107,9 +107,10 @@ is a function that accepts `inputs` and returns a dict:
       (dict "result" (string-upcase content)))))
 ```
 
-Module names are resolved relative to the pipeline file's directory first, then the
-global `menai_modules/` directory.  Subdirectory paths like `"lib/helpers"` are
-supported.  Absolute paths and `../` navigation are not permitted.
+Module names are resolved from the pipeline file's directory, then the `MENAI_PATH`
+application library directories, then the installed standard library.  Subdirectory
+paths like `"lib/helpers"` are supported.  Absolute paths and `../` navigation are
+not permitted.
 
 ### Optimizer
 

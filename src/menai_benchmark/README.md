@@ -274,7 +274,7 @@ incompressible data, and long runs.  Inputs are generated fixtures
    (with any fixture bound) outside the timed loop and executes the pre-compiled
    bytecode inside it.
 4. Non-standard `.menai` modules go in the suite directory.  Standard-library
-   modules are resolved from `menai_modules/` and must not be copied into the
+   modules are resolved from the installed standard library and must not be copied into the
    suite, so that the benchmark always exercises the reference implementation.
 5. For binary inputs, generate the fixture bytes in the suite module from
    deterministic code and return them from the `fixture` callable (see

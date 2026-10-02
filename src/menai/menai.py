@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 import hashlib
+from importlib.resources import files
 from pathlib import Path
 import os
 
@@ -431,3 +432,91 @@ class Menai:
             List of directories in the module search path
         """
         return self._module_path
+
+    @staticmethod
+    def stdlib_path() -> Path | None:
+        """
+        Return the on-disk directory containing the standard library modules.
+
+        The standard library ships as package data inside the ``menai`` package
+        and is located through ``importlib.resources``.  When the package is
+        installed unpacked (the normal case for a wheel) the resource directory
+        is a real filesystem path and is returned here.  Returns None when there
+        is no filesystem location, in which case ``stdlib_source`` is still
+        usable.
+
+        Returns:
+            Path to the standard library directory, or None if there is none
+        """
+        resource = files("menai") / "stdlib"
+        try:
+            return Path(str(resource))
+
+        except TypeError:
+            return None
+
+    @staticmethod
+    def stdlib_source(module_name: str) -> str:
+        """
+        Return the source text of a standard library module.
+
+        This is the primitive for reading the standard library: it works for
+        every installation shape, including ones where the package is not
+        unpacked to a real directory, because ``importlib.resources`` can read
+        a resource without it corresponding to a file.
+
+        Args:
+            module_name: Standard library module name (e.g. "json-decode")
+
+        Returns:
+            The module's source text
+        """
+        return (files("menai") / "stdlib" / f"{module_name}.menai").read_text()
+
+    @staticmethod
+    def build_module_path(source_dir: str | None = None) -> list[str]:
+        """
+        Compose the default module search path from its layers.
+
+        The path is composed in precedence order, highest first:
+
+          1. Application library directories from the MENAI_PATH environment
+             variable (a colon-separated list, like PATH)
+          2. The directory of the source file being compiled, when given
+          3. The standard library directory
+
+        Resolution is first-match-wins in this order, so an application library
+        may shadow a standard library module of the same name.  Empty MENAI_PATH
+        segments are ignored, and duplicate directories are removed while
+        preserving precedence.
+
+        This is the composition the tools use when no explicit path is given.
+        A caller that needs full control passes ``module_path`` to the
+        constructor instead, which is used verbatim.
+
+        Args:
+            source_dir: Directory of the source file being compiled, or None
+
+        Returns:
+            The composed module search path
+        """
+        candidates: list[str] = []
+
+        menai_path = os.environ.get("MENAI_PATH", "")
+        for segment in menai_path.split(os.pathsep):
+            if segment:
+                candidates.append(segment)
+
+        if source_dir is not None:
+            candidates.append(source_dir)
+
+        stdlib_dir = Menai.stdlib_path()
+        if stdlib_dir is not None:
+            candidates.append(str(stdlib_dir))
+
+        module_path: list[str] = []
+        for directory in candidates:
+            if directory not in module_path:
+                module_path.append(directory)
+
+        return module_path

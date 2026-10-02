@@ -22,7 +22,7 @@ and has zero dependencies on Humbug.
 
 ## What you can do with it
 
-Menai has a standard library in [`menai_modules/`](menai_modules/) is
+Menai has a standard library, shipped with the package under `src/menai/stdlib/`,
 written entirely in Menai. It implements useful binary and text processing features:
 
 | Module | What it does |
@@ -212,11 +212,11 @@ make test
 ```text
 menai/
 ├── docs/                       # language manual and design records
-├── menai_modules/              # standard library (.menai files)
 ├── pyproject.toml              # Python package configuration
 ├── setup.py                    # C VM extension build (platform-specific flags)
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
+│   │   └── stdlib/             # standard library (.menai files)
 │   ├── menai_benchmark/        # performance benchmarking tool
 │   ├── menai_check/            # parenthesis balance checker
 │   ├── menai_disassemble/      # bytecode disassembler
