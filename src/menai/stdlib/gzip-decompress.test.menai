@@ -22,6 +22,30 @@
                           (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff010800f7ff6162636465666768502aefae08000000"))))
                             (assert-equal (bytes->string r) "abcdefgh"))))))
 
+       ; The optional header fields are parsed and skipped, or verified.
+       (list "optional header fields"
+         (list
+           (expect-pass "skips FNAME"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b08080000000000ff6f7269672e74787400cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+                            (assert-equal (bytes->string r) "hello world"))))
+           (expect-pass "skips FCOMMENT"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b08100000000000ff61206e6f746500cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+                            (assert-equal (bytes->string r) "hello world"))))
+           (expect-pass "skips FEXTRA"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b08040000000000ff0600414202007879cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+                            (assert-equal (bytes->string r) "hello world"))))
+           (expect-pass "verifies FHCRC"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b08020000000000ff90c9cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+                            (assert-equal (bytes->string r) "hello world"))))
+           (expect-pass "handles FNAME and FHCRC together"
+                        (lambda ()
+                          (let ((r (decompress (string-hex->bytes "1f8b080a0000000000ff6f7269672e747874001a1ecb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+                            (assert-equal (bytes->string r) "hello world"))))))
+
        (list "errors"
          (list
            (expect-fail "rejects non-bytes argument"
@@ -40,22 +64,10 @@
                         (lambda ()
                           (decompress (string-hex->bytes "1f8b07000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
                         "not DEFLATE")
-           (expect-fail "rejects FEXTRA"
+           (expect-fail "rejects a bad FHCRC"
                         (lambda ()
-                          (decompress (string-hex->bytes "1f8b08040000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
-                        "FEXTRA")
-           (expect-fail "rejects FNAME"
-                        (lambda ()
-                          (decompress (string-hex->bytes "1f8b08080000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
-                        "FNAME")
-           (expect-fail "rejects FCOMMENT"
-                        (lambda ()
-                          (decompress (string-hex->bytes "1f8b08100000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
-                        "FCOMMENT")
-           (expect-fail "rejects FHCRC"
-                        (lambda ()
-                          (decompress (string-hex->bytes "1f8b08020000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000")))
-                        "FHCRC")
+                          (decompress (string-hex->bytes "1f8b08020000000000ff0000cb48cdc9c95728cf2fca49010085114a0d0b000000")))
+                        "header checksum mismatch")
            (expect-fail "rejects a checksum mismatch"
                         (lambda ()
                           (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0e0b000000")))

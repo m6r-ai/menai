@@ -1,0 +1,102 @@
+; tar-extract - extracts the contents of a tar archive.
+;
+; The entry metadata is produced by tar-entries; this module adds the content.
+;
+; Every export returns entry dicts in this shape, with the "content" field
+; filled in with the entry's bytes (or #none for entries that carry no data,
+; such as directories and symlinks):
+;
+;   (dict
+;     "name" <string>               ; entry name (ustar name and prefix joined, or a GNU/PAX override)
+;     "typeflag" <string>           ; "0" file, "5" directory, "2" symlink
+;     "mode" <integer>              ; permission bits
+;     "uid" <integer>
+;     "gid" <integer>
+;     "size" <integer>              ; size of the entry's data in bytes
+;     "mtime" <integer>
+;     "linkname" <string>           ; symlink target ("" when not a symlink)
+;     "uname" <string>
+;     "gname" <string>
+;     "is-directory" <boolean>      ; #t when the typeflag is "5"
+;     "data-offset" <integer>       ; absolute offset of the entry's data
+;     "content" <bytes> or #none)
+;
+; Both the POSIX ustar format and the GNU tar format are supported, including
+; GNU long names and PAX extended headers.  Supported entry types are regular
+; files ("0"), directories ("5"), and symbolic links ("2").  Any other type
+; raises a runtime error.
+
+(letrec
+  ((entries-lib (import "tar-entries"))
+
+   ; Fill in one entry's "content" field from the archive.  Only regular files
+   ; carry data; directories and symlinks have no content.
+   (with-content
+    (lambda (b entry)
+      (dict-with entry "content"
+                (if (string=? (dict-get entry "typeflag") "0")
+                    (let ((start (dict-get entry "data-offset")))
+                      (bytes-slice b start (integer+ start (dict-get entry "size"))))
+                    #none))))
+
+   ; Read the archive's entries and fill in every entry's content.
+   (read-entries
+    (lambda (b)
+      (if (bytes? b)
+          (map-list (lambda (e) (with-content b e))
+                    (dict-get ((:: entries-lib entries) b) "entries"))
+          (error "tar-extract: extract expects a bytes value"))))
+
+   ; Extract the whole archive.  Returns a dict with "entries" (a list of entry
+   ; dicts, in archive order, each with its "content" filled in) and "meta"
+   ; (the archive's "format" and "entry-count").
+   (extract
+    (lambda (b)
+      (if (bytes? b)
+          (let ((listed ((:: entries-lib entries) b)))
+            (dict
+              "entries" (map-list (lambda (e) (with-content b e))
+                                  (dict-get listed "entries"))
+              "meta" (dict-get listed "meta")))
+          (error "tar-extract: extract expects a bytes value"))))
+
+   ; The entries whose name equals `name`, with contents filled in, in archive
+   ; order.
+   (matching-entries
+    (lambda (b name)
+      (filter-list (lambda (e) (string=? (dict-get e "name") name))
+                   (read-entries b))))
+
+   ; Extract every entry whose name equals `name`.  Returns a list of matching
+   ; entry dicts, in archive order, each with its "content" filled in.  Returns
+   ; an empty list when no entry matches.
+   (extract-matching
+    (lambda (b name)
+      (if (string? name)
+          (matching-entries b name)
+          (error "tar-extract: extract-matching expects a string entry name"))))
+
+   ; Extract the single entry whose name equals `name`, with its "content"
+   ; filled in.  Raises if no entry has that name, and raises if more than one
+   ; entry has that name: tar permits duplicate names, so a match that is not
+   ; unique cannot be resolved.
+   (extract-entry
+    (lambda (b name)
+      (if (string? name)
+          (let ((matches (matching-entries b name)))
+            (if (list-null? matches)
+                (error (string-concat
+                         "tar-extract: no entry named \""
+                         name
+                         "\""))
+                (if (list-null? (list-rest matches))
+                    (list-first matches)
+                    (error (string-concat
+                             "tar-extract: entry name \""
+                             name
+                             "\" is ambiguous: "
+                             (integer->string (list-length matches))
+                             " entries match")))))
+          (error "tar-extract: extract-entry expects a string entry name")))))
+
+  (export extract extract-entry extract-matching))

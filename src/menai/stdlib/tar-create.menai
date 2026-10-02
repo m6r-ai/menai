@@ -1,0 +1,235 @@
+; tar-create — builds a POSIX ustar archive from a container description.
+;
+; A ustar archive is a sequence of 512-byte header blocks, each followed by the
+; entry's data zero-padded to a multiple of 512 bytes.  The archive ends with
+; two 512-byte zero blocks.  This module writes the POSIX ustar format: the
+; magic "ustar\0" and version "00", with the 155-byte prefix field used to
+; carry the leading directories of paths longer than 100 bytes.
+;
+; Numeric fields are written as zero-padded octal ASCII.  The header checksum is
+; the sum of all 512 header bytes with the checksum field taken as eight spaces,
+; written as six octal digits followed by NUL and space.
+;
+; Supported entry types are regular files ("0"), directories ("5"), and symbolic
+; links ("2").  Any other type raises.  Paths that do not fit the ustar name and
+; prefix fields (a total of 255 bytes, split at a "/") raise rather than falling
+; back to a GNU or PAX extension.
+
+(letrec
+  ((block-size 512)
+
+   ; A bytes value of `count` NUL bytes.
+   (nul-bytes
+    (lambda (count)
+      (list->bytes (map-list (lambda (i) 0) (range 0 count)))))
+
+   ; The two zero blocks that terminate every archive.
+   (end-marker (nul-bytes (integer* block-size 2)))
+
+   ; The ustar magic and version fields.
+   (magic (bytes-append-u8 (string->bytes "ustar") 0))
+   (version (string->bytes "00"))
+
+   ; Left-pad `text` with "0" to exactly `width` characters.
+   (zero-pad
+    (lambda (text width)
+      (string-concat
+        (list->string (map-list (lambda (i) "0")
+                                (range 0 (integer- width (string-length text)))))
+        text)))
+
+   ; A bytes value of `text` followed by NUL bytes, to exactly `width` bytes.
+   (pad-field
+    (lambda (text width)
+      (let ((b (string->bytes text)))
+        (bytes-concat b (nul-bytes (integer- width (bytes-length b)))))))
+
+   ; Format `value` as an octal ASCII field of exactly `width` bytes: the octal
+   ; digits zero-padded to width - 1, followed by a NUL byte.
+   (octal-field
+    (lambda (value width)
+      (bytes-append-u8 (string->bytes (zero-pad (integer->string value 8) (integer- width 1))) 0)))
+
+   ; Format the 8-byte checksum field: six octal digits, NUL, space.
+   (checksum-field
+    (lambda (value)
+      (bytes-concat (string->bytes (zero-pad (integer->string value 8) 6))
+                    (list->bytes (list 0 32)))))
+
+   ; Split a path into the 100-byte name field and the 155-byte prefix field.
+   ; When the path fits in 100 bytes the prefix is empty.  Otherwise the path is
+   ; split at a "/" so that the suffix fits in 100 bytes and the leading part
+   ; fits in 155.  Returns (list <name-string> <prefix-string>); raises when no
+   ; such split exists.
+   (split-path
+    (lambda (path)
+      (let ((path-bytes (string->bytes path)))
+        (if (integer<=? (bytes-length path-bytes) 100)
+            (list path "")
+            (letrec ((search (lambda (i)
+                               (if (integer<? i 0)
+                                   (error (string-concat
+                                            "tar-create: path too long for ustar: \"" path "\""))
+                                   (if (integer=? (bytes-nth path-bytes i) 47)
+                                       (let ((prefix (bytes-slice path-bytes 0 i))
+                                             (name (bytes-slice path-bytes (integer+ i 1)
+                                                                (bytes-length path-bytes))))
+                                         (if (and (integer<=? (bytes-length prefix) 155)
+                                                  (integer<=? (bytes-length name) 100)
+                                                  (integer>? (bytes-length name) 0))
+                                             (list (bytes->string name) (bytes->string prefix))
+                                             (search (integer- i 1))))
+                                       (search (integer- i 1)))))))
+              (search (integer- (bytes-length path-bytes) 1)))))))
+
+   ; Pad `data` with NUL bytes to the next multiple of 512.
+   (pad-data
+    (lambda (data)
+      (let ((remainder (integer% (bytes-length data) block-size)))
+        (if (integer=? remainder 0)
+            data
+            (bytes-concat data (nul-bytes (integer- block-size remainder)))))))
+
+   ; The bytes of an entry's content: the "content" field when it is bytes,
+   ; otherwise empty.
+   (entry-content
+    (lambda (entry)
+      (let ((content (dict-get entry "content")))
+        (if (bytes? content) content (bytes-concat)))))
+
+   ; The typeflag of an entry: "0" (regular), "5" (directory), or "2" (symlink).
+   ; Defaults to "5" when the name ends with "/", otherwise "0".
+   (entry-type
+    (lambda (entry)
+      (let ((typeflag (dict-get entry "typeflag")))
+        (if (string? typeflag)
+            typeflag
+            (if (string-suffix? (dict-get entry "name") "/") "5" "0")))))
+
+   ; The numeric value of an entry field, or `default` when absent or not an
+   ; integer.
+   (entry-number
+    (lambda (entry key default)
+      (let ((value (dict-get entry key)))
+        (if (integer? value) value default))))
+
+   ; The string value of an entry field, or "" when absent or not a string.
+   (entry-string
+    (lambda (entry key)
+      (let ((value (dict-get entry key)))
+        (if (string? value) value ""))))
+
+   ; The permission bits of an entry: the "mode" field when present, otherwise
+   ; #o755 for a directory and #o644 for anything else.
+   (entry-mode
+    (lambda (entry)
+      (let ((mode (dict-get entry "mode")))
+        (if (integer? mode)
+            mode
+            (if (string=? (entry-type entry) "5") #o755 #o644)))))
+
+   ; The header checksum: the sum of all 512 header bytes, with the checksum
+   ; field (offset 148, length 8) taken as eight spaces (0x20).
+   (header-checksum
+    (lambda (header)
+      (letrec ((loop (lambda (i acc)
+                       (if (integer=? i 512)
+                           acc
+                           (loop (integer+ i 1)
+                                 (integer+ acc
+                                          (if (and (integer>=? i 148) (integer<? i 156))
+                                              32
+                                              (bytes-nth header i))))))))
+        (loop 0 0))))
+
+   ; Build one entry's 512-byte header block.
+   (build-header
+    (lambda (entry)
+      (let ((typeflag (entry-type entry)))
+        (if (boolean-not (or (string=? typeflag "0")
+                             (or (string=? typeflag "5") (string=? typeflag "2"))))
+            (error (string-concat
+                     "tar-create: unsupported typeflag \"" typeflag
+                     "\" (only \"0\" (file), \"5\" (directory), and \"2\" (symlink) are supported)"))
+            (let ((split (split-path (dict-get entry "name"))))
+              (let ((content (entry-content entry)))
+                (let ((size (if (string=? typeflag "0") (bytes-length content) 0)))
+                  (let ((header
+                         (bytes-concat
+                           (pad-field (list-first split) 100)
+                           (octal-field (entry-mode entry) 8)
+                           (octal-field (entry-number entry "uid" 0) 8)
+                           (octal-field (entry-number entry "gid" 0) 8)
+                           (octal-field size 12)
+                           (octal-field (entry-number entry "mtime" 0) 12)
+                           (string->bytes "        ")
+                           (string->bytes typeflag)
+                           (pad-field (entry-string entry "linkname") 100)
+                           magic
+                           version
+                           (pad-field (entry-string entry "uname") 32)
+                           (pad-field (entry-string entry "gname") 32)
+                           (octal-field (entry-number entry "devmajor" 0) 8)
+                           (octal-field (entry-number entry "devminor" 0) 8)
+                           (pad-field (list-nth split 1) 155)
+                           (nul-bytes 12))))
+                    (bytes-concat
+                      (bytes-slice header 0 148)
+                      (checksum-field (header-checksum header))
+                      (bytes-slice header 156 512))))))))))
+
+   ; Build one entry's header block and padded data.
+   (build-entry
+    (lambda (entry)
+      (let ((typeflag (entry-type entry)))
+        (bytes-concat (build-header entry)
+                      (if (string=? typeflag "0")
+                          (pad-data (entry-content entry))
+                          (bytes-concat))))))
+
+   ; Build the whole archive body from a list of entries.
+   (build-entries
+    (lambda (entries)
+      (if (list-null? entries)
+          (bytes-concat)
+          (bytes-concat (build-entry (list-first entries))
+                        (build-entries (list-rest entries))))))
+
+   ; Build a tar archive from a dict describing it, in the shape documented at
+   ; the top of this module, and return a bytes value containing the archive.
+   ; It is the write side of tar-entries and tar-extract: reading back an
+   ; archive produced by create recovers the logical entries that were put in.
+   ; This is a content round-trip, not a byte round-trip: the archive is written
+   ; in a canonical layout, so it need not be byte-identical to any archive the
+   ; same entries came from.
+   ;
+   ; The input dict is:
+   ;
+   ;   (dict
+   ;     "entries" (list of entry dicts))
+   ;
+   ; Each entry dict uses these fields:
+   ;
+   ;   "name" <string>              ; required; a trailing "/" marks a directory
+   ;   "typeflag" <string>          ; optional; "0" file, "5" directory, "2" symlink
+   ;   "content" <bytes> or #none   ; optional; written only for regular files
+   ;   "linkname" <string>          ; optional; target of a symlink
+   ;   "mode" <integer>             ; optional; defaults to #o644 (files) or #o755 (directories)
+   ;   "mtime" <integer>            ; optional; defaults to 0
+   ;   "uid" <integer>              ; optional; defaults to 0
+   ;   "gid" <integer>              ; optional; defaults to 0
+   ;   "uname" <string>             ; optional; defaults to ""
+   ;   "gname" <string>             ; optional; defaults to ""
+   ;
+   ; The derived fields the readers report ("size", "is-directory") are
+   ; recomputed from the content and ignored if present on input.
+   (create
+    (lambda (container)
+      (if (dict? container)
+          (let ((entries (dict-get container "entries")))
+            (if (list? entries)
+                (bytes-concat (build-entries entries) end-marker)
+                (error "tar-create: \"entries\" must be a list")))
+          (error "tar-create: create expects a dict")))))
+
+  (export create))

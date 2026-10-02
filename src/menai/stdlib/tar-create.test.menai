@@ -1,0 +1,103 @@
+; Tests for tar-create.menai
+
+(let ((tar-create (import "tar-create"))
+      (tar-extract (import "tar-extract"))
+      (tar-entries (import "tar-entries"))
+      (t (import "menai_test")))
+  (let ((create (:: tar-create create))
+        (extract (:: tar-extract extract))
+        (extract-entry (:: tar-extract extract-entry))
+        (entries (:: tar-entries entries))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Round-trips through tar-extract
+        (list "round-trips"
+          (list
+            (expect-pass "empty archive"
+                         (lambda ()
+                           (let ((archive (create (dict "entries" (list)))))
+                             (assert-equal (list-length (dict-get (extract archive) "entries")) 0))))
+            (expect-pass "single file"
+                         (lambda ()
+                           (let ((archive (create (dict "entries"
+                                                        (list (dict "name" "hello.txt"
+                                                                    "content" (string->bytes "hello world")))))))
+                             (assert-equal (bytes->string (dict-get (extract-entry archive "hello.txt") "content"))
+                                           "hello world"))))
+            (expect-pass "nested path"
+                         (lambda ()
+                           (let ((archive (create (dict "entries"
+                                                        (list (dict "name" "a/b/c.txt"
+                                                                    "content" (string->bytes "deep")))))))
+                             (assert-equal (bytes->string (dict-get (extract-entry archive "a/b/c.txt") "content"))
+                                           "deep"))))
+            (expect-pass "directory entry"
+                         (lambda ()
+                           (let ((archive (create (dict "entries" (list (dict "name" "dir/"))))))
+                             (assert-equal (dict-get (extract-entry archive "dir/") "is-directory") #t))))
+            (expect-pass "symlink entry"
+                         (lambda ()
+                           (let ((archive (create (dict "entries"
+                                                        (list (dict "name" "link"
+                                                                    "typeflag" "2"
+                                                                    "linkname" "target.txt"))))))
+                             (let ((entry (extract-entry archive "link")))
+                               (assert-equal (list (dict-get entry "linkname") (dict-get entry "content"))
+                                             (list "target.txt" #none))))))
+            (expect-pass "multiple entries keep order"
+                         (lambda ()
+                           (let ((archive (create (dict "entries"
+                                                        (list (dict "name" "one" "content" (string->bytes "1"))
+                                                              (dict "name" "two" "content" (string->bytes "2"))
+                                                              (dict "name" "three" "content" (string->bytes "3")))))))
+                             (assert-equal (map-list (lambda (e) (dict-get e "name"))
+                                                     (dict-get (entries archive) "entries"))
+                                           (list "one" "two" "three")))))))
+
+        ; The archive is block-aligned and terminated by two zero blocks.
+        (list "layout"
+          (list
+            (expect-pass "archive length is a multiple of 512"
+                         (lambda ()
+                           (let ((archive (create (dict "entries"
+                                                        (list (dict "name" "x" "content" (string->bytes "hello")))))))
+                             (assert-equal (integer% (bytes-length archive) 512) 0))))
+            (expect-pass "archive ends with two zero blocks"
+                         (lambda ()
+                           (let ((archive (create (dict "entries"
+                                                        (list (dict "name" "x" "content" (string->bytes "hello")))))))
+                             (let ((len (bytes-length archive)))
+                               (assert-equal (bytes-slice archive (integer- len 1024) len)
+                                             (list->bytes (map-list (lambda (i) 0) (range 0 1024))))))))
+            (expect-pass "header carries the ustar magic"
+                         (lambda ()
+                           (let ((archive (create (dict "entries" (list (dict "name" "x"))))))
+                             (assert-equal (bytes-slice archive 257 265)
+                                           (string-hex->bytes "7573746172003030")))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-dict argument"
+                         (lambda () (create "not a dict"))
+                         "expects a dict")
+            (expect-fail "rejects a non-list entries field"
+                         (lambda () (create (dict "entries" "nope")))
+                         "must be a list")
+            (expect-fail "rejects an unsupported typeflag"
+                         (lambda ()
+                           (create (dict "entries"
+                                         (list (dict "name" "x" "typeflag" "1")))))
+                         "unsupported typeflag")
+            (expect-fail "rejects a path too long for ustar"
+                         (lambda ()
+                           (create (dict "entries"
+                                         (list (dict "name" (string-concat
+                                                              (list->string (map-list (lambda (i) "a") (range 0 300)))
+                                                              "/file"))))))
+                         "too long for ustar"))))))
+
+      (export tests))))

@@ -1,6 +1,6 @@
 # Change log for Menai
 
-## v0.7.0 (2026-10-01)
+## v0.7.0 (2026-10-02)
 
 New features:
 
@@ -10,7 +10,12 @@ New features:
 - The module search path is now composed from explicit `--module-path` directories,
   the `MENAI_PATH` environment variable, and the source file's directory.
 - Added `extract-entry` and `extract-matches` operations to `zip-extract`.
-- Added 'gzip-compress` and `gzip-decompress` modules to the standard library.
+- Added `gzip-compress` and `gzip-decompress` modules to the standard library.
+  `gzip-decompress` parses and skips the optional FEXTRA, FNAME, and FCOMMENT
+  header fields, and verifies FHCRC when present.
+- Added `tar-create`, `tar-entries`, and `tar-extract` modules to the standard library.
+  The readers accept both the POSIX ustar and GNU tar formats, including GNU long
+  names and PAX extended headers.
 
 ## v0.6.0 (2026-10-01)
 

@@ -8,22 +8,35 @@
 ;   - a 4-byte little-endian modification time (MTIME).
 ;   - a 1-byte extra flags field (XFL).
 ;   - a 1-byte operating system field (OS).
+;   - the optional header fields selected by FLG, in order:
+;       FEXTRA   (FLG bit 2) — a 2-byte little-endian length followed by that
+;                              many bytes of subfield data.
+;       FNAME    (FLG bit 3) — the original filename, NUL-terminated.
+;       FCOMMENT (FLG bit 4) — a comment, NUL-terminated.
+;       FHCRC    (FLG bit 1) — a 2-byte little-endian CRC-16 of the header so
+;                              far (the low 16 bits of the CRC-32).
 ;   - the DEFLATE data (handed to deflate-decompress).
 ;   - a 4-byte little-endian CRC-32 of the uncompressed data.
 ;   - a 4-byte little-endian ISIZE: the uncompressed size modulo 2^32.
 ;
-; The magic number and compression method are verified.  The CRC-32 trailer is
+; The magic number and compression method are verified.  FEXTRA, FNAME, and
+; FCOMMENT are parsed and skipped: they carry metadata that does not affect the
+; decompressed data.  FHCRC, when present, is verified.  The CRC-32 trailer is
 ; verified against the decompressed data, and ISIZE is verified against the
 ; decompressed size modulo 2^32.
 ;
-; Optional header fields (FEXTRA, FNAME, FCOMMENT, FHCRC) are not supported and
-; raise an error, mirroring how zlib-decompress rejects preset dictionaries
-; rather than parsing them.
+; A gzip stream may be followed by more data (RFC 1952 permits concatenated
+; members); only the first member is decompressed.
 
 (letrec
   ((deflate-lib (import "deflate-decompress"))
 
-   (check-header
+   ; The offset just past the fixed 10-byte header (magic, CM, FLG, MTIME,
+   ; XFL, OS).
+   (header-size 10)
+
+   ; Verify the fixed header fields and return the FLG byte.
+   (check-fixed-header
     (lambda (b)
       (if (integer!=? (bytes-nth b 0) #x1f)
           (error "Not a gzip stream: bad magic number")
@@ -34,28 +47,65 @@
                            "Unsupported gzip stream: compression method "
                            (integer->string (bytes-nth b 2))
                            " is not DEFLATE (8)"))
-                  (let ((flg (bytes-nth b 3)))
-                    (if (integer!=? (integer-bit-and flg #x04) 0)
-                        (error "Unsupported gzip stream: FEXTRA is not supported")
-                        (if (integer!=? (integer-bit-and flg #x08) 0)
-                            (error "Unsupported gzip stream: FNAME is not supported")
-                            (if (integer!=? (integer-bit-and flg #x10) 0)
-                                (error "Unsupported gzip stream: FCOMMENT is not supported")
-                                (if (integer!=? (integer-bit-and flg #x02) 0)
-                                    (error "Unsupported gzip stream: FHCRC is not supported")
-                                    #t))))))))))
+                  (bytes-nth b 3))))))
 
-   ; Decompress a bytes value containing a complete gzip stream (10-byte
-   ; header, DEFLATE data, 8-byte CRC-32/ISIZE trailer) and return the
+   ; The offset of the first byte after a NUL-terminated string starting at
+   ; `pos`.  Raises if no NUL is found before the end of `b`.
+   (skip-cstring
+    (lambda (b pos)
+      (if (integer>=? pos (bytes-length b))
+          (error "Malformed gzip stream: unterminated string in header")
+          (if (integer=? (bytes-nth b pos) 0)
+              (integer+ pos 1)
+              (skip-cstring b (integer+ pos 1))))))
+
+   ; The offset of the DEFLATE data, after the optional header fields selected
+   ; by `flg`.  FEXTRA, FNAME, and FCOMMENT are skipped; FHCRC is verified
+   ; against the header bytes that precede it.
+   (skip-optional-fields
+    (lambda (b flg)
+      (let* ((after-extra
+              (if (integer=? (integer-bit-and flg #x04) 0)
+                  header-size
+                  (if (integer>? (integer+ header-size 2) (bytes-length b))
+                      (error "Malformed gzip stream: truncated FEXTRA length")
+                      (let ((len (bytes-read-u16-le b header-size)))
+                        (if (integer>? (integer+ header-size 2 len) (bytes-length b))
+                            (error "Malformed gzip stream: truncated FEXTRA data")
+                            (integer+ header-size 2 len))))))
+             (after-name
+              (if (integer=? (integer-bit-and flg #x08) 0)
+                  after-extra
+                  (skip-cstring b after-extra)))
+             (after-comment
+              (if (integer=? (integer-bit-and flg #x10) 0)
+                  after-name
+                  (skip-cstring b after-name))))
+        (if (integer=? (integer-bit-and flg #x02) 0)
+            after-comment
+            (if (integer>? (integer+ after-comment 2) (bytes-length b))
+                (error "Malformed gzip stream: truncated FHCRC")
+                (let ((stored (bytes-read-u16-le b after-comment))
+                      (computed (integer-bit-and (bytes-crc32 (bytes-slice b 0 after-comment)) #xffff)))
+                  (if (integer!=? stored computed)
+                      (error (string-concat
+                               "gzip stream header checksum mismatch: expected "
+                               (integer->string stored)
+                               " but computed "
+                               (integer->string computed)))
+                      (integer+ after-comment 2))))))))
+
+   ; Decompress a bytes value containing a gzip stream and return the
    ; decompressed bytes.
    (decompress
     (lambda (b)
       (if (bytes? b)
           (if (integer<? (bytes-length b) 18)
               (error "Not a gzip stream: too short")
-              (if (check-header b)
+              (let ((flg (check-fixed-header b)))
+                (let ((data-start (skip-optional-fields b flg)))
                   (let ((decompress (:: deflate-lib decompress)))
-                    (let ((data (decompress (bytes-slice b 10 (integer- (bytes-length b) 8)))))
+                    (let ((data (decompress (bytes-slice b data-start (integer- (bytes-length b) 8)))))
                       (let ((expected-crc (bytes-read-u32-le b (integer- (bytes-length b) 8)))
                             (actual-crc (bytes-crc32 data))
                             (expected-size (bytes-read-u32-le b (integer- (bytes-length b) 4)))
@@ -72,8 +122,7 @@
                                          (integer->string expected-size)
                                          " but computed "
                                          (integer->string actual-size)))
-                                data)))))
-                  (error "Malformed gzip stream: header check failed")))
+                                data))))))))
           (error "gzip-decompress: decompress expects a bytes value")))))
 
   (export decompress))

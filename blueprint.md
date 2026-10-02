@@ -16,10 +16,11 @@ multi-byte integer primitives let a Menai module decode a binary file into a
 structured, queryable value — for example a BMP image into a dict of header
 fields plus a normalised pixel grid. The standard library ships decoders for JSON
 (`json-decode`), BMP (`bmp-decode`), PNG (`png-decode`), ZIP (`zip-entries`,
-`zip-extract`), zlib (`zlib-decompress`), and raw DEFLATE (`deflate-decompress`),
-with the matching encoders and compressors alongside them, and the pattern
-generalises to other formats. The host reads the file and binds it as a `bytes`
-value; Menai decodes it purely.
+`zip-extract`), tar (`tar-entries`, `tar-extract`), zlib (`zlib-decompress`),
+gzip (`gzip-decompress`), and raw DEFLATE (`deflate-decompress`), with the
+matching encoders and compressors alongside them, and the pattern generalises to
+other formats. The host reads the file and binds it as a `bytes` value; Menai
+decodes it purely.
 
 ## Why does it exist?
 
