@@ -7,17 +7,54 @@ language reference: the Menai AI tool (e.g. Humbug's ``menai_ai_tool.py``)
 fetches this text rather than maintaining its own copy, so the help can never
 drift out of sync with the language.
 
+The standard library listing in the module system section is generated at call
+time by scanning the shipped standard library, so it names every module that is
+actually present and cannot drift as modules are added or removed.
+
 The human-readable language manual lives in ``docs/`` and is kept consistent
 with this text.
 """
 
+from importlib.resources import files
+from pathlib import Path
+
 
 def get_help() -> str:
     """Return the Menai language reference text for AI agents."""
-    return _HELP_TEXT
+    return _HELP_TEXT_BEFORE_MODULES + _stdlib_modules_section() + _HELP_TEXT_AFTER_MODULES
 
 
-_HELP_TEXT = """# Menai Tool
+def _stdlib_modules_section() -> str:
+    """
+    Build the standard library module listing.
+
+    Each module is listed with the path to its source and the one-line
+    description from the first line of that source.  The path is resolved at
+    call time so it reflects however the ``menai`` package was installed.
+
+    Returns:
+        The rendered listing, ending in a newline
+    """
+    resource = files("menai") / "stdlib"
+    try:
+        directory = Path(str(resource))
+
+    except TypeError:
+        return "- (the standard library has no filesystem location in this installation)\n"
+
+    lines = []
+    for path in sorted(directory.glob("*.menai")):
+        if path.name.endswith(".test.menai"):
+            continue
+
+        first_line = path.read_text().split("\n", 1)[0]
+        description = first_line.removeprefix("; ").split(" — ", 1)[-1]
+        lines.append(f"- {path} — {description}")
+
+    return "\n".join(lines) + "\n"
+
+
+_HELP_TEXT_BEFORE_MODULES = """# Menai Tool
 Syntax: (operator arg1 arg2 ...)
 
 ## Introduction
@@ -454,8 +491,16 @@ Syntax: (operator arg1 arg2 ...)
 - A module file is also a valid program: compiled directly (not imported) it evaluates to a dict mapping each export name to its value
 - Module names can include subdirectories: (e.g. import "lib/helpers")
 - Modules are resolved from a search path: explicit --module-path directories, then MENAI_PATH application libraries and the source file's directory, then the standard library
-- The standard library (e.g. json-decode, png-decode, deflate-compress, zip-extract) ships with Menai and is always available; its source can be read to understand a module
+- The standard library ships with Menai and is always available; its source can be read to understand a module
 - An application library may shadow a standard library module of the same name
+
+### Standard library modules
+
+The standard library modules available in this installation, each with the path to its source:
+
+"""
+
+_HELP_TEXT_AFTER_MODULES = """
 
 ## Raising errors
 

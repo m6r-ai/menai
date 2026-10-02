@@ -1,14 +1,4 @@
-; deflate-compress module — raw DEFLATE compressor (RFC 1951).
-;
-; Exports: "compress" — takes a bytes value and returns a bytes value containing
-; a raw DEFLATE stream that decompresses back to the input.
-;
-; The optional second argument selects the block encoding:
-;   "auto"    — chooses the smallest of stored/fixed/dynamic (default)
-;   "stored"  — emit a stored (BTYPE = 00) block
-;   "fixed"   — emit a fixed Huffman (BTYPE = 01) block
-;   "dynamic" — emit a dynamic Huffman (BTYPE = 10) block
-; An unrecognised mode raises an error.
+; deflate-compress — raw DEFLATE compressor (RFC 1951).
 ;
 ; The compressor is the mirror of the inflate module: it emits all three DEFLATE
 ; block types, packs bits LSB-first within each byte, and terminates the stream
@@ -16,7 +6,9 @@
 ; window to find back-references; it does not attempt lazy matching.
 ;
 ; The bit writer is a pure state value threaded through every call:
+;
 ;   (writer <bytes> <0-7> <integer>)
+;
 ; `acc` holds the bits accumulated for the current output byte, and `bit` is how
 ; many of them are present (0-7).  Writing bits appends them above the existing
 ; ones; when eight have accumulated the byte is emitted and the accumulator is
@@ -663,6 +655,16 @@
                                (if (integer<? (bytes-length a) (bytes-length c)) a c))))
             (shortest (shortest stored fixed) dynamic))))))
 
+   ; Compress a bytes value into a raw DEFLATE stream that decompresses back to
+   ; the input.  The optional second argument selects the block encoding, as
+   ; documented at the top of this module.
+   ;
+   ; The optional second argument selects the block encoding:
+   ;
+   ;   "auto"    — chooses the smallest of stored/fixed/dynamic (default)
+   ;   "stored"  — emit a stored (BTYPE = 00) block
+   ;   "fixed"   — emit a fixed Huffman (BTYPE = 01) block
+   ;   "dynamic" — emit a dynamic Huffman (BTYPE = 10) block
    (compress
     (lambda (b . rest)
       (if (bytes? b)

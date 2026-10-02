@@ -1,32 +1,4 @@
-; zip-create module — builds a ZIP archive from a container description.
-;
-; Exports: "create" — takes a dict describing a ZIP archive and returns a bytes
-; value containing the archive.  It is the write side of zip-entries and
-; zip-extract: reading back an archive produced by create recovers the logical
-; entries that were put in.  This is a content round-trip, not a byte
-; round-trip: the archive is written in a canonical layout, so it need not be
-; byte-identical to any archive the same entries came from.
-;
-; The input dict has the same shape that zip-entries and zip-extract produce:
-;
-;   (dict
-;     "entries" (list of entry dicts)
-;     "meta"    (dict "comment" <string> or #none))
-;
-; Each entry dict uses these fields:
-;
-;   "name"        <string>          ; required; a trailing "/" marks a directory
-;   "compression" <integer>         ; optional; 0 = stored (default), 8 = deflate
-;   "content"     <bytes> or #none  ; optional; #none or absent means no data
-;
-; The derived fields the readers report ("crc32", "compressed-size",
-; "uncompressed-size", "local-offset", "data-offset", "is-directory") are
-; recomputed from the content and ignored if present on input.
-;
-; The archive is laid out in the standard way: every entry's local file header
-; and data first, then the central directory, then the end-of-central-directory
-; record.  Entries are written in the order given.  Directory entries (names
-; ending in "/") are written with no data and a zero CRC.
+; zip-create — builds a ZIP archive from a container description.
 ;
 ; Supported: stored (0) and deflate (8).  Any other compression method raises.
 
@@ -177,6 +149,34 @@
           (bytes-append-u16-le (bytes-concat) (bytes-length comment-bytes))
           comment-bytes))))
 
+   ; Build a ZIP archive from a dict describing it, in the shape documented at
+   ; the top of this module, and return a bytes value containing the archive.
+   ; It is the write side of zip-entries and zip-extract: reading back an
+   ; archive produced by create recovers the logical entries that were put in.
+   ; This is a content round-trip, not a byte round-trip: the archive is written
+   ; in a canonical layout, so it need not be byte-identical to any archive the
+   ; same entries came from.
+   ;
+   ; The input dict has the same shape that zip-entries and zip-extract produce:
+   ;
+   ;   (dict
+   ;     "entries" (list of entry dicts)
+   ;     "meta"    (dict "comment" <string> or #none))
+   ;
+   ; Each entry dict uses these fields:
+   ;
+   ;   "name"        <string>          ; required; a trailing "/" marks a directory
+   ;   "compression" <integer>         ; optional; 0 = stored (default), 8 = deflate
+   ;   "content"     <bytes> or #none  ; optional; #none or absent means no data
+   ;
+   ; The derived fields the readers report ("crc32", "compressed-size",
+   ; "uncompressed-size", "local-offset", "data-offset", "is-directory") are
+   ; recomputed from the content and ignored if present on input.
+   ;
+   ; The archive is laid out in the standard way: every entry's local file header
+   ; and data first, then the central directory, then the end-of-central-directory
+   ; record.  Entries are written in the order given.  Directory entries (names
+   ; ending in "/") are written with no data and a zero CRC.
    (create
     (lambda (container)
       (if (dict? container)

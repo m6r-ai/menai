@@ -1,10 +1,7 @@
-; zlib-decompress module — decompresses a zlib stream (RFC 1950).
-;
-; Exports: "decompress" — takes a bytes value containing a complete zlib stream
-; (2-byte header, DEFLATE data, 4-byte Adler-32 trailer) and returns the
-; decompressed bytes.
+; zlib-decompress — decompresses a zlib stream (RFC 1950).
 ;
 ; A zlib stream is:
+;
 ;   - CMF byte: bits 0-3 are the compression method (must be 8 = DEFLATE),
 ;     bits 4-7 are the window size exponent (CINFO).
 ;   - FLG byte: bits 0-4 are a check value, bit 5 is the preset-dictionary
@@ -45,6 +42,8 @@
                     (error "Unsupported zlib stream: preset dictionaries are not supported")
                     #t))))))
 
+   ; Decompress a bytes value containing a complete zlib stream (2-byte header,
+   ; DEFLATE data, 4-byte Adler-32 trailer) and return the decompressed bytes.
    (decompress
     (lambda (b)
       (if (bytes? b)

@@ -1,20 +1,4 @@
-; bmp-decode module — decodes uncompressed 24-bit and 32-bit BMP files.
-;
-; Exports: "decode" — takes a bytes value containing a BMP file and returns a
-; dict describing it:
-;
-;   (dict
-;     "header" (dict "file-size" ... "data-offset" ...
-;                    "dib-size" ... "width" ... "height" ... "planes" ...
-;                    "bpp" ... "compression" ... "image-size" ...
-;                    "x-ppm" ... "y-ppm" ... "colours-used" ... "colours-important" ...)
-;     "pixels" (vector of rows, top-down; each row is a vector of pixels;
-;               each pixel is a vector of channels)
-;     "meta" (dict "format" "bmp" "row-padding" ... "bottom-up" ...))
-;
-; The pixel grid is normalised: rows are ordered top-down regardless of the
-; file's bottom-up storage, and per-row padding is stripped.  Pixels are
-; (vector r g b) for 24-bit files and (vector r g b a) for 32-bit files.
+; bmp-decode — decodes uncompressed 24-bit and 32-bit BMP files.
 ;
 ; Only uncompressed files (compression = 0) with 24 or 32 bits per pixel are
 ; supported.  Anything else raises a runtime error.
@@ -105,6 +89,20 @@
                                (loop (integer+ y 1) (list-prepend acc row)))))))
           (loop 0 (list))))))
 
+   ; Decode a bytes value containing a BMP file into a dict describing it:
+   ;
+   ;   (dict
+   ;     "header" (dict "file-size" ... "data-offset" ...
+   ;                    "dib-size" ... "width" ... "height" ... "planes" ...
+   ;                    "bpp" ... "compression" ... "image-size" ...
+   ;                    "x-ppm" ... "y-ppm" ... "colours-used" ... "colours-important" ...)
+   ;     "pixels" (vector of rows, top-down; each row is a vector of pixels;
+   ;               each pixel is a vector of channels)
+   ;     "meta" (dict "format" "bmp" "row-padding" ... "bottom-up" ...))
+   ;
+   ; The pixel grid is normalised: rows are ordered top-down regardless of the
+   ; file's bottom-up storage, and per-row padding is stripped.  Pixels are
+   ; (vector r g b) for 24-bit files and (vector r g b a) for 32-bit files.
    (decode
     (lambda (b)
       (if (bytes? b)

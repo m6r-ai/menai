@@ -1,19 +1,9 @@
-; json-decode module — iterative (explicit stack) implementation.
+; json-decode — decodes JSON text into Menai values.
 ;
 ; Uses an explicit work stack to avoid call-stack overflow on deeply nested JSON.
 ; Each stack frame describes what to do when a sub-value is returned:
 ;   (list "array"  s acc)      - resume building an array after an element (acc is reversed)
 ;   (list "object" s d key)    - resume building an object after a value
-;
-; Exports: "decode" — takes a JSON string, returns the equivalent Menai value.
-;   JSON objects    -> dict
-;   JSON arrays     -> list
-;   JSON strings    -> string
-;   JSON integers   -> integer
-;   JSON floats     -> float
-;   JSON true/false -> #t / #f
-;   JSON null       -> #none
-; Raises a runtime error on malformed input.
 
 (letrec
   ((skip-ws
@@ -207,6 +197,20 @@
                                                 (error "Unexpected character in JSON"))))))))
                          (resume (list-first scalar-result) (list-nth scalar-result 1) stack)))))))))
 
+   ; Decode a JSON string into the equivalent Menai value: objects become
+   ; dicts, arrays become lists, and the JSON scalars map to their Menai
+   ; counterparts (true/false to #t/#f, null to #none).  Raises a runtime
+   ; error on malformed input.
+   ;
+   ; The JSON-to-value mapping is:
+   ;
+   ;   JSON objects    -> dict
+   ;   JSON arrays     -> list
+   ;   JSON strings    -> string
+   ;   JSON integers   -> integer
+   ;   JSON floats     -> float
+   ;   JSON true/false -> #t / #f
+   ;   JSON null       -> #none
    (decode
     (lambda (json-string)
       (dispatch json-string 0 (list)))))

@@ -1,23 +1,4 @@
-; png-encode module — encodes a decoded PNG description as a PNG file.
-;
-; Exports: "encode" — takes the dict that png-decode produces and returns a
-; bytes value containing a non-interlaced 8-bit PNG file.  It is the inverse of
-; png-decode's decode for truecolour images: for every value whose header
-; reports colour type 2 (truecolour) or 6 (truecolour + alpha),
-; (decode (encode v)) reproduces v.
-;
-; The input dict has the shape png-decode produces:
-;
-;   (dict
-;     "header" (dict "width" ... "height" ... "bit-depth" ... "colour-type" ...
-;                    "compression" ... "filter" ... "interlace" ...)
-;     "pixels" (vector of rows, top-down; each row a vector of pixels;
-;               each pixel a vector of channels)
-;     "meta"   (dict "format" "png" "channels" ...))
-;
-; Pixels are RGB (3 channels) or RGBA (4 channels).  The number of channels is
-; taken from "meta"; the emitted colour type is 2 for RGB and 6 for RGBA, and
-; the IHDR colour type is written to match.
+; png-encode — encodes a decoded PNG description as a PNG file.
 ;
 ; The decoder normalises every source colour type to RGB or RGBA, so an encoder
 ; cannot reconstruct a palette, greyscale, or greyscale+alpha file from the
@@ -119,6 +100,23 @@
             (loop 0 (list)))
           (error "png-encode: \"pixels\" must be a vector of rows"))))
 
+   ; Encode the dict that png-decode produces into a bytes value containing a
+   ; non-interlaced 8-bit PNG file.  It is the inverse of png-decode's decode
+   ; for truecolour images: for every value whose header reports colour type 2
+   ; (truecolour) or 6 (truecolour + alpha), (decode (encode v)) reproduces v.
+   ;
+   ; The input dict has the shape png-decode produces:
+   ;
+   ;   (dict
+   ;     "header" (dict "width" ... "height" ... "bit-depth" ... "colour-type" ...
+   ;                    "compression" ... "filter" ... "interlace" ...)
+   ;     "pixels" (vector of rows, top-down; each row a vector of pixels;
+   ;               each pixel a vector of channels)
+   ;     "meta"   (dict "format" "png" "channels" ...))
+   ;
+   ; Pixels are RGB (3 channels) or RGBA (4 channels).  The number of channels is
+   ; taken from "meta"; the emitted colour type is 2 for RGB and 6 for RGBA, and
+   ; the IHDR colour type is written to match.
    (encode
     (lambda (container)
       (if (dict? container)

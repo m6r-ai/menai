@@ -1,19 +1,4 @@
-; json-encode module — encodes a Menai value as JSON text.
-;
-; Exports: "encode" — takes a Menai value and returns a string containing the
-; equivalent JSON.  It is the inverse of json-decode's decode: for every value
-; that encode accepts, (decode (encode v)) reproduces v.
-;
-;   dict            -> JSON object (keys must be strings)
-;   list            -> JSON array
-;   string          -> JSON string
-;   integer         -> JSON integer
-;   float           -> JSON float
-;   #t / #f         -> JSON true / false
-;   #none           -> JSON null
-;
-; Values with no JSON representation (bytes, symbol, vector, set, complex, and
-; functions) raise a runtime error, as does a dict with a non-string key.
+; json-encode — encodes a Menai value as JSON text.
 ;
 ; The output is built as a list of string chunks and joined once with
 ; list->string, so encoding an n-element structure costs O(n) string copies
@@ -124,7 +109,22 @@
                                  (error "json-encode: dict keys must be strings")))))))
         (loop (dict-keys d) (list "{") #t))))
 
-   ; Encode any supported value to its JSON source text.
+   ; Encode a Menai value as a string containing the equivalent JSON.  It is
+   ; the inverse of json-decode's decode: for every value that encode accepts,
+   ; (decode (encode v)) reproduces v.
+   ;
+   ; The value-to-JSON mapping is:
+   ;
+   ;   dict            -> JSON object (keys must be strings)
+   ;   list            -> JSON array
+   ;   string          -> JSON string
+   ;   integer         -> JSON integer
+   ;   float           -> JSON float
+   ;   #t / #f         -> JSON true / false
+   ;   #none           -> JSON null
+   ;
+   ; Values with no JSON representation (bytes, symbol, vector, set, complex, and
+   ; functions) raise a runtime error, as does a dict with a non-string key.
    (encode
     (lambda (v)
       (match v

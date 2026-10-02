@@ -1,14 +1,7 @@
-; zlib-compress module — compresses bytes to a zlib stream (RFC 1950).
-;
-; Exports: "compress" — takes a bytes value and returns a bytes value containing
-; a complete zlib stream.  It is the inverse of zlib-decompress's decompress:
-; for every bytes value b, (decompress (compress b)) reproduces b.
-;
-; The optional second argument selects the DEFLATE block encoding and is passed
-; straight through to deflate-compress ("auto", "stored", "fixed", or
-; "dynamic"); it defaults to "auto".  It does not affect decompression.
+; zlib-compress — compresses bytes to a zlib stream (RFC 1950).
 ;
 ; A zlib stream is:
+;
 ;   - CMF byte: bits 0-3 are the compression method (8 = DEFLATE), bits 4-7 are
 ;     the window size exponent (CINFO).
 ;   - FLG byte: bits 0-4 are a check value, bit 5 is the preset-dictionary flag,
@@ -42,6 +35,13 @@
    ; The two-byte zlib header: CMF = 0x78, FLG = 0x9c.
    (header (string-hex->bytes "789c"))
 
+   ; Compress a bytes value into a complete zlib stream.  It is the inverse of
+   ; zlib-decompress's decompress: for every bytes value b,
+   ; (decompress (compress b)) reproduces b.
+   ;
+   ; The optional second argument selects the DEFLATE block encoding and is
+   ; passed straight through to deflate-compress ("auto", "stored", "fixed", or
+   ; "dynamic"); it defaults to "auto".  It does not affect decompression.
    (compress
     (lambda (b . rest)
       (if (bytes? b)

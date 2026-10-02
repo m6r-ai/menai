@@ -1,4 +1,4 @@
-; Menai test support module — injected by the test runner.
+; Menai test support — injected by the test runner.
 ;
 ; Provides:
 ;   assert-equal  — raises if two values are not equal (polymorphic)

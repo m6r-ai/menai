@@ -1,22 +1,4 @@
-; png-decode module — decodes non-interlaced 8-bit PNG files.
-;
-; Exports: "decode" — takes a bytes value containing a PNG file and returns a
-; dict describing it:
-;
-;   (dict
-;     "header" (dict "width" ... "height" ... "bit-depth" ... "colour-type" ...
-;                    "compression" ... "filter" ... "interlace" ...)
-;     "pixels" (vector of rows, top-down; each row is a vector of pixels;
-;               each pixel is a vector of channels)
-;     "meta" (dict "format" "png" "channels" ...))
-;
-; Pixels are normalised to RGB or RGBA regardless of the source colour type:
-;   - colour type 0 (greyscale) -> (vector g g g)
-;   - colour type 2 (truecolour) -> (vector r g b)
-;   - colour type 3 (palette) -> (vector r g b) or (vector r g b a)
-;   - colour type 4 (greyscale + alpha) -> (vector g g g a)
-;   - colour type 6 (truecolour + alpha) -> (vector r g b a)
-; The original colour type is preserved in the "header" dict.
+; png-decode — decodes non-interlaced 8-bit PNG files.
 ;
 ; A PNG file is a signature followed by a sequence of chunks.  IHDR carries the
 ; image dimensions and format; PLTE carries the palette (colour type 3); tRNS
@@ -256,6 +238,24 @@
                   4
                   3)))))
 
+   ; Decode a bytes value containing a PNG file into a dict describing it, in
+   ; the following form:
+   ;
+   ;   (dict
+   ;     "header" (dict "width" ... "height" ... "bit-depth" ... "colour-type" ...
+   ;                    "compression" ... "filter" ... "interlace" ...)
+   ;     "pixels" (vector of rows, top-down; each row is a vector of pixels;
+   ;               each pixel is a vector of channels)
+   ;     "meta" (dict "format" "png" "channels" ...))
+   ;
+   ; Pixels are normalised to RGB or RGBA regardless of the source colour type:
+   ;   - colour type 0 (greyscale) -> (vector g g g)
+   ;   - colour type 2 (truecolour) -> (vector r g b)
+   ;   - colour type 3 (palette) -> (vector r g b) or (vector r g b a)
+   ;   - colour type 4 (greyscale + alpha) -> (vector g g g a)
+   ;   - colour type 6 (truecolour + alpha) -> (vector r g b a)
+   ;
+   ; The original colour type is preserved in the "header" dict.
    (decode
     (lambda (b)
       (if (bytes? b)

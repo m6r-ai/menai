@@ -1,35 +1,4 @@
-; bmp-encode module — encodes a decoded BMP description as a BMP file.
-;
-; Exports: "encode" — takes the dict that bmp-decode produces and returns a
-; bytes value containing an uncompressed 24-bit or 32-bit BMP file.  It is the
-; inverse of bmp-decode's decode: for every value that encode accepts,
-; (decode (encode v)) reproduces v.
-;
-; The input dict has the shape bmp-decode produces:
-;
-;   (dict
-;     "header" (dict "file-size" ... "data-offset" ... "dib-size" ...
-;                    "width" ... "height" ... "planes" ... "bpp" ...
-;                    "compression" ... "image-size" ... "x-ppm" ... "y-ppm" ...
-;                    "colours-used" ... "colours-important" ...)
-;     "pixels" (vector of rows, top-down; each row a vector of pixels;
-;               each pixel a vector of channels)
-;     "meta"   (dict "format" "bmp" "row-padding" ... "bottom-up" ...))
-;
-; Pixels are (vector r g b) for 24-bit files and (vector r g b a) for 32-bit
-; files.  The pixel grid is top-down; the file is written bottom-up or top-down
-; according to "bottom-up", and the height is signed to match.
-;
-; The derived header fields are recomputed from the pixel data and the
-; descriptive fields are preserved:
-;
-;   recomputed: "file-size", "data-offset", "image-size"
-;   preserved:  "dib-size", "width", "height", "planes", "bpp", "compression",
-;               "x-ppm", "y-ppm", "colours-used", "colours-important"
-;
-; "width" and "height" are taken from the header and must match the pixel grid;
-; the written height is signed according to "bottom-up".  Only uncompressed
-; files with 24 or 32 bits per pixel are supported.
+; bmp-encode — encodes a decoded BMP description as a BMP file.
 
 (letrec
   ((signature (string->bytes "BM"))
@@ -136,6 +105,36 @@
         (bytes-append-u32-le (bytes-concat) (dict-get header "colours-used"))
         (bytes-append-u32-le (bytes-concat) (dict-get header "colours-important")))))
 
+   ; Encode the dict that bmp-decode produces into a bytes value containing an
+   ; uncompressed 24-bit or 32-bit BMP file.  It is the inverse of bmp-decode's
+   ; decode: for every value that encode accepts, (decode (encode v))
+   ; reproduces v.
+   ;
+   ; The input dict has the the following shape:
+   ;
+   ;   (dict
+   ;     "header" (dict "file-size" ... "data-offset" ... "dib-size" ...
+   ;                    "width" ... "height" ... "planes" ... "bpp" ...
+   ;                    "compression" ... "image-size" ... "x-ppm" ... "y-ppm" ...
+   ;                    "colours-used" ... "colours-important" ...)
+   ;     "pixels" (vector of rows, top-down; each row a vector of pixels;
+   ;               each pixel a vector of channels)
+   ;     "meta"   (dict "format" "bmp" "row-padding" ... "bottom-up" ...))
+   ;
+   ; Pixels are (vector r g b) for 24-bit files and (vector r g b a) for 32-bit
+   ; files.  The pixel grid is top-down; the file is written bottom-up or top-down
+   ; according to "bottom-up", and the height is signed to match.
+   ;
+   ; The derived header fields are recomputed from the pixel data and the
+   ; descriptive fields are preserved:
+   ;
+   ;   recomputed: "file-size", "data-offset", "image-size"
+   ;   preserved:  "dib-size", "width", "height", "planes", "bpp", "compression",
+   ;               "x-ppm", "y-ppm", "colours-used", "colours-important"
+   ;
+   ; "width" and "height" are taken from the header and must match the pixel grid;
+   ; the written height is signed according to "bottom-up".  Only uncompressed
+   ; files with 24 or 32 bits per pixel are supported.
    (encode
     (lambda (container)
       (if (dict? container)

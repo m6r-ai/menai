@@ -1,15 +1,11 @@
-; zip-extract module — extracts the contents of a ZIP archive.
+; zip-extract - extracts the contents of a ZIP archive.
 ;
-; Exports: "extract" — takes a bytes value containing a ZIP file and returns a
-; dict describing its entries with each entry's "content" field filled in with
-; the decompressed bytes (or #none for entries that carry no data, such as
-; directory entries):
+; The entry metadata is produced by zip-entries; this module adds the
+; decompressed contents.
 ;
-;   (dict
-;     "entries" (list of entry dicts, in central-directory order)
-;     "meta"    (dict "format" "zip" "entry-count" ... "comment" ...))
-;
-; Each entry dict is:
+; Every export returns entry dicts in this shape, with the "content" field
+; filled in with the decompressed bytes (or #none for entries that carry no
+; data, such as directory entries):
 ;
 ;   (dict
 ;     "name" <string>               ; entry name (UTF-8)
@@ -22,9 +18,8 @@
 ;     "is-directory" <boolean>      ; #t when the name ends with "/"
 ;     "content" <bytes> or #none)
 ;
-; The entry metadata is produced by zip-entries; this module adds the
-; decompressed contents.  The CRC-32 carried by each entry is verified against
-; the decompressed data.
+; The CRC-32 carried by each entry is verified against the decompressed data,
+; so a corrupt or mismatched entry raises rather than returning bad content.
 ;
 ; Supported: stored (method 0) and deflate (method 8) entries.  Any other
 ; compression method raises a runtime error.
@@ -62,6 +57,28 @@
                            " but computed "
                            (integer->string actual))))))))))
 
+   ; Fill in one entry's "content" field from the archive.  Directory entries
+   ; carry no data, so their content is #none.
+   (with-content
+    (lambda (b entry decompress)
+      (dict-with entry "content"
+                (if (dict-get entry "is-directory")
+                    #none
+                    (entry-content b entry decompress)))))
+
+   ; Read the archive's entries and decompress every one of them.
+   (read-entries
+    (lambda (b)
+      (if (bytes? b)
+          (let ((listed ((:: entries-lib entries) b)))
+            (let ((decompress (:: deflate-lib decompress)))
+              (map-list (lambda (e) (with-content b e decompress))
+                        (dict-get listed "entries"))))
+          (error "zip-extract: extract expects a bytes value"))))
+
+   ; Extract the whole archive.  Returns a dict with "entries" (a list of entry
+   ; dicts, in central-directory order, each with its "content" filled in) and
+   ; "meta" (the archive's "format", "entry-count", and "comment").
    (extract
     (lambda (b)
       (if (bytes? b)
@@ -69,13 +86,48 @@
             (let ((decompress (:: deflate-lib decompress)))
               (dict
                 "entries" (map-list
-                            (lambda (e)
-                              (dict-with e "content"
-                                        (if (dict-get e "is-directory")
-                                            #none
-                                            (entry-content b e decompress))))
+                            (lambda (e) (with-content b e decompress))
                             (dict-get listed "entries"))
                 "meta" (dict-get listed "meta"))))
-          (error "zip-extract: extract expects a bytes value")))))
+          (error "zip-extract: extract expects a bytes value"))))
 
-  (export extract))
+   ; The entries whose name equals `name`, with contents filled in, in
+   ; central-directory order.
+   (matching-entries
+    (lambda (b name)
+      (filter-list (lambda (e) (string=? (dict-get e "name") name))
+                   (read-entries b))))
+
+   ; Extract every entry whose name equals `name`.  Returns a list of matching
+   ; entry dicts, in central-directory order, each with its "content" filled in.
+   ; Returns an empty list when no entry matches.
+   (extract-matching
+    (lambda (b name)
+      (if (string? name)
+          (matching-entries b name)
+          (error "zip-extract: extract-matching expects a string entry name"))))
+
+   ; Extract the single entry whose name equals `name`, with its "content"
+   ; filled in.  Raises if no entry has that name, and raises if more than one
+   ; entry has that name: ZIP permits duplicate names, so a match that is not
+   ; unique cannot be resolved.
+   (extract-entry
+    (lambda (b name)
+      (if (string? name)
+          (let ((matches (matching-entries b name)))
+            (if (list-null? matches)
+                (error (string-concat
+                         "zip-extract: no entry named \""
+                         name
+                         "\""))
+                (if (list-null? (list-rest matches))
+                    (list-first matches)
+                    (error (string-concat
+                             "zip-extract: entry name \""
+                             name
+                             "\" is ambiguous: "
+                             (integer->string (list-length matches))
+                             " entries match")))))
+          (error "zip-extract: extract-entry expects a string entry name")))))
+
+  (export extract extract-entry extract-matching))

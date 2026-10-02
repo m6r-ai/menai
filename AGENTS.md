@@ -125,6 +125,37 @@ underlying modules with `python -m`; use the console scripts.
 - These and other style rules are enforced by the style checker pylint plugin (`tools/style_checker/`), which runs
   automatically as part of `python -m tools.code_checker`.
 
+### Module header comments
+
+A `.menai` module opens with a single comment block, then the code.  The block
+carries what applies to the module as a whole: a one-line summary, any framing,
+the shape of the values the module produces or consumes, and any module-wide
+constraints (supported inputs, what raises).  Keep it to things a caller or
+maintainer needs and cannot read directly off the code.
+
+The contract for each export belongs next to the export, as a comment immediately
+above its binding, not in the top block.  Documenting an export in two places
+invites the two copies to disagree.  When a module exports data with no enclosing
+lambda (a table, a constant), comment each exported binding individually.
+
+The result looks like this:
+
+```menai
+; module-name — one-line summary.
+;
+; Module-wide framing: what it is, the shape of the values it works with, and
+; any constraints.
+
+(letrec
+  ((helper ...)
+
+   ; What this export does, its arguments, and what it raises.
+   (exported-thing
+    (lambda ...)))
+
+  (export exported-thing))
+```
+
 ## YAGNI (You Aren't Gonna Need It)
 
 This project strongly follows the YAGNI principle.  If there is no clear reason for a feature, method, or helper to exist,

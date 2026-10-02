@@ -1,23 +1,24 @@
-; deflate-decompress module — raw DEFLATE decompressor (RFC 1951).
-;
-; Exports: "decompress" — takes a bytes value containing a raw DEFLATE stream and
-; returns a bytes value containing the decompressed data.
+; deflate-decompress — raw DEFLATE decompressor (RFC 1951).
 ;
 ; All three DEFLATE block types are supported: stored (BTYPE = 00), fixed
 ; Huffman (BTYPE = 01), and dynamic Huffman (BTYPE = 10).  Invalid block types
 ; (BTYPE = 11) are rejected.
 ;
 ; The bit reader is a pure state value threaded through every call:
+;
 ;   (reader <bytes> <byte-offset> <0-7>)
+;
 ; `bit` is the index of the next bit to read within byte `pos`, counted from
 ; the least-significant bit (DEFLATE is LSB-first within each byte).
 ;
 ; Decompressed output is carried as an output state value threaded through the
 ; decode:
+;
 ;   (output <reversed list of every appended bytes value>
 ;           <reversed list of bytes appended since the window was last refreshed>
 ;           <bytes: the most recent output, coalesced>
 ;           <integer: total bytes produced>)
+;
 ; Appending only prepends to `chunks` and `pending`, so it is O(1) regardless
 ; of how much output has already been produced.  `window` is a coalesced
 ; contiguous view of the most recent output and is refreshed lazily, only when
@@ -488,6 +489,8 @@
                       (list new-out state3)
                       (decode-blocks state3 new-out))))))))))
 
+   ; Decompress a bytes value containing a raw DEFLATE stream into the
+   ; decompressed data.
    (decompress
     (lambda (b)
       (if (bytes? b)

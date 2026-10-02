@@ -1,24 +1,4 @@
-; zip-entries module — reads the central directory of a ZIP archive.
-;
-; Exports: "entries" — takes a bytes value containing a ZIP file and returns a
-; dict describing its entries without decompressing them:
-;
-;   (dict
-;     "entries" (list of entry dicts, in central-directory order)
-;     "meta"    (dict "format" "zip" "entry-count" ... "comment" ...))
-;
-; Each entry dict is:
-;
-;   (dict
-;     "name" <string>               ; entry name (UTF-8)
-;     "compression" <integer>       ; 0 = stored, 8 = deflate
-;     "crc32" <integer>
-;     "compressed-size" <integer>
-;     "uncompressed-size" <integer>
-;     "local-offset" <integer>      ; offset of the entry's local file header
-;     "data-offset" <integer>       ; absolute offset of the entry's data
-;     "is-directory" <boolean>      ; #t when the name ends with "/"
-;     "content" <bytes> or #none)   ; always #none from this module
+; zip-entries — reads the central directory of a ZIP archive.
 ;
 ; The reader reads the End Of Central Directory record, then walks the central
 ; directory.  It does not scan local file headers from the front, because the
@@ -141,6 +121,27 @@
                  "entry-count" (list-length entries)
                  "comment" comment))))
 
+   ; Read a bytes value containing a ZIP file and return a dict describing its
+   ; entries without decompressing them.
+   ;
+   ; The result is a dict:
+   ;
+   ;   (dict
+   ;     "entries" (list of entry dicts, in central-directory order)
+   ;     "meta"    (dict "format" "zip" "entry-count" ... "comment" ...))
+   ;
+   ; Each entry dict is:
+   ;
+   ;   (dict
+   ;     "name" <string>               ; entry name (UTF-8)
+   ;     "compression" <integer>       ; 0 = stored, 8 = deflate
+   ;     "crc32" <integer>
+   ;     "compressed-size" <integer>
+   ;     "uncompressed-size" <integer>
+   ;     "local-offset" <integer>      ; offset of the entry's local file header
+   ;     "data-offset" <integer>       ; absolute offset of the entry's data
+   ;     "is-directory" <boolean>      ; #t when the name ends with "/"
+   ;     "content" <bytes> or #none)   ; always #none from this module
    (entries
     (lambda (b)
       (if (bytes? b)
