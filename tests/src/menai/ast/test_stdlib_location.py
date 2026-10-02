@@ -8,6 +8,7 @@ Tests cover:
 - Precedence and shadowing of application libraries over the standard library
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -68,7 +69,7 @@ class TestBuildModulePath:
 
     def test_menai_path_precedes_source_dir(self, monkeypatch):
         """MENAI_PATH directories precede the source file's directory."""
-        monkeypatch.setenv("MENAI_PATH", "/app/one:/app/two")
+        monkeypatch.setenv("MENAI_PATH", os.pathsep.join(["/app/one", "/app/two"]))
         path = Menai.build_module_path("/some/source/dir")
         assert path[0] == "/app/one"
         assert path[1] == "/app/two"
@@ -76,7 +77,7 @@ class TestBuildModulePath:
 
     def test_empty_menai_path_segments_are_ignored(self, monkeypatch):
         """Empty MENAI_PATH segments are omitted from the path."""
-        monkeypatch.setenv("MENAI_PATH", "/app/one::/app/two:")
+        monkeypatch.setenv("MENAI_PATH", os.pathsep.join(["/app/one", "", "/app/two", ""]))
         path = Menai.build_module_path()
         assert "/app/one" in path
         assert "/app/two" in path

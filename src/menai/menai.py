@@ -481,7 +481,8 @@ class Menai:
         The path is composed in precedence order, highest first:
 
           1. Application library directories from the MENAI_PATH environment
-             variable (a colon-separated list, like PATH)
+             variable (a list separated by the platform path separator, like
+             PATH)
           2. The directory of the source file being compiled, when given
           3. The standard library directory
 

@@ -80,11 +80,12 @@ The standard library is the outermost binding.
 Shadowing is resolved by search order, so the standard library is never consulted
 for a name an application library provides.
 
-**`MENAI_PATH` is a colon-separated list of directories**, like `PATH` and
-`PYTHONPATH`. Empty segments are ignored. It is the mechanism by which a host
-platform (such as Humbug) or a user injects application library directories
-without editing every tool invocation. It composes: a host sets it once and every
-Menai tool honours it.
+**`MENAI_PATH` is a path-separator-separated list of directories**, like `PATH`
+and `PYTHONPATH`. The separator is the platform's path separator (`:` on POSIX,
+`;` on Windows), so `MENAI_PATH` behaves exactly like `PATH` on each platform.
+Empty segments are ignored. It is the mechanism by which a host platform (such as
+Humbug) or a user injects application library directories without editing every
+tool invocation. It composes: a host sets it once and every Menai tool honours it.
 
 **Every tool exposes a repeatable `--module-path DIR` flag.** Each occurrence
 prepends a directory to the search path, ahead of the application layer and the

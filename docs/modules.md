@@ -101,8 +101,8 @@ The path is composed of three layers, in precedence order:
 1. **Explicit directories** — a `module_path` argument to `Menai`, or a
    `--module-path` flag on a tool. Highest precedence.
 2. **Application library directories** — the directories in the `MENAI_PATH`
-   environment variable (a colon-separated list, like `PATH`), then the source
-   file's own directory.
+   environment variable (a list separated by the platform's path separator: `:`
+   on POSIX, `;` on Windows, like `PATH`), then the source file's own directory.
 3. **The standard library** — always searched last.
 
 Resolution is first-match-wins in this order, so an application library may
