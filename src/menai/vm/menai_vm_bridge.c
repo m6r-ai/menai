@@ -1797,11 +1797,13 @@ static void
 bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
 {
     /*
-     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth, user_value, backtrace).
+     * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth,
+     * user_value, backtrace, frame_dump).
      */
     PyObject *py_user_val;
     PyObject *args;
     PyObject *exc;
+    PyObject *py_frame_dump = NULL;
 
     /* Build backtrace as a list of (name, source_line, source_file) tuples. */
     PyObject *py_backtrace = PyList_New(0);
@@ -1833,11 +1835,68 @@ bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
         Py_DECREF(entry);
     }
 
+    /*
+     * Build the register dump as a list of (name, ip, [register values])
+     * tuples, one per live frame (deepest first).  Each register value is
+     * converted from its retained MenaiValue * and then released.
+     */
+    py_frame_dump = PyList_New(0);
+    if (!py_frame_dump) {
+        Py_DECREF(py_backtrace);
+        goto cleanup_bt_strings;
+    }
+
+    for (int i = 0; i < err->frame_dump_count; i++) {
+        const MenaiErrorFrameDump *dump = &err->frame_dump[i];
+        PyObject *regs = PyList_New(dump->reg_count);
+        if (!regs) {
+            Py_DECREF(py_backtrace);
+            Py_DECREF(py_frame_dump);
+            goto cleanup_bt_strings;
+        }
+
+        for (int r = 0; r < dump->reg_count; r++) {
+            PyObject *py_val = menai_value_to_slow_value(vs, dump->regs[r]);
+            if (!py_val) {
+                Py_DECREF(regs);
+                Py_DECREF(py_backtrace);
+                Py_DECREF(py_frame_dump);
+                goto cleanup_bt_strings;
+            }
+
+            PyList_SET_ITEM(regs, r, py_val);
+        }
+
+        PyObject *entry = PyTuple_New(3);
+        if (!entry) {
+            Py_DECREF(regs);
+            Py_DECREF(py_backtrace);
+            Py_DECREF(py_frame_dump);
+            goto cleanup_bt_strings;
+        }
+
+        PyTuple_SET_ITEM(entry, 0, dump->name
+            ? PyUnicode_FromString(dump->name)
+            : (Py_INCREF(Py_None), Py_None));
+        PyTuple_SET_ITEM(entry, 1, PyLong_FromLong(dump->ip));
+        PyTuple_SET_ITEM(entry, 2, regs);
+
+        if (PyList_Append(py_frame_dump, entry) < 0) {
+            Py_DECREF(entry);
+            Py_DECREF(py_backtrace);
+            Py_DECREF(py_frame_dump);
+            goto cleanup_bt_strings;
+        }
+
+        Py_DECREF(entry);
+    }
+
     if (err->user_value) {
         py_user_val = menai_value_to_slow_value(vs, err->user_value);
         menai_value_release(vs, err->user_value);
         if (!py_user_val) {
             Py_DECREF(py_backtrace);
+            Py_DECREF(py_frame_dump);
             goto cleanup_bt_strings;
         }
     } else {
@@ -1845,7 +1904,7 @@ bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
         Py_INCREF(py_user_val);
     }
 
-    args = Py_BuildValue("(iiiiNN)", err->code, err->opcode, err->ip, err->call_depth, py_user_val, py_backtrace);
+    args = Py_BuildValue("(iiiiNNN)", err->code, err->opcode, err->ip, err->call_depth, py_user_val, py_backtrace, py_frame_dump);
     if (!args) {
         goto cleanup_bt_strings;
     }
@@ -1864,6 +1923,23 @@ cleanup_bt_strings:
     for (int i = 0; i < err->backtrace_count; i++) {
         free((char *)err->backtrace_names[i]);
         free((char *)err->backtrace_files[i]);
+    }
+
+    /*
+     * Release the retained register values and free the strdup'd frame names
+     * owned by the error struct.
+     */
+    for (int i = 0; i < err->frame_dump_count; i++) {
+        const MenaiErrorFrameDump *dump = &err->frame_dump[i];
+        if (dump->regs) {
+            for (int r = 0; r < dump->reg_count; r++) {
+                menai_value_release(vs, dump->regs[r]);
+            }
+
+            menai_pool_free(vs, dump->regs);
+        }
+
+        free(dump->name);
     }
 }
 

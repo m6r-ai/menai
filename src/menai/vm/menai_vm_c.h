@@ -822,6 +822,32 @@ struct MenaiVector {
  */
 #define MENAI_MAX_BACKTRACE 64
 
+/*
+ * MenaiErrorFrameDump — a snapshot of one frame's registers at error time.
+ *
+ * Captured by the VM at the error label, before frames are released, so that
+ * Python can inspect the exact register contents that led to a failure.  This
+ * is what makes "cannot call non-function value", "undefined variable", and
+ * similar register-level errors diagnosable: the error code alone says what
+ * went wrong, but not which value was in the offending register.
+ *
+ * name is a strdup'd copy of the frame's code-object name (the code objects
+ * are released before the bridge runs, so a borrowed pointer would dangle).
+ * The bridge frees it after conversion.
+ *
+ * regs holds a retained MenaiValue * for each register slot in the frame
+ * (0..reg_count-1).  The bridge converts them to Python objects and releases
+ * them.  reg_count is the frame's local_count at error time.
+ */
+#define MENAI_MAX_ERROR_FRAMES 64
+
+typedef struct {
+    char *name;                 /* strdup'd; bridge frees */
+    int ip;                     /* instruction pointer within the frame */
+    int reg_count;              /* number of captured registers */
+    MenaiValue **regs;          /* retained; bridge converts then releases */
+} MenaiErrorFrameDump;
+
 typedef struct {
     int code;               /* MENAI_ERR_* code */
     int opcode;             /* opcode that was executing (0 if unknown) */
@@ -834,6 +860,14 @@ typedef struct {
     const char *backtrace_names[MENAI_MAX_BACKTRACE];    /* function names */
     int backtrace_lines[MENAI_MAX_BACKTRACE];            /* source lines (0 if unknown) */
     const char *backtrace_files[MENAI_MAX_BACKTRACE];    /* source files (NULL if unknown) */
+
+    /*
+     * Register snapshots for the call stack (deepest frame first, matching
+     * backtrace order).  frame_dump_count is the number of valid entries.
+     * Populated at error time only; always 0 on a successful execute.
+     */
+    int frame_dump_count;
+    MenaiErrorFrameDump frame_dump[MENAI_MAX_ERROR_FRAMES];
 } MenaiVMError;
 
 /*
@@ -1164,6 +1198,7 @@ int menai_value_equal(MenaiValue *a, MenaiValue *b);
 int menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n);
 ssize_t menai_ht_lookup(const MenaiHashTable *ht, MenaiValue *key, hash_t hash);
 void menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index);
+void menai_ht_replace_key(MenaiHashTable *ht, hash_t hash, ssize_t index, MenaiValue *new_key);
 
 static inline void
 menai_ht_final(MenaiVMState *vs, MenaiHashTable *ht)

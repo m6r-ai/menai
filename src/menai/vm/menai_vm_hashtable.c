@@ -189,3 +189,33 @@ menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index)
         slot = (ssize_t)((5 * (uhash_t)slot + 1 + perturb) & (uhash_t)mask);
     }
 }
+
+void
+menai_ht_replace_key(MenaiHashTable *ht, hash_t hash, ssize_t index, MenaiValue *new_key)
+{
+    /*
+     * Re-point the slot for (hash, index) at a new key object.  Used when a
+     * dict or set replaces the element at `index` with a new element whose key
+     * is equal to the old one: the slot's key is a borrowed reference to the
+     * old element's key, which is about to be released, so it must be updated
+     * to the replacement element's key or it would dangle.
+     *
+     * The probe sequence is the same one menai_ht_insert used, so the slot is
+     * found deterministically.  The slot is guaranteed to exist: the caller
+     * only calls this for an index that was previously inserted.
+     */
+    ssize_t mask = ht->slot_count - 1;
+    uhash_t perturb = (uhash_t)hash;
+    ssize_t slot = (ssize_t)(perturb & (uhash_t)mask);
+
+    for (;;) {
+        MenaiHashSlot *s = &ht->slots[slot];
+        if (s->key != NULL && s->hash == hash && s->index == index) {
+            s->key = new_key;
+            return;
+        }
+
+        perturb >>= 5;
+        slot = (ssize_t)((5 * (uhash_t)slot + 1 + perturb) & (uhash_t)mask);
+    }
+}

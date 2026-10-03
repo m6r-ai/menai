@@ -45,6 +45,7 @@ class MenaiVM:
                 exc.call_depth,
                 exc.user_value,
                 exc.backtrace,
+                exc.frame_dump,
             ) from None
 
     def cancel(self) -> None:

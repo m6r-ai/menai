@@ -28,7 +28,8 @@ class MenaiError(Exception):
         vm_opcode: int | None = None,
         vm_ip: int | None = None,
         vm_call_depth: int | None = None,
-       backtrace: list[tuple[str | None, int, str | None]] | None = None,
+        backtrace: list[tuple[str | None, int, str | None]] | None = None,
+        frame_dump: list[tuple[str | None, int, list['MenaiValue']]] | None = None,
     ):
         """
         Initialize detailed error.
@@ -52,6 +53,8 @@ class MenaiError(Exception):
             vm_call_depth: Call stack depth at time of error
             backtrace: List of (name, source_line, source_file) tuples
                 capturing the VM call stack at error time
+            frame_dump: List of (name, ip, [register values]) tuples capturing
+                the register contents of each live frame at error time
         """
         self.message = message
         self.context = context
@@ -70,6 +73,7 @@ class MenaiError(Exception):
         self.vm_ip = vm_ip
         self.vm_call_depth = vm_call_depth
         self.backtrace = backtrace or []
+        self.frame_dump = frame_dump or []
 
         super().__init__(self._format_detailed_message())
 

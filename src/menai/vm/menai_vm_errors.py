@@ -144,6 +144,10 @@ class _MenaiVMRuntimeError(Exception):
             for UNDEFINED_VARIABLE.
         backtrace: List of (name, source_line, source_file) tuples capturing
             the call stack at error time, or empty list if none.
+        frame_dump: List of (name, ip, [register values]) tuples capturing the
+            register contents of each live frame at error time (deepest frame
+            first), or empty list if none.  Used to diagnose register-level
+            errors such as "cannot call non-function value".
     """
 
     def __init__(
@@ -154,6 +158,7 @@ class _MenaiVMRuntimeError(Exception):
         call_depth: int = 0,
         user_value: MenaiValue | None = None,
         backtrace: list[tuple[str | None, int, str | None]] | None = None,
+        frame_dump: list[tuple[str | None, int, list[MenaiValue]]] | None = None,
     ) -> None:
         self.code = code
         self.opcode = opcode
@@ -161,6 +166,7 @@ class _MenaiVMRuntimeError(Exception):
         self.call_depth = call_depth
         self.user_value = user_value
         self.backtrace = backtrace or []
+        self.frame_dump = frame_dump or []
         super().__init__(f"VM error {code}")
 
 
@@ -253,6 +259,7 @@ def translate_vm_error(
     call_depth: int = 0,
     user_value: MenaiValue | None = None,
     backtrace: list[tuple[str | None, int, str | None]] | None = None,
+    frame_dump: list[tuple[str | None, int, list[MenaiValue]]] | None = None,
 ) -> Exception:
     """
     Translate a structured VM error into the appropriate MenaiError exception.
@@ -273,6 +280,8 @@ def translate_vm_error(
             MenaiString containing the variable name for UNDEFINED_VARIABLE.
         backtrace: List of (name, source_line, source_file) tuples from the
             C VM call stack at error time, or None if unavailable.
+        frame_dump: List of (name, ip, [register values]) tuples from the C VM
+            capturing each live frame's registers at error time, or None.
 
     Returns:
         An exception instance ready to be raised.
@@ -296,6 +305,7 @@ def translate_vm_error(
             vm_ip=ip,
             vm_call_depth=call_depth,
             backtrace=backtrace,
+            frame_dump=frame_dump,
         )
 
     # CANCELLED maps to MenaiCancelledException.
@@ -306,6 +316,7 @@ def translate_vm_error(
             vm_ip=ip,
             vm_call_depth=call_depth,
             backtrace=backtrace,
+            frame_dump=frame_dump,
         )
 
     # Look up in the error table.
@@ -332,4 +343,5 @@ def translate_vm_error(
         vm_ip=ip,
         vm_call_depth=call_depth,
         backtrace=backtrace,
+        frame_dump=frame_dump,
     )

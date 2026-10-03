@@ -741,6 +741,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
     int vm_err = MENAI_OK;
     MenaiValue *vm_user_value = NULL;
 
+    /*
+     * Clear any register dump left by a previous error.  The bridge consumes
+     * and releases it after each error, but a run that errors and is never
+     * translated (or a subsequent successful run) must not leave a stale
+     * dump behind.
+     */
+    vs->error.frame_dump_count = 0;
+
     MenaiValue **regs = vs->regs;
 
     /* Frame stack — depth 0 is the sentinel. */
@@ -7531,6 +7539,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     /* Key already present — replace its value, keep its position. */
                     menai_value_release(vs, (MenaiValue *)elems[existing]);
                     elems[existing] = elem;
+
+                    /*
+                     * The hash table slot for this key holds a borrowed
+                     * reference to the old element's key, which was just
+                     * released.  Re-point it at the replacement element's key
+                     * so the slot does not dangle.
+                     */
+                    menai_ht_replace_key(&r->ht, h, existing, elem->key);
                 } else {
                     elems[out] = elem;
                     menai_ht_insert(&r->ht, elem->key, elem->hash, out);
@@ -7842,6 +7858,46 @@ error:
                 vs->error.backtrace_files[bt_idx] = co->source_file ? strdup(co->source_file) : NULL;
                 vs->error.backtrace_count++;
             }
+        }
+
+        /*
+         * Capture a register snapshot of each live frame, before the frames
+         * are released.  Each register value is retained so it survives until
+         * the bridge converts it; the bridge releases it afterwards.  This lets
+         * our caller inspect the exact register contents that led to the failure,
+         * which the error code alone does not reveal.
+         */
+        vs->error.frame_dump_count = 0;
+        for (int d = frame_depth; d >= 1 && vs->error.frame_dump_count < MENAI_MAX_ERROR_FRAMES; d--) {
+            Frame *f = &frames[d];
+            if (!f->code_obj) {
+                continue;
+            }
+
+            int dump_idx = vs->error.frame_dump_count;
+            MenaiErrorFrameDump *dump = &vs->error.frame_dump[dump_idx];
+            dump->name = f->code_obj->name ? strdup(f->code_obj->name) : NULL;
+            dump->ip = (d == frame_depth) ? cur_ip : f->ip;
+            dump->reg_count = f->local_count;
+            dump->regs = NULL;
+            if (f->local_count > 0) {
+                dump->regs = (MenaiValue **)menai_pool_alloc(vs, (size_t)f->local_count * sizeof(MenaiValue *));
+                if (!dump->regs) {
+                    /* Out of memory: drop the dump rather than fail the error. */
+                    free(dump->name);
+                    dump->name = NULL;
+                    dump->reg_count = 0;
+                    continue;
+                }
+
+                for (int r = 0; r < f->local_count; r++) {
+                    MenaiValue *v = f->frame_regs[r];
+                    menai_value_retain(v);
+                    dump->regs[r] = v;
+                }
+            }
+
+            vs->error.frame_dump_count++;
         }
 
         /* Release all live frames above the sentinel. */

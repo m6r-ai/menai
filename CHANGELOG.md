@@ -5,6 +5,14 @@
 New features:
 
 - Added a new "trivial phi elimination" operation inside the CFG collapse phi pass.
+- Added a register dump capability to capture state when an error is raised inside
+  the VM.
+
+Bug fixes:
+
+- Updated the LICM pass to handle the nested loops introduced by the letrec inliner
+  optimization.
+- Fixed a hash reinitialization bug in the VM.
 
 ## v0.7.0 (2026-10-02)
 
