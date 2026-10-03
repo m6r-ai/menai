@@ -13,9 +13,10 @@ the duplicate.
 
 The fold_constants pass runs after coalescing.  Where an opcode accepts a
 constant operand, the constant is encoded directly in the instruction and the
-LOAD_CONST is removed if no uses of its register remain.  The integer+,
-integer-, integer%, integer comparison, and integer bitwise opcodes accept
-constant operands, so constants feeding them no longer appear as loads.
+LOAD_CONST is removed if no uses of its register remain.  The integer, float,
+complex, and string opcode families all accept constant operands, so constants
+feeding them no longer appear as loads.  Opcodes outside those families (dict,
+list, set, struct, bytes, vector) still load their constants.
 
 Struct type descriptors are not emitted as VCode LOAD_CONST instructions —
 the bytecode builder stages them directly into the constant pool at each
@@ -97,7 +98,9 @@ class TestConstantCoalescingBasic:
     def test_string_constant_coalesced(self):
         """
         The string "x" is used three times in straight-line code.
-        After coalescing, only one LOAD_CONST of "x" should remain.
+        After coalescing there is one pool entry for it, and because
+        string-concat accepts constant operands the folded pass emits no
+        LOAD_CONST at all.
         """
         src = """
         (lambda (s)
@@ -110,7 +113,9 @@ class TestConstantCoalescingBasic:
             if type(c).__name__ == "MenaiString" and c.value == "x"
         ]
         assert len(str_x_consts) == 1
-        assert _count_op(code, Opcode.LOAD_CONST) == 1
+        # Every use of "x" is folded into a string-concat constant operand, so
+        # no LOAD_CONST remains.
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
 
     def test_multiple_distinct_constants_coalesced_independently(self):
         """
@@ -217,10 +222,10 @@ class TestConstantCoalescingDominanceSafety:
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        # "x" loaded once before the branch, used in both arms.
-        # "y" and "z" each loaded once in their respective arms.
-        # Total: 3 LOAD_CONST (one per distinct string).
-        assert _count_op(code, Opcode.LOAD_CONST) == 3
+        # "x" is a let-bound constant used in both arms; "y" and "z" each
+        # appear in one arm.  All three fold into string-concat constant
+        # operands, so no LOAD_CONST remains.
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
 
 
 class TestConstantCoalescingCorrectness:
@@ -316,26 +321,29 @@ class TestConstantCoalescingDistinctValues:
         assert _count_op(code, Opcode.LOAD_CONST) == 0
 
     def test_different_strings_not_coalesced(self):
-        """Strings "a" and "b" are distinct and must not be coalesced."""
+        """
+        Strings "a" and "b" are distinct and must not be coalesced.  Both are
+        folded into string-concat constant operands, so neither is loaded.
+        """
         src = """
         (lambda (s) (string-concat (string-concat s "a") "b"))
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        assert _count_op(code, Opcode.LOAD_CONST) == 2
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
 
     def test_integer_and_float_not_coalesced(self):
         """
         Integer 1 and float 1.0 are distinct types and must not be coalesced.
-        The integer is folded into the integer+ operand; float+ does not accept
-        constant operands, so the float is still loaded.
+        Both are folded into their respective arithmetic constant operands, so
+        neither is loaded.
         """
         src = """
         (lambda (x) (list (integer+ x 1) (float+ x 1.0)))
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        assert _count_op(code, Opcode.LOAD_CONST) == 1
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
 
 
 def _struct_type_constants(code, name: str) -> list:

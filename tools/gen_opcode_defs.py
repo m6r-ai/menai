@@ -17,7 +17,9 @@ from pathlib import Path
 # menai_bytecode.py.  The generator resolves these names to their integer
 # values so the emitted header carries plain numbers.
 _MASK_NAMES = {
+    "_FOLD_SRC0": 0b001,
     "_FOLD_SRC01": 0b011,
+    "_FOLD_SRC012": 0b111,
 }
 
 
