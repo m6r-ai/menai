@@ -12,6 +12,8 @@ Covers:
   8. No change when there is nothing to collapse
   9. Integration with downstream passes (bypass + dead-block elimination)
  10. End-to-end: compile nested-if Menai source and verify MOVE reduction
+ 11. Trivial-phi elimination (all incoming values identical)
+ 12. Loop-carried phis are never eliminated
 """
 
 from menai.cfg.menai_cfg import (
@@ -24,6 +26,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeClosureInstr,
     MenaiCFGPhiInstr,
     MenaiCFGReturnTerm,
+    MenaiCFGSelfLoopTerm,
     MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
@@ -780,3 +783,321 @@ class TestEndToEnd:
             (classify "D")))
         """)
         assert result == [1, 2, 3, 4]
+
+
+# ---------------------------------------------------------------------------
+# 11. Trivial-phi elimination
+# ---------------------------------------------------------------------------
+
+class TestTrivialPhi:
+
+    def test_identical_incoming_values_collapsed(self):
+        """
+        A phi whose two incoming values are the same SSA value denotes that
+        value on every path.  Its result is replaced by the value at every
+        use and the phi is removed.
+
+            A: jump -> join
+            B: jump -> join
+            join: %r = phi [(%i, A), (%i, B)]
+                  %s = not %r
+                  return %s
+
+        After: the phi is gone and %s reads %i directly.
+        """
+        vi = v("i")
+        vr = v("r"); vs = v("s")
+
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="B")
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vr, incoming=[(vi, 1), (vi, 2)]),
+            MenaiCFGBuiltinInstr(result=vs, op="not", args=[vr]),
+            terminator=MenaiCFGReturnTerm(value=vs),
+            label="join",
+        )
+
+        cond = v("cond")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=cond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=1, false_block=2),
+            label="entry",
+        )
+        f = func(entry, block_a, block_b, join)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert changed
+        assert vr.id not in phi_result_ids(new_f), "trivial phi should be removed"
+
+        join_new = next(b for b in new_f.blocks if b.id == 3)
+        builtin = next(i for i in join_new.instrs if isinstance(i, MenaiCFGBuiltinInstr))
+        assert builtin.args[0].id == vi.id, "use of the phi result should become the sole incoming value"
+
+    def test_identical_three_incoming_values_collapsed(self):
+        """A phi with three identical incoming values is also trivial."""
+        vi = v("i")
+        vr = v("r")
+
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=4), label="C")
+        join = block(
+            4,
+            MenaiCFGPhiInstr(result=vr, incoming=[(vi, 1), (vi, 2), (vi, 3)]),
+            terminator=MenaiCFGReturnTerm(value=vr),
+            label="join",
+        )
+        f = func(block_a, block_b, block_c, join)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert changed
+        assert vr.id not in phi_result_ids(new_f)
+
+        join_new = next(b for b in new_f.blocks if b.id == 4)
+        assert isinstance(join_new.terminator, MenaiCFGReturnTerm)
+        assert join_new.terminator.value.id == vi.id
+
+    def test_distinct_incoming_values_not_collapsed(self):
+        """A phi with two distinct incoming values is not trivial."""
+        va = v("a"); vb = v("b"); vr = v("r")
+
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=3), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=3), label="B")
+        join = block(
+            3,
+            MenaiCFGPhiInstr(result=vr, incoming=[(va, 1), (vb, 2)]),
+            terminator=MenaiCFGReturnTerm(value=vr),
+            label="join",
+        )
+        f = func(block_a, block_b, join)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert not changed
+        assert vr.id in phi_result_ids(new_f)
+
+    def test_self_referential_single_incoming_not_collapsed(self):
+        """
+        A phi whose sole incoming value is its own result is degenerate and
+        must be left alone.
+        """
+        vr = v("r")
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=2), label="A")
+        join = block(
+            2,
+            MenaiCFGPhiInstr(result=vr, incoming=[(vr, 1)]),
+            terminator=MenaiCFGReturnTerm(value=vr),
+            label="join",
+        )
+        f = func(block_a, join)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert not changed
+        assert vr.id in phi_result_ids(new_f)
+
+    def test_trivial_phi_feeding_another_phi_is_substituted(self):
+        """
+        A trivial phi whose result feeds another phi's incoming list must
+        have that use substituted as well.
+
+            A: jump -> join1
+            B: jump -> join1
+            join1: %r = phi [(%i, A), (%i, B)]  -> jump join2
+            C: jump -> join2
+            join2: %s = phi [(%r, join1), (%c, C)] -> return %s
+
+        After: %r is gone and join2's phi reads %i from join1.
+        """
+        vi = v("i"); vc = v("c")
+        vr = v("r"); vs = v("s")
+
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=5), label="C")
+        join1 = block(
+            4,
+            MenaiCFGPhiInstr(result=vr, incoming=[(vi, 1), (vi, 2)]),
+            terminator=MenaiCFGJumpTerm(target=5),
+            label="join1",
+        )
+        join2 = block(
+            5,
+            MenaiCFGPhiInstr(result=vs, incoming=[(vr, 4), (vc, 3)]),
+            terminator=MenaiCFGReturnTerm(value=vs),
+            label="join2",
+        )
+        f = func(block_a, block_b, block_c, join1, join2)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert changed
+        assert vr.id not in phi_result_ids(new_f)
+
+        join2_new = next(b for b in new_f.blocks if b.id == 5)
+        phi2 = next(i for i in join2_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        incoming_ids = {val.id for val, _ in phi2.incoming}
+        assert incoming_ids == {vi.id, vc.id}
+
+
+# ---------------------------------------------------------------------------
+# 12. Loop-carried phis are never eliminated
+# ---------------------------------------------------------------------------
+
+class TestLoopCarriedPhi:
+
+    def test_loop_carried_trivial_phi_not_collapsed(self):
+        """
+        A phi named by a SelfLoopTerm.param_vals is a loop-carried variable.
+        Even when its incoming values are identical, it must not be removed:
+        the back-edge machinery and the slot allocator name it by identity.
+        """
+        vi = v("i")
+        vr = v("r")
+
+        # The back-edge names vr as the loop-carried variable.
+        back = block(
+            1,
+            terminator=MenaiCFGSelfLoopTerm(
+                args=(vi,),
+                param_vals=(vr,),
+                target=2,
+            ),
+            label="back",
+        )
+        loop_entry = block(
+            2,
+            MenaiCFGPhiInstr(result=vr, incoming=[(vi, 0), (vi, 1)]),
+            terminator=MenaiCFGReturnTerm(value=vr),
+            label="loop_entry",
+        )
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=2), label="entry")
+        f = func(entry, back, loop_entry)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert not changed
+        assert vr.id in phi_result_ids(new_f), "loop-carried phi must be retained"
+
+
+# ---------------------------------------------------------------------------
+# 13. Integration: trivial-phi collapse removes the redundant VCode MOVE
+# ---------------------------------------------------------------------------
+
+class TestTrivialPhiVCodeIntegration:
+
+    def _build_cfg(self, source: str, passes):
+        from menai.ast.menai_lexer import MenaiLexer
+        from menai.ast.menai_ast_builder import MenaiASTBuilder
+        from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
+        from menai.ast.menai_ast_module_resolver import MenaiASTModuleResolver
+        from menai.ast.menai_ast_desugarer import MenaiASTDesugarer
+        from menai.ast.menai_ast_constant_folder import MenaiASTConstantFolder
+        from menai.ir.menai_ir_builder import MenaiIRBuilder
+        from menai.ir.menai_ir_optimizer import MenaiIROptimizer
+        from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
+
+        tokens = MenaiLexer().lex(source)
+        ast = MenaiASTBuilder().build(tokens, source, "")
+        ast = MenaiASTSemanticAnalyzer().analyze(ast, source)
+        ast = MenaiASTModuleResolver(None).resolve(ast)
+        ast = MenaiASTDesugarer().desugar(ast)
+        ast = MenaiASTConstantFolder().optimize(ast)
+        ir = MenaiIRBuilder().build(ast)
+
+        ir_passes = [MenaiIROptimizer()]
+        changed = True
+        while changed:
+            changed = False
+            for p in ir_passes:
+                ir, c = p.optimize(ir)
+                changed = changed or c
+
+        cfg = MenaiCFGBuilder().build(ir)
+        context = MenaiCFGContext()
+        changed = True
+        while changed:
+            changed = False
+            for p in passes:
+                cfg, c = p.optimize(cfg, context)
+                changed = changed or c
+        return cfg
+
+    def test_whitespace_skip_loop_has_fewer_phis(self):
+        """
+        A whitespace-skipping loop's exit join carries the same position
+        variable on both exits.  With trivial-phi collapse enabled the join
+        phi is removed, so the CFG has fewer phis than without the pass.
+        """
+        source = """
+        (letrec
+          ((skip-ws
+            (lambda (s pos)
+              (letrec ((loop (lambda (i)
+                               (if (integer>=? i (string-length s))
+                                   i
+                                   (let ((ch (string-nth s i)))
+                                     (if (or (string=? ch " ")
+                                         (or (string=? ch "\\t")
+                                         (or (string=? ch "\\n")
+                                             (string=? ch "\\r"))))
+                                         (loop (integer+ i 1))
+                                         i))))))
+                (loop pos)))))
+          (skip-ws "abc" 0))
+        """
+        passes_without = [MenaiCFGSimplifyBlocks()]
+        passes_with = [MenaiCFGCollapsePhiChains(), MenaiCFGSimplifyBlocks()]
+
+        cfg_without = self._build_cfg(source, passes_without)
+        cfg_with = self._build_cfg(source, passes_with)
+
+        phis_without = _count_phis(cfg_without)
+        phis_with = _count_phis(cfg_with)
+        assert phis_with < phis_without, (
+            f"trivial-phi collapse should remove a phi: "
+            f"{phis_with} not < {phis_without}"
+        )
+
+    def test_whitespace_skip_loop_still_executes_correctly(self):
+        """
+        End-to-end: a whitespace-skipping loop compiled with the collapse pass
+        enabled must still skip all four whitespace characters.
+        """
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (letrec
+          ((skip-ws
+            (lambda (s pos)
+              (letrec ((loop (lambda (i)
+                               (if (integer>=? i (string-length s))
+                                   i
+                                   (let ((ch (string-nth s i)))
+                                     (if (or (string=? ch " ")
+                                         (or (string=? ch "\\t")
+                                         (or (string=? ch "\\n")
+                                             (string=? ch "\\r"))))
+                                         (loop (integer+ i 1))
+                                         i))))))
+                (loop pos)))))
+          (list
+            (skip-ws "   x" 0)
+            (skip-ws "\\t\\n\\r y" 0)
+            (skip-ws "abc" 0)
+            (skip-ws "  " 0)))
+        """)
+        assert result == [3, 4, 0, 2]
+
+
+def _count_phis(func) -> int:
+    """Count phi instructions across a CFG and all nested functions."""
+    from menai.cfg.menai_cfg import MenaiCFGMakeClosureInstr, MenaiCFGPhiInstr
+
+    total = 0
+    for block in func.blocks:
+        total += sum(1 for i in block.instrs if isinstance(i, MenaiCFGPhiInstr))
+        for i in block.instrs:
+            if isinstance(i, MenaiCFGMakeClosureInstr):
+                total += _count_phis(i.function)
+
+    return total

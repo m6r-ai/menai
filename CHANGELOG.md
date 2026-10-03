@@ -2,6 +2,10 @@
 
 ## v0.8.0 (2026-10-03)
 
+New features:
+
+- Added a new "trivial phi elimination" operation inside the CFG collapse phi pass.
+
 ## v0.7.0 (2026-10-02)
 
 New features:

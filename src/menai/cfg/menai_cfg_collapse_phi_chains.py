@@ -1,10 +1,14 @@
 """
-CFG pass: collapse phi chains.
+CFG pass: collapse phi chains and eliminate trivial phis.
 
-Eliminates phi-of-phi redundancy that arises from nested `if` expressions.
-When the result of a phi node is used *only* as an incoming value in one or
-more other phi nodes, the intermediate phi can be bypassed: each consuming
-phi absorbs the intermediate's incoming entries in its place.
+Two transformations run to a joint fixed point.
+
+1. Phi-chain collapsing
+   Eliminates phi-of-phi redundancy that arises from nested `if`
+   expressions.  When the result of a phi node is used *only* as an incoming
+   value in one or more other phi nodes, the intermediate phi can be
+   bypassed: each consuming phi absorbs the intermediate's incoming entries
+   in its place.
 
 Example before:
 
@@ -21,9 +25,24 @@ Example after:
 join1's phi is removed.  If join1 now has no instructions it becomes an
 empty block, which MenaiCFGSimplifyBlocks will then eliminate.
 
+2. Trivial-phi elimination
+   Removes a phi node whose incoming values are all the same SSA value.
+   Such a phi always yields that value, so every use of the phi result is
+   replaced by the value and the phi is deleted.  The classic case is a
+   loop-exit join where both exits carry the same variable:
+
+       then block:  jump → join
+       else block:  jump → join
+       join:  %r = phi [(%i, then), (%i, else)]
+              ... use %r ...
+
+   Here %r is just %i.  Removing the phi makes the two predecessor blocks
+   empty indirections, which MenaiCFGSimplifyBlocks then eliminates, so the
+   VCode builder emits no redundant phi-elimination MOVE for them.
+
 Safety
 ------
-The transformation is valid when:
+The chain-collapse transformation is valid when:
   1. The intermediate phi result (%v1) is used *only* as a phi incoming
      value — never in a builtin, call, return, branch condition, etc.
   2. No consuming phi already has an entry from one of the intermediate
@@ -34,16 +53,46 @@ Condition 2 can arise when a consuming phi has multiple entries that would
 expand to the same predecessor block.  The pass skips any collapse that
 would produce such a conflict.
 
+The trivial-phi transformation is unconditionally valid: a phi whose every
+incoming value is the same SSA value denotes that value on every path that
+reaches it, so substituting it at every use preserves the program's meaning.
+A phi that is a loop-carried variable (named by a
+MenaiCFGSelfLoopTerm.param_vals) is never removed: the back-edge machinery
+and the slot allocator name it by identity.
+
 Menai is pure, so dead-code elimination is always safe (AGENTS.md).
 """
 
 
+from dataclasses import replace
+
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
+    MenaiCFGApplyInstr,
+    MenaiCFGBranchTerm,
+    MenaiCFGBuiltinInstr,
+    MenaiCFGCallInstr,
     MenaiCFGFunction,
     MenaiCFGInstr,
     MenaiCFGJumpTerm,
+    MenaiCFGMakeClosureInstr,
+    MenaiCFGMakeDictInstr,
+    MenaiCFGMakeListInstr,
+    MenaiCFGMakeSetInstr,
+    MenaiCFGMakeStructInstr,
+    MenaiCFGMakeVectorInstr,
+    MenaiCFGPatchClosureInstr,
     MenaiCFGPhiInstr,
+    MenaiCFGGuardInstr,
+    MenaiCFGRaiseTerm,
+    MenaiCFGReturnTerm,
+    MenaiCFGSelfLoopTerm,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
+    MenaiCFGSwitchTerm,
+    MenaiCFGTailApplyTerm,
+    MenaiCFGTailCallTerm,
+    MenaiCFGTerminator,
     MenaiCFGValue,
     value_ids_in_instr,
     value_ids_in_term,
@@ -59,12 +108,17 @@ from menai.cfg.menai_cfg_optimization_pass import (
 class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
     """
     Replace phi-of-phi chains with a single flat phi, and remove phi nodes
-    whose results are never used.
+    that are redundant.
 
     For each phi P1 whose result is used *only* as an incoming value in
     other phi nodes (or not at all), expand each consuming phi by
     substituting P1's incoming entries for the P1 reference, then remove
     P1.
+
+    A phi whose incoming values are all the same SSA value is also redundant:
+    it always yields that value, so every use of its result is replaced by
+    the value and the phi is removed.  A phi that is a loop-carried variable
+    (named by a MenaiCFGSelfLoopTerm.param_vals) is never removed this way.
 
     After collapsing, blocks that contained only the now-removed phi (and
     an unconditional jump) become empty and will be eliminated by
@@ -81,9 +135,13 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
         changed_overall = False
 
         # Iterate to fixed point: each round may expose new candidates.
+        # Trivial-phi elimination runs first because removing a trivial phi
+        # can expose a phi-chain collapse (its result may have fed a
+        # consuming phi) and vice versa.
         while True:
-            func, round_changed = self._run_one_round(func)
-            if not round_changed:
+            func, trivial_changed = self._eliminate_trivial_phis(func)
+            func, chain_changed = self._run_one_round(func)
+            if not (trivial_changed or chain_changed):
                 break
 
             changed_overall = True
@@ -108,6 +166,79 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
             return False
 
         return all(isinstance(instr, MenaiCFGPhiInstr) for instr in block.instrs)
+
+    def _eliminate_trivial_phis(
+        self,
+        func: MenaiCFGFunction,
+    ) -> tuple[MenaiCFGFunction, bool]:
+        """
+        Remove phi nodes whose incoming values are all the same SSA value.
+
+        Such a phi always yields that value, so every use of the phi result
+        is replaced by the value and the phi is deleted.  This is the classic
+        loop-exit join where both exits carry the same variable, and it makes
+        the predecessor blocks' phi-elimination moves disappear from the
+        VCode.
+
+        A phi whose result is a loop-carried variable (named by a
+        MenaiCFGSelfLoopTerm.param_vals) is skipped: the back-edge machinery
+        and the slot allocator name it by identity.
+
+        Returns the (possibly new) function and whether any change was made.
+        """
+        loop_carried_ids: set[int] = set()
+        for block in func.blocks:
+            term = block.terminator
+            if isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is not None:
+                for param_val in term.param_vals:
+                    loop_carried_ids.add(param_val.id)
+
+        # Map phi result id -> the single incoming value it always yields.
+        replacements: dict[int, MenaiCFGValue] = {}
+        for block in func.blocks:
+            for instr in block.instrs:
+                if not isinstance(instr, MenaiCFGPhiInstr):
+                    continue
+
+                if instr.result.id in loop_carried_ids:
+                    continue
+
+                incoming_ids = {val.id for val, _ in instr.incoming}
+                if len(incoming_ids) != 1:
+                    continue
+
+                only_id = next(iter(incoming_ids))
+                if only_id == instr.result.id:
+                    # A self-referential single incoming is degenerate; leave it.
+                    continue
+
+                replacements[instr.result.id] = next(
+                    val for val, _ in instr.incoming if val.id == only_id
+                )
+
+        if not replacements:
+            return func, False
+
+        new_blocks: list[MenaiCFGBlock] = []
+        for block in func.blocks:
+            new_instrs: list[MenaiCFGInstr] = []
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGPhiInstr) and instr.result.id in replacements:
+                    continue
+
+                new_instrs.append(_substitute_value_in_instr(instr, replacements))
+
+            terminator = block.terminator
+            if terminator is not None:
+                terminator = _substitute_value_in_term(terminator, replacements)
+
+            new_blocks.append(replace(
+                block,
+                instrs=tuple(new_instrs),
+                terminator=terminator,
+            ))
+
+        return replace_blocks(func, tuple(new_blocks)), True
 
     def _run_one_round(self, func: MenaiCFGFunction) -> tuple[MenaiCFGFunction, bool]:
         """
@@ -289,3 +420,101 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
             ]
 
         return replace_blocks(func, tuple(new_blocks)), True
+
+
+def _substitute_value_in_instr(
+    instr: MenaiCFGInstr,
+    replacements: dict[int, MenaiCFGValue],
+) -> MenaiCFGInstr:
+    """
+    Return a copy of instr with every referenced value id replaced.
+
+    A value id present in `replacements` is replaced by the mapped value;
+    ids not present are left alone.  The instruction's own result is never
+    a substitution target — a phi defining a replaced id has already been
+    dropped by the caller.
+    """
+    def sub(v: MenaiCFGValue) -> MenaiCFGValue:
+        return replacements.get(v.id, v)
+
+    if isinstance(instr, MenaiCFGBuiltinInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGCallInstr):
+        return replace(instr, func=sub(instr.func), args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGApplyInstr):
+        return replace(instr, func=sub(instr.func), arg_list=sub(instr.arg_list))
+
+    if isinstance(instr, MenaiCFGMakeClosureInstr):
+        return replace(instr, captures=tuple(sub(c) for c in instr.captures))
+
+    if isinstance(instr, MenaiCFGMakeStructInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeListInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeSetInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeDictInstr):
+        return replace(instr, pairs=tuple((sub(k), sub(v)) for k, v in instr.pairs))
+
+    if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+        return replace(instr, struct=sub(instr.struct))
+
+    if isinstance(instr, MenaiCFGStructWithIndexedInstr):
+        return replace(instr, struct=sub(instr.struct), value=sub(instr.value))
+
+    if isinstance(instr, MenaiCFGPatchClosureInstr):
+        return replace(instr, closure=sub(instr.closure), value=sub(instr.value))
+
+    if isinstance(instr, MenaiCFGGuardInstr):
+        return replace(instr, value=sub(instr.value))
+
+    if isinstance(instr, MenaiCFGPhiInstr):
+        return MenaiCFGPhiInstr(
+            result=instr.result,
+            incoming=tuple((sub(val), pred) for val, pred in instr.incoming),
+        )
+
+    # MenaiCFGConstInstr, MenaiCFGParamInstr, MenaiCFGFreeVarInstr: no input
+    # value references.
+    return instr
+
+
+def _substitute_value_in_term(
+    term: MenaiCFGTerminator,
+    replacements: dict[int, MenaiCFGValue],
+) -> MenaiCFGTerminator:
+    """Return a copy of term with every referenced value id replaced."""
+    def sub(v: MenaiCFGValue) -> MenaiCFGValue:
+        return replacements.get(v.id, v)
+
+    if isinstance(term, MenaiCFGBranchTerm):
+        return replace(term, cond=sub(term.cond))
+
+    if isinstance(term, MenaiCFGSwitchTerm):
+        return replace(term, value=sub(term.value))
+
+    if isinstance(term, MenaiCFGReturnTerm):
+        return replace(term, value=sub(term.value))
+
+    if isinstance(term, MenaiCFGTailCallTerm):
+        return replace(term, func=sub(term.func), args=tuple(sub(a) for a in term.args))
+
+    if isinstance(term, MenaiCFGTailApplyTerm):
+        return replace(term, func=sub(term.func), arg_list=sub(term.arg_list))
+
+    if isinstance(term, MenaiCFGSelfLoopTerm):
+        return replace(term, args=tuple(sub(a) for a in term.args))
+
+    if isinstance(term, MenaiCFGRaiseTerm):
+        return replace(term, message=sub(term.message))
+
+    # MenaiCFGJumpTerm: no value references.
+    return term
