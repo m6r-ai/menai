@@ -9,6 +9,7 @@ This is the final pass of the VM backend pipeline:
     MenaiVCodeFunction
         → schedule_self_loop_moves (reorder instructions before self-loop moves)
         → coalesce_constants   (deduplicate LOAD_CONST of the same value)
+        → fold_constants       (fold constant loads into immediate operands)
         → allocate_slots      (assign virtual registers to slots)
         → peephole            (eliminate redundant moves and jumps)
         → MenaiBytecodeBuilder (emit CodeObject)  ← this file
@@ -79,6 +80,7 @@ from menai.vcode.menai_vcode_allocator import SlotMap, allocate_slots
 from menai.vcode.menai_vcode_peephole import peephole
 from menai.vcode.menai_vcode_peephole import coalesce_constants
 from menai.vcode.menai_vcode_peephole import schedule_self_loop_moves
+from menai.vcode.menai_vcode_fold_constants import fold_constants
 
 from menai.bytecode.menai_bytecode import (
     _OPCODE_SHIFT, _DEST_SHIFT, _SRC0_SHIFT, _SRC1_SHIFT,
@@ -153,10 +155,10 @@ class _EmitContext:
         """Get the slot index assigned to reg."""
         return self.slot_map.slot_of(reg)
 
-    def emit(self, opcode: Opcode, src0: int = 0, src1: int = 0, dest: int = 0, src2: int = 0) -> int:
+    def emit(self, opcode: Opcode, src0: int = 0, src1: int = 0, dest: int = 0, src2: int = 0, tag: int = 0) -> int:
         """Emit an instruction and return its index."""
         idx = len(self.instructions)
-        self.instructions.append(pack_instruction(int(opcode), dest, src0, src1, src2))
+        self.instructions.append(pack_instruction(int(opcode), dest, src0, src1, src2, tag))
         return idx
 
     def current_index(self) -> int:
@@ -293,6 +295,7 @@ class MenaiBytecodeBuilder:
         """
         func = schedule_self_loop_moves(func)
         func = coalesce_constants(func)
+        func = fold_constants(func)
         slot_map = allocate_slots(func)
         func = peephole(func, slot_map)
 
@@ -628,20 +631,35 @@ class MenaiBytecodeBuilder:
 
         opcode = info.opcode
 
-        def slot(i: int) -> int:
-            return ctx.slot_of(args[i])
+        # Each operand resolves to either a register slot or a constant-pool
+        # index.  A constant operand sets the corresponding tag bit so the VM
+        # reads the constant pool instead of the register file.
+        operand_values: list[int] = []
+        tag = 0
+        for i, arg in enumerate(args):
+            if arg.is_const():
+                assert arg.value is not None
+                operand_values.append(ctx.add_constant(arg.value))
+                tag |= 1 << i
+
+            else:
+                assert arg.reg is not None
+                operand_values.append(ctx.slot_of(arg.reg))
+
+        def operand(i: int) -> int:
+            return operand_values[i]
 
         if op in TERNARY_OPS:
             assert len(args) == 3
-            ctx.emit(opcode, slot(0), slot(1), dest=dest, src2=slot(2))
+            ctx.emit(opcode, operand(0), operand(1), dest=dest, src2=operand(2), tag=tag)
 
         elif op in BINARY_OPS:
             assert len(args) == 2
-            ctx.emit(opcode, slot(0), slot(1), dest=dest)
+            ctx.emit(opcode, operand(0), operand(1), dest=dest, tag=tag)
 
         elif op in UNARY_OPS:
             assert len(args) == 1
-            ctx.emit(opcode, slot(0), dest=dest)
+            ctx.emit(opcode, operand(0), dest=dest, tag=tag)
 
         else:
             raise ValueError(f"MenaiBytecodeBuilder: unhandled builtin op {op!r}")
@@ -681,6 +699,7 @@ class MenaiBytecodeBuilder:
         """Recursively emit a nested lambda MenaiVCodeFunction to a CodeObject."""
         func = schedule_self_loop_moves(func)
         func = coalesce_constants(func)
+        func = fold_constants(func)
         slot_map = allocate_slots(func)
         func = peephole(func, slot_map)
 

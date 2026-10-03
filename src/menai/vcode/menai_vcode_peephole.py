@@ -227,6 +227,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeStructWithIndexed,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
+    MenaiVCodeOperand,
 )
 from menai.menai_value import (
     MenaiBoolean,
@@ -291,7 +292,12 @@ def _replace_reg(
         return MenaiVCodeBuiltin(
             dst=instr.dst,
             op=instr.op,
-            args=tuple(new_reg if r.id == old_id else r for r in instr.args),
+            args=tuple(
+                MenaiVCodeOperand.of_reg(new_reg)
+                if a.reg is not None and a.reg.id == old_id
+                else a
+                for a in instr.args
+            ),
         )
 
     if isinstance(instr, MenaiVCodeCall):
@@ -707,7 +713,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [], [instr.value.id]
 
     if isinstance(instr, MenaiVCodeBuiltin):
-        return [instr.dst.id], [r.id for r in instr.args]
+        return [instr.dst.id], [a.reg.id for a in instr.args if a.reg is not None]
 
     if isinstance(instr, MenaiVCodeCall):
         return [instr.dst.id], [instr.func.id] + [r.id for r in instr.args]

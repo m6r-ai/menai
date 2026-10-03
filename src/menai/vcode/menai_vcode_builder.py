@@ -90,6 +90,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeLoadConst,
     MenaiVCodeMakeClosure,
     MenaiVCodeMove,
+    MenaiVCodeOperand,
     MenaiVCodePatchClosure,
     MenaiVCodeMakeStruct,
     MenaiVCodeMakeList,
@@ -444,9 +445,12 @@ class MenaiVCodeBuilder:
 
         if isinstance(instr, MenaiCFGBuiltinInstr):
             dst = self._reg(instr.result)
-            args = tuple(self._reg(a) for a in instr.args)
-            instrs.append(MenaiVCodeBuiltin(dst=dst, op=instr.op, args=args))
-            return max(max_reg_id, dst.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id)
+            operands = tuple(MenaiVCodeOperand.of_reg(self._reg(a)) for a in instr.args)
+            instrs.append(MenaiVCodeBuiltin(dst=dst, op=instr.op, args=operands))
+            if not operands:
+                return max(max_reg_id, dst.id)
+
+            return max(max_reg_id, dst.id, *(o.reg.id for o in operands if o.reg is not None))
 
         if isinstance(instr, MenaiCFGCallInstr):
             dst = self._reg(instr.result)

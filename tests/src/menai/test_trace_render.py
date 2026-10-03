@@ -5,9 +5,14 @@ The function summary ranks functions by instructions executed.  The annotated
 view's instruction lines and metadata tables must match the disassembler's, so
 that a hot spot found in a trace can be read directly against the disassembler
 output.
+
+Integer comparison and arithmetic opcodes fold constant operands into the
+instruction, so a function may contain no LOAD_CONST at all; tests locate a
+LOAD_CONST by opcode rather than assuming a fixed instruction index.
 """
 
 from menai import Menai
+from menai.bytecode.menai_bytecode import Opcode
 from menai_render.menai_render_instruction import (
     annotate_instruction,
     format_instruction,
@@ -48,7 +53,14 @@ class TestInstructionLineMatchesDisassembler:
     def test_annotation_matches_disassembler_helper(self):
         code, result = _traced_result()
         fact = result.functions[1]
-        load_const = fact.instructions[0]
+        # Find a LOAD_CONST trace line.  The first instruction is not
+        # necessarily one: integer comparison and arithmetic opcodes fold
+        # constant operands, so a function may have no LOAD_CONST at all until
+        # a value that cannot be folded (such as a returned literal).
+        load_const = next(
+            tr for tr in fact.instructions
+            if tr.instruction.opcode == int(Opcode.LOAD_CONST)
+        )
         expected = annotate_instruction(load_const.instruction, fact.code)
         assert expected == "  ; integer 1"
 
@@ -135,8 +147,11 @@ class TestRenderAnnotated:
                 if index_part.isdigit():
                     indices.append(int(index_part))
 
-        fact_indices = indices[4:14]
-        assert fact_indices == list(range(10))
+        # The first four indices belong to the module body; the rest are the
+        # first function's instructions, which must appear in ascending index
+        # order starting at 0.
+        function_indices = indices[4:]
+        assert function_indices == list(range(len(function_indices)))
 
     def test_function_header_shows_share_of_total(self):
         _, result = _traced_result()

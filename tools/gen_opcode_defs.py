@@ -13,6 +13,14 @@ import sys
 from pathlib import Path
 
 
+# Source-position foldability masks, mirroring the named constants in
+# menai_bytecode.py.  The generator resolves these names to their integer
+# values so the emitted header carries plain numbers.
+_MASK_NAMES = {
+    "_FOLD_SRC01": 0b011,
+}
+
+
 def main() -> None:
     """
     Read the Opcode enum from menai_bytecode.py and write C #defines to menai_vm_opcodes.h.
@@ -24,12 +32,28 @@ def main() -> None:
 
     source = bytecode_path.read_text(encoding="utf-8")
 
-    pattern = re.compile(r"^\s+([A-Z][A-Z0-9_]*)\s*=\s*_op\((\d+)", re.MULTILINE)
+    # Match: NAME = _op(<int>[, <arg_count>[, <const_mask>]])
+    # The arg_count and const_mask groups are optional.  const_mask may be a
+    # literal integer or a named constant resolved via _MASK_NAMES.
+    pattern = re.compile(
+        r"^\s+([A-Z][A-Z0-9_]*)\s*=\s*_op\(\s*(\d+)\s*(?:,\s*(\d+)\s*(?:,\s*([A-Za-z0-9_]+)\s*)?)?\)",
+        re.MULTILINE,
+    )
     matches = pattern.findall(source)
 
     if not matches:
         print("ERROR: No opcode definitions found", file=sys.stderr)
         sys.exit(1)
+
+    def resolve_mask(token: str) -> int:
+        """Resolve a const_mask token — a named constant or a literal — to an int."""
+        if token == "":
+            return 0
+
+        if token in _MASK_NAMES:
+            return _MASK_NAMES[token]
+
+        return int(token, 0)
 
     lines = [
         "/*",
@@ -42,13 +66,29 @@ def main() -> None:
         "",
     ]
 
-    for name, value in matches:
+    for name, value, _arg_count, _const_mask in matches:
         c_name = f"OP_{name}"
         lines.append(f"#define {c_name} {value}")
 
     max_val = int(matches[-1][1])
     lines.append("")
     lines.append(f"#define MENAI_HIGHEST_OPCODE {max_val}")
+    lines.append("")
+
+    # Foldability table: for each opcode, a 3-bit mask of which source positions
+    # may hold a constant-pool index instead of a register.  Indexed by opcode
+    # value; MENAI_OPCODE_COUNT bounds the table.
+    lines.append("/*")
+    lines.append(" * Per-opcode source-position foldability mask.  Bit i set means source")
+    lines.append(" * position i may hold a constant-pool index instead of a register.")
+    lines.append(" */")
+    lines.append(f"#define MENAI_OPCODE_COUNT {max_val + 1}")
+    lines.append("static const unsigned char MENAI_OPCODE_CONST_MASK[MENAI_OPCODE_COUNT] = {")
+    for name, value, _arg_count, const_mask in matches:
+        mask = resolve_mask(const_mask)
+        lines.append(f"    [{value}] = {mask},  /* {name} */")
+
+    lines.append("};")
     lines.append("")
     lines.append("#endif /* MENAI_VM_OPCODES_H */")
     lines.append("")

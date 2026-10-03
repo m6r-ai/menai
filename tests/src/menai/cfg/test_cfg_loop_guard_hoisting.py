@@ -86,6 +86,20 @@ def _find_assert(code, opcode, slot) -> int | None:
     return None
 
 
+def _find_assert_opcode(code, opcode) -> int | None:
+    """
+    Return the instruction index of the first ASSERT_* opcode, or None.
+
+    Used where the guarded slot is not fixed by the test's intent, so that the
+    assertion does not depend on slot allocation.
+    """
+    for i, instr in enumerate(code.instructions):
+        if unpack_instruction(instr).opcode == int(opcode):
+            return i
+
+    return None
+
+
 class TestLoopInvariantGuardHoisting:
     """Loop-invariant guards in self-loop functions should be hoisted."""
 
@@ -323,9 +337,9 @@ class TestGuardHoistingFromNonEntryBlocks:
         assert target is not None
         # The ASSERT_STRING guard should be before the self-loop target,
         # meaning it has been hoisted to the preamble.
-        # scan has 1 param (i=slot0) and 2 free vars (len=slot1, s=slot2).
-        # The scan self-capture was eliminated by the dead captures pass.
-        guard_idx = _find_assert(scan, Opcode.ASSERT_STRING, 2)
+        # The guard's slot depends on slot allocation, so locate it by opcode
+        # rather than by a hard-coded slot number.
+        guard_idx = _find_assert_opcode(scan, Opcode.ASSERT_STRING)
         assert guard_idx is not None
         assert target > guard_idx, (
             "self-loop must skip the hoisted ASSERT_STRING guard on free var 's'"

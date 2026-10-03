@@ -44,6 +44,43 @@ class MenaiVCodeReg:
         return str(self)
 
 
+@dataclass(frozen=True)
+class MenaiVCodeOperand:
+    """
+    A source operand in VCode: either a register or a compile-time constant.
+
+    A register operand reads its value from the register's slot at run time.
+    A constant operand is folded into the instruction as a constant-pool index
+    by the fold_constants pass, so no register is allocated for it and no
+    LOAD_CONST is emitted.  Exactly one of reg/value is set.
+
+    Only MenaiVCodeBuiltin carries operands of this kind.  All other VCode
+    instructions take registers only.
+    """
+    reg: MenaiVCodeReg | None = None
+    value: MenaiValue | None = None
+
+    @staticmethod
+    def of_reg(reg: MenaiVCodeReg) -> 'MenaiVCodeOperand':
+        """Return a register operand."""
+        return MenaiVCodeOperand(reg=reg)
+
+    @staticmethod
+    def of_const(value: MenaiValue) -> 'MenaiVCodeOperand':
+        """Return a constant operand."""
+        return MenaiVCodeOperand(value=value)
+
+    def is_const(self) -> bool:
+        """Return True if this operand is a compile-time constant."""
+        return self.value is not None
+
+    def __str__(self) -> str:
+        if self.value is not None:
+            return f"k({self.value!r})"
+
+        return str(self.reg)
+
+
 @dataclass
 class MenaiVCodeLabel:
     """
@@ -87,10 +124,13 @@ class MenaiVCodeBuiltin:
     dst = <builtin_op>(args...)
 
     `op` is the builtin name as it appears in the builtin registry.
+
+    `args` are operands: each is a register or, after the fold_constants pass,
+    a compile-time constant folded into a constant-pool index.
     """
     dst: MenaiVCodeReg
     op: str
-    args: tuple[MenaiVCodeReg, ...]
+    args: tuple[MenaiVCodeOperand, ...]
 
 
 @dataclass
@@ -439,7 +479,7 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
         return f"{instr.dst} = LOAD_CONST {instr.value!r}"
 
     if isinstance(instr, MenaiVCodeBuiltin):
-        return f"{instr.dst} = {instr.op} {_fmt_regs(instr.args)}"
+        return f"{instr.dst} = {instr.op} [{' , '.join(str(a) for a in instr.args)}]"
 
     if isinstance(instr, MenaiVCodeCall):
         return f"{instr.dst} = CALL {instr.func} {_fmt_regs(instr.args)}"

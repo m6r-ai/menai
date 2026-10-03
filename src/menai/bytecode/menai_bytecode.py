@@ -8,39 +8,64 @@ from enum import IntEnum
 from menai.menai_value import MenaiValue
 
 
-def _op(n: int, arg_count: int = 0) -> tuple[int, int]:
+# Source-position foldability masks for _op.  _FOLD_SRC01 marks a two-source
+# opcode whose src0 and src1 positions may each hold a constant-pool index.
+_FOLD_SRC01 = 0b011
+
+
+def _op(n: int, arg_count: int = 0, const_mask: int = 0) -> tuple[int, int, int]:
     """
-    Helper to construct an Opcode value: (integer_value, arg_count).
+    Helper to construct an Opcode value: (integer_value, arg_count, const_mask).
 
     arg_count is the number of instruction-stream arguments the opcode encodes
+
+    const_mask is a 3-bit mask of which source positions may hold a
+    constant-pool index instead of a register.  Bit i set means source position
+    i is foldable.  A zero mask means the opcode takes registers only.
     """
-    return (n, arg_count)
+    return (n, arg_count, const_mask)
 
 
 class Opcode(IntEnum):
     """
     Bytecode operation codes.
 
-    Each member's value is a (integer_value, arg_count) tuple.
+    Each member's value is an (integer_value, arg_count, const_mask) tuple.
     The integer value is used for fast VM dispatch (IntEnum identity).
     The arg_count property returns the number of instruction-stream arguments.
 
     Encoding arg_count directly on the enum eliminates the error-prone
     no_arg_opcodes / two_arg_opcodes sets that previously lived in
     Instruction.arg_count().
+
+    const_mask records which source positions the opcode can take as a
+    constant-pool index rather than a register.  The instruction tag may only
+    set a bit for a position the opcode's mask permits; the validator rejects
+    any other tag.
     """
 
-    _arg_count: int  # Set in __new__; declared here so mypy knows the attribute exists
+    _arg_count: int   # Set in __new__; declared here so mypy knows the attribute exists
+    _const_mask: int  # Set in __new__; declared here so mypy knows the attribute exists
 
-    def __new__(cls, int_value: int, arg_count: int = 0) -> 'Opcode':
+    def __new__(cls, int_value: int, arg_count: int = 0, const_mask: int = 0) -> 'Opcode':
         obj = int.__new__(cls, int_value,)
         obj._value_ = int_value
         obj._arg_count = arg_count
+        obj._const_mask = const_mask
         return obj
 
     def arg_count(self) -> int:
         """Number of instruction-stream arguments (0, 1, or 2)."""
         return self._arg_count
+
+    def const_mask(self) -> int:
+        """
+        Return the 3-bit mask of source positions foldable to a constant.
+
+        Bit i set means source position i may hold a constant-pool index
+        instead of a register.  A zero mask means registers only.
+        """
+        return self._const_mask
 
     # Constants
     LOAD_NONE = _op(0)                  # r_dest = #none
@@ -92,27 +117,27 @@ class Opcode(IntEnum):
 
     # Integer operations
     INTEGER_P = _op(34, 1)             # r_dest = (integer? r_src0)
-    INTEGER_EQ_P = _op(35, 2)          # r_dest = (integer=? r_src0 r_src1)
-    INTEGER_NEQ_P = _op(36, 2)         # r_dest = (integer!=? r_src0 r_src1)
-    INTEGER_LT_P = _op(37, 2)          # r_dest = (integer<? r_src0 r_src1)
-    INTEGER_GT_P = _op(38, 2)          # r_dest = (integer>? r_src0 r_src1)
-    INTEGER_LTE_P = _op(39, 2)         # r_dest = (integer<=? r_src0 r_src1)
-    INTEGER_GTE_P = _op(40, 2)         # r_dest = (integer>=? r_src0 r_src1)
+    INTEGER_EQ_P = _op(35, 2, _FOLD_SRC01)      # r_dest = (integer=? r_src0 r_src1)
+    INTEGER_NEQ_P = _op(36, 2, _FOLD_SRC01)     # r_dest = (integer!=? r_src0 r_src1)
+    INTEGER_LT_P = _op(37, 2, _FOLD_SRC01)      # r_dest = (integer<? r_src0 r_src1)
+    INTEGER_GT_P = _op(38, 2, _FOLD_SRC01)      # r_dest = (integer>? r_src0 r_src1)
+    INTEGER_LTE_P = _op(39, 2, _FOLD_SRC01)     # r_dest = (integer<=? r_src0 r_src1)
+    INTEGER_GTE_P = _op(40, 2, _FOLD_SRC01)     # r_dest = (integer>=? r_src0 r_src1)
     INTEGER_ABS = _op(41, 1)           # r_dest = (integer-abs r_src0)
-    INTEGER_ADD = _op(42, 2)           # r_dest = (integer+ r_src0 r_src1)
-    INTEGER_SUB = _op(43, 2)           # r_dest = (integer- r_src0 r_src1)
+    INTEGER_ADD = _op(42, 2, _FOLD_SRC01)       # r_dest = (integer+ r_src0 r_src1)
+    INTEGER_SUB = _op(43, 2, _FOLD_SRC01)       # r_dest = (integer- r_src0 r_src1)
     INTEGER_MUL = _op(44, 2)           # r_dest = (integer* r_src0 r_src1)
     INTEGER_DIV = _op(45, 2)           # r_dest = (integer/ r_src0 r_src1)
-    INTEGER_MOD = _op(46, 2)           # r_dest = (integer% r_src0 r_src1)
+    INTEGER_MOD = _op(46, 2, _FOLD_SRC01)       # r_dest = (integer% r_src0 r_src1)
     INTEGER_NEG = _op(47, 1)           # r_dest = (integer-neg r_src0)
     INTEGER_EXPN = _op(48, 2)          # r_dest = (integer-expn r_src0 r_src1)
     INTEGER_BIT_NOT = _op(49, 1)       # r_dest = (integer-bit-not r_src0)
-    INTEGER_BIT_SHIFT_LEFT = _op(50, 2)
+    INTEGER_BIT_SHIFT_LEFT = _op(50, 2, _FOLD_SRC01)
                                         # r_dest = (integer-bit-shift-left r_src0 r_src1)
-    INTEGER_BIT_SHIFT_RIGHT = _op(51, 2)
+    INTEGER_BIT_SHIFT_RIGHT = _op(51, 2, _FOLD_SRC01)
                                         # r_dest = (integer-bit-shift-right r_src0 r_src1)
-    INTEGER_BIT_OR = _op(52, 2)        # r_dest = (integer-bit-or r_src0 r_src1)
-    INTEGER_BIT_AND = _op(53, 2)       # r_dest = (integer-bit-and r_src0 r_src1)
+    INTEGER_BIT_OR = _op(52, 2, _FOLD_SRC01)    # r_dest = (integer-bit-or r_src0 r_src1)
+    INTEGER_BIT_AND = _op(53, 2, _FOLD_SRC01)   # r_dest = (integer-bit-and r_src0 r_src1)
     INTEGER_BIT_XOR = _op(54, 2)       # r_dest = (integer-bit-xor r_src0 r_src1)
     INTEGER_MIN = _op(55, 2)           # r_dest = (integer-min r_src0 r_src1)
     INTEGER_MAX = _op(56, 2)           # r_dest = (integer-max r_src0 r_src1)
@@ -441,30 +466,45 @@ class Opcode(IntEnum):
 #
 # Each instruction is stored as a single unsigned 64-bit word:
 #
-#   63        48 47      36 35      24 23      12 11       0
-#   [  opcode  ] [  dest  ] [  src0  ] [  src1  ] [  src2  ]
-#       16 bits    12 bits    12 bits    12 bits    12 bits
+#   63  61 60        48 47      36 35      24 23      12 11       0
+#   [tag] [  opcode  ] [  dest  ] [  src0  ] [  src1  ] [  src2  ]
+#    3b      13 bits     12 bits    12 bits    12 bits    12 bits
 #
 # The 12-bit fields support up to 4096 register slots, which is far more
-# than the slot allocator ever produces.  The 16-bit opcode field gives
+# than the slot allocator ever produces.  The 13-bit opcode field gives
 # ample room for future expansion.
+#
+# The 3-bit tag describes the shape of the instruction's source operands.
+# Bit i set means source position i holds a constant-pool index rather than a
+# register.  The dest field is never tagged: a destination is always a write
+# to a register.  Which positions may be tagged is constrained per opcode by
+# the foldable mask on the Opcode member; a tag bit set for a position the
+# opcode does not permit is a validation error.
 
+_TAG_SHIFT = 61
+_TAG_MASK = 0b111
 _OPCODE_SHIFT = 48
 _DEST_SHIFT = 36
 _SRC0_SHIFT = 24
 _SRC1_SHIFT = 12
 _FIELD_MASK = 0xFFF
-_OPCODE_MASK = 0xFFFF
+_OPCODE_MASK = 0x1FFF
 
 
-def pack_instruction(opcode: int, dest: int, src0: int, src1: int, src2: int) -> int:
-    """Pack five integer fields into a single unsigned 64-bit instruction word."""
+def pack_instruction(opcode: int, dest: int, src0: int, src1: int, src2: int, tag: int = 0) -> int:
+    """
+    Pack six integer fields into a single unsigned 64-bit instruction word.
+
+    `tag` is the 3-bit source-operand shape descriptor: bit i set means source
+    position i holds a constant-pool index rather than a register.
+    """
     return (
-        (opcode & _OPCODE_MASK) << _OPCODE_SHIFT
-        | (dest  & _FIELD_MASK) << _DEST_SHIFT
-        | (src0  & _FIELD_MASK) << _SRC0_SHIFT
-        | (src1  & _FIELD_MASK) << _SRC1_SHIFT
-        | (src2  & _FIELD_MASK)
+        (tag & _TAG_MASK) << _TAG_SHIFT
+        | (opcode & _OPCODE_MASK) << _OPCODE_SHIFT
+        | (dest & _FIELD_MASK) << _DEST_SHIFT
+        | (src0 & _FIELD_MASK) << _SRC0_SHIFT
+        | (src1 & _FIELD_MASK) << _SRC1_SHIFT
+        | (src2 & _FIELD_MASK)
     )
 
 
@@ -476,10 +516,11 @@ def unpack_instruction(word: int) -> 'Instruction':
     """
     return Instruction(
         opcode=(word >> _OPCODE_SHIFT) & _OPCODE_MASK,
-        dest  =(word >> _DEST_SHIFT)   & _FIELD_MASK,
-        src0  =(word >> _SRC0_SHIFT)   & _FIELD_MASK,
-        src1  =(word >> _SRC1_SHIFT)   & _FIELD_MASK,
-        src2  = word                   & _FIELD_MASK,
+        dest=(word >> _DEST_SHIFT) & _FIELD_MASK,
+        src0=(word >> _SRC0_SHIFT) & _FIELD_MASK,
+        src1=(word >> _SRC1_SHIFT) & _FIELD_MASK,
+        src2= word & _FIELD_MASK,
+        tag=(word >> _TAG_SHIFT) & _TAG_MASK,
     )
 
 
@@ -533,12 +574,17 @@ class Instruction:
       src0  — first source register or instruction-stream immediate
       src1  — second source register or instruction-stream immediate
       src2  — third source register or instruction-stream immediate
+
+    tag is the 3-bit source-operand shape descriptor: bit i set means source
+    position i holds a constant-pool index rather than a register.  It is
+    constrained per opcode by the foldable mask on the Opcode member.
     """
     opcode: int  # Plain int (Opcode integer value) for fast VM dispatch table indexing
     dest: int = 0   # destination register (written by MAKE_CLOSURE, POP, and load ops)
     src0: int = 0   # first immediate / source operand (was arg1)
     src1: int = 0   # second immediate / source operand (was arg2)
     src2: int = 0   # third source operand (used by PATCH_CLOSURE for value_reg)
+    tag: int = 0    # 3-bit source-operand shape: bit i set ⇒ source i is a constant-pool index
 
     def arg_count(self) -> int:
         """
@@ -650,9 +696,22 @@ class Instruction:
             return f"{name} {rn(self.src0)}"
 
         n = self.arg_count()
-        srcs = [rn(self.src0), rn(self.src1), rn(self.src2)][:n]
+        srcs = [self._src_name(i, rn) for i in range(n)]
         src_str = (", ".join(srcs) + " " if srcs else "")
         return f"{rn(self.dest)} = {name} {src_str}".rstrip()
+
+    def _src_name(self, position: int, rn: 'Callable[[int], str]') -> str:
+        """
+        Render source operand `position` (0, 1, or 2) for disassembly.
+
+        A tagged position holds a constant-pool index and is rendered as k<n>;
+        an untagged position holds a register and is rendered via rn.
+        """
+        value = (self.src0, self.src1, self.src2)[position]
+        if (self.tag >> position) & 1:
+            return f"k{value}"
+
+        return rn(value)
 
 
 @dataclass(slots=True)
@@ -705,7 +764,7 @@ class CodeObject:
         if isinstance(self.instructions, list):
             packed = make_instructions_array()
             for instr in self.instructions:
-                packed.append(pack_instruction(instr.opcode, instr.dest, instr.src0, instr.src1, instr.src2))
+                packed.append(pack_instruction(instr.opcode, instr.dest, instr.src0, instr.src1, instr.src2, instr.tag))
 
             self.instructions = packed
 

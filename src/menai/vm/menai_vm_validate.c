@@ -19,12 +19,14 @@
 #include "menai_vm_opcodes.h"
 
 /* Instruction encoding — must match menai_vm_c.c */
+#define V_TAG_SHIFT 61
+#define V_TAG_MASK 0x7u
 #define V_OPCODE_SHIFT 48
 #define V_DEST_SHIFT 36
 #define V_SRC0_SHIFT 24
 #define V_SRC1_SHIFT 12
 #define V_FIELD_MASK 0xFFFu
-#define V_OPCODE_MASK 0xFFFFu
+#define V_OPCODE_MASK 0x1FFFu
 
 /* Highest valid opcode, derived from the generated opcode header. */
 #define V_HIGHEST_OPCODE MENAI_HIGHEST_OPCODE
@@ -159,6 +161,43 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
         int src0 = (int)((word >> V_SRC0_SHIFT) & V_FIELD_MASK);
         int src1 = (int)((word >> V_SRC1_SHIFT) & V_FIELD_MASK);
         int src2 = (int)(word & V_FIELD_MASK);
+        int tag = (int)((word >> V_TAG_SHIFT) & V_TAG_MASK);
+
+        /*
+         * Tag legality: a tag bit may only be set for a source position the
+         * opcode's foldability mask permits.  A tagged position holds a
+         * constant-pool index and must be < nconst; an untagged position holds
+         * a register slot and must be < total_slots.
+         */
+        if (tag != 0) {
+            int allowed = (opcode >= 0 && opcode < MENAI_OPCODE_COUNT)
+                ? MENAI_OPCODE_CONST_MASK[opcode] : 0;
+            if ((tag & ~allowed) != 0) {
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "Instruction tag 0x%x sets a constant operand in a "
+                         "position opcode %d does not permit (allowed mask: 0x%x)",
+                         tag, opcode, allowed);
+                set_error(err, VERR_INVALID_VARIABLE_ACCESS, buf, i, opcode);
+                return MENAI_ERR_UNDEFINED_VARIABLE;
+            }
+
+            const int fields[3] = { src0, src1, src2 };
+            for (int p = 0; p < 3; p++) {
+                if (!((tag >> p) & 1)) {
+                    continue;
+                }
+
+                if (fields[p] < 0 || fields[p] >= (int)co->nconst) {
+                    char buf[256];
+                    snprintf(buf, sizeof(buf),
+                             "Constant operand %d out of bounds (pool size: %zd)",
+                             fields[p], co->nconst);
+                    set_error(err, VERR_INDEX_OUT_OF_BOUNDS, buf, i, opcode);
+                    return MENAI_ERR_INDEX_OUT_OF_RANGE;
+                }
+            }
+        }
 
         /* LOAD_CONST: src0 must be < nconst */
         if (opcode == OP_LOAD_CONST) {

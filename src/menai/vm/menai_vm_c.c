@@ -200,12 +200,14 @@ _menai_shl_overflow(long a, long shift, long *r) {
 /*
  * Instruction encoding constants — must match menai_bytecode.py
  */
+#define TAG_SHIFT 61
+#define TAG_MASK 0x7u
 #define OPCODE_SHIFT 48
 #define DEST_SHIFT 36
 #define SRC0_SHIFT 24
 #define SRC1_SHIFT 12
 #define FIELD_MASK 0xFFFu
-#define OPCODE_MASK 0xFFFFu
+#define OPCODE_MASK 0x1FFFu
 
 /*
  * Profiling and tracing control — enable and extract.
@@ -586,6 +588,28 @@ typedef struct {
 } Frame;
 
 /*
+ * operand — resolve a source operand field to a MenaiValue *.
+ *
+ * When is_const is nonzero the field holds a constant-pool index and the value
+ * is read from the frame's constant pool; otherwise the field holds a register
+ * slot and the value is read from the register file.  The tag bit for source
+ * position i is bit i of the instruction's tag, so the caller passes tag & 1
+ * for src0, tag & 2 for src1, and tag & 4 for src2.
+ *
+ * A constant-pool value is owned by the code object, which outlives the frame,
+ * so no retain or release is needed for a constant operand read.
+ */
+static inline MenaiValue *
+operand(Frame *frame, MenaiValue **frame_regs, int field, int is_const)
+{
+    if (is_const) {
+        return frame->constants_items[field];
+    }
+
+    return frame_regs[field];
+}
+
+/*
  * Initial number of registers to allocate.  The register file grows on
  * demand via realloc when more slots are needed.
  */
@@ -790,6 +814,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         int opcode = (int)((word >> OPCODE_SHIFT) & OPCODE_MASK);
         int dest = (int)((word >> DEST_SHIFT) & FIELD_MASK);
         int src0 = (int)((word >> SRC0_SHIFT) & FIELD_MASK);
+        int tag = (int)((word >> TAG_SHIFT) & TAG_MASK);
 
         if (vs->_profile.enabled) {
             vs->_profile.opcode_counts[opcode]++;
@@ -1514,25 +1539,25 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_EQ_P: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
             bool_store(vs, frame_regs, dest, menai_integer_equal(a, b));
             break;
         }
 
         case OP_INTEGER_NEQ_P: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
             bool_store(vs, frame_regs, dest, !menai_integer_equal(a, b));
             break;
         }
 
         case OP_INTEGER_LT_P: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(vs, frame_regs, dest, a->fixed < b->fixed);
@@ -1567,9 +1592,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_GT_P: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(vs, frame_regs, dest, a->fixed > b->fixed);
@@ -1604,9 +1629,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_LTE_P: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(vs, frame_regs, dest, a->fixed <= b->fixed);
@@ -1641,9 +1666,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_GTE_P: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 bool_store(vs, frame_regs, dest, a->fixed >= b->fixed);
@@ -1847,9 +1872,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_ADD: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (!a->is_big && !b->is_big) {
                 long la = a->fixed;
@@ -1906,9 +1931,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_SUB: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (!a->is_big && !b->is_big) {
                 long la = a->fixed;
@@ -2094,9 +2119,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_MOD: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             int b_is_zero = (!b->is_big && b->fixed == 0) || (b->is_big && b->big.sign == 0);
             if (b_is_zero) {
@@ -2210,9 +2235,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_BIT_OR: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 MenaiInteger *r = alloc_menai_integer_from_long(vs, a->fixed | b->fixed);
@@ -2263,9 +2288,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_BIT_AND: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             if (MENAI_LIKELY(!a->is_big && !b->is_big)) {
                 MenaiInteger *r = alloc_menai_integer_from_long(vs, a->fixed & b->fixed);
@@ -2371,9 +2396,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_BIT_SHIFT_LEFT: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             long shift;
             if (!b->is_big) {
@@ -2439,9 +2464,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_INTEGER_BIT_SHIFT_RIGHT: {
-            MenaiInteger *a = (MenaiInteger *)frame_regs[src0];
+            MenaiInteger *a = (MenaiInteger *)operand(frame, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiInteger *b = (MenaiInteger *)frame_regs[src1];
+            MenaiInteger *b = (MenaiInteger *)operand(frame, frame_regs, src1, tag & 2);
 
             long shift;
             if (!b->is_big) {

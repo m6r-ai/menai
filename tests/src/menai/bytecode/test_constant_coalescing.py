@@ -11,6 +11,12 @@ Safety: a duplicate is only coalesced with an earlier load when no labels
 (branch targets) appear between them, ensuring the first load dominates
 the duplicate.
 
+The fold_constants pass runs after coalescing.  Where an opcode accepts a
+constant operand, the constant is encoded directly in the instruction and the
+LOAD_CONST is removed if no uses of its register remain.  The integer+,
+integer-, integer%, integer comparison, and integer bitwise opcodes accept
+constant operands, so constants feeding them no longer appear as loads.
+
 Struct type descriptors are not emitted as VCode LOAD_CONST instructions —
 the bytecode builder stages them directly into the constant pool at each
 MAKE_STRUCT site.  They are deduplicated by the constant pool's add_constant
@@ -68,7 +74,8 @@ class TestConstantCoalescingBasic:
     def test_integer_constant_coalesced(self):
         """
         The integer 1 is used four times in straight-line code.
-        After coalescing, only one LOAD_CONST of integer 1 should remain.
+        After coalescing there is one pool entry for it, and because integer+
+        accepts constant operands the folded pass emits no LOAD_CONST at all.
         """
         src = """
         (lambda (x)
@@ -82,9 +89,10 @@ class TestConstantCoalescingBasic:
             if type(c).__name__ == "MenaiInteger" and c.value == 1
         ]
         assert len(int1_consts) == 1
-        # And there should be exactly one LOAD_CONST for it.
+        # Every use of 1 is folded into an integer+ constant operand, so no
+        # LOAD_CONST remains.
         load_const_count = _count_op(code, Opcode.LOAD_CONST)
-        assert load_const_count == 1
+        assert load_const_count == 0
 
     def test_string_constant_coalesced(self):
         """
@@ -107,7 +115,8 @@ class TestConstantCoalescingBasic:
     def test_multiple_distinct_constants_coalesced_independently(self):
         """
         When multiple distinct constants are each used multiple times,
-        each should be coalesced independently — one load per distinct value.
+        each should be coalesced independently.  Both are folded into integer+
+        operands, so neither is loaded.
         """
         src = """
         (lambda (x)
@@ -115,8 +124,8 @@ class TestConstantCoalescingBasic:
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        # Two distinct integer constants: 1 and 2.
-        assert _count_op(code, Opcode.LOAD_CONST) == 2
+        # Two distinct integer constants: 1 and 2, both folded into operands.
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
 
     def test_boolean_constant_coalesced_in_straight_line(self):
         """
@@ -295,13 +304,16 @@ class TestConstantCoalescingDistinctValues:
     """Distinct constant values must not be coalesced with each other."""
 
     def test_different_integers_not_coalesced(self):
-        """Integers 1 and 2 are distinct and must not be coalesced."""
+        """
+        Integers 1 and 2 are distinct and must not be coalesced.  Both are
+        folded into integer+ constant operands, so neither is loaded.
+        """
         src = """
         (lambda (x) (integer+ (integer+ x 1) 2))
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        assert _count_op(code, Opcode.LOAD_CONST) == 2
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
 
     def test_different_strings_not_coalesced(self):
         """Strings "a" and "b" are distinct and must not be coalesced."""
@@ -313,13 +325,17 @@ class TestConstantCoalescingDistinctValues:
         assert _count_op(code, Opcode.LOAD_CONST) == 2
 
     def test_integer_and_float_not_coalesced(self):
-        """Integer 1 and float 1.0 are distinct types and must not coalesced."""
+        """
+        Integer 1 and float 1.0 are distinct types and must not be coalesced.
+        The integer is folded into the integer+ operand; float+ does not accept
+        constant operands, so the float is still loaded.
+        """
         src = """
         (lambda (x) (list (integer+ x 1) (float+ x 1.0)))
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        assert _count_op(code, Opcode.LOAD_CONST) == 2
+        assert _count_op(code, Opcode.LOAD_CONST) == 1
 
 
 def _struct_type_constants(code, name: str) -> list:
@@ -418,7 +434,8 @@ class TestConstantCoalescingNestedFunctions:
     def test_nested_functions_coalesce_independently(self):
         """
         Two nested lambdas that both use the same constant should each
-        coalesce their own copies independently.
+        coalesce their own copies independently.  Both copies are folded into
+        integer+ operands, so neither nested function loads a constant.
         """
         src = """
         (lambda (x)
@@ -432,8 +449,9 @@ class TestConstantCoalescingNestedFunctions:
         nested = [co for co in code.code_objects if "lambda" in co.name]
         assert len(nested) == 2
         for lam in nested:
-            # Each nested lambda should have exactly one LOAD_CONST for 1.
-            assert _count_op(lam, Opcode.LOAD_CONST) == 1
+            # Each nested lambda folds its uses of 1 into integer+ operands,
+            # so no LOAD_CONST remains.
+            assert _count_op(lam, Opcode.LOAD_CONST) == 0
 
     def test_nested_function_correct_result(self, menai):
         """Nested functions with coalesced constants produce correct results."""
@@ -451,18 +469,25 @@ class TestConstantCoalescingNoChange:
     """No coalescing when there are no duplicates."""
 
     def test_no_duplicates_no_change(self):
-        """A function with all-distinct constants should not be changed."""
+        """
+        A function with all-distinct constants coalesces nothing.  Both
+        constants are folded into integer+ operands, so neither is loaded.
+        """
         src = """
         (lambda (x) (integer+ (integer+ x 1) 2))
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        # Two distinct constants, each used once — no coalescing.
-        assert _count_op(code, Opcode.LOAD_CONST) == 2
+        # Two distinct constants, each used once — no coalescing, and both
+        # folded into integer+ operands.
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
 
     def test_single_use_no_coalescing(self):
-        """A constant used only once is not affected."""
+        """
+        A constant used only once is not coalesced, and is folded into the
+        integer+ operand, so no LOAD_CONST remains.
+        """
         src = '(lambda (x) (integer+ x 42))'
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        assert _count_op(code, Opcode.LOAD_CONST) == 1
+        assert _count_op(code, Opcode.LOAD_CONST) == 0

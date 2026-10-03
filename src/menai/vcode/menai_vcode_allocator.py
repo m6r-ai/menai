@@ -61,6 +61,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeBuiltin,
     MenaiVCodeCall,
     MenaiVCodeFunction,
+    MenaiVCodeGuard,
     MenaiVCodeInstr,
     MenaiVCodeJump,
     MenaiVCodeJumpIfFalse,
@@ -581,7 +582,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], []
 
     if isinstance(instr, MenaiVCodeBuiltin):
-        return [instr.dst.id], [r.id for r in instr.args]
+        return [instr.dst.id], [a.reg.id for a in instr.args if a.reg is not None]
 
     if isinstance(instr, MenaiVCodeCall):
         return [instr.dst.id], [instr.func.id] + [r.id for r in instr.args]
@@ -634,7 +635,13 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, MenaiVCodeReturn):
         return [], [instr.value.id]
 
-    # MenaiVCodeJump, MenaiVCodeRaise: no register references.
+    if isinstance(instr, MenaiVCodeGuard):
+        return [], [instr.value.id]
+
+    if isinstance(instr, MenaiVCodeRaise):
+        return [], [instr.message.id]
+
+    # MenaiVCodeJump: no register references.
     return [], []
 
 
