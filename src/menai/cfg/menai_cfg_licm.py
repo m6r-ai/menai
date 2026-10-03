@@ -9,6 +9,38 @@ self-loop skips the preamble on every iteration after the first.  A loop may
 have more than one back-edge (both arms of a branch tail-calling the enclosing
 function); all of them are retargeted.
 
+Multiple loops per function
+---------------------------
+A function may contain more than one loop.  This happens when the IR inliner
+splices a `letrec`-to-loop body (an inner loop) into a function that is itself
+a loop, producing a loop nested inside another loop; it also happens for
+sequential loops.  Self-loops are grouped by the header they target, and each
+group is a distinct loop.  Every loop is optimised independently, innermost
+first: hoisting out of an inner loop only moves instructions into its own
+pre-header, which lies inside the enclosing loop, so it cannot invalidate the
+region an enclosing loop's analysis was derived from.  Processing the
+innermost loop first means a value that is invariant for both an inner and an
+enclosing loop is first hoisted to the inner pre-header and then, on a later
+fixed-point iteration, hoisted further out to the enclosing pre-header.
+
+Loop region
+-----------
+The blocks that make up a loop are the header plus every block that can reach
+one of the loop's back-edge blocks without passing through the header, walking
+predecessors.  The back-edge blocks are exactly the blocks terminated by the
+loop's SelfLoopTerms, so no dominator computation is needed.
+
+This is deliberately not a forward reachability walk from the header, and not
+a "blocks dominated by the header" set.  Both over-include.  For a loop
+nested inside another, the inner header is reachable from the outer loop's
+later blocks (via the outer back-edge and the next outer iteration), so a
+forward walk would pull the whole enclosing loop into the inner region.  And a
+loop that sits at the top of a function (e.g. an inlined `skip-ws` loop) has
+its header on the path from the entry to everything after it, so the header
+dominates the rest of the function even though that code is not in the loop.
+The back-edge walk stops at the header, so it reaches neither an enclosing
+loop nor the code that follows the loop.
+
 As Menai is pure (no side effects, no mutation) any instruction whose
 operands are all loop-invariant can be hoisted unconditionally.  There is no
 need to check for side effects, memory aliasing, or ordering hazards.
@@ -48,16 +80,25 @@ to recursively compute phi types under a hypothetical param type.
 
 Block splitting
 ---------------
-When at least one instruction is hoisted, the entry block is split:
+When at least one instruction is hoisted, the hoisting target depends on
+whether the loop header is the entry block:
 
-  - Preamble: ParamInstr/FreeVarInstr definitions, then hoisted instructions
-    in dependency order, terminated by a JumpTerm to the loop-entry block.
-  - Loop-entry: remaining instructions (non-hoisted), with the original
-    terminator.
+  - Function-level loop (header is the entry block): the entry block is split
+    into a preamble and a new loop-entry block.
+      - Preamble: ParamInstr/FreeVarInstr definitions, then hoisted
+        instructions in dependency order, terminated by a JumpTerm to the
+        loop-entry block.
+      - Loop-entry: remaining instructions (non-hoisted), with the original
+        terminator.
+    Each SelfLoopTerm's target is set to the loop-entry block.  The VCode
+    builder emits the self-loop jump targeting that block's own label, so the
+    back-edge resolves to the loop-entry rather than the preamble.
 
-Each SelfLoopTerm's target is set to the loop-entry block.  The VCode builder
-emits the self-loop jump targeting that block's own label, so the back-edge
-resolves to the loop-entry rather than the preamble.
+  - MenaiIRLoop (header is a distinct loop-entry block): the header already
+    has a pre-header that dominates it and the back-edge already skips it, so
+    the hoisted instructions are appended to that pre-header and the
+    SelfLoopTerms' targets are left unchanged.  Splitting the entry block in
+    this case would orphan the header's phi nodes.
 
 Hoisting from non-entry blocks
 ------------------------------
@@ -75,8 +116,8 @@ a forward walk naturally places producers before consumers.  When an
 instruction in block B depends on a value defined in block A (where A
 precedes B in the block list), the producer is hoisted first.
 
-The pass mutates the CFG in place — it moves instructions between block.instrs
-lists and may create a new block — and returns the same MenaiCFGFunction.
+The pass returns a new MenaiCFGFunction; it does not mutate its input.  It
+moves instructions between block.instrs lists and may create a new block.
 """
 
 from dataclasses import replace
@@ -188,11 +229,37 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
     def _optimize_function(
         self, func: MenaiCFGFunction, context: MenaiCFGContext,
     ) -> tuple[MenaiCFGFunction, bool]:
-        """Hoist loop-invariant instructions from a self-loop into a preamble."""
-        self_loops = self._find_self_loop(func)
-        if self_loops is None:
-            return func, False
+        """
+        Hoist loop-invariant instructions from every loop in the function.
 
+        A function may contain more than one loop (nested or sequential), so
+        each loop is optimised independently.  Loops are processed innermost
+        first so that hoisting out of an inner loop (which only moves
+        instructions into its own pre-header, inside the enclosing loop)
+        cannot invalidate the region an enclosing loop's analysis was derived
+        from.
+        """
+        changed = False
+        for loop in self._find_loops(func):
+            func, loop_changed = self._optimize_loop(func, loop)
+            if loop_changed:
+                changed = True
+
+        return func, changed
+
+    def _optimize_loop(
+        self,
+        func: MenaiCFGFunction,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+    ) -> tuple[MenaiCFGFunction, bool]:
+        """
+        Hoist loop-invariant instructions from a single loop into a preamble.
+
+        `self_loops` are the loop's back-edges: all the SelfLoopTerms that
+        share one header.  The header, region, and pre-header are re-derived
+        from the current CFG, so this is safe to call after other loops in the
+        same function have been optimised.
+        """
         entry = func.entry()
         header = self._self_loop_header(func, self_loops[0])
 
@@ -222,15 +289,12 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             self_loops, param_ids, def_map,
         )
 
-        # Only instructions inside the loop may be hoisted.  A block is inside
-        # the loop when it is reachable from the loop header.  For a
-        # function-level self-loop the header is the entry block and every block
-        # is reachable, so all blocks qualify.  For a MenaiIRLoop the header is a
-        # distinct loop-entry block, and the blocks that precede it (the
-        # pre-header and any earlier blocks) are outside the loop; hoisting an
-        # instruction out of one of those into the pre-header would move it
-        # across a use and break dominance.
-        loop_block_ids = self._loop_block_ids(func, header)
+        # Only instructions inside the loop may be hoisted.  The region is the
+        # header plus the blocks that reach a back-edge without passing through
+        # the header; a pre-header, an enclosing-loop block, or code after the
+        # loop is excluded, so an instruction is never moved across a use or
+        # out of a loop it is not invariant for.
+        loop_block_ids = self._loop_region(func, header, self_loops)
 
         # Collect hoistable instructions from blocks inside the loop.
         preamble_instrs: list[MenaiCFGInstr] = []
@@ -305,12 +369,17 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             terminator=entry.terminator,
         )
 
-        # Retarget every self-loop to the new loop-entry block.
+        # Retarget this loop's self-loops to the new loop-entry block.  Other
+        # loops' self-loops are left alone: a function may contain more than
+        # one loop, and only this loop's back-edges should skip this preamble.
+        self_loop_block_ids = self._self_loop_block_ids(func, self_loops)
+
         def _retarget(b: MenaiCFGBlock) -> MenaiCFGBlock:
-            term = b.terminator
-            if not isinstance(term, MenaiCFGSelfLoopTerm):
+            if b.id not in self_loop_block_ids:
                 return b
 
+            term = b.terminator
+            assert isinstance(term, MenaiCFGSelfLoopTerm)
             return replace(
                 b,
                 terminator=MenaiCFGSelfLoopTerm(
@@ -324,6 +393,22 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         rebuilt = [
             new_entry if b.id == entry.id else b for b in rebuilt
         ]
+
+        # The entry block's outgoing edges moved to loop_entry (it inherited
+        # the original terminator), so a successor block's phi that named the
+        # entry block as an incoming predecessor must now name loop_entry.
+        # The VCode builder emits a phi-elimination move in a predecessor block
+        # only when the phi's incoming predecessor is that block; a stale
+        # reference would drop the move and leave the phi's register
+        # uninitialised.
+        successor_ids = set(self._successor_ids(loop_entry))
+        rebuilt = [
+            self._retarget_phi_incoming(b, entry.id, loop_entry.id)
+            if b.id in successor_ids
+            else b
+            for b in rebuilt
+        ]
+
         rebuilt.append(loop_entry)
 
         return replace(func, blocks=tuple(rebuilt)), True
@@ -649,81 +734,207 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         """Return the next available block id in func."""
         return max(b.id for b in func.blocks) + 1
 
-    def _find_self_loop(
+    def _find_loops(
         self, func: MenaiCFGFunction,
-    ) -> list[MenaiCFGSelfLoopTerm] | None:
+    ) -> list[list[MenaiCFGSelfLoopTerm]]:
         """
-        Return the function's self-loop terminators, or None.
+        Return the function's loops, each as the list of its back-edges.
 
         A tail-recursive loop can have more than one back-edge: when both
         arms of a branch in the body tail-call the enclosing function, each
-        arm gets its own SelfLoopTerm.  Returns None when there are no
-        self-loops, or when they do not all share one loop header (which
-        would mean more than one distinct loop, not a single hoistable one).
+        arm gets its own SelfLoopTerm, and all of them share the loop's
+        header.  Self-loops are therefore grouped by the header they target.
+
+        A function may contain several loops (nested, sequential, or both),
+        so each group is a distinct loop rather than evidence of an
+        unhoistable shape.  Groups are returned innermost first so that a
+        nested loop is optimised before the loop that encloses it.
         """
-        found: list[MenaiCFGSelfLoopTerm] = []
+        groups: dict[int, list[MenaiCFGSelfLoopTerm]] = {}
+        headers: dict[int, MenaiCFGBlock] = {}
+        by_id = blocks_by_id(func)
         for block in func.blocks:
             if isinstance(block.terminator, MenaiCFGSelfLoopTerm):
-                found.append(block.terminator)
+                header = self._self_loop_header(func, block.terminator, by_id)
+                groups.setdefault(header.id, []).append(block.terminator)
+                headers[header.id] = header
 
-        if not found:
-            return None
+        # Order innermost first: a loop's nesting depth is the number of other
+        # loop regions that contain its header.  Optimising a nested loop only
+        # moves instructions into its own pre-header, which lies inside the
+        # enclosing loop, so it cannot invalidate an enclosing loop's region.
+        #
+        # Each header's region is computed once here, not once per
+        # (header, other_header) pair inside `depth`: the region depends only
+        # on the loop, so recomputing it in the inner loop would make the
+        # depth computation quadratic in the number of loops.
+        regions: dict[int, set[int]] = {
+            header_id: self._loop_region(func, header, groups[header_id])
+            for header_id, header in headers.items()
+        }
 
-        header = self._self_loop_header(func, found[0])
-        for self_loop in found[1:]:
-            if self._self_loop_header(func, self_loop) is not header:
-                return None
+        def depth(header_id: int) -> int:
+            """Count how many other loops enclose the loop with this header."""
+            count = 0
+            for other_id, region in regions.items():
+                if other_id == header_id:
+                    continue
 
-        return found
+                if header_id in region:
+                    count += 1
+
+            return count
+
+        return [groups[h] for h in sorted(groups, key=depth, reverse=True)]
 
     def _self_loop_header(
-        self, func: MenaiCFGFunction, self_loop: MenaiCFGSelfLoopTerm,
+        self,
+        func: MenaiCFGFunction,
+        self_loop: MenaiCFGSelfLoopTerm,
+        by_id: dict[int, MenaiCFGBlock] | None = None,
     ) -> MenaiCFGBlock:
-        """Return the header a self-loop targets (the entry block when unset)."""
+        """
+        Return the header a self-loop targets (the entry block when unset).
+
+        `by_id` is the function's block map, passed in so that a caller that
+        resolves several self-loops does not rebuild it per call.
+        """
         if self_loop.target is None:
             return func.entry()
 
-        return blocks_by_id(func)[self_loop.target]
+        if by_id is None:
+            by_id = blocks_by_id(func)
 
-    def _loop_block_ids(
-        self, func: MenaiCFGFunction, header: MenaiCFGBlock,
+        return by_id[self_loop.target]
+
+    def _loop_region(
+        self,
+        func: MenaiCFGFunction,
+        header: MenaiCFGBlock,
+        self_loops: list[MenaiCFGSelfLoopTerm],
     ) -> set[int]:
         """
-        Return the ids of the blocks that are inside the loop.
+        Return the ids of the blocks that make up the loop.
 
-        A block is inside the loop when it is reachable from the loop header by
-        following successors.  The back-edge is followed (it targets the header,
-        which is already in the set).  For a function-level self-loop the header
-        is the entry block, so every block is reachable and the whole function
-        is the loop.  For a MenaiIRLoop the header is a distinct loop-entry
-        block, so blocks that precede it are excluded.
+        The region is the header plus every block that can reach a back-edge
+        block without passing through the header, walking predecessors.  The
+        back-edge blocks are the blocks terminated by the loop's SelfLoopTerms.
+
+        This is deliberately not a forward reachability walk from the header,
+        and not a "blocks dominated by the header" set: both over-include.  A
+        loop nested inside another has its header reachable from the outer
+        loop's later blocks (via the outer back-edge and the next outer
+        iteration), so a forward walk pulls the whole enclosing loop in.  A
+        loop at the top of a function (e.g. an inlined `skip-ws` loop) has its
+        header on the path from the entry to everything after it, so the
+        header dominates the rest of the function even though that code is not
+        in the loop.  The back-edge walk stops at the header, so it reaches
+        neither an enclosing loop nor the code that follows the loop.
         """
-        region: set[int] = set()
         by_id = blocks_by_id(func)
-        stack = [header.id]
+        region: set[int] = {header.id}
+        stack = list(self._self_loop_block_ids(func, self_loops))
         while stack:
             block_id = stack.pop()
             if block_id in region:
                 continue
 
             region.add(block_id)
-            block = by_id[block_id]
-            term = block.terminator
-            if isinstance(term, MenaiCFGJumpTerm):
-                stack.append(term.target)
-
-            elif isinstance(term, MenaiCFGBranchTerm):
-                stack.append(term.true_block)
-                stack.append(term.false_block)
-
-            elif isinstance(term, MenaiCFGSwitchTerm):
-                stack.extend(t for t in term.targets if t is not None)
-                stack.append(term.default_block)
-
-            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
-                stack.append(term.target)
+            for pred in self._predecessor_ids(by_id, block_id):
+                if pred not in region:
+                    stack.append(pred)
 
         return region
+
+    def _predecessor_ids(
+        self,
+        by_id: dict[int, MenaiCFGBlock],
+        block_id: int,
+    ) -> list[int]:
+        """
+        Return the ids of the blocks that can transfer control to `block_id`.
+
+        The reverse of `_successor_ids`: a block is a predecessor when one of
+        its successors is `block_id`.  A SelfLoopTerm with a target contributes
+        that target as a successor (the back-edge), so the loop header is seen
+        as a predecessor of its own back-edge block.
+        """
+        return [
+            other.id for other in by_id.values()
+            if block_id in self._successor_ids(other)
+        ]
+
+    def _self_loop_block_ids(
+        self,
+        func: MenaiCFGFunction,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+    ) -> set[int]:
+        """Return the ids of the blocks whose terminator is one of `self_loops`."""
+        wanted = {id(self_loop) for self_loop in self_loops}
+        return {
+            block.id for block in func.blocks
+            if id(block.terminator) in wanted
+        }
+
+    def _retarget_phi_incoming(
+        self,
+        block: MenaiCFGBlock,
+        old_pred_id: int,
+        new_pred_id: int,
+    ) -> MenaiCFGBlock:
+        """
+        Rewrite phi incoming edges that name `old_pred_id` to `new_pred_id`.
+
+        Used when a block is split: the split block's outgoing edges move to
+        the new block, so a successor's phi must name the new block as the
+        incoming predecessor.
+        """
+        changed = False
+        new_instrs: list[MenaiCFGInstr] = []
+        for instr in block.instrs:
+            if not isinstance(instr, MenaiCFGPhiInstr):
+                new_instrs.append(instr)
+                continue
+
+            if not any(pred == old_pred_id for _, pred in instr.incoming):
+                new_instrs.append(instr)
+                continue
+
+            new_incoming = tuple(
+                (value, new_pred_id if pred == old_pred_id else pred)
+                for value, pred in instr.incoming
+            )
+            new_instrs.append(
+                MenaiCFGPhiInstr(result=instr.result, incoming=new_incoming)
+            )
+            changed = True
+
+        if not changed:
+            return block
+
+        return replace(block, instrs=tuple(new_instrs))
+
+    def _successor_ids(self, block: MenaiCFGBlock) -> list[int]:
+        """Return the ids of the blocks a block's terminator can transfer to."""
+        term = block.terminator
+        if term is None:
+            return []
+
+        if isinstance(term, MenaiCFGJumpTerm):
+            return [term.target]
+
+        if isinstance(term, MenaiCFGBranchTerm):
+            return [term.true_block, term.false_block]
+
+        if isinstance(term, MenaiCFGSwitchTerm):
+            targets = [t for t in term.targets if t is not None]
+            targets.append(term.default_block)
+            return targets
+
+        if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
+            return [term.target]
+
+        return []
 
     def _pre_header(
         self,

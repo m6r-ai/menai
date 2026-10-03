@@ -550,6 +550,11 @@ class TestGuardHoisting:
 
         'acc' is fed by 'flip', whose return type is ambiguous, so acc's type
         is not provable and the ASSERT_LIST guard is inserted.
+
+        Two ASSERT_LIST guards are emitted: one on the loop-carried acc at the
+        top of the loop (hoisted into the preamble, so the loop is entered only
+        after it passes) and one on the exit path before list->vector.  The
+        exit-path guard is not in the loop, so it is not hoisted.
         """
         src = """
         (letrec ((loop
@@ -568,14 +573,18 @@ class TestGuardHoisting:
         """
         code = _compile(src)
         loop_fn = _loop_function(code, "loop")
-        assert _count_op(loop_fn, Opcode.ASSERT_LIST) == 1
         target = _self_loop_target(loop_fn)
         assert target is not None
-        guard_idx = next(
+        guard_indices = [
             i for i, instr in enumerate(loop_fn.instructions)
             if unpack_instruction(instr).opcode == int(Opcode.ASSERT_LIST)
+        ]
+        hoisted = [gi for gi in guard_indices if gi < target]
+        assert hoisted, (
+            "the loop guard must be hoisted into the preamble, before the "
+            "loop entry"
         )
-        assert target > guard_idx, (
+        assert target > hoisted[0], (
             "self-loop must skip the hoisted ASSERT_LIST guard"
         )
 
