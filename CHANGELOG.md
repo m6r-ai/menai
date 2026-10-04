@@ -14,6 +14,12 @@ Bug fixes:
   optimization.
 - Fixed a hash reinitialization bug in the VM.
 
+Internal structure changes:
+
+- Any opcode that has a register source operand has now been updated to take an
+  optional constant operand too.  A new peephole pass merges constant loads into
+  opcodes, giving benchmark gains typically around 4-5%.
+
 ## v0.7.0 (2026-10-02)
 
 New features:
