@@ -61,6 +61,10 @@ If you need to use an API read the source code to understand it first.
   ```bash
   python -m pytest tests/src/menai/ 2>&1 | tail -10
   ```
+- The standard library module tests (`tests/src/menai/stdlib/`) are slow: each parametrised
+  case compiles and runs a full Menai suite.  Use `make test-fast` to run everything except
+  them when iterating.  `make test` runs the full suite, and CI runs the full suite, so the
+  standard library is still exercised.
 
 ## Project tools
 
@@ -189,10 +193,19 @@ menai/
 │   └── menai_test/             # test runner for *.test.menai files
 └── tests/
     ├── src/
-    │   └── menai/              # compiler core tests
+    │   ├── menai/              # compiler core tests
+    │   │   └── stdlib/         # standard library module tests
+    │   ├── menai_check/        # parenthesis balance checker tests
+    │   ├── menai_eval/         # evaluator tests
+    │   └── menai_pipeline/     # pipeline runner tests
     └── tools/
         └── style_checker/      # style checker tests
 ```
+
+The `tests/` tree mirrors the source tree: a test for code under `src/<name>/`
+lives under `tests/src/<name>/`, and a test for code under `tools/<name>/` lives
+under `tests/tools/<name>/`. The standard library is package data of the `menai`
+package (`src/menai/stdlib/`), so its tests live under `tests/src/menai/stdlib/`.
 
 ## Architectural invariants
 

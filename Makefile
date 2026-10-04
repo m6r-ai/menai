@@ -91,6 +91,16 @@ test:
 	$(PYTHON) -m pytest tests/
 
 #
+# Run the test suite excluding the standard library module tests, which are
+# slow because each parametrised case compiles and runs a full Menai suite.
+# The standard library is still exercised by `make test` and by CI.
+#
+.PHONY: test-fast
+
+test-fast:
+	$(PYTHON) -m pytest tests/ --ignore=tests/src/menai/stdlib
+
+#
 # Remove the compiled .so files, generated opcode header, and cached
 # build artifacts (object files and staged .so in build/temp.* and build/lib.*).
 # Without removing the build dirs, setuptools will skip recompilation

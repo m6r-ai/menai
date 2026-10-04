@@ -6,7 +6,7 @@ import pytest
 
 from menai import Menai
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _RUNNER_DIR = _REPO_ROOT / "src" / "menai_test"
 
 
