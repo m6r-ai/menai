@@ -9,8 +9,9 @@ level, independent of either tool.
 """
 
 from menai.bytecode.menai_bytecode import CodeObject, Instruction, Opcode
-from menai.menai_value import MenaiInteger, MenaiString
+from menai.menai_value import MenaiFunction, MenaiInteger, MenaiString
 from menai_render.menai_render_instruction import (
+    annotate_instruction,
     render_code_metadata,
     render_instruction_lines,
 )
@@ -196,3 +197,113 @@ class TestConditionalReturnRendering:
         lines = render_instruction_lines(code, lambda _i, _instr: "")
         cond_index = next(i for i, ln in enumerate(lines) if "RETURN_IF_FALSE" in ln)
         assert lines[cond_index + 1] == ""
+
+
+class TestConstantOperandAnnotations:
+    """A constant in a source-operand position is annotated with its value."""
+
+    def test_single_tagged_operand_is_annotated(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=0, tag=0b010)],
+            constants=(MenaiInteger(7),),
+            local_count=1,
+        )
+        assert annotate_instruction(Instruction(
+            opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=0, tag=0b010,
+        ), code) == "  ; integer 7"
+
+    def test_tagged_operands_are_listed_in_position_order(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=1, tag=0b011)],
+            constants=(MenaiInteger(1), MenaiInteger(2)),
+            local_count=1,
+        )
+        annotation = annotate_instruction(
+            Instruction(opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=1, tag=0b011), code,
+        )
+        assert annotation == "  ; integer 1, integer 2"
+
+    def test_repeated_constant_is_shown_once(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=0, tag=0b011)],
+            constants=(MenaiInteger(1),),
+            local_count=1,
+        )
+        annotation = annotate_instruction(
+            Instruction(opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=0, tag=0b011), code,
+        )
+        assert annotation == "  ; integer 1"
+
+    def test_untagged_operands_are_not_annotated(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=1)],
+            constants=(MenaiInteger(1),),
+            local_count=2,
+        )
+        assert annotate_instruction(
+            Instruction(opcode=Opcode.INTEGER_ADD, dest=0, src0=0, src1=1), code,
+        ) == ""
+
+    def test_tagged_constant_operand_in_conditional_return(self):
+        """RETURN_IF_FALSE folds its value operand, which is then annotated."""
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.RETURN_IF_FALSE, src0=0, src1=0, tag=0b010)],
+            constants=(MenaiInteger(3),),
+            local_count=1,
+        )
+        assert annotate_instruction(
+            Instruction(opcode=Opcode.RETURN_IF_FALSE, src0=0, src1=0, tag=0b010), code,
+        ) == "  ; integer 3"
+
+    def test_raise_error_constant_is_annotated(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.RAISE_ERROR, src0=0, tag=0b001)],
+            constants=(MenaiString("boom"),),
+        )
+        assert annotate_instruction(
+            Instruction(opcode=Opcode.RAISE_ERROR, src0=0, tag=0b001), code,
+        ) == '  ; Raise error: string "boom"'
+
+    def test_raise_error_register_operand_is_not_annotated(self):
+        """A register operand for RAISE_ERROR must not be read as a constant index."""
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.RAISE_ERROR, src0=0)],
+            constants=(MenaiString("boom"),),
+            local_count=1,
+        )
+        assert annotate_instruction(
+            Instruction(opcode=Opcode.RAISE_ERROR, src0=0), code,
+        ) == ""
+
+
+class TestCalleeAnnotations:
+    """A constant callee of CALL or TAIL_CALL is named in the annotation."""
+
+    def test_tail_call_to_constant_function_names_the_callee(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.TAIL_CALL, src0=0, src1=1, tag=0b001)],
+            constants=(MenaiFunction(("y",), name="g"),),
+        )
+        assert annotate_instruction(
+            Instruction(opcode=Opcode.TAIL_CALL, src0=0, src1=1, tag=0b001), code,
+        ) == "  ; calls 'g'"
+
+    def test_call_to_constant_function_names_the_callee(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.CALL, dest=0, src0=0, src1=1, tag=0b001)],
+            constants=(MenaiFunction(("y",), name="g"),),
+            local_count=1,
+        )
+        assert annotate_instruction(
+            Instruction(opcode=Opcode.CALL, dest=0, src0=0, src1=1, tag=0b001), code,
+        ) == "  ; calls 'g'"
+
+    def test_call_via_register_is_not_annotated(self):
+        code = _code(
+            instructions=[Instruction(opcode=Opcode.CALL, dest=0, src0=0, src1=1)],
+            constants=(MenaiFunction(("y",), name="g"),),
+            local_count=2,
+        )
+        assert annotate_instruction(
+            Instruction(opcode=Opcode.CALL, dest=0, src0=0, src1=1), code,
+        ) == ""

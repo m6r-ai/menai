@@ -9,7 +9,7 @@ metadata tables, the same instruction formatting, and the same annotations.
 
 from collections.abc import Callable, Iterator
 
-from menai.menai_value import MenaiValue
+from menai.menai_value import MenaiFunction, MenaiValue
 from menai.bytecode.menai_bytecode import CodeObject, Instruction, Opcode, reg_name, unpack_instruction
 from menai_render.menai_render_colour import cyan, green, grey
 
@@ -87,8 +87,71 @@ def clean_name(name: str) -> str:
     return name
 
 
+def _tagged_operands(instr: Instruction) -> Iterator[tuple[int, int]]:
+    """
+    Yield (position, constant-pool index) for each constant source operand.
+
+    A source position is a constant when the instruction's tag bit for that
+    position is set; the field then indexes the constant pool rather than the
+    register file.  Position 0 is src0, 1 is src1, 2 is src2.
+    """
+    for position, value in enumerate((instr.src0, instr.src1, instr.src2)):
+        if (instr.tag >> position) & 1:
+            yield position, value
+
+
+def _constant_operand_annotation(instr: Instruction, code: CodeObject) -> str:
+    """
+    Annotate the constants held in an instruction's tagged source operands.
+
+    Each distinct constant-pool index among the tagged positions is rendered
+    with its value, in first-occurrence order; a constant referenced by more
+    than one position is shown once.  Returns an empty string when the
+    instruction has no tagged source operands.
+    """
+    seen: set[int] = set()
+    parts: list[str] = []
+    for _position, index in _tagged_operands(instr):
+        if index in seen or index >= len(code.constants):
+            continue
+
+        seen.add(index)
+        parts.append(format_constant(code.constants[index]))
+
+    if not parts:
+        return ""
+
+    return "  ; " + ", ".join(parts)
+
+
+def _callee_annotation(instr: Instruction, code: CodeObject) -> str:
+    """
+    Annotate a CALL or TAIL_CALL whose callee is a constant.
+
+    The callee is the src0 operand; when it is tagged it indexes a constant
+    MenaiFunction, and the annotation names the function being called.  Returns
+    an empty string when the callee is a register.
+    """
+    if not (instr.tag & 1) or instr.src0 >= len(code.constants):
+        return ""
+
+    const = code.constants[instr.src0]
+    if isinstance(const, MenaiFunction) and const.name:
+        return f"  ; calls '{clean_name(const.name)}'"
+
+    return f"  ; calls {format_constant(const)}"
+
+
 def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
-    """Add annotation to instruction showing what it does."""
+    """
+    Add annotation to instruction showing what it does.
+
+    Opcodes whose operands are dedicated (a constant-pool index, a code-object
+    index, a jump-table index) are annotated by name.  Any remaining source
+    operand that holds a constant rather than a register — a position whose tag
+    bit is set — is annotated with the constant's value, so a folded constant is
+    visible wherever it occurs.
+    """
     opcode = instr.opcode
     src0 = instr.src0
 
@@ -142,23 +205,27 @@ def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
 
                 break
 
-        # Name the value being patched in: use the closure's own name if the
-        # value register also holds a known closure, otherwise use reg_name.
-        value_closure_name = None
-        for scan_instr in instructions(code):
-            if scan_instr.opcode == Opcode.MAKE_CLOSURE and scan_instr.dest == instr.src2:
-                value_closure_name = clean_name(code.code_objects[scan_instr.src0].name)
-                break
+        # Name the value being patched in: a constant operand is shown by value,
+        # a register holding a known closure by the closure's name, and any other
+        # register by its symbolic name.
+        if (instr.tag >> 2) & 1 and instr.src2 < len(code.constants):
+            rhs = format_constant(code.constants[instr.src2])
+
+        else:
+            value_closure_name = None
+            for scan_instr in instructions(code):
+                if scan_instr.opcode == Opcode.MAKE_CLOSURE and scan_instr.dest == instr.src2:
+                    value_closure_name = clean_name(code.code_objects[scan_instr.src0].name)
+                    break
+
+            rhs = f"'{value_closure_name}'" if value_closure_name else reg_name(instr.src2, code)
 
         lhs_closure = closure_name or reg_name(instr.src0, code)
         lhs_capture = f"'{free_var_name}'" if free_var_name else f"capture[{instr.src1}]"
-        rhs_sym = value_closure_name
-        rhs_reg = reg_name(instr.src2, code)
-        rhs = f"'{rhs_sym}'" if rhs_sym else rhs_reg
         annotation = f"  ; '{lhs_closure}'.{lhs_capture} = {rhs}"
 
     elif opcode == Opcode.RAISE_ERROR:
-        if src0 < len(code.constants):
+        if (instr.tag & 1) and src0 < len(code.constants):
             msg = code.constants[src0]
             annotation = f"  ; Raise error: {format_constant(msg)[:40]}"
 
@@ -167,6 +234,12 @@ def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
             t_min, t_default, targets = code.jump_tables[instr.src1]
             hi = t_min + len(targets) - 1
             annotation = f"  ; see jt{instr.src1}: {t_min}..{hi} -> arms, else @{t_default}"
+
+    elif opcode in (Opcode.CALL, Opcode.TAIL_CALL):
+        annotation = _callee_annotation(instr, code)
+
+    if not annotation:
+        annotation = _constant_operand_annotation(instr, code)
 
     return annotation
 
