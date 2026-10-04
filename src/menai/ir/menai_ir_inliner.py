@@ -414,6 +414,17 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             if target.binding_name is not None and target.binding_name in letrec_names:
                 return False
 
+        # The check above is weaker than the recursion rule it implements.  A
+        # self-recursive lambda is intrinsic to the lambda (its binding name is
+        # in its own sibling_free_vars), but this test keys on letrec_names,
+        # which is a property of the walk position: it holds the group's names
+        # only while walking inside the group.  A call site is re-walked with
+        # the call site's letrec_names after a body has been inlined, so a
+        # self-call inside a freshly inlined body is not recognised here and
+        # would be inlined again, without bound.  The capture check above masks
+        # this today by rejecting every lambda that has sibling_free_vars, so
+        # the gap is unreachable until that check is relaxed or removed.
+
         # Expensive tree walks last, only for candidates that survived the
         # field checks above.
         try:
