@@ -13,7 +13,12 @@ from menai.menai_value import MenaiValue
 # _FOLD_SRC0 marks a one-source opcode whose src0 position may.
 # _FOLD_SRC012 marks a three-source opcode whose src0, src1, and src2
 # positions may each hold a constant-pool index.
+# _FOLD_SRC1 and _FOLD_SRC2 mark opcodes whose only foldable position is src1
+# or src2 respectively (e.g. RETURN_IF_* folds its value but not its
+# condition; PATCH_CLOSURE folds its value but not its closure).
 _FOLD_SRC0 = 0b001
+_FOLD_SRC1 = 0b010
+_FOLD_SRC2 = 0b100
 _FOLD_SRC01 = 0b011
 _FOLD_SRC012 = 0b111
 
@@ -86,16 +91,16 @@ class Opcode(IntEnum):
     JUMP = _op(8, 1)                   # Unconditional jump: JUMP offset
     JUMP_IF_FALSE = _op(9, 2)          # JUMP_IF_FALSE r_src0, @src1 — jump to src1 if r_src0 is false
     JUMP_IF_TRUE = _op(10, 2)           # JUMP_IF_TRUE r_src0, @src1 — jump to src1 if r_src0 is true
-    RAISE_ERROR = _op(11, 1)            # RAISE_ERROR r_src0 — raise error with value from register src0 (string or any MenaiValue)
+    RAISE_ERROR = _op(11, 1, _FOLD_SRC0)  # RAISE_ERROR r_src0 — raise error with a message
 
     # Functions
     MAKE_CLOSURE = _op(12, 1)           # r_dest = MAKE_CLOSURE code_objects[src0]
-    PATCH_CLOSURE = _op(13, 3)          # r_src0.captures[src1] = r_src2
-    CALL = _op(14, 2)                   # r_dest = CALL r_src0 src1 — func in src0, arity in src1, result to dest
-    TAIL_CALL = _op(15, 2)              # TAIL_CALL r_src0 src1 — func in src0, arity in src1, no dest
+    PATCH_CLOSURE = _op(13, 3, _FOLD_SRC2)  # r_src0.captures[src1] = r_src2
+    CALL = _op(14, 2, _FOLD_SRC0)       # r_dest = CALL r_src0 src1 — func in src0, arity in src1, result to dest
+    TAIL_CALL = _op(15, 2, _FOLD_SRC0)  # TAIL_CALL r_src0 src1 — func in src0, arity in src1, no dest
     APPLY = _op(16, 2)                  # r_dest = APPLY r_src0 r_src1 — func in src0, arg_list reg in src1, result to dest
     TAIL_APPLY = _op(17, 2)             # TAIL_APPLY r_src0 r_src1 — func in src0, arg_list reg in src1, no dest
-    RETURN = _op(18, 1)                 # RETURN r_src0 — return value in r_src0
+    RETURN = _op(18, 1, _FOLD_SRC0)     # RETURN r_src0 — return value in r_src0
 
     # None operations
     NONE_P = _op(19, 1)                 # r_dest = (none? r_src0)
@@ -254,153 +259,153 @@ class Opcode(IntEnum):
 
     # Dictionary operations
     MAKE_DICT = _op(154, 2)             # r_dest = MAKE_DICT src0, src1 — base slot of outgoing zone, pair count
-    DICT_P = _op(155, 1)                # r_dest = (dict? r_src0)
-    DICT_EQ_P = _op(156, 2)             # r_dest = (dict=? r_src0 r_src1)
-    DICT_NEQ_P = _op(157, 2)            # r_dest = (dict!=? r_src0 r_src1)
-    DICT_KEYS = _op(158, 1)             # r_dest = (dict-keys r_src0)
-    DICT_VALUES = _op(159, 1)           # r_dest = (dict-values r_src0)
-    DICT_LENGTH = _op(160, 1)           # r_dest = (dict-length r_src0)
-    DICT_HAS_P = _op(161, 2)            # r_dest = (dict-has? r_src0 r_src1)
-    DICT_WITHOUT = _op(162, 2)          # r_dest = (dict-without r_src0 r_src1)
-    DICT_MERGE = _op(163, 2)            # r_dest = (dict-merge r_src0 r_src1)
-    DICT_WITH = _op(164, 3)             # r_dest = (dict-with r_src0 r_src1 r_src2)
-    DICT_GET = _op(165, 3)              # r_dest = (dict-get r_src0 r_src1 r_src2)
+    DICT_P = _op(155, 1, _FOLD_SRC0)                # r_dest = (dict? r_src0)
+    DICT_EQ_P = _op(156, 2, _FOLD_SRC01)             # r_dest = (dict=? r_src0 r_src1)
+    DICT_NEQ_P = _op(157, 2, _FOLD_SRC01)            # r_dest = (dict!=? r_src0 r_src1)
+    DICT_KEYS = _op(158, 1, _FOLD_SRC0)             # r_dest = (dict-keys r_src0)
+    DICT_VALUES = _op(159, 1, _FOLD_SRC0)           # r_dest = (dict-values r_src0)
+    DICT_LENGTH = _op(160, 1, _FOLD_SRC0)           # r_dest = (dict-length r_src0)
+    DICT_HAS_P = _op(161, 2, _FOLD_SRC01)            # r_dest = (dict-has? r_src0 r_src1)
+    DICT_WITHOUT = _op(162, 2, _FOLD_SRC01)          # r_dest = (dict-without r_src0 r_src1)
+    DICT_MERGE = _op(163, 2, _FOLD_SRC01)            # r_dest = (dict-merge r_src0 r_src1)
+    DICT_WITH = _op(164, 3, _FOLD_SRC012)             # r_dest = (dict-with r_src0 r_src1 r_src2)
+    DICT_GET = _op(165, 3, _FOLD_SRC012)              # r_dest = (dict-get r_src0 r_src1 r_src2)
 
     # List operations
     MAKE_LIST = _op(166, 2)             # r_dest = MAKE_LIST src0, src1 — base slot of outgoing zone, element count
-    LIST_P = _op(167, 1)                # r_dest = (list? r_src0)
-    LIST_EQ_P = _op(168, 2)             # r_dest = (list=? r_src0 r_src1)
-    LIST_NEQ_P = _op(169, 2)            # r_dest = (list!=? r_src0 r_src1)
-    LIST_PREPEND = _op(170, 2)          # r_dest = (list-prepend r_src0 r_src1)
-    LIST_APPEND = _op(171, 2)           # r_dest = (list-append r_src0 r_src1)
-    LIST_REVERSE = _op(172, 1)          # r_dest = (list-reverse r_src0)
-    LIST_FIRST = _op(173, 1)            # r_dest = (list-first r_src0)
-    LIST_REST = _op(174, 1)             # r_dest = (list-rest r_src0)
-    LIST_LAST = _op(175, 1)             # r_dest = (list-last r_src0)
-    LIST_LENGTH = _op(176, 1)           # r_dest = (list-length r_src0)
-    LIST_NTH = _op(177, 2)              # r_dest = (list-nth r_src0 r_src1)
-    LIST_NULL_P = _op(178, 1)           # r_dest = (list-null? r_src0)
-    LIST_MEMBER_P = _op(179, 2)         # r_dest = (list-member? r_src0 r_src1)
-    LIST_INDEX = _op(180, 2)            # r_dest = (list-index r_src0 r_src1)
-    LIST_SLICE = _op(181, 3)            # r_dest = (list-slice r_src0 r_src1 r_src2)
-    LIST_WITHOUT = _op(182, 2)          # r_dest = (list-without r_src0 r_src1)
-    LIST_CONCAT = _op(183, 2)           # r_dest = (list-concat r_src0 r_src1)
-    LIST_TO_STRING = _op(184, 2)        # r_dest = (list->string r_src0 r_src1)
-    LIST_TO_SET = _op(185, 1)           # r_dest = (list->set r_src0)
+    LIST_P = _op(167, 1, _FOLD_SRC0)                # r_dest = (list? r_src0)
+    LIST_EQ_P = _op(168, 2, _FOLD_SRC01)             # r_dest = (list=? r_src0 r_src1)
+    LIST_NEQ_P = _op(169, 2, _FOLD_SRC01)            # r_dest = (list!=? r_src0 r_src1)
+    LIST_PREPEND = _op(170, 2, _FOLD_SRC01)          # r_dest = (list-prepend r_src0 r_src1)
+    LIST_APPEND = _op(171, 2, _FOLD_SRC01)           # r_dest = (list-append r_src0 r_src1)
+    LIST_REVERSE = _op(172, 1, _FOLD_SRC0)          # r_dest = (list-reverse r_src0)
+    LIST_FIRST = _op(173, 1, _FOLD_SRC0)            # r_dest = (list-first r_src0)
+    LIST_REST = _op(174, 1, _FOLD_SRC0)             # r_dest = (list-rest r_src0)
+    LIST_LAST = _op(175, 1, _FOLD_SRC0)             # r_dest = (list-last r_src0)
+    LIST_LENGTH = _op(176, 1, _FOLD_SRC0)           # r_dest = (list-length r_src0)
+    LIST_NTH = _op(177, 2, _FOLD_SRC01)              # r_dest = (list-nth r_src0 r_src1)
+    LIST_NULL_P = _op(178, 1, _FOLD_SRC0)           # r_dest = (list-null? r_src0)
+    LIST_MEMBER_P = _op(179, 2, _FOLD_SRC01)         # r_dest = (list-member? r_src0 r_src1)
+    LIST_INDEX = _op(180, 2, _FOLD_SRC01)            # r_dest = (list-index r_src0 r_src1)
+    LIST_SLICE = _op(181, 3, _FOLD_SRC012)            # r_dest = (list-slice r_src0 r_src1 r_src2)
+    LIST_WITHOUT = _op(182, 2, _FOLD_SRC01)          # r_dest = (list-without r_src0 r_src1)
+    LIST_CONCAT = _op(183, 2, _FOLD_SRC01)           # r_dest = (list-concat r_src0 r_src1)
+    LIST_TO_STRING = _op(184, 2, _FOLD_SRC01)        # r_dest = (list->string r_src0 r_src1)
+    LIST_TO_SET = _op(185, 1, _FOLD_SRC0)           # r_dest = (list->set r_src0)
 
     # Set operations
     MAKE_SET = _op(186, 2)              # r_dest = MAKE_SET src0, src1 — base slot of outgoing zone, element count
-    SET_P = _op(187, 1)                 # r_dest = (set? r_src0)
-    SET_EQ_P = _op(188, 2)              # r_dest = (set=? r_src0 r_src1)
-    SET_NEQ_P = _op(189, 2)             # r_dest = (set!=? r_src0 r_src1)
-    SET_MEMBER_P = _op(190, 2)          # r_dest = (set-member? r_src0 r_src1)
-    SET_WITH = _op(191, 2)              # r_dest = (set-with r_src0 r_src1)
-    SET_WITHOUT = _op(192, 2)           # r_dest = (set-without r_src0 r_src1)
-    SET_LENGTH = _op(193, 1)            # r_dest = (set-length r_src0)
-    SET_UNION = _op(194, 2)             # r_dest = (set-union r_src0 r_src1)
-    SET_INTERSECTION = _op(195, 2)      # r_dest = (set-intersection r_src0 r_src1)
-    SET_DIFFERENCE = _op(196, 2)        # r_dest = (set-difference r_src0 r_src1)
-    SET_SUBSET_P = _op(197, 2)          # r_dest = (set-subset? r_src0=superset r_src1=subset)
-    SET_TO_LIST = _op(198, 1)           # r_dest = (set->list r_src0)
+    SET_P = _op(187, 1, _FOLD_SRC0)                 # r_dest = (set? r_src0)
+    SET_EQ_P = _op(188, 2, _FOLD_SRC01)              # r_dest = (set=? r_src0 r_src1)
+    SET_NEQ_P = _op(189, 2, _FOLD_SRC01)             # r_dest = (set!=? r_src0 r_src1)
+    SET_MEMBER_P = _op(190, 2, _FOLD_SRC01)          # r_dest = (set-member? r_src0 r_src1)
+    SET_WITH = _op(191, 2, _FOLD_SRC01)              # r_dest = (set-with r_src0 r_src1)
+    SET_WITHOUT = _op(192, 2, _FOLD_SRC01)           # r_dest = (set-without r_src0 r_src1)
+    SET_LENGTH = _op(193, 1, _FOLD_SRC0)            # r_dest = (set-length r_src0)
+    SET_UNION = _op(194, 2, _FOLD_SRC01)             # r_dest = (set-union r_src0 r_src1)
+    SET_INTERSECTION = _op(195, 2, _FOLD_SRC01)      # r_dest = (set-intersection r_src0 r_src1)
+    SET_DIFFERENCE = _op(196, 2, _FOLD_SRC01)        # r_dest = (set-difference r_src0 r_src1)
+    SET_SUBSET_P = _op(197, 2, _FOLD_SRC01)          # r_dest = (set-subset? r_src0=superset r_src1=subset)
+    SET_TO_LIST = _op(198, 1, _FOLD_SRC0)           # r_dest = (set->list r_src0)
 
     # Struct operations
     MAKE_STRUCT = _op(199, 2)           # r_dest = MAKE_STRUCT src0, src1 — slot holding the struct type descriptor, field count
-    STRUCT_P = _op(200, 1)              # r_dest = (struct? r_src0)
-    STRUCT_IS_INSTANCE_P = _op(201, 2)  # r_dest = (struct-is-instance? r_src0 r_src1) — tag check, src0=struct, src1=structtype
-    STRUCT_GET = _op(202, 2)            # r_dest = (struct-get r_src0 field_sym) - field access by symbol name
-    STRUCT_GET_INDEXED = _op(203, 2)    # r_dest = indexed field read at r_src1 (compiler-internal)
-    STRUCT_WITH = _op(204, 3)           # r_dest = (struct-with r_src0 field_sym r_src1) - functional update by symbol name
-    STRUCT_WITH_INDEXED = _op(205, 3)   # r_dest = indexed field update of r_src0 at r_src1 (compiler-internal)
-    STRUCT_EQ_P = _op(206, 2)           # r_dest = (struct=? r_src0 r_src1)
-    STRUCT_NEQ_P = _op(207, 2)          # r_dest = (struct!=? r_src0 r_src1)
-    STRUCT_TYPE = _op(208, 1)           # r_dest = (struct-type r_src0) → MenaiStructType value
-    STRUCTTYPE_P = _op(209, 1)          # r_dest = (structtype? r_src0)
-    STRUCTTYPE_EQ_P = _op(210, 2)       # r_dest = (structtype=? r_src0 r_src1)
-    STRUCTTYPE_NEQ_P = _op(211, 2)      # r_dest = (structtype!=? r_src0 r_src1)
-    STRUCTTYPE_NAME = _op(212, 1)       # r_dest = (structtype-name r_src0) → string
-    STRUCTTYPE_FIELDS = _op(213, 1)     # r_dest = (structtype-fields r_src0) → list of symbols
+    STRUCT_P = _op(200, 1, _FOLD_SRC0)              # r_dest = (struct? r_src0)
+    STRUCT_IS_INSTANCE_P = _op(201, 2, _FOLD_SRC01)  # r_dest = (struct-is-instance? r_src0 r_src1)
+    STRUCT_GET = _op(202, 2, _FOLD_SRC01)            # r_dest = (struct-get r_src0 field_sym) - field access by symbol name
+    STRUCT_GET_INDEXED = _op(203, 2, _FOLD_SRC01)    # r_dest = indexed field read at r_src1 (compiler-internal)
+    STRUCT_WITH = _op(204, 3, _FOLD_SRC012)           # r_dest = (struct-with r_src0 field_sym r_src1)
+    STRUCT_WITH_INDEXED = _op(205, 3, _FOLD_SRC012)   # r_dest = indexed field update of r_src0 at r_src1 (compiler-internal)
+    STRUCT_EQ_P = _op(206, 2, _FOLD_SRC01)           # r_dest = (struct=? r_src0 r_src1)
+    STRUCT_NEQ_P = _op(207, 2, _FOLD_SRC01)          # r_dest = (struct!=? r_src0 r_src1)
+    STRUCT_TYPE = _op(208, 1, _FOLD_SRC0)           # r_dest = (struct-type r_src0) → MenaiStructType value
+    STRUCTTYPE_P = _op(209, 1, _FOLD_SRC0)          # r_dest = (structtype? r_src0)
+    STRUCTTYPE_EQ_P = _op(210, 2, _FOLD_SRC01)       # r_dest = (structtype=? r_src0 r_src1)
+    STRUCTTYPE_NEQ_P = _op(211, 2, _FOLD_SRC01)      # r_dest = (structtype!=? r_src0 r_src1)
+    STRUCTTYPE_NAME = _op(212, 1, _FOLD_SRC0)       # r_dest = (structtype-name r_src0) → string
+    STRUCTTYPE_FIELDS = _op(213, 1, _FOLD_SRC0)     # r_dest = (structtype-fields r_src0) → list of symbols
 
     # Generate integer range list
-    RANGE = _op(214, 3)                 # r_dest = (range r_src0 r_src1 r_src2)
+    RANGE = _op(214, 3, _FOLD_SRC012)                 # r_dest = (range r_src0 r_src1 r_src2)
 
     # Bytes operations — type foundation
-    BYTES_P = _op(215, 1)               # r_dest = (bytes? r_src0)
-    BYTES_EQ_P = _op(216, 2)            # r_dest = (bytes=? r_src0 r_src1)
-    BYTES_NEQ_P = _op(217, 2)           # r_dest = (bytes!=? r_src0 r_src1)
-    BYTES_LENGTH = _op(218, 1)          # r_dest = (bytes-length r_src0)
-    BYTES_NTH = _op(219, 2)             # r_dest = (bytes-nth r_src0 r_src1)
-    BYTES_APPEND_U8 = _op(220, 2)       # r_dest = (bytes-append-u8 r_src0 r_src1)
-    LIST_TO_BYTES = _op(221, 1)         # r_dest = (list->bytes r_src0)
-    BYTES_SLICE = _op(222, 3)           # r_dest = (bytes-slice r_src0 r_src1 r_src2)
+    BYTES_P = _op(215, 1, _FOLD_SRC0)               # r_dest = (bytes? r_src0)
+    BYTES_EQ_P = _op(216, 2, _FOLD_SRC01)            # r_dest = (bytes=? r_src0 r_src1)
+    BYTES_NEQ_P = _op(217, 2, _FOLD_SRC01)           # r_dest = (bytes!=? r_src0 r_src1)
+    BYTES_LENGTH = _op(218, 1, _FOLD_SRC0)          # r_dest = (bytes-length r_src0)
+    BYTES_NTH = _op(219, 2, _FOLD_SRC01)             # r_dest = (bytes-nth r_src0 r_src1)
+    BYTES_APPEND_U8 = _op(220, 2, _FOLD_SRC01)       # r_dest = (bytes-append-u8 r_src0 r_src1)
+    LIST_TO_BYTES = _op(221, 1, _FOLD_SRC0)         # r_dest = (list->bytes r_src0)
+    BYTES_SLICE = _op(222, 3, _FOLD_SRC012)           # r_dest = (bytes-slice r_src0 r_src1 r_src2)
     STRING_TO_BYTES = _op(223, 1, _FOLD_SRC0)       # r_dest = (string->bytes r_src0)
-    BYTES_TO_STRING = _op(224, 1)       # r_dest = (bytes->string r_src0)
-    BYTES_TO_LIST = _op(225, 1)         # r_dest = (bytes->list r_src0)
-    BYTES_TO_STRING_HEX = _op(226, 1)   # r_dest = (bytes->string-hex r_src0)
+    BYTES_TO_STRING = _op(224, 1, _FOLD_SRC0)       # r_dest = (bytes->string r_src0)
+    BYTES_TO_LIST = _op(225, 1, _FOLD_SRC0)         # r_dest = (bytes->list r_src0)
+    BYTES_TO_STRING_HEX = _op(226, 1, _FOLD_SRC0)   # r_dest = (bytes->string-hex r_src0)
     STRING_HEX_TO_BYTES = _op(227, 1, _FOLD_SRC0)  # r_dest = (string-hex->bytes r_src0)
-    BYTES_CONCAT = _op(228, 2)          # r_dest = (bytes-concat r_src0 r_src1)
-    BYTES_INDEX = _op(229, 2)           # r_dest = (bytes-index r_src0 r_src1)
-    BYTES_INDEX_INT = _op(230, 2)       # r_dest = (bytes-index-int r_src0 r_src1)
-    BYTES_LT_P = _op(231, 2)            # r_dest = (bytes<? r_src0 r_src1)
-    BYTES_GT_P = _op(232, 2)            # r_dest = (bytes>? r_src0 r_src1)
-    BYTES_LTE_P = _op(233, 2)           # r_dest = (bytes<=? r_src0 r_src1)
-    BYTES_GTE_P = _op(234, 2)           # r_dest = (bytes>=? r_src0 r_src1)
-    BYTES_READ_U8 = _op(235, 2)         # r_dest = (bytes-read-u8 r_src0 r_src1)
-    BYTES_READ_U16_LE = _op(236, 2)     # r_dest = (bytes-read-u16-le r_src0 r_src1)
-    BYTES_READ_U24_LE = _op(237, 2)     # r_dest = (bytes-read-u24-le r_src0 r_src1)
-    BYTES_READ_U32_LE = _op(238, 2)     # r_dest = (bytes-read-u32-le r_src0 r_src1)
-    BYTES_READ_U64_LE = _op(239, 2)     # r_dest = (bytes-read-u64-le r_src0 r_src1)
-    BYTES_READ_U16_BE = _op(240, 2)     # r_dest = (bytes-read-u16-be r_src0 r_src1)
-    BYTES_READ_U24_BE = _op(241, 2)     # r_dest = (bytes-read-u24-be r_src0 r_src1)
-    BYTES_READ_U32_BE = _op(242, 2)     # r_dest = (bytes-read-u32-be r_src0 r_src1)
-    BYTES_READ_U64_BE = _op(243, 2)     # r_dest = (bytes-read-u64-be r_src0 r_src1)
-    BYTES_READ_I8 = _op(244, 2)         # r_dest = (bytes-read-i8 r_src0 r_src1)
-    BYTES_READ_I16_LE = _op(245, 2)     # r_dest = (bytes-read-i16-le r_src0 r_src1)
-    BYTES_READ_I24_LE = _op(246, 2)     # r_dest = (bytes-read-i24-le r_src0 r_src1)
-    BYTES_READ_I32_LE = _op(247, 2)     # r_dest = (bytes-read-i32-le r_src0 r_src1)
-    BYTES_READ_I64_LE = _op(248, 2)     # r_dest = (bytes-read-i64-le r_src0 r_src1)
-    BYTES_READ_I16_BE = _op(249, 2)     # r_dest = (bytes-read-i16-be r_src0 r_src1)
-    BYTES_READ_I24_BE = _op(250, 2)     # r_dest = (bytes-read-i24-be r_src0 r_src1)
-    BYTES_READ_I32_BE = _op(251, 2)     # r_dest = (bytes-read-i32-be r_src0 r_src1)
-    BYTES_READ_I64_BE = _op(252, 2)     # r_dest = (bytes-read-i64-be r_src0 r_src1)
-    BYTES_APPEND_U16_LE = _op(253, 2)   # r_dest = (bytes-append-u16-le r_src0 r_src1)
-    BYTES_APPEND_U16_BE = _op(254, 2)   # r_dest = (bytes-append-u16-be r_src0 r_src1)
-    BYTES_APPEND_U24_LE = _op(255, 2)   # r_dest = (bytes-append-u24-le r_src0 r_src1)
-    BYTES_APPEND_U24_BE = _op(256, 2)   # r_dest = (bytes-append-u24-be r_src0 r_src1)
-    BYTES_APPEND_U32_LE = _op(257, 2)   # r_dest = (bytes-append-u32-le r_src0 r_src1)
-    BYTES_APPEND_U32_BE = _op(258, 2)   # r_dest = (bytes-append-u32-be r_src0 r_src1)
-    BYTES_APPEND_U64_LE = _op(259, 2)   # r_dest = (bytes-append-u64-le r_src0 r_src1)
-    BYTES_APPEND_U64_BE = _op(260, 2)   # r_dest = (bytes-append-u64-be r_src0 r_src1)
-    BYTES_APPEND_I8 = _op(261, 2)       # r_dest = (bytes-append-i8 r_src0 r_src1)
-    BYTES_APPEND_I16_LE = _op(262, 2)   # r_dest = (bytes-append-i16-le r_src0 r_src1)
-    BYTES_APPEND_I16_BE = _op(263, 2)   # r_dest = (bytes-append-i16-be r_src0 r_src1)
-    BYTES_APPEND_I24_LE = _op(264, 2)   # r_dest = (bytes-append-i24-le r_src0 r_src1)
-    BYTES_APPEND_I24_BE = _op(265, 2)   # r_dest = (bytes-append-i24-be r_src0 r_src1)
-    BYTES_APPEND_I32_LE = _op(266, 2)   # r_dest = (bytes-append-i32-le r_src0 r_src1)
-    BYTES_APPEND_I32_BE = _op(267, 2)   # r_dest = (bytes-append-i32-be r_src0 r_src1)
-    BYTES_APPEND_I64_LE = _op(268, 2)   # r_dest = (bytes-append-i64-le r_src0 r_src1)
-    BYTES_APPEND_I64_BE = _op(269, 2)   # r_dest = (bytes-append-i64-be r_src0 r_src1)
-    BYTES_WRITE_U8 = _op(270, 3)        # r_dest = (bytes-write-u8 r_src0 r_src1 r_src2)
-    BYTES_WRITE_U16_LE = _op(271, 3)    # r_dest = (bytes-write-u16-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_U16_BE = _op(272, 3)    # r_dest = (bytes-write-u16-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_U24_LE = _op(273, 3)    # r_dest = (bytes-write-u24-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_U24_BE = _op(274, 3)    # r_dest = (bytes-write-u24-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_U32_LE = _op(275, 3)    # r_dest = (bytes-write-u32-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_U32_BE = _op(276, 3)    # r_dest = (bytes-write-u32-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_U64_LE = _op(277, 3)    # r_dest = (bytes-write-u64-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_U64_BE = _op(278, 3)    # r_dest = (bytes-write-u64-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_I8 = _op(279, 3)        # r_dest = (bytes-write-i8 r_src0 r_src1 r_src2)
-    BYTES_WRITE_I16_LE = _op(280, 3)    # r_dest = (bytes-write-i16-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_I16_BE = _op(281, 3)    # r_dest = (bytes-write-i16-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_I24_LE = _op(282, 3)    # r_dest = (bytes-write-i24-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_I24_BE = _op(283, 3)    # r_dest = (bytes-write-i24-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_I32_LE = _op(284, 3)    # r_dest = (bytes-write-i32-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_I32_BE = _op(285, 3)    # r_dest = (bytes-write-i32-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_I64_LE = _op(286, 3)    # r_dest = (bytes-write-i64-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_I64_BE = _op(287, 3)    # r_dest = (bytes-write-i64-be r_src0 r_src1 r_src2)
-    BYTES_READ_ULEB128 = _op(288, 2)    # r_dest = (bytes-read-uleb128 r_src0 r_src1)
-    BYTES_APPEND_ULEB128 = _op(289, 2)  # r_dest = (bytes-append-uleb128 r_src0 r_src1)
-    BYTES_READ_SLEB128 = _op(290, 2)    # r_dest = (bytes-read-sleb128 r_src0 r_src1)
-    BYTES_APPEND_SLEB128 = _op(291, 2)  # r_dest = (bytes-append-sleb128 r_src0 r_src1)
+    BYTES_CONCAT = _op(228, 2, _FOLD_SRC01)          # r_dest = (bytes-concat r_src0 r_src1)
+    BYTES_INDEX = _op(229, 2, _FOLD_SRC01)           # r_dest = (bytes-index r_src0 r_src1)
+    BYTES_INDEX_INT = _op(230, 2, _FOLD_SRC01)       # r_dest = (bytes-index-int r_src0 r_src1)
+    BYTES_LT_P = _op(231, 2, _FOLD_SRC01)            # r_dest = (bytes<? r_src0 r_src1)
+    BYTES_GT_P = _op(232, 2, _FOLD_SRC01)            # r_dest = (bytes>? r_src0 r_src1)
+    BYTES_LTE_P = _op(233, 2, _FOLD_SRC01)           # r_dest = (bytes<=? r_src0 r_src1)
+    BYTES_GTE_P = _op(234, 2, _FOLD_SRC01)           # r_dest = (bytes>=? r_src0 r_src1)
+    BYTES_READ_U8 = _op(235, 2, _FOLD_SRC01)         # r_dest = (bytes-read-u8 r_src0 r_src1)
+    BYTES_READ_U16_LE = _op(236, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u16-le r_src0 r_src1)
+    BYTES_READ_U24_LE = _op(237, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u24-le r_src0 r_src1)
+    BYTES_READ_U32_LE = _op(238, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u32-le r_src0 r_src1)
+    BYTES_READ_U64_LE = _op(239, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u64-le r_src0 r_src1)
+    BYTES_READ_U16_BE = _op(240, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u16-be r_src0 r_src1)
+    BYTES_READ_U24_BE = _op(241, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u24-be r_src0 r_src1)
+    BYTES_READ_U32_BE = _op(242, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u32-be r_src0 r_src1)
+    BYTES_READ_U64_BE = _op(243, 2, _FOLD_SRC01)     # r_dest = (bytes-read-u64-be r_src0 r_src1)
+    BYTES_READ_I8 = _op(244, 2, _FOLD_SRC01)         # r_dest = (bytes-read-i8 r_src0 r_src1)
+    BYTES_READ_I16_LE = _op(245, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i16-le r_src0 r_src1)
+    BYTES_READ_I24_LE = _op(246, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i24-le r_src0 r_src1)
+    BYTES_READ_I32_LE = _op(247, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i32-le r_src0 r_src1)
+    BYTES_READ_I64_LE = _op(248, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i64-le r_src0 r_src1)
+    BYTES_READ_I16_BE = _op(249, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i16-be r_src0 r_src1)
+    BYTES_READ_I24_BE = _op(250, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i24-be r_src0 r_src1)
+    BYTES_READ_I32_BE = _op(251, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i32-be r_src0 r_src1)
+    BYTES_READ_I64_BE = _op(252, 2, _FOLD_SRC01)     # r_dest = (bytes-read-i64-be r_src0 r_src1)
+    BYTES_APPEND_U16_LE = _op(253, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u16-le r_src0 r_src1)
+    BYTES_APPEND_U16_BE = _op(254, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u16-be r_src0 r_src1)
+    BYTES_APPEND_U24_LE = _op(255, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u24-le r_src0 r_src1)
+    BYTES_APPEND_U24_BE = _op(256, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u24-be r_src0 r_src1)
+    BYTES_APPEND_U32_LE = _op(257, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u32-le r_src0 r_src1)
+    BYTES_APPEND_U32_BE = _op(258, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u32-be r_src0 r_src1)
+    BYTES_APPEND_U64_LE = _op(259, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u64-le r_src0 r_src1)
+    BYTES_APPEND_U64_BE = _op(260, 2, _FOLD_SRC01)   # r_dest = (bytes-append-u64-be r_src0 r_src1)
+    BYTES_APPEND_I8 = _op(261, 2, _FOLD_SRC01)       # r_dest = (bytes-append-i8 r_src0 r_src1)
+    BYTES_APPEND_I16_LE = _op(262, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i16-le r_src0 r_src1)
+    BYTES_APPEND_I16_BE = _op(263, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i16-be r_src0 r_src1)
+    BYTES_APPEND_I24_LE = _op(264, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i24-le r_src0 r_src1)
+    BYTES_APPEND_I24_BE = _op(265, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i24-be r_src0 r_src1)
+    BYTES_APPEND_I32_LE = _op(266, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i32-le r_src0 r_src1)
+    BYTES_APPEND_I32_BE = _op(267, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i32-be r_src0 r_src1)
+    BYTES_APPEND_I64_LE = _op(268, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i64-le r_src0 r_src1)
+    BYTES_APPEND_I64_BE = _op(269, 2, _FOLD_SRC01)   # r_dest = (bytes-append-i64-be r_src0 r_src1)
+    BYTES_WRITE_U8 = _op(270, 3, _FOLD_SRC012)        # r_dest = (bytes-write-u8 r_src0 r_src1 r_src2)
+    BYTES_WRITE_U16_LE = _op(271, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u16-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_U16_BE = _op(272, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u16-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_U24_LE = _op(273, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u24-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_U24_BE = _op(274, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u24-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_U32_LE = _op(275, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u32-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_U32_BE = _op(276, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u32-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_U64_LE = _op(277, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u64-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_U64_BE = _op(278, 3, _FOLD_SRC012)    # r_dest = (bytes-write-u64-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_I8 = _op(279, 3, _FOLD_SRC012)        # r_dest = (bytes-write-i8 r_src0 r_src1 r_src2)
+    BYTES_WRITE_I16_LE = _op(280, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i16-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_I16_BE = _op(281, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i16-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_I24_LE = _op(282, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i24-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_I24_BE = _op(283, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i24-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_I32_LE = _op(284, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i32-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_I32_BE = _op(285, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i32-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_I64_LE = _op(286, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i64-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_I64_BE = _op(287, 3, _FOLD_SRC012)    # r_dest = (bytes-write-i64-be r_src0 r_src1 r_src2)
+    BYTES_READ_ULEB128 = _op(288, 2, _FOLD_SRC01)    # r_dest = (bytes-read-uleb128 r_src0 r_src1)
+    BYTES_APPEND_ULEB128 = _op(289, 2, _FOLD_SRC01)  # r_dest = (bytes-append-uleb128 r_src0 r_src1)
+    BYTES_READ_SLEB128 = _op(290, 2, _FOLD_SRC01)    # r_dest = (bytes-read-sleb128 r_src0 r_src1)
+    BYTES_APPEND_SLEB128 = _op(291, 2, _FOLD_SRC01)  # r_dest = (bytes-append-sleb128 r_src0 r_src1)
 
     # Type guard opcodes — assert runtime type, raise MENAI_ERR_TYPE_MISMATCH if wrong.
     ASSERT_NONE = _op(292, 1)           # Check r_src0 — assert r_src0 is none
@@ -421,50 +426,50 @@ class Opcode(IntEnum):
     # Vector operations
     LOAD_EMPTY_VECTOR = _op(306)        # r_dest = empty vector singleton
     MAKE_VECTOR = _op(307, 2)           # r_dest = MAKE_VECTOR src0, src1 — base slot, element count
-    VECTOR_P = _op(308, 1)              # r_dest = (vector? r_src0)
-    VECTOR_EQ_P = _op(309, 2)           # r_dest = (vector=? r_src0 r_src1)
-    VECTOR_NEQ_P = _op(310, 2)          # r_dest = (vector!=? r_src0 r_src1)
-    VECTOR_NTH = _op(311, 2)            # r_dest = (vector-nth r_src0 r_src1)
-    VECTOR_LENGTH = _op(312, 1)         # r_dest = (vector-length r_src0)
-    VECTOR_WITH = _op(313, 3)           # r_dest = (vector-with r_src0 r_src1 r_src2)
-    VECTOR_SLICE = _op(314, 3)          # r_dest = (vector-slice r_src0 r_src1 r_src2)
-    VECTOR_CONCAT = _op(315, 2)         # r_dest = (vector-concat r_src0 r_src1)
-    VECTOR_EMPTY_P = _op(316, 1)        # r_dest = (vector-empty? r_src0)
-    VECTOR_MEMBER_P = _op(317, 2)       # r_dest = (vector-member? r_src0 r_src1)
-    VECTOR_INDEX = _op(318, 2)          # r_dest = (vector-index r_src0 r_src1)
-    VECTOR_TO_LIST = _op(319, 1)        # r_dest = (vector->list r_src0)
-    LIST_TO_VECTOR = _op(320, 1)        # r_dest = (list->vector r_src0)
+    VECTOR_P = _op(308, 1, _FOLD_SRC0)              # r_dest = (vector? r_src0)
+    VECTOR_EQ_P = _op(309, 2, _FOLD_SRC01)           # r_dest = (vector=? r_src0 r_src1)
+    VECTOR_NEQ_P = _op(310, 2, _FOLD_SRC01)          # r_dest = (vector!=? r_src0 r_src1)
+    VECTOR_NTH = _op(311, 2, _FOLD_SRC01)            # r_dest = (vector-nth r_src0 r_src1)
+    VECTOR_LENGTH = _op(312, 1, _FOLD_SRC0)         # r_dest = (vector-length r_src0)
+    VECTOR_WITH = _op(313, 3, _FOLD_SRC012)           # r_dest = (vector-with r_src0 r_src1 r_src2)
+    VECTOR_SLICE = _op(314, 3, _FOLD_SRC012)          # r_dest = (vector-slice r_src0 r_src1 r_src2)
+    VECTOR_CONCAT = _op(315, 2, _FOLD_SRC01)         # r_dest = (vector-concat r_src0 r_src1)
+    VECTOR_EMPTY_P = _op(316, 1, _FOLD_SRC0)        # r_dest = (vector-empty? r_src0)
+    VECTOR_MEMBER_P = _op(317, 2, _FOLD_SRC01)       # r_dest = (vector-member? r_src0 r_src1)
+    VECTOR_INDEX = _op(318, 2, _FOLD_SRC01)          # r_dest = (vector-index r_src0 r_src1)
+    VECTOR_TO_LIST = _op(319, 1, _FOLD_SRC0)        # r_dest = (vector->list r_src0)
+    LIST_TO_VECTOR = _op(320, 1, _FOLD_SRC0)        # r_dest = (list->vector r_src0)
     ASSERT_VECTOR = _op(321, 1)         # Check r_src0 — assert r_src0 is vector
 
     # Bytes hashing operations
-    BYTES_HASH_SHA2_256 = _op(322, 1)       # r_dest = (bytes-hash-sha2-256 r_src0)
-    BYTES_HASH_SHA2_512 = _op(323, 1)       # r_dest = (bytes-hash-sha2-512 r_src0)
-    BYTES_HASH_SHA2_512_256 = _op(324, 1)   # r_dest = (bytes-hash-sha2-512-256 r_src0)
-    BYTES_HASH_SHA3_256 = _op(325, 1)       # r_dest = (bytes-hash-sha3-256 r_src0)
+    BYTES_HASH_SHA2_256 = _op(322, 1, _FOLD_SRC0)       # r_dest = (bytes-hash-sha2-256 r_src0)
+    BYTES_HASH_SHA2_512 = _op(323, 1, _FOLD_SRC0)       # r_dest = (bytes-hash-sha2-512 r_src0)
+    BYTES_HASH_SHA2_512_256 = _op(324, 1, _FOLD_SRC0)   # r_dest = (bytes-hash-sha2-512-256 r_src0)
+    BYTES_HASH_SHA3_256 = _op(325, 1, _FOLD_SRC0)       # r_dest = (bytes-hash-sha3-256 r_src0)
 
     # Bytes checksum operations
-    BYTES_CRC32 = _op(326, 1)           # r_dest = (bytes-crc32 r_src0)
+    BYTES_CRC32 = _op(326, 1, _FOLD_SRC0)           # r_dest = (bytes-crc32 r_src0)
 
     # Bytes floating-point operations
-    BYTES_READ_F32_LE = _op(327, 2)     # r_dest = (bytes-read-f32-le r_src0 r_src1)
-    BYTES_READ_F32_BE = _op(328, 2)     # r_dest = (bytes-read-f32-be r_src0 r_src1)
-    BYTES_READ_F64_LE = _op(329, 2)     # r_dest = (bytes-read-f64-le r_src0 r_src1)
-    BYTES_READ_F64_BE = _op(330, 2)     # r_dest = (bytes-read-f64-be r_src0 r_src1)
-    BYTES_APPEND_F32_LE = _op(331, 2)   # r_dest = (bytes-append-f32-le r_src0 r_src1)
-    BYTES_APPEND_F32_BE = _op(332, 2)   # r_dest = (bytes-append-f32-be r_src0 r_src1)
-    BYTES_APPEND_F64_LE = _op(333, 2)   # r_dest = (bytes-append-f64-le r_src0 r_src1)
-    BYTES_APPEND_F64_BE = _op(334, 2)   # r_dest = (bytes-append-f64-be r_src0 r_src1)
-    BYTES_WRITE_F32_LE = _op(335, 3)    # r_dest = (bytes-write-f32-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_F32_BE = _op(336, 3)    # r_dest = (bytes-write-f32-be r_src0 r_src1 r_src2)
-    BYTES_WRITE_F64_LE = _op(337, 3)    # r_dest = (bytes-write-f64-le r_src0 r_src1 r_src2)
-    BYTES_WRITE_F64_BE = _op(338, 3)    # r_dest = (bytes-write-f64-be r_src0 r_src1 r_src2)
+    BYTES_READ_F32_LE = _op(327, 2, _FOLD_SRC01)     # r_dest = (bytes-read-f32-le r_src0 r_src1)
+    BYTES_READ_F32_BE = _op(328, 2, _FOLD_SRC01)     # r_dest = (bytes-read-f32-be r_src0 r_src1)
+    BYTES_READ_F64_LE = _op(329, 2, _FOLD_SRC01)     # r_dest = (bytes-read-f64-le r_src0 r_src1)
+    BYTES_READ_F64_BE = _op(330, 2, _FOLD_SRC01)     # r_dest = (bytes-read-f64-be r_src0 r_src1)
+    BYTES_APPEND_F32_LE = _op(331, 2, _FOLD_SRC01)   # r_dest = (bytes-append-f32-le r_src0 r_src1)
+    BYTES_APPEND_F32_BE = _op(332, 2, _FOLD_SRC01)   # r_dest = (bytes-append-f32-be r_src0 r_src1)
+    BYTES_APPEND_F64_LE = _op(333, 2, _FOLD_SRC01)   # r_dest = (bytes-append-f64-le r_src0 r_src1)
+    BYTES_APPEND_F64_BE = _op(334, 2, _FOLD_SRC01)   # r_dest = (bytes-append-f64-be r_src0 r_src1)
+    BYTES_WRITE_F32_LE = _op(335, 3, _FOLD_SRC012)    # r_dest = (bytes-write-f32-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_F32_BE = _op(336, 3, _FOLD_SRC012)    # r_dest = (bytes-write-f32-be r_src0 r_src1 r_src2)
+    BYTES_WRITE_F64_LE = _op(337, 3, _FOLD_SRC012)    # r_dest = (bytes-write-f64-le r_src0 r_src1 r_src2)
+    BYTES_WRITE_F64_BE = _op(338, 3, _FOLD_SRC012)    # r_dest = (bytes-write-f64-be r_src0 r_src1 r_src2)
 
     # Control flow (jump table)
     SWITCH_INTEGER = _op(339, 2)        # SWITCH_INTEGER r_src0, jt[src1] — dense integer jump table dispatch
 
     # Conditional return — return a value if a condition holds, else fall through.
-    RETURN_IF_FALSE = _op(340, 2)       # RETURN_IF_FALSE r_src0, r_src1 — return r_src1 if r_src0 is false
-    RETURN_IF_TRUE = _op(341, 2)        # RETURN_IF_TRUE r_src0, r_src1 — return r_src1 if r_src0 is true
+    RETURN_IF_FALSE = _op(340, 2, _FOLD_SRC1)  # RETURN_IF_FALSE r_src0, r_src1 — return r_src1 if r_src0 is false
+    RETURN_IF_TRUE = _op(341, 2, _FOLD_SRC1)   # RETURN_IF_TRUE r_src0, r_src1 — return r_src1 if r_src0 is true
 
 
 # Packed instruction encoding
@@ -664,22 +669,22 @@ class Instruction:
             return f"{rn(self.dest)} = MAKE_STRUCT {rn(self.src0)}, {self.src1}"
 
         if opcode == Opcode.PATCH_CLOSURE:
-            return f"PATCH_CLOSURE {rn(self.src0)}, {self.src1}, {rn(self.src2)}"
+            return f"PATCH_CLOSURE {rn(self.src0)}, {self.src1}, {self._src_name(2, rn)}"
 
         if opcode == Opcode.RETURN:
-            return f"RETURN {rn(self.src0)}"
+            return f"RETURN {self._src_name(0, rn)}"
 
         if opcode == Opcode.RETURN_IF_FALSE:
-            return f"RETURN_IF_FALSE {rn(self.src0)}, {rn(self.src1)}"
+            return f"RETURN_IF_FALSE {rn(self.src0)}, {self._src_name(1, rn)}"
 
         if opcode == Opcode.RETURN_IF_TRUE:
-            return f"RETURN_IF_TRUE {rn(self.src0)}, {rn(self.src1)}"
+            return f"RETURN_IF_TRUE {rn(self.src0)}, {self._src_name(1, rn)}"
 
         if opcode == Opcode.CALL:
-            return f"{rn(self.dest)} = CALL {rn(self.src0)}, {self.src1}"
+            return f"{rn(self.dest)} = CALL {self._src_name(0, rn)}, {self.src1}"
 
         if opcode == Opcode.TAIL_CALL:
-            return f"TAIL_CALL {rn(self.src0)}, {self.src1}"
+            return f"TAIL_CALL {self._src_name(0, rn)}, {self.src1}"
 
         if opcode == Opcode.APPLY:
             return f"{rn(self.dest)} = APPLY {rn(self.src0)} {rn(self.src1)}"
@@ -688,7 +693,7 @@ class Instruction:
             return f"TAIL_APPLY {rn(self.src0)} {rn(self.src1)}"
 
         if opcode == Opcode.RAISE_ERROR:
-            return f"RAISE_ERROR {rn(self.src0)}"
+            return f"RAISE_ERROR {self._src_name(0, rn)}"
 
         if opcode in (Opcode.ASSERT_NONE, Opcode.ASSERT_BOOLEAN,
                       Opcode.ASSERT_INTEGER, Opcode.ASSERT_FLOAT,

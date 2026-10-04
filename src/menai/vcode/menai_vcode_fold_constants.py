@@ -55,13 +55,19 @@ never mutates its input.
 """
 
 from menai.menai_builtin_registry import BUILTINS
-from menai.menai_value import MenaiValue
 from menai.vcode.menai_vcode import (
     MenaiVCodeBuiltin,
+    MenaiVCodeCall,
     MenaiVCodeFunction,
     MenaiVCodeInstr,
     MenaiVCodeLoadConst,
+    MenaiVCodeMakeClosure,
     MenaiVCodeOperand,
+    MenaiVCodePatchClosure,
+    MenaiVCodeRaise,
+    MenaiVCodeReturn,
+    MenaiVCodeReturnIf,
+    MenaiVCodeTailCall,
 )
 from menai.vcode.menai_vcode_allocator import _defs_uses
 
@@ -84,11 +90,15 @@ def fold_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
     """
     instrs = func.instrs
 
-    # reg_id → constant value, for every register with a unique LOAD_CONST
-    # definition.  A register defined more than once is absent.
-    foldable: dict[int, MenaiValue] = {}
-    # reg_id → index of the LOAD_CONST that uniquely defines it.
-    load_index: dict[int, int] = {}
+    # reg_id → constant operand, for every register whose unique definition is
+    # a compile-time constant.  A register defined more than once is absent.
+    #
+    # Two definitions yield a constant: a LOAD_CONST, and a capture-less
+    # MAKE_CLOSURE (a closure with no captures and no patching is a constant
+    # MenaiFunction).
+    foldable: dict[int, MenaiVCodeOperand] = {}
+    # reg_id → index of the instruction that uniquely defines it as a constant.
+    const_index: dict[int, int] = {}
     # reg_id → number of definitions seen so far.
     def_counts: dict[int, int] = {}
 
@@ -98,14 +108,31 @@ def fold_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
             def_counts[reg_id] = def_counts.get(reg_id, 0) + 1
 
         if isinstance(instr, MenaiVCodeLoadConst):
-            load_index[instr.dst.id] = idx
+            const_index[instr.dst.id] = idx
 
     for reg_id, count in def_counts.items():
-        if count == 1 and reg_id in load_index:
-            load_idx = load_index[reg_id]
-            load_instr = instrs[load_idx]
-            assert isinstance(load_instr, MenaiVCodeLoadConst)
-            foldable[reg_id] = load_instr.value
+        if count != 1 or reg_id not in const_index:
+            continue
+
+        const_instr = instrs[const_index[reg_id]]
+        assert isinstance(const_instr, MenaiVCodeLoadConst)
+        foldable[reg_id] = MenaiVCodeOperand.of_const(const_instr.value)
+
+    # A capture-less MAKE_CLOSURE defines a constant function.  It is folded
+    # only when the register is defined once, so the function value is
+    # unambiguous at every use.
+    for idx, instr in enumerate(instrs):
+        if not isinstance(instr, MenaiVCodeMakeClosure):
+            continue
+
+        if instr.captures or instr.needs_patching:
+            continue
+
+        if def_counts.get(instr.dst.id, 0) != 1:
+            continue
+
+        foldable[instr.dst.id] = MenaiVCodeOperand.of_function(instr.function)
+        const_index[instr.dst.id] = idx
 
     if not foldable:
         return func
@@ -117,13 +144,9 @@ def fold_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
     new_instrs: list[MenaiVCodeInstr] = []
     changed = False
     for instr in instrs:
-        if isinstance(instr, MenaiVCodeBuiltin):
-            new_instr, folded = _fold_builtin(instr, foldable, folded_uses)
-            new_instrs.append(new_instr)
-            changed = changed or folded
-
-        else:
-            new_instrs.append(instr)
+        new_instr, folded = _fold_instr(instr, foldable, folded_uses)
+        new_instrs.append(new_instr)
+        changed = changed or folded
 
     if not changed:
         return func
@@ -137,7 +160,7 @@ def fold_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
                 total_uses[reg_id] = total_uses.get(reg_id, 0) + 1
 
     remove_indices = {
-        load_index[reg_id]
+        const_index[reg_id]
         for reg_id in foldable
         if folded_uses.get(reg_id, 0) >= total_uses.get(reg_id, 0)
     }
@@ -162,9 +185,114 @@ def fold_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
     )
 
 
+def _fold_operand(
+    operand: MenaiVCodeOperand,
+    foldable: dict[int, MenaiVCodeOperand],
+    folded_uses: dict[int, int],
+) -> MenaiVCodeOperand:
+    """
+    Return operand, folded to a constant if its register has a unique
+    constant definition.
+
+    A fold increments the register's folded-use count in folded_uses.  An
+    operand that is already a constant, or whose register is not foldable, is
+    returned unchanged.
+    """
+    if operand.is_const() or operand.reg is None:
+        return operand
+
+    const_operand = foldable.get(operand.reg.id)
+    if const_operand is None:
+        return operand
+
+    folded_uses[operand.reg.id] = folded_uses.get(operand.reg.id, 0) + 1
+    return const_operand
+
+
+def _fold_instr(
+    instr: MenaiVCodeInstr,
+    foldable: dict[int, MenaiVCodeOperand],
+    folded_uses: dict[int, int],
+) -> tuple[MenaiVCodeInstr, bool]:
+    """
+    Return (instr', folded) where instr' has any foldable operands rewritten.
+
+    Only the instruction types that carry foldable operands are handled; every
+    other instruction is returned unchanged.  A builtin's foldable positions
+    come from its opcode's const_mask; the other types have a fixed foldable
+    position (a call's callee, a patch's value, a return's value).
+    """
+    if isinstance(instr, MenaiVCodeBuiltin):
+        return _fold_builtin(instr, foldable, folded_uses)
+
+    if isinstance(instr, MenaiVCodeCall):
+        func = _fold_operand(instr.func, foldable, folded_uses)
+        if func is instr.func:
+            return instr, False
+
+        return MenaiVCodeCall(dst=instr.dst, func=func, args=instr.args), True
+
+    if isinstance(instr, MenaiVCodeTailCall):
+        func = _fold_operand(instr.func, foldable, folded_uses)
+        if func is instr.func:
+            return instr, False
+
+        return MenaiVCodeTailCall(func=func, args=instr.args), True
+
+    if isinstance(instr, MenaiVCodePatchClosure):
+        value = _fold_operand(instr.value, foldable, folded_uses)
+        if value is instr.value:
+            return instr, False
+
+        return MenaiVCodePatchClosure(
+            closure=instr.closure,
+            capture_index=instr.capture_index,
+            value=value,
+        ), True
+
+    if isinstance(instr, MenaiVCodeMakeClosure):
+        captures = tuple(
+            _fold_operand(c, foldable, folded_uses) for c in instr.captures
+        )
+        if captures == instr.captures:
+            return instr, False
+
+        return MenaiVCodeMakeClosure(
+            dst=instr.dst,
+            function=instr.function,
+            captures=captures,
+            needs_patching=instr.needs_patching,
+        ), True
+
+    if isinstance(instr, MenaiVCodeReturn):
+        value = _fold_operand(instr.value, foldable, folded_uses)
+        if value is instr.value:
+            return instr, False
+
+        return MenaiVCodeReturn(value=value), True
+
+    if isinstance(instr, MenaiVCodeReturnIf):
+        value = _fold_operand(instr.value, foldable, folded_uses)
+        if value is instr.value:
+            return instr, False
+
+        return MenaiVCodeReturnIf(
+            cond=instr.cond, value=value, when_true=instr.when_true,
+        ), True
+
+    if isinstance(instr, MenaiVCodeRaise):
+        message = _fold_operand(instr.message, foldable, folded_uses)
+        if message is instr.message:
+            return instr, False
+
+        return MenaiVCodeRaise(message=message), True
+
+    return instr, False
+
+
 def _fold_builtin(
     instr: MenaiVCodeBuiltin,
-    foldable: dict[int, MenaiValue],
+    foldable: dict[int, MenaiVCodeOperand],
     folded_uses: dict[int, int],
 ) -> tuple[MenaiVCodeBuiltin, bool]:
     """
@@ -181,19 +309,13 @@ def _fold_builtin(
     new_args: list[MenaiVCodeOperand] = []
     folded = False
     for position, arg in enumerate(instr.args):
-        if arg.is_const() or not (const_mask >> position) & 1:
+        if not (const_mask >> position) & 1:
             new_args.append(arg)
             continue
 
-        assert arg.reg is not None
-        value = foldable.get(arg.reg.id)
-        if value is None:
-            new_args.append(arg)
-            continue
-
-        new_args.append(MenaiVCodeOperand.of_const(value))
-        folded_uses[arg.reg.id] = folded_uses.get(arg.reg.id, 0) + 1
-        folded = True
+        new_arg = _fold_operand(arg, foldable, folded_uses)
+        folded = folded or new_arg is not arg
+        new_args.append(new_arg)
 
     if not folded:
         return instr, False

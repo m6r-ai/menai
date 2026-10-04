@@ -303,13 +303,17 @@ def _replace_reg(
     if isinstance(instr, MenaiVCodeCall):
         return MenaiVCodeCall(
             dst=instr.dst,
-            func=new_reg if instr.func.id == old_id else instr.func,
+            func=MenaiVCodeOperand.of_reg(new_reg)
+            if instr.func.reg is not None and instr.func.reg.id == old_id
+            else instr.func,
             args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
     if isinstance(instr, MenaiVCodeTailCall):
         return MenaiVCodeTailCall(
-            func=new_reg if instr.func.id == old_id else instr.func,
+            func=MenaiVCodeOperand.of_reg(new_reg)
+            if instr.func.reg is not None and instr.func.reg.id == old_id
+            else instr.func,
             args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
 
@@ -330,7 +334,12 @@ def _replace_reg(
         return MenaiVCodeMakeClosure(
             dst=instr.dst,
             function=instr.function,
-            captures=tuple(new_reg if r.id == old_id else r for r in instr.captures),
+            captures=tuple(
+                MenaiVCodeOperand.of_reg(new_reg)
+                if c.reg is not None and c.reg.id == old_id
+                else c
+                for c in instr.captures
+            ),
             needs_patching=instr.needs_patching,
         )
 
@@ -338,7 +347,9 @@ def _replace_reg(
         return MenaiVCodePatchClosure(
             closure=new_reg if instr.closure.id == old_id else instr.closure,
             capture_index=instr.capture_index,
-            value=new_reg if instr.value.id == old_id else instr.value,
+            value=MenaiVCodeOperand.of_reg(new_reg)
+            if instr.value.reg is not None and instr.value.reg.id == old_id
+            else instr.value,
         )
 
     if isinstance(instr, MenaiVCodeMakeStruct):
@@ -382,14 +393,14 @@ def _replace_reg(
         return MenaiVCodeStructGetIndexed(
             dst=instr.dst,
             struct=new_reg if instr.struct.id == old_id else instr.struct,
-            index=new_reg if instr.index.id == old_id else instr.index,
+            index=instr.index,
         )
 
     if isinstance(instr, MenaiVCodeStructWithIndexed):
         return MenaiVCodeStructWithIndexed(
             dst=instr.dst,
             struct=new_reg if instr.struct.id == old_id else instr.struct,
-            index=new_reg if instr.index.id == old_id else instr.index,
+            index=instr.index,
             value=new_reg if instr.value.id == old_id else instr.value,
         )
 
@@ -415,19 +426,25 @@ def _replace_reg(
 
     if isinstance(instr, MenaiVCodeReturn):
         return MenaiVCodeReturn(
-            value=new_reg if instr.value.id == old_id else instr.value,
+            value=MenaiVCodeOperand.of_reg(new_reg)
+            if instr.value.reg is not None and instr.value.reg.id == old_id
+            else instr.value,
         )
 
     if isinstance(instr, MenaiVCodeReturnIf):
         return MenaiVCodeReturnIf(
             cond=new_reg if instr.cond.id == old_id else instr.cond,
-            value=new_reg if instr.value.id == old_id else instr.value,
+            value=MenaiVCodeOperand.of_reg(new_reg)
+            if instr.value.reg is not None and instr.value.reg.id == old_id
+            else instr.value,
             when_true=instr.when_true,
         )
 
     if isinstance(instr, MenaiVCodeRaise):
         return MenaiVCodeRaise(
-            message=new_reg if instr.message.id == old_id else instr.message,
+            message=MenaiVCodeOperand.of_reg(new_reg)
+            if instr.message.reg is not None and instr.message.reg.id == old_id
+            else instr.message,
         )
 
     if isinstance(instr, MenaiVCodeGuard):
@@ -701,13 +718,16 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeReturn):
-        return [], [instr.value.id]
+        value_uses = [instr.value.reg.id] if instr.value.reg is not None else []
+        return [], value_uses
 
     if isinstance(instr, MenaiVCodeReturnIf):
-        return [], [instr.cond.id, instr.value.id]
+        value_uses = [instr.value.reg.id] if instr.value.reg is not None else []
+        return [], [instr.cond.id] + value_uses
 
     if isinstance(instr, MenaiVCodeRaise):
-        return [], [instr.message.id]
+        message_uses = [instr.message.reg.id] if instr.message.reg is not None else []
+        return [], message_uses
 
     if isinstance(instr, MenaiVCodeGuard):
         return [], [instr.value.id]
@@ -716,10 +736,12 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], [a.reg.id for a in instr.args if a.reg is not None]
 
     if isinstance(instr, MenaiVCodeCall):
-        return [instr.dst.id], [instr.func.id] + [r.id for r in instr.args]
+        func_uses = [instr.func.reg.id] if instr.func.reg is not None else []
+        return [instr.dst.id], func_uses + [r.id for r in instr.args]
 
     if isinstance(instr, MenaiVCodeTailCall):
-        return [], [instr.func.id] + [r.id for r in instr.args]
+        func_uses = [instr.func.reg.id] if instr.func.reg is not None else []
+        return [], func_uses + [r.id for r in instr.args]
 
     if isinstance(instr, MenaiVCodeApply):
         return [instr.dst.id], [instr.func.id, instr.arg_list.id]
@@ -728,10 +750,12 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [], [instr.func.id, instr.arg_list.id]
 
     if isinstance(instr, MenaiVCodeMakeClosure):
-        return [instr.dst.id], [r.id for r in instr.captures]
+        capture_uses = [c.reg.id for c in instr.captures if c.reg is not None]
+        return [instr.dst.id], capture_uses
 
     if isinstance(instr, MenaiVCodePatchClosure):
-        return [], [instr.closure.id, instr.value.id]
+        value_uses = [instr.value.reg.id] if instr.value.reg is not None else []
+        return [], [instr.closure.id] + value_uses
 
     if isinstance(instr, MenaiVCodeMakeStruct):
         return [instr.dst.id], [r.id for r in instr.args]
@@ -749,10 +773,10 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], [r.id for k, v in instr.pairs for r in (k, v)]
 
     if isinstance(instr, MenaiVCodeStructGetIndexed):
-        return [instr.dst.id], [instr.struct.id, instr.index.id]
+        return [instr.dst.id], [instr.struct.id]
 
     if isinstance(instr, MenaiVCodeStructWithIndexed):
-        return [instr.dst.id], [instr.struct.id, instr.index.id, instr.value.id]
+        return [instr.dst.id], [instr.struct.id, instr.value.id]
 
     # MenaiVCodeJump: no register references.
     return [], []
@@ -1043,7 +1067,13 @@ def _fold_branch_load_return(
         # The RETURN source must share a slot with the LOAD_CONST destination
         # (they may be different registers that the allocator assigned the same slot).
         load_slot = slot_map.slots.get(load.dst.id)
-        ret_slot = slot_map.slots.get(ret.value.id)
+        # A constant return value has no register slot, so this pattern cannot
+        # apply — the value is already folded into the RETURN.
+        ret_slot = (
+            slot_map.slots.get(ret.value.reg.id)
+            if ret.value.reg is not None
+            else None
+        )
         if load_slot != ret_slot:
             result.append(instr)
             i += 1
@@ -1060,7 +1090,7 @@ def _fold_branch_load_return(
         for m in range(j + 1, k):
             result.append(instrs[m])   # labels between load and return
 
-        result.append(MenaiVCodeReturn(value=instr.cond))
+        result.append(MenaiVCodeReturn(value=MenaiVCodeOperand.of_reg(instr.cond)))
         i = k + 1
         changed = True
 

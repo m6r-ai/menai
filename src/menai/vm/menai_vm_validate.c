@@ -254,7 +254,15 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
         /* CALL/TAIL_CALL/APPLY/TAIL_APPLY: src0 (func register) < local_count */
         if (opcode == OP_CALL || opcode == OP_TAIL_CALL ||
             opcode == OP_APPLY || opcode == OP_TAIL_APPLY) {
-            if (src0 < 0 || src0 >= co->local_count) {
+            /*
+             * CALL and TAIL_CALL may name their callee with a constant operand
+             * (a capture-less closure or a struct type descriptor lives in the
+             * constant pool).  A tagged src0 is bounds-checked against the
+             * constant pool by the tag check above; only an untagged src0 is a
+             * register and must be < local_count.
+             */
+            int func_is_const = (tag & 1) != 0;
+            if (!func_is_const && (src0 < 0 || src0 >= co->local_count)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "Function register %d out of bounds (local_count: %d)",
@@ -267,7 +275,10 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
 
         /* RAISE_ERROR: src0 (message register) < local_count */
         if (opcode == OP_RAISE_ERROR) {
-            if (src0 < 0 || src0 >= co->local_count) {
+            /* A tagged src0 is a constant message, bounds-checked against the
+             * constant pool by the tag check above. */
+            int message_is_const = (tag & 1) != 0;
+            if (!message_is_const && (src0 < 0 || src0 >= co->local_count)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "RAISE_ERROR message register %d out of bounds (local_count: %d)",
@@ -303,7 +314,10 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
                 return MENAI_ERR_UNDEFINED_VARIABLE;
             }
 
-            if (src2 < 0 || src2 >= total_slots) {
+            /* A tagged src2 is a constant capture value, bounds-checked against
+             * the constant pool by the tag check above. */
+            int value_is_const = (tag & 4) != 0;
+            if (!value_is_const && (src2 < 0 || src2 >= total_slots)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "PATCH_CLOSURE src2 (value) register %d out of bounds (total_slots: %d)",
@@ -374,7 +388,10 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
                 return MENAI_ERR_UNDEFINED_VARIABLE;
             }
 
-            if (src1 < 0 || src1 >= co->local_count) {
+            /* A tagged src1 is a constant return value, bounds-checked against
+             * the constant pool by the tag check above. */
+            int value_is_const = (tag & 2) != 0;
+            if (!value_is_const && (src1 < 0 || src1 >= co->local_count)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "Return value register %d out of bounds (local_count: %d)",
@@ -918,6 +935,7 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
         int src0 = (int)((word >> V_SRC0_SHIFT) & V_FIELD_MASK);
         int src1 = (int)((word >> V_SRC1_SHIFT) & V_FIELD_MASK);
         int src2 = (int)(word & V_FIELD_MASK);
+        int tag = (int)((word >> V_TAG_SHIFT) & V_TAG_MASK);
 
         InitState *cur = &states[instr_idx];
 
@@ -936,7 +954,9 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
 
         /* Check RETURN: source must be initialized */
         if (opcode == OP_RETURN) {
-            if (!init_state_get_bit(cur, src0)) {
+            /* A tagged src0 is a constant return value, not a register read. */
+            int value_is_const = (tag & 1) != 0;
+            if (!value_is_const && !init_state_get_bit(cur, src0)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "RETURN source register %d may be uninitialized", src0);
@@ -961,7 +981,9 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
                 goto done;
             }
 
-            if (!init_state_get_bit(cur, src1)) {
+            /* A tagged src1 is a constant return value, not a register read. */
+            int value_is_const = (tag & 2) != 0;
+            if (!value_is_const && !init_state_get_bit(cur, src1)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "RETURN_IF value register %d may be uninitialized",
@@ -975,7 +997,9 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
 
         /* Check RAISE_ERROR: message register must be initialized */
         if (opcode == OP_RAISE_ERROR) {
-            if (!init_state_get_bit(cur, src0)) {
+            /* A tagged src0 is a constant message, not a register read. */
+            int message_is_const = (tag & 1) != 0;
+            if (!message_is_const && !init_state_get_bit(cur, src0)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "RAISE_ERROR message register %d may be uninitialized",
@@ -1016,7 +1040,9 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
             }
 
             /* src2 (value register) must be initialized */
-            if (!init_state_get_bit(cur, src2)) {
+            /* A tagged src2 is a constant capture value, not a register read. */
+            int value_is_const = (tag & 4) != 0;
+            if (!value_is_const && !init_state_get_bit(cur, src2)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "PATCH_CLOSURE value register %d may be uninitialized",
@@ -1061,7 +1087,13 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
         /* Check CALL/TAIL_CALL/APPLY/TAIL_APPLY: func register initialized */
         if (opcode == OP_CALL || opcode == OP_TAIL_CALL ||
             opcode == OP_APPLY || opcode == OP_TAIL_APPLY) {
-            if (!init_state_get_bit(cur, src0)) {
+            /*
+             * CALL and TAIL_CALL may name their callee with a constant operand,
+             * which is not a register and so has nothing to initialise.  Only
+             * an untagged src0 is a register read.
+             */
+            int func_is_const = (tag & 1) != 0;
+            if (!func_is_const && !init_state_get_bit(cur, src0)) {
                 char buf[256];
                 snprintf(buf, sizeof(buf),
                          "Function register %d may be uninitialized", src0);

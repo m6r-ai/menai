@@ -47,18 +47,26 @@ class MenaiVCodeReg:
 @dataclass(frozen=True)
 class MenaiVCodeOperand:
     """
-    A source operand in VCode: either a register or a compile-time constant.
+    A source operand in VCode: a register, a compile-time constant, or a
+    nested function.
 
     A register operand reads its value from the register's slot at run time.
     A constant operand is folded into the instruction as a constant-pool index
     by the fold_constants pass, so no register is allocated for it and no
-    LOAD_CONST is emitted.  Exactly one of reg/value is set.
+    LOAD_CONST is emitted.
 
-    Only MenaiVCodeBuiltin carries operands of this kind.  All other VCode
-    instructions take registers only.
+    A function operand names a nested MenaiVCodeFunction that is used as a
+    value — a capture-less closure, which is a compile-time constant.  The
+    MenaiFunction value does not exist until the child code object has been
+    emitted, so the operand carries the VCode function and the emitter resolves
+    it to a constant-pool index.  This lets a call whose callee is a
+    capture-less closure fold the callee without allocating it a register.
+
+    Exactly one of reg/value/function is set.
     """
     reg: MenaiVCodeReg | None = None
     value: MenaiValue | None = None
+    function: 'MenaiVCodeFunction | None' = None
 
     @staticmethod
     def of_reg(reg: MenaiVCodeReg) -> 'MenaiVCodeOperand':
@@ -70,11 +78,24 @@ class MenaiVCodeOperand:
         """Return a constant operand."""
         return MenaiVCodeOperand(value=value)
 
+    @staticmethod
+    def of_function(function: 'MenaiVCodeFunction') -> 'MenaiVCodeOperand':
+        """Return a nested-function operand."""
+        return MenaiVCodeOperand(function=function)
+
     def is_const(self) -> bool:
-        """Return True if this operand is a compile-time constant."""
-        return self.value is not None
+        """
+        Return True if this operand is a compile-time constant.
+
+        A nested-function operand is also a compile-time constant: it is
+        resolved to a constant-pool index by the emitter.
+        """
+        return self.value is not None or self.function is not None
 
     def __str__(self) -> str:
+        if self.function is not None:
+            return f"fn({self.function.binding_name or '<lambda>'})"
+
         if self.value is not None:
             return f"k({self.value!r})"
 
@@ -135,16 +156,26 @@ class MenaiVCodeBuiltin:
 
 @dataclass
 class MenaiVCodeCall:
-    """dst = call func(args...)"""
+    """
+    dst = call func(args...)
+
+    `func` is an operand: a capture-less closure and a struct type descriptor
+    are both loaded from the constant pool, so the callee is frequently a
+    compile-time constant.
+    """
     dst: MenaiVCodeReg
-    func: MenaiVCodeReg
+    func: MenaiVCodeOperand
     args: tuple[MenaiVCodeReg, ...]
 
 
 @dataclass
 class MenaiVCodeTailCall:
-    """tail_call func(args...)  — no result, terminates the function."""
-    func: MenaiVCodeReg
+    """
+    tail_call func(args...)  — no result, terminates the function.
+
+    `func` is an operand for the same reason as MenaiVCodeCall.
+    """
+    func: MenaiVCodeOperand
     args: tuple[MenaiVCodeReg, ...]
 
 
@@ -169,13 +200,16 @@ class MenaiVCodeMakeClosure:
     dst = make_closure(function, captures...)
 
     `function` is the nested MenaiVCodeFunction.
-    `captures` are the outer registers to capture, in order.
+    `captures` are the outer values to capture, in order.  Each is an operand:
+    a capture is frequently a compile-time constant (a lambda closing over a
+    literal), so the emitter installs it with a constant PATCH_CLOSURE operand
+    rather than loading it into a register first.
     `needs_patching` mirrors the CFG flag — the closure must be allocated
     even if captures is empty because PATCH_CLOSURE will fill sibling slots.
     """
     dst: MenaiVCodeReg
     function: 'MenaiVCodeFunction'
-    captures: tuple[MenaiVCodeReg, ...]
+    captures: tuple[MenaiVCodeOperand, ...]
     needs_patching: bool = False
 
 
@@ -252,14 +286,13 @@ class MenaiVCodeStructGetIndexed:
     """
     dst = struct_get_indexed(struct, index)
 
-    Reads the field at `index` from `struct`.  `index` is a register holding
-    the field index; the VCode builder materialises the compile-time index
-    constant into a register so the allocator manages its slot like any other
-    value.
+    Reads the field at `index` from `struct`.  `index` is a constant operand:
+    the field index is known at compile time, so it is encoded directly in the
+    instruction as a constant-pool index and needs no register slot.
     """
     dst: MenaiVCodeReg
     struct: MenaiVCodeReg
-    index: MenaiVCodeReg
+    index: MenaiVCodeOperand
 
 
 @dataclass
@@ -268,13 +301,13 @@ class MenaiVCodeStructWithIndexed:
     dst = struct_with_indexed(struct, index, value)
 
     Returns a new struct with the field at `index` set to `value`.  `index` is
-    a register holding the field index; the VCode builder materialises the
-    compile-time index constant into a register so the allocator manages its
-    slot like any other value.
+    a constant operand: the field index is known at compile time, so it is
+    encoded directly in the instruction as a constant-pool index and needs no
+    register slot.
     """
     dst: MenaiVCodeReg
     struct: MenaiVCodeReg
-    index: MenaiVCodeReg
+    index: MenaiVCodeOperand
     value: MenaiVCodeReg
 
 
@@ -285,10 +318,13 @@ class MenaiVCodePatchClosure:
 
     Installs value into capture slot capture_index of closure.
     Used exclusively during letrec initialisation.
+
+    `value` is an operand: the patched value is frequently a compile-time
+    constant (a literal sibling binding in the letrec group).
     """
     closure: MenaiVCodeReg
     capture_index: int
-    value: MenaiVCodeReg
+    value: MenaiVCodeOperand
 
 
 @dataclass
@@ -334,8 +370,12 @@ class MenaiVCodeSwitch:
 
 @dataclass
 class MenaiVCodeReturn:
-    """Return value from the current function."""
-    value: MenaiVCodeReg
+    """
+    Return value from the current function.
+
+    `value` is an operand: a function may return a compile-time constant.
+    """
+    value: MenaiVCodeOperand
 
 
 @dataclass
@@ -347,16 +387,24 @@ class MenaiVCodeReturnIf:
     `when_true` selects the condition polarity: True lowers to RETURN_IF_TRUE
     (return when cond is true), False lowers to RETURN_IF_FALSE (return when
     cond is false).
+
+    `cond` is a register — it is the branch condition.  `value` is an operand:
+    a function may return a compile-time constant.
     """
     cond: MenaiVCodeReg
-    value: MenaiVCodeReg
+    value: MenaiVCodeOperand
     when_true: bool
 
 
 @dataclass
 class MenaiVCodeRaise:
-    """Raise a runtime error with a value from a register."""
-    message: MenaiVCodeReg
+    """
+    Raise a runtime error with a message.
+
+    `message` is an operand: an error message is usually a compile-time
+    constant string.
+    """
+    message: MenaiVCodeOperand
 
 
 @dataclass
@@ -462,8 +510,11 @@ class MenaiVCodeFunction:
         return "\n".join(lines)
 
 
-def _fmt_regs(regs: tuple[MenaiVCodeReg, ...]) -> str:
-    """Format a list of VCode registers as a bracketed comma-separated string."""
+def _fmt_regs(regs: tuple[MenaiVCodeReg | MenaiVCodeOperand, ...]) -> str:
+    """
+    Format a list of VCode registers or operands as a bracketed
+    comma-separated string.
+    """
     return "[" + ", ".join(str(r) for r in regs) + "]"
 
 

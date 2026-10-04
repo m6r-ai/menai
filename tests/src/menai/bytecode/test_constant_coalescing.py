@@ -191,11 +191,11 @@ class TestConstantCoalescingDominanceSafety:
         """
         code = _find_lambda(_compile(src), "lambda")
         assert code is not None
-        # The string "same" appears in both branches, separated by a label.
-        # They must NOT be coalesced — two LOAD_CONST expected.
-        # The constant pool has one entry, but two LOAD_CONST instructions
-        # because they're in different branches.
-        assert _count_op(code, Opcode.LOAD_CONST) == 2
+        # The string "same" appears in both branches, separated by a label,
+        # so the two occurrences are not coalesced.  Both are folded into
+        # their RETURN operands, so no LOAD_CONST remains; the two returns
+        # reference the single pool entry independently.
+        assert _count_op(code, Opcode.LOAD_CONST) == 0
         # Also verify the constant pool has just one entry for "same".
         str_same = [
             c for c in code.constants

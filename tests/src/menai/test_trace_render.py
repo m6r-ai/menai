@@ -11,6 +11,8 @@ instruction, so a function may contain no LOAD_CONST at all; tests locate a
 LOAD_CONST by opcode rather than assuming a fixed instruction index.
 """
 
+import re
+
 from menai import Menai
 from menai.bytecode.menai_bytecode import Opcode
 from menai_render.menai_render_instruction import (
@@ -52,17 +54,20 @@ class TestInstructionLineMatchesDisassembler:
 
     def test_annotation_matches_disassembler_helper(self):
         code, result = _traced_result()
-        fact = result.functions[1]
-        # Find a LOAD_CONST trace line.  The first instruction is not
-        # necessarily one: integer comparison and arithmetic opcodes fold
-        # constant operands, so a function may have no LOAD_CONST at all until
-        # a value that cannot be folded (such as a returned literal).
-        load_const = next(
-            tr for tr in fact.instructions
+        # Find a LOAD_CONST trace line in any traced function.  A function may
+        # have none: the fold_constants pass folds constant operands into the
+        # instruction, including into a RETURN, so a returned literal need not
+        # be loaded separately.
+        found = next(
+            (fn, tr)
+            for fn in result.functions
+            for tr in fn.instructions
             if tr.instruction.opcode == int(Opcode.LOAD_CONST)
         )
-        expected = annotate_instruction(load_const.instruction, fact.code)
-        assert expected == "  ; integer 1"
+        fn, load_const = found
+        expected = annotate_instruction(load_const.instruction, fn.code)
+        constant = fn.code.constants[load_const.instruction.src0]
+        assert expected == f"  ; {constant.type_name()} {constant.describe()}"
 
 
 class TestRenderFunctionSummary:
@@ -203,7 +208,10 @@ class TestAnnotatedMetadata:
         _, result = _traced_metadata()
         text = "\n".join(render_annotated(result, color=False))
         assert "Jump Tables: 3" in text
-        assert "jt0: min=0  default=@7  span=0..1" in text
+        # The default target index depends on the emitted instruction layout,
+        # which the fold_constants pass can shift, so assert the table's shape
+        # rather than a fixed target.
+        assert re.search(r"jt0: min=0  default=@\d+  span=0\.\.1", text)
 
     def test_inputs_section_present(self):
         """A function with parameters gets an Inputs section naming each slot."""

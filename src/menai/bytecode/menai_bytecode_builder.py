@@ -67,6 +67,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeStructGetIndexed,
     MenaiVCodeStructWithIndexed,
     MenaiVCodeMove,
+    MenaiVCodeOperand,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
@@ -232,7 +233,20 @@ class _EmitContext:
         return idx
 
     def add_code_object(self, code_obj: CodeObject) -> int:
-        """Add a code object to the code object pool and return its index."""
+        """
+        Add a code object to the code object pool and return its index.
+
+        A code object is added at most once.  A nested function can be reached
+        both through a MAKE_CLOSURE (which emits MAKE_CLOSURE and registers the
+        child) and through a folded call operand (which pools the child as a
+        constant), so the same code object may be offered twice.  Registering it
+        once keeps the C bridge's ordinal assignment in step with the Python
+        code-object walk.
+        """
+        for idx, existing in enumerate(self.code_objects):
+            if existing is code_obj:
+                return idx
+
         idx = len(self.code_objects)
         if idx > self._MAX_INDEX:
             raise MenaiCodegenError(
@@ -281,6 +295,18 @@ class MenaiBytecodeBuilder:
 
     def __init__(self) -> None:
         self._lambda_counter = 0
+        # id(MenaiVCodeFunction) → emitted CodeObject.  A nested function can be
+        # reached through more than one path: a MAKE_CLOSURE that emits it and
+        # registers the child, and a folded call operand that pools it as a
+        # constant.  Emitting it once keeps the C bridge's ordinal assignment in
+        # step with the Python code-object walk, which would otherwise see two
+        # code objects for one logical function.
+        #
+        # Keyed by id because MenaiVCodeFunction is not hashable.  The functions
+        # are held in _lambda_sources so their ids cannot be reused by a later
+        # function while the cache entry is live.
+        self._lambda_cache: dict[int, CodeObject] = {}
+        self._lambda_sources: list[MenaiVCodeFunction] = []
 
     def build(self, func: MenaiVCodeFunction, name: str = "<module>") -> CodeObject:
         """
@@ -386,22 +412,26 @@ class MenaiBytecodeBuilder:
                 continue
 
             if isinstance(instr, MenaiVCodeStructGetIndexed):
+                assert instr.index.value is not None
                 ctx.emit(
                     Opcode.STRUCT_GET_INDEXED,
                     ctx.slot_of(instr.struct),
-                    ctx.slot_of(instr.index),
+                    ctx.add_constant(instr.index.value),
                     dest=ctx.slot_of(instr.dst),
+                    tag=0b010,
                 )
                 i += 1
                 continue
 
             if isinstance(instr, MenaiVCodeStructWithIndexed):
+                assert instr.index.value is not None
                 ctx.emit(
                     Opcode.STRUCT_WITH_INDEXED,
                     ctx.slot_of(instr.struct),
-                    ctx.slot_of(instr.index),
+                    ctx.add_constant(instr.index.value),
                     dest=ctx.slot_of(instr.dst),
                     src2=ctx.slot_of(instr.value),
+                    tag=0b010,
                 )
                 i += 1
                 continue
@@ -477,7 +507,11 @@ class MenaiBytecodeBuilder:
 
                 n_args = len(instr.args)
                 ctx.max_outgoing_args = max(ctx.max_outgoing_args, n_args)
-                ctx.emit(Opcode.CALL, ctx.slot_of(instr.func), n_args, dest=ctx.slot_of(instr.dst))
+                func_field, func_tag = self._operand_field(instr.func, ctx)
+                ctx.emit(
+                    Opcode.CALL, func_field, n_args,
+                    dest=ctx.slot_of(instr.dst), tag=func_tag,
+                )
                 i += 1
                 continue
 
@@ -491,7 +525,8 @@ class MenaiBytecodeBuilder:
 
                 n_args = len(instr.args)
                 ctx.max_outgoing_args = max(ctx.max_outgoing_args, n_args)
-                ctx.emit(Opcode.TAIL_CALL, ctx.slot_of(instr.func), n_args)
+                func_field, func_tag = self._operand_field(instr.func, ctx)
+                ctx.emit(Opcode.TAIL_CALL, func_field, n_args, tag=func_tag)
                 i += 1
                 continue
 
@@ -511,28 +546,35 @@ class MenaiBytecodeBuilder:
                 continue
 
             if isinstance(instr, MenaiVCodePatchClosure):
+                value_field, value_tag = self._operand_field(instr.value, ctx, 2)
                 ctx.emit(
                     Opcode.PATCH_CLOSURE,
                     ctx.slot_of(instr.closure),
                     instr.capture_index,
-                    src2=ctx.slot_of(instr.value),
+                    src2=value_field,
+                    tag=value_tag,
                 )
                 i += 1
                 continue
 
             if isinstance(instr, MenaiVCodeReturn):
-                ctx.emit(Opcode.RETURN, ctx.slot_of(instr.value))
+                value_field, value_tag = self._operand_field(instr.value, ctx, 0)
+                ctx.emit(Opcode.RETURN, value_field, tag=value_tag)
                 i += 1
                 continue
 
             if isinstance(instr, MenaiVCodeReturnIf):
                 opcode = Opcode.RETURN_IF_TRUE if instr.when_true else Opcode.RETURN_IF_FALSE
-                ctx.emit(opcode, ctx.slot_of(instr.cond), ctx.slot_of(instr.value))
+                value_field, value_tag = self._operand_field(instr.value, ctx, 1)
+                ctx.emit(
+                    opcode, ctx.slot_of(instr.cond), value_field, tag=value_tag,
+                )
                 i += 1
                 continue
 
             if isinstance(instr, MenaiVCodeRaise):
-                ctx.emit(Opcode.RAISE_ERROR, ctx.slot_of(instr.message))
+                message_field, message_tag = self._operand_field(instr.message, ctx, 0)
+                ctx.emit(Opcode.RAISE_ERROR, message_field, tag=message_tag)
                 i += 1
                 continue
 
@@ -637,14 +679,9 @@ class MenaiBytecodeBuilder:
         operand_values: list[int] = []
         tag = 0
         for i, arg in enumerate(args):
-            if arg.is_const():
-                assert arg.value is not None
-                operand_values.append(ctx.add_constant(arg.value))
-                tag |= 1 << i
-
-            else:
-                assert arg.reg is not None
-                operand_values.append(ctx.slot_of(arg.reg))
+            field_value, arg_tag = self._operand_field(arg, ctx, i)
+            operand_values.append(field_value)
+            tag |= arg_tag
 
         def operand(i: int) -> int:
             return operand_values[i]
@@ -664,6 +701,54 @@ class MenaiBytecodeBuilder:
         else:
             raise ValueError(f"MenaiBytecodeBuilder: unhandled builtin op {op!r}")
 
+    def _operand_field(self, operand: MenaiVCodeOperand, ctx: _EmitContext, position: int = 0) -> tuple[int, int]:
+        """
+        Resolve a VCode operand to (instruction field value, tag bit).
+
+        A register operand resolves to its slot with tag 0.  A constant operand
+        resolves to its constant-pool index with the tag bit for `position` set,
+        so the VM reads the constant pool instead of the register file.
+
+        A function operand names a capture-less closure, which is a constant
+        MenaiFunction.  The value does not exist until the child code object has
+        been emitted, so it is built and pooled here.
+        """
+        if operand.function is not None:
+            return self._function_constant(operand.function, ctx), 1 << position
+
+        if operand.value is not None:
+            return ctx.add_constant(operand.value), 1 << position
+
+        assert operand.reg is not None
+        return ctx.slot_of(operand.reg), 0
+
+    def _function_constant(self, function: MenaiVCodeFunction, ctx: _EmitContext) -> int:
+        """
+        Emit function's child code object and return its constant-pool index.
+
+        The MenaiFunction value is pooled by child code object identity, so a
+        function referenced more than once shares one pool entry.
+
+        The child code object is registered in ctx.code_objects as well as being
+        referenced from the constant.  The C bridge walks code objects through
+        the children list, and a code object reachable only through a constant
+        would be converted separately and stamped with a fresh ordinal, putting
+        its trace counts on the wrong instruction.
+        """
+        child_code = self._emit_lambda(function)
+        ctx.add_code_object(child_code)
+        key = ('function', id(child_code))
+        if key not in ctx.constant_map:
+            ctx.constant_map[key] = len(ctx.constants)
+            ctx.constants.append(MenaiFunction(
+                parameters=tuple(child_code.param_names),
+                name=child_code.name,
+                bytecode=child_code,
+                is_variadic=child_code.is_variadic,
+            ))
+
+        return ctx.constant_map[key]
+
     def _emit_make_closure(self, instr: MenaiVCodeMakeClosure, ctx: _EmitContext) -> None:
         """Emit bytecode for creating a closure from a lambda."""
         child_code = self._emit_lambda(instr.function)
@@ -677,26 +762,29 @@ class MenaiBytecodeBuilder:
             ctx.emit(Opcode.MAKE_CLOSURE, code_idx, 0, dest=closure_slot)
             outer_start = total_free_vars - capture_count
             for i, cap in enumerate(instr.captures):
-                value_slot = ctx.slot_of(cap)
-                ctx.emit(Opcode.PATCH_CLOSURE, closure_slot, outer_start + i, src2=value_slot)
+                value_field, value_tag = self._operand_field(cap, ctx, 2)
+                ctx.emit(
+                    Opcode.PATCH_CLOSURE,
+                    closure_slot,
+                    outer_start + i,
+                    src2=value_field,
+                    tag=value_tag,
+                )
 
             return
 
-        func_val = MenaiFunction(
-            parameters=tuple(child_code.param_names),
-            name=child_code.name,
-            bytecode=child_code,
-            is_variadic=child_code.is_variadic,
-        )
-        key = ('function', id(child_code))
-        if key not in ctx.constant_map:
-            ctx.constant_map[key] = len(ctx.constants)
-            ctx.constants.append(func_val)
-
-        ctx.emit(Opcode.LOAD_CONST, ctx.constant_map[key], dest=ctx.slot_of(instr.dst))
+        const_idx = self._function_constant(instr.function, ctx)
+        ctx.emit(Opcode.LOAD_CONST, const_idx, dest=ctx.slot_of(instr.dst))
 
     def _emit_lambda(self, func: MenaiVCodeFunction) -> CodeObject:
         """Recursively emit a nested lambda MenaiVCodeFunction to a CodeObject."""
+        # The passes below rebind func, so key the cache on the original.
+        source_func = func
+        source_id = id(source_func)
+        cached = self._lambda_cache.get(source_id)
+        if cached is not None:
+            return cached
+
         func = schedule_self_loop_moves(func)
         func = coalesce_constants(func)
         func = fold_constants(func)
@@ -718,7 +806,7 @@ class MenaiBytecodeBuilder:
         param_word = "param" if param_count == 1 else "params"
         lambda_name = f"{lambda_name}({param_count} {param_word})"
 
-        return CodeObject(
+        code_obj = CodeObject(
             instructions=child_ctx.instructions,
             constants=tuple(child_ctx.constants),
             jump_tables=tuple(
@@ -736,6 +824,9 @@ class MenaiBytecodeBuilder:
             source_line=func.source_line,
             source_file=func.source_file,
         )
+        self._lambda_cache[source_id] = code_obj
+        self._lambda_sources.append(source_func)
+        return code_obj
 
 
 def _emit_parallel_moves(

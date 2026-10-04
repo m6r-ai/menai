@@ -5,9 +5,11 @@ Each test compiles a Menai expression whose arguments are all compile-time
 literals and asserts two things:
 
 1. The expression evaluates to the correct value (correctness).
-2. The compiled bytecode contains only a single load instruction (LOAD_CONST,
-   LOAD_TRUE, LOAD_FALSE, or LOAD_NONE) followed by RETURN — no runtime
-   opcode for the operation — proving the constant folder actually fired.
+2. The compiled bytecode contains no runtime opcode for the operation —
+   proving the constant folder actually fired.  A folded expression compiles
+   either to a load (LOAD_CONST, LOAD_TRUE, LOAD_FALSE, or LOAD_NONE) followed
+   by RETURN, or to a bare RETURN whose value is the constant operand, because
+   the fold_constants pass folds a constant directly into the return.
 
 Without the bytecode check a broken folder that silently falls through to
 runtime would still pass, since the runtime produces the same answer.
@@ -26,20 +28,27 @@ def menai():
 
 
 def _assert_folded_to_constant(menai: Menai, expr: str) -> None:
-    """Compile expr and assert it was folded to a load + RETURN.
+    """Compile expr and assert it was folded to a constant.
 
     The load may be LOAD_CONST (integers, floats, strings, etc.),
     LOAD_TRUE, LOAD_FALSE, or LOAD_NONE depending on the folded value type.
 
-    This proves the constant folder fired: if the operation were still
-    present as a runtime opcode, there would be more than two instructions.
+    A folded expression compiles to either [load, RETURN] or, when the
+    fold_constants pass folds the constant into the return operand, a bare
+    [RETURN].  Both prove the constant folder fired: if the operation were
+    still present as a runtime opcode, there would be a third instruction.
     """
     code = menai.compile(expr)
     instrs = [unpack_instruction(w) for w in code.instructions]
     opcodes = [i.opcode for i in instrs]
     load_ops = {Opcode.LOAD_CONST, Opcode.LOAD_TRUE, Opcode.LOAD_FALSE, Opcode.LOAD_NONE}
-    assert len(opcodes) == 2 and opcodes[0] in load_ops and opcodes[1] == Opcode.RETURN, (
-        f"Expected [load, RETURN] for folded expression {expr!r}, "
+    folded = (
+        len(opcodes) == 2 and opcodes[0] in load_ops and opcodes[1] == Opcode.RETURN
+    ) or (
+        len(opcodes) == 1 and opcodes[0] == Opcode.RETURN
+    )
+    assert folded, (
+        f"Expected [load, RETURN] or [RETURN] for folded expression {expr!r}, "
         f"got opcodes: {[Opcode(o).name for o in opcodes]}"
     )
 
@@ -266,11 +275,17 @@ class TestVectorFolding:
         _assert_folded_to_constant(menai, '(vector 1 "hello" #t)')
 
     def test_empty_vector_folds_to_empty_vector_load(self, menai):
-        # The empty vector has a dedicated singleton load rather than LOAD_CONST.
+        # The empty vector has a dedicated singleton load rather than
+        # LOAD_CONST.  The fold_constants pass folds it into the return
+        # operand, so the load may not survive as a separate instruction.
         code = menai.compile("(vector)")
         opcodes = [unpack_instruction(w).opcode for w in code.instructions]
-        assert opcodes == [Opcode.LOAD_EMPTY_VECTOR, Opcode.RETURN], (
-            f"Expected [LOAD_EMPTY_VECTOR, RETURN], got {[Opcode(o).name for o in opcodes]}"
+        assert opcodes in (
+            [Opcode.LOAD_EMPTY_VECTOR, Opcode.RETURN],
+            [Opcode.RETURN],
+        ), (
+            f"Expected [LOAD_EMPTY_VECTOR, RETURN] or [RETURN], "
+            f"got {[Opcode(o).name for o in opcodes]}"
         )
 
     def test_nested_constant_vectors(self, menai):

@@ -279,7 +279,7 @@ class MenaiVCodeBuilder:
                 vi = MenaiVCodePatchClosure(
                     closure=self._reg(patch.closure),
                     capture_index=patch.capture_index,
-                    value=self._reg(patch.value),
+                    value=MenaiVCodeOperand.of_reg(self._reg(patch.value)),
                 )
                 instrs.append(vi)
                 max_reg_id = max(max_reg_id, patch.closure.id, patch.value.id)
@@ -296,7 +296,7 @@ class MenaiVCodeBuilder:
             assert term is not None, f"VCodeBuilder: block {block.id} has no terminator"
 
             if isinstance(term, MenaiCFGReturnTerm):
-                instrs.append(MenaiVCodeReturn(value=self._reg(term.value)))
+                instrs.append(MenaiVCodeReturn(value=MenaiVCodeOperand.of_reg(self._reg(term.value))))
                 max_reg_id = max(max_reg_id, term.value.id)
 
             elif isinstance(term, MenaiCFGJumpTerm):
@@ -325,7 +325,7 @@ class MenaiVCodeBuilder:
 
             elif isinstance(term, MenaiCFGTailCallTerm):
                 instrs.append(MenaiVCodeTailCall(
-                    func=self._reg(term.func),
+                    func=MenaiVCodeOperand.of_reg(self._reg(term.func)),
                     args=tuple(self._reg(a) for a in term.args),
                 ))
                 max_reg_id = max(max_reg_id, term.func.id,
@@ -388,7 +388,7 @@ class MenaiVCodeBuilder:
 
             elif isinstance(term, MenaiCFGRaiseTerm):
                 msg_reg = self._reg(term.message)
-                instrs.append(MenaiVCodeRaise(message=msg_reg))
+                instrs.append(MenaiVCodeRaise(message=MenaiVCodeOperand.of_reg(msg_reg)))
                 max_reg_id = max(max_reg_id, term.message.id)
 
             elif isinstance(term, MenaiCFGSwitchTerm):
@@ -456,7 +456,7 @@ class MenaiVCodeBuilder:
             dst = self._reg(instr.result)
             func_reg = self._reg(instr.func)
             args = tuple(self._reg(a) for a in instr.args)
-            instrs.append(MenaiVCodeCall(dst=dst, func=func_reg, args=args))
+            instrs.append(MenaiVCodeCall(dst=dst, func=MenaiVCodeOperand.of_reg(func_reg), args=args))
             return max(max_reg_id, dst.id, func_reg.id, *(r.id for r in args)) if args else max(max_reg_id, dst.id, func_reg.id)
 
         if isinstance(instr, MenaiCFGApplyInstr):
@@ -468,17 +468,22 @@ class MenaiVCodeBuilder:
 
         if isinstance(instr, MenaiCFGMakeClosureInstr):
             dst = self._reg(instr.result)
-            captures = tuple(self._reg(c) for c in instr.captures)
+            capture_regs = tuple(self._reg(c) for c in instr.captures)
+            captures = tuple(MenaiVCodeOperand.of_reg(r) for r in capture_regs)
             child_vcode = self._lower_function(instr.function)
             instrs.append(MenaiVCodeMakeClosure(
                 dst=dst, function=child_vcode, captures=captures, needs_patching=instr.needs_patching
             ))
-            return max(max_reg_id, dst.id, *(r.id for r in captures)) if captures else max(max_reg_id, dst.id)
+            return max(max_reg_id, dst.id, *(r.id for r in capture_regs)) if capture_regs else max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGPatchClosureInstr):
             closure = self._reg(instr.closure)
             value = self._reg(instr.value)
-            instrs.append(MenaiVCodePatchClosure(closure=closure, capture_index=instr.capture_index, value=value))
+            instrs.append(MenaiVCodePatchClosure(
+                closure=closure,
+                capture_index=instr.capture_index,
+                value=MenaiVCodeOperand.of_reg(value),
+            ))
             return max(max_reg_id, closure.id, value.id)
 
         if isinstance(instr, MenaiCFGMakeStructInstr):
@@ -490,21 +495,19 @@ class MenaiVCodeBuilder:
         if isinstance(instr, MenaiCFGStructGetIndexedInstr):
             dst = self._reg(instr.result)
             struct_reg = self._reg(instr.struct)
-            index_reg = MenaiVCodeReg(id=max(max_reg_id, dst.id, struct_reg.id) + 1, hint="index")
-            instrs.append(MenaiVCodeLoadConst(dst=index_reg, value=MenaiInteger(value=instr.index)))
-            instrs.append(MenaiVCodeStructGetIndexed(dst=dst, struct=struct_reg, index=index_reg))
-            return max(max_reg_id, dst.id, struct_reg.id, index_reg.id)
+            index = MenaiVCodeOperand.of_const(MenaiInteger(value=instr.index))
+            instrs.append(MenaiVCodeStructGetIndexed(dst=dst, struct=struct_reg, index=index))
+            return max(max_reg_id, dst.id, struct_reg.id)
 
         if isinstance(instr, MenaiCFGStructWithIndexedInstr):
             dst = self._reg(instr.result)
             struct_reg = self._reg(instr.struct)
             value_reg = self._reg(instr.value)
-            index_reg = MenaiVCodeReg(id=max(max_reg_id, dst.id, struct_reg.id, value_reg.id) + 1, hint="index")
-            instrs.append(MenaiVCodeLoadConst(dst=index_reg, value=MenaiInteger(value=instr.index)))
+            index = MenaiVCodeOperand.of_const(MenaiInteger(value=instr.index))
             instrs.append(MenaiVCodeStructWithIndexed(
-                dst=dst, struct=struct_reg, index=index_reg, value=value_reg,
+                dst=dst, struct=struct_reg, index=index, value=value_reg,
             ))
-            return max(max_reg_id, dst.id, struct_reg.id, value_reg.id, index_reg.id)
+            return max(max_reg_id, dst.id, struct_reg.id, value_reg.id)
 
         if isinstance(instr, MenaiCFGMakeListInstr):
             dst = self._reg(instr.result)

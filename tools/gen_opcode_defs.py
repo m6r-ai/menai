@@ -18,6 +18,8 @@ from pathlib import Path
 # values so the emitted header carries plain numbers.
 _MASK_NAMES = {
     "_FOLD_SRC0": 0b001,
+    "_FOLD_SRC1": 0b010,
+    "_FOLD_SRC2": 0b100,
     "_FOLD_SRC01": 0b011,
     "_FOLD_SRC012": 0b111,
 }
