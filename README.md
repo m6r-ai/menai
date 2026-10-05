@@ -28,10 +28,13 @@ written entirely in Menai. It implements useful binary and text processing featu
 | Module | What it does |
 |--------|--------------|
 | `json-decode` / `json-encode` | Read and write JSON |
+| `csv-decode` / `csv-encode` | Read and write RFC 4180 CSV |
 | `bmp-decode` / `bmp-encode` | Read and write uncompressed 24-bit and 32-bit BMP images |
 | `png-decode` / `png-encode` | Read and write non-interlaced 8-bit PNG images |
 | `zip-entries` / `zip-extract` / `zip-create` | Read ZIP central directories, extract and decompress entries, and build archives |
+| `tar-entries` / `tar-extract` / `tar-create` | Read tar entry headers, extract entry contents, and build POSIX ustar archives |
 | `zlib-compress` / `zlib-decompress` | Compress and decompress zlib streams (RFC 1950) |
+| `gzip-compress` / `gzip-decompress` | Compress and decompress gzip streams (RFC 1952) |
 | `deflate-compress` / `deflate-decompress` | Compress and decompress raw DEFLATE streams (RFC 1951) |
 
 These are not bindings to libraries written in another language.  The whole idea is

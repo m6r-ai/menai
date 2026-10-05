@@ -244,6 +244,15 @@ menai`. Currently it includes:
 - `deflate-tables.menai` — the constant tables defined by RFC 1951, shared by
   `deflate-compress` and `deflate-decompress`.  Not an operation module; it
   exports specification data
+- `gzip-compress.menai` — compresses bytes to a gzip stream (RFC 1952), writing
+  the fixed 10-byte header, delegating the DEFLATE data to `deflate-compress`,
+  and appending the CRC-32 and ISIZE trailer; the optional second argument
+  selects the DEFLATE block encoding (`compress`)
+- `gzip-decompress.menai` — decompresses a gzip stream (RFC 1952), verifying the
+  magic number and compression method, parsing and skipping the optional header
+  fields, delegating the DEFLATE data to `deflate-decompress`, and verifying the
+  CRC-32 and ISIZE trailer.  Only the first member of a concatenated stream is
+  decompressed (`decompress`)
 - `json-decode.menai` — decodes a JSON string to the equivalent Menai value
   (`decode`)
 - `json-encode.menai` — encodes a Menai value as a JSON string; the inverse of
@@ -258,6 +267,19 @@ menai`. Currently it includes:
   with alpha (type 6) according to the channel count; the decoder normalises
   every source colour type to RGB or RGBA, so the other colour types cannot be
   reconstructed.  The inverse of `png-decode` for truecolour images (`encode`)
+- `tar-entries.menai` — reads a tar archive (as bytes) and returns a dict with an
+  `"entries"` list of entry dicts and a `"meta"` dict, without returning entry
+  contents.  Both POSIX ustar and GNU tar are accepted, including GNU long names
+  and PAX extended headers; entry checksums are verified (`entries`)
+- `tar-extract.menai` — reads a tar archive and returns the same entry dicts with
+  each entry's `"content"` filled in.  Exports three operations: `extract` (all
+  entries), `extract-entry` (the single entry with a given name, raising if it is
+  missing or ambiguous), and `extract-matching` (every entry with a given name,
+  as a list, empty when none match)
+- `tar-create.menai` — builds a POSIX ustar archive (as bytes) from a container
+  dict of the shape `tar-entries` and `tar-extract` produce; the write side of
+  the tar readers.  Supported entry types are regular files, directories, and
+  symbolic links (`create`)
 - `zip-entries.menai` — reads a ZIP file (as bytes) and returns its central
   directory as a list of entry dicts, without decompressing the contents
   (`entries`)
