@@ -319,15 +319,14 @@ _menai_bigint_divmod_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigI
         }
     }
 
-    /* Build quotient. */
-    quotient->digits = qdigits;
-    quotient->length = q_len;
-    quotient->sign = 1;
-    menai_bigint_normalize(vs, quotient);
-
-    /* Unnormalize remainder: shift un right by d bits. */
+    /*
+     * Unnormalize remainder: shift un right by d bits.  This is done before
+     * either output is committed so that a failure here leaves quotient and
+     * remainder untouched; the caller then owns no partial result to free.
+     */
     uint32_t *rdigits = (uint32_t *)menai_pool_alloc(vs, (size_t)n * sizeof(uint32_t));
     if (rdigits == NULL) {
+        menai_pool_free(vs, qdigits);
         menai_pool_free(vs, un);
         menai_pool_free(vs, vn);
         return MENAI_ERR_NOMEM;
@@ -346,13 +345,21 @@ _menai_bigint_divmod_mag(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigI
         }
     }
 
+    menai_pool_free(vs, un);
+    menai_pool_free(vs, vn);
+
+    /* Build quotient. */
+    quotient->digits = qdigits;
+    quotient->length = q_len;
+    quotient->sign = 1;
+    menai_bigint_normalize(vs, quotient);
+
+    /* Build remainder. */
     remainder->digits = rdigits;
     remainder->length = n;
     remainder->sign = 1;
     menai_bigint_normalize(vs, remainder);
 
-    menai_pool_free(vs, un);
-    menai_pool_free(vs, vn);
     return 0;
 }
 

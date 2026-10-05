@@ -327,8 +327,10 @@ menai_bytes_encode_u64(uint8_t *dest, unsigned long long value, int width, int l
 /*
  * MenaiType — the type tag for a Menai value.  uint16_t is sufficient for
  * the current types and leaves room for future additions.  The values are
- * chosen to be distinct and non-zero so that ob_type == 0 reliably detects
- * use-after-free (the allocator poisons freed blocks with ob_type = 0).
+ * chosen to be distinct and non-zero so that a zeroed ob_type is
+ * unambiguously not a valid type.  Note that the allocator does not write
+ * ob_type on free, so ob_type == 0 does not by itself detect use-after-free;
+ * MENAI_DEBUG_MAGIC is the mechanism that does.
  */
 typedef uint16_t MenaiType;
 
@@ -1187,6 +1189,68 @@ menai_hash_double(double v)
     bits ^= bits >> 31;
     hash_t h = (hash_t)(bits & (uint64_t)PTRDIFF_MAX);
     return h == -1 ? -2 : h;
+}
+
+/*
+ * menai_hash_bytes — hash a byte buffer.
+ *
+ * Consumes the input eight bytes at a time with a multiply-xor mix, then
+ * folds in the byte length and applies a SplitMix64 finalisation.  This is
+ * the same finalisation menai_hash_double uses, so all Menai-internal hashes
+ * share one avalanche step.
+ *
+ * The length is folded in so that inputs differing only by trailing zero
+ * bytes hash differently, which matters for bytes values.
+ *
+ * This is a Menai-internal hash.  It is never compared against a Python hash
+ * and never persisted, so its exact value is an implementation detail; only
+ * determinism within a single table matters.
+ *
+ * The result is mapped away from -1 (the "unhashable" sentinel).
+ */
+static inline hash_t
+menai_hash_bytes(const void *data, size_t nbytes)
+{
+    const unsigned char *p = (const unsigned char *)data;
+    uint64_t h = 0x9e3779b97f4a7c15ULL;
+    size_t total = nbytes;
+
+    while (nbytes >= 8) {
+        uint64_t w;
+        memcpy(&w, p, sizeof(w));
+        h ^= w;
+        h *= 0xbf58476d1ce4e5b9ULL;
+        h ^= h >> 29;
+        p += 8;
+        nbytes -= 8;
+    }
+
+    /*
+     * Tail: fewer than eight bytes remain.  Assemble them into a word so the
+     * remaining bytes get the same mixing as the bulk rather than a
+     * byte-at-a-time loop.
+     */
+    if (nbytes > 0) {
+        uint64_t w = 0;
+        for (size_t i = 0; i < nbytes; i++) {
+            w |= (uint64_t)p[i] << (i * 8);
+        }
+
+        h ^= w;
+        h *= 0xbf58476d1ce4e5b9ULL;
+        h ^= h >> 29;
+    }
+
+    /* Fold in the length, then finalise. */
+    h ^= (uint64_t)total;
+    h ^= h >> 30;
+    h *= 0xbf58476d1ce4e5b9ULL;
+    h ^= h >> 27;
+    h *= 0x94d049bb133111ebULL;
+    h ^= h >> 31;
+
+    hash_t result = (hash_t)(h & (uint64_t)PTRDIFF_MAX);
+    return result == -1 ? -2 : result;
 }
 
 hash_t menai_value_hash(MenaiValue *val);

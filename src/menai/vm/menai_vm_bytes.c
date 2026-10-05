@@ -196,20 +196,7 @@ menai_bytes_hash(MenaiBytes *b)
         return b->hash;
     }
 
-    /* FNV-1a over the raw bytes. */
-    uint64_t h = 14695981039346656037ULL;
-    const unsigned char *p = (const unsigned char *)b->data;
-    ssize_t nbytes = b->length;
-    for (ssize_t i = 0; i < nbytes; i++) {
-        h ^= p[i];
-        h *= 1099511628211ULL;
-    }
-
-    hash_t result = (hash_t)h;
-    if (result == -1) {
-        result = -2;
-    }
-
+    hash_t result = menai_hash_bytes(b->data, (size_t)b->length);
     b->hash = result;
 
     return result;

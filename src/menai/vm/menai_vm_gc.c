@@ -156,8 +156,12 @@ gc_mark_value(MenaiValue *val)
 static int
 _gc_is_dead(MenaiValue *val)
 {
+    if (val == NULL) {
+        return 0;
+    }
+
     MenaiPoolHeader *ph = menai_get_pool_header(val);
-    return val != NULL && ph->ob_type == MENAITYPE_FUNCTION && ((MenaiFunction *)val)->gc_mark == MENAI_GC_MARK_DEAD;
+    return ph->ob_type == MENAITYPE_FUNCTION && ((MenaiFunction *)val)->gc_mark == MENAI_GC_MARK_DEAD;
 }
 
 /*

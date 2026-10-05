@@ -135,6 +135,13 @@ menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n)
 
     ht->slots = (MenaiHashSlot *)menai_pool_alloc(vs, (size_t)sc * sizeof(MenaiHashSlot));
     if (!ht->slots) {
+        /*
+         * Leave the table fully defined on failure.  A caller that releases
+         * a partially-built value will run its finalizer, which calls
+         * menai_ht_final; that must see a consistent empty table rather than
+         * an uninitialised slot_count.
+         */
+        ht->slot_count = 0;
         return MENAI_ERR_NOMEM;
     }
 

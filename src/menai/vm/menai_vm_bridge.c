@@ -1100,13 +1100,13 @@ slow_structtype_to_fast(MenaiVMState *vs, PyObject *src)
     MenaiString **field_names_arr = NULL;
     if (nfields > 0) {
         field_names_arr = (MenaiString **)menai_pool_alloc(vs, (size_t)nfields * sizeof(MenaiString *));
-        memset(field_names_arr, 0, (size_t)nfields * sizeof(MenaiString *));
         if (!field_names_arr) {
             menai_value_release(vs, (MenaiValue *)name_str);
             Py_DECREF(fn_tup);
             return NULL;
         }
 
+        memset(field_names_arr, 0, (size_t)nfields * sizeof(MenaiString *));
         for (ssize_t i = 0; i < nfields; i++) {
             PyObject *fname = PyTuple_GET_ITEM(fn_tup, i);
             MenaiString *fname_str = alloc_menai_string_from_pyunicode(vs, fname);

@@ -1214,21 +1214,11 @@ menai_string_hash(MenaiString *s)
         return s->hash;
     }
 
-    /* FNV-1a over the codepoint bytes. */
-    ssize_t len = s->length;
-    uint64_t h = 14695981039346656037ULL;
-    const unsigned char *p = (const unsigned char *)s->data;
-    ssize_t nbytes = len * (ssize_t)sizeof(uint32_t);
-    for (ssize_t i = 0; i < nbytes; i++) {
-        h ^= p[i];
-        h *= 1099511628211ULL;
-    }
-
-    hash_t result = (hash_t)h;
-    if (result == -1) {
-        result = -2;
-    }
-
+    /*
+     * Hash the codepoint array's bytes.  The array is contiguous and has no
+     * padding between elements, so it can be hashed as a flat byte buffer.
+     */
+    hash_t result = menai_hash_bytes(s->data, (size_t)s->length * sizeof(uint32_t));
     s->hash = result;
     return result;
 }
@@ -1354,10 +1344,53 @@ menai_string_find(MenaiString *haystack, MenaiString *needle)
     }
 
     ssize_t limit = hlen - nlen;
-    for (ssize_t i = 0; i <= limit; i++) {
-        if (memcmp(haystack->data + i, needle->data, (size_t)nlen * sizeof(uint32_t)) == 0) {
-            return i;
+    const uint32_t *h = haystack->data;
+    const uint32_t *n = needle->data;
+
+    /*
+     * Boyer-Moore-Horspool.  The bad-character table is indexed by the low
+     * 12 bits of a codepoint rather than the whole codepoint: a full table
+     * for UTF-32 would need 4 GiB, and a lossy index is safe here because a
+     * shift that is too small only causes a redundant comparison, never a
+     * missed match.  The low 12 bits cover ASCII and Latin-1 exactly, which
+     * is where the common cases live.
+     *
+     * For a single-codepoint needle there is no window to skip within, so
+     * fall back to a plain scan.
+     */
+    if (nlen == 1) {
+        for (ssize_t i = 0; i <= limit; i++) {
+            if (h[i] == n[0]) {
+                return i;
+            }
         }
+
+        return -1;
+    }
+
+    enum { SKIP_SIZE = 1 << 12 };
+    ssize_t skip[SKIP_SIZE];
+    for (int i = 0; i < SKIP_SIZE; i++) {
+        skip[i] = nlen;
+    }
+
+    for (ssize_t i = 0; i < nlen - 1; i++) {
+        skip[n[i] & (SKIP_SIZE - 1)] = nlen - 1 - i;
+    }
+
+    ssize_t pos = 0;
+    while (pos <= limit) {
+        /* Compare the window from the end; the last codepoint is already known. */
+        ssize_t j = nlen - 1;
+        while (j >= 0 && h[pos + j] == n[j]) {
+            j--;
+        }
+
+        if (j < 0) {
+            return pos;
+        }
+
+        pos += skip[h[pos + nlen - 1] & (SKIP_SIZE - 1)];
     }
 
     return -1;

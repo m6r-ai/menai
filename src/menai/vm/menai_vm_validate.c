@@ -154,6 +154,22 @@ validate_indices(MenaiCodeObject *co, MenaiValidationError *err)
     int total_slots = co->local_count + co->outgoing_arg_slots;
     int code_len = co->code_len;
 
+    /*
+     * The initialization pass tracks definite assignment in a fixed-size
+     * bitmask of V_MAX_SLOTS bits.  A code object with more slots than that
+     * cannot be validated correctly, so reject it here rather than letting
+     * the initialization pass silently treat the excess slots as
+     * uninitialized and report a spurious error.
+     */
+    if (total_slots > V_MAX_SLOTS) {
+        char buf[128];
+        snprintf(buf, sizeof(buf),
+                 "Code object requires %d register slots, exceeding the validator limit of %d",
+                 total_slots, V_MAX_SLOTS);
+        set_error(err, VERR_INVALID_VARIABLE_ACCESS, buf, -1, -1);
+        return MENAI_ERR_UNDEFINED_VARIABLE;
+    }
+
     for (int i = 0; i < code_len; i++) {
         uint64_t word = co->instrs[i];
         int opcode = (int)((word >> V_OPCODE_SHIFT) & V_OPCODE_MASK);
@@ -1121,12 +1137,12 @@ validate_initialization(MenaiCodeObject *co, MenaiValidationError *err)
         /* Update initialized set after this instruction */
         if (opcode == OP_MAKE_CLOSURE) {
             init_state_set_bit(cur, dest);
-            if (dest >= 0 && dest < V_MAX_SLOTS) {
+            if (dest >= 0 && dest < total_slots) {
                 cur->closure_map[dest] = src0;
             }
         } else if (!is_no_dest_opcode(opcode)) {
             init_state_set_bit(cur, dest);
-            if (dest >= 0 && dest < V_MAX_SLOTS) {
+            if (dest >= 0 && dest < total_slots) {
                 cur->closure_map[dest] = -1;
             }
         }

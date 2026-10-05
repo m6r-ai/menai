@@ -38,13 +38,13 @@ alloc_menai_structtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString
         self->fields[i].index = (int)i;
     }
 
+    /*
+     * menai_value_free runs menai_structtype_final, which releases the name
+     * and every field name and finalises the field table.  Do not release
+     * them here as well: menai_ht_init leaves the table in a defined empty
+     * state on failure, so the finalizer is safe.
+     */
     if (menai_ht_init(vs, &self->field_ht, nfields) < 0) {
-        menai_value_release(vs, (MenaiValue *)self->name);
-        int n = self->nfields;
-        for (int i = 0; i < n; i++) {
-            menai_value_release(vs, (MenaiValue *)self->fields[i].name);
-        }
-
         menai_value_free(vs, (MenaiValue *)self);
         return NULL;
     }
