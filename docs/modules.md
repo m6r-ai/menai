@@ -223,6 +223,17 @@ menai`. Currently it includes:
   `(decode (encode v))` reproduces `v` for every value `encode` accepts.  The
   derived header fields are recomputed and the descriptive fields preserved
   (`encode`)
+- `csv-decode.menai` — decodes RFC 4180 CSV text (as a string) to a vector of
+  rows, each row a vector of field strings, so both rows and fields are
+  reachable in O(1) by position.  Quoted fields, embedded delimiters and line
+  terminators, and doubled quotes are handled; the optional second argument is
+  the single-character field delimiter (default `,`) (`decode`)
+- `csv-encode.menai` — encodes a table of field strings (a vector of rows, each
+  a vector of strings) as RFC 4180 CSV text; the inverse of `csv-decode`, so
+  `(decode (encode v))` reproduces `v` for every value `encode` accepts.
+  Records are separated by CRLF with no trailing terminator, and fields are
+  quoted only when necessary; the optional second argument is the
+  single-character field delimiter (default `,`) (`encode`)
 - `deflate-compress.menai` — compresses a bytes value to a raw DEFLATE stream
   (RFC 1951); the optional second argument selects the block encoding (`"auto"`,
   `"stored"`, `"fixed"`, or `"dynamic"`), with `"auto"` choosing the smallest of

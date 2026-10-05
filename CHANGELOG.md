@@ -1,12 +1,19 @@
 # Change log for Menai
 
-## v0.8.0 (2026-10-03)
+
+## v0.8.0 (2026-10-05)
 
 New features:
 
 - Added a new "trivial phi elimination" operation inside the CFG collapse phi pass.
 - Added a register dump capability to capture state when an error is raised inside
   the VM.
+- Added a `csv-decode` module to the standard library.  It decodes RFC 4180 CSV
+  text (as a string) to a vector of rows, each row a vector of field strings, so
+  both rows and fields are reachable in O(1) by position.
+- Added a `csv-encode` module to the standard library.  It encodes a vector of
+  rows (each a vector of field strings) as RFC 4180 CSV text; it is the inverse
+  of `csv-decode`.
 
 Bug fixes:
 

@@ -1,0 +1,134 @@
+; csv-decode — decodes CSV text into a table of field strings.
+;
+; The decoder follows RFC 4180: fields may be quoted with double quotes, a
+; quoted field may contain the delimiter, line terminators, and doubled quotes
+; ("" represents a literal "), and records are separated by line terminators.
+; Both CRLF and a bare LF are accepted as a line terminator, and a CRLF pair
+; counts as a single terminator.  A single trailing line terminator does not
+; produce a final empty row, but a genuinely blank line does produce a row
+; containing one empty field.
+;
+; Every field is returned as a string; no type coercion is performed.  The
+; result is a vector of rows, each row a vector of field strings, so that both
+; rows and fields are reachable in O(1) by position:
+;
+;   #vector(#vector("a" "b") #vector("c" "d"))
+;
+; A header row can be turned into per-row dicts by the caller, for example by
+; zipping the first row against each subsequent row with list-zip.  That is
+; deliberately not part of this module: it is a policy decision (duplicate
+; header names, ragged rows) that belongs to the caller.
+;
+; Malformed input raises a runtime error: an unterminated quoted field, or a
+; character following a closing quote other than the delimiter or a line
+; terminator.
+
+(letrec
+  ((is-line-terminator?
+    (lambda (ch)
+      (or (string=? ch "\n") (string=? ch "\r"))))
+
+   ; The number of characters consumed by the line terminator at `i`: 2 for a
+   ; CRLF pair, 1 for a bare CR or LF.  `i` must be at a line terminator.
+   (terminator-length
+    (lambda (s i)
+      (if (and (string=? (string-nth s i) "\r")
+               (integer<? (integer+ i 1) (string-length s))
+               (string=? (string-nth s (integer+ i 1)) "\n"))
+          2
+          1)))
+
+   ; Scan an unquoted field starting at `i`, stopping at the delimiter, a line
+   ; terminator, or end of input.  Returns (list <field-string> <next-pos>).
+   (scan-unquoted
+    (lambda (s i delim)
+      (letrec ((loop (lambda (j)
+                       (if (integer>=? j (string-length s))
+                           j
+                           (let ((ch (string-nth s j)))
+                             (if (or (string=? ch delim) (is-line-terminator? ch))
+                                 j
+                                 (loop (integer+ j 1))))))))
+        (let ((end (loop i)))
+          (list (string-slice s i end) end)))))
+
+   ; Scan a quoted field starting at `i`, where `i` is the position of the
+   ; opening quote.  A doubled quote inside the field is an escaped quote; the
+   ; field ends at a quote not followed by another quote.  Returns
+   ; (list <field-string> <next-pos>), where next-pos is the position just
+   ; after the closing quote.
+   (scan-quoted
+    (lambda (s i)
+      (letrec ((loop (lambda (j acc)
+                       (if (integer>=? j (string-length s))
+                           (error "Unterminated quoted field in CSV input")
+                           (let ((ch (string-nth s j)))
+                             (if (string=? ch "\"")
+                                 (if (and (integer<? (integer+ j 1) (string-length s))
+                                          (string=? (string-nth s (integer+ j 1)) "\""))
+                                     (loop (integer+ j 2) (list-prepend acc "\""))
+                                     (list (list->string (list-reverse acc)) (integer+ j 1)))
+                                 (loop (integer+ j 1) (list-prepend acc ch))))))))
+        (loop (integer+ i 1) (list)))))
+
+   ; Parse one field at `i`.  Returns (list <field-string> <next-pos>).
+   (parse-field
+    (lambda (s i delim)
+      (if (and (integer<? i (string-length s)) (string=? (string-nth s i) "\""))
+          (scan-quoted s i)
+          (scan-unquoted s i delim))))
+
+   ; After a field ends at `pos`, consume the separator that follows and decide
+   ; whether the row continues, ends, or the input ends.  Returns a dispatch tag
+   ; and the next position:
+   ;   (list "field" <pos>)  — another field follows in the same row
+   ;   (list "row"   <pos>)  — the row ends; pos is just past the terminator
+   ;   (list "end"   <pos>)  — the input ends immediately after this field
+   (after-field
+    (lambda (s pos delim)
+      (if (integer>=? pos (string-length s))
+          (list "end" pos)
+          (let ((ch (string-nth s pos)))
+            (if (string=? ch delim)
+                (list "field" (integer+ pos 1))
+                (if (is-line-terminator? ch)
+                    (list "row" (integer+ pos (terminator-length s pos)))
+                    (error "Unexpected character after quoted field in CSV input")))))))
+
+   ; Decode CSV text into a vector of rows (each a vector of field strings).
+   ; The optional second argument is the field delimiter, a single-character
+   ; string; it defaults to ",".
+   (decode
+    (lambda (csv-string . rest)
+      (if (string? csv-string)
+          (let ((delim (if (list-null? rest) "," (list-first rest))))
+            (if (and (string? delim) (integer=? (string-length delim) 1))
+                (letrec
+                  ((finish
+                    (lambda (rows-acc row)
+                      (list->vector
+                        (map-list list->vector
+                                  (list-reverse (list-prepend rows-acc (list-reverse row)))))))
+                   (loop
+                    (lambda (i row-acc rows-acc)
+                      (let ((field-result (parse-field csv-string i delim)))
+                        (let* ((field (list-first field-result))
+                               (pos (list-nth field-result 1))
+                               (row (list-prepend row-acc field)))
+                          (let ((dispatch (after-field csv-string pos delim)))
+                            (let ((tag (list-first dispatch))
+                                  (next (list-nth dispatch 1)))
+                              (if (string=? tag "field")
+                                  (loop next row rows-acc)
+                                  (if (string=? tag "row")
+                                      (if (integer>=? next (string-length csv-string))
+                                          ; A single trailing terminator ends the
+                                          ; last row without starting a new one.
+                                          (finish rows-acc row)
+                                          (loop next (list) (list-prepend rows-acc (list-reverse row))))
+                                      (finish rows-acc row))))))))))
+                  (loop 0 (list) (list)))
+                (error "CSV delimiter must be a single-character string")))
+          (error "CSV input must be a string")))))
+
+  (export decode))

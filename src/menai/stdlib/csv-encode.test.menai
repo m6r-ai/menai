@@ -1,0 +1,133 @@
+; Tests for csv-encode.menai
+
+(let ((csv-encode (import "csv-encode"))
+      (csv-decode (import "csv-decode"))
+      (t (import "menai_test")))
+  (let ((encode (:: csv-encode encode))
+        (decode (:: csv-decode decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; Records and fields
+        (list "records"
+          (list
+            (expect-pass "single field"
+                         (lambda () (assert-equal (encode (vector (vector "abc"))) "abc")))
+            (expect-pass "single row"
+                         (lambda () (assert-equal (encode (vector (vector "a" "b" "c"))) "a,b,c")))
+            (expect-pass "two rows use CRLF"
+                         (lambda () (assert-equal (encode (vector (vector "a" "b") (vector "c" "d")))
+                                                  "a,b\r\nc,d")))
+            (expect-pass "three rows"
+                         (lambda () (assert-equal (encode (vector (vector "a") (vector "b") (vector "c")))
+                                                  "a\r\nb\r\nc")))
+            (expect-pass "no trailing terminator"
+                         (lambda () (assert-equal (encode (vector (vector "a" "b")))
+                                                  "a,b")))
+            (expect-pass "ragged rows"
+                         (lambda () (assert-equal (encode (vector (vector "a" "b")
+                                                                  (vector "c")
+                                                                  (vector "d" "e" "f")))
+                                                  "a,b\r\nc\r\nd,e,f")))))
+
+        ; Empty fields and empty tables
+        (list "empty"
+          (list
+            (expect-pass "no rows is the empty string"
+                         (lambda () (assert-equal (encode (vector)) "")))
+            (expect-pass "one empty row is the empty string"
+                         (lambda () (assert-equal (encode (vector (vector))) "")))
+            (expect-pass "empty field"
+                         (lambda () (assert-equal (encode (vector (vector ""))) "")))
+            (expect-pass "empty field between values"
+                         (lambda () (assert-equal (encode (vector (vector "a" "" "b"))) "a,,b")))
+            (expect-pass "leading empty field"
+                         (lambda () (assert-equal (encode (vector (vector "" "a"))) ",a")))
+            (expect-pass "trailing empty field"
+                         (lambda () (assert-equal (encode (vector (vector "a" ""))) "a,")))))
+
+        ; Minimal quoting
+        (list "quoting"
+          (list
+            (expect-pass "plain field is not quoted"
+                         (lambda () (assert-equal (encode (vector (vector "abc"))) "abc")))
+            (expect-pass "field with delimiter is quoted"
+                         (lambda () (assert-equal (encode (vector (vector "a,b"))) "\"a,b\"")))
+            (expect-pass "field with quote is quoted and doubled"
+                         (lambda () (assert-equal (encode (vector (vector "a\"b"))) "\"a\"\"b\"")))
+            (expect-pass "field with newline is quoted"
+                         (lambda () (assert-equal (encode (vector (vector "a\nb"))) "\"a\nb\"")))
+            (expect-pass "field with CR is quoted"
+                         (lambda () (assert-equal (encode (vector (vector "a\rb"))) "\"a\rb\"")))
+            (expect-pass "field with CRLF is quoted"
+                         (lambda () (assert-equal (encode (vector (vector "a\r\nb"))) "\"a\r\nb\"")))
+            (expect-pass "only the fields that need it are quoted"
+                         (lambda () (assert-equal (encode (vector (vector "a" "b,c" "d")))
+                                                  "a,\"b,c\",d")))
+            (expect-pass "quote is doubled at the start and end"
+                         (lambda () (assert-equal (encode (vector (vector "\"x\""))) "\"\"\"x\"\"\"")))
+            (expect-pass "field of only quotes"
+                         (lambda () (assert-equal (encode (vector (vector "\"\""))) "\"\"\"\"\"\"")))))
+
+        ; Custom delimiter
+        (list "delimiter"
+          (list
+            (expect-pass "semicolon delimiter"
+                         (lambda () (assert-equal (encode (vector (vector "a" "b" "c")) ";") "a;b;c")))
+            (expect-pass "tab delimiter"
+                         (lambda () (assert-equal (encode (vector (vector "a" "b" "c")) "\t")
+                                                  "a\tb\tc")))
+            (expect-pass "field with custom delimiter is quoted"
+                         (lambda () (assert-equal (encode (vector (vector "a;b" "c")) ";")
+                                                  "\"a;b\";c")))
+            (expect-pass "comma is literal when delimiter is semicolon"
+                         (lambda () (assert-equal (encode (vector (vector "a,b" "c")) ";")
+                                                  "a,b;c")))))
+
+        ; Round-trips through csv-decode
+        (list "round-trips"
+          (list
+            (expect-pass "simple table"
+                         (lambda () (assert-equal
+                                      (decode (encode (vector (vector "a" "b") (vector "c" "d"))))
+                                      (vector (vector "a" "b") (vector "c" "d")))))
+            (expect-pass "fields with delimiters, quotes, and newlines"
+                         (lambda () (assert-equal
+                                      (decode (encode (vector (vector "a" "b,c" "d\"e")
+                                                              (vector "x\ny" ""))))
+                                      (vector (vector "a" "b,c" "d\"e")
+                                              (vector "x\ny" "")))))
+            (expect-pass "custom delimiter"
+                         (lambda () (assert-equal
+                                      (decode (encode (vector (vector "a" "b;c") (vector "d" "e")) ";") ";")
+                                      (vector (vector "a" "b;c") (vector "d" "e")))))
+            (expect-pass "empty field"
+                         (lambda () (assert-equal
+                                      (decode (encode (vector (vector ""))))
+                                      (vector (vector "")))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "non-vector input"
+                         (lambda () (encode (list (list "a" "b"))))
+                         "must be a vector of rows")
+            (expect-fail "non-vector row"
+                         (lambda () (encode (vector (list "a" "b"))))
+                         "must be a vector of strings")
+            (expect-fail "non-string field"
+                         (lambda () (encode (vector (vector "a" 1))))
+                         "must be a string")
+            (expect-fail "multi-character delimiter"
+                         (lambda () (encode (vector (vector "a")) "::"))
+                         "single-character")
+            (expect-fail "empty delimiter"
+                         (lambda () (encode (vector (vector "a")) ""))
+                         "single-character")
+            (expect-fail "non-string delimiter"
+                         (lambda () (encode (vector (vector "a")) 1))
+                         "single-character"))))))
+
+      (export tests))))
