@@ -368,10 +368,40 @@ class MenaiVCodeBuilder:
                     # reused mid-body must have a use recorded here or its slot
                     # will be freed too early.  The peephole pass eliminates any
                     # move that resolves to the same slot.
-                    for idx, arg_val in enumerate(term.args):
+                    #
+                    # A variadic function has one rest parameter that receives
+                    # the excess arguments as a list, so its args do not map
+                    # positionally onto its param registers.  The fixed prefix
+                    # moves positionally; the rest are packed into a fresh list
+                    # which is moved into the rest-param register.  This mirrors
+                    # the packing call_setup performs for a variadic call, which
+                    # a self-loop jump cannot use because it does not go through
+                    # a call.
+                    #
+                    # The moves are a parallel assignment, so the bytecode
+                    # builder must see them as one contiguous group of MOVE
+                    # instructions.  The packing MAKE_LIST is emitted before the
+                    # group so that it reads the rest arguments before any move
+                    # overwrites a param register they might name.
+                    if func.is_variadic:
+                        min_arity = len(func.params) - 1
+
+                    else:
+                        min_arity = len(func.params)
+
+                    if func.is_variadic:
+                        rest_args = tuple(self._reg(a) for a in term.args[min_arity:])
+                        rest_reg = MenaiVCodeReg(id=max_reg_id + 1)
+                        max_reg_id = rest_reg.id
+                        instrs.append(MenaiVCodeMakeList(dst=rest_reg, args=rest_args))
+
+                    for idx, arg_val in enumerate(term.args[:min_arity]):
                         param_reg = param_regs[idx]
                         arg_reg = self._reg(arg_val)
                         instrs.append(MenaiVCodeMove(dst=param_reg, src=arg_reg))
+
+                    if func.is_variadic:
+                        instrs.append(MenaiVCodeMove(dst=param_regs[min_arity], src=rest_reg))
 
                     # Emit self-moves for free vars.  Free vars do not appear
                     # in the self-loop args (they are captured and never

@@ -43,6 +43,7 @@ Bug fixes:
   module's bindings were not in scope for it.
 - Fixed an IR dead binding elimination quirk.  An unreachable group of mutually-
   recursive bindings can now be eliminated.
+- Fixed a VCode issue affecting tail recursive variadic functions.
 
 Internal structure changes:
 

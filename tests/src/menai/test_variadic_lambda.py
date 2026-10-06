@@ -261,6 +261,43 @@ class TestVariadicLambdaTailCalls:
         assert menai.evaluate_and_format(expr2) == '210'
 
 
+class TestVariadicLambdaSelfLoop:
+    """Variadic functions whose tail-recursive self-call feeds the rest parameter."""
+
+    def test_self_call_packs_old_param_into_rest(self, menai):
+        """A self-call passing an earlier param as an excess arg captures its pre-update value."""
+        expr = '''
+        (letrec ((f (lambda (n . acc)
+                      (if (integer=? n 0)
+                          acc
+                          (f (integer- n 1) n)))))
+          (f 3))
+        '''
+        assert menai.evaluate_and_format(expr) == '(1)'
+
+    def test_self_call_rest_is_a_list(self, menai):
+        """The rest parameter receives a list, not the bare excess argument."""
+        expr = '''
+        (letrec ((f (lambda (n . acc)
+                      (if (integer=? n 0)
+                          (list? acc)
+                          (f (integer- n 1) n)))))
+          (f 2))
+        '''
+        assert menai.evaluate_and_format(expr) == '#t'
+
+    def test_self_call_with_two_fixed_params(self, menai):
+        """Two fixed params: the self-call passes both old values as excess args."""
+        expr = '''
+        (letrec ((f (lambda (n a . acc)
+                      (if (integer=? n 0)
+                          acc
+                          (f (integer- n 1) (integer+ a n) a n)))))
+          (f 3 0))
+        '''
+        assert menai.evaluate_and_format(expr) == '(5 1)'
+
+
 class TestVariadicLambdaErrors:
     """Error cases for variadic lambda definitions and calls."""
 
