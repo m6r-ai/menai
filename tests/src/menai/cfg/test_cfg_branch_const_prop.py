@@ -532,26 +532,23 @@ class TestMultipleInstrsInJoin:
 
 
 # ---------------------------------------------------------------------------
-# 9. Fixed-point: re-wired predecessor exposes new candidate
+# 9. Fixed point: a phi result used by a nested join is retained
 # ---------------------------------------------------------------------------
 
 class TestFixedPoint:
 
-    def test_two_rounds_needed(self):
+    def test_phi_used_by_nested_join_is_retained(self):
         """
-        After the first round, the re-wired predecessor itself becomes a
-        single-entry phi that qualifies for a second round.
+        A phi result that feeds a nested join's phi is live on every path
+        that reaches that join, so it must not be bypassed.
 
-        join1: %v1 = phi [True←A, %r←B]  branch %v1 → join2 / exit
-        join2: %v2 = phi [True←C, %v1←join1_true_arm_after_rewire]
-               branch %v2 → body / exit2
+        join1: %v1 = phi [True←A, %r←B]  branch %v1 → join2 / exit1
+        join2: %v2 = phi [%v1←join1, True←C]  branch %v2 → body / exit2
 
-        After round 1: A jumps to join2; join1 phi = [%r←B].
-        After round 2: C jumps to body; join2 phi = [%v1←join1].
-
-        We verify the pass reaches a fixed point (changed=True overall) and
-        that A's terminator ends up pointing at join2 (body of first branch)
-        and C's terminator ends up pointing at body.
+        join2's phi reads %v1, so %v1 is used outside join1.  Rewiring A
+        directly to join2 would leave %v1 undefined on A's path, so A must
+        keep jumping to join1.  C's constant arm feeds only join2, so C is
+        rewired to body and join2's phi collapses to the %v1 arm.
         """
         vtrue_a = v("ta"); vtrue_c = v("tc"); vr = v("r"); v1 = v("v1"); v2 = v("v2")
 
@@ -589,13 +586,28 @@ class TestFixedPoint:
         new_f, changed = MenaiCFGBranchConstProp()._optimize_function(f, MenaiCFGContext())
         assert changed
 
+        # A must keep jumping to join1: %v1 is used by join2's phi, so
+        # bypassing join1 would leave %v1 undefined on A's path.
         a_new = next(b for b in new_f.blocks if b.id == 1)
         assert isinstance(a_new.terminator, MenaiCFGJumpTerm)
-        assert a_new.terminator.target == 5
+        assert a_new.terminator.target == 4
 
+        # join1's phi is unchanged — its result is still needed by join2.
+        join1_new = next(b for b in new_f.blocks if b.id == 4)
+        phi1_new = next(i for i in join1_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        assert len(phi1_new.incoming) == 2
+
+        # C's constant arm feeds only join2, so it is rewired to body.
         c_new = next(b for b in new_f.blocks if b.id == 3)
         assert isinstance(c_new.terminator, MenaiCFGJumpTerm)
         assert c_new.terminator.target == 20
+
+        # join2's phi collapses to the single %v1 arm, which becomes the
+        # branch condition directly.
+        join2_new = next(b for b in new_f.blocks if b.id == 5)
+        assert not any(isinstance(i, MenaiCFGPhiInstr) for i in join2_new.instrs)
+        assert isinstance(join2_new.terminator, MenaiCFGBranchTerm)
+        assert join2_new.terminator.cond.id == v1.id
 
 
 # ---------------------------------------------------------------------------

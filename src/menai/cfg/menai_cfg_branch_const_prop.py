@@ -56,6 +56,12 @@ After all constant arms have been re-wired:
   - If multiple non-constant arms remain the phi is retained with only
     those entries.
 
+The phi result may also be used outside the join block (downstream code, or a
+nested join's phi).  When it is, the phi must stay defined on every path that
+reaches such a use, so the pass keeps the phi and re-wires a constant arm only
+to a branch target that does not use the phi result.  A phi whose result is
+used only within its own join block carries no such constraint.
+
 The pass runs to a fixed point within each function; a single round may
 expose new candidates (e.g. after a join block is reduced to a single
 incoming entry and then itself becomes a candidate).
@@ -225,10 +231,13 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
         2. phi → ReturnTerm:             constant arms can be any type.
         3. phi → predicate → BranchTerm: constant arms can be any type;
            the predicate is statically evaluated to determine the branch
-           direction.  When the phi result is also used by downstream code
-           (outside this block), only arms whose branch target does NOT use
-           the phi result are re-wired; the rest stay in the phi so the value
-           remains available.
+           direction.
+
+        For all three patterns, when the phi result is used outside this block
+        (by downstream code or by a nested join's phi), it must stay defined on
+        every path that reaches such a use.  The phi is therefore retained, and
+        a constant arm is re-wired only to a branch target that does not use the
+        phi result; the rest stay in the phi so the value remains available.
 
         Returns the (possibly new) function and whether any change was made.
         """
@@ -255,17 +264,14 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
             # branch target that does NOT use the phi result, and keep the
             # remaining arms in the phi.
             predicate_name = pred_instr.op if pred_instr is not None else None
-            phi_used_outside = (
-                pred_instr is not None
-                and _is_value_used_outside(func, block, phi.result)
-            )
+            phi_used_outside = _is_value_used_outside(func, block, phi.result)
 
             # Determine which branch targets are safe to re-wire to.
             # A target is safe if the phi result is NOT used by any block
             # reachable from it.  When phi_used_outside is False, both
-            # targets are safe (the phi result is only used by the predicate
-            # in this block).  When phi_used_outside is True, we need to
-            # check each target individually.
+            # targets are safe (the phi result is only used in this block).
+            # When phi_used_outside is True, we need to check each target
+            # individually.
             if isinstance(terminal, MenaiCFGBranchTerm) and phi_used_outside:
                 true_safe = not _is_value_used_in_subtree(
                     func, terminal.true_block, phi.result, block.id
@@ -397,11 +403,11 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                                 rewrites[sole_def_block.id] = sole_def_block
 
                     else:
-                        # The sole remaining value is not a statically-known
-                        # constant, so the predicate cannot be evaluated at
-                        # compile time and the branch must stay.  The phi can
-                        # only be removed if its result is not used by the
-                        # code reachable from either branch target; otherwise
+                        # Either the terminal is not a predicate branch, or the
+                        # sole remaining value is not a statically-known
+                        # constant, so the branch cannot be resolved at compile
+                        # time and must stay.  The phi can only be removed if
+                        # its result is not used outside this block; otherwise
                         # downstream code still needs the merged value and the
                         # phi must be retained with its reduced incoming list.
                         if phi_used_outside:
@@ -491,9 +497,11 @@ class MenaiCFGBranchConstProp(MenaiCFGPerFunctionPass):
                 # valid one; the block is now unreachable and SimplifyBlocks
                 # will drop it.
                 #
-                # Note: this can only happen when phi_used_outside is False
-                # (or when there's no predicate), because if the phi result is
-                # used outside this block, at least one arm will be kept.
+                # This cannot happen when phi_used_outside is True: a constant
+                # arm is re-wired only to a target that does not use the phi
+                # result (condition 3), so if every arm is re-wired the phi
+                # result is unused on every path, contradicting the fact that
+                # it is used outside this block.
                 new_instrs = list(block.instrs)
                 new_instrs.remove(phi)
                 if pred_instr is not None:
