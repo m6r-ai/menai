@@ -83,7 +83,6 @@ underlying modules with `python -m`; use the console scripts.
   stdin) and prints the result. `--cprofile` profiles the compiler; `--profile`,
   `--opcodes`, and `--annotate` profile VM execution (per-function, per-opcode, and
   annotated disassembly respectively).
-- `menai-check <file>...` — validates parenthesis balance and pinpoints mismatched parens.
 - `menai-pretty-print <file>...` — formats Menai source.
 - `menai-disassemble <file>` — compiles and prints annotated bytecode disassembly.
 - `menai-benchmark` — runs the performance benchmark suites. `--profile`, `--opcodes`,
@@ -183,7 +182,6 @@ menai/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   │   └── stdlib/             # standard library (.menai files)
 │   ├── menai_benchmark/        # performance benchmarking tool
-│   ├── menai_check/            # parenthesis balance checker
 │   ├── menai_disassemble/      # bytecode disassembler
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
@@ -195,7 +193,6 @@ menai/
     ├── src/
     │   ├── menai/              # compiler core tests
     │   │   └── stdlib/         # standard library module tests
-    │   ├── menai_check/        # parenthesis balance checker tests
     │   ├── menai_eval/         # evaluator tests
     │   └── menai_pipeline/     # pipeline runner tests
     └── tools/

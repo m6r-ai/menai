@@ -194,6 +194,126 @@ class TestMissingParens:
         assert "let" in error.lower()
 
 
+class TestMissingCloseLocation:
+    """
+    A missing ')' is reported where it belongs, not where the form opened.
+
+    The location must be the insertion point — immediately after the last token
+    — because that is the line the reader has to change.  Reporting the opening
+    paren of the unclosed form sends the reader to the wrong line entirely.
+    """
+
+    def test_single_line_reports_end_of_line(self, menai):
+        """A missing ')' on a one-line expression is reported at the end of it."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(integer+ 1 2")
+
+        error = exc_info.value
+        assert error.line == 1
+        assert error.column == 14
+
+    def test_missing_bindings_list_close_reported_after_last_binding(self, menai):
+        """
+        A missing bindings-list close is reported after the last binding.
+
+        The body being read as a further binding means the bindings list never
+        closed, and the absent ')' belongs immediately after the last binding —
+        not at the end of the file, which is where the parse ran out of input.
+        """
+        source = (
+            "(letrec\n"
+            "  ((a 1)\n"
+            "   (b (lambda (n) (integer+ n 1)))\n"
+            "  (export b))\n"
+        )
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate(source)
+
+        error = exc_info.value
+        assert error.line == 3
+        assert "immediately after the last binding" in str(error)
+
+    def test_multiline_reports_last_content_line(self, menai):
+        """A missing ')' is reported on the last line carrying content."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 5)\n      (y 10))\n  (integer+ x\n            y\n")
+
+        error = exc_info.value
+        assert error.line == 4
+        assert error.column == 14
+
+    def test_error_names_the_insertion_point(self, menai):
+        """The message states the exact position to insert the missing ')'."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 5)\n      (y 10))\n  (integer+ x\n            y\n")
+
+        error = str(exc_info.value)
+        assert "Insert )) at line 4, column 14" in error
+
+    def test_error_includes_depth_table(self, menai):
+        """The message includes the per-line depth profile."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 5)\n      (y 10))\n  (integer+ x\n            y\n")
+
+        error = str(exc_info.value)
+        assert "Parenthesis depth by line" in error
+        assert "2->2" in error
+
+    def test_failed_parse_does_not_inflate_next_depth(self, menai):
+        """A failed parse leaves no state behind for the next one."""
+        with pytest.raises(MenaiASTBuildError):
+            menai.evaluate("(integer+ 1 2")
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 5)\n      (y 10))\n  (integer+ x\n            y\n")
+
+        assert "missing 2 closing parentheses" in str(exc_info.value)
+
+
+class TestExtraCloseLocation:
+    """An extra ')' is reported at the first ')' that cannot be matched."""
+
+    def test_extra_close_at_end(self, menai):
+        """A trailing ')' is reported at its own position."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(integer+ 1 2))")
+
+        error = exc_info.value
+        assert error.line == 1
+        assert error.column == 15
+        assert "Extra closing parenthesis" in str(error)
+
+    def test_extra_close_names_earlier_culprit(self, menai):
+        """
+        A ')' that closed a form before its body is named as the likely culprit.
+
+        The provable extra ')' is on the last line, but the mistake the reader
+        has to fix is the earlier ')' that ended the 'let' early.
+        """
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 5)\n      (y 10)))\n  (integer+ x y))\n")
+
+        error = str(exc_info.value)
+        assert "Likely culprit" in error
+        assert "line 2, column 14" in error
+        assert "'let'" in error
+
+    def test_balanced_structure_error_points_at_early_close(self, menai):
+        """A form closed before its body is reported at that close."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 5))) (integer+ x 1)")
+
+        error = exc_info.value
+        assert error.line == 1
+        assert error.column == 13
+        assert "'let' closed before its body" in str(error)
+
+    def test_two_top_level_expressions_are_not_an_extra_close(self, menai):
+        """Two adjacent expressions are reported as such, not as an extra ')'."""
+        with pytest.raises(MenaiASTBuildError, match="Unexpected token after complete expression"):
+            menai.evaluate("(integer+ 1 2) (integer+ 3 4)")
+
+
 @pytest.fixture
 def menai():
     """Create a fresh Menai instance for each test."""

@@ -99,7 +99,7 @@ class TestErrors:
         with pytest.raises(MenaiASTBuildError, match="Unterminated list"):
             menai.evaluate("(integer* (integer+ 1 2) 3")
 
-        with pytest.raises(MenaiASTBuildError, match="Premature closing parenthesis"):
+        with pytest.raises(MenaiASTBuildError, match="Unexpected token after complete expression"):
             menai.evaluate("(integer+ 1 2) (integer+ 3 4)")
 
     def test_unexpected_token_after_expression_parse_error(self, menai):
@@ -107,7 +107,7 @@ class TestErrors:
         with pytest.raises(MenaiASTBuildError, match="Unexpected token after complete expression"):
             menai.evaluate("42 43")
 
-        with pytest.raises(MenaiASTBuildError, match="Unexpected token after complete expression"):
+        with pytest.raises(MenaiASTBuildError, match="Extra closing parenthesis"):
             menai.evaluate("integer+ 1 2)")
 
     def test_invalid_lambda_syntax_parse_error(self, menai):
@@ -150,7 +150,7 @@ class TestErrors:
         with pytest.raises(MenaiEvalError, match="Let binding .* has wrong number of elements"):
             menai.evaluate("(let ((x)) x)")  # Binding without value
 
-        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis inside binding 'x'"):
+        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis — insert '\\)' at the end of binding 'x''s value"):
             menai.evaluate("(let ((x 1 2)) x)")  # Binding with too many elements — caught by parser
 
     def test_invalid_let_binding_variable_parse_error(self, menai):

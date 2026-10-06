@@ -122,7 +122,6 @@ Menai ships with a full set of command-line tools:
 |------|---------|
 | `menai-eval` | Compile and run a `.menai` file, with optional compiler and VM profiling |
 | `menai-test` | Discover and run `*.test.menai` suites |
-| `menai-check` | Validate parenthesis balance and pinpoint mismatched parens |
 | `menai-pretty-print` | Format Menai source |
 | `menai-disassemble` | Print annotated bytecode disassembly |
 | `menai-benchmark` | Run the performance benchmark suites |
@@ -133,12 +132,6 @@ The profiling is worth noting.  `menai-eval`, `menai-benchmark`, and
 by instructions executed, `--opcodes` counts opcode frequency, and `--annotate` shows
 the annotated disassembly with each instruction's execution share.  That last one is
 a `perf annotate` view for Menai.
-
-`menai-check` exists because AIs have a peculiar weakness.  Much as they struggle to
-count the "R"s in "strawberry", they struggle with long runs of parentheses and will
-often write throwaway scripts to check their own work.  It is easier to give them a
-reusable tool that does this.  Humans can use it too, but most find it easier to let
-an editor highlight matching parentheses visually.
 
 ## Embedding Menai
 
@@ -221,7 +214,6 @@ menai/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   │   └── stdlib/             # standard library (.menai files)
 │   ├── menai_benchmark/        # performance benchmarking tool
-│   ├── menai_check/            # parenthesis balance checker
 │   ├── menai_disassemble/      # bytecode disassembler
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)

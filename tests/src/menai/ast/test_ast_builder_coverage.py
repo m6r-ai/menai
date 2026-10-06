@@ -287,7 +287,7 @@ class TestBindingSummaryFormatting:
 
         error = exc_info.value
         # The parser catches the third element as a missing close paren
-        assert "Missing closing parenthesis inside binding 'x'" in error.message
+        assert "Missing closing parenthesis — insert ')' at the end of binding 'x''s value" in error.message
 
 
 class TestKeywordSpecificErrorMessages:

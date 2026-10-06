@@ -1,6 +1,5 @@
 # Change log for Menai
 
-
 ## v0.8.0 (2026-10-05)
 
 New features:
@@ -20,6 +19,15 @@ Bug fixes:
 - Updated the LICM pass to handle the nested loops introduced by the letrec inliner
   optimization.
 - Fixed a hash reinitialization bug in the VM.
+- Parenthesis errors now report the line and column to change rather than the line
+  where the offending form opened.  A missing `)` is reported at its insertion
+  point, and an extra `)` at the `)` that cannot be matched, naming any earlier `)`
+  that closed a form before its body as the likely culprit.  Errors also include a
+  per-line parenthesis depth table.
+- A parse error no longer leaves the AST builder's unclosed-form stack populated,
+  which previously inflated the depth reported for the next parse.
+- Two top-level expressions are no longer misreported as a premature closing
+  parenthesis.
 
 Internal structure changes:
 
@@ -27,6 +35,9 @@ Internal structure changes:
   optional constant operand too.  A new peephole pass merges constant loads into
   opcodes, giving benchmark gains typically around 4-5%.
 - Test `tests` directory now accurately reflects the source tree.
+- Removed the `menai-check` tool.  The compiler reports parenthesis errors more
+  accurately, and editors highlight matching parentheses visually, so the tool no
+  longer earned its place.
 
 ## v0.7.0 (2026-10-02)
 

@@ -4,6 +4,9 @@ from typing import cast
 from dataclasses import dataclass
 from menai.menai_error import MenaiASTBuildError
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
+from menai.ast.menai_paren_diagnostic import (
+    ParenDiagnosis, diagnose_parens, format_depth_table,
+)
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex, MenaiASTString,
     MenaiASTBoolean, MenaiASTNone, MenaiASTSymbol, MenaiASTList
@@ -60,9 +63,9 @@ class MenaiASTBuilder:
         # Paren stack for tracking unclosed expressions
         self.paren_stack: list[ParenStackFrame] = []
 
-        # Track the most recently closed frame and where it was closed.
-        # Used to report premature-close errors pointing at the culprit ')'.
-        self.last_closed_frame: ParenStackFrame | None = None
+        # Track where the most recently closed frame was closed.  Used to
+        # report the position of the previous binding when a bindings list is
+        # missing its close paren.
         self.last_close_line: int = 1
         self.last_close_column: int = 1
 
@@ -91,9 +94,13 @@ class MenaiASTBuilder:
         self.expression = expression
         self.source_file = source_file
 
+        # A previous build() that raised leaves its unclosed frames behind.
+        # Clearing the stack here keeps a failed parse from inflating the depth
+        # reported for the next one.
+        self.paren_stack.clear()
+
         # Reset inter-call state so stale positions from a previous build() never
         # leak into error messages for this expression.
-        self.last_closed_frame = None
         self.last_close_line = 1
         self.last_close_column = 1
 
@@ -114,31 +121,16 @@ class MenaiASTBuilder:
             current_line = self.current_token.line if self.current_token else 1
             current_col = self.current_token.column if self.current_token else 1
 
-            if self.last_closed_frame is not None:
-                # A ')' closed an expression prematurely — point at that ')' as the culprit
-                closed = self.last_closed_frame
-                expr_type = closed.get_expression_type()
-                snippet = closed.get_context_snippet()
-                context = (
-                    f"The expression starting at line {closed.line}, column {closed.column} "
-                    f"({expr_type}: {snippet}) "
-                    f"was closed at line {self.last_close_line}, column {self.last_close_column} "
-                    f"after {closed.elements_parsed} element{'s' if closed.elements_parsed != 1 else ''}, "
-                    f"but '{current_value}' at line {current_line}, column {current_col} was not expected after that close. "
-                    f"The ')' at line {self.last_close_line}, column {self.last_close_column} may be one too many."
+            diagnosis = self._diagnose_parens()
+
+            if diagnosis.extra_line is not None and diagnosis.extra_column is not None:
+                raise self._create_extra_close_error(
+                    diagnosis, current_value, current_line, current_col
                 )
-                raise MenaiASTBuildError(
-                    message="Premature closing parenthesis",
-                    line=self.last_close_line,
-                    column=self.last_close_column,
-                    received=f"Unexpected '{current_value}' at line {current_line}, column {current_col} after close",
-                    expected="Either more elements before this ')' or end of input after it",
-                    example="Correct: (+ 1 2)\\nIncorrect: (+ 1 2)) extra",
-                    suggestion=f"Check the ')' at line {self.last_close_line}, column {self.last_close_column} "
-                        f"— it may close too early",
-                    context=context,
-                    source=self.expression,
-                    source_file=self.source_file,
+
+            if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
+                raise self._create_form_closed_early_error(
+                    diagnosis, current_value, current_line, current_col
                 )
 
             raise MenaiASTBuildError(
@@ -147,7 +139,7 @@ class MenaiASTBuilder:
                 column=current_col,
                 received=f"Found: {current_value}",
                 expected="End of expression",
-                example="Correct: (+ 1 2)\\nIncorrect: (+ 1 2) extra",
+                example="Correct: (+ 1 2)\nIncorrect: (+ 1 2) extra",
                 suggestion="Remove extra tokens or combine into single expression",
                 context="Each evaluation can only handle one complete expression",
                 source=self.expression,
@@ -237,8 +229,7 @@ class MenaiASTBuilder:
     def _pop_paren_frame(self) -> None:
         """Pop an opening paren from the stack when it's successfully closed."""
         assert self.paren_stack, "Paren stack underflow - trying to pop from empty stack"
-        frame = self.paren_stack.pop()
-        self.last_closed_frame = frame
+        self.paren_stack.pop()
         # current_token is the ')' that just closed this frame — record its position
         if self.current_token is not None:
             self.last_close_line = self.current_token.line
@@ -302,6 +293,34 @@ class MenaiASTBuilder:
         pos += min(column - 1, len(lines[line - 1]) if line <= len(lines) else 0)
 
         return pos
+
+    def _diagnose_parens(self) -> ParenDiagnosis:
+        """
+        Analyse parenthesis balance over the whole token stream.
+
+        The diagnosis is computed from the token stream rather than from the
+        parser's in-progress state, so it can say where a missing ')' belongs
+        and which ')' is the extra one, independently of how far the parse got.
+        """
+        tokens = cast(list[MenaiToken], self.tokens) if self.tokens is not None else []
+        return diagnose_parens(tokens, self.expression)
+
+    def _depth_table_around(self, line: int, context: int = 3) -> str:
+        """
+        Render the per-line depth table around a line for inclusion in an error.
+
+        Args:
+            line: The line to centre the table on.
+            context: Number of lines to show either side.
+
+        Returns:
+            The formatted table, or an empty string when there is no source.
+        """
+        if not self.expression:
+            return ""
+
+        diagnosis = self._diagnose_parens()
+        return format_depth_table(diagnosis, line - context, line + context)
 
     def detect_expression_type(self, line: int, column: int) -> str:
         """
@@ -392,7 +411,7 @@ class MenaiASTBuilder:
 
         # Build stack trace showing all unclosed expressions
         stack_lines = []
-        for i, frame in enumerate(self.paren_stack, 1):
+        for i, frame in enumerate(reversed(self.paren_stack), 1):
             line = f"  {i}. {frame.get_expression_type()} at line {frame.line}, column {frame.column}"
 
             # Add related symbol if available (e.g., binding variable name)
@@ -441,11 +460,46 @@ class MenaiASTBuilder:
                 )
                 break
 
+        # The missing ')' belongs where the structure first went wrong.  When a
+        # binding form's body was read at the bindings list's own depth, the
+        # bindings list never closed and the ')' belongs immediately after the
+        # last binding.  Otherwise it belongs immediately after the last token in
+        # the source, which is where the parse ran out of input.  Pointing at the
+        # opening paren of the unclosed form instead would send the reader to the
+        # wrong line entirely.
+        diagnosis = self._diagnose_parens()
+        if diagnosis.binding_list_line is not None and diagnosis.binding_list_column is not None:
+            error_line = diagnosis.binding_list_line
+            error_column = diagnosis.binding_list_column
+            where = (
+                f"Insert {closing_parens} at line {error_line}, column {error_column} "
+                f"(immediately after the last binding, which is where the bindings "
+                f"list should have closed)."
+            )
+
+        elif diagnosis.insertion_line is not None and diagnosis.insertion_column is not None:
+            error_line = diagnosis.insertion_line
+            error_column = diagnosis.insertion_column
+            where = (
+                f"Insert {closing_parens} at line {error_line}, column {error_column} "
+                f"(immediately after the last token)."
+            )
+
+        else:
+            error_line = start_line
+            error_column = start_col
+            where = f"Insert {closing_parens} to close the unclosed expressions."
+
+        depth_table = self._depth_table_around(error_line)
+        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+
         # Create the context message
         context_msg = (
             f"Reached end of input at depth {depth}.\n\n"
+            f"{where}\n\n"
             f"Unclosed expressions (innermost to outermost):\n{stack_trace}"
             f"{binding_hint}"
+            f"{table_block}"
         )
 
         # Determine singular vs plural
@@ -453,12 +507,133 @@ class MenaiASTBuilder:
 
         return MenaiASTBuildError(
             message=f"Unterminated list - missing {depth} closing {paren_word}",
-            line=start_line,
-            column=start_col,
+            line=error_line,
+            column=error_column,
             expected=f'Additional parentheses, "{closing_parens}", to close all expressions',
             example="Correct: (+ 1 2)\nIncorrect: (+ 1 2",
-            suggestion="Close each incomplete expression with ')', working from innermost to outermost",
+            suggestion=where,
             context=context_msg,
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
+    def _create_extra_close_error(
+        self,
+        diagnosis: ParenDiagnosis,
+        current_value: object,
+        current_line: int,
+        current_col: int,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a ')' that cannot be matched to any '('.
+
+        The location is the first ')' at which the depth went negative, which is
+        the earliest point at which an extra ')' is provable.  When an earlier
+        ')' closed a form that cannot be complete without a body, that close is
+        the likelier mistake — it ended the form early, leaving this ')' with
+        nothing to close — so it is named as the likely culprit.
+
+        Args:
+            diagnosis: The parenthesis diagnosis for the token stream.
+            current_value: The token value found after the parsed expression.
+            current_line: Line of that token.
+            current_col: Column of that token.
+
+        Returns:
+            MenaiASTBuildError describing the extra closing parenthesis.
+        """
+        extra_line = cast(int, diagnosis.extra_line)
+        extra_column = cast(int, diagnosis.extra_column)
+
+        culprit = ""
+        if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
+            culprit = (
+                f"\n\nLikely culprit: the ')' at line {diagnosis.suspected_line}, "
+                f"column {diagnosis.suspected_column} closed the "
+                f"'{diagnosis.suspected_form}' opened earlier before it had a body. "
+                f"Removing that ')' would leave the ')' at line {extra_line}, "
+                f"column {extra_column} with something to close."
+            )
+
+        depth_table = self._depth_table_around(extra_line)
+        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+
+        if current_value == ')':
+            follows = "Another ')' follows it."
+
+        else:
+            follows = f"'{current_value}' at line {current_line}, column {current_col} follows it."
+
+        context = (
+            f"The ')' at line {extra_line}, column {extra_column} closes nothing: "
+            f"every '(' before it is already matched, so this ')' is one too many. "
+            f"{follows}"
+            f"{culprit}"
+            f"{table_block}"
+        )
+
+        return MenaiASTBuildError(
+            message=f"Extra closing parenthesis at line {extra_line}, column {extra_column}",
+            line=extra_line,
+            column=extra_column,
+            received=f"Unmatched ')' at line {extra_line}, column {extra_column}",
+            expected="A matching '(' before this ')'",
+            example="Correct: (+ 1 2)\nIncorrect: (+ 1 2))",
+            suggestion=f"Remove the ')' at line {extra_line}, column {extra_column}",
+            context=context,
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
+    def _create_form_closed_early_error(
+        self,
+        diagnosis: ParenDiagnosis,
+        current_value: object,
+        current_line: int,
+        current_col: int,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a form closed before it had a body.
+
+        The parentheses balance, so there is no extra ')' to point at.  What
+        went wrong is that a ')' closed a form — a 'let' or similar — before its
+        body, which makes the following form a second top-level expression
+        rather than the body.  The error points at that early ')'.
+
+        Args:
+            diagnosis: The parenthesis diagnosis for the token stream.
+            current_value: The token value found after the parsed expression.
+            current_line: Line of that token.
+            current_col: Column of that token.
+
+        Returns:
+            MenaiASTBuildError describing the form closed before its body.
+        """
+        early_line = cast(int, diagnosis.suspected_line)
+        early_column = cast(int, diagnosis.suspected_column)
+        form = diagnosis.suspected_form
+
+        depth_table = self._depth_table_around(early_line)
+        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+
+        context = (
+            f"The ')' at line {early_line}, column {early_column} closed the '{form}' "
+            f"before its body, so '{current_value}' at line {current_line}, "
+            f"column {current_col} is a second top-level expression rather than that "
+            f"body. The parentheses balance, so no ')' is missing or extra — the "
+            f"'{form}' simply ended too early."
+            f"{table_block}"
+        )
+
+        return MenaiASTBuildError(
+            message=f"'{form}' closed before its body at line {early_line}, column {early_column}",
+            line=early_line,
+            column=early_column,
+            received=f"'{form}' has no body before the ')' at line {early_line}, column {early_column}",
+            expected=f"A body expression before the ')' that closes the '{form}'",
+            example=f"Correct: ({form} ((x 5)) (integer+ x 1))\nIncorrect: ({form} ((x 5))) (integer+ x 1)",
+            suggestion=f"Move the ')' at line {early_line}, column {early_column} to after the body",
+            context=context,
             source=self.expression,
             source_file=self.source_file,
         )
@@ -815,21 +990,22 @@ class MenaiASTBuilder:
         token = cast(MenaiToken, self.current_token)
 
         if prev_binding_name is None:
-            # No preceding binding — case 2 is impossible, so the value's close
-            # paren must be the one that is missing.
+            # No preceding binding — the bindings list has nothing before this
+            # binding, so the value's close paren must be the one that is missing.
             return MenaiASTBuildError(
                 message=(
-                    f"Missing closing parenthesis inside binding '{var_name}' "
-                    f"(opened at line {binding_start_line}, column {binding_start_col}) "
-                    f"— form '{form_name}' at line {token.line}, "
-                    f"column {token.column} appears where a close paren was expected"
+                    f"Missing closing parenthesis — insert ')' at the end of "
+                    f"binding '{var_name}''s value. Without it, '{form_name}' at "
+                    f"line {token.line}, column {token.column} is read as a third "
+                    f"element of binding '{var_name}'"
                 ),
                 line=token.line,
                 column=token.column,
                 expected="')' to close the binding",
                 suggestion=(
-                    f"Check the value expression of binding '{var_name}' — "
-                    f"it is missing a closing parenthesis"
+                    f"The value expression of binding '{var_name}' (opened at line "
+                    f"{binding_start_line}, column {binding_start_col}) is missing a "
+                    f"closing parenthesis"
                 ),
                 context=(
                     f"The binding '{var_name}' has parsed its name and value (2 elements), "
@@ -844,23 +1020,28 @@ class MenaiASTBuilder:
 
         return MenaiASTBuildError(
             message=(
-                f"Malformed binding '{var_name}' — unexpected element '{form_name}' "
-                f"at line {token.line}, column {token.column}"
+                f"Missing closing parenthesis — insert ')' at line "
+                f"{prev_binding_end_line}, column {prev_binding_end_column} "
+                f"(after the previous binding) or at the end of binding "
+                f"'{var_name}''s value. Without it, '{form_name}' at line "
+                f"{token.line}, column {token.column} is read as a third element "
+                f"of binding '{var_name}'"
             ),
-            line=token.line,
-            column=token.column,
+            line=prev_binding_end_line,
+            column=prev_binding_end_column,
             expected="')' to close the binding",
             suggestion=(
-                f"Check the value expression of binding '{var_name}', and the ')' that "
-                f"should close the bindings list immediately after binding "
-                f"'{prev_binding_name}' (line {prev_binding_end_line}, "
-                f"column {prev_binding_end_column})"
+                f"Insert ')' at line {prev_binding_end_line}, column "
+                f"{prev_binding_end_column} if the bindings list should have closed "
+                f"after binding '{prev_binding_name}', or at the end of binding "
+                f"'{var_name}''s value if that value is missing a close"
             ),
             context=(
                 f"Binding '{var_name}' at line {binding_start_line}, "
                 f"column {binding_start_col} already has its name and value, but "
                 f"'{form_name}' at line {token.line}, column {token.column} appears as "
-                f"a third element. This is usually one of two things:\n"
+                f"a third element. The token stream cannot say which of two places "
+                f"the missing ')' belongs:\n"
                 f"  1. The value expression of binding '{var_name}' is missing a ')'.\n"
                 f"  2. The enclosing bindings list is missing its ')' after binding "
                 f"'{prev_binding_name}' (line {prev_binding_end_line}, "
@@ -913,7 +1094,7 @@ class MenaiASTBuilder:
 
         # Get details from stack
         stack_lines = []
-        for i, frame in enumerate(self.paren_stack, 1):
+        for i, frame in enumerate(reversed(self.paren_stack), 1):
             line = f"  {i}. {frame.get_expression_type()} at line {frame.line}, column {frame.column}"
 
             if frame.elements_parsed > 0:
@@ -935,23 +1116,43 @@ class MenaiASTBuilder:
         stack_trace = "\n".join(stack_lines)
 
         # Build closing parens (always multiple since depth >= 2)
-        closing_parens = " ) " * depth
-        closing_parens = closing_parens.strip()
+        closing_parens = ")" * depth
 
         paren_word = "parentheses"  # Always plural since depth >= 2
 
+        # The missing ')' belongs immediately after the last token in the
+        # source, which is where the parse ran out of input.
+        diagnosis = self._diagnose_parens()
+        if diagnosis.insertion_line is not None and diagnosis.insertion_column is not None:
+            error_line = diagnosis.insertion_line
+            error_column = diagnosis.insertion_column
+            where = (
+                f"Insert {closing_parens} at line {error_line}, column {error_column} "
+                f"(immediately after the last token)."
+            )
+
+        else:
+            error_line = bindings_start_line
+            error_column = bindings_start_col
+            where = f"Insert {closing_parens} to close the unclosed expressions."
+
+        depth_table = self._depth_table_around(error_line)
+        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+
         context_msg = (
             f"Reached end of input while parsing {keyword} bindings.\n\n"
+            f"{where}\n\n"
             f"Bindings parsed:\n{summary_text}\n\n"
             f"Unclosed expressions:\n{stack_trace}"
+            f"{table_block}"
         )
 
         return MenaiASTBuildError(
             message=f"Incomplete {keyword} bindings - missing {depth} closing {paren_word}",
-            line=bindings_start_line,
-            column=bindings_start_col,
+            line=error_line,
+            column=error_column,
             expected=f'Add "{closing_parens}" to close all expressions',
-            suggestion="Close each incomplete expression with ')', working from innermost to outermost",
+            suggestion=where,
             context=context_msg,
             example=f"({keyword} (\n  (x 5)\n  (y (integer+ x 2))\n) body)",
             source=self.expression,
@@ -980,7 +1181,7 @@ class MenaiASTBuilder:
                 column=quote_col,
                 received="Quote symbol ' with nothing to quote",
                 expected="Expression after quote symbol",
-                example="Correct: '(a b c) or 'symbol\\nIncorrect: ' (nothing after)",
+                example="Correct: '(a b c) or 'symbol\nIncorrect: ' (nothing after)",
                 suggestion="Add an expression after the ' symbol",
                 context="Quote symbol must be followed by something to quote",
                 source=self.expression,
