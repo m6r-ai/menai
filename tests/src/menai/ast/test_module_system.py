@@ -336,6 +336,27 @@ class TestImportBindingPosition:
         assert "binding" in str(exc_info.value).lower()
 
 
+class TestModuleMemberInLetStarBindingValue:
+    """Test that a module member may be referenced from a let* binding value."""
+
+    def test_member_used_in_let_star_binding_value(self, tmp_path):
+        """A let* binding value may reference a member of an imported module."""
+        (tmp_path / "math_utils.menai").write_text("""
+(let ((square (lambda (x) (integer* x x))))
+  (export square))
+""")
+        menai = Menai(module_path=[str(tmp_path)])
+
+        result = menai.evaluate('''
+(let* ((math (import "math_utils"))
+       (square (:: math square))
+       (n (square 5)))
+  n)
+''')
+
+        assert result == 25
+
+
 class TestSecondClassNamespaces:
     """Test that namespaces are second-class and cannot be used as values."""
 

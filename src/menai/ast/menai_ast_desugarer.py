@@ -849,8 +849,6 @@ class MenaiASTDesugarer:
             for _ in desugared_bindings:
                 self._pop_scope()
 
-        result = self._wrap_namespace_modules(namespace_modules, result, expr)
-
         # Wrap in nested lets, processing bindings in reverse order so the
         # outermost let is the first binding.
         for var_name, desugared_value, binding in reversed(desugared_bindings):
@@ -859,6 +857,14 @@ class MenaiASTDesugarer:
                 self._make_list((self._make_list((var_name, desugared_value), binding),), binding),
                 result
             ), expr)
+
+        # The imported modules' renamed bindings wrap the whole let* chain, not
+        # just the body.  A let* binding value may reference a module member
+        # (its namespace is in scope by the time the value is desugared), so the
+        # module bindings must be visible to every binding value as well as the
+        # body.  Wrapping only the body would leave those references outside the
+        # scope that defines them.
+        result = self._wrap_namespace_modules(namespace_modules, result, expr)
 
         return result
 
