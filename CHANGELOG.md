@@ -28,6 +28,19 @@ Bug fixes:
   which previously inflated the depth reported for the next parse.
 - Two top-level expressions are no longer misreported as a premature closing
   parenthesis.
+- Fixed a miscompile in the CFG branch constant propagation pass.  It dropped a
+  phi whose result fed a branch directly and was also used downstream, leaving
+  the downstream use undefined.
+- Fixed a miscompile in the interprocedural type analysis.  A call whose callee
+  could not be resolved contributed no return-type information instead of an
+  unknown type, so a function returning such a call was reported as returning
+  only the types of its other return paths.
+- Fixed a miscompile in the slot allocator.  A closure result coalesced into a
+  slot it captured overwrote the captured value before it was patched, so the
+  closure captured itself.
+- Fixed a scope bug when desugaring a `let*` that binds an imported module.  A
+  binding value that referenced a module member failed to compile because the
+  module's bindings were not in scope for it.
 
 Internal structure changes:
 
