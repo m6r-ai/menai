@@ -1,9 +1,10 @@
 """
 Menai IR Optimizer - transformation pass over the IR tree.
 
-Consumes an IRUseCounts annotation (produced by MenaiIRUseCounter) and applies
-IR-level optimizations that are safe because Menai is a pure functional language
-— every binding is immutable and every expression is side-effect-free.
+Consumes an IRUseCounts annotation (produced by MenaiIRUseCounter) and an
+IRReachability annotation (produced by MenaiIRReachability) and applies IR-level
+optimizations that are safe because Menai is a pure functional language — every
+binding is immutable and every expression is side-effect-free.
 """
 
 from typing import cast
@@ -30,6 +31,7 @@ from menai.ir.menai_ir import (
     MenaiIRVariable,
 )
 from menai.menai_value import MenaiBoolean
+from menai.ir.menai_ir_reachability import MenaiIRReachability, IRReachability
 from menai.ir.menai_ir_use_counter import MenaiIRUseCounter, IRUseCounts
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 
@@ -52,7 +54,8 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
     Implements MenaiIROptimizationPass: call optimize(ir) to get back a
     transformed IR tree and a boolean indicating whether any changes were made.
-    Use counts are computed internally so callers do not need to manage them.
+    Use counts and reachability are computed internally so callers do not need
+    to manage them.
 
     Usage::
 
@@ -62,6 +65,7 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
     def __init__(self) -> None:
         self._eliminations = 0
         self._counts: IRUseCounts | None = None
+        self._reach: IRReachability | None = None
 
     def eliminations(self) -> int:
         """Return the number of eliminations performed by the last optimize() call."""
@@ -73,6 +77,7 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         new_ir = ir
         while True:
             self._counts = MenaiIRUseCounter().count(new_ir)
+            self._reach = MenaiIRReachability().analyze(new_ir, self._counts.lambda_frame_ids)
             prev_eliminations = self._eliminations
             new_ir = self._opt(new_ir, frame_stack=[0])
             if self._eliminations == prev_eliminations:
@@ -157,15 +162,21 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         raise TypeError(f"MenaiIROptimizer: unhandled IR node type {type(ir).__name__}")
 
     def _opt_let(self, ir: MenaiIRLet, frame_stack: list[int]) -> MenaiIRExpr:
-        """Drop dead let bindings (total use count == 0)."""
+        """
+        Drop dead let bindings (unreachable from the evaluation roots).
+
+        Reachability, not a use count, decides liveness: a binding referenced
+        only by other unreachable bindings is itself dead, and a use count
+        cannot see that.
+        """
         current_frame = frame_stack[-1]
-        counts = cast(IRUseCounts, self._counts)
+        reach = cast(IRReachability, self._reach)
 
         live: list[tuple[str, MenaiIRExpr]] = []
         changed = False
         for binding in ir.bindings:
             name, value_plan, *_ = binding
-            if counts.total_count(current_frame, id(binding)) == 0:
+            if not reach.is_live(current_frame, id(binding)):
                 self._eliminations += 1
                 changed = True
                 continue
@@ -193,15 +204,21 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         )
 
     def _opt_letrec(self, ir: MenaiIRLetrec, frame_stack: list[int]) -> MenaiIRExpr:
-        """Drop dead letrec bindings (total use count == 0)."""
+        """
+        Drop dead letrec bindings (unreachable from the evaluation roots).
+
+        Reachability removes an entire unreachable mutually-recursive group as
+        a unit.  A use count cannot: every member of an unreachable cycle is
+        referenced by another member, so no member ever counts as unused.
+        """
         current_frame = frame_stack[-1]
-        counts = cast(IRUseCounts, self._counts)
+        reach = cast(IRReachability, self._reach)
 
         live: list[tuple[str, MenaiIRExpr]] = []
         changed = False
         for binding in ir.bindings:
             name, value_plan, *_ = binding
-            if counts.total_count(current_frame, id(binding)) == 0:
+            if not reach.is_live(current_frame, id(binding)):
                 self._eliminations += 1
                 changed = True
                 continue

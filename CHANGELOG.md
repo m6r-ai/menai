@@ -41,6 +41,8 @@ Bug fixes:
 - Fixed a scope bug when desugaring a `let*` that binds an imported module.  A
   binding value that referenced a module member failed to compile because the
   module's bindings were not in scope for it.
+- Fixed an IR dead binding elimination quirk.  An unreachable group of mutually-
+  recursive bindings can now be eliminated.
 
 Internal structure changes:
 
