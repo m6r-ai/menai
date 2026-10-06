@@ -641,6 +641,25 @@ in the VM core, not a prelude function, and returns the checksum as an
 therefore a language primitive.
 See [ADR-0025](docs/adr/0025-crc32-primitive-in-c-vm.md).
 
+### Regular-expression matching is a standard library capability module
+Regular-expression matching is the standard library module `regexp`, not a prelude
+function and not an opcode-backed primitive. The pattern dialect is a Menai design
+decision, not a fixed specification, so it fails the ADR-0024 criterion for
+opcode-hood; and the residual cost is Menai-level call overhead, which a
+literal-prefix prefilter addresses without VM changes.
+
+It is a capability module rather than an operation module: it is a pattern
+compiler, a matcher, and a family of search, split, and replace operations that
+share a compiled-regexp type and a pattern dialect, and none of the parts is
+independently useful. It exports the type `regexp` and the operations `compile`,
+`search`, `search?`, `search-all`, `split`, and `replace` under their bare names,
+with no `regexp-` prefix — the module name supplies the capability.
+
+The compiled regexp is the first argument and the string is the second, following
+the `domain-operation` shape used throughout. See
+[ADR-0041](docs/adr/0041-standard-library-module-taxonomy.md) and
+[ADR-0042](docs/adr/0042-regular-expression-matching.md).
+
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and

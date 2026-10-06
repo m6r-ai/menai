@@ -13,6 +13,8 @@ New features:
 - Added a `csv-encode` module to the standard library.  It encodes a vector of
   rows (each a vector of field strings) as RFC 4180 CSV text; it is the inverse
   of `csv-decode`.
+- Added a `regexp` module to the standard library.  It compiles a
+  regular-expression pattern and searches, splits, or replaces within strings.
 
 Bug fixes:
 

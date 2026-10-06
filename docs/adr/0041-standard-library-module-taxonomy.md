@@ -1,7 +1,7 @@
-# ADR-0039: Standard library module naming
+# ADR-0041: Standard library module taxonomy
 
-Date: 2026-10-02  
-Status: Superseded by ADR-0041
+Date: 2026-10-06  
+Status: Accepted
 
 ## Context
 
@@ -20,11 +20,34 @@ The standard library had grown to a set of modules whose names were chosen ad ho
 is called from the capability it wants, and cannot predict the name of the inverse of an
 operation it has found.
 
+[ADR-0039](0039-standard-library-module-naming.md) established a convention to fix this:
+a module does one thing, its name is `<format>-<operation>`, and it exports `<operation>`.
+That model works for a codec or a container reader, where the module *is* one operation.
+
+It does not work for a **capability** that is not a single operation. A regular-expression
+engine is the first such case: it is a pattern compiler, a matcher, and a family of
+search, split, and replace operations, all built on a pattern dialect that is a Menai
+design decision. There is no single `<operation>` that names it, and forcing it into the
+`<format>-<operation>` shape would either split the capability across several modules
+(so an agent that finds one operation cannot find its siblings) or pick one operation to
+stand for the whole (so the module name lies about what the module does).
+
+ADR-0039 foresaw this only partially. It named a second kind of module — shared-data
+modules such as `deflate-tables` — but treated "not an operation" as a narrow exception
+for constant tables. A capability module is a third kind, and it is not an exception: it
+is a legitimate module whose unit is a capability rather than an operation.
+
+This ADR replaces ADR-0039's model with one that covers all three kinds, and supersedes
+ADR-0039.
+
 ## Decision
 
-### The unit is the operation
+### Three kinds of standard library module
 
-A module does **one thing**, and its name is `<format>-<operation>`:
+A standard library module is one of three kinds. The kind determines how the module is
+named and what it exports.
+
+**Operation modules** do one thing. The name is `<format>-<operation>`:
 
 - `json-decode` — decode JSON.
 - `json-encode` — encode JSON.
@@ -40,6 +63,35 @@ force the agent to open the module to discover what it does.
 Pairing is by name, not by structure. `json-decode` and `json-encode` are a pair because
 their names say so. They are not required to live together, and no module exists whose
 only purpose is to group them.
+
+**Shared-data modules** hold a specification's constant data that several operation
+modules need. They are named for what they hold, not for an operation. `deflate-tables`
+(the RFC 1951 constant tables, used by both `deflate-compress` and `deflate-decompress`)
+is the example. A data module is not an operation and is not named as one.
+
+**Capability modules** provide a whole capability that is not a single operation. They
+are named for the capability, and they export a family of operations that the capability
+comprises. `regexp` is the example: it exports the compiled-regexp type and the compile,
+search, split, and replace operations that make up regular-expression matching.
+
+A capability module is not a bundle of unrelated operations. It is a single coherent
+capability whose parts are not individually useful — a compiled regexp with no search
+operation does nothing, and a search operation with no way to compile a pattern does
+nothing. The parts belong together because the capability is the unit.
+
+### Choosing a kind
+
+The kind follows from what the module is, not from a preference:
+
+- If the module is one operation on one format, it is an **operation module**.
+- If the module is constant data several modules share, it is a **shared-data module**.
+- If the module is a capability made of several operations that only make sense together,
+  it is a **capability module**.
+
+The default is the operation module. A capability module is chosen only when the
+capability genuinely is not one operation; if a module can be named `<format>-<operation>`
+without lying, it is an operation module. This keeps the common case searchable by
+operation, which is what an agent does.
 
 ### Inverse operations are named as a symmetric pair
 
@@ -68,8 +120,8 @@ one — the obligation arises from the pair, not from the single name.
 
 ### The operation vocabulary
 
-The operation part of a module name is drawn from a small, fixed vocabulary, so that the
-inverse of an operation is always predictable:
+The operation part of an operation module's name is drawn from a small, fixed vocabulary,
+so that the inverse of an operation is always predictable:
 
 | Operation | Inverse | Meaning |
 |-----------|---------|---------|
@@ -93,26 +145,21 @@ The container shape is deliberately asymmetric because the operations are asymme
 use pattern is to read a container's entries, decide what is worth investigating, and
 extract that — a read-then-read flow, with `create` as the separate write side.
 
-### Two kinds of module
-
-Not every module is an operation.
-
-- **Operation modules** do one thing and are named `<format>-<operation>`.
-- **Shared-data modules** hold a specification's constant data that several operation
-  modules need. They are named for what they hold, not for an operation. `deflate-tables`
-  (the RFC 1951 constant tables, used by both `deflate-compress` and `deflate-decompress`)
-  is the example.
-
-This is not an exception to the model; it is a second kind of module. A data module is
-not an operation and should not be named as one.
-
 ### Exports
 
-A module exports its operation under the same name as the operation in its module name.
-`json-decode` exports `decode`; `deflate-compress` exports `compress`. The export name is
-therefore redundant with the module name, and that redundancy is accepted: the export name
-is predictable from the module name, and it reads naturally at the call site
-(`(:: json-decode decode)`).
+An operation module exports its operation under the same name as the operation in its
+module name. `json-decode` exports `decode`; `deflate-compress` exports `compress`. The
+export name is therefore redundant with the module name, and that redundancy is accepted:
+the export name is predictable from the module name, and it reads naturally at the call
+site (`(:: json-decode decode)`).
+
+A capability module exports the members of the capability under their bare operation
+names, with no module-name prefix. `regexp` exports `compile`, `search`, `search?`,
+`search-all`, `split`, and `replace`, plus the compiled-regexp type. The module name
+supplies the capability, so repeating it in each export would be redundant: the call site
+is `(:: regexp search)`, not `(:: regexp regexp-search)`. This is the same principle as
+the operation module's redundant export name, applied to a capability instead of an
+operation.
 
 ### Naming constraints
 
@@ -127,6 +174,30 @@ is the natural word, but it is a prelude function the ZIP reader needs, so it is
 as an export name.
 
 ## Alternatives considered
+
+### Keep ADR-0039 and treat a capability module as an exception
+
+This was the status quo. It leaves the model describing two kinds of module and treating
+anything else as an anomaly, which does not scale: a second capability module would be a
+second exception, and the model would not tell an author which shape to choose. Making the
+capability module a named kind, with a rule for when to choose it, keeps the model total.
+
+### Split a capability into one module per operation
+
+A `regexp-compile`, `regexp-search`, `regexp-split`, and `regexp-replace` module would fit
+the `<format>-<operation>` shape exactly. It is rejected because the parts are not
+independently useful: they share the compiled-regexp type and the pattern dialect, and a
+user needs several of them together to do anything. Splitting them forces the agent to
+find and import every part, and it puts the shared type in an arbitrary one of them. The
+capability is the unit, so the module is the unit.
+
+### One module per format, with all operations as exports
+
+This is the shape ADR-0039 rejected for codecs, and it is still wrong for them: an agent
+searches for an operation, so the operation belongs in the name. It is not what a
+capability module does either — a capability module is named for a capability, not a
+format, and its exports are the parts of that capability, not the two directions of one
+operation.
 
 ### Why `decode` / `encode` rather than `parse` / `encode`
 
@@ -178,13 +249,21 @@ module to discover what it does.
   name of an operation's inverse from the operation it has found.
 - A symmetric pair is a testable contract: the round-trip property must hold and is tested.
 - The naming is uniform across formats, so the shape of a pair is learnable as a rule.
+- A capability that is not one operation has a defined home, so the next one does not
+  require a new exception to the model.
+- A capability module's exports carry no module-name prefix, so the call site reads
+  naturally and the module name supplies the capability.
 
 ### Negative
 
 - A format with two directions is two files rather than one, so the standard library has
   more modules than a format-grouped layout would.
-- The export name is redundant with the module name. This is accepted, but it is
-  duplication.
+- The export name is redundant with the module name for operation modules. This is
+  accepted, but it is duplication.
+- The taxonomy has three kinds, so an author must decide which kind a new module is. The
+  rule ("the default is the operation module; a capability module only when the capability
+  genuinely is not one operation") is intended to make that decision mechanical, but it is
+  a decision.
 - The convention is a constraint on vocabulary: a natural name that collides with a
   builtin or prelude function the module uses (such as `list`) is unavailable, and a
   less natural name must be chosen instead.
@@ -197,10 +276,12 @@ are not lost.
 ### Is the unit a module at all, or a capability?
 
 If AIs both write and consume this code, the natural unit may not be a file with an export
-list. It may be a *searchable capability* — "decompress DEFLATE", "decode PNG" — where the
-implementation is an implementation detail and what matters is that the capability is
-discoverable, named, versioned, and trusted. If that is the direction, the module layout is
-an implementation concern and the interesting design work is in the capability layer.
+list. It may be a *searchable capability* — "decompress DEFLATE", "decode PNG", "match a
+regular expression" — where the implementation is an implementation detail and what
+matters is that the capability is discoverable, named, versioned, and trusted. A
+capability module is closer to that unit than an operation module is, but it is still a
+file with an export list. If that is the direction, the module layout is an implementation
+concern and the interesting design work is in the capability layer.
 
 ### The retrieval layer
 

@@ -107,5 +107,7 @@ What costs, risks, or constraints does this decision impose?
 | [0036](0036-predicate-fold-may-consume-interprocedural-facts.md) | Type-predicate folding may consume interprocedural facts | Accepted |
 | [0037](0037-collection-access-verbs.md) | Element access verbs — `-nth`, `-get`, `-with`, and `-without` | Accepted |
 | [0038](0038-standard-library-packaging-and-location.md) | Standard library packaging and location | Accepted |
-| [0039](0039-standard-library-module-naming.md) | Standard library module naming | Accepted |
+| [0039](0039-standard-library-module-naming.md) | Standard library module naming | Superseded by ADR-0041 |
 | [0040](0040-module-search-path-and-application-libraries.md) | Module search path and application libraries | Accepted |
+| [0041](0041-standard-library-module-taxonomy.md) | Standard library module taxonomy | Accepted |
+| [0042](0042-regular-expression-matching.md) | Regular-expression matching — the `regexp` capability module | Accepted |

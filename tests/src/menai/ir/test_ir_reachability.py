@@ -498,9 +498,9 @@ class TestReachabilityIntegration:
 
     def test_prelude_cost_nothing_when_unused(self):
         """
-        The prelude's regexp parser is an unreachable mutually-recursive group
-        in a program that does not use it, so it is pruned: the compiled module
-        contains no closure at all.
+        The prelude is an unreachable mutually-recursive group in a program that
+        does not use it, so it is pruned: the compiled module contains no closure
+        at all.
         """
         menai = Menai()
         code = menai.compile("(integer+ 3 4)")
@@ -512,8 +512,11 @@ class TestReachabilityIntegration:
             f"{[Opcode(o).name for o in opcodes]}"
         )
 
-    def test_regexp_still_works(self):
-        """The regexp prelude functions still behave correctly when used."""
-        menai = Menai()
-        result = menai.evaluate('(string-match "hello world" (regexp "wor.d"))')
+    def test_imported_module_recursive_bindings_survive(self):
+        """A used mutually-recursive group from an imported module is preserved."""
+        menai = Menai(module_path=Menai.build_module_path())
+        result = menai.evaluate(
+            '(let ((r (import "regexp")))'
+            '  ((:: r search) ((:: r compile) "wor.d") "hello world"))'
+        )
         assert result == [6, 11]

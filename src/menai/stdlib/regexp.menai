@@ -1,0 +1,451 @@
+; regexp — regular-expression matching over strings.
+;
+; A compiled regexp is a struct holding the source pattern, the parsed node
+; tree, and a precomputed literal prefix used by the fast path.  compile builds
+; one from a pattern string; the search, split, and replace operations take a
+; compiled regexp and a string.  A match is reported as a half-open (start end)
+; index pair, so (string-slice s start end) is the matched text.
+;
+; The pattern dialect is small and documented in ADR-0042.  A malformed pattern,
+; a repetition count above the limit, or a non-string where a string is required
+; raises an error.
+
+(letrec
+  ((regexp-op-empty 0)
+   (regexp-op-char 1)
+   (regexp-op-any 2)
+   (regexp-op-class 3)
+   (regexp-op-bol 4)
+   (regexp-op-eol 5)
+   (regexp-op-seq 6)
+   (regexp-op-alt 7)
+   (regexp-op-opt 8)
+   (regexp-op-star 9)
+
+   ; The largest repetition count a brace quantifier may specify.  A larger count
+   ; would expand to an impractically large node tree, so it is rejected rather
+   ; than silently accepted.
+   (regexp-repeat-limit 1000)
+
+   (regexp-is-digit?
+    (lambda (ch)
+      (let ((cp ($string->integer-codepoint ch)))
+        (and ($integer>=? cp 48) ($integer<=? cp 57)))))
+
+   (regexp-n-char (lambda (c) (list regexp-op-char c)))
+   (regexp-n-any (lambda () (list regexp-op-any)))
+   (regexp-n-class (lambda (ranges negated) (list regexp-op-class ranges negated)))
+   (regexp-n-bol (lambda () (list regexp-op-bol)))
+   (regexp-n-eol (lambda () (list regexp-op-eol)))
+   (regexp-n-seq (lambda (a b) (list regexp-op-seq a b)))
+   (regexp-n-alt (lambda (a b) (list regexp-op-alt a b)))
+   (regexp-n-star (lambda (a) (list regexp-op-star a)))
+   (regexp-n-opt (lambda (a) (list regexp-op-opt a)))
+   (regexp-n-empty (lambda () (list regexp-op-empty)))
+
+   (regexp-parse-class
+    (lambda (p i)
+      (letrec
+        ((loop
+          (lambda (j ranges)
+            (if ($integer>=? j ($string-length p))
+                (error "Unterminated character class in pattern")
+                (let ((ch ($string-nth p j)))
+                  (if ($string=? ch "]")
+                      (list ($list-reverse ranges) ($integer+ j 1))
+                      (if (and ($integer<? ($integer+ j 2) ($string-length p))
+                               ($string=? ($string-nth p ($integer+ j 1)) "-")
+                               ($string!=? ($string-nth p ($integer+ j 2)) "]"))
+                          (loop ($integer+ j 3)
+                                ($list-prepend ranges
+                                              (list ($string->integer-codepoint ch)
+                                                    ($string->integer-codepoint ($string-nth p ($integer+ j 2))))))
+                          (let ((cp ($string->integer-codepoint ch)))
+                            (loop ($integer+ j 1) ($list-prepend ranges (list cp cp)))))))))))
+        (loop i (list)))))
+
+   (regexp-parse-atom
+    (lambda (p i)
+      (let ((ch ($string-nth p i)))
+        (if ($string=? ch "(")
+            (let ((inner (regexp-parse-alt p ($integer+ i 1))))
+              (if (and ($integer<? ($list-nth inner 1) ($string-length p))
+                       ($string=? ($string-nth p ($list-nth inner 1)) ")"))
+                  (list ($list-first inner) ($integer+ ($list-nth inner 1) 1))
+                  (error "Unterminated group in pattern")))
+            (if ($string=? ch "[")
+                (let* ((neg (and ($integer<? ($integer+ i 1) ($string-length p))
+                                 ($string=? ($string-nth p ($integer+ i 1)) "^")))
+                       (start (if neg ($integer+ i 2) ($integer+ i 1)))
+                       (cls (regexp-parse-class p start)))
+                  (list (regexp-n-class ($list-first cls) neg) ($list-nth cls 1)))
+                (if ($string=? ch "\\")
+                    (let ((esc ($string-nth p ($integer+ i 1))))
+                      (if ($string=? esc "d")
+                          (list (regexp-n-class (list (list 48 57)) #f) ($integer+ i 2))
+                          (if ($string=? esc "D")
+                              (list (regexp-n-class (list (list 48 57)) #t) ($integer+ i 2))
+                              (if ($string=? esc "w")
+                                  (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #f) ($integer+ i 2))
+                                  (if ($string=? esc "W")
+                                      (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #t) ($integer+ i 2))
+                                      (if ($string=? esc "s")
+                                          (list (regexp-n-class (list (list 9 13) (list 32 32)) #f) ($integer+ i 2))
+                                          (if ($string=? esc "S")
+                                              (list (regexp-n-class (list (list 9 13) (list 32 32)) #t) ($integer+ i 2))
+                                              (list (regexp-n-char esc) ($integer+ i 2)))))))))
+                    (if ($string=? ch ".")
+                        (list (regexp-n-any) ($integer+ i 1))
+                        (if ($string=? ch "^")
+                            (list (regexp-n-bol) ($integer+ i 1))
+                            (if ($string=? ch "$")
+                                (list (regexp-n-eol) ($integer+ i 1))
+                                (list (regexp-n-char ch) ($integer+ i 1)))))))))))
+
+   (regexp-parse-quant
+    (lambda (p i)
+      (let* ((atom-result (regexp-parse-atom p i))
+             (node ($list-first atom-result))
+             (after ($list-nth atom-result 1)))
+        (if ($integer>=? after ($string-length p))
+            (list node after)
+            (let ((q ($string-nth p after)))
+              (if ($string=? q "*")
+                  (list (regexp-n-star node) ($integer+ after 1))
+                  (if ($string=? q "+")
+                      (list (regexp-n-seq node (regexp-n-star node)) ($integer+ after 1))
+                      (if ($string=? q "?")
+                          (list (regexp-n-opt node) ($integer+ after 1))
+                          (if ($string=? q "{")
+                              (let ((br (regexp-parse-brace p after)))
+                                (if ($none? br)
+                                    (list node after)
+                                    (list (regexp-expand-repeat node ($list-nth br 0) ($list-nth br 1))
+                                          ($list-nth br 2))))
+                              (list node after))))))))))
+
+   ; regexp-parse-brace parses a brace quantifier starting at the "{" at p[i].
+   ; Returns (list <min> <max> <next-index>) where max is #none for an open-ended
+   ; "{n,}", or #none when the braces do not form a valid quantifier (in which
+   ; case the "{" is a literal character and the caller leaves it alone).
+   ; Raises when a count exceeds regexp-repeat-limit.
+   (regexp-parse-brace
+    (lambda (p i)
+      (letrec
+        ((digits
+          (lambda (j)
+            (if (and ($integer<? j ($string-length p))
+                     (regexp-is-digit? ($string-nth p j)))
+                (digits ($integer+ j 1))
+                j)))
+         (value
+          (lambda (from j)
+            (if ($integer=? j from)
+                #none
+                (let ((n (string->integer ($string-slice p from j))))
+                  (if ($integer>? n regexp-repeat-limit)
+                      (error "Repetition count in pattern exceeds the limit")
+                      n))))))
+        (if ($integer>=? ($integer+ i 1) ($string-length p))
+            #none
+            (let ((start ($integer+ i 1)))
+              (let ((j (digits start)))
+                (if ($integer=? j start)
+                    #none
+                    (let ((lo (value start j)))
+                      (if ($integer>=? j ($string-length p))
+                          #none
+                          (if ($string=? ($string-nth p j) "}")
+                              (list lo lo ($integer+ j 1))
+                              (if ($string=? ($string-nth p j) ",")
+                                  (let ((k (digits ($integer+ j 1))))
+                                    (if (and ($integer<? k ($string-length p))
+                                             ($string=? ($string-nth p k) "}"))
+                                        (if ($integer=? k ($integer+ j 1))
+                                            (list lo #none ($integer+ k 1))
+                                            (let ((hi (value ($integer+ j 1) k)))
+                                              (if ($integer<? hi lo)
+                                                  (error "Repetition range in pattern is inverted")
+                                                  (list lo hi ($integer+ k 1)))))
+                                        #none))
+                                  #none)))))))))))
+
+   ; regexp-expand-repeat builds a node matching its child between lo and hi times.
+   ; hi is #none for an open-ended repeat.  The expansion is by construction:
+   ; lo mandatory copies followed by (hi - lo) optional copies, or a star for an
+   ; open-ended repeat.
+   (regexp-expand-repeat
+    (lambda (node lo hi)
+      (letrec
+        ((copies
+          (lambda (n)
+            (if ($integer<=? n 0)
+                (regexp-n-empty)
+                (regexp-n-seq node (copies ($integer- n 1)))))))
+        (if ($none? hi)
+            (regexp-n-seq (copies lo) (regexp-n-star node))
+            (letrec
+              ((optionals
+                (lambda (n)
+                  (if ($integer<=? n 0)
+                      (regexp-n-empty)
+                      (regexp-n-opt (regexp-n-seq node (optionals ($integer- n 1))))))))
+              (regexp-n-seq (copies lo) (optionals ($integer- hi lo))))))))
+
+   (regexp-parse-seq
+    (lambda (p i)
+      (letrec
+        ((loop
+          (lambda (j node)
+            (if ($integer>=? j ($string-length p))
+                (list node j)
+                (let ((ch ($string-nth p j)))
+                  (if (or ($string=? ch "|") ($string=? ch ")"))
+                      (list node j)
+                      (let ((q (regexp-parse-quant p j)))
+                        (loop ($list-nth q 1)
+                              (if ($integer=? ($list-first node) regexp-op-empty)
+                                  ($list-first q)
+                                  (regexp-n-seq node ($list-first q)))))))))))
+        (loop i (regexp-n-empty)))))
+
+   (regexp-parse-alt
+    (lambda (p i)
+      (letrec
+        ((loop
+          (lambda (j node)
+            (let* ((seq (regexp-parse-seq p j))
+                   (snode ($list-first seq))
+                   (after ($list-nth seq 1)))
+              (if (and ($integer<? after ($string-length p))
+                       ($string=? ($string-nth p after) "|"))
+                  (loop ($integer+ after 1)
+                        (if ($integer=? ($list-first node) regexp-op-empty)
+                            snode
+                            (regexp-n-alt node snode)))
+                  (list (if ($integer=? ($list-first node) regexp-op-empty)
+                            snode
+                            (regexp-n-alt node snode))
+                        after))))))
+        (loop i (regexp-n-empty)))))
+
+   (regexp-class-match?
+    (lambda (ranges negated ch)
+      (let ((cp ($string->integer-codepoint ch)))
+        (letrec
+          ((loop (lambda (rs)
+                   (if ($list-null? rs)
+                       negated
+                       (let ((r ($list-first rs)))
+                         (if (and ($integer>=? cp ($list-nth r 0))
+                                  ($integer<=? cp ($list-nth r 1)))
+                             ($boolean-not negated)
+                             (loop ($list-rest rs))))))))
+          (loop ranges)))))
+
+   (regexp-identity (lambda (p) p))
+
+   (regexp-m
+    (lambda (node pos s k)
+      (match ($list-first node)
+        (0 (k pos))
+        (1 (if (and ($integer<? pos ($string-length s))
+                    ($string=? ($string-nth s pos) ($list-nth node 1)))
+               (k ($integer+ pos 1))
+               #none))
+        (2 (if ($integer<? pos ($string-length s))
+               (k ($integer+ pos 1))
+               #none))
+        (3 (if (and ($integer<? pos ($string-length s))
+                    (regexp-class-match? ($list-nth node 1)
+                                  ($list-nth node 2)
+                                  ($string-nth s pos)))
+               (k ($integer+ pos 1))
+               #none))
+        (4 (if ($integer=? pos 0) (k pos) #none))
+        (5 (if ($integer=? pos ($string-length s)) (k pos) #none))
+        (6 (regexp-m ($list-nth node 1) pos s
+              (lambda (p2)
+                (regexp-m ($list-nth node 2) p2 s k))))
+        (7 (let ((r (regexp-m ($list-nth node 1) pos s k)))
+             (if ($none? r)
+                 (regexp-m ($list-nth node 2) pos s k)
+                 r)))
+        (8 (let ((r (regexp-m ($list-nth node 1) pos s k)))
+             (if ($none? r)
+                 (k pos)
+                 r)))
+        (9 (letrec
+             ((loop
+               (lambda (p)
+                 (let ((r (regexp-m ($list-nth node 1) p s
+                             (lambda (np)
+                               (if ($integer=? np p)
+                                   #none
+                                   (loop np))))))
+                   (if ($none? r)
+                       (k p)
+                       r)))))
+             (loop pos)))
+        (_ (error "Unknown instruction")))))
+
+   (regexp-match-from
+    (lambda (node s start)
+      (regexp-m node start s regexp-identity)))
+
+   ; regexp-literal-prefix returns the longest run of literal characters that any match
+   ; must begin with, as a string; the empty string when the pattern's first node
+   ; is not a literal.  It is used to reject start positions with one string
+   ; comparison instead of a full match attempt.
+   ;
+   ; A sequence contributes its first child's prefix, and continues into the
+   ; second child only when the first child is *entirely* literal (regexp-literal-length
+   ; equals the whole child).  Continuing past a node that is only partly literal
+   ; would claim a longer prefix than every match actually has, which would reject
+   ; valid start positions and silently miss matches.
+   (regexp-literal-prefix
+    (lambda (node)
+      (match ($list-first node)
+        (1 ($list-nth node 1))
+        (6 (let ((a ($list-nth node 1)))
+             (let ((pa (regexp-literal-prefix a)))
+               (if ($integer=? ($string-length pa) (regexp-literal-length a))
+                   ($string-concat pa (regexp-literal-prefix ($list-nth node 2)))
+                   pa))))
+        (_ ""))))
+
+   ; regexp-literal-length returns the number of characters a node matches when it is
+   ; entirely literal, or -1 when it is not entirely literal.
+   (regexp-literal-length
+    (lambda (node)
+      (match ($list-first node)
+        (1 1)
+        (6 (let ((n (regexp-literal-length ($list-nth node 1))))
+             (if ($integer=? n -1)
+                 -1
+                 (let ((regexp-m (regexp-literal-length ($list-nth node 2))))
+                   (if ($integer=? regexp-m -1) -1 ($integer+ n regexp-m))))))
+        (_ -1))))
+
+   (regexp-prefix-matches?
+    (lambda (s start prefix)
+      (let ((n ($string-length prefix)))
+        (if ($integer>? ($integer+ start n) ($string-length s))
+            #f
+            ($string=? ($string-slice s start ($integer+ start n)) prefix)))))
+
+   ; regexp-match-from-start finds the first match at or after `start`, returning
+   ; (start end) or #none.  The literal prefix of the pattern is checked at each
+   ; start position so that positions which cannot begin a match are rejected
+   ; with one string comparison instead of a full match attempt.
+   (regexp-match-from-start
+    (lambda (node prefix s start)
+      (letrec
+        ((loop
+          (lambda (pos)
+            (if ($integer>? pos ($string-length s))
+                #none
+                (if (or ($string=? prefix "")
+                        (regexp-prefix-matches? s pos prefix))
+                    (let ((end (regexp-match-from node s pos)))
+                      (if ($none? end)
+                          (loop ($integer+ pos 1))
+                          (list pos end)))
+                    (loop ($integer+ pos 1)))))))
+        (loop start))))
+
+   ; regexp — the compiled-regexp struct type.  Fields: the source pattern, the
+   ; parsed node tree, and the literal prefix used by the fast path.
+   (regexp (struct (source node prefix)))
+
+   ; compile — compiles a pattern string into a compiled regexp value.  Raises
+   ; when the pattern is not a string or is malformed.
+   (compile
+    (lambda (p)
+      (if ($string? p)
+          (let ((parsed (regexp-parse-alt p 0)))
+            (if ($integer=? ($list-nth parsed 1) ($string-length p))
+                (regexp p ($list-first parsed) (regexp-literal-prefix ($list-first parsed)))
+                (error "regexp: invalid pattern")))
+          (error "regexp: pattern must be a string"))))
+
+   ; regexp? — returns #t when its argument is a compiled regexp, #f otherwise.
+   ; Total: it guards with struct? before struct-is-instance?.
+   (regexp? (lambda (x)
+              (and ($struct? x) ($struct-is-instance? x regexp))))
+
+   (regexp-node (lambda (rx) ($struct-get rx 'node)))
+   (regexp-prefix (lambda (rx) ($struct-get rx 'prefix)))
+
+   ; search — returns the first match in a string as a (start end) pair, or
+   ; #none.  Raises when the input is not a string.
+   (search
+    (lambda (rx s)
+      (if ($string? s)
+          (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s 0)
+          (error "regexp: input must be a string"))))
+
+   ; search? — returns #t when a string contains a match, #f otherwise.
+   (search?
+    (lambda (rx s)
+      (if ($none? (search rx s)) #f #t)))
+
+   ; search-all — returns every non-overlapping match in a string, left to
+   ; right, as a list of (start end) pairs.  Raises when the input is not a
+   ; string.
+   (search-all
+    (lambda (rx s)
+      (if ($string? s)
+          (letrec
+            ((loop
+              (lambda (pos acc)
+                (let ((m (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s pos)))
+                  (if ($none? m)
+                      ($list-reverse acc)
+                      (let ((start ($list-nth m 0))
+                            (end ($list-nth m 1)))
+                        (if ($integer=? start end)
+                            ($list-reverse acc)
+                            (loop end ($list-prepend acc m)))))))))
+            (loop 0 (list)))
+          (error "regexp: input must be a string"))))
+
+   ; split — splits a string on matches, returning the fields as a list of
+   ; strings.  Raises when the input is not a string.
+   (split
+    (lambda (rx s)
+      (if ($string? s)
+          (letrec
+            ((loop
+              (lambda (pos last acc)
+                (let ((m (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s pos)))
+                  (if ($none? m)
+                      ($list-reverse ($list-prepend acc ($string-slice s last ($string-length s))))
+                      (let ((start ($list-nth m 0))
+                            (end ($list-nth m 1)))
+                        (if ($integer=? start end)
+                            ($list-reverse ($list-prepend acc ($string-slice s last ($string-length s))))
+                            (loop end end ($list-prepend acc ($string-slice s last start))))))))))
+            (loop 0 0 (list)))
+          (error "regexp: input must be a string"))))
+
+   ; replace — replaces every match in a string with a replacement string.
+   ; Raises when the input is not a string.
+   (replace
+    (lambda (rx s replacement)
+      (if ($string? s)
+          (letrec
+            ((loop
+              (lambda (pos acc)
+                (let ((m (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s pos)))
+                  (if ($none? m)
+                      ($string-concat acc ($string-slice s pos ($string-length s)))
+                      (let ((start ($list-nth m 0))
+                            (end ($list-nth m 1)))
+                        (if ($integer=? start end)
+                            ($string-concat acc ($string-slice s pos ($string-length s)))
+                            (loop end ($string-concat ($string-concat acc ($string-slice s pos start)) replacement)))))))))
+            (loop 0 ""))
+          (error "regexp: input must be a string")))))
+
+  (export regexp compile regexp? search search? search-all split replace))

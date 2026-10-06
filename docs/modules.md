@@ -267,6 +267,12 @@ menai`. Currently it includes:
   with alpha (type 6) according to the channel count; the decoder normalises
   every source colour type to RGB or RGBA, so the other colour types cannot be
   reconstructed.  The inverse of `png-decode` for truecolour images (`encode`)
+- `regexp.menai` — compiles a regular-expression pattern and searches, splits,
+  or replaces within strings.  Exports the compiled-regexp type `regexp` and the
+  operations `compile`, `search`, `search?`, `search-all`, `split`, and
+  `replace`.  A match is reported as a half-open `(start end)` index pair, so
+  `(string-slice s start end)` is the matched text.  The pattern dialect is
+  documented in [ADR-0042](adr/0042-regular-expression-matching.md)
 - `tar-entries.menai` — reads a tar archive (as bytes) and returns a dict with an
   `"entries"` list of entry dicts and a `"meta"` dict, without returning entry
   contents.  Both POSIX ustar and GNU tar are accepted, including GNU long names
@@ -296,12 +302,18 @@ menai`. Currently it includes:
   2-byte header, delegating the DEFLATE data to `deflate-decompress`, and
   verifying the Adler-32 trailer (`decompress`)
 
-Modules are named `<format>-<operation>`: the format names the thing the module
-operates on, and the operation names what it does.  A module exports its
+A standard library module is one of three kinds.  An **operation module** does
+one thing and is named `<format>-<operation>`: the format names the thing the
+module operates on, and the operation names what it does.  It exports its
 operation under the same name as the operation in its module name, so
 `json-decode` exports `decode`.  Operations that are inverses use a symmetric
 pair of names (`decode`/`encode`, `compress`/`decompress`); operations that are
-not inverses are named individually (`entries`, `extract`, `create`).  See
-[ADR-0039](adr/0039-standard-library-module-naming.md) for the full convention.
+not inverses are named individually (`entries`, `extract`, `create`).  A
+**shared-data module** holds constant data several operation modules need and is
+named for what it holds (`deflate-tables`).  A **capability module** provides a
+whole capability that is not a single operation; it is named for the capability
+and exports its members under their bare operation names, so `regexp` exports
+`compile`, `search`, and `split`.  See
+[ADR-0041](adr/0041-standard-library-module-taxonomy.md) for the full taxonomy.
 
 See [Examples](examples.md) for a walkthrough of the JSON decoder.
