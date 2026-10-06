@@ -930,3 +930,58 @@ class TestEscapingFunction:
         cfg = _build_cfg(MONOMORPHIC_SRC)
         assert "struct-indexed-get" in _ops(cfg)
         assert "struct-get" not in _ops(cfg)
+
+
+def _none_predicate_count(cfg) -> int:
+    """Count none? builtin instructions across all functions in the module."""
+    n = 0
+    for func in collect_functions(cfg):
+        for block in func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGBuiltinInstr) and instr.op == 'none?':
+                    n += 1
+
+    return n
+
+
+RETURN_THROUGH_FUNCTION_PARAM_SRC = """
+(letrec
+  ((walk
+    (lambda (i k)
+      (if (integer>? i 3)
+          #none
+          (if (integer=? i 2)
+              (k i)
+              (walk (integer+ i 1) k)))))
+
+   (scan
+    (lambda (i)
+      (if (integer>? i 5)
+          #none
+          (let ((end (walk i (lambda (v) v))))
+            (if (none? end)
+                (scan (integer+ i 1))
+                (list i end)))))))
+
+  (scan 0))
+"""
+
+
+class TestReturnThroughFunctionParameter:
+    """
+    A function whose return flows through a function-valued parameter it cannot
+    resolve may return a value of any type, so its return fact must not be
+    narrowed to the types of its other return paths.
+
+    The analysis cannot resolve a call through a function-valued parameter, so
+    such a call's result is ANY.  Treating it as BOTTOM instead would drop it
+    from the return-fact join, leaving only the function's literal returns and
+    reporting a return type that is more precise than reality.
+    """
+
+    def test_none_predicate_retained(self):
+        cfg = _build_cfg(RETURN_THROUGH_FUNCTION_PARAM_SRC)
+        assert _none_predicate_count(cfg) > 0
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(RETURN_THROUGH_FUNCTION_PARAM_SRC) == "(0 2)"

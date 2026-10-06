@@ -755,8 +755,17 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 result = join(result, facts.get(term.value.id, BOTTOM))
 
             elif isinstance(term, MenaiCFGTailCallTerm):
-                for callee_id in info.callee_of_value.get(term.func.id, set()):
-                    result = join(result, info_of[callee_id].return_fact)
+                callees = info.callee_of_value.get(term.func.id, set())
+                if not callees:
+                    # An unresolved tail-call callee may return a value of any
+                    # type, so it contributes ANY.  Contributing BOTTOM would
+                    # drop this return path from the join and let a known return
+                    # type from another path survive as if it were the only one.
+                    result = join(result, ANY)
+
+                else:
+                    for callee_id in callees:
+                        result = join(result, info_of[callee_id].return_fact)
 
             elif isinstance(term, MenaiCFGSelfLoopTerm):
                 result = join(result, info.return_fact)
@@ -1201,8 +1210,17 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             return self._free_var_fact(instr, info)
 
         if isinstance(instr, MenaiCFGCallInstr):
+            callees = info.callee_of_value.get(instr.func.id, set())
+            if not callees:
+                # The callee could not be resolved (e.g. a function-valued
+                # parameter), so the call may reach any function and return a
+                # value of any type.  This is ANY, not BOTTOM: BOTTOM is the
+                # join identity, so returning it would let a known return type
+                # from another path survive the join and be reported as proven.
+                return ANY
+
             result = BOTTOM
-            for callee_id in info.callee_of_value.get(instr.func.id, set()):
+            for callee_id in callees:
                 result = join(result, info_of[callee_id].return_fact)
 
             return result
