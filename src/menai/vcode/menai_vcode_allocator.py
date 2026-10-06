@@ -42,7 +42,10 @@ and that instruction, are reassigned directly to the outgoing zone
 Self-loop argument registers whose last use is the self-loop move itself,
 and whose target param slot is neither written nor read between their
 definition and that move, are reassigned directly to the target param slot
-(arg_index) in Phase 3b, eliminating the MOVE.
+(arg_index) in Phase 3b, eliminating the MOVE.  The defining instruction
+itself must not read that slot after writing its result there: a
+MenaiVCodeMakeClosure writes the closure slot and then reads its capture
+slots, so a closure result must not be coalesced into a slot it captures.
 
 Param/free-var register ids
 ----------------------------
@@ -428,6 +431,12 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if not _has_no_other_move(func.instrs, instr_uses, reg_id, reg_def, move_idx):
                 continue
 
+            # The defining instruction itself must not read param_slot after
+            # writing its result there (a MAKE_CLOSURE reads its captures after
+            # writing the closure slot).
+            if _def_reads_slot_after_write(func.instrs[reg_def], param_slot, slots):
+                continue
+
             barrier = False
             for scan_idx in range(reg_def + 1, move_idx):
                 scan_instr = func.instrs[scan_idx]
@@ -496,6 +505,12 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if not _has_no_other_move(func.instrs, instr_uses, reg_id, reg_def, move_idx):
                 continue
 
+            # The defining instruction itself must not read param_slot after
+            # writing its result there (a MAKE_CLOSURE reads its captures after
+            # writing the closure slot).
+            if _def_reads_slot_after_write(func.instrs[reg_def], param_slot, slots):
+                continue
+
             reads_param = False
             for scan_idx in range(reg_def + 1, move_idx):
                 scan_uses = instr_uses[scan_idx]
@@ -545,6 +560,12 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         if not _has_no_other_move(func.instrs, instr_uses, reg_id, reg_def, move_idx):
             continue
 
+        # The defining instruction itself must not read dst_slot after writing
+        # its result there (a MAKE_CLOSURE reads its captures after writing the
+        # closure slot).
+        if _def_reads_slot_after_write(func.instrs[reg_def], dst_slot, slots):
+            continue
+
         barrier = False
         for scan_idx in range(reg_def + 1, move_idx):
             scan_instr = func.instrs[scan_idx]
@@ -563,6 +584,34 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         slots[reg_id] = dst_slot
 
     return SlotMap(slots=slots, slot_count=slot_count, local_count=local_count)
+
+
+def _def_reads_slot_after_write(
+    instr: MenaiVCodeInstr,
+    slot: int,
+    slots: dict[int, int],
+) -> bool:
+    """
+    Return True if instr reads `slot` after writing its own result to it.
+
+    A MenaiVCodeMakeClosure writes its result slot and is then followed by one
+    PATCH_CLOSURE per capture, each of which reads a capture register from its
+    slot.  If the result is coalesced into a slot that a capture occupies, the
+    MAKE_CLOSURE overwrites the captured value before it is patched, and the
+    closure captures itself.
+
+    Every other instruction reads its operands before writing its result, so a
+    read of its own result slot is not a read-after-write and coalescing is
+    safe.
+    """
+    if isinstance(instr, MenaiVCodeMakeClosure):
+        return any(
+            slots.get(c.reg.id, -1) == slot
+            for c in instr.captures
+            if c.reg is not None
+        )
+
+    return False
 
 
 def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
