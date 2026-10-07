@@ -27,7 +27,7 @@ from menai.ast.menai_ast import (
 )
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
-from menai.ast.menai_ast import MenaiASTStruct
+from menai.ast.menai_ast import MenaiASTStruct, MenaiASTEnum
 
 
 class MenaiASTSemanticAnalyzer:
@@ -42,6 +42,7 @@ class MenaiASTSemanticAnalyzer:
         """Initialize the semantic analyzer."""
         self.source = ""
         self._next_struct_tag: int = 0
+        self._next_enum_tag: int = 0
 
         # Lexical scope for ordinary variable bindings, innermost frame last.
         # Used to suppress builtin-specific validation (e.g. call arity checks
@@ -163,6 +164,9 @@ class MenaiASTSemanticAnalyzer:
             if name == 'struct':
                 return self._reject_struct_outside_let(expr)
 
+            if name == 'enum':
+                return self._reject_enum_outside_let(expr)
+
             if name == 'export':
                 return self._analyze_export(expr)
 
@@ -270,6 +274,20 @@ class MenaiASTSemanticAnalyzer:
                 struct_node = self._analyze_struct(value_expr, name_expr.name)
                 new_bindings.append(MenaiASTList(
                     elements=(name_expr, struct_node),
+                    line=binding.line, column=binding.column, source_file=binding.source_file
+                ))
+                var_names.append(name_expr.name)
+                continue
+
+            # Check if this binding's value is an enum definition
+            if (isinstance(name_expr, MenaiASTSymbol) and
+                    isinstance(value_expr, MenaiASTList) and
+                    not value_expr.is_empty() and
+                    isinstance(value_expr.elements[0], MenaiASTSymbol) and
+                    value_expr.elements[0].name == 'enum'):
+                enum_node = self._analyze_enum(value_expr, name_expr.name)
+                new_bindings.append(MenaiASTList(
+                    elements=(name_expr, enum_node),
                     line=binding.line, column=binding.column, source_file=binding.source_file
                 ))
                 var_names.append(name_expr.name)
@@ -419,6 +437,21 @@ class MenaiASTSemanticAnalyzer:
                 struct_node = self._analyze_struct(value_expr, name_expr.name)
                 new_bindings.append(MenaiASTList(
                     elements=(name_expr, struct_node),
+                    line=binding.line, column=binding.column, source_file=binding.source_file
+                ))
+                var_names.append(name_expr.name)
+                self._push_scope({name_expr.name})
+                continue
+
+            # Check if this binding's value is an enum definition
+            if (isinstance(name_expr, MenaiASTSymbol) and
+                    isinstance(value_expr, MenaiASTList) and
+                    not value_expr.is_empty() and
+                    isinstance(value_expr.elements[0], MenaiASTSymbol) and
+                    value_expr.elements[0].name == 'enum'):
+                enum_node = self._analyze_enum(value_expr, name_expr.name)
+                new_bindings.append(MenaiASTList(
+                    elements=(name_expr, enum_node),
                     line=binding.line, column=binding.column, source_file=binding.source_file
                 ))
                 var_names.append(name_expr.name)
@@ -581,6 +614,22 @@ class MenaiASTSemanticAnalyzer:
                 struct_node = self._analyze_struct(value_expr, name_expr.name)
                 new_bindings.append(MenaiASTList(
                     elements=(name_expr, struct_node),
+                    line=binding.line, column=binding.column, source_file=binding.source_file
+                ))
+                var_names.append(name_expr.name)
+                continue
+
+            # Enum definitions are permitted in letrec for the same reason as
+            # struct definitions: they have no recursive semantics and the
+            # desugarer hoists them to let automatically.
+            if (isinstance(name_expr, MenaiASTSymbol) and
+                    isinstance(value_expr, MenaiASTList) and
+                    not value_expr.is_empty() and
+                    isinstance(value_expr.elements[0], MenaiASTSymbol) and
+                    value_expr.elements[0].name == 'enum'):
+                enum_node = self._analyze_enum(value_expr, name_expr.name)
+                new_bindings.append(MenaiASTList(
+                    elements=(name_expr, enum_node),
                     line=binding.line, column=binding.column, source_file=binding.source_file
                 ))
                 var_names.append(name_expr.name)
@@ -1434,6 +1483,111 @@ class MenaiASTSemanticAnalyzer:
             expected="(let ((TypeName (struct (field1 field2 ...)))) ...)",
             example="(let ((Point (struct (x y)))) (Point 1 2))",
             suggestion="Wrap struct definitions in a let or let* binding",
+            line=expr.line,
+            column=expr.column,
+            source=self.source
+        )
+
+    def _analyze_enum(self, expr: MenaiASTList, binding_name: str) -> MenaiASTEnum:
+        """
+        Validate and transform an (enum (variant ...)) form into a MenaiASTEnum node.
+
+        Called only when (enum ...) appears as the RHS of a let, let*, or letrec
+        binding.  Assigns a fresh compile-time tag and extracts the variant names.
+
+        Args:
+            expr: The raw (enum (variant ...)) AST list node
+            binding_name: The name of the enclosing binding (becomes the type name)
+
+        Returns:
+            A MenaiASTEnum node with name, tag, and variant_names populated
+        """
+        if len(expr.elements) != 2:
+            raise MenaiEvalError(
+                message="Enum definition has wrong number of elements",
+                received=f"Got {len(expr.elements) - 1} argument(s)",
+                expected="Exactly 1 argument: (enum (variant1 variant2 ...))",
+                example="(let ((State (enum (idle running)))) ...)",
+                suggestion="Provide exactly one variant list to enum",
+                line=expr.line,
+                column=expr.column,
+                source=self.source
+            )
+
+        _, variants_expr = expr.elements
+
+        if not isinstance(variants_expr, MenaiASTList):
+            raise MenaiEvalError(
+                message="Enum variant list must be a list",
+                received=f"Got {variants_expr.type_name()}",
+                expected="A list of variant name symbols: (variant1 variant2 ...)",
+                example="(let ((State (enum (idle running)))) ...)",
+                suggestion="Wrap variant names in parentheses: (enum (variant1 variant2 ...))",
+                line=variants_expr.line,
+                column=variants_expr.column,
+                source=self.source
+            )
+
+        if variants_expr.is_empty():
+            raise MenaiEvalError(
+                message="Enum must declare at least one variant",
+                received="An empty variant list",
+                expected="One or more variant names: (enum (variant1 variant2 ...))",
+                example="(let ((State (enum (idle running)))) ...)",
+                suggestion="Declare at least one variant",
+                line=variants_expr.line,
+                column=variants_expr.column,
+                source=self.source
+            )
+
+        variant_names: list[str] = []
+        for i, variant in enumerate(variants_expr.elements):
+            if not isinstance(variant, MenaiASTSymbol):
+                raise MenaiEvalError(
+                    message=f"Enum variant {i+1} must be a symbol",
+                    received=f"Got {variant.type_name()}",
+                    expected="Unquoted symbol (variant name)",
+                    example="(enum (idle running)) not (enum (\"idle\" \"running\"))",
+                    suggestion="Use unquoted names for enum variants",
+                    line=variant.line,
+                    column=variant.column,
+                    source=self.source
+                )
+
+            if variant.name in variant_names:
+                raise MenaiEvalError(
+                    message=f"Enum variant name '{variant.name}' is duplicated",
+                    received=f"Variant '{variant.name}' appears more than once",
+                    expected="All variant names must be unique",
+                    example="(enum (idle running)) not (enum (idle idle))",
+                    suggestion="Use distinct names for each variant",
+                    line=variant.line,
+                    column=variant.column,
+                    source=self.source
+                )
+
+            variant_names.append(variant.name)
+
+        tag = self._next_enum_tag
+        self._next_enum_tag += 1
+
+        return MenaiASTEnum(
+            name=binding_name,
+            tag=tag,
+            variant_names=tuple(variant_names),
+            line=expr.line,
+            column=expr.column,
+            source_file=expr.source_file
+        )
+
+    def _reject_enum_outside_let(self, expr: MenaiASTList) -> MenaiASTList:
+        """Reject (enum ...) used outside a let/let*/letrec binding position."""
+        raise MenaiEvalError(
+            message="Enum definition must be the value in a let, let*, or letrec binding",
+            received="(enum ...) used outside a binding",
+            expected="(let ((TypeName (enum (variant1 variant2 ...)))) ...)",
+            example="(let ((State (enum (idle running)))) (State 'idle))",
+            suggestion="Wrap enum definitions in a let, let*, or letrec binding",
             line=expr.line,
             column=expr.column,
             source=self.source

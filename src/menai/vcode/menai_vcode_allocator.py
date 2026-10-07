@@ -75,6 +75,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMove,
     MenaiVCodePatchClosure,
     MenaiVCodeMakeStruct,
+    MenaiVCodeMakeEnum,
     MenaiVCodeMakeList,
     MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
@@ -331,6 +332,7 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         MenaiVCodeCall, MenaiVCodeApply,
         MenaiVCodeTailCall, MenaiVCodeTailApply,
         MenaiVCodeMakeStruct, MenaiVCodeMakeList,
+        MenaiVCodeMakeEnum,
         MenaiVCodeMakeVector,
         MenaiVCodeMakeSet, MenaiVCodeMakeDict,
     )
@@ -659,6 +661,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, MenaiVCodeMakeStruct):
         return [instr.dst.id], [r.id for r in instr.args]
 
+    if isinstance(instr, MenaiVCodeMakeEnum):
+        return [instr.dst.id], []
+
     if isinstance(instr, MenaiVCodeMakeList):
         return [instr.dst.id], [r.id for r in instr.args]
 
@@ -824,6 +829,9 @@ def _outgoing_args(instr: MenaiVCodeInstr) -> list[tuple[MenaiVCodeReg, int]]:
 
     if isinstance(instr, MenaiVCodeMakeStruct):
         return [(arg, j + 1) for j, arg in enumerate(instr.args)]
+
+    if isinstance(instr, MenaiVCodeMakeEnum):
+        return []
 
     if isinstance(instr, MenaiVCodeMakeDict):
         return [(reg, j * 2 + offset)

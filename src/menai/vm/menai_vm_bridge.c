@@ -168,6 +168,8 @@ static PyTypeObject *Slow_StructTypeType = NULL;
 static PyTypeObject *Slow_StructType = NULL;
 static PyTypeObject *Slow_BytesType = NULL;
 static PyTypeObject *Slow_VectorType = NULL;
+static PyTypeObject *Slow_EnumTypeType = NULL;
+static PyTypeObject *Slow_EnumType = NULL;
 
 /*
  * Conversion helpers — Python boundary only.
@@ -1196,6 +1198,114 @@ slow_struct_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 }
 
 static inline MenaiValue *
+slow_enumtype_to_fast(MenaiVMState *vs, PyObject *src)
+{
+    PyObject *name = PyObject_GetAttrString(src, "name");
+    if (!name) {
+        return NULL;
+    }
+
+    MenaiString *name_str = alloc_menai_string_from_pyunicode(vs, name);
+    Py_DECREF(name);
+    if (!name_str) {
+        return NULL;
+    }
+
+    PyObject *tag = PyObject_GetAttrString(src, "tag");
+    if (!tag) {
+        menai_value_release(vs, (MenaiValue *)name_str);
+        return NULL;
+    }
+
+    long tag_val = PyLong_AsLong(tag);
+    Py_DECREF(tag);
+    if (tag_val == -1 && PyErr_Occurred()) {
+        menai_value_release(vs, (MenaiValue *)name_str);
+        return NULL;
+    }
+
+    PyObject *vn_tup = PyObject_GetAttrString(src, "variant_names");
+    if (!vn_tup) {
+        menai_value_release(vs, (MenaiValue *)name_str);
+        return NULL;
+    }
+
+    Py_ssize_t nvariants = PyTuple_GET_SIZE(vn_tup);
+    MenaiString **variant_names_arr = NULL;
+    if (nvariants > 0) {
+        variant_names_arr = (MenaiString **)menai_pool_alloc(vs, (size_t)nvariants * sizeof(MenaiString *));
+        if (!variant_names_arr) {
+            menai_value_release(vs, (MenaiValue *)name_str);
+            Py_DECREF(vn_tup);
+            return NULL;
+        }
+
+        memset(variant_names_arr, 0, (size_t)nvariants * sizeof(MenaiString *));
+        for (ssize_t i = 0; i < nvariants; i++) {
+            PyObject *vname = PyTuple_GET_ITEM(vn_tup, i);
+            MenaiString *vname_str = alloc_menai_string_from_pyunicode(vs, vname);
+            if (!vname_str) {
+                for (ssize_t j = 0; j < i; j++) {
+                    menai_value_release(vs, (MenaiValue *)variant_names_arr[j]);
+                }
+
+                menai_pool_free(vs, variant_names_arr);
+                menai_value_release(vs, (MenaiValue *)name_str);
+                Py_DECREF(vn_tup);
+                return NULL;
+            }
+            variant_names_arr[i] = vname_str;
+        }
+    }
+
+    MenaiEnumType *result = alloc_menai_enumtype(vs, name_str, (int)tag_val, variant_names_arr, nvariants);
+    menai_value_release(vs, (MenaiValue *)name_str);
+    for (ssize_t i = 0; i < nvariants; i++) {
+        menai_value_release(vs, (MenaiValue *)variant_names_arr[i]);
+    }
+
+    menai_pool_free(vs, variant_names_arr);
+    Py_DECREF(vn_tup);
+    return (MenaiValue *)result;
+}
+
+static inline MenaiValue *
+slow_enum_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
+{
+    PyObject *et = PyObject_GetAttrString(src, "enum_type");
+    if (!et) {
+        return NULL;
+    }
+
+    MenaiEnumType *fast_et = (MenaiEnumType *)slow_value_to_menai_value(vs, et, ctx);
+    Py_DECREF(et);
+    if (!fast_et) {
+        return NULL;
+    }
+
+    PyObject *vi = PyObject_GetAttrString(src, "variant_index");
+    if (!vi) {
+        menai_value_release(vs, (MenaiValue *)fast_et);
+        return NULL;
+    }
+
+    long variant_index = PyLong_AsLong(vi);
+    Py_DECREF(vi);
+    if (variant_index == -1 && PyErr_Occurred()) {
+        menai_value_release(vs, (MenaiValue *)fast_et);
+        return NULL;
+    }
+
+    /*
+     * alloc_menai_enum retains fast_et internally, so we release our
+     * reference afterward.
+     */
+    MenaiEnum *r = alloc_menai_enum(vs, fast_et, (int)variant_index);
+    menai_value_release(vs, (MenaiValue *)fast_et);
+    return (MenaiValue *)r;
+}
+
+static inline MenaiValue *
 slow_function_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
 {
     PyObject *bc = PyObject_GetAttrString(src, "bytecode");
@@ -1313,6 +1423,14 @@ slow_value_to_menai_value(MenaiVMState *vs, PyObject *src, ConversionContext *ct
 
     if (t == Slow_StructType) {
         return slow_struct_to_fast(vs, src, ctx);
+    }
+
+    if (t == Slow_EnumTypeType) {
+        return slow_enumtype_to_fast(vs, src);
+    }
+
+    if (t == Slow_EnumType) {
+        return slow_enum_to_fast(vs, src, ctx);
     }
 
     if (t == Slow_FunctionType) {
@@ -1656,6 +1774,70 @@ fast_struct_to_slow(MenaiVMState *vs, MenaiValue *val)
 }
 
 static inline PyObject *
+fast_enumtype_to_slow(MenaiVMState *vs, MenaiValue *val)
+{
+    MenaiEnumType *et = (MenaiEnumType *)val;
+    PyObject *py_name = alloc_pyunicode_from_menai_string(et->name);
+    if (!py_name) {
+        return NULL;
+    }
+
+    PyObject *py_tag = PyLong_FromLong((long)et->tag);
+    if (!py_tag) {
+        Py_DECREF(py_name);
+        return NULL;
+    }
+
+    PyObject *py_variants = PyTuple_New(et->nvariants);
+    if (!py_variants) {
+        Py_DECREF(py_name);
+        Py_DECREF(py_tag);
+        return NULL;
+    }
+
+    for (int i = 0; i < et->nvariants; i++) {
+        PyObject *vname = alloc_pyunicode_from_menai_string(et->variants[i].name);
+        if (!vname) {
+            Py_DECREF(py_name);
+            Py_DECREF(py_tag);
+            Py_DECREF(py_variants);
+            return NULL;
+        }
+
+        PyTuple_SET_ITEM(py_variants, i, vname);
+    }
+
+    PyObject *result = PyObject_CallFunctionObjArgs(
+        (PyObject *)Slow_EnumTypeType, py_name, py_tag, py_variants, NULL);
+    Py_DECREF(py_name);
+    Py_DECREF(py_tag);
+    Py_DECREF(py_variants);
+    return result;
+}
+
+static inline PyObject *
+fast_enum_to_slow(MenaiVMState *vs, MenaiValue *val)
+{
+    MenaiEnum *e = (MenaiEnum *)val;
+    PyObject *slow_et = menai_value_to_slow_value(vs, (MenaiValue *)e->enum_type);
+    if (!slow_et) {
+        return NULL;
+    }
+
+    PyObject *py_index = PyLong_FromLong((long)e->variant_index);
+    if (!py_index) {
+        Py_DECREF(slow_et);
+        return NULL;
+    }
+
+    PyObject *result = PyObject_CallFunctionObjArgs(
+        (PyObject *)Slow_EnumType, slow_et, py_index, NULL);
+    Py_DECREF(slow_et);
+    Py_DECREF(py_index);
+    return result;
+}
+
+static inline PyObject *
 fast_function_to_slow(MenaiVMState *vs, MenaiValue *val)
 {
     MenaiFunction *fn = (MenaiFunction *)val;
@@ -1764,6 +1946,14 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
 
     if (t == MENAITYPE_STRUCT) {
         return fast_struct_to_slow(vs, val);
+    }
+
+    if (t == MENAITYPE_ENUMTYPE) {
+        return fast_enumtype_to_slow(vs, val);
+    }
+
+    if (t == MENAITYPE_ENUM) {
+        return fast_enum_to_slow(vs, val);
     }
 
     if (t == MENAITYPE_FUNCTION) {
@@ -2261,6 +2451,20 @@ menai_vm_bridge_init(void)
     }
 
     Slow_VectorType = (PyTypeObject *)vector_type;
+
+    PyObject *enum_type_type = PyObject_GetAttrString(slow_mod, "MenaiEnumType");
+    if (!enum_type_type) {
+        goto fail;
+    }
+
+    Slow_EnumTypeType = (PyTypeObject *)enum_type_type;
+
+    PyObject *enum_type = PyObject_GetAttrString(slow_mod, "MenaiEnum");
+    if (!enum_type) {
+        goto fail;
+    }
+
+    Slow_EnumType = (PyTypeObject *)enum_type;
 
     Py_DECREF(slow_mod);
     slow_mod = NULL;

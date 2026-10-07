@@ -220,6 +220,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeStruct,
+    MenaiVCodeMakeEnum,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
@@ -358,6 +359,9 @@ def _replace_reg(
             struct_type=instr.struct_type,
             args=tuple(new_reg if r.id == old_id else r for r in instr.args),
         )
+
+    if isinstance(instr, MenaiVCodeMakeEnum):
+        return instr
 
     if isinstance(instr, MenaiVCodeMakeList):
         return MenaiVCodeMakeList(
@@ -759,6 +763,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
 
     if isinstance(instr, MenaiVCodeMakeStruct):
         return [instr.dst.id], [r.id for r in instr.args]
+
+    if isinstance(instr, MenaiVCodeMakeEnum):
+        return [instr.dst.id], []
 
     if isinstance(instr, MenaiVCodeMakeList):
         return [instr.dst.id], [r.id for r in instr.args]

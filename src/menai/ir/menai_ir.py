@@ -9,7 +9,7 @@ allocation is handled by MenaiCFGBuilder.
 
 from dataclasses import dataclass
 
-from menai.menai_value import MenaiValue, MenaiStructType
+from menai.menai_value import MenaiValue, MenaiStructType, MenaiEnumType
 
 
 @dataclass
@@ -180,6 +180,24 @@ class MenaiIRBuildStruct:
 
 
 @dataclass
+class MenaiIRBuildEnum:
+    """
+    Plan for compiling an enum constructor call (TypeName 'variant).
+
+    Carries the MenaiEnumType descriptor (known at compile time) and the
+    variant's compile-time index.  The VM codegen lowers it to LOAD_ENUM_TYPE
+    followed by MAKE_ENUM, which pushes the new MenaiEnum instance.
+
+    The variant index is resolved at compile time rather than carried as a name,
+    because the index is what the runtime value stores and what a match over the
+    enum dispatches on.  The enum type descriptor is retained so that the value
+    can report its type and variant name.
+    """
+    enum_type: MenaiEnumType
+    variant_index: int
+
+
+@dataclass
 class MenaiIRLoop:
     """
     Plan for compiling a tail-recursive loop.
@@ -230,6 +248,7 @@ MenaiIRExpr = (  # pylint: disable=invalid-name
     MenaiIRBuildSet |
     MenaiIRBuildVector |
     MenaiIRBuildStruct |
+    MenaiIRBuildEnum |
     MenaiIRReturn |
     MenaiIRLoop |
     MenaiIRRecur

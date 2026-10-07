@@ -238,6 +238,13 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'structtype!=?': (['structtype', 'structtype'], 'boolean'),
     'structtype-name': (['structtype'], 'string'),
     'structtype-fields': (['structtype'], 'list'),
+    'enum?': (['any'], 'boolean'),
+    'enumtype?': (['any'], 'boolean'),
+    'enumtype-name': (['enumtype'], 'string'),
+    'enumtype-variants': (['enumtype'], 'list'),
+    'enum-variant': (['enum'], 'symbol'),
+    'enum=?': (['enum', 'enum'], 'boolean'),
+    'enum!=?': (['enum', 'enum'], 'boolean'),
 
     # Range
     'range': (['integer', 'integer', 'integer'], 'list'),
@@ -377,4 +384,6 @@ TYPE_PREDICATES: dict[str, str] = {
     'function?': 'function',
     'struct?': 'struct',
     'structtype?': 'structtype',
+    'enum?': 'enum',
+    'enumtype?': 'enumtype',
 }

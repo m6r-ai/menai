@@ -427,6 +427,8 @@ typedef struct {
 #define MENAITYPE_DICT_ELEMENT 0x000f
 #define MENAITYPE_SET_ELEMENT 0x0010
 #define MENAITYPE_VECTOR 0x0011
+#define MENAITYPE_ENUM 0x0012
+#define MENAITYPE_ENUMTYPE 0x0013
 
 typedef struct MenaiBigInt MenaiBigInt;
 typedef struct MenaiBoolean MenaiBoolean;
@@ -448,6 +450,8 @@ struct MenaiJumpTable {
 typedef struct MenaiComplex MenaiComplex;
 typedef struct MenaiDict MenaiDict;
 typedef struct MenaiDictElement MenaiDictElement;
+typedef struct MenaiEnum MenaiEnum;
+typedef struct MenaiEnumType MenaiEnumType;
 typedef struct MenaiFloat MenaiFloat;
 typedef struct MenaiFunction MenaiFunction;
 typedef struct MenaiInteger MenaiInteger;
@@ -697,6 +701,21 @@ struct MenaiStructType {
     MenaiFieldEntry fields[];           /* inline field-index table, nfields entries */
 };
 
+struct MenaiEnum {
+    MENAI_MAGIC_FIELD
+    int variant_index;                  /* 0-based index of the variant, dense by construction */
+    MenaiEnumType *enum_type;           /* owned reference to MenaiEnumType */
+};
+
+struct MenaiEnumType {
+    MENAI_MAGIC_FIELD
+    MenaiString *name;                  /* owned MenaiString * — enum type name */
+    int tag;                            /* unique integer tag */
+    int nvariants;                      /* number of variants */
+    MenaiHashTable variant_ht;          /* name -> index hash table; keys are borrowed from variants[] */
+    MenaiFieldEntry variants[];         /* inline variant-index table, nvariants entries */
+};
+
 struct MenaiSymbol {
     MENAI_MAGIC_FIELD
     MenaiString *name;                  /* owned MenaiString * */
@@ -922,6 +941,8 @@ int menai_validate(MenaiCodeObject *co, MenaiValidationError *out_err);
 #define IS_MENAI_STRUCT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCT)
 #define IS_MENAI_BYTES(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_BYTES)
 #define IS_MENAI_VECTOR(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_VECTOR)
+#define IS_MENAI_ENUM(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_ENUM)
+#define IS_MENAI_ENUMTYPE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_ENUMTYPE)
 
 /*
  * Pool allocator constants.
@@ -1833,6 +1854,58 @@ static inline hash_t
 menai_structtype_hash(MenaiStructType *st)
 {
     return (hash_t)st->tag;
+}
+
+MenaiEnum *alloc_menai_enum(MenaiVMState *vs, MenaiEnumType *enum_type, int variant_index);
+
+static inline void
+menai_enum_final(MenaiVMState *vs, MenaiEnum *self)
+{
+    menai_value_release(vs, (MenaiValue *)self->enum_type);
+}
+
+static inline int
+menai_enum_equal(MenaiEnum *a, MenaiEnum *b)
+{
+    if (((MenaiEnumType *)a->enum_type)->tag != ((MenaiEnumType *)b->enum_type)->tag) {
+        return 0;
+    }
+
+    return a->variant_index == b->variant_index;
+}
+
+static inline hash_t
+menai_enum_hash(MenaiEnum *e)
+{
+    int tag = ((MenaiEnumType *)e->enum_type)->tag;
+    uhash_t acc = 0x345678UL ^ (uhash_t)tag;
+    acc = acc * 1000003UL ^ (uhash_t)e->variant_index;
+    return (hash_t)(acc == (uhash_t)-1 ? (uhash_t)-2 : acc);
+}
+
+MenaiEnumType *alloc_menai_enumtype(MenaiVMState *vs, MenaiString *name, int tag, MenaiString **variant_names, ssize_t nvariants);
+
+static inline void
+menai_enumtype_final(MenaiVMState *vs, MenaiEnumType *self)
+{
+    menai_ht_final(vs, &self->variant_ht);
+    menai_value_release(vs, (MenaiValue *)self->name);
+    int n = self->nvariants;
+    for (int i = 0; i < n; i++) {
+        menai_value_release(vs, (MenaiValue *)self->variants[i].name);
+    }
+}
+
+static inline int
+menai_enumtype_equal(MenaiEnumType *a, MenaiEnumType *b)
+{
+    return a->tag == b->tag;
+}
+
+static inline hash_t
+menai_enumtype_hash(MenaiEnumType *et)
+{
+    return (hash_t)et->tag;
 }
 
 MenaiSymbol *alloc_menai_symbol(MenaiVMState *vs, MenaiString *name);

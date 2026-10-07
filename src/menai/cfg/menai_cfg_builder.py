@@ -20,6 +20,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGPatchClosureInstr,
     MenaiCFGParamInstr,
     MenaiCFGMakeStructInstr,
+    MenaiCFGMakeEnumInstr,
     MenaiCFGMakeListInstr,
     MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
@@ -42,6 +43,7 @@ from menai.ir.menai_ir import (
     MenaiIRBuildSet,
     MenaiIRBuildVector,
     MenaiIRBuildStruct,
+    MenaiIRBuildEnum,
     MenaiIREmptyList,
     MenaiIRExpr,
     MenaiIRError,
@@ -290,6 +292,9 @@ class MenaiCFGBuilder:
 
         if isinstance(ir, MenaiIRBuildStruct):
             return self._build_struct(ir, block, scope, state)
+
+        if isinstance(ir, MenaiIRBuildEnum):
+            return self._build_enum(ir, block, scope, state)
 
         if isinstance(ir, MenaiIRReturn):
             # MenaiIRReturn is the IR tree's explicit return wrapper.
@@ -952,6 +957,28 @@ class MenaiCFGBuilder:
             result=result,
             struct_type=ir.struct_type,
             args=tuple(field_vals),
+        ))
+        return result, block
+
+    def _build_enum(
+        self,
+        ir: MenaiIRBuildEnum,
+        block: _DraftBlock,
+        scope: MenaiCFGScope,
+        state: _FunctionState,
+    ) -> tuple[MenaiCFGValue, _DraftBlock]:
+        """
+        Build an enum constructor call.
+
+        Emits a MenaiCFGMakeEnumInstr carrying the compile-time MenaiEnumType
+        descriptor and the variant index.  Both are compile-time constants, so
+        there are no sub-expressions to evaluate.
+        """
+        result = state.new_value(f"enum_{ir.enum_type.name}")
+        block.instrs.append(MenaiCFGMakeEnumInstr(
+            result=result,
+            enum_type=ir.enum_type,
+            variant_index=ir.variant_index,
         ))
         return result, block
 

@@ -38,6 +38,7 @@ from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
     MenaiIRBuildStruct,
+    MenaiIRBuildEnum,
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
@@ -232,6 +233,9 @@ class MenaiIRReachability:
         elif isinstance(ir, MenaiIRBuildStruct):
             for field_plan in ir.field_plans:
                 work.append((field_plan, scope_stack, frame_id))
+
+        elif isinstance(ir, MenaiIRBuildEnum):
+            pass
 
         elif isinstance(ir, MenaiIRReturn):
             work.append((ir.value_plan, scope_stack, frame_id))

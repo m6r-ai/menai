@@ -10,7 +10,7 @@ import itertools
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from menai.menai_value import MenaiValue, MenaiStructType
+from menai.menai_value import MenaiValue, MenaiStructType, MenaiEnumType
 
 
 @dataclass
@@ -163,6 +163,22 @@ class MenaiCFGMakeStructInstr:
     result: MenaiCFGValue
     struct_type: MenaiStructType
     args: tuple[MenaiCFGValue, ...]
+
+
+@dataclass
+class MenaiCFGMakeEnumInstr:
+    """
+    %result = make_enum <enum_type> <variant_index>
+
+    Constructs a new MenaiEnum of type `enum_type` at variant `variant_index`.
+    Both the enum type descriptor and the variant index are known at compile time
+    and are stored directly on the instruction rather than being loaded into
+    registers.  The VM codegen lowers this to MAKE_ENUM, staging the type
+    descriptor into the outgoing zone.
+    """
+    result: MenaiCFGValue
+    enum_type: MenaiEnumType
+    variant_index: int
 
 
 @dataclass
@@ -321,6 +337,7 @@ MenaiCFGInstr = (  # pylint: disable=invalid-name
     | MenaiCFGCallInstr
     | MenaiCFGApplyInstr
     | MenaiCFGMakeStructInstr
+    | MenaiCFGMakeEnumInstr
     | MenaiCFGMakeListInstr
     | MenaiCFGMakeVectorInstr
     | MenaiCFGMakeSetInstr
@@ -588,6 +605,9 @@ def _fmt_instr(instr: MenaiCFGInstr) -> str:
     if isinstance(instr, MenaiCFGMakeStructInstr):
         return f"{instr.result} = make_struct {instr.struct_type.name!r} {_fmt_values(instr.args)}"
 
+    if isinstance(instr, MenaiCFGMakeEnumInstr):
+        return f"{instr.result} = make_enum {instr.enum_type.name!r} {instr.variant_index}"
+
     if isinstance(instr, MenaiCFGMakeListInstr):
         return f"{instr.result} = make_list {_fmt_values(instr.args)}"
 
@@ -791,6 +811,9 @@ def value_ids_in_instr(instr: 'MenaiCFGInstr') -> list[int]:
 
     if isinstance(instr, MenaiCFGMakeStructInstr):
         return [a.id for a in instr.args]
+
+    if isinstance(instr, MenaiCFGMakeEnumInstr):
+        return []
 
     if isinstance(instr, MenaiCFGMakeListInstr):
         return [a.id for a in instr.args]

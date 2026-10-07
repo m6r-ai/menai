@@ -19,7 +19,7 @@ from typing import Any, cast
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTSymbol, MenaiASTList, MenaiASTInteger,
     MenaiASTFloat, MenaiASTComplex, MenaiASTString, MenaiASTBoolean, MenaiASTNone,
-    MenaiASTStruct, MenaiASTBytes, MenaiASTNamespace,
+    MenaiASTStruct, MenaiASTEnum, MenaiASTBytes, MenaiASTNamespace,
 )
 from menai.ast.menai_ast_dependency_analyzer import MenaiASTDependencyAnalyzer
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
@@ -141,6 +141,27 @@ def _namespace_member_access(expr: MenaiASTNode) -> tuple[str, str] | None:
     return namespace_expr.name, member_expr.name
 
 
+def _quoted_symbol_name(expr: MenaiASTNode) -> str | None:
+    """
+    Return the symbol name if expr is a quoted symbol, or None.
+
+    A quoted symbol is written 'name, which the reader produces as the two-element
+    form (quote name).  The shape check is purely structural and does not verify
+    that the name is bound to anything.
+    """
+    if not isinstance(expr, MenaiASTList) or len(expr.elements) != 2:
+        return None
+
+    head, name_expr = expr.elements
+    if not (isinstance(head, MenaiASTSymbol) and head.name == 'quote'):
+        return None
+
+    if not isinstance(name_expr, MenaiASTSymbol):
+        return None
+
+    return name_expr.name
+
+
 class MenaiASTDesugarer:
     """Transforms complex Menai constructs into core language."""
 
@@ -161,6 +182,12 @@ class MenaiASTDesugarer:
         # declared it.
         self._struct_scope_stack: list[dict[str, MenaiASTStruct]] = []
 
+        # Enum types in lexical scope, innermost frame last.  A parallel stack to
+        # the struct one rather than a generalisation of it: the struct path is
+        # working and there is no reason to disturb it.  Enum types are lexically
+        # scoped and hoisted exactly as struct types are.
+        self._enum_scope_stack: list[dict[str, MenaiASTEnum]] = []
+
         # Namespace names in lexical scope, innermost frame last.  Each frame
         # maps a namespace name to its export map (export key -> renamed binding
         # name).  A namespace is compile-time only: the binding that introduces
@@ -169,14 +196,20 @@ class MenaiASTDesugarer:
         self._namespace_stack: list[dict[str, _NamespaceBinding]] = []
 
     def _push_scope(self, names: set[str], structs: dict[str, MenaiASTStruct] | None = None) -> None:
-        """Push a lexical scope frame binding the given names and struct types."""
+        """Push a lexical scope frame binding the given names, struct and enum types."""
         self._scope_stack.append(names)
         self._struct_scope_stack.append(structs if structs is not None else {})
+        self._enum_scope_stack.append({})
+
+    def _set_scope_enums(self, enums: dict[str, MenaiASTEnum]) -> None:
+        """Record the enum types declared in the innermost lexical scope frame."""
+        self._enum_scope_stack[-1] = enums
 
     def _pop_scope(self) -> None:
         """Pop the innermost lexical scope frame."""
         self._scope_stack.pop()
         self._struct_scope_stack.pop()
+        self._enum_scope_stack.pop()
 
     def _is_shadowed(self, name: str) -> bool:
         """Return True if name is bound by any enclosing lexical scope frame."""
@@ -210,6 +243,38 @@ class MenaiASTDesugarer:
                 renamed = namespace.members.get(member_name)
                 declaration = namespace.declarations.get(renamed) if renamed is not None else None
                 if isinstance(declaration, MenaiASTStruct):
+                    return declaration
+
+        return None
+
+    def _lookup_enum(self, name: str) -> MenaiASTEnum | None:
+        """Return the enum type bound to name in scope, or None."""
+        for frame in reversed(self._enum_scope_stack):
+            if name in frame:
+                return frame[name]
+
+        return None
+
+    def _enum_from_value(self, value_expr: MenaiASTNode) -> MenaiASTEnum | None:
+        """
+        Return the enum declaration a binding value denotes, if any.
+
+        A binding value denotes an enum when it is an enum declaration directly,
+        or a namespace member access whose member declaration is an enum type.
+        Used to hoist enum declarations, including imported ones, so they are
+        available as constructors and pattern heads.
+        """
+        if isinstance(value_expr, MenaiASTEnum):
+            return value_expr
+
+        member_access = _namespace_member_access(value_expr)
+        if member_access is not None:
+            namespace_name, member_name = member_access
+            namespace = self._lookup_namespace(namespace_name)
+            if namespace is not None:
+                renamed = namespace.members.get(member_name)
+                declaration = namespace.declarations.get(renamed) if renamed is not None else None
+                if isinstance(declaration, MenaiASTEnum):
                     return declaration
 
         return None
@@ -540,6 +605,12 @@ class MenaiASTDesugarer:
             if struct_node is not None:
                 return self._desugar_struct_constructor(expr, struct_node)
 
+            # Enum constructor call: (TypeName 'variant)
+            # Detected when the function position names an enum type in scope.
+            enum_node = self._lookup_enum(name)
+            if enum_node is not None:
+                return self._desugar_enum_constructor(expr, enum_node)
+
         # Regular function call - desugar all elements
         return self._desugar_call(expr)
 
@@ -572,10 +643,11 @@ class MenaiASTDesugarer:
         assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list (validated by semantic analyzer)"
 
         # let is parallel: each binding value is desugared in the enclosing
-        # scope and cannot see its siblings.  Struct declarations are the one
-        # exception: they are hoisted so that sibling binding values and the body
-        # can use them as constructors and pattern heads.
+        # scope and cannot see its siblings.  Struct and enum declarations are the
+        # one exception: they are hoisted so that sibling binding values and the
+        # body can use them as constructors and pattern heads.
         struct_bindings: dict[str, MenaiASTStruct] = {}
+        enum_bindings: dict[str, MenaiASTEnum] = {}
         namespace_bindings: dict[str, _NamespaceBinding] = {}
         namespace_modules: list[tuple[tuple[str, MenaiASTNode], ...]] = []
         for binding in bindings_list.elements:
@@ -590,13 +662,19 @@ class MenaiASTDesugarer:
             if struct_node is not None:
                 struct_bindings[var_name.name] = struct_node
 
-            elif isinstance(value_expr, MenaiASTNamespace):
+            # An enum declaration is hoisted for the same reason.
+            enum_node = self._enum_from_value(value_expr)
+            if enum_node is not None:
+                enum_bindings[var_name.name] = enum_node
+
+            if isinstance(value_expr, MenaiASTNamespace):
                 namespace_bindings[var_name.name] = _namespace_binding(value_expr)
                 namespace_modules.append(value_expr.bindings)
 
         desugared_bindings = []
         bound_names: set[str] = set()
         self._push_scope(set(struct_bindings), struct_bindings)
+        self._set_scope_enums(enum_bindings)
         self._push_namespace_scope(namespace_bindings)
         try:
             for i, binding in enumerate(bindings_list.elements):
@@ -700,7 +778,9 @@ class MenaiASTDesugarer:
         # throughout.
         letrec_names = {name for name, _ in raw_pairs}
         letrec_structs = {name: value for name, value in raw_pairs if isinstance(value, MenaiASTStruct)}
+        letrec_enums = {name: value for name, value in raw_pairs if isinstance(value, MenaiASTEnum)}
         self._push_scope(letrec_names, letrec_structs)
+        self._set_scope_enums(letrec_enums)
         self._push_namespace_scope(namespace_bindings)
         try:
             result = self._desugar_letrec_body(expr, raw_dict, binding_groups)
@@ -838,6 +918,8 @@ class MenaiASTDesugarer:
 
             structs = {var_name.name: value_expr} if isinstance(value_expr, MenaiASTStruct) else {}
             self._push_scope({var_name.name}, structs)
+            enums = {var_name.name: value_expr} if isinstance(value_expr, MenaiASTEnum) else {}
+            self._set_scope_enums(enums)
 
         try:
             result = self.desugar(body)
@@ -2081,6 +2163,68 @@ class MenaiASTDesugarer:
         desugared_args = [self.desugar(arg) for arg in expr.elements[1:]]
         return self._make_list(
             (struct_node,) + tuple(desugared_args),
+            expr
+        )
+
+    def _desugar_enum_constructor(
+        self,
+        expr: MenaiASTList,
+        enum_node: MenaiASTEnum,
+    ) -> MenaiASTNode:
+        """
+        Desugar an enum constructor call (TypeName 'variant).
+
+        Validates that the argument is a quoted symbol naming a declared variant,
+        and emits a (MenaiASTEnum 'variant) list where the MenaiASTEnum node sits
+        directly in the function position.  The IR builder recognises this and
+        resolves the variant name to its compile-time index.
+
+        Args:
+            expr: The constructor call AST, e.g. (State 'idle)
+            enum_node: The MenaiASTEnum for this type
+
+        Returns:
+            Desugared constructor call
+        """
+        n_args = len(expr.elements) - 1
+
+        if n_args != 1:
+            raise MenaiEvalError(
+                message=f"Enum constructor '{enum_node.name}' called with wrong number of arguments",
+                received=f"Got {n_args} argument{'s' if n_args != 1 else ''}",
+                expected="Exactly 1 argument: a quoted variant name",
+                example=f"({enum_node.name} '{enum_node.variant_names[0]})",
+                line=expr.line,
+                column=expr.column,
+            )
+
+        variant_arg = expr.elements[1]
+        variant_name = _quoted_symbol_name(variant_arg)
+
+        if variant_name is None:
+            raise MenaiEvalError(
+                message=f"Enum constructor '{enum_node.name}' expects a quoted variant name",
+                received=f"Got {variant_arg.type_name()}",
+                expected="A quoted symbol naming a declared variant of this enum",
+                example=f"({enum_node.name} '{enum_node.variant_names[0]})",
+                suggestion="Quote the variant name: (State 'idle), not (State idle)",
+                line=variant_arg.line,
+                column=variant_arg.column,
+            )
+
+        if variant_name not in enum_node.variant_names:
+            raise MenaiEvalError(
+                message=f"Enum '{enum_node.name}' has no variant '{variant_name}'",
+                received=f"Variant '{variant_name}' is not declared",
+                expected=f"One of: {list(enum_node.variant_names)}",
+                example=f"({enum_node.name} '{enum_node.variant_names[0]})",
+                suggestion="Use a variant declared by the enum definition",
+                line=variant_arg.line,
+                column=variant_arg.column,
+            )
+
+        return self._make_list(
+            (enum_node, variant_arg),
             expr
         )
 

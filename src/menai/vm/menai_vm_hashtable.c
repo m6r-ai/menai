@@ -30,6 +30,12 @@ menai_value_hash(MenaiValue *val)
     case MENAITYPE_COMPLEX:
         return menai_complex_hash((MenaiComplex *)val);
 
+    case MENAITYPE_ENUM:
+        return menai_enum_hash((MenaiEnum *)val);
+
+    case MENAITYPE_ENUMTYPE:
+        return menai_enumtype_hash((MenaiEnumType *)val);
+
     case MENAITYPE_FLOAT:
         return menai_float_hash((MenaiFloat *)val);
 
@@ -107,6 +113,12 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
 
     case MENAITYPE_STRUCTTYPE:
         return menai_structtype_equal((MenaiStructType *)a, (MenaiStructType *)b);
+
+    case MENAITYPE_ENUM:
+        return menai_enum_equal((MenaiEnum *)a, (MenaiEnum *)b);
+
+    case MENAITYPE_ENUMTYPE:
+        return menai_enumtype_equal((MenaiEnumType *)a, (MenaiEnumType *)b);
 
     case MENAITYPE_SYMBOL:
         return menai_symbol_equal((MenaiSymbol *)a, (MenaiSymbol *)b);

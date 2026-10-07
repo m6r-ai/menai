@@ -59,6 +59,7 @@ from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
     MenaiIRBuildStruct,
+    MenaiIRBuildEnum,
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
@@ -186,6 +187,9 @@ class MenaiIRInliner(MenaiIROptimizationPass):
                 struct_type=ir.struct_type,
                 field_plans=tuple(self._opt(f, scope_stack, letrec_names) for f in ir.field_plans),
             )
+
+        if isinstance(ir, MenaiIRBuildEnum):
+            return ir
 
         if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList, MenaiIRError)):
             return ir
@@ -593,6 +597,9 @@ def _has_captures_of_params(ir: MenaiIRExpr, params: set[str]) -> bool:
     if isinstance(ir, MenaiIRBuildStruct):
         return any(_has_captures_of_params(f, params) for f in ir.field_plans)
 
+    if isinstance(ir, MenaiIRBuildEnum):
+        return False
+
     if isinstance(ir, MenaiIRLoop):
         return (any(_has_captures_of_params(init, params) for init in ir.init_plans)
                 or _has_captures_of_params(ir.body_plan, params))
@@ -667,6 +674,9 @@ def _count_param_uses(ir: MenaiIRExpr, param: str, shadowed: set[str]) -> int:
     if isinstance(ir, MenaiIRBuildStruct):
         return sum(_count_param_uses(f, param, shadowed) for f in ir.field_plans)
 
+    if isinstance(ir, MenaiIRBuildEnum):
+        return 0
+
     if isinstance(ir, MenaiIRLoop):
         inner = shadowed | set(ir.params)
         return (sum(_count_param_uses(init, param, shadowed) for init in ir.init_plans)
@@ -727,6 +737,9 @@ def _count_nodes(ir: MenaiIRExpr) -> int:
 
     if isinstance(ir, MenaiIRBuildStruct):
         return 1 + sum(_count_nodes(f) for f in ir.field_plans)
+
+    if isinstance(ir, MenaiIRBuildEnum):
+        return 1
 
     if isinstance(ir, MenaiIRLoop):
         return (1 + sum(_count_nodes(init) for init in ir.init_plans)
@@ -831,6 +844,9 @@ def _substitute(
             struct_type=ir.struct_type,
             field_plans=tuple(_substitute(f, param_map, shadowed) for f in ir.field_plans),
         )
+
+    if isinstance(ir, MenaiIRBuildEnum):
+        return ir
 
     if isinstance(ir, MenaiIRLoop):
         return MenaiIRLoop(

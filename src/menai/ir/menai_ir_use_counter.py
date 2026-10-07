@@ -13,6 +13,7 @@ from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
     MenaiIRBuildStruct,
+    MenaiIRBuildEnum,
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
@@ -181,6 +182,9 @@ class MenaiIRUseCounter:
         elif isinstance(ir, MenaiIRBuildStruct):
             for field_plan in ir.field_plans:
                 self._walk(field_plan, result, scope_stack, current_frame_id)
+
+        elif isinstance(ir, MenaiIRBuildEnum):
+            pass  # Leaf node — the variant index is a compile-time constant.
 
         elif isinstance(ir, MenaiIRReturn):
             self._walk(ir.value_plan, result, scope_stack, current_frame_id)

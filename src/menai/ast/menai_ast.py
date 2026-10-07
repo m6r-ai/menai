@@ -13,7 +13,7 @@ from typing import Any
 from menai.menai_value import (
     MenaiValue, MenaiInteger, MenaiFloat, MenaiComplex,
     MenaiString, MenaiBoolean, MenaiSymbol, MenaiList, MenaiDict, MenaiSet, MenaiNone, Menai_NONE,
-    MenaiStructType, MenaiBytes, MenaiVector,
+    MenaiStructType, MenaiEnumType, MenaiBytes, MenaiVector,
 )
 
 
@@ -415,6 +415,43 @@ class MenaiASTStruct(MenaiASTNode):
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, MenaiASTStruct):
+            return False
+
+        return self.tag == other.tag
+
+
+@dataclass
+class MenaiASTEnum(MenaiASTNode):
+    """
+    Represents an (enum (variant ...)) special form in the AST.
+
+    Produced by the semantic analyser when it encounters (enum (a b c)) as the
+    RHS of a let, let*, or letrec binding.  The binding name and tag are resolved
+    at that point and stored here so that all downstream passes have direct access
+    without needing to re-examine the enclosing let.
+
+    variant_names is an ordered tuple of variant name strings matching the
+    declaration order — this is the authoritative variant index mapping for the
+    entire pipeline.  The index is dense (0..n-1) by construction, which is what
+    lets a match over an enum compile to a jump table.
+    """
+    name: str = ""
+    tag: int = 0
+    variant_names: tuple[str, ...] = ()
+
+    def to_runtime_value(self) -> MenaiEnumType:
+        """Produce the MenaiEnumType runtime value for this enum definition."""
+        return MenaiEnumType(self.name, self.tag, self.variant_names)
+
+    def type_name(self) -> str:
+        return "enum"
+
+    def describe(self) -> str:
+        variants = " ".join(self.variant_names)
+        return f"(enum ({variants}))"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, MenaiASTEnum):
             return False
 
         return self.tag == other.tag

@@ -660,6 +660,28 @@ the `domain-operation` shape used throughout. See
 [ADR-0041](docs/adr/0041-standard-library-module-taxonomy.md) and
 [ADR-0042](docs/adr/0042-regular-expression-matching.md).
 
+### Enums are bare-tag, and the bare-tag form must not foreclose payloads
+
+An `enum` is a nominal, closed set of named variants, compared for identity only.
+It is declared with `(enum (variant ...))` as the RHS of a `let`/`let*`/`letrec`
+binding, producing an **enumtype** value that mirrors structtype; the enumtype is
+callable, and `(state 'idle)` constructs a value. A `match` names the enumtype as the
+pattern head and the variant as a quoted symbol: `((state 'idle) ...)`. Variants are
+namespaced by their enumtype, which is what lets many enum types coexist.
+
+A `match` over an enum with no `_` arm must name every variant; omitting one is a
+compile-time error, not a warning. Enum values are hashable unconditionally, and
+support no arithmetic, ordering, or bitwise operations.
+
+This ADR decides the **bare-tag** enum only; a variant carries no payload. Three
+constraints keep the later tagged union an addition rather than a migration, and all
+three are easy to violate accidentally: the C VM must allocate an enum with the
+struct's inline trailing-array layout even though a bare tag has zero entries;
+exhaustiveness must be computed as a variant set, not as a comparison of arm tags
+against the variant list; and non-exhaustiveness must be an error, because a warning
+could not be tightened later without breaking programs.
+See [ADR-0043](docs/adr/0043-enum-type.md).
+
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and

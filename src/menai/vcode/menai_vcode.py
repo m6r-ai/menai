@@ -19,7 +19,7 @@ Key properties
 
 from dataclasses import dataclass, field
 
-from menai.menai_value import MenaiValue, MenaiStructType
+from menai.menai_value import MenaiValue, MenaiStructType, MenaiEnumType
 
 
 @dataclass(frozen=True)
@@ -230,6 +230,21 @@ class MenaiVCodeMakeStruct:
 
 
 @dataclass
+class MenaiVCodeMakeEnum:
+    """
+    dst = make_enum(enum_type, variant_index)
+
+    Constructs a new MenaiEnum of type `enum_type` at variant `variant_index`.
+    Both are compile-time constants stored directly on the instruction rather
+    than in registers.  The bytecode emitter stages the type descriptor into the
+    outgoing zone and emits MAKE_ENUM.
+    """
+    dst: MenaiVCodeReg
+    enum_type: MenaiEnumType
+    variant_index: int
+
+
+@dataclass
 class MenaiVCodeMakeList:
     """
     dst = make_list(args...)
@@ -431,6 +446,7 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodeMakeClosure
     | MenaiVCodePatchClosure
     | MenaiVCodeMakeStruct
+    | MenaiVCodeMakeEnum
     | MenaiVCodeMakeList
     | MenaiVCodeMakeVector
     | MenaiVCodeMakeSet
@@ -553,6 +569,9 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
 
     if isinstance(instr, MenaiVCodeMakeStruct):
         return f"{instr.dst} = MAKE_STRUCT {instr.struct_type.name!r} {_fmt_regs(instr.args)}"
+
+    if isinstance(instr, MenaiVCodeMakeEnum):
+        return f"{instr.dst} = MAKE_ENUM {instr.enum_type.name!r} {instr.variant_index}"
 
     if isinstance(instr, MenaiVCodeMakeList):
         return f"{instr.dst} = MAKE_LIST {_fmt_regs(instr.args)}"

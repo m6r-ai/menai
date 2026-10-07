@@ -1,0 +1,17 @@
+(let ((State (enum (idle running stopped))))
+  (list
+    ; construction of each variant
+    (State 'idle)
+    (State 'running)
+    (State 'stopped)
+    ; equality
+    (enum=? (State 'idle) (State 'idle))
+    (enum=? (State 'idle) (State 'running))
+    ; introspection
+    (enum? (State 'idle))
+    (enumtype? State)
+    (enumtype-name State)
+    (enumtype-variants State)
+    (enum-variant (State 'running))
+    ; hashable as a dict key
+    (dict-get (dict (State 'idle) "IDLE" (State 'running) "RUNNING") (State 'running))))

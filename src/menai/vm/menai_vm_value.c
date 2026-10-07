@@ -41,6 +41,14 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         menai_dict_element_final(vs, (MenaiDictElement *)v);
         break;
 
+    case MENAITYPE_ENUM:
+        menai_enum_final(vs, (MenaiEnum *)v);
+        break;
+
+    case MENAITYPE_ENUMTYPE:
+        menai_enumtype_final(vs, (MenaiEnumType *)v);
+        break;
+
     case MENAITYPE_FLOAT:
         menai_float_final(vs, (MenaiFloat *)v);
         break;

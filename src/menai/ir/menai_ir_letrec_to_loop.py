@@ -51,6 +51,7 @@ from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
     MenaiIRBuildStruct,
+    MenaiIRBuildEnum,
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
@@ -122,6 +123,9 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
 
         if isinstance(ir, MenaiIRBuildStruct):
             return self._opt_build_struct(ir, loop_name)
+
+        if isinstance(ir, MenaiIRBuildEnum):
+            return ir, False
 
         if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList, MenaiIRError)):
             return ir, False
@@ -465,6 +469,9 @@ def _nested_lambda_references_name(ir: MenaiIRExpr, name: str) -> bool:
     if isinstance(ir, MenaiIRBuildStruct):
         return any(_nested_lambda_references_name(f, name) for f in ir.field_plans)
 
+    if isinstance(ir, MenaiIRBuildEnum):
+        return False
+
     if isinstance(ir, MenaiIRLoop):
         return (any(_nested_lambda_references_name(init, name) for init in ir.init_plans)
                 or _nested_lambda_references_name(ir.body_plan, name))
@@ -518,6 +525,9 @@ def _references_name(ir: MenaiIRExpr, name: str) -> bool:
 
     if isinstance(ir, MenaiIRBuildStruct):
         return any(_references_name(f, name) for f in ir.field_plans)
+
+    if isinstance(ir, MenaiIRBuildEnum):
+        return False
 
     if isinstance(ir, MenaiIRLoop):
         return (any(_references_name(init, name) for init in ir.init_plans)
@@ -590,6 +600,9 @@ def _references_name_outside_call(ir: MenaiIRExpr, name: str) -> bool:
     if isinstance(ir, MenaiIRBuildStruct):
         return any(_references_name_outside_call(f, name) for f in ir.field_plans)
 
+    if isinstance(ir, MenaiIRBuildEnum):
+        return False
+
     if isinstance(ir, MenaiIRLoop):
         return (any(_references_name_outside_call(init, name) for init in ir.init_plans)
                 or _references_name_outside_call(ir.body_plan, name))
@@ -650,6 +663,9 @@ def _self_calls_correct_arity(ir: MenaiIRExpr, name: str, param_count: int) -> b
 
     if isinstance(ir, MenaiIRBuildStruct):
         return all(_self_calls_correct_arity(f, name, param_count) for f in ir.field_plans)
+
+    if isinstance(ir, MenaiIRBuildEnum):
+        return True
 
     if isinstance(ir, MenaiIRError):
         return _self_calls_correct_arity(ir.message, name, param_count)
@@ -747,6 +763,9 @@ def _no_self_call(ir: MenaiIRExpr, name: str) -> bool:
 
     if isinstance(ir, MenaiIRBuildStruct):
         return all(_no_self_call(f, name) for f in ir.field_plans)
+
+    if isinstance(ir, MenaiIRBuildEnum):
+        return True
 
     if isinstance(ir, MenaiIRError):
         return _no_self_call(ir.message, name)

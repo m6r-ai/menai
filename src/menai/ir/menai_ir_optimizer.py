@@ -14,6 +14,7 @@ from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
     MenaiIRBuildStruct,
+    MenaiIRBuildEnum,
     MenaiIRBuildList,
     MenaiIRBuildDict,
     MenaiIRBuildSet,
@@ -148,6 +149,9 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
                 return ir
 
             return MenaiIRBuildStruct(struct_type=ir.struct_type, field_plans=field_plans)
+
+        if isinstance(ir, MenaiIRBuildEnum):
+            return ir
 
         if isinstance(ir, MenaiIRReturn):
             value_plan = self._opt(ir.value_plan, frame_stack)

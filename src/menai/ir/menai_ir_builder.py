@@ -9,12 +9,12 @@ from menai.ir.menai_ir import (
     MenaiIRExpr, MenaiIRConstant, MenaiIRVariable, MenaiIRIf, MenaiIRLet, MenaiIRLetrec,
     MenaiIRLambda, MenaiIRCall, MenaiIRQuote, MenaiIRError, MenaiIREmptyList,
     MenaiIRReturn, MenaiIRBuildList, MenaiIRBuildDict, MenaiIRBuildSet, MenaiIRBuildVector,
-    MenaiIRBuildStruct
+    MenaiIRBuildStruct, MenaiIRBuildEnum
 )
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex,
     MenaiASTString, MenaiASTBoolean, MenaiASTNone, MenaiASTSymbol, MenaiASTList, MenaiASTListLiteral,
-    MenaiASTDict, MenaiASTSet, MenaiASTVector, MenaiASTStruct, MenaiASTBytes, MenaiASTConstant,
+    MenaiASTDict, MenaiASTSet, MenaiASTVector, MenaiASTStruct, MenaiASTEnum, MenaiASTBytes, MenaiASTConstant,
 )
 
 
@@ -181,6 +181,9 @@ class MenaiIRBuilder:
 
         if expr_type is MenaiASTStruct:
             return MenaiIRConstant(value=cast(MenaiASTStruct, expr).to_runtime_value())
+
+        if expr_type is MenaiASTEnum:
+            return MenaiIRConstant(value=cast(MenaiASTEnum, expr).to_runtime_value())
 
         if expr_type is MenaiASTConstant:
             return MenaiIRConstant(value=cast(MenaiASTConstant, expr).value)
@@ -474,6 +477,17 @@ class MenaiIRBuilder:
                 for arg in arg_exprs
             )
             return MenaiIRBuildStruct(struct_type=struct_node.to_runtime_value(), field_plans=field_plans)
+
+        # (MenaiASTEnum 'variant) — enum constructor call.
+        # The desugarer places the MenaiASTEnum node directly in function position
+        # and has already validated that the argument is a declared variant name.
+        if func_type is MenaiASTEnum:
+            enum_node = cast(MenaiASTEnum, func_expr)
+            variant_name = cast(MenaiASTSymbol, cast(MenaiASTList, arg_exprs[0]).elements[1]).name
+            return MenaiIRBuildEnum(
+                enum_type=enum_node.to_runtime_value(),
+                variant_index=enum_node.variant_names.index(variant_name),
+            )
 
         if func_type is MenaiASTSymbol and cast(MenaiASTSymbol, func_expr).name in self._builtin_names:
             dollar_name = cast(MenaiASTSymbol, func_expr).name

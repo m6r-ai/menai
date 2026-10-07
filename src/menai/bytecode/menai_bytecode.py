@@ -471,6 +471,20 @@ class Opcode(IntEnum):
     RETURN_IF_FALSE = _op(340, 2, _FOLD_SRC1)  # RETURN_IF_FALSE r_src0, r_src1 — return r_src1 if r_src0 is false
     RETURN_IF_TRUE = _op(341, 2, _FOLD_SRC1)   # RETURN_IF_TRUE r_src0, r_src1 — return r_src1 if r_src0 is true
 
+    # Enum construction
+    MAKE_ENUM = _op(342, 2)                    # MAKE_ENUM r_src0, variant_index — construct an enum value at the given variant
+
+    # Enum operations
+    ENUM_P = _op(343, 1, _FOLD_SRC0)                # r_dest = (enum? r_src0)
+    ENUMTYPE_P = _op(344, 1, _FOLD_SRC0)            # r_dest = (enumtype? r_src0)
+    ENUMTYPE_NAME = _op(345, 1, _FOLD_SRC0)         # r_dest = (enumtype-name r_src0) → string
+    ENUMTYPE_VARIANTS = _op(346, 1, _FOLD_SRC0)     # r_dest = (enumtype-variants r_src0) → list of symbols
+    ENUM_VARIANT = _op(347, 1, _FOLD_SRC0)          # r_dest = (enum-variant r_src0) → variant name symbol
+    ENUM_EQ_P = _op(348, 2, _FOLD_SRC01)            # r_dest = (enum=? r_src0 r_src1)
+    ENUM_NEQ_P = _op(349, 2, _FOLD_SRC01)           # r_dest = (enum!=? r_src0 r_src1)
+    ASSERT_ENUM = _op(350, 1)                       # Check r_src0 — assert r_src0 is enum
+    ASSERT_ENUMTYPE = _op(351, 1)                   # Check r_src0 — assert r_src0 is enumtype
+
 
 # Packed instruction encoding
 #
@@ -668,6 +682,9 @@ class Instruction:
         if opcode == Opcode.MAKE_STRUCT:
             return f"{rn(self.dest)} = MAKE_STRUCT {rn(self.src0)}, {self.src1}"
 
+        if opcode == Opcode.MAKE_ENUM:
+            return f"{rn(self.dest)} = MAKE_ENUM {rn(self.src0)}, variant {self.src1}"
+
         if opcode == Opcode.PATCH_CLOSURE:
             return f"PATCH_CLOSURE {rn(self.src0)}, {self.src1}, {self._src_name(2, rn)}"
 
@@ -702,7 +719,8 @@ class Instruction:
                       Opcode.ASSERT_DICT, Opcode.ASSERT_SET,
                       Opcode.ASSERT_FUNCTION, Opcode.ASSERT_BYTES,
                       Opcode.ASSERT_STRUCT, Opcode.ASSERT_STRUCTTYPE,
-                      Opcode.ASSERT_VECTOR):
+                      Opcode.ASSERT_VECTOR,
+                      Opcode.ASSERT_ENUM, Opcode.ASSERT_ENUMTYPE):
             return f"{name} {rn(self.src0)}"
 
         n = self.arg_count()

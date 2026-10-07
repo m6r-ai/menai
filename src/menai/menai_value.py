@@ -552,6 +552,12 @@ class MenaiDict(MenaiValue):
                     received=f"Key type: {key.type_name()}",
                 ) from e
 
+        # MenaiEnum is hashable unconditionally: it is immutable and has a total
+        # structural equality.  MenaiEnum is defined later in this module;
+        # isinstance works at runtime.
+        if isinstance(key, MenaiEnum):
+            return ('enum', hash(key))
+
         raise MenaiEvalError(
             message="Dict keys must be strings, numbers, booleans, or symbols",
             received=f"Key type: {key.type_name()}",
@@ -711,6 +717,99 @@ class MenaiStruct(MenaiValue):
 
     def __repr__(self) -> str:
         return f"MenaiStruct(struct_type={self.struct_type!r}, fields={self.fields!r})"
+
+
+class MenaiEnumType(MenaiValue):
+    """
+    Represents an enum type descriptor — the value produced by (enum (a b c)).
+
+    Carries the type name, a unique integer tag for fast VM identity checks, and
+    the ordered variant names.  The tag is assigned at compile time and is stable
+    within a single compilation; it does not need to be stable across compilations
+    because MenaiEnumType values are never serialised.
+
+    MenaiEnumType is itself a callable value: calling it with a quoted variant name
+    constructs an instance.  The VM handles this via the MAKE_ENUM opcode rather than
+    the normal CALL path.
+
+    Variants are namespaced by their enum type, which is what allows many enum types
+    to coexist: two enum types may each declare a variant with the same name.
+    """
+    __slots__ = ('name', 'tag', 'variant_names', '_variant_index')
+
+    def __init__(self, name: str, tag: int, variant_names: tuple[str, ...]) -> None:
+        self.name: str = name
+        self.tag: int = tag
+        self.variant_names: tuple[str, ...] = variant_names
+        self._variant_index: dict = {vname: idx for idx, vname in enumerate(variant_names)}
+
+    def variant_index(self, name: str) -> int:
+        """Return the 0-based index for a variant name, raising KeyError if absent."""
+        return self._variant_index[name]
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, MenaiEnumType):
+            return False
+
+        return self.tag == other.tag
+
+    def __hash__(self) -> int:
+        return hash(self.tag)
+
+    def to_python(self) -> str:
+        return f"<enumtype {self.name}>"
+
+    def type_name(self) -> str:
+        return "enumtype"
+
+    def describe(self) -> str:
+        variants = " ".join(self.variant_names)
+        return f"<enumtype {self.name} ({variants})>"
+
+    def __repr__(self) -> str:
+        return f"MenaiEnumType(name={self.name!r}, tag={self.tag!r}, variant_names={self.variant_names!r})"
+
+
+class MenaiEnum(MenaiValue):
+    """
+    Represents an enum instance — the value produced by calling an enum constructor.
+
+    A bare-tag variant carries no data: the value is fully described by its enum type
+    and its variant index.  The enum_type reference allows type identity checks and
+    introspection (enum-variant, enumtype-variants) without storing redundant metadata
+    on every instance.
+
+    Enum values are hashable unconditionally, unlike structs: a value is hashable when
+    it is immutable and has a total structural equality, and an enum satisfies both
+    trivially.  The variant index is dense (0..n-1) by construction, which is what lets
+    a match over an enum compile to a jump table.
+    """
+    __slots__ = ('enum_type', 'variant_index')
+
+    def __init__(self, enum_type: MenaiEnumType, variant_index: int) -> None:
+        self.enum_type: MenaiEnumType = enum_type
+        self.variant_index: int = variant_index
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, MenaiEnum):
+            return False
+
+        return self.enum_type.tag == other.enum_type.tag and self.variant_index == other.variant_index
+
+    def __hash__(self) -> int:
+        return hash((self.enum_type.tag, self.variant_index))
+
+    def to_python(self) -> str:
+        return f"{self.enum_type.name}.{self.enum_type.variant_names[self.variant_index]}"
+
+    def type_name(self) -> str:
+        return "enum"
+
+    def describe(self) -> str:
+        return f"({self.enum_type.name} {self.enum_type.variant_names[self.variant_index]})"
+
+    def __repr__(self) -> str:
+        return f"MenaiEnum(enum_type={self.enum_type!r}, variant_index={self.variant_index!r})"
 
 
 # Module-level singletons — there is only one #none value.

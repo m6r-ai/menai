@@ -64,6 +64,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeVector,
     MenaiVCodeMakeSet,
     MenaiVCodeMakeStruct,
+    MenaiVCodeMakeEnum,
     MenaiVCodeStructGetIndexed,
     MenaiVCodeStructWithIndexed,
     MenaiVCodeMove,
@@ -113,6 +114,8 @@ _GUARD_OPCODES: dict[str, Opcode] = {
     'struct': Opcode.ASSERT_STRUCT,
     'structtype': Opcode.ASSERT_STRUCTTYPE,
     'vector': Opcode.ASSERT_VECTOR,
+    'enum': Opcode.ASSERT_ENUM,
+    'enumtype': Opcode.ASSERT_ENUMTYPE,
 }
 
 _FIELD_NAMES = ('opcode', 'dest', 'src0', 'src1', 'src2')
@@ -408,6 +411,17 @@ class MenaiBytecodeBuilder:
 
                 ctx.max_outgoing_args = max(ctx.max_outgoing_args, 1 + n_fields)
                 ctx.emit(Opcode.MAKE_STRUCT, local_count, n_fields, dest=ctx.slot_of(instr.dst))
+                i += 1
+                continue
+
+            if isinstance(instr, MenaiVCodeMakeEnum):
+                local_count = ctx.slot_map.local_count
+                # Stage the enum type descriptor into the outgoing zone slot 0,
+                # then construct the value at the compile-time variant index.
+                type_const_idx = ctx.add_constant(instr.enum_type)
+                ctx.emit(Opcode.LOAD_CONST, type_const_idx, dest=local_count)
+                ctx.max_outgoing_args = max(ctx.max_outgoing_args, 1)
+                ctx.emit(Opcode.MAKE_ENUM, local_count, instr.variant_index, dest=ctx.slot_of(instr.dst))
                 i += 1
                 continue
 
