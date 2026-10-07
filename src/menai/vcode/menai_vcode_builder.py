@@ -542,7 +542,19 @@ class MenaiVCodeBuilder:
 
         if isinstance(instr, MenaiCFGMakeEnumInstr):
             dst = self._reg(instr.result)
-            instrs.append(MenaiVCodeMakeEnum(dst=dst, enum_type=instr.enum_type, variant_index=instr.variant_index))
+            # The enum type descriptor is a compile-time constant here, so it is
+            # materialised into a register by a LOAD_CONST and passed as an
+            # operand.  The constant fold pass then rewrites the operand back to
+            # a constant-pool index and removes the load, so no register slot is
+            # allocated for it.
+            type_reg = MenaiVCodeReg(id=max_reg_id + 1)
+            max_reg_id = type_reg.id
+            instrs.append(MenaiVCodeLoadConst(dst=type_reg, value=instr.enum_type))
+            instrs.append(MenaiVCodeMakeEnum(
+                dst=dst,
+                enum_type=MenaiVCodeOperand.of_reg(type_reg),
+                variant_index=instr.variant_index,
+            ))
             return max(max_reg_id, dst.id)
 
         if isinstance(instr, MenaiCFGStructGetIndexedInstr):

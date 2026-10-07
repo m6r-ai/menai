@@ -362,7 +362,14 @@ def _replace_reg(
         )
 
     if isinstance(instr, MenaiVCodeMakeEnum):
-        return instr
+        if instr.enum_type.reg is None or instr.enum_type.reg.id != old_id:
+            return instr
+
+        return MenaiVCodeMakeEnum(
+            dst=instr.dst,
+            enum_type=MenaiVCodeOperand.of_reg(new_reg),
+            variant_index=instr.variant_index,
+        )
 
     if isinstance(instr, MenaiVCodeMakeList):
         return MenaiVCodeMakeList(
@@ -774,7 +781,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], [r.id for r in instr.args]
 
     if isinstance(instr, MenaiVCodeMakeEnum):
-        return [instr.dst.id], []
+        # The enum type is an operand; it may be a register or a constant.
+        type_uses = [instr.enum_type.reg.id] if instr.enum_type.reg is not None else []
+        return [instr.dst.id], type_uses
 
     if isinstance(instr, MenaiVCodeMakeList):
         return [instr.dst.id], [r.id for r in instr.args]

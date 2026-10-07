@@ -7637,10 +7637,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         case OP_MAKE_ENUM: {
             /*
              * MAKE_ENUM src0, src1:
-             * src0 = absolute slot of MenaiEnumType descriptor in outgoing zone.
+             * src0 = the MenaiEnumType descriptor: a register, or a constant-pool
+             *        index when the fold pass has folded it (tag bit 0).
              * src1 = compile-time variant index.
+             *
+             * Nothing is marshalled into the outgoing zone: the type descriptor
+             * is the only operand and the variant index is an immediate.
              */
-            MenaiEnumType *enum_type = (MenaiEnumType *)frame_regs[src0];
+            MenaiEnumType *enum_type = (MenaiEnumType *)operand(constants_items, frame_regs, src0, tag & 1);
             int variant_index = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiEnum *instance = alloc_menai_enum(vs, enum_type, variant_index);
             if (instance == NULL) {

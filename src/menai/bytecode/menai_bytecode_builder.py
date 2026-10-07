@@ -42,6 +42,7 @@ from menai.menai_value import (
     MenaiList,
     MenaiNone,
     MenaiStructType,
+    MenaiEnumType,
     MenaiVector,
     MenaiSet,
     MenaiString,
@@ -216,6 +217,12 @@ class _EmitContext:
             # unique per struct declaration within a compilation.  Each constructor
             # call site lowers the declaration to a fresh descriptor object, so keying
             # by identity would give every site its own pool entry.
+            key = (type(value).__name__, value.tag)
+
+        elif isinstance(value, MenaiEnumType):
+            # Enum type descriptors are keyed by tag for the same reason as struct
+            # type descriptors: each constructor call site lowers the declaration to
+            # a fresh descriptor object, so identity keying would duplicate them.
             key = (type(value).__name__, value.tag)
 
         else:
@@ -416,13 +423,14 @@ class MenaiBytecodeBuilder:
                 continue
 
             if isinstance(instr, MenaiVCodeMakeEnum):
-                local_count = ctx.slot_map.local_count
-                # Stage the enum type descriptor into the outgoing zone slot 0,
-                # then construct the value at the compile-time variant index.
-                type_const_idx = ctx.add_constant(instr.enum_type)
-                ctx.emit(Opcode.LOAD_CONST, type_const_idx, dest=local_count)
-                ctx.max_outgoing_args = max(ctx.max_outgoing_args, 1)
-                ctx.emit(Opcode.MAKE_ENUM, local_count, instr.variant_index, dest=ctx.slot_of(instr.dst))
+                # The enum type is an operand: a register, or a constant-pool index
+                # when the fold pass has folded it.  Nothing is staged into the
+                # outgoing zone.
+                type_field, type_tag = self._operand_field(instr.enum_type, ctx, 0)
+                ctx.emit(
+                    Opcode.MAKE_ENUM, type_field, instr.variant_index,
+                    dest=ctx.slot_of(instr.dst), tag=type_tag,
+                )
                 i += 1
                 continue
 

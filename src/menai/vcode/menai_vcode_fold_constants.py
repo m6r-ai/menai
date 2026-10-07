@@ -76,6 +76,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeInstr,
     MenaiVCodeLoadConst,
     MenaiVCodeMakeClosure,
+    MenaiVCodeMakeEnum,
     MenaiVCodeMove,
     MenaiVCodeOperand,
     MenaiVCodePatchClosure,
@@ -327,6 +328,17 @@ def _fold_instr(
             return instr, set()
 
         return MenaiVCodeReturn(value=value), {folded}
+
+    if isinstance(instr, MenaiVCodeMakeEnum):
+        enum_type, folded = _fold_operand(instr.enum_type, foldable)
+        if folded is None:
+            return instr, set()
+
+        return MenaiVCodeMakeEnum(
+            dst=instr.dst,
+            enum_type=enum_type,
+            variant_index=instr.variant_index,
+        ), {folded}
 
     if isinstance(instr, MenaiVCodeReturnIf):
         value, folded = _fold_operand(instr.value, foldable)

@@ -472,7 +472,7 @@ class Opcode(IntEnum):
     RETURN_IF_TRUE = _op(341, 2, _FOLD_SRC1)   # RETURN_IF_TRUE r_src0, r_src1 — return r_src1 if r_src0 is true
 
     # Enum construction
-    MAKE_ENUM = _op(342, 2)                    # MAKE_ENUM r_src0, variant_index — construct an enum value at the given variant
+    MAKE_ENUM = _op(342, 2, _FOLD_SRC0)  # MAKE_ENUM src0, variant_index — construct an enum value; src0 is the enum type
 
     # Enum operations
     ENUM_P = _op(343, 1, _FOLD_SRC0)                # r_dest = (enum? r_src0)
@@ -679,10 +679,10 @@ class Instruction:
             return f"SWITCH_ENUM {rn(self.src0)}, jt{self.src1}"
 
         if opcode == Opcode.ENUMTYPE_EQ_P:
-            return f"{rn(self.dest)} = ENUMTYPE_EQ_P {rn(self.src0)}, {rn(self.src1)}"
+            return f"{rn(self.dest)} = ENUMTYPE_EQ_P {self._src_name(0, rn)}, {self._src_name(1, rn)}"
 
         if opcode == Opcode.ENUMTYPE_NEQ_P:
-            return f"{rn(self.dest)} = ENUMTYPE_NEQ_P {rn(self.src0)}, {rn(self.src1)}"
+            return f"{rn(self.dest)} = ENUMTYPE_NEQ_P {self._src_name(0, rn)}, {self._src_name(1, rn)}"
 
         if opcode == Opcode.MAKE_CLOSURE:
             return f"{rn(self.dest)} = MAKE_CLOSURE x{self.src0}"
@@ -697,7 +697,7 @@ class Instruction:
             return f"{rn(self.dest)} = MAKE_STRUCT {rn(self.src0)}, {self.src1}"
 
         if opcode == Opcode.MAKE_ENUM:
-            return f"{rn(self.dest)} = MAKE_ENUM {rn(self.src0)}, variant {self.src1}"
+            return f"{rn(self.dest)} = MAKE_ENUM {self._src_name(0, rn)}, {self.src1}"
 
         if opcode == Opcode.PATCH_CLOSURE:
             return f"PATCH_CLOSURE {rn(self.src0)}, {self.src1}, {self._src_name(2, rn)}"

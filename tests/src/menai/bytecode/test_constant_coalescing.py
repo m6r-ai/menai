@@ -436,6 +436,121 @@ class TestStructTypeConstantCoalescing:
         assert menai.evaluate(src) == [True, False, True]
 
 
+def _enum_type_constants(code, name: str) -> list:
+    """Return pool entries in `code` that are enum type descriptors named `name`."""
+    return [
+        c for c in code.constants
+        if type(c).__name__ == "MenaiEnumType" and c.name == name
+    ]
+
+
+class TestEnumTypeConstantCoalescing:
+    """Repeated enum type descriptors share one constant pool entry."""
+
+    def test_repeated_constructor_calls_share_one_pool_entry(self):
+        """
+        Three constructor calls of the same enum type stage the type
+        descriptor into the constant pool.  Because each call site lowers the
+        declaration to a fresh descriptor object, the pool must key descriptors
+        by their tag so that all three share one entry.
+        """
+        src = """
+        (letrec ((State (enum (idle running stopped)))
+                 (a (lambda () (State 'idle)))
+                 (b (lambda () (State 'running)))
+                 (c (lambda () (State 'stopped))))
+          (list (a) (b) (c)))
+        """
+        code = _compile(src)
+        assert len(_enum_type_constants(code, "State")) == 1
+
+    def test_repeated_constructor_calls_share_one_load(self):
+        """
+        The enum type descriptor is folded into each MAKE_ENUM operand: the
+        constant fold pass replaces the register with the descriptor's pool
+        index, so no LOAD_CONST of the descriptor remains and every MAKE_ENUM
+        references the same pool index.
+        """
+        src = """
+        (letrec ((State (enum (idle running stopped)))
+                 (a (lambda () (State 'idle)))
+                 (b (lambda () (State 'running)))
+                 (c (lambda () (State 'stopped))))
+          (list (a) (b) (c)))
+        """
+        code = _compile(src)
+        enum_consts = _enum_type_constants(code, "State")
+        assert len(enum_consts) == 1
+        descriptor_index = code.constants.index(enum_consts[0])
+
+        def _make_enums(co) -> list:
+            found = [
+                unpack_instruction(i) for i in co.instructions
+                if unpack_instruction(i).opcode == Opcode.MAKE_ENUM
+            ]
+            for nested in co.code_objects:
+                found.extend(_make_enums(nested))
+            return found
+
+        make_enums = _make_enums(code)
+        assert len(make_enums) == 3
+        for instr in make_enums:
+            # src0 is a constant operand (tag bit 0) holding the descriptor.
+            assert instr.tag & 1
+            assert instr.src0 == descriptor_index
+
+        # No LOAD_CONST of the descriptor remains anywhere.
+        def _descriptor_loads(co) -> int:
+            n = sum(
+                1 for i in co.instructions
+                if unpack_instruction(i).opcode == Opcode.LOAD_CONST
+                and unpack_instruction(i).src0 == descriptor_index
+            )
+            for nested in co.code_objects:
+                n += _descriptor_loads(nested)
+            return n
+
+        assert _descriptor_loads(code) == 0
+
+    def test_distinct_enum_types_not_coalesced(self):
+        """
+        Two enum types with identical variant names are distinct nominal types
+        and must keep separate pool entries.
+        """
+        src = """
+        (letrec ((A (enum (idle running)))
+                 (B (enum (idle running)))
+                 (f (lambda () (A 'idle)))
+                 (g (lambda () (B 'idle))))
+          (list (f) (g)))
+        """
+        code = _compile(src)
+        assert len(_enum_type_constants(code, "A")) == 1
+        assert len(_enum_type_constants(code, "B")) == 1
+
+    def test_repeated_enum_type_correct_result(self, menai):
+        """Repeated constructor calls of one enum type produce correct results."""
+        src = """
+        (letrec ((State (enum (idle running stopped)))
+                 (a (lambda () (State 'idle)))
+                 (b (lambda () (State 'running)))
+                 (c (lambda () (State 'stopped))))
+          (list (a) (b) (c)))
+        """
+        assert menai.evaluate_and_format(src) == "((State idle) (State running) (State stopped))"
+
+    def test_distinct_enum_types_correct_result(self, menai):
+        """Distinct enum types with identical variants keep distinct identities."""
+        src = """
+        (letrec ((A (enum (idle running)))
+                 (B (enum (idle running)))
+                 (f (lambda () (A 'idle)))
+                 (g (lambda () (B 'idle))))
+          (list (enumtype=? A B) (enumtype=? A A)))
+        """
+        assert menai.evaluate(src) == [False, True]
+
+
 class TestConstantCoalescingNestedFunctions:
     """Each function's constants are coalesced independently."""
 

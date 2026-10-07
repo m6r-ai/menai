@@ -333,7 +333,6 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         MenaiVCodeCall, MenaiVCodeApply,
         MenaiVCodeTailCall, MenaiVCodeTailApply,
         MenaiVCodeMakeStruct, MenaiVCodeMakeList,
-        MenaiVCodeMakeEnum,
         MenaiVCodeMakeVector,
         MenaiVCodeMakeSet, MenaiVCodeMakeDict,
     )
@@ -663,7 +662,9 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
         return [instr.dst.id], [r.id for r in instr.args]
 
     if isinstance(instr, MenaiVCodeMakeEnum):
-        return [instr.dst.id], []
+        # The enum type is an operand; it may be a register or a constant.
+        type_uses = [instr.enum_type.reg.id] if instr.enum_type.reg is not None else []
+        return [instr.dst.id], type_uses
 
     if isinstance(instr, MenaiVCodeMakeList):
         return [instr.dst.id], [r.id for r in instr.args]
@@ -807,6 +808,9 @@ def _use_requires_local_slot(instr: MenaiVCodeInstr, reg_id: int) -> bool:
 
     if isinstance(instr, MenaiVCodeRaise):
         return instr.message.reg is not None and instr.message.reg.id == reg_id
+
+    if isinstance(instr, MenaiVCodeMakeEnum):
+        return instr.enum_type.reg is not None and instr.enum_type.reg.id == reg_id
 
     return False
 
