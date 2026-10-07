@@ -100,6 +100,23 @@ struct type alongside its associated functions:
   (dict "point" point "make-point" make-point "distance" distance))
 ```
 
+### Enum definitions in letrec
+
+Enum type definitions can appear in `letrec` alongside function definitions, for the
+same reason: they have no recursive semantics and are hoisted to `let` automatically.
+Use this when defining a module that exports an enum type alongside its associated
+functions:
+
+```menai
+(letrec ((state (enum (idle running stopped)))
+         (describe (lambda (s)
+                     (match s
+                       ((state 'idle) "idle")
+                       ((state 'running) "running")
+                       ((state 'stopped) "stopped")))))
+  (dict "state" state "describe" describe))
+```
+
 ### Syntax
 
 ```menai

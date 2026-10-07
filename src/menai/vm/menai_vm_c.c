@@ -7873,8 +7873,54 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_ENUM_EQ_P: {
+            MenaiEnum *a = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiEnum *b = (MenaiEnum *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, menai_enum_equal(a, b));
+            break;
+        }
+
+        case OP_ENUM_NEQ_P: {
+            MenaiEnum *a = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiEnum *b = (MenaiEnum *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, !menai_enum_equal(a, b));
+            break;
+        }
+
+        case OP_ENUM_VARIANT: {
+            MenaiEnum *e = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiEnumType *et = e->enum_type;
+            MenaiSymbol *sym = alloc_menai_symbol(vs, et->variants[e->variant_index].name);
+            if (sym == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)sym;
+            break;
+        }
+
         case OP_ENUMTYPE_P: {
             bool_store(vs, frame_regs, dest, IS_MENAI_ENUMTYPE(operand(constants_items, frame_regs, src0, tag & 1)));
+            break;
+        }
+
+        case OP_ENUMTYPE_EQ_P: {
+            MenaiEnumType *a = (MenaiEnumType *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiEnumType *b = (MenaiEnumType *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, menai_enumtype_equal(a, b));
+            break;
+        }
+
+        case OP_ENUMTYPE_NEQ_P: {
+            MenaiEnumType *a = (MenaiEnumType *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiEnumType *b = (MenaiEnumType *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, !menai_enumtype_equal(a, b));
             break;
         }
 
@@ -7916,36 +7962,6 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)r;
-            break;
-        }
-
-        case OP_ENUM_VARIANT: {
-            MenaiEnum *e = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiEnumType *et = e->enum_type;
-            MenaiSymbol *sym = alloc_menai_symbol(vs, et->variants[e->variant_index].name);
-            if (sym == NULL) {
-                vm_err = MENAI_ERR_NOMEM;
-                goto error;
-            }
-
-            menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = (MenaiValue *)sym;
-            break;
-        }
-
-        case OP_ENUM_EQ_P: {
-            MenaiEnum *a = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
-            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiEnum *b = (MenaiEnum *)operand(constants_items, frame_regs, src1, tag & 2);
-            bool_store(vs, frame_regs, dest, menai_enum_equal(a, b));
-            break;
-        }
-
-        case OP_ENUM_NEQ_P: {
-            MenaiEnum *a = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
-            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiEnum *b = (MenaiEnum *)operand(constants_items, frame_regs, src1, tag & 2);
-            bool_store(vs, frame_regs, dest, !menai_enum_equal(a, b));
             break;
         }
 

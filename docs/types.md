@@ -268,7 +268,8 @@ The display format `#{...}` is for display only — construction always uses
 `(set ...)`.
 
 Valid element types (hashable): `string`, `integer`, `float`, `complex`, `boolean`,
-`symbol`, `bytes`, `structtype`, `struct` (if all fields are hashable scalars).
+`symbol`, `bytes`, `structtype`, `struct` (if all fields are hashable scalars),
+`enumtype`, `enum`.
 Lists, dicts, functions, and `#none` are not hashable and cannot be set members.
 
 Type predicate:
@@ -355,6 +356,73 @@ hashable scalars.
 
 See [Builtins — struct operations](builtins.md#struct-operations) for the full list
 of struct instance functions.
+
+## enumtype
+
+An enumtype is a type descriptor produced by `(enum (variant1 variant2 ...))`. It is
+not an enum instance — it is the blueprint that describes an enum type. An `enum`
+form is valid as the RHS of a `let`, `let*`, or `letrec` binding, and is hoisted out
+of `letrec` exactly as a struct definition is. An enumtype value is callable: calling
+it with a quoted variant name creates an enum value of that variant.
+
+```menai
+(let ((state (enum (idle running stopped))))
+  state)                          ; <enumtype state (idle running stopped)>
+  (enumtype? state)               ; #t
+  (enumtype-name state)           ; "state"
+  (enumtype-variants state)       ; (idle running stopped)
+```
+
+At least one variant is required, and variant names must be unique. A variant name
+that is not declared is a compile-time error.
+
+Enum-type values are hashable and can be used as set members or dict keys.
+
+See [Builtins — enumtype operations](builtins.md#enumtype-operations) for
+introspection functions.
+
+## enum
+
+An enum is an instance of an enumtype. Instances are created by calling the enumtype
+value with a quoted variant name. Enums are nominal — two enum types with the same
+variant names are distinct types:
+
+```menai
+(let ((a (enum (idle running)))
+      (b (enum (idle running))))
+  (enum=? (a 'idle) (b 'idle)))   → #f
+```
+
+Variants are namespaced by their enumtype, so many enum types may each declare a
+variant with the same name.
+
+Type predicate:
+
+```menai
+(enum? (state 'idle))  → #t
+(enum? state)          → #f   ; enumtype value, not an instance
+```
+
+Enum values are hashable unconditionally, and support no arithmetic, ordering, or
+bitwise operations: `(integer+ (state 'idle) 1)` is a type error.
+
+An enum is matched with the enumtype as the pattern head and a quoted variant to
+select:
+
+```menai
+(match (state 'running)
+  ((state 'idle) "idle")
+  ((state 'running) "running")
+  (_ "other"))
+→ "running"
+```
+
+An enum pattern is total: matching a value of another type falls through to the next
+arm rather than raising. A `match` whose arms are all enum patterns of the same type
+compiles to a jump table.
+
+See [Builtins — enum operations](builtins.md#enum-operations) for the full list of
+enum instance functions.
 
 ## function
 

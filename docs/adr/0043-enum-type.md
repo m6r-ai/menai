@@ -150,6 +150,8 @@ The enumtype operations mirror the structtype operations:
 | Operation | Result |
 |---|---|
 | `(enumtype? x)` | `#t` if `x` is an enumtype value |
+| `(enumtype=? a b)` | `#t` if `a` and `b` are the same enum type |
+| `(enumtype!=? a b)` | negation of `enumtype=?` |
 | `(enumtype-name state)` | `"state"` |
 | `(enumtype-variants state)` | `('idle 'running 'stopped)` |
 

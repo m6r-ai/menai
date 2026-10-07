@@ -964,6 +964,112 @@ See [Pattern matching — struct destructuring](pattern_matching.md#struct-destr
 
 ---
 
+## Enumtype operations
+
+Enumtype values are produced by `(enum (variant1 variant2 ...))` as the RHS of a
+`let`, `let*`, or `letrec` binding. The binding name becomes the type name.
+
+```menai
+(let ((state (enum (idle running stopped))))
+  state)                         ; <enumtype state (idle running stopped)>
+```
+
+### Predicates and equality
+
+| Function | Description |
+|----------|-------------|
+| `(enumtype? x)` | `→ #t` if x is an enumtype value |
+| `(enumtype=? a b)` | `→ #t` if a and b are the same enum type (same tag) |
+| `(enumtype!=? a b)` | Negation |
+
+### Introspection
+
+| Function | Description |
+|----------|-------------|
+| `(enumtype-name type-val)` | Type name as string |
+| `(enumtype-variants type-val)` | List of variant name symbols, in declaration order |
+
+```menai
+(let ((state (enum (idle running stopped))))
+  (enumtype? state))               → #t
+(let ((state (enum (idle running stopped))))
+  (enumtype? (state 'idle)))       → #f   ; instance, not type
+(let ((state (enum (idle running stopped))))
+  (enumtype-name state))           → "state"
+(let ((state (enum (idle running stopped))))
+  (enumtype-variants state))       → (idle running stopped)
+```
+
+Enum-type values are hashable and can be used as set members or dict keys.
+
+---
+
+## Enum operations
+
+Enum instances are created by calling an enumtype value with a quoted variant name:
+
+```menai
+(let ((state (enum (idle running stopped))))
+  (state 'idle))   ; creates a state value at variant idle
+```
+
+### Predicates
+
+| Function | Description |
+|----------|-------------|
+| `(enum? x)` | `→ #t` for any enum value, `#f` for anything else |
+
+```menai
+(let ((state (enum (idle running))))
+  (enum? (state 'idle)))           → #t
+(let ((state (enum (idle running))))
+  (enum? state))                   → #f   ; enumtype value, not an instance
+```
+
+### Equality
+
+| Function | Description |
+|----------|-------------|
+| `(enum=? a b)` | `→ #t` if same enum type and same variant |
+| `(enum!=? a b)` | Negation |
+
+### Introspection
+
+| Function | Description |
+|----------|-------------|
+| `(enum-variant instance)` | Returns the variant name symbol for a given instance |
+
+```menai
+(let ((state (enum (idle running))))
+  (enum-variant (state 'running)))   → running
+```
+
+### Nominal typing
+
+Two enum types with identical variant names are distinct types:
+
+```menai
+(let ((a (enum (idle running)))
+      (b (enum (idle running))))
+  (enum=? (a 'idle) (b 'idle)))
+→ #f
+```
+
+### Hashability
+
+Enum values are hashable unconditionally and can be used as set members or dict keys.
+
+### No arithmetic
+
+Enum values support no arithmetic, ordering, or bitwise operations:
+`(integer+ (state 'idle) 1)` is a type error.
+
+### Pattern matching
+
+See [Pattern matching — enum patterns](pattern_matching.md#enum-patterns).
+
+---
+
 ## Symbol
 
 | Function | Description |

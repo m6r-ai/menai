@@ -142,6 +142,33 @@ class TestEnumIntrospection:
         assert menai.evaluate_and_format('(enumtype? 5)') == '#f'
         assert menai.evaluate_and_format('(enumtype? "x")') == '#f'
 
+    def test_enumtype_equality(self, menai):
+        """enumtype=? compares enum types by identity."""
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (idle running)))'
+            '      (B (enum (idle running))))'
+            '  (enumtype=? A A))'
+        ) == '#t'
+
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (idle running)))'
+            '      (B (enum (idle running))))'
+            '  (enumtype=? A B))'
+        ) == '#f'
+
+    def test_enumtype_inequality(self, menai):
+        """enumtype!=? is the negation of enumtype=?."""
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (idle running)))'
+            '      (B (enum (idle running))))'
+            '  (enumtype!=? A B))'
+        ) == '#t'
+
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (idle running))))'
+            '  (enumtype!=? A A))'
+        ) == '#f'
+
 
 class TestEnumHashability:
     """Test that enum values are usable as dict and set keys."""

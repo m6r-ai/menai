@@ -484,9 +484,11 @@ class Opcode(IntEnum):
     ENUM_NEQ_P = _op(349, 2, _FOLD_SRC01)           # r_dest = (enum!=? r_src0 r_src1)
     ASSERT_ENUM = _op(350, 1)                       # Check r_src0 — assert r_src0 is enum
     ASSERT_ENUMTYPE = _op(351, 1)                   # Check r_src0 — assert r_src0 is enumtype
+    ENUMTYPE_EQ_P = _op(352, 2, _FOLD_SRC01)        # r_dest = (enumtype=? r_src0 r_src1)
+    ENUMTYPE_NEQ_P = _op(353, 2, _FOLD_SRC01)       # r_dest = (enumtype!=? r_src0 r_src1)
 
     # Control flow (enum jump table)
-    SWITCH_ENUM = _op(352, 2)                       # SWITCH_ENUM r_src0, jt[src1] — dense enum jump table dispatch
+    SWITCH_ENUM = _op(354, 2)                       # SWITCH_ENUM r_src0, jt[src1] — dense enum jump table dispatch
 
 
 # Packed instruction encoding
@@ -675,6 +677,12 @@ class Instruction:
 
         if opcode == Opcode.SWITCH_ENUM:
             return f"SWITCH_ENUM {rn(self.src0)}, jt{self.src1}"
+
+        if opcode == Opcode.ENUMTYPE_EQ_P:
+            return f"{rn(self.dest)} = ENUMTYPE_EQ_P {rn(self.src0)}, {rn(self.src1)}"
+
+        if opcode == Opcode.ENUMTYPE_NEQ_P:
+            return f"{rn(self.dest)} = ENUMTYPE_NEQ_P {rn(self.src0)}, {rn(self.src1)}"
 
         if opcode == Opcode.MAKE_CLOSURE:
             return f"{rn(self.dest)} = MAKE_CLOSURE x{self.src0}"

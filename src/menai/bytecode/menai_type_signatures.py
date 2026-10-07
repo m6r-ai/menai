@@ -240,6 +240,8 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'structtype-fields': (['structtype'], 'list'),
     'enum?': (['any'], 'boolean'),
     'enumtype?': (['any'], 'boolean'),
+    'enumtype=?': (['enumtype', 'enumtype'], 'boolean'),
+    'enumtype!=?': (['enumtype', 'enumtype'], 'boolean'),
     'enumtype-name': (['enumtype'], 'string'),
     'enumtype-variants': (['enumtype'], 'list'),
     'enum-variant': (['enum'], 'symbol'),

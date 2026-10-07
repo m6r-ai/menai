@@ -43,9 +43,11 @@ to focus on making Menai fast enough to do these things natively.
 ## The language
 
 Menai has a rich but strict type system.  Integers are arbitrary precision, and there
-are floats, complex numbers, strings, booleans, symbols, bytes, and structs.  Menai has
-a useful set of containers including lists, dictionaries, and sets.  It also has vectors
-for index-heavy code where a list's O(n) random access is a bottleneck.
+are floats, complex numbers, strings, booleans, symbols, bytes, structs, and enums.  An
+enum is a closed set of named variants, compared for identity only — the shape of a
+state machine or an option argument.  Menai has a useful set of containers including
+lists, dictionaries, and sets.  It also has vectors for index-heavy code where a list's
+O(n) random access is a bottleneck.
 
 Everything is dynamically typed, but every low-level operation is strictly typed.
 There is no implicit coercion: `integer+` adds integers and raises an error if you

@@ -160,6 +160,33 @@ destructuring:
   (_ 0))
 ```
 
+## Enum patterns
+
+An enum pattern `(TypeName 'variant)` matches an enum value of the given type at the
+given variant. The enumtype is the pattern head and the variant is a quoted symbol:
+
+```menai
+(let ((state (enum (idle running stopped))))
+  (match (state 'running)
+    ((state 'idle) "idle")
+    ((state 'running) "running")
+    ((state 'stopped) "stopped")))
+→ "running"
+```
+
+The enumtype in the pattern must be a value that is in scope. An enum pattern binds
+no variables — the variant is a name, not a binding — so it never shadows a name.
+
+An enum pattern is total. Matching a value of another type does not raise; it falls
+through to the next arm, so a wildcard arm catches it:
+
+```menai
+(match 5
+  ((state 'idle) "idle")
+  (_ "not an enum"))
+→ "not an enum"
+```
+
 ## First match wins
 
 Patterns are tested top to bottom. Put more specific patterns before more general

@@ -308,6 +308,34 @@ Syntax: (operator arg1 arg2 ...)
 - Fields: (structtype-fields point) → ('x 'y) list of field name symbols (takes a structtype value)
 - Get structtype from instance: (struct-type p) → returns the structtype value (e.g. point) for a given instance
 
+## Enums:
+
+- Nominal, closed sets of named variants, compared for identity only — two enum types with the same variant names are distinct types
+- Declaration: (enum (variant1 variant2 ...)) — valid as the RHS of a let, let*, or letrec binding; at least one variant is required and variant names must be unique
+- An enum definition produces an enumtype value (a type descriptor), not an enum instance
+- (let ((state (enum (idle running stopped)))) ...) → binds state to an enumtype value; the binding name becomes the type name
+- Construction: call the enumtype value with a quoted variant name: (state 'idle) → a state value at variant idle
+- Variants are namespaced by their enumtype, so many enum types may each have a variant with the same name
+- Constructing an undeclared variant, or passing an unquoted name, is a compile-time error
+- Type predicate (any enum): (enum? x) → #t for any enum value, #f for anything else
+- Equality: (enum=? a b) → #t if same enum type and same variant; (enum!=? a b) → negation
+- Display format: (state idle) — display-only; construction always uses (TypeName 'variant)
+- Pattern matching: (match s ((state 'idle) "i") ((state 'running) "r") (_ "other")) — the enumtype is the pattern head and the variant is a quoted symbol
+- An enum pattern is total: matching a value of another type falls through to the next arm rather than raising
+- A match whose arms are all enum patterns of the same type compiles to a jump table
+- Hashability: enum values are hashable unconditionally (usable as set members or dict keys)
+- No arithmetic, ordering, or bitwise operations: (integer+ (state 'idle) 1) is a type error
+- Enums are nominal: two enum types with identical variant names are distinct types
+
+## Enumtype operations:
+
+- An enumtype is the type descriptor produced by (enum (variant ...)) — distinct from enum instances
+- Type predicate: (enumtype? state) → #t if state is an enumtype value; (enumtype? s) → #f if s is an enum instance
+- Equality: (enumtype=? state state) → #t; (enumtype=? state other) → #f (different types); (enumtype!=? state other) → #t
+- Name: (enumtype-name state) → "state" (takes an enumtype value, not an instance)
+- Variants: (enumtype-variants state) → ('idle 'running 'stopped) list of variant name symbols, in declaration order (takes an enumtype value)
+- Get variant from instance: (enum-variant (state 'running)) → running (returns the variant name symbol)
+
 ## Bytes operations:
 
 - Immutable sequences of bytes (octets, 0–255); no literal syntax — create via string-hex->bytes, string->bytes, or list->bytes
@@ -463,6 +491,7 @@ Syntax: (operator arg1 arg2 ...)
 - Predicate patterns: (? pred var) — pred can be any expression, including user-defined predicates: (? integer? n), (? string? s), (? my-pred? x)
 - Empty list: (match lst (() "empty") ((x) "singleton") (_ "multiple"))
 - List destructuring: (match lst ((a b c) (integer+ a b c)) ((head . tail) (list-prepend tail head)))
+- Enum variants: (match s ((state 'idle) "i") ((state 'running) "r") (_ "other")) — the enumtype is the pattern head, the variant a quoted symbol
 - Nested patterns: (match data (((? integer? x) (? string? y)) (list x y)) (_ "no match"))
 - First match wins: patterns are tested in order, use specific patterns before general ones
 - Example: (match data (42 "answer") ((? integer? n) (integer* n 2)) ((? string? s) (string-upcase s)) ((head . tail) (list head (list-length tail))) (_ "unknown"))
