@@ -93,6 +93,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeListInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeStructInstr,
+    MenaiCFGMakeEnumInstr,
     MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
     MenaiCFGPatchClosureInstr,
@@ -103,6 +104,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
     MenaiCFGSwitchTerm,
+    MenaiCFGSwitchEnumTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
@@ -188,6 +190,7 @@ _VALUE_INSTR_TYPES = (
     MenaiCFGApplyInstr,
     MenaiCFGMakeClosureInstr,
     MenaiCFGMakeStructInstr,
+    MenaiCFGMakeEnumInstr,
     MenaiCFGMakeListInstr,
     MenaiCFGMakeVectorInstr,
     MenaiCFGMakeSetInstr,
@@ -1175,6 +1178,9 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         if isinstance(instr, MenaiCFGMakeStructInstr):
             return TypeFact(kind='struct', struct_type=instr.struct_type)
 
+        if isinstance(instr, MenaiCFGMakeEnumInstr):
+            return TypeFact(kind='enum', enum_type=instr.enum_type)
+
         if isinstance(instr, MenaiCFGStructGetIndexedInstr):
             return ANY
 
@@ -1785,6 +1791,9 @@ def _instr_value_uses(instr: object) -> list[int]:
     if isinstance(instr, MenaiCFGMakeStructInstr):
         return [arg.id for arg in instr.args]
 
+    if isinstance(instr, MenaiCFGMakeEnumInstr):
+        return []
+
     if isinstance(instr, MenaiCFGMakeListInstr):
         return [arg.id for arg in instr.args]
 
@@ -1812,6 +1821,9 @@ def _term_value_uses(term: object) -> list[int]:
         return [term.cond.id]
 
     if isinstance(term, MenaiCFGSwitchTerm):
+        return [term.value.id]
+
+    if isinstance(term, MenaiCFGSwitchEnumTerm):
         return [term.value.id]
 
     if isinstance(term, MenaiCFGReturnTerm):

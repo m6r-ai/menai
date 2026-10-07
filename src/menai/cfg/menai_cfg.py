@@ -389,6 +389,24 @@ class MenaiCFGSwitchTerm:
 
 
 @dataclass
+class MenaiCFGSwitchEnumTerm:
+    """
+    Dense enum switch on `value`.
+
+    Lowered to the SWITCH_ENUM opcode by the VM codegen.  `targets[i]` is the id
+    of the block jumped to when the scrutinee is the variant at index i.  Unlike
+    the integer switch there is no `min` and no None holes: enum variant indices
+    are dense (0..nvariants-1) by construction, so the table always covers the
+    whole range.  The scrutinee is guaranteed enum (an enum guard is inserted by
+    MenaiCFGGuardInsertion when the type is not statically known), so no runtime
+    type dispatch is needed.
+    """
+    value: MenaiCFGValue
+    targets: tuple[int, ...]
+    default_block: int
+
+
+@dataclass
 class MenaiCFGReturnTerm:
     """Return `value` from the current function."""
     value: MenaiCFGValue
@@ -458,6 +476,7 @@ MenaiCFGTerminator = (  # pylint: disable=invalid-name
     MenaiCFGJumpTerm
     | MenaiCFGBranchTerm
     | MenaiCFGSwitchTerm
+    | MenaiCFGSwitchEnumTerm
     | MenaiCFGReturnTerm
     | MenaiCFGTailCallTerm
     | MenaiCFGTailApplyTerm
@@ -656,6 +675,12 @@ def _fmt_term(term: MenaiCFGTerminator) -> str:
         )
         return f"switch {term.value} min={term.min} [{arms}] default=block{term.default_block}"
 
+    if isinstance(term, MenaiCFGSwitchEnumTerm):
+        arms = ", ".join(
+            f"{i}: block{t}" for i, t in enumerate(term.targets)
+        )
+        return f"switch-enum {term.value} [{arms}] default=block{term.default_block}"
+
     if isinstance(term, MenaiCFGReturnTerm):
         return f"return {term.value}"
 
@@ -699,6 +724,11 @@ def successor_ids(term: MenaiCFGTerminator | None) -> list[int]:
 
     if isinstance(term, MenaiCFGSwitchTerm):
         targets = [t for t in term.targets if t is not None]
+        targets.append(term.default_block)
+        return targets
+
+    if isinstance(term, MenaiCFGSwitchEnumTerm):
+        targets = list(term.targets)
         targets.append(term.default_block)
         return targets
 
@@ -783,6 +813,18 @@ def remap_term(
             min=term.min,
             targets=new_targets,
             default_block=new_default,
+        )
+
+    if isinstance(term, MenaiCFGSwitchEnumTerm):
+        new_enum_targets = tuple(remap_block(t) for t in term.targets)
+        new_enum_default = remap_block(term.default_block)
+        if new_enum_targets == term.targets and new_enum_default == term.default_block:
+            return term
+
+        return MenaiCFGSwitchEnumTerm(
+            value=term.value,
+            targets=new_enum_targets,
+            default_block=new_enum_default,
         )
 
     if isinstance(term, MenaiCFGSelfLoopTerm) and term.target is not None:
@@ -870,6 +912,9 @@ def value_ids_in_term(term: 'MenaiCFGTerminator') -> list[int]:
         return [term.cond.id]
 
     if isinstance(term, MenaiCFGSwitchTerm):
+        return [term.value.id]
+
+    if isinstance(term, MenaiCFGSwitchEnumTerm):
         return [term.value.id]
 
     if isinstance(term, MenaiCFGTailCallTerm):

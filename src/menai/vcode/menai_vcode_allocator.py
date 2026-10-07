@@ -87,6 +87,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeReturnIf,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
+    MenaiVCodeSwitchEnum,
     MenaiVCodeTailApply,
     MenaiVCodeTailCall,
 )
@@ -688,7 +689,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, MenaiVCodeJumpIfFalse):
         return [], [instr.cond.id]
 
-    if isinstance(instr, MenaiVCodeSwitch):
+    if isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
         return [], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeReturn):
@@ -795,7 +796,7 @@ def _use_requires_local_slot(instr: MenaiVCodeInstr, reg_id: int) -> bool:
     if isinstance(instr, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
         return instr.cond.id == reg_id
 
-    if isinstance(instr, MenaiVCodeSwitch):
+    if isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
         return instr.src.id == reg_id
 
     if isinstance(instr, (MenaiVCodeCall, MenaiVCodeTailCall)):

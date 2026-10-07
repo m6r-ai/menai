@@ -669,17 +669,17 @@ callable, and `(state 'idle)` constructs a value. A `match` names the enumtype a
 pattern head and the variant as a quoted symbol: `((state 'idle) ...)`. Variants are
 namespaced by their enumtype, which is what lets many enum types coexist.
 
-A `match` over an enum with no `_` arm must name every variant; omitting one is a
-compile-time error, not a warning. Enum values are hashable unconditionally, and
-support no arithmetic, ordering, or bitwise operations.
+Enum values are hashable unconditionally, and support no arithmetic, ordering, or
+bitwise operations. An enum pattern is total: matching a value of another type falls
+through rather than raising. A `match` over an enum is fused into a dense `SWITCH_ENUM`
+jump table by `MenaiCFGEnumSwitchDispatch`, mirroring the integer
+`MenaiCFGSwitchDispatch`.
 
-This ADR decides the **bare-tag** enum only; a variant carries no payload. Three
-constraints keep the later tagged union an addition rather than a migration, and all
-three are easy to violate accidentally: the C VM must allocate an enum with the
-struct's inline trailing-array layout even though a bare tag has zero entries;
-exhaustiveness must be computed as a variant set, not as a comparison of arm tags
-against the variant list; and non-exhaustiveness must be an error, because a warning
-could not be tightened later without breaking programs.
+This ADR decides the **bare-tag** enum only; a variant carries no payload. Exhaustiveness
+checking is **not implemented**: a `match` over an enum that omits a variant is not
+currently rejected, and the ADR records that when it is added it must be an error
+rather than a warning, and must be computed as a variant set so that it extends to
+nested patterns.
 See [ADR-0043](docs/adr/0043-enum-type.md).
 
 ## VM implementation

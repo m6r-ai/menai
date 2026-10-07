@@ -72,6 +72,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
+    MenaiVCodeSwitchEnum,
     MenaiVCodeReg,
     MenaiVCodeReturn,
     MenaiVCodeReturnIf,
@@ -645,6 +646,26 @@ class MenaiBytecodeBuilder:
                 for slot_i, label in enumerate(instr.labels):
                     if label in label_index:
                         table_targets[slot_i] = label_index[label]
+
+                    else:
+                        forward_table_entries.append((table_idx, slot_i, label))
+
+                i += 1
+                continue
+
+            if isinstance(instr, MenaiVCodeSwitchEnum):
+                src_slot = ctx.slot_of(instr.src)
+                enum_targets: list[int] = [0] * len(instr.labels)
+                default_target = label_index.get(instr.default_label, 0)
+                # Variant indices are dense from 0, so the table min is always 0.
+                table_idx = ctx.add_jump_table(0, default_target, enum_targets)
+                ctx.emit(Opcode.SWITCH_ENUM, src_slot, table_idx)
+                if instr.default_label not in label_index:
+                    forward_table_entries.append((table_idx, -1, instr.default_label))
+
+                for slot_i, label in enumerate(instr.labels):
+                    if label in label_index:
+                        enum_targets[slot_i] = label_index[label]
 
                     else:
                         forward_table_entries.append((table_idx, slot_i, label))

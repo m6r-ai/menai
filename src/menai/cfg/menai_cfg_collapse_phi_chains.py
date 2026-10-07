@@ -90,6 +90,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGStructGetIndexedInstr,
     MenaiCFGStructWithIndexedInstr,
     MenaiCFGSwitchTerm,
+    MenaiCFGSwitchEnumTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGTerminator,
@@ -499,6 +500,9 @@ def _substitute_value_in_term(
         return replace(term, cond=sub(term.cond))
 
     if isinstance(term, MenaiCFGSwitchTerm):
+        return replace(term, value=sub(term.value))
+
+    if isinstance(term, MenaiCFGSwitchEnumTerm):
         return replace(term, value=sub(term.value))
 
     if isinstance(term, MenaiCFGReturnTerm):

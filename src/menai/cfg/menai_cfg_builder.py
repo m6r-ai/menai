@@ -294,7 +294,7 @@ class MenaiCFGBuilder:
             return self._build_struct(ir, block, scope, state)
 
         if isinstance(ir, MenaiIRBuildEnum):
-            return self._build_enum(ir, block, scope, state)
+            return self._build_enum(ir, block, state)
 
         if isinstance(ir, MenaiIRReturn):
             # MenaiIRReturn is the IR tree's explicit return wrapper.
@@ -964,7 +964,6 @@ class MenaiCFGBuilder:
         self,
         ir: MenaiIRBuildEnum,
         block: _DraftBlock,
-        scope: MenaiCFGScope,
         state: _FunctionState,
     ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """

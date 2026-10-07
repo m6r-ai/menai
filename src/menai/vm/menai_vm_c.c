@@ -937,6 +937,21 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_SWITCH_ENUM: {
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            const MenaiJumpTable *t = &frame->code_obj->jump_tables[src1];
+            MenaiEnum *e = (MenaiEnum *)frame_regs[src0];
+            long long target = (long long)e->variant_index - t->min;
+
+            if (target >= 0 && target < (long long)t->count) {
+                frame->ip = t->targets[target];
+                break;
+            }
+
+            frame->ip = t->default_target;
+            break;
+        }
+
         case OP_RAISE_ERROR: {
             MenaiValue *val = operand(constants_items, frame_regs, src0, tag & 1);
 

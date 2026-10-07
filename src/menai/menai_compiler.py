@@ -34,6 +34,7 @@ from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_struct_instance_fold import MenaiCFGStructInstanceFold
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
+from menai.cfg.menai_cfg_enum_switch_dispatch import MenaiCFGEnumSwitchDispatch
 from menai.cfg.menai_cfg import MenaiCFGFunction
 from menai.cfg.menai_cfg_optimization_pass import MenaiCFGContext, MenaiCFGOptimizationPass
 from menai.ir.menai_ir_builder import MenaiIRBuilder
@@ -102,6 +103,7 @@ class MenaiCompiler:
             MenaiCFGBranchConstProp(),
             MenaiCFGSimplifyBlocks(),
             MenaiCFGSwitchDispatch(),
+            MenaiCFGEnumSwitchDispatch(),
             MenaiCFGInterprocTypeAnalysis(),
             MenaiCFGStructInstanceFold(),
             MenaiCFGPredicateFold(),

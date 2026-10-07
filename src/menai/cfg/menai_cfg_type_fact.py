@@ -24,11 +24,15 @@ Join rules:
     Known(k) ⊔ Known(k)      = Known(k)                (k != 'struct')
     Known('struct', t) ⊔ Known('struct', t) = Known('struct', t)
     Known('struct', t1) ⊔ Known('struct', t2) = Known('struct', None)  (t1 != t2)
+    Known('enum', t) ⊔ Known('enum', t) = Known('enum', t)
+    Known('enum', t1) ⊔ Known('enum', t2) = Known('enum', None)  (t1 != t2)
     Known(k1) ⊔ Known(k2)    = ANY                     (k1 != k2)
 
 A join of two different struct types yields Known('struct', None): the value is
 still known to be a struct, but its specific type identity is lost, so field
-accesses cannot be resolved to indices.
+accesses cannot be resolved to indices.  The enum case is analogous: a join of
+two different enum types yields Known('enum', None), so the value is still known
+to be an enum but its specific type identity is lost.
 """
 
 from dataclasses import dataclass
@@ -47,6 +51,8 @@ from menai.menai_value import (
     MenaiString,
     MenaiStruct,
     MenaiStructType,
+    MenaiEnum,
+    MenaiEnumType,
     MenaiSymbol,
     MenaiVector,
 )
@@ -67,6 +73,8 @@ _VALUE_TYPE_MAP = {
     MenaiBytes: 'bytes',
     MenaiStruct: 'struct',
     MenaiStructType: 'structtype',
+    MenaiEnum: 'enum',
+    MenaiEnumType: 'enumtype',
 }
 
 
@@ -86,6 +94,7 @@ class TypeFact:
     """
     kind: str
     struct_type: MenaiStructType | None = None
+    enum_type: MenaiEnumType | None = None
 
     def is_bottom(self) -> bool:
         """True if no type information is known yet."""
@@ -103,6 +112,10 @@ class TypeFact:
         """True if this fact proves the value is a struct of the given type."""
         return self.kind == 'struct' and self.struct_type == struct_type
 
+    def is_enum_of(self, enum_type: MenaiEnumType) -> bool:
+        """True if this fact proves the value is an enum of the given type."""
+        return self.kind == 'enum' and self.enum_type == enum_type
+
 
 BOTTOM = TypeFact(kind='bottom')
 ANY = TypeFact(kind='any')
@@ -117,6 +130,9 @@ def fact_for_value(value: object) -> TypeFact:
     """
     if isinstance(value, MenaiStruct):
         return TypeFact(kind='struct', struct_type=value.struct_type)
+
+    if isinstance(value, MenaiEnum):
+        return TypeFact(kind='enum', enum_type=value.enum_type)
 
     for cls, name in _VALUE_TYPE_MAP.items():
         if isinstance(value, cls):
@@ -146,5 +162,8 @@ def join(a: TypeFact, b: TypeFact) -> TypeFact:
 
     if a.kind == 'struct' and a.struct_type != b.struct_type:
         return TypeFact(kind='struct')
+
+    if a.kind == 'enum' and a.enum_type != b.enum_type:
+        return TypeFact(kind='enum')
 
     return a

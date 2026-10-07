@@ -384,6 +384,19 @@ class MenaiVCodeSwitch:
 
 
 @dataclass
+class MenaiVCodeSwitchEnum:
+    """
+    Dense enum switch: jump to labels[src.variant_index] when src holds an enum
+    value, else to default_label.  Variant indices are dense (0..n-1) by
+    construction, so there is no `min` and no absent-arm entries.  Lowered to
+    SWITCH_ENUM with a jump-table index.
+    """
+    src: MenaiVCodeReg
+    labels: tuple[str, ...]
+    default_label: str
+
+
+@dataclass
 class MenaiVCodeReturn:
     """
     Return value from the current function.
@@ -457,6 +470,7 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodeJumpIfTrue
     | MenaiVCodeJumpIfFalse
     | MenaiVCodeSwitch
+    | MenaiVCodeSwitchEnum
     | MenaiVCodeReturn
     | MenaiVCodeReturnIf
     | MenaiVCodeRaise

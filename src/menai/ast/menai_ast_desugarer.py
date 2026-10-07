@@ -20,10 +20,12 @@ from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTSymbol, MenaiASTList, MenaiASTInteger,
     MenaiASTFloat, MenaiASTComplex, MenaiASTString, MenaiASTBoolean, MenaiASTNone,
     MenaiASTStruct, MenaiASTEnum, MenaiASTBytes, MenaiASTNamespace,
+    MenaiASTConstant,
 )
 from menai.ast.menai_ast_dependency_analyzer import MenaiASTDependencyAnalyzer
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
+from menai.menai_value import MenaiEnum
 
 
 # Builtin names recognised by the name-based rewrites below.  These are module
@@ -1406,6 +1408,9 @@ class MenaiASTDesugarer:
         #   - A maximal contiguous run of literal arms sharing the same type
         #     (integer, float, complex, boolean, string).  These can share a
         #     single hoisted type guard, with bare equality checks per arm.
+        #   - A maximal contiguous run of enum variant arms naming the same enum
+        #     type.  These likewise share a single hoisted enum guard, with bare
+        #     equality checks per arm.
         #   - A single non-literal arm (wildcard, variable binding, predicate
         #     pattern, list/cons pattern) processed individually as before.
         #
@@ -1418,7 +1423,8 @@ class MenaiASTDesugarer:
         ))
 
         # Partition into groups: list of (group_type, [clause, ...])
-        # group_type is the Python AST class for literal groups, or None for singles.
+        # group_type is the Python AST class for literal groups, the MenaiASTEnum
+        # for enum groups, or None for singles.
         groups: list[tuple[Any, list[MenaiASTNode]]] = []
         i = 0
         while i < len(clauses):
@@ -1443,6 +1449,24 @@ class MenaiASTDesugarer:
                 groups.append((lit_type, group))
                 i = j
 
+            elif (enum_type := self._enum_pattern_type(pattern)) is not None:
+                # Start or extend an enum group of this enum type.  Grouping is
+                # by enum type identity so the hoisted guard proves the right
+                # type for every arm it covers.
+                group = [clause]
+                j = i + 1
+                while j < len(clauses):
+                    next_clause = clauses[j]
+                    assert isinstance(next_clause, MenaiASTList)
+                    if self._enum_pattern_type(next_clause.elements[0]) is not enum_type:
+                        break
+
+                    group.append(next_clause)
+                    j += 1
+
+                groups.append((enum_type, group))
+                i = j
+
             else:
                 groups.append((None, [clause]))
                 i += 1
@@ -1452,8 +1476,13 @@ class MenaiASTDesugarer:
 
         for group_type, group_clauses in reversed(groups):
             if group_type is not None:
-                # Literal group: hoist a single type guard over all arms.
-                result = self._build_literal_group(temp_var, group_type, group_clauses, result)
+                if isinstance(group_type, MenaiASTEnum):
+                    # Enum group: hoist a single enum guard over all arms.
+                    result = self._build_enum_group(temp_var, group_clauses, result)
+
+                else:
+                    # Literal group: hoist a single type guard over all arms.
+                    result = self._build_literal_group(temp_var, group_type, group_clauses, result)
 
             else:
                 # Single non-literal clause: use the original per-arm path.
@@ -1488,6 +1517,31 @@ class MenaiASTDesugarer:
             return type(pattern)
 
         return None
+
+    def _enum_pattern_type(self, pattern: MenaiASTNode) -> MenaiASTEnum | None:
+        """
+        Return the MenaiASTEnum for an enum variant pattern (TypeName 'variant),
+        or None if the pattern is not an enum variant pattern.
+
+        Grouping is by enum type identity, not by the pattern's Python class:
+        two arms naming the same enum type share one hoisted (enum? tmp) guard,
+        while arms naming different enum types must not, because the guard
+        establishes the scrutinee's type for the arms it covers.
+        """
+        if not isinstance(pattern, MenaiASTList):
+            return None
+
+        if len(pattern.elements) != 2 or not isinstance(pattern.elements[0], MenaiASTSymbol):
+            return None
+
+        enum_node = self._lookup_enum(pattern.elements[0].name)
+        if enum_node is None:
+            return None
+
+        if _quoted_symbol_name(pattern.elements[1]) is None:
+            return None
+
+        return enum_node
 
     def _build_literal_group(
         self,
@@ -1537,6 +1591,64 @@ class MenaiASTDesugarer:
         # Wrap in the single type guard.
         type_test = MenaiASTList((MenaiASTSymbol(type_pred), tmp_sym))
         return MenaiASTList((MenaiASTSymbol('if'), type_test, inner, else_expr))
+
+    def _build_enum_group(
+        self,
+        temp_var: str,
+        clauses: list[MenaiASTNode],
+        else_expr: MenaiASTNode,
+    ) -> MenaiASTNode:
+        """
+        Build a type-guarded block for a run of enum variant arms of one enum type.
+
+        Emits:
+            (if ($enum? tmp)
+                (if ($enum=? tmp variant0) result0
+                (if ($enum=? tmp variant1) result1
+                    ...
+                    else_expr))
+                else_expr)
+
+        The enum guard is emitted once, exactly as _build_literal_group hoists
+        the type guard over a run of literal arms.  Each arm uses only the bare
+        equality check, so the emitted chain is the const / enum=? / branch shape
+        MenaiCFGEnumSwitchDispatch recognises and fuses into a SWITCH_ENUM jump
+        table.  Hoisting also keeps the pattern total: a scrutinee that is not an
+        enum fails the guard and falls through to else_expr.
+        """
+        tmp_sym = MenaiASTSymbol(temp_var)
+
+        # Build the inner equality chain right-to-left, falling through to else_expr.
+        inner: MenaiASTNode = else_expr
+        for clause in reversed(clauses):
+            assert isinstance(clause, MenaiASTList)
+            pattern = clause.elements[0]
+            assert isinstance(pattern, MenaiASTList)
+            enum_node = self._enum_pattern_type(pattern)
+            assert enum_node is not None
+
+            variant_name = _quoted_symbol_name(pattern.elements[1])
+            assert variant_name is not None
+
+            variant_const = MenaiASTConstant(
+                value=MenaiEnum(
+                    enum_node.to_runtime_value(),
+                    enum_node.variant_names.index(variant_name),
+                ),
+                line=pattern.line,
+                column=pattern.column,
+                source_file=pattern.source_file,
+            )
+
+            # Left undesugared: the generated structure is desugared once by
+            # _desugar_match, with the pattern's bindings in scope.
+            desugared_result = clause.elements[1]
+            eq_test = MenaiASTList((MenaiASTSymbol('$enum=?'), tmp_sym, variant_const))
+            inner = MenaiASTList((MenaiASTSymbol('if'), eq_test, desugared_result, inner))
+
+        # Wrap in the single enum guard.
+        enum_test = MenaiASTList((MenaiASTSymbol('$enum?'), tmp_sym))
+        return MenaiASTList((MenaiASTSymbol('if'), enum_test, inner, else_expr))
 
     def _build_clause_with_bindings(
         self,
@@ -1750,6 +1862,17 @@ class MenaiASTDesugarer:
                 n_fields = len(struct_node.field_names)
                 if n_patterns == n_fields:
                     return self._desugar_struct_pattern(pattern, temp_var)
+
+        # Enum variant pattern: (TypeName 'variant)
+        # Detected when the first element names an enum type in scope and the
+        # second is a quoted variant name.
+        if len(pattern.elements) == 2 and isinstance(pattern.elements[0], MenaiASTSymbol):
+            head_name = pattern.elements[0].name
+            enum_node = self._lookup_enum(head_name)
+            if enum_node is not None:
+                variant_name = _quoted_symbol_name(pattern.elements[1])
+                if variant_name is not None:
+                    return self._desugar_enum_pattern(pattern, temp_var, enum_node, variant_name)
 
         # Empty list pattern: ()
         if pattern.is_empty():
@@ -2227,6 +2350,56 @@ class MenaiASTDesugarer:
             (enum_node, variant_arg),
             expr
         )
+
+    def _desugar_enum_pattern(
+        self,
+        pattern: MenaiASTList,
+        temp_var: str,
+        enum_node: MenaiASTEnum,
+        variant_name: str,
+    ) -> tuple[MenaiASTNode, list[tuple[str, Any]]]:
+        """
+        Desugar an enum variant pattern (TypeName 'variant).
+
+        Emits an (and ($enum? tmp) ($enum=? tmp VariantConst)) test, where
+        VariantConst is the compile-time enum value for the variant.  The
+        enum? guard makes the test total, exactly as the integer literal
+        pattern's ($integer? tmp) guard does: enum=? raises on a non-enum
+        operand, so the guard short-circuits it for a value of the wrong type.
+
+        The enum=? test is the shape MenaiCFGEnumSwitchDispatch recognises, so a
+        match whose arms are all enum patterns is fused into a SWITCH_ENUM jump
+        table.
+
+        Args:
+            pattern: The enum pattern, e.g. (State 'idle)
+            temp_var: Name of temp variable holding the match value
+            enum_node: The MenaiASTEnum for this type
+            variant_name: The variant being matched
+
+        Returns:
+            (test_expression, []) — an enum pattern binds nothing.
+        """
+        variant_const = MenaiASTConstant(
+            value=MenaiEnum(enum_node.to_runtime_value(), enum_node.variant_names.index(variant_name)),
+            line=pattern.line,
+            column=pattern.column,
+            source_file=pattern.source_file,
+        )
+
+        enum_test = MenaiASTList((
+            MenaiASTSymbol('$enum?'),
+            MenaiASTSymbol(temp_var),
+        ))
+
+        eq_test = MenaiASTList((
+            MenaiASTSymbol('$enum=?'),
+            MenaiASTSymbol(temp_var),
+            variant_const,
+        ))
+
+        combined_test = self._make_and([enum_test, eq_test], pattern)
+        return (combined_test, [])
 
     def _desugar_struct_pattern(
         self,

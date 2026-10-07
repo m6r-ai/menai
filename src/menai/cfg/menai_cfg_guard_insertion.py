@@ -62,6 +62,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGFunction,
     MenaiCFGGuardInstr,
     MenaiCFGSwitchTerm,
+    MenaiCFGSwitchEnumTerm,
     predecessors_by_block,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
@@ -121,6 +122,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
 
             self._guard_branch(block, block_types, new_instrs, present)
             self._guard_switch(block, block_types, new_instrs, present)
+            self._guard_switch_enum(block, block_types, new_instrs, present)
 
             if len(new_instrs) != len(block.instrs):
                 block = replace_block_instrs(block, tuple(new_instrs))
@@ -247,6 +249,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
 
         self._guard_branch(block, block_types, scratch, present)
         self._guard_switch(block, block_types, scratch, present)
+        self._guard_switch_enum(block, block_types, scratch, present)
 
     @staticmethod
     def _existing_guards(
@@ -431,6 +434,38 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         ))
         types[term.value.id] = 'integer'
         present.add((term.value.id, 'integer'))
+
+    @staticmethod
+    def _guard_switch_enum(
+        block: MenaiCFGBlock,
+        types: dict[int, str | None],
+        new_instrs: list[MenaiCFGInstr],
+        present: set[tuple[int, str]],
+    ) -> None:
+        """
+        Insert an enum guard on an enum switch terminator's scrutinee if its
+        type is not statically known to be enum.
+
+        Appends a guard to new_instrs if needed and updates the types dict.
+        """
+        term = block.terminator
+        if not isinstance(term, MenaiCFGSwitchEnumTerm):
+            return
+
+        val_type = types.get(term.value.id)
+        if val_type == 'enum':
+            return
+
+        if (term.value.id, 'enum') in present:
+            types[term.value.id] = 'enum'
+            return
+
+        new_instrs.append(MenaiCFGGuardInstr(
+            value=term.value,
+            expected_type='enum',
+        ))
+        types[term.value.id] = 'enum'
+        present.add((term.value.id, 'enum'))
 
     def _refine_branch_types(
         self,

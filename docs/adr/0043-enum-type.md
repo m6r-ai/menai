@@ -177,9 +177,10 @@ An enum value is represented by its enumtype's tag and its variant's index, both
 integers assigned at compile time. The representation is fixed-width and does not grow
 with the number of variants or the size of the program.
 
-The C VM allocates an enum value with the same inline trailing-array layout that
-`MenaiStruct` uses (`menai_vm_struct.c`), even though a bare-tag variant has zero
-trailing entries. This is deliberate: see the first constraint under Scope below.
+The C VM allocates an enum value as a fixed-size object holding the enumtype pointer
+and the variant index. It does not use the inline trailing-array layout that
+`MenaiStruct` uses, because a bare-tag variant carries no trailing entries to store.
+See the first constraint under Scope below for why this was decided.
 
 ## Scope: bare tags now
 
@@ -189,20 +190,24 @@ A tagged union, in which a variant may carry a payload, is a larger feature — 
 requires a pattern-matrix exhaustiveness algorithm rather than a variant-set
 comparison, and it changes the value layout. It is not decided here.
 
-Three constraints are recorded so that the bare-tag enum does not foreclose it:
+Two constraints are recorded so that the bare-tag enum does not foreclose it:
 
-1. **The value layout must be the trailing-array layout from the start.** The C VM
-   allocates an enum with the same inline-array machinery as a struct, always with
-   zero entries. Adding payloads then becomes "allow a non-zero count" rather than
-   re-laying-out the type, which would touch every constructor, finalizer, equality,
-   and hash path.
+1. **The value layout does not pre-reserve payload space.** An earlier draft of this
+   ADR required the C VM to allocate an enum with the struct's inline trailing-array
+   machinery, always with zero entries, so that adding payloads later would be
+   "allow a non-zero count" rather than a re-layout. That requirement was dropped:
+   it is speculative work for a feature that may never be built, and the project's
+   YAGNI principle rejects speculative structure. A bare-tag enum is allocated as a
+   fixed-size object. If payloads are added later, the value layout changes then, and
+   that change touches the constructor, finalizer, equality, and hash paths — a cost
+   accepted deliberately rather than pre-paid.
 
 2. **Exhaustiveness must be computed as a variant set.** The checker asks which
    variants a pattern can match, and compares that set against the declared variants.
    It must not be written as a comparison of arm tags against the variant list, because
    that formulation does not extend to nested patterns.
 
-3. **Non-exhaustiveness must be an error, not a warning.** If it were a warning, a
+2. **Non-exhaustiveness must be an error, not a warning.** If it were a warning, a
    later payload-carrying enum could not tighten it without breaking programs that
    ignored the warning.
 

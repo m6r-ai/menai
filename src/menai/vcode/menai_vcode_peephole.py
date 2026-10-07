@@ -224,6 +224,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
     MenaiVCodeSwitch,
+    MenaiVCodeSwitchEnum,
     MenaiVCodeStructGetIndexed,
     MenaiVCodeStructWithIndexed,
     MenaiVCodeTailApply,
@@ -424,6 +425,13 @@ def _replace_reg(
         return MenaiVCodeSwitch(
             src=new_reg if instr.src.id == old_id else instr.src,
             min=instr.min,
+            labels=instr.labels,
+            default_label=instr.default_label,
+        )
+
+    if isinstance(instr, MenaiVCodeSwitchEnum):
+        return MenaiVCodeSwitchEnum(
+            src=new_reg if instr.src.id == old_id else instr.src,
             labels=instr.labels,
             default_label=instr.default_label,
         )
@@ -691,6 +699,7 @@ _BARRIER_TYPES = (
 _no_fallthrough_types = (
     MenaiVCodeJump,
     MenaiVCodeSwitch,
+    MenaiVCodeSwitchEnum,
     MenaiVCodeReturn,
     MenaiVCodeTailCall,
     MenaiVCodeTailApply,
@@ -718,7 +727,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
         return [], [instr.cond.id]
 
-    if isinstance(instr, MenaiVCodeSwitch):
+    if isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
         return [], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeReturn):
@@ -1191,7 +1200,7 @@ def _thread_jumps(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             targeted_labels.add(redirect.get(instr.label, instr.label))
 
-        elif isinstance(instr, MenaiVCodeSwitch):
+        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
             targeted_labels.add(redirect.get(instr.default_label, instr.default_label))
             for label in instr.labels:
                 targeted_labels.add(redirect.get(label, label))
@@ -1281,19 +1290,27 @@ def _thread_jumps(
             else:
                 result.append(instr)
 
-        elif isinstance(instr, MenaiVCodeSwitch):
+        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
             new_default = redirect.get(instr.default_label, instr.default_label)
             new_labels = tuple(redirect.get(l, l) for l in instr.labels)
             if new_default != instr.default_label or any(
                 nl != l for nl, l in zip(new_labels, instr.labels)
             ):
                 changed = True
-                result.append(MenaiVCodeSwitch(
-                    src=instr.src,
-                    min=instr.min,
-                    labels=new_labels,
-                    default_label=new_default,
-                ))
+                if isinstance(instr, MenaiVCodeSwitch):
+                    result.append(MenaiVCodeSwitch(
+                        src=instr.src,
+                        min=instr.min,
+                        labels=new_labels,
+                        default_label=new_default,
+                    ))
+
+                else:
+                    result.append(MenaiVCodeSwitchEnum(
+                        src=instr.src,
+                        labels=new_labels,
+                        default_label=new_default,
+                    ))
 
             else:
                 result.append(instr)
@@ -1389,7 +1406,7 @@ def _inline_jump_to_return(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             live_labels.add(instr.label)
 
-        elif isinstance(instr, MenaiVCodeSwitch):
+        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
             live_labels.add(instr.default_label)
             live_labels.update(instr.labels)
 
@@ -1519,7 +1536,7 @@ def _fold_conditional_return(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             targeted_labels.add(instr.label)
 
-        elif isinstance(instr, MenaiVCodeSwitch):
+        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
             targeted_labels.add(instr.default_label)
             targeted_labels.update(instr.labels)
 
@@ -1625,7 +1642,7 @@ def _fold_conditional_return(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             live_labels.add(instr.label)
 
-        elif isinstance(instr, MenaiVCodeSwitch):
+        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
             live_labels.add(instr.default_label)
             live_labels.update(instr.labels)
 

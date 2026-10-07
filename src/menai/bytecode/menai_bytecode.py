@@ -485,6 +485,9 @@ class Opcode(IntEnum):
     ASSERT_ENUM = _op(350, 1)                       # Check r_src0 — assert r_src0 is enum
     ASSERT_ENUMTYPE = _op(351, 1)                   # Check r_src0 — assert r_src0 is enumtype
 
+    # Control flow (enum jump table)
+    SWITCH_ENUM = _op(352, 2)                       # SWITCH_ENUM r_src0, jt[src1] — dense enum jump table dispatch
+
 
 # Packed instruction encoding
 #
@@ -669,6 +672,9 @@ class Instruction:
 
         if opcode == Opcode.SWITCH_INTEGER:
             return f"SWITCH_INTEGER {rn(self.src0)}, jt{self.src1}"
+
+        if opcode == Opcode.SWITCH_ENUM:
+            return f"SWITCH_ENUM {rn(self.src0)}, jt{self.src1}"
 
         if opcode == Opcode.MAKE_CLOSURE:
             return f"{rn(self.dest)} = MAKE_CLOSURE x{self.src0}"

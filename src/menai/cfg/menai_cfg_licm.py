@@ -145,6 +145,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGPhiInstr,
     MenaiCFGSelfLoopTerm,
     MenaiCFGSwitchTerm,
+    MenaiCFGSwitchEnumTerm,
     MenaiCFGValue,
     blocks_by_id,
     predecessors,
@@ -928,6 +929,11 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         if isinstance(term, MenaiCFGSwitchTerm):
             targets = [t for t in term.targets if t is not None]
+            targets.append(term.default_block)
+            return targets
+
+        if isinstance(term, MenaiCFGSwitchEnumTerm):
+            targets = list(term.targets)
             targets.append(term.default_block)
             return targets
 
