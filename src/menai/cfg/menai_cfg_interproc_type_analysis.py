@@ -103,7 +103,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
-    MenaiCFGSwitchTerm,
+    MenaiCFGSwitchIntegerTerm,
     MenaiCFGSwitchEnumTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
@@ -1820,7 +1820,7 @@ def _term_value_uses(term: object) -> list[int]:
     if isinstance(term, MenaiCFGBranchTerm):
         return [term.cond.id]
 
-    if isinstance(term, MenaiCFGSwitchTerm):
+    if isinstance(term, MenaiCFGSwitchIntegerTerm):
         return [term.value.id]
 
     if isinstance(term, MenaiCFGSwitchEnumTerm):

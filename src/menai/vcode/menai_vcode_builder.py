@@ -69,7 +69,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
-    MenaiCFGSwitchTerm,
+    MenaiCFGSwitchIntegerTerm,
     MenaiCFGSwitchEnumTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
@@ -103,7 +103,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeStructGetIndexed,
     MenaiVCodeStructWithIndexed,
     MenaiVCodeRaise,
-    MenaiVCodeSwitch,
+    MenaiVCodeSwitchInteger,
     MenaiVCodeSwitchEnum,
     MenaiVCodeGuard,
     MenaiVCodeReg,
@@ -217,7 +217,7 @@ class MenaiVCodeBuilder:
             elif isinstance(term, MenaiCFGBranchTerm):
                 successors = [term.true_block, term.false_block]
 
-            elif isinstance(term, MenaiCFGSwitchTerm):
+            elif isinstance(term, MenaiCFGSwitchIntegerTerm):
                 successors = [t for t in term.targets if t is not None]
                 successors.append(term.default_block)
 
@@ -429,10 +429,10 @@ class MenaiVCodeBuilder:
                 instrs.append(MenaiVCodeRaise(message=MenaiVCodeOperand.of_reg(msg_reg)))
                 max_reg_id = max(max_reg_id, term.message.id)
 
-            elif isinstance(term, MenaiCFGSwitchTerm):
+            elif isinstance(term, MenaiCFGSwitchIntegerTerm):
                 src_reg = self._reg(term.value)
                 default = labels[term.default_block]
-                instrs.append(MenaiVCodeSwitch(
+                instrs.append(MenaiVCodeSwitchInteger(
                     src=src_reg,
                     min=term.min,
                     labels=tuple(labels[t] if t is not None else default for t in term.targets),
@@ -683,7 +683,7 @@ class MenaiVCodeBuilder:
                 dfs(term.true_block)
                 dfs(term.false_block)
 
-            elif isinstance(term, MenaiCFGSwitchTerm):
+            elif isinstance(term, MenaiCFGSwitchIntegerTerm):
                 for t in term.targets:
                     if t is not None:
                         dfs(t)
@@ -863,7 +863,7 @@ class MenaiVCodeBuilder:
                 stack.append(term.true_block)
                 stack.append(term.false_block)
 
-            elif isinstance(term, MenaiCFGSwitchTerm):
+            elif isinstance(term, MenaiCFGSwitchIntegerTerm):
                 stack.extend(t for t in term.targets if t is not None)
                 stack.append(term.default_block)
 

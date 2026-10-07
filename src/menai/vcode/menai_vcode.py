@@ -374,7 +374,7 @@ class MenaiVCodeJumpIfFalse:
 
 
 @dataclass
-class MenaiVCodeSwitch:
+class MenaiVCodeSwitchInteger:
     """
     Dense integer switch: jump to labels[i - min] when src holds the integer
     min + i, else to default_label.  Entries for absent arms point at
@@ -472,7 +472,7 @@ MenaiVCodeInstr = (  # pylint: disable=invalid-name
     | MenaiVCodeJump
     | MenaiVCodeJumpIfTrue
     | MenaiVCodeJumpIfFalse
-    | MenaiVCodeSwitch
+    | MenaiVCodeSwitchInteger
     | MenaiVCodeSwitchEnum
     | MenaiVCodeReturn
     | MenaiVCodeReturnIf
@@ -617,7 +617,7 @@ def _fmt_instr(instr: MenaiVCodeInstr) -> str:
     if isinstance(instr, MenaiVCodeJumpIfFalse):
         return f"JUMP_IF_FALSE {instr.cond} {instr.label}"
 
-    if isinstance(instr, MenaiVCodeSwitch):
+    if isinstance(instr, MenaiVCodeSwitchInteger):
         return f"SWITCH {instr.src} min={instr.min} {instr.labels} default {instr.default_label}"
 
     if isinstance(instr, MenaiVCodeReturn):

@@ -223,7 +223,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeMakeEnum,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
-    MenaiVCodeSwitch,
+    MenaiVCodeSwitchInteger,
     MenaiVCodeSwitchEnum,
     MenaiVCodeStructGetIndexed,
     MenaiVCodeStructWithIndexed,
@@ -428,8 +428,8 @@ def _replace_reg(
             label=instr.label,
         )
 
-    if isinstance(instr, MenaiVCodeSwitch):
-        return MenaiVCodeSwitch(
+    if isinstance(instr, MenaiVCodeSwitchInteger):
+        return MenaiVCodeSwitchInteger(
             src=new_reg if instr.src.id == old_id else instr.src,
             min=instr.min,
             labels=instr.labels,
@@ -705,7 +705,7 @@ _BARRIER_TYPES = (
 # fall through to the next instruction.
 _no_fallthrough_types = (
     MenaiVCodeJump,
-    MenaiVCodeSwitch,
+    MenaiVCodeSwitchInteger,
     MenaiVCodeSwitchEnum,
     MenaiVCodeReturn,
     MenaiVCodeTailCall,
@@ -734,7 +734,7 @@ def _defs_uses(instr: MenaiVCodeInstr) -> tuple[list[int], list[int]]:
     if isinstance(instr, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
         return [], [instr.cond.id]
 
-    if isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
+    if isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
         return [], [instr.src.id]
 
     if isinstance(instr, MenaiVCodeReturn):
@@ -1209,7 +1209,7 @@ def _thread_jumps(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             targeted_labels.add(redirect.get(instr.label, instr.label))
 
-        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
+        elif isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
             targeted_labels.add(redirect.get(instr.default_label, instr.default_label))
             for label in instr.labels:
                 targeted_labels.add(redirect.get(label, label))
@@ -1299,15 +1299,15 @@ def _thread_jumps(
             else:
                 result.append(instr)
 
-        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
+        elif isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
             new_default = redirect.get(instr.default_label, instr.default_label)
             new_labels = tuple(redirect.get(l, l) for l in instr.labels)
             if new_default != instr.default_label or any(
                 nl != l for nl, l in zip(new_labels, instr.labels)
             ):
                 changed = True
-                if isinstance(instr, MenaiVCodeSwitch):
-                    result.append(MenaiVCodeSwitch(
+                if isinstance(instr, MenaiVCodeSwitchInteger):
+                    result.append(MenaiVCodeSwitchInteger(
                         src=instr.src,
                         min=instr.min,
                         labels=new_labels,
@@ -1415,7 +1415,7 @@ def _inline_jump_to_return(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             live_labels.add(instr.label)
 
-        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
+        elif isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
             live_labels.add(instr.default_label)
             live_labels.update(instr.labels)
 
@@ -1545,7 +1545,7 @@ def _fold_conditional_return(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             targeted_labels.add(instr.label)
 
-        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
+        elif isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
             targeted_labels.add(instr.default_label)
             targeted_labels.update(instr.labels)
 
@@ -1651,7 +1651,7 @@ def _fold_conditional_return(
         elif isinstance(instr, MenaiVCodeJumpIfFalse):
             live_labels.add(instr.label)
 
-        elif isinstance(instr, (MenaiVCodeSwitch, MenaiVCodeSwitchEnum)):
+        elif isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
             live_labels.add(instr.default_label)
             live_labels.update(instr.labels)
 

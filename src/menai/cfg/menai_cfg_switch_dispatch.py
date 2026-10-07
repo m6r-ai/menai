@@ -3,7 +3,7 @@ CFG pass: integer switch dispatch.
 
 Detects chains of branches that all test the same value against integer
 literals with `integer=?` and replaces them with a single dense
-MenaiCFGSwitchTerm, lowered to the SWITCH_INT opcode (a jump table) by the
+MenaiCFGSwitchIntegerTerm, lowered to the SWITCH_INTEGER opcode (a jump table) by the
 VM backend.
 
 Detection pattern (per test block):
@@ -47,7 +47,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGConstInstr,
     MenaiCFGFunction,
     MenaiCFGInstr,
-    MenaiCFGSwitchTerm,
+    MenaiCFGSwitchIntegerTerm,
     MenaiCFGValue,
     blocks_by_id,
     predecessors_by_block,
@@ -366,7 +366,7 @@ def _rewrite(
     return replace(
         entry,
         instrs=tuple(new_instrs),
-        terminator=MenaiCFGSwitchTerm(
+        terminator=MenaiCFGSwitchIntegerTerm(
             value=scrutinee,
             min=lo,
             targets=tuple(targets),

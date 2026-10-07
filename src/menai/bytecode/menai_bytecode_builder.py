@@ -72,7 +72,7 @@ from menai.vcode.menai_vcode import (
     MenaiVCodeOperand,
     MenaiVCodePatchClosure,
     MenaiVCodeRaise,
-    MenaiVCodeSwitch,
+    MenaiVCodeSwitchInteger,
     MenaiVCodeSwitchEnum,
     MenaiVCodeReg,
     MenaiVCodeReturn,
@@ -642,7 +642,7 @@ class MenaiBytecodeBuilder:
                 i += 1
                 continue
 
-            if isinstance(instr, MenaiVCodeSwitch):
+            if isinstance(instr, MenaiVCodeSwitchInteger):
                 src_slot = ctx.slot_of(instr.src)
                 table_targets: list[int] = [0] * len(instr.labels)
                 default_target = label_index.get(instr.default_label, 0)

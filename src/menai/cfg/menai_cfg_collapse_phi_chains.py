@@ -89,7 +89,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGSelfLoopTerm,
     MenaiCFGStructGetIndexedInstr,
     MenaiCFGStructWithIndexedInstr,
-    MenaiCFGSwitchTerm,
+    MenaiCFGSwitchIntegerTerm,
     MenaiCFGSwitchEnumTerm,
     MenaiCFGTailApplyTerm,
     MenaiCFGTailCallTerm,
@@ -499,7 +499,7 @@ def _substitute_value_in_term(
     if isinstance(term, MenaiCFGBranchTerm):
         return replace(term, cond=sub(term.cond))
 
-    if isinstance(term, MenaiCFGSwitchTerm):
+    if isinstance(term, MenaiCFGSwitchIntegerTerm):
         return replace(term, value=sub(term.value))
 
     if isinstance(term, MenaiCFGSwitchEnumTerm):

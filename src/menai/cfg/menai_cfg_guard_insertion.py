@@ -61,7 +61,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGInstr,
     MenaiCFGFunction,
     MenaiCFGGuardInstr,
-    MenaiCFGSwitchTerm,
+    MenaiCFGSwitchIntegerTerm,
     MenaiCFGSwitchEnumTerm,
     predecessors_by_block,
 )
@@ -417,7 +417,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         Appends a guard to new_instrs if needed and updates the types dict.
         """
         term = block.terminator
-        if not isinstance(term, MenaiCFGSwitchTerm):
+        if not isinstance(term, MenaiCFGSwitchIntegerTerm):
             return
 
         val_type = types.get(term.value.id)

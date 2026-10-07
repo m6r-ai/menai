@@ -144,7 +144,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGParamInstr,
     MenaiCFGPhiInstr,
     MenaiCFGSelfLoopTerm,
-    MenaiCFGSwitchTerm,
+    MenaiCFGSwitchIntegerTerm,
     MenaiCFGSwitchEnumTerm,
     MenaiCFGValue,
     blocks_by_id,
@@ -927,7 +927,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         if isinstance(term, MenaiCFGBranchTerm):
             return [term.true_block, term.false_block]
 
-        if isinstance(term, MenaiCFGSwitchTerm):
+        if isinstance(term, MenaiCFGSwitchIntegerTerm):
             targets = [t for t in term.targets if t is not None]
             targets.append(term.default_block)
             return targets

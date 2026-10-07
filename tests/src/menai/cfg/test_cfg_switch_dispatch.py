@@ -16,7 +16,7 @@ Covers:
   8. Hand-written chains nested inside other expressions are transformed
 """
 
-from menai.cfg.menai_cfg import MenaiCFGSwitchTerm
+from menai.cfg.menai_cfg import MenaiCFGSwitchIntegerTerm
 from menai.menai_compiler import MenaiCompiler
 from menai.menai import Menai
 from menai.menai_value import MenaiList, MenaiSymbol
@@ -59,7 +59,7 @@ def _count_switches(cfg) -> int:
     def walk(func):
         nonlocal count
         for block in func.blocks:
-            if isinstance(block.terminator, MenaiCFGSwitchTerm):
+            if isinstance(block.terminator, MenaiCFGSwitchIntegerTerm):
                 count += 1
 
             for instr in block.instrs:
@@ -86,7 +86,7 @@ class TestChainToSwitch:
 
         for block in cfg.blocks:
             term = block.terminator
-            if isinstance(term, MenaiCFGSwitchTerm):
+            if isinstance(term, MenaiCFGSwitchIntegerTerm):
                 assert term.min == 1
                 assert len(term.targets) == 4
                 assert all(t is not None for t in term.targets)

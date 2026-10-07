@@ -372,7 +372,7 @@ class MenaiCFGBranchTerm:
 
 
 @dataclass
-class MenaiCFGSwitchTerm:
+class MenaiCFGSwitchIntegerTerm:
     """
     Dense integer switch on `value`.
 
@@ -475,7 +475,7 @@ class MenaiCFGRaiseTerm:
 MenaiCFGTerminator = (  # pylint: disable=invalid-name
     MenaiCFGJumpTerm
     | MenaiCFGBranchTerm
-    | MenaiCFGSwitchTerm
+    | MenaiCFGSwitchIntegerTerm
     | MenaiCFGSwitchEnumTerm
     | MenaiCFGReturnTerm
     | MenaiCFGTailCallTerm
@@ -668,7 +668,7 @@ def _fmt_term(term: MenaiCFGTerminator) -> str:
         return (f"branch {term.cond} → block{term.true_block} / "
                 f"block{term.false_block}")
 
-    if isinstance(term, MenaiCFGSwitchTerm):
+    if isinstance(term, MenaiCFGSwitchIntegerTerm):
         arms = ", ".join(
             f"{term.min + i}: block{t}" if t is not None else f"{term.min + i}: default"
             for i, t in enumerate(term.targets)
@@ -722,7 +722,7 @@ def successor_ids(term: MenaiCFGTerminator | None) -> list[int]:
     if isinstance(term, MenaiCFGBranchTerm):
         return [term.true_block, term.false_block]
 
-    if isinstance(term, MenaiCFGSwitchTerm):
+    if isinstance(term, MenaiCFGSwitchIntegerTerm):
         targets = [t for t in term.targets if t is not None]
         targets.append(term.default_block)
         return targets
@@ -802,13 +802,13 @@ def remap_term(
             false_block=new_false,
         )
 
-    if isinstance(term, MenaiCFGSwitchTerm):
+    if isinstance(term, MenaiCFGSwitchIntegerTerm):
         new_targets = tuple(remap_block(t) if t is not None else None for t in term.targets)
         new_default = remap_block(term.default_block)
         if new_targets == term.targets and new_default == term.default_block:
             return term
 
-        return MenaiCFGSwitchTerm(
+        return MenaiCFGSwitchIntegerTerm(
             value=term.value,
             min=term.min,
             targets=new_targets,
@@ -911,7 +911,7 @@ def value_ids_in_term(term: 'MenaiCFGTerminator') -> list[int]:
     if isinstance(term, MenaiCFGBranchTerm):
         return [term.cond.id]
 
-    if isinstance(term, MenaiCFGSwitchTerm):
+    if isinstance(term, MenaiCFGSwitchIntegerTerm):
         return [term.value.id]
 
     if isinstance(term, MenaiCFGSwitchEnumTerm):
