@@ -861,6 +861,57 @@ class TestImportedStructAsPatternHead:
         assert result == 5
 
 
+class TestImportedEnumAsPatternHead:
+    """Test that an imported enum type works as a pattern head."""
+
+    def test_imported_enum_pattern_head(self, tmp_path):
+        """An imported enum bound to a local name is a valid pattern head."""
+        (tmp_path / "traffic.menai").write_text("""
+(letrec ((light (enum (red amber green)))
+         (next (lambda (l)
+                 (match l
+                   ((light 'red) (light 'green))
+                   ((light 'amber) (light 'red))
+                   ((light 'green) (light 'amber))))))
+  (export light next))
+""")
+
+        menai = Menai(module_path=[str(tmp_path)])
+
+        result = menai.evaluate('''
+(let ((traffic (import "traffic")))
+  (let ((Light (:: traffic light))
+        (next (:: traffic next)))
+    (enum-variant (next (next (Light 'red))))))
+''')
+
+        assert result == "amber"
+
+    def test_imported_enum_pattern_head_does_not_bind_the_variant(self, tmp_path):
+        """An enum pattern's quoted variant is a name, not a variable binding."""
+        (tmp_path / "traffic.menai").write_text("""
+(letrec ((light (enum (red amber green)))
+         (green (lambda () (light 'green)))
+         (describe (lambda (l)
+                     (match l
+                       ((light 'red) "stop")
+                       ((light 'amber) "wait")
+                       ((light 'green) (string-upcase "go"))))))
+  (export light green describe))
+""")
+
+        menai = Menai(module_path=[str(tmp_path)])
+
+        result = menai.evaluate('''
+(let ((traffic (import "traffic")))
+  (let ((Light (:: traffic light))
+        (describe (:: traffic describe)))
+    (describe (Light 'green))))
+''')
+
+        assert result == "GO"
+
+
 class TestDirectModuleCompilation:
     """Test compiling a module file directly as a program."""
 

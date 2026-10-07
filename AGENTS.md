@@ -424,6 +424,15 @@ that importing two modules that share a private name does not collide. The renam
 must not rename a namespace member name (it is a key, not a variable reference) nor
 a struct pattern head's member name — see `_ModuleRenamer`.
 
+A pattern head that names a module's *type* — a struct type or an enum type — must be
+renamed, because it is a reference to the module binding. An enum pattern's variant is
+a quoted symbol and must be left alone, and it binds nothing. If a type pattern head is
+not renamed, the desugarer can no longer resolve it to the type binding and silently
+falls back to treating the pattern as a list destructuring pattern. That is not a
+local failure: a list pattern compiles to a `list?`/`list-length`/`list-nth` test chain,
+so a `match` over an enum degrades from a jump table into a long comparison chain and
+can explode the CFG of any function it is inlined into.
+
 See [ADR-0023](docs/adr/0023-second-class-module-namespaces.md).
 
 ### A module cannot export a name it also needs as a builtin or prelude function

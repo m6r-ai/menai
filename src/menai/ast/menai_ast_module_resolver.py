@@ -32,6 +32,7 @@ from typing import Protocol, ContextManager
 from menai.menai_error import MenaiModuleError
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTSymbol, MenaiASTList, MenaiASTString, MenaiASTNamespace, MenaiASTStruct,
+    MenaiASTEnum,
 )
 
 
@@ -255,8 +256,9 @@ def _extract_exports(
 
     renaming = {name: rename + name for name in raw_bindings}
     struct_names = {name for name, value in raw_bindings.items() if isinstance(value, MenaiASTStruct)}
+    enum_names = {name for name, value in raw_bindings.items() if isinstance(value, MenaiASTEnum)}
     namespace_names = {name for name, value in raw_bindings.items() if isinstance(value, MenaiASTNamespace)}
-    renamer = _ModuleRenamer(renaming, struct_names, namespace_names)
+    renamer = _ModuleRenamer(renaming, struct_names, enum_names, namespace_names)
 
     bindings: list[tuple[str, MenaiASTNode]] = []
     for name, value in raw_bindings.items():
@@ -413,13 +415,22 @@ class _ModuleRenamer:
     within their scope, exactly as lexical semantics require.
     """
 
-    def __init__(self, renaming: dict[str, str], struct_names: set[str], namespace_names: set[str]):
+    def __init__(
+        self,
+        renaming: dict[str, str],
+        struct_names: set[str],
+        enum_names: set[str],
+        namespace_names: set[str],
+    ):
         """
         Initialize the renamer.
 
         Args:
             renaming: Map from original top-level name to renamed name.
             struct_names: Names of the module's struct-type bindings.  A struct
+                pattern head names a type, not a bound variable, so it is
+                renamed like any other reference to a module binding.
+            enum_names: Names of the module's enum-type bindings.  An enum
                 pattern head names a type, not a bound variable, so it is
                 renamed like any other reference to a module binding.
             namespace_names: Names of the module's namespace bindings (imports).
@@ -429,7 +440,14 @@ class _ModuleRenamer:
         """
         self._renaming = renaming
         self._struct_names = struct_names
+        self._enum_names = enum_names
         self._namespace_names = namespace_names
+        # Both the original and the renamed enum-type names identify an enum
+        # pattern: a pattern is renamed in place, so a later pattern walk sees
+        # the renamed form.
+        self._enum_names_all = enum_names | {
+            renaming[name] for name in enum_names
+        }
 
     def rename(self, expr: MenaiASTNode) -> MenaiASTNode:
         """Return expr with free references to module bindings renamed."""
@@ -569,7 +587,7 @@ class _ModuleRenamer:
             assert isinstance(clause, MenaiASTList) and len(clause.elements) == 2
             pattern, result = clause.elements
             new_pattern = self._rename_pattern(pattern, shadowed)
-            pattern_names = _pattern_names(new_pattern)
+            pattern_names = self._pattern_names(new_pattern)
             new_result = self._rename(result, shadowed | pattern_names)
             new_clauses.append(MenaiASTList(
                 (new_pattern, new_result),
@@ -585,8 +603,10 @@ class _ModuleRenamer:
         """
         Rename references to module bindings within a match pattern.
 
-        Only struct pattern heads name a module binding; every other symbol in
-        a pattern is a variable the pattern binds, so it is left alone.
+        Only struct and enum pattern heads name a module binding; every other
+        symbol in a pattern is a variable the pattern binds, so it is left
+        alone.  An enum pattern's variant is a quoted symbol, which is a name
+        rather than a reference, so it is left alone too.
         """
         if not isinstance(pattern, MenaiASTList) or pattern.is_empty():
             return pattern
@@ -601,15 +621,23 @@ class _ModuleRenamer:
                 line=pattern.line, column=pattern.column, source_file=pattern.source_file,
             )
 
-        if (isinstance(head, MenaiASTSymbol) and head.name in self._struct_names
+        if (isinstance(head, MenaiASTSymbol)
+                and head.name in (self._struct_names | self._enum_names)
                 and head.name not in shadowed):
             new_head = MenaiASTSymbol(
                 self._renaming[head.name],
                 line=head.line, column=head.column, source_file=head.source_file,
             )
-            new_elements = (new_head,) + tuple(
-                self._rename_pattern(elem, shadowed) for elem in pattern.elements[1:]
-            )
+            if head.name in self._enum_names:
+                # An enum pattern is (TypeName 'variant): the variant is a
+                # quoted symbol naming a variant, not a sub-pattern to rename.
+                new_elements = (new_head, *pattern.elements[1:])
+
+            else:
+                new_elements = (new_head,) + tuple(
+                    self._rename_pattern(elem, shadowed) for elem in pattern.elements[1:]
+                )
+
             return MenaiASTList(
                 new_elements,
                 line=pattern.line, column=pattern.column, source_file=pattern.source_file,
@@ -621,28 +649,32 @@ class _ModuleRenamer:
             line=pattern.line, column=pattern.column, source_file=pattern.source_file,
         )
 
+    def _pattern_names(self, pattern: MenaiASTNode) -> set[str]:
+        """Return the variable names a match pattern binds."""
+        if isinstance(pattern, MenaiASTSymbol):
+            return set() if pattern.name == '_' else {pattern.name}
 
-def _pattern_names(pattern: MenaiASTNode) -> set[str]:
-    """Return the variable names a match pattern binds."""
-    if isinstance(pattern, MenaiASTSymbol):
-        return set() if pattern.name == '_' else {pattern.name}
+        if not isinstance(pattern, MenaiASTList) or pattern.is_empty():
+            return set()
 
-    if not isinstance(pattern, MenaiASTList) or pattern.is_empty():
-        return set()
+        head = pattern.first()
+        if isinstance(head, MenaiASTSymbol) and head.name == '?' and len(pattern.elements) == 3:
+            var = pattern.elements[2]
+            if isinstance(var, MenaiASTSymbol) and var.name != '_':
+                return {var.name}
 
-    head = pattern.first()
-    if isinstance(head, MenaiASTSymbol) and head.name == '?' and len(pattern.elements) == 3:
-        var = pattern.elements[2]
-        if isinstance(var, MenaiASTSymbol) and var.name != '_':
-            return {var.name}
+            return set()
 
-        return set()
+        # An enum pattern is (TypeName 'variant).  The variant is a quoted
+        # symbol, so it binds nothing; the head is a type name, not a binder.
+        if isinstance(head, MenaiASTSymbol) and head.name in self._enum_names_all:
+            return set()
 
-    names: set[str] = set()
-    for elem in pattern.elements:
-        if isinstance(elem, MenaiASTSymbol) and elem.name == '.':
-            continue
+        names: set[str] = set()
+        for elem in pattern.elements:
+            if isinstance(elem, MenaiASTSymbol) and elem.name == '.':
+                continue
 
-        names |= _pattern_names(elem)
+            names |= self._pattern_names(elem)
 
-    return names
+        return names
