@@ -11,16 +11,10 @@
 ; raises an error.
 
 (letrec
-  ((regexp-op-empty 0)
-   (regexp-op-char 1)
-   (regexp-op-any 2)
-   (regexp-op-class 3)
-   (regexp-op-bol 4)
-   (regexp-op-eol 5)
-   (regexp-op-seq 6)
-   (regexp-op-alt 7)
-   (regexp-op-opt 8)
-   (regexp-op-star 9)
+  (; regexp-op names the variants of a parsed node.  A node is a list whose first
+   ; element is one of these variants and whose remaining elements are the node's
+   ; operands.
+   (regexp-op (enum (empty char any class bol eol seq alt opt star)))
 
    ; The largest repetition count a brace quantifier may specify.  A larger count
    ; would expand to an impractically large node tree, so it is rejected rather
@@ -32,16 +26,21 @@
       (let ((cp (string->integer-codepoint ch)))
         (and (integer>=? cp 48) (integer<=? cp 57)))))
 
-   (regexp-n-char (lambda (c) (list regexp-op-char c)))
-   (regexp-n-any (lambda () (list regexp-op-any)))
-   (regexp-n-class (lambda (ranges negated) (list regexp-op-class ranges negated)))
-   (regexp-n-bol (lambda () (list regexp-op-bol)))
-   (regexp-n-eol (lambda () (list regexp-op-eol)))
-   (regexp-n-seq (lambda (a b) (list regexp-op-seq a b)))
-   (regexp-n-alt (lambda (a b) (list regexp-op-alt a b)))
-   (regexp-n-star (lambda (a) (list regexp-op-star a)))
-   (regexp-n-opt (lambda (a) (list regexp-op-opt a)))
-   (regexp-n-empty (lambda () (list regexp-op-empty)))
+   (regexp-n-char (lambda (c) (list (regexp-op 'char) c)))
+   (regexp-n-any (lambda () (list (regexp-op 'any))))
+   (regexp-n-class (lambda (ranges negated) (list (regexp-op 'class) ranges negated)))
+   (regexp-n-bol (lambda () (list (regexp-op 'bol))))
+   (regexp-n-eol (lambda () (list (regexp-op 'eol))))
+   (regexp-n-seq (lambda (a b) (list (regexp-op 'seq) a b)))
+   (regexp-n-alt (lambda (a b) (list (regexp-op 'alt) a b)))
+   (regexp-n-star (lambda (a) (list (regexp-op 'star) a)))
+   (regexp-n-opt (lambda (a) (list (regexp-op 'opt) a)))
+   (regexp-n-empty (lambda () (list (regexp-op 'empty))))
+
+   ; regexp-empty? returns #t when a node is the empty node, which matches the
+   ; empty string.  The sequence and alternation parsers use it to avoid wrapping
+   ; an empty node around the first operand they see.
+   (regexp-empty? (lambda (node) (enum=? (list-first node) (regexp-op 'empty))))
 
    (regexp-parse-class
     (lambda (p i)
@@ -204,7 +203,7 @@
                       (list node j)
                       (let ((q (regexp-parse-quant p j)))
                         (loop (list-nth q 1)
-                              (if (integer=? (list-first node) regexp-op-empty)
+                              (if (regexp-empty? node)
                                   (list-first q)
                                   (regexp-n-seq node (list-first q)))))))))))
         (loop i (regexp-n-empty)))))
@@ -220,10 +219,10 @@
               (if (and (integer<? after (string-length p))
                        (string=? (string-nth p after) "|"))
                   (loop (integer+ after 1)
-                        (if (integer=? (list-first node) regexp-op-empty)
+                        (if (regexp-empty? node)
                             snode
                             (regexp-n-alt node snode)))
-                  (list (if (integer=? (list-first node) regexp-op-empty)
+                  (list (if (regexp-empty? node)
                             snode
                             (regexp-n-alt node snode))
                         after))))))
@@ -248,34 +247,34 @@
    (regexp-m
     (lambda (node pos s k)
       (match (list-first node)
-        (0 (k pos))
-        (1 (if (and (integer<? pos (string-length s))
+        ((regexp-op 'empty) (k pos))
+        ((regexp-op 'char) (if (and (integer<? pos (string-length s))
                     (string=? (string-nth s pos) (list-nth node 1)))
                (k (integer+ pos 1))
                #none))
-        (2 (if (integer<? pos (string-length s))
+        ((regexp-op 'any) (if (integer<? pos (string-length s))
                (k (integer+ pos 1))
                #none))
-        (3 (if (and (integer<? pos (string-length s))
+        ((regexp-op 'class) (if (and (integer<? pos (string-length s))
                     (regexp-class-match? (list-nth node 1)
                                   (list-nth node 2)
                                   (string-nth s pos)))
                (k (integer+ pos 1))
                #none))
-        (4 (if (integer=? pos 0) (k pos) #none))
-        (5 (if (integer=? pos (string-length s)) (k pos) #none))
-        (6 (regexp-m (list-nth node 1) pos s
+        ((regexp-op 'bol) (if (integer=? pos 0) (k pos) #none))
+        ((regexp-op 'eol) (if (integer=? pos (string-length s)) (k pos) #none))
+        ((regexp-op 'seq) (regexp-m (list-nth node 1) pos s
               (lambda (p2)
                 (regexp-m (list-nth node 2) p2 s k))))
-        (7 (let ((r (regexp-m (list-nth node 1) pos s k)))
+        ((regexp-op 'alt) (let ((r (regexp-m (list-nth node 1) pos s k)))
              (if (none? r)
                  (regexp-m (list-nth node 2) pos s k)
                  r)))
-        (8 (let ((r (regexp-m (list-nth node 1) pos s k)))
+        ((regexp-op 'opt) (let ((r (regexp-m (list-nth node 1) pos s k)))
              (if (none? r)
                  (k pos)
                  r)))
-        (9 (letrec
+        ((regexp-op 'star) (letrec
              ((loop
                (lambda (p)
                  (let ((r (regexp-m (list-nth node 1) p s
@@ -306,8 +305,8 @@
    (regexp-literal-prefix
     (lambda (node)
       (match (list-first node)
-        (1 (list-nth node 1))
-        (6 (let ((a (list-nth node 1)))
+        ((regexp-op 'char) (list-nth node 1))
+        ((regexp-op 'seq) (let ((a (list-nth node 1)))
              (let ((pa (regexp-literal-prefix a)))
                (if (integer=? (string-length pa) (regexp-literal-length a))
                    (string-concat pa (regexp-literal-prefix (list-nth node 2)))
@@ -319,8 +318,8 @@
    (regexp-literal-length
     (lambda (node)
       (match (list-first node)
-        (1 1)
-        (6 (let ((n (regexp-literal-length (list-nth node 1))))
+        ((regexp-op 'char) 1)
+        ((regexp-op 'seq) (let ((n (regexp-literal-length (list-nth node 1))))
              (if (integer=? n -1)
                  -1
                  (let ((regexp-m (regexp-literal-length (list-nth node 2))))
