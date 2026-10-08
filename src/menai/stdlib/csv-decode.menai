@@ -24,7 +24,11 @@
 ; terminator.
 
 (letrec
-  ((is-line-terminator?
+  (; The dispatch tag after-field returns: another field follows in the same row
+   ; (field), the row ends (row), or the input ends (end).
+   (after-field-tag (enum (field row end)))
+
+   (is-line-terminator?
     (lambda (ch)
       (or (string=? ch "\n") (string=? ch "\r"))))
 
@@ -81,18 +85,18 @@
    ; After a field ends at `pos`, consume the separator that follows and decide
    ; whether the row continues, ends, or the input ends.  Returns a dispatch tag
    ; and the next position:
-   ;   (list "field" <pos>)  — another field follows in the same row
-   ;   (list "row"   <pos>)  — the row ends; pos is just past the terminator
-   ;   (list "end"   <pos>)  — the input ends immediately after this field
+   ;   (list (after-field-tag 'field) <pos>) — another field follows in the same row
+   ;   (list (after-field-tag 'row)   <pos>) — the row ends; pos is just past the terminator
+   ;   (list (after-field-tag 'end)   <pos>) — the input ends immediately after this field
    (after-field
     (lambda (s pos delim)
       (if (integer>=? pos (string-length s))
-          (list "end" pos)
+          (list (after-field-tag 'end) pos)
           (let ((ch (string-nth s pos)))
             (if (string=? ch delim)
-                (list "field" (integer+ pos 1))
+                (list (after-field-tag 'field) (integer+ pos 1))
                 (if (is-line-terminator? ch)
-                    (list "row" (integer+ pos (terminator-length s pos)))
+                    (list (after-field-tag 'row) (integer+ pos (terminator-length s pos)))
                     (error "Unexpected character after quoted field in CSV input")))))))
 
    ; Decode CSV text into a vector of rows (each a vector of field strings).
@@ -118,15 +122,17 @@
                           (let ((dispatch (after-field csv-string pos delim)))
                             (let ((tag (list-first dispatch))
                                   (next (list-nth dispatch 1)))
-                              (if (string=? tag "field")
-                                  (loop next row rows-acc)
-                                  (if (string=? tag "row")
-                                      (if (integer>=? next (string-length csv-string))
-                                          ; A single trailing terminator ends the
-                                          ; last row without starting a new one.
-                                          (finish rows-acc row)
-                                          (loop next (list) (list-prepend rows-acc (list-reverse row))))
-                                      (finish rows-acc row))))))))))
+                              (match tag
+                                ((: after-field-tag 'field)
+                                 (loop next row rows-acc))
+                                ((: after-field-tag 'row)
+                                 (if (integer>=? next (string-length csv-string))
+                                     ; A single trailing terminator ends the
+                                     ; last row without starting a new one.
+                                     (finish rows-acc row)
+                                     (loop next (list) (list-prepend rows-acc (list-reverse row)))))
+                                ((: after-field-tag 'end)
+                                 (finish rows-acc row))))))))))
                   (loop 0 (list) (list)))
                 (error "CSV delimiter must be a single-character string")))
           (error "CSV input must be a string")))))
