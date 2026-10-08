@@ -1,0 +1,128 @@
+; Tests for base64-encode.menai
+
+(let ((base64-encode (import "base64-encode"))
+      (base64-decode (import "base64-decode"))
+      (t (import "menai_test")))
+  (let ((encode (:: base64-encode encode))
+        (ev (:: base64-encode variant))
+        (decode (:: base64-decode decode))
+        (dv (:: base64-decode variant))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error)))
+    (let ((tests
+      (list
+        ; The RFC 4648 section 10 test vectors, using the default variant.
+        (list "rfc-4648-vectors"
+          (list
+            (expect-pass "empty input"
+                         (lambda () (assert-equal (encode (string->bytes "")) "")))
+            (expect-pass "f"
+                         (lambda () (assert-equal (encode (string->bytes "f")) "Zg==")))
+            (expect-pass "fo"
+                         (lambda () (assert-equal (encode (string->bytes "fo")) "Zm8=")))
+            (expect-pass "foo"
+                         (lambda () (assert-equal (encode (string->bytes "foo")) "Zm9v")))
+            (expect-pass "foob"
+                         (lambda () (assert-equal (encode (string->bytes "foob")) "Zm9vYg==")))
+            (expect-pass "fooba"
+                         (lambda () (assert-equal (encode (string->bytes "fooba")) "Zm9vYmE=")))
+            (expect-pass "foobar"
+                         (lambda () (assert-equal (encode (string->bytes "foobar")) "Zm9vYmFy")))))
+
+        ; Each input length modulo three exercises a different padding shape.
+        (list "padding"
+          (list
+            (expect-pass "length 3 has no padding"
+                         (lambda () (assert-equal (encode (string->bytes "abc")) "YWJj")))
+            (expect-pass "length 4 has one padding character"
+                         (lambda () (assert-equal (encode (string->bytes "abcd")) "YWJjZA==")))
+            (expect-pass "length 5 has two padding characters"
+                         (lambda () (assert-equal (encode (string->bytes "abcde")) "YWJjZGU=")))
+            (expect-pass "output length is always a multiple of four"
+                         (lambda ()
+                           (assert-equal (integer% (string-length (encode (string->bytes "a"))) 4) 0)))))
+
+        ; The four variants select the alphabet and the padding.
+        (list "variants"
+          (list
+            (expect-pass "standard is the default"
+                         (lambda () (assert-equal (encode (string->bytes "foob") (ev 'standard))
+                                                  (encode (string->bytes "foob")))))
+            (expect-pass "standard pads"
+                         (lambda () (assert-equal (encode (string->bytes "foob") (ev 'standard)) "Zm9vYg==")))
+            (expect-pass "standard-unpadded omits padding"
+                         (lambda () (assert-equal (encode (string->bytes "foob") (ev 'standard-unpadded)) "Zm9vYg")))
+            (expect-pass "url pads"
+                         (lambda () (assert-equal (encode (string->bytes "foob") (ev 'url)) "Zm9vYg==")))
+            (expect-pass "url-unpadded omits padding"
+                         (lambda () (assert-equal (encode (string->bytes "foob") (ev 'url-unpadded)) "Zm9vYg")))
+            (expect-pass "standard and url agree when no special character occurs"
+                         (lambda () (assert-equal (encode (string->bytes "foobar") (ev 'standard))
+                                                  (encode (string->bytes "foobar") (ev 'url)))))
+            (expect-pass "standard uses + and /"
+                         (lambda () (assert-equal (encode (list->bytes (list 251 255 254)) (ev 'standard)) "+//+")))
+            (expect-pass "url uses - and _"
+                         (lambda () (assert-equal (encode (list->bytes (list 251 255 254)) (ev 'url)) "-__-")))))
+
+        ; Round-trips through base64-decode; the pair carries a round-trip
+        ; guarantee, so (decode (encode b v) v) must reproduce b for every b.
+        (list "round-trips"
+          (list
+            (expect-pass "empty"
+                         (lambda () (assert-equal (decode (encode (string->bytes ""))) (string->bytes ""))))
+            (expect-pass "text"
+                         (lambda () (assert-equal (decode (encode (string->bytes "hello world")))
+                                                  (string->bytes "hello world"))))
+            (expect-pass "every byte value, standard"
+                         (lambda ()
+                           (letrec ((mk (lambda (i acc)
+                                          (if (integer>=? i 256)
+                                              (list->bytes (list-reverse acc))
+                                              (mk (integer+ i 1) (list-prepend acc i))))))
+                             (let ((all (mk 0 (list))))
+                               (assert-equal (decode (encode all (ev 'standard)) (dv 'standard)) all)))))
+            (expect-pass "every byte value, standard-unpadded"
+                         (lambda ()
+                           (letrec ((mk (lambda (i acc)
+                                          (if (integer>=? i 256)
+                                              (list->bytes (list-reverse acc))
+                                              (mk (integer+ i 1) (list-prepend acc i))))))
+                             (let ((all (mk 0 (list))))
+                               (assert-equal (decode (encode all (ev 'standard-unpadded)) (dv 'standard-unpadded)) all)))))
+            (expect-pass "every byte value, url"
+                         (lambda ()
+                           (letrec ((mk (lambda (i acc)
+                                          (if (integer>=? i 256)
+                                              (list->bytes (list-reverse acc))
+                                              (mk (integer+ i 1) (list-prepend acc i))))))
+                             (let ((all (mk 0 (list))))
+                               (assert-equal (decode (encode all (ev 'url)) (dv 'url)) all)))))
+            (expect-pass "every byte value, url-unpadded"
+                         (lambda ()
+                           (letrec ((mk (lambda (i acc)
+                                          (if (integer>=? i 256)
+                                              (list->bytes (list-reverse acc))
+                                              (mk (integer+ i 1) (list-prepend acc i))))))
+                             (let ((all (mk 0 (list))))
+                               (assert-equal (decode (encode all (ev 'url-unpadded)) (dv 'url-unpadded)) all)))))
+            (expect-pass "long payload spanning many groups"
+                         (lambda ()
+                           (letrec ((mk (lambda (i acc)
+                                          (if (integer>=? i 1000)
+                                              (list->bytes (list-reverse acc))
+                                              (mk (integer+ i 1) (list-prepend acc (integer% i 256)))))))
+                             (let ((data (mk 0 (list))))
+                               (assert-equal (decode (encode data)) data)))))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a string argument"
+                         (lambda () (encode "not bytes"))
+                         "expects a bytes value")
+            (expect-fail "rejects an integer argument"
+                         (lambda () (encode 42))
+                         "expects a bytes value"))))))
+
+      (export tests))))

@@ -1,17 +1,22 @@
 # Change log for Menai
 
-## v0.8.0 (2026-10-05)
+## v0.8.0 (2026-10-08)
 
 New features:
 
 - Added a new "trivial phi elimination" operation inside the CFG collapse phi pass.
 - Added a register dump capability to capture state when an error is raised inside
   the VM.
+- Added a `base64-decode` module to the standard library.  It decodes Base64 text
+  (RFC 4648) to bytes.
+- Added a `base64-encode` module to the standard library.  It encodes a bytes
+  value as Base64 text, selecting the standard or URL-safe alphabet and padded or
+  unpadded output.  It is the inverse of `base64-decode`.
 - Added a `csv-decode` module to the standard library.  It decodes RFC 4180 CSV
   text (as a string) to a vector of rows, each row a vector of field strings, so
   both rows and fields are reachable in O(1) by position.
 - Added a `csv-encode` module to the standard library.  It encodes a vector of
-  rows (each a vector of field strings) as RFC 4180 CSV text; it is the inverse
+  rows (each a vector of field strings) as RFC 4180 CSV text.  It is the inverse
   of `csv-decode`.
 - Added a `regexp` module to the standard library.  It compiles a
   regular-expression pattern and searches, splits, or replaces within strings.

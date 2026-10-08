@@ -215,6 +215,19 @@ always the lowest-precedence directory on the module search path. It is
 available in every installation, including a wheel installed with `pip install
 menai`. Currently it includes:
 
+- `base64-decode.menai` — decodes Base64 text (RFC 4648) to bytes.  The optional
+  second argument is a `variant` enum value selecting the alphabet and padding:
+  `(variant 'standard)` (standard alphabet, `=` padding required, the default),
+  `(variant 'standard-unpadded)`, `(variant 'url)` (URL-safe alphabet, `=` padding
+  required), or `(variant 'url-unpadded)`.  Decoding is strict and each variant
+  accepts exactly its own form, so a character outside the variant's alphabet, a
+  character from the other alphabet, or padding that does not match the variant
+  raises a runtime error.  Exports the `variant` enum and `decode`
+- `base64-encode.menai` — encodes a bytes value as Base64 text; the inverse of
+  `base64-decode`, so `(decode (encode b v) v)` reproduces `b` for every bytes
+  value `b` and every variant `v`.  The optional second argument is the same
+  `variant` enum, defaulting to `(variant 'standard)`; the output is a single
+  unbroken line.  Exports the `variant` enum and `encode`
 - `bmp-decode.menai` — decodes uncompressed 24-bit and 32-bit BMP files (as
   bytes) to a dict containing the decoded header, a normalised top-down pixel
   grid, and metadata (`decode`)
