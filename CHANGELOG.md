@@ -15,6 +15,8 @@ New features:
   of `csv-decode`.
 - Added a `regexp` module to the standard library.  It compiles a
   regular-expression pattern and searches, splits, or replaces within strings.
+- Added an `enum` type: a nominal, closed set of named variants, compared for
+  identity only.
 
 Bug fixes:
 
