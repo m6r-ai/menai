@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
-from menai_benchmark.suites.rubiks_list.suite import _SCRAMBLES
+from menai_benchmark.suites.rubiks_list.suite import _SCRAMBLES, move_to_menai
 
 _SUITE_DIR = Path(__file__).resolve().parent
 
@@ -10,17 +10,15 @@ _SUITE_DIR = Path(__file__).resolve().parent
 # differs.
 
 
-def _moves_to_menai(moves: list[str]) -> str:
-    """Convert a list of move names into a Menai list literal."""
-    return "(list " + " ".join(f'"{m}"' for m in moves) + ")"
-
-
 def _expr(scramble_moves: list[str]) -> str:
     """Build the solver-driving expression for a scramble sequence."""
-    moves_literal = _moves_to_menai(scramble_moves)
+    moves_literal = "(list " + " ".join(move_to_menai(m) for m in scramble_moves) + ")"
     return (
         '(let ((rubiks (import "rubiks-cube-vector")))'
-        '  (let ((solved-cube-fn (:: rubiks solved-cube))'
+        '  (let ((move (:: rubiks move))'
+        '        (face (:: rubiks face))'
+        '        (turn (:: rubiks turn))'
+        '        (solved-cube-fn (:: rubiks solved-cube))'
         '        (apply-moves-fn (:: rubiks apply-moves))'
         '        (ida-star-fn (:: rubiks ida-star)))'
         f'    (let ((scrambled (apply-moves-fn (solved-cube-fn) {moves_literal})))'

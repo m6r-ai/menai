@@ -12,13 +12,25 @@ _SCRAMBLES: list[tuple[str, list[str]]] = [
     ("7-move", ["R", "U", "R'", "D", "F", "R", "U"]),
 ]
 
+_TURN_SUFFIXES: dict[str, str] = {"": "cw", "'": "ccw", "2": "half"}
+
+
+def move_to_menai(move: str) -> str:
+    """Render a standard-notation move (e.g. "R'") as a Menai move value."""
+    face, suffix = move[0], move[1:]
+    turn = _TURN_SUFFIXES[suffix]
+    return f"(move (face '{face.lower()}) (turn '{turn}))"
+
 
 def _expr(scramble_moves: list[str]) -> str:
     """Build the solver-driving expression for a scramble sequence."""
-    moves_literal = "(list " + " ".join(f'"{m}"' for m in scramble_moves) + ")"
+    moves_literal = "(list " + " ".join(move_to_menai(m) for m in scramble_moves) + ")"
     return (
         '(let ((rubiks (import "rubiks_cube")))'
-        '  (let ((solved-cube-fn (:: rubiks solved-cube))'
+        '  (let ((move (:: rubiks move))'
+        '        (face (:: rubiks face))'
+        '        (turn (:: rubiks turn))'
+        '        (solved-cube-fn (:: rubiks solved-cube))'
         '        (apply-moves-fn (:: rubiks apply-moves))'
         '        (ida-star-fn (:: rubiks ida-star)))'
         f'    (let ((scrambled (apply-moves-fn (solved-cube-fn) {moves_literal})))'

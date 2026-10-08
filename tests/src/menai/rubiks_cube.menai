@@ -1,6 +1,12 @@
 ; Rubik's Cube Solver in Menai
 ; Uses IDA* algorithm with heuristic based on misplaced stickers
 ;
+; This is the test suite's private copy of the solver, used by
+; test_rubiks_cube_functions.py.  It is deliberately kept in its original
+; string-move form: that form is what exposed the compiler bug the suite
+; guards against, so it must not be converted to enum moves.  The benchmark
+; suite carries the enum-move version; do not point the tests at it.
+;
 ; Cube representation: cube-repr struct with 6 face fields (U D F B L R), each a list of 9 stickers (0-5)
 ; Face order: U(up/white), D(down/yellow), F(front/green), B(back/blue), L(left/orange), R(right/red)
 ; Sticker positions on each face:
@@ -8,19 +14,10 @@
 ;   3 4 5
 ;   6 7 8
 ; Center (position 4) never moves and identifies the face color
-;
-; A move is a `move` struct of a `face` and a `turn`.  The `face` enum names the
-; six faces and the `turn` enum the three quarter-turn amounts, so a move is a
-; closed, typed value rather than a string.  `move->string` renders a move in the
-; standard notation ("U", "U'", "U2").
 
 (letrec
   ((cube-repr (struct (U D F B L R)))
    (search-result (struct (found value)))
-
-   (face (enum (u d f b l r)))
-   (turn (enum (cw ccw half)))
-   (move (struct (face turn)))
 
    (solved-cube
      (lambda ()
@@ -187,25 +184,28 @@
            (struct-get cube 'L)
            (rotate-face-cw r)))))
 
-   ; Apply a turn to a cube by repeating the face's clockwise rotation: once for
-   ; cw, three times for ccw (the inverse of cw), twice for half.
-   (turn-apply
-     (lambda (rotate-cw cube t)
-       (match t
-         ((: turn 'cw) (rotate-cw cube))
-         ((: turn 'ccw) (rotate-cw (rotate-cw (rotate-cw cube))))
-         ((: turn 'half) (rotate-cw (rotate-cw cube))))))
-
    (apply-move
-     (lambda (cube m)
-       (let ((t (struct-get m 'turn)))
-         (match (struct-get m 'face)
-           ((: face 'u) (turn-apply move-U cube t))
-           ((: face 'd) (turn-apply move-D cube t))
-           ((: face 'f) (turn-apply move-F cube t))
-           ((: face 'b) (turn-apply move-B cube t))
-           ((: face 'l) (turn-apply move-L cube t))
-           ((: face 'r) (turn-apply move-R cube t))))))
+     (lambda (cube move-name)
+       (match move-name
+         ("U"  (move-U cube))
+         ("U'" (move-U (move-U (move-U cube))))
+         ("U2" (move-U (move-U cube)))
+         ("D"  (move-D cube))
+         ("D'" (move-D (move-D (move-D cube))))
+         ("D2" (move-D (move-D cube)))
+         ("F"  (move-F cube))
+         ("F'" (move-F (move-F (move-F cube))))
+         ("F2" (move-F (move-F cube)))
+         ("B"  (move-B cube))
+         ("B'" (move-B (move-B (move-B cube))))
+         ("B2" (move-B (move-B cube)))
+         ("L"  (move-L cube))
+         ("L'" (move-L (move-L (move-L cube))))
+         ("L2" (move-L (move-L cube)))
+         ("R"  (move-R cube))
+         ("R'" (move-R (move-R (move-R cube))))
+         ("R2" (move-R (move-R cube)))
+         (_ cube))))
 
    (apply-moves
      (lambda (cube moves)
@@ -229,8 +229,18 @@
 
    (count-mismatched
      (lambda (face)
-       (let ((center (get-sticker face 4)))
-         (list-length (filter-list (lambda (s) (integer!=? s center)) face)))))
+       (count-mismatch-loop face (get-sticker face 4) 0)))
+
+   (count-mismatch-loop
+     (lambda (face center acc)
+       (if (list-null? face)
+           acc
+           (count-mismatch-loop
+             (list-rest face)
+             center
+             (if (integer!=? (list-first face) center)
+                 (integer+ acc 1)
+                 acc)))))
 
    (heuristic
      (lambda (cube)
@@ -243,34 +253,33 @@
                       (count-mismatched (struct-get cube 'R)))))
          (integer/ total 8))))
 
-   ; Every move, in face-major order (all three turns of U, then D, and so on).
-   (all-moves
-     (list
-       (move (face 'u) (turn 'cw)) (move (face 'u) (turn 'ccw)) (move (face 'u) (turn 'half))
-       (move (face 'd) (turn 'cw)) (move (face 'd) (turn 'ccw)) (move (face 'd) (turn 'half))
-       (move (face 'f) (turn 'cw)) (move (face 'f) (turn 'ccw)) (move (face 'f) (turn 'half))
-       (move (face 'b) (turn 'cw)) (move (face 'b) (turn 'ccw)) (move (face 'b) (turn 'half))
-       (move (face 'l) (turn 'cw)) (move (face 'l) (turn 'ccw)) (move (face 'l) (turn 'half))
-       (move (face 'r) (turn 'cw)) (move (face 'r) (turn 'ccw)) (move (face 'r) (turn 'half))))
+   (all-moves (list "U" "U'" "U2" "D" "D'" "D2"
+                    "F" "F'" "F2" "B" "B'" "B2"
+                    "L" "L'" "L2" "R" "R'" "R2"))
+
+   (move-face
+     (lambda (move)
+       (string-nth move 0)))
 
    (same-face?
      (lambda (m1 m2)
-       (enum=? (struct-get m1 'face) (struct-get m2 'face))))
+       (string=? (move-face m1) (move-face m2))))
 
-   ; The inverse of a move is the same face with the opposite turn: cw and ccw
-   ; swap, and half is its own inverse.
    (inverse-move
-     (lambda (m)
-       (move (struct-get m 'face)
-             (match (struct-get m 'turn)
-               ((: turn 'cw) (turn 'ccw))
-               ((: turn 'ccw) (turn 'cw))
-               ((: turn 'half) (turn 'half))))))
+     (lambda (move)
+       (match move
+         ("U"  "U'") ("U'" "U") ("U2" "U2")
+         ("D"  "D'") ("D'" "D") ("D2" "D2")
+         ("F"  "F'") ("F'" "F") ("F2" "F2")
+         ("B"  "B'") ("B'" "B") ("B2" "B2")
+         ("L"  "L'") ("L'" "L") ("L2" "L2")
+         ("R"  "R'") ("R'" "R") ("R2" "R2")
+         (_ move))))
 
    (should-prune?
      (lambda (move last-move)
        (or (same-face? move last-move)
-           (struct=? move (inverse-move last-move)))))
+           (string=? move (inverse-move last-move)))))
 
    (get-candidates
      (lambda (last-move)
@@ -346,27 +355,15 @@
            "    " (face-row->str d 1) "\n"
            "    " (face-row->str d 2) "\n"))))
 
-   ; Render a move in the standard notation: the face letter followed by "" for a
-   ; clockwise turn, "'" for a counter-clockwise turn, or "2" for a half turn.
-   (move->string
-     (lambda (m)
-       (string-concat
-         (match (struct-get m 'face)
-           ((: face 'u) "U") ((: face 'd) "D") ((: face 'f) "F")
-           ((: face 'b) "B") ((: face 'l) "L") ((: face 'r) "R"))
-         (match (struct-get m 'turn)
-           ((: turn 'cw) "") ((: turn 'ccw) "'") ((: turn 'half) "2")))))
-
    (format-solution
      (lambda (result)
        (if (struct-get result 'found)
-           (string-concat "Solution found! Moves: "
-                          (list->string (map-list move->string (struct-get result 'value)) " "))
+           (string-concat "Solution found! Moves: " (list->string (struct-get result 'value) " "))
            (string-concat "No solution: " (struct-get result 'value)))))
 
    (make-cube
      (lambda (u d f b l r)
        (cube-repr u d f b l r))))
 
-  (export face turn move solved-cube apply-move apply-moves cube-solved? heuristic
-          ida-star print-cube move->string format-solution make-cube all-moves))
+  (export solved-cube apply-move apply-moves cube-solved? heuristic
+          ida-star print-cube format-solution make-cube all-moves))

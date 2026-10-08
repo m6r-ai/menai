@@ -204,6 +204,15 @@ lives under `tests/src/<name>/`, and a test for code under `tools/<name>/` lives
 under `tests/tools/<name>/`. The standard library is package data of the `menai`
 package (`src/menai/stdlib/`), so its tests live under `tests/src/menai/stdlib/`.
 
+A test may keep a private copy of a `.menai` module next to itself rather than
+importing one from `src/`. `test_rubiks_cube_functions.py` does this: its
+`rubiks_cube.menai` is frozen in the original string-move form because that form
+is what exposed the compiler bug the suite guards against, while the benchmark
+suite's copy has since moved to enum moves. The copy is not a duplicate to be
+deduplicated — pointing the test at the benchmark copy would destroy the
+regression it exists to catch. A test that pins a representation for a reason
+must say so in its own header, as that copy does.
+
 ## Architectural invariants
 
 These are constraints that must hold across the whole compiler. They are recorded here

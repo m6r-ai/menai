@@ -1,5 +1,5 @@
 """
-Isolated function tests for the Rubik's Cube benchmark.
+Isolated function tests for the Rubik's Cube solver.
 
 Each exported function from rubiks_cube.menai is tested independently so
 that a compiler bug can be pinpointed to the specific function that is
@@ -8,7 +8,14 @@ miscompiled.
 The tests use the same scrambles as the benchmark suite and verify
 correctness by checking invariants of the cube state and by comparing
 against known-good results.
+
+The solver under test is a private copy that lives next to this file, not the
+benchmark suite's copy.  It is kept in its original string-move form because
+that form is what exposed the compiler bug this suite guards against; the
+benchmark's copy has since moved to enum moves and must not be used here.
 """
+
+from pathlib import Path
 
 import pytest
 
@@ -25,12 +32,12 @@ _SCRAMBLES: list[tuple[str, list[str]]] = [
     ("7-move", ["R", "U", "R'", "D", "F", "R", "U"]),
 ]
 
-_SUITE_DIR = "src/menai_benchmark/suites/rubiks_list"
+_TEST_DIR = Path(__file__).resolve().parent
 
 
 def _menai_with_rubiks() -> Menai:
     """Create a Menai instance with the rubiks_cube module on the path."""
-    return Menai(module_path=[_SUITE_DIR] + Menai.build_module_path())
+    return Menai(module_path=[str(_TEST_DIR)] + Menai.build_module_path())
 
 
 def _rubiks_expr(body: str) -> str:

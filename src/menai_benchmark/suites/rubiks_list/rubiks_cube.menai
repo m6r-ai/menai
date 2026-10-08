@@ -8,10 +8,19 @@
 ;   3 4 5
 ;   6 7 8
 ; Center (position 4) never moves and identifies the face color
+;
+; A move is a `move` struct of a `face` and a `turn`.  The `face` enum names the
+; six faces and the `turn` enum the three quarter-turn amounts, so a move is a
+; closed, typed value rather than a string.  `move->string` renders a move in the
+; standard notation ("U", "U'", "U2").
 
 (letrec
   ((cube-repr (struct (U D F B L R)))
    (search-result (struct (found value)))
+
+   (face (enum (u d f b l r)))
+   (turn (enum (cw ccw half)))
+   (move (struct (face turn)))
 
    (solved-cube
      (lambda ()
@@ -179,27 +188,39 @@
            (rotate-face-cw r)))))
 
    (apply-move
-     (lambda (cube move-name)
-       (match move-name
-         ("U"  (move-U cube))
-         ("U'" (move-U (move-U (move-U cube))))
-         ("U2" (move-U (move-U cube)))
-         ("D"  (move-D cube))
-         ("D'" (move-D (move-D (move-D cube))))
-         ("D2" (move-D (move-D cube)))
-         ("F"  (move-F cube))
-         ("F'" (move-F (move-F (move-F cube))))
-         ("F2" (move-F (move-F cube)))
-         ("B"  (move-B cube))
-         ("B'" (move-B (move-B (move-B cube))))
-         ("B2" (move-B (move-B cube)))
-         ("L"  (move-L cube))
-         ("L'" (move-L (move-L (move-L cube))))
-         ("L2" (move-L (move-L cube)))
-         ("R"  (move-R cube))
-         ("R'" (move-R (move-R (move-R cube))))
-         ("R2" (move-R (move-R cube)))
-         (_ cube))))
+     (lambda (cube m)
+       (let ((t (struct-get m 'turn)))
+         (match (struct-get m 'face)
+           ((: face 'u)
+            (match t
+              ((: turn 'cw) (move-U cube))
+              ((: turn 'ccw) (move-U (move-U (move-U cube))))
+              ((: turn 'half) (move-U (move-U cube)))))
+           ((: face 'd)
+            (match t
+              ((: turn 'cw) (move-D cube))
+              ((: turn 'ccw) (move-D (move-D (move-D cube))))
+              ((: turn 'half) (move-D (move-D cube)))))
+           ((: face 'f)
+            (match t
+              ((: turn 'cw) (move-F cube))
+              ((: turn 'ccw) (move-F (move-F (move-F cube))))
+              ((: turn 'half) (move-F (move-F cube)))))
+           ((: face 'b)
+            (match t
+              ((: turn 'cw) (move-B cube))
+              ((: turn 'ccw) (move-B (move-B (move-B cube))))
+              ((: turn 'half) (move-B (move-B cube)))))
+           ((: face 'l)
+            (match t
+              ((: turn 'cw) (move-L cube))
+              ((: turn 'ccw) (move-L (move-L (move-L cube))))
+              ((: turn 'half) (move-L (move-L cube)))))
+           ((: face 'r)
+            (match t
+              ((: turn 'cw) (move-R cube))
+              ((: turn 'ccw) (move-R (move-R (move-R cube))))
+              ((: turn 'half) (move-R (move-R cube)))))))))
 
    (apply-moves
      (lambda (cube moves)
@@ -247,33 +268,34 @@
                       (count-mismatched (struct-get cube 'R)))))
          (integer/ total 8))))
 
-   (all-moves (list "U" "U'" "U2" "D" "D'" "D2"
-                    "F" "F'" "F2" "B" "B'" "B2"
-                    "L" "L'" "L2" "R" "R'" "R2"))
-
-   (move-face
-     (lambda (move)
-       (string-nth move 0)))
+   ; Every move, in face-major order (all three turns of U, then D, and so on).
+   (all-moves
+     (list
+       (move (face 'u) (turn 'cw)) (move (face 'u) (turn 'ccw)) (move (face 'u) (turn 'half))
+       (move (face 'd) (turn 'cw)) (move (face 'd) (turn 'ccw)) (move (face 'd) (turn 'half))
+       (move (face 'f) (turn 'cw)) (move (face 'f) (turn 'ccw)) (move (face 'f) (turn 'half))
+       (move (face 'b) (turn 'cw)) (move (face 'b) (turn 'ccw)) (move (face 'b) (turn 'half))
+       (move (face 'l) (turn 'cw)) (move (face 'l) (turn 'ccw)) (move (face 'l) (turn 'half))
+       (move (face 'r) (turn 'cw)) (move (face 'r) (turn 'ccw)) (move (face 'r) (turn 'half))))
 
    (same-face?
      (lambda (m1 m2)
-       (string=? (move-face m1) (move-face m2))))
+       (enum=? (struct-get m1 'face) (struct-get m2 'face))))
 
+   ; The inverse of a move is the same face with the opposite turn: cw and ccw
+   ; swap, and half is its own inverse.
    (inverse-move
-     (lambda (move)
-       (match move
-         ("U"  "U'") ("U'" "U") ("U2" "U2")
-         ("D"  "D'") ("D'" "D") ("D2" "D2")
-         ("F"  "F'") ("F'" "F") ("F2" "F2")
-         ("B"  "B'") ("B'" "B") ("B2" "B2")
-         ("L"  "L'") ("L'" "L") ("L2" "L2")
-         ("R"  "R'") ("R'" "R") ("R2" "R2")
-         (_ move))))
+     (lambda (m)
+       (move (struct-get m 'face)
+             (match (struct-get m 'turn)
+               ((: turn 'cw) (turn 'ccw))
+               ((: turn 'ccw) (turn 'cw))
+               ((: turn 'half) (turn 'half))))))
 
    (should-prune?
      (lambda (move last-move)
        (or (same-face? move last-move)
-           (string=? move (inverse-move last-move)))))
+           (struct=? move (inverse-move last-move)))))
 
    (get-candidates
      (lambda (last-move)
@@ -349,15 +371,27 @@
            "    " (face-row->str d 1) "\n"
            "    " (face-row->str d 2) "\n"))))
 
+   ; Render a move in the standard notation: the face letter followed by "" for a
+   ; clockwise turn, "'" for a counter-clockwise turn, or "2" for a half turn.
+   (move->string
+     (lambda (m)
+       (string-concat
+         (match (struct-get m 'face)
+           ((: face 'u) "U") ((: face 'd) "D") ((: face 'f) "F")
+           ((: face 'b) "B") ((: face 'l) "L") ((: face 'r) "R"))
+         (match (struct-get m 'turn)
+           ((: turn 'cw) "") ((: turn 'ccw) "'") ((: turn 'half) "2")))))
+
    (format-solution
      (lambda (result)
        (if (struct-get result 'found)
-           (string-concat "Solution found! Moves: " (list->string (struct-get result 'value) " "))
+           (string-concat "Solution found! Moves: "
+                          (list->string (map-list move->string (struct-get result 'value)) " "))
            (string-concat "No solution: " (struct-get result 'value)))))
 
    (make-cube
      (lambda (u d f b l r)
        (cube-repr u d f b l r))))
 
-  (export solved-cube apply-move apply-moves cube-solved? heuristic
-          ida-star print-cube format-solution make-cube all-moves))
+  (export face turn move solved-cube apply-move apply-moves cube-solved? heuristic
+          ida-star print-cube move->string format-solution make-cube all-moves))
