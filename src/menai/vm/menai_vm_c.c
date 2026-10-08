@@ -1107,6 +1107,43 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 break;
             }
 
+            if (IS_MENAI_ENUMTYPE(raw)) {
+                /*
+                 * Enum constructor call: the single argument is a quoted variant
+                 * name (a MenaiSymbol).  Resolve it to the variant's dense index
+                 * via the enumtype's name-to-index table and allocate the value.
+                 */
+                MenaiEnumType *eraw = (MenaiEnumType *)raw;
+                if (arity != 1) {
+                    vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    goto error;
+                }
+
+                MenaiValue *arg = regs[callee_base];
+                if (MENAI_UNLIKELY(!IS_MENAI_SYMBOL(arg))) {
+                    vm_err = MENAI_ERR_NOT_SYMBOL;
+                    goto error;
+                }
+
+                MenaiString *variant_name = ((MenaiSymbol *)arg)->name;
+                ssize_t variant_index = menai_ht_lookup(&eraw->variant_ht, (MenaiValue *)variant_name,
+                                                        menai_string_hash(variant_name));
+                if (variant_index < 0) {
+                    vm_err = MENAI_ERR_ENUM_VARIANT_NOT_FOUND;
+                    goto error;
+                }
+
+                MenaiEnum *instance = alloc_menai_enum(vs, eraw, (int)variant_index);
+                if (instance == NULL) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)instance;
+                break;
+            }
+
             vm_err = MENAI_ERR_NOT_CALLABLE;
             goto error;
         }
@@ -1179,6 +1216,55 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 }
 
                 /* Tail-return the struct: pop frame and deliver to caller. */
+                int saved_return_dest = frame->return_dest;
+                menai_code_object_release(vs, frame->code_obj);
+                frame->code_obj = NULL;
+                if (--frame_depth == 0) {
+                    return (MenaiValue *)retval;
+                }
+
+                Frame *caller = &frames[frame_depth];
+                menai_value_release(vs, regs[caller->base + saved_return_dest]);
+                regs[caller->base + saved_return_dest] = (MenaiValue *)retval;
+                frame = caller;
+                frame_regs = frame->frame_regs;
+                constants_items = frame->constants_items;
+                instrs = frame->instrs;
+                break;
+            }
+
+            if (IS_MENAI_ENUMTYPE(raw)) {
+                /*
+                 * Enum constructor call in tail position: the single argument is
+                 * a quoted variant name (a MenaiSymbol).  Resolve it to the
+                 * variant's dense index and tail-return the value.
+                 */
+                MenaiEnumType *eraw = (MenaiEnumType *)raw;
+                if (n_args != 1) {
+                    vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    goto error;
+                }
+
+                MenaiValue *arg = frame_regs[local_count];
+                if (MENAI_UNLIKELY(!IS_MENAI_SYMBOL(arg))) {
+                    vm_err = MENAI_ERR_NOT_SYMBOL;
+                    goto error;
+                }
+
+                MenaiString *variant_name = ((MenaiSymbol *)arg)->name;
+                ssize_t variant_index = menai_ht_lookup(&eraw->variant_ht, (MenaiValue *)variant_name,
+                                                        menai_string_hash(variant_name));
+                if (variant_index < 0) {
+                    vm_err = MENAI_ERR_ENUM_VARIANT_NOT_FOUND;
+                    goto error;
+                }
+
+                MenaiEnum *retval = alloc_menai_enum(vs, eraw, (int)variant_index);
+                if (retval == NULL) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
                 int saved_return_dest = frame->return_dest;
                 menai_code_object_release(vs, frame->code_obj);
                 frame->code_obj = NULL;
@@ -1301,6 +1387,42 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 break;
             }
 
+            if (IS_MENAI_ENUMTYPE(raw_func)) {
+                /*
+                 * Enum constructor applied to an argument list whose single
+                 * element is a quoted variant name (a MenaiSymbol).
+                 */
+                MenaiEnumType *eraw_func = (MenaiEnumType *)raw_func;
+                if (arity != 1) {
+                    vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    goto error;
+                }
+
+                MenaiValue *arg = apply_elems[0];
+                if (MENAI_UNLIKELY(!IS_MENAI_SYMBOL(arg))) {
+                    vm_err = MENAI_ERR_NOT_SYMBOL;
+                    goto error;
+                }
+
+                MenaiString *variant_name = ((MenaiSymbol *)arg)->name;
+                ssize_t variant_index = menai_ht_lookup(&eraw_func->variant_ht, (MenaiValue *)variant_name,
+                                                        menai_string_hash(variant_name));
+                if (variant_index < 0) {
+                    vm_err = MENAI_ERR_ENUM_VARIANT_NOT_FOUND;
+                    goto error;
+                }
+
+                MenaiEnum *instance = alloc_menai_enum(vs, eraw_func, (int)variant_index);
+                if (instance == NULL) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)instance;
+                break;
+            }
+
             vm_err = MENAI_ERR_APPLY_FIRST_NOT_FUNCTION;
             goto error;
         }
@@ -1406,6 +1528,54 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 }
 
                 MenaiStruct *retval = alloc_menai_struct(vs, sraw_func, apply_elems, n_fields);
+                if (retval == NULL) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                int saved_return_dest = frame->return_dest;
+                menai_code_object_release(vs, frame->code_obj);
+                frame->code_obj = NULL;
+                if (--frame_depth == 0) {
+                    return (MenaiValue *)retval;
+                }
+
+                Frame *caller = &frames[frame_depth];
+                menai_value_release(vs, regs[caller->base + saved_return_dest]);
+                regs[caller->base + saved_return_dest] = (MenaiValue *)retval;
+                frame = caller;
+                frame_regs = frame->frame_regs;
+                constants_items = frame->constants_items;
+                instrs = frame->instrs;
+                break;
+            }
+
+            if (IS_MENAI_ENUMTYPE(raw_func)) {
+                /*
+                 * Enum constructor applied in tail position to an argument list
+                 * whose single element is a quoted variant name (a MenaiSymbol).
+                 */
+                MenaiEnumType *eraw_func = (MenaiEnumType *)raw_func;
+                if (arity != 1) {
+                    vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    goto error;
+                }
+
+                MenaiValue *arg = apply_elems[0];
+                if (MENAI_UNLIKELY(!IS_MENAI_SYMBOL(arg))) {
+                    vm_err = MENAI_ERR_NOT_SYMBOL;
+                    goto error;
+                }
+
+                MenaiString *variant_name = ((MenaiSymbol *)arg)->name;
+                ssize_t variant_index = menai_ht_lookup(&eraw_func->variant_ht, (MenaiValue *)variant_name,
+                                                        menai_string_hash(variant_name));
+                if (variant_index < 0) {
+                    vm_err = MENAI_ERR_ENUM_VARIANT_NOT_FOUND;
+                    goto error;
+                }
+
+                MenaiEnum *retval = alloc_menai_enum(vs, eraw_func, (int)variant_index);
                 if (retval == NULL) {
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;

@@ -802,17 +802,19 @@ class MenaiASTDesugarer:
         # every sibling value and to the body, so all names are in scope
         # throughout.
         letrec_names = {name for name, _ in raw_pairs}
-        letrec_structs = {name: value for name, value in raw_pairs if isinstance(value, MenaiASTStruct)}
-        letrec_enums = {name: value for name, value in raw_pairs if isinstance(value, MenaiASTEnum)}
+        self._push_namespace_scope(namespace_bindings)
+        letrec_structs = {name: struct_node for name, value in raw_pairs
+                          if (struct_node := self._struct_from_value(value)) is not None}
+        letrec_enums = {name: enum_node for name, value in raw_pairs
+                        if (enum_node := self._enum_from_value(value)) is not None}
         self._push_scope(letrec_names, letrec_structs)
         self._set_scope_enums(letrec_enums)
-        self._push_namespace_scope(namespace_bindings)
         try:
             result = self._desugar_letrec_body(expr, raw_dict, binding_groups)
 
         finally:
-            self._pop_namespace_scope()
             self._pop_scope()
+            self._pop_namespace_scope()
 
         return self._wrap_namespace_modules(namespace_modules, result, expr)
 
@@ -941,9 +943,11 @@ class MenaiASTDesugarer:
             desugared_value = self.desugar(value_expr)
             desugared_bindings.append((var_name, desugared_value, binding))
 
-            structs = {var_name.name: value_expr} if isinstance(value_expr, MenaiASTStruct) else {}
+            struct_node = self._struct_from_value(value_expr)
+            structs = {var_name.name: struct_node} if struct_node is not None else {}
             self._push_scope({var_name.name}, structs)
-            enums = {var_name.name: value_expr} if isinstance(value_expr, MenaiASTEnum) else {}
+            enum_node = self._enum_from_value(value_expr)
+            enums = {var_name.name: enum_node} if enum_node is not None else {}
             self._set_scope_enums(enums)
 
         try:

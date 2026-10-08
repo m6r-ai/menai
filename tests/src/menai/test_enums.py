@@ -252,3 +252,52 @@ class TestEnumPatternMatching:
             '  (list (describe (State \'idle))'
             '        (describe (State \'stopped))))'
         ) == '("idle" "stopped")'
+
+
+class TestEnumtypeAsFirstClassValue:
+    """Test calling an enumtype value that is not statically resolvable."""
+
+    def test_call_a_passed_enumtype(self, menai):
+        """An enumtype passed as an argument constructs a value when called."""
+        assert menai.evaluate_and_format(
+            '(let ((State (enum (idle running))))'
+            '  (let ((make (lambda (ctor) (ctor \'idle))))'
+            '    (enum-variant (make State))))'
+        ) == 'idle'
+
+    def test_call_a_passed_enumtype_in_tail_position(self, menai):
+        """A passed enumtype is callable in tail position."""
+        assert menai.evaluate_and_format(
+            '(let ((State (enum (idle running))))'
+            '  (letrec ((make (lambda (ctor n)'
+            '                  (if (integer=? n 0)'
+            '                      (ctor \'running)'
+            '                      (make ctor (integer- n 1))))))'
+            '    (enum-variant (make State 3))))'
+        ) == 'running'
+
+    def test_apply_a_passed_enumtype(self, menai):
+        """An enumtype is callable through apply."""
+        assert menai.evaluate_and_format(
+            '(let ((State (enum (idle running))))'
+            '  (let ((make (lambda (ctor) (apply ctor (list \'running)))))'
+            '    (enum-variant (make State))))'
+        ) == 'running'
+
+    def test_call_a_passed_enumtype_with_undeclared_variant_raises(self, menai):
+        """Calling a passed enumtype with an undeclared variant is an error."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(
+                '(let ((State (enum (idle running))))'
+                '  (let ((make (lambda (ctor) (ctor \'stopped))))'
+                '    (make State)))'
+            )
+
+    def test_call_a_passed_enumtype_with_non_symbol_raises(self, menai):
+        """Calling a passed enumtype with a non-symbol argument is an error."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(
+                '(let ((State (enum (idle running))))'
+                '  (let ((make (lambda (ctor) (ctor 42))))'
+                '    (make State)))'
+            )

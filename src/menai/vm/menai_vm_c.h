@@ -821,6 +821,7 @@ struct MenaiVector {
 #define MENAI_ERR_MISSING_RETURN -58
 #define MENAI_ERR_UNIMPLEMENTED_OPCODE -59
 #define MENAI_ERR_USER_ERROR -60
+#define MENAI_ERR_ENUM_VARIANT_NOT_FOUND -61
 
 /*
  * MenaiVMError — structured error record produced by the VM.

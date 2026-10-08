@@ -125,6 +125,7 @@ class VMErrorCode(IntEnum):
     MISSING_RETURN = -58
     UNIMPLEMENTED_OPCODE = -59
     USER_ERROR = -60
+    ENUM_VARIANT_NOT_FOUND = -61
 
 
 class _MenaiVMRuntimeError(Exception):
@@ -249,6 +250,9 @@ _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
         "frame execution ended without RETURN instruction"
     ),
     VMErrorCode.UNIMPLEMENTED_OPCODE: _eval_error_entry("unimplemented opcode"),
+    VMErrorCode.ENUM_VARIANT_NOT_FOUND: _eval_error_entry(
+        "enum has no such variant"
+    ),
 }
 
 
