@@ -20,6 +20,8 @@ New features:
   of `csv-decode`.
 - Added a `regexp` module to the standard library.  It compiles a
   regular-expression pattern and searches, splits, or replaces within strings.
+- Added `xml-decode` and `xml-encode` modules to the standard library.  They
+  parse XML text into a value tree and serialise it back.
 - Added an `enum` type: a nominal, closed set of named variants, compared for
   identity only.
 

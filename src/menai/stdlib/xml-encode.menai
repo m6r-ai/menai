@@ -1,0 +1,120 @@
+; xml-encode — serialises an XML value tree to text.
+;
+; The input is a value tree in the shape xml-decode produces and the output is
+; a string containing XML.  An element is a dict:
+;
+;   (dict "tag" <string> "attrs" <dict> "children" <list>)
+;
+; "tag" is the element's qualified name, emitted verbatim.  "attrs" maps each
+; attribute's qualified name to its value, which must be a string.  "children"
+; is an ordered list of nodes, where each node is either a string (a text node)
+; or an element dict.  Text and child elements share one ordered list, so mixed
+; content is emitted in order.
+;
+; It is the inverse of xml-decode's decode: for every value tree v that encode
+; accepts, (decode (encode v)) reproduces v.
+;
+; Text is escaped minimally: "&", "<", and ">" become &amp;, &lt;, and &gt;.
+; Attribute values additionally escape "\"".  Every other character, including
+; non-ASCII, is emitted literally, because the output is a UTF-8 string.
+;
+; The output is a single unbroken document with no added whitespace, so it does
+; not reproduce the incidental formatting of any input document.  This is a
+; value round-trip, not a byte round-trip: the tree survives, the original
+; layout does not.
+;
+; A value that is not a well-formed element tree raises a runtime error: a
+; missing or non-string "tag", a non-dict "attrs", a non-list "children", a
+; non-string attribute value, or a child that is neither a string nor an
+; element dict.
+
+(letrec
+  ((escape-text
+    (lambda (s)
+      (letrec ((loop (lambda (i acc)
+                       (if (integer>=? i (string-length s))
+                           (list->string (list-reverse acc))
+                           (loop (integer+ i 1)
+                                 (list-prepend acc (escape-text-char (string-nth s i))))))))
+        (loop 0 (list)))))
+
+   (escape-text-char
+    (lambda (ch)
+      (match ch
+        ("&" "&amp;")
+        ("<" "&lt;")
+        (">" "&gt;")
+        (_ ch))))
+
+   (escape-attribute-char
+    (lambda (ch)
+      (match ch
+        ("&" "&amp;")
+        ("<" "&lt;")
+        (">" "&gt;")
+        ("\"" "&quot;")
+        (_ ch))))
+
+   (escape-attribute
+    (lambda (s)
+      (letrec ((loop (lambda (i acc)
+                       (if (integer>=? i (string-length s))
+                           (list->string (list-reverse acc))
+                           (loop (integer+ i 1)
+                                 (list-prepend acc (escape-attribute-char (string-nth s i))))))))
+        (loop 0 (list)))))
+
+   ; One attribute as " name=\"value\"".
+   (encode-attribute
+    (lambda (name value)
+      (if (string? name)
+          (if (string? value)
+              (string-concat " " name "=\"" (escape-attribute value) "\"")
+              (error (string-concat "xml-encode: attribute \"" name "\" value must be a string")))
+          (error "xml-encode: attribute name must be a string"))))
+
+   (encode-attributes
+    (lambda (attrs)
+      (if (dict? attrs)
+          (list->string
+            (map-list (lambda (name) (encode-attribute name (dict-get attrs name)))
+                      (dict-keys attrs)))
+          (error "xml-encode: \"attrs\" must be a dict"))))
+
+   ; One child node: text is escaped, an element dict is serialised.
+   (encode-child
+    (lambda (node)
+      (if (string? node)
+          (escape-text node)
+          (if (dict? node)
+              (encode-element node)
+              (error "xml-encode: a child must be a string or an element dict")))))
+
+   (encode-children
+    (lambda (children)
+      (if (list? children)
+          (list->string (map-list encode-child children))
+          (error "xml-encode: \"children\" must be a list"))))
+
+   ; One element as "<tag attrs>children</tag>", or self-closing when childless.
+   (encode-element
+    (lambda (element)
+      (let ((tag (dict-get element "tag"))
+            (attrs (dict-get element "attrs"))
+            (children (dict-get element "children")))
+        (if (string? tag)
+            (let ((attr-text (encode-attributes attrs)))
+              (if (and (list? children) (list-null? children))
+                  (string-concat "<" tag attr-text "/>")
+                  (string-concat "<" tag attr-text ">"
+                                 (encode-children children)
+                                 "</" tag ">")))
+            (error "xml-encode: element \"tag\" must be a string")))))
+
+   (encode
+    (lambda (v)
+      (if (dict? v)
+          (encode-element v)
+          (error "xml-encode: encode expects an element dict")))))
+
+  (export encode))

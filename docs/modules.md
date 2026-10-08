@@ -301,6 +301,20 @@ menai`. Currently it includes:
   dict of the shape `tar-entries` and `tar-extract` produce; the write side of
   the tar readers.  Supported entry types are regular files, directories, and
   symbolic links (`create`)
+- `xml-decode.menai` — parses an XML document (as a string) into a value tree.
+  An element is a dict with `"tag"` (the qualified name, kept verbatim),
+  `"attrs"` (a dict of attribute name to string value), and `"children"` (an
+  ordered list of nodes, each a string text node or a child element dict), so
+  mixed content survives.  The five predefined entities, numeric character
+  references, and CDATA are decoded; the XML declaration, comments, and
+  processing instructions are discarded.  DTDs and non-UTF-8 encodings are not
+  supported (`decode`)
+- `xml-encode.menai` — serialises an XML value tree (the shape `xml-decode`
+  produces) to a string of XML; the inverse of `xml-decode`, so
+  `(decode (encode v))` reproduces `v` for every value tree `v` that `encode`
+  accepts.  Text and attribute values are escaped minimally, and the output is a
+  single unbroken document, so it is a value round-trip rather than a byte
+  round-trip (`encode`)
 - `zip-entries.menai` — reads a ZIP file (as bytes) and returns its central
   directory as a list of entry dicts, without decompressing the contents
   (`entries`)
