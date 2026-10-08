@@ -111,9 +111,9 @@ functions:
 (letrec ((state (enum (idle running stopped)))
          (describe (lambda (s)
                      (match s
-                       ((state 'idle) "idle")
-                       ((state 'running) "running")
-                       ((state 'stopped) "stopped")))))
+                       ((: state 'idle) "idle")
+                       ((: state 'running) "running")
+                       ((: state 'stopped) "stopped")))))
   (dict "state" state "describe" describe))
 ```
 

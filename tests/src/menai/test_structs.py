@@ -523,7 +523,7 @@ class TestStructPatternMatching:
         (let ((Point (struct (x y)))
               (p (Point 3 4)))
           (match p
-            ((Point a b) (integer+ a b))
+            ((: Point a b) (integer+ a b))
             (_ 0)))
         ''')
         assert result == '7'
@@ -534,7 +534,7 @@ class TestStructPatternMatching:
         (let ((Point (struct (x y)))
               (p (Point 10 20)))
           (match p
-            ((Point a b) (list a b))
+            ((: Point a b) (list a b))
             (_ (list))))
         ''')
         assert result == '(10 20)'
@@ -546,8 +546,8 @@ class TestStructPatternMatching:
               (Vec (struct (x y)))
               (v (Vec 1 2)))
           (match v
-            ((Point a b) "point")
-            ((Vec a b) "vec")
+            ((: Point a b) "point")
+            ((: Vec a b) "vec")
             (_ "other")))
         ''')
         assert result == '"vec"'
@@ -558,7 +558,7 @@ class TestStructPatternMatching:
         (let ((Point (struct (x y)))
               (p (Point 1 2)))
           (match 42
-            ((Point a b) "point")
+            ((: Point a b) "point")
             (_ "other")))
         ''')
         assert result == '"other"'
@@ -570,7 +570,7 @@ class TestStructPatternMatching:
               (Line (struct (start end)))
               (line (Line (Point 0 0) (Point 3 4))))
           (match line
-            ((Line (Point x1 y1) (Point x2 y2))
+            ((: Line (: Point x1 y1) (: Point x2 y2))
              (list x1 y1 x2 y2))
             (_ (list))))
         ''')
@@ -582,7 +582,7 @@ class TestStructPatternMatching:
         (let ((Unit (struct ()))
               (u (Unit)))
           (match u
-            ((Unit) "unit!")
+            ((: Unit) "unit!")
             (_ "other")))
         ''')
         assert result == '"unit!"'
@@ -593,7 +593,7 @@ class TestStructPatternMatching:
         (let ((Point (struct (x y))))
           (let ((distance-sq (lambda (p)
                   (match p
-                    ((Point x y) (integer+ (integer* x x) (integer* y y)))
+                    ((: Point x y) (integer+ (integer* x x) (integer* y y)))
                     (_ 0)))))
             (distance-sq (Point 3 4))))
         ''')
@@ -721,7 +721,7 @@ class TestStructScoping:
         (let ((Point (struct (x y)))
               (p (Point 5 6)))
           (match p
-            ((Point a b) (integer+ a b))
+            ((: Point a b) (integer+ a b))
             (_ 0)))
         ''')
         assert result == '11'
@@ -730,7 +730,7 @@ class TestStructScoping:
         """A struct pattern resolves against the type in scope where it is written."""
         result = menai.evaluate_and_format('''
         (let ((Point (struct (x y))))
-          (let ((f (lambda (p) (match p ((Point a b) (integer+ a b)) (_ 0)))))
+          (let ((f (lambda (p) (match p ((: Point a b) (integer+ a b)) (_ 0)))))
             (let ((Point (struct (a b c))))
               (f (Point 10 20 30)))))
         ''')
@@ -802,8 +802,8 @@ class TestStructModuleExport:
         (tmp_path / "shapes.menai").write_text("""
 (letrec ((Point (struct (x y)))
          (make-point (lambda (a b) (Point a b)))
-         (point-x (lambda (p) (match p ((Point x _) x))))
-         (point-y (lambda (p) (match p ((Point _ y) y)))))
+         (point-x (lambda (p) (match p ((: Point x _) x))))
+         (point-y (lambda (p) (match p ((: Point _ y) y)))))
   (export Point make-point point-x point-y))
 """)
         m = Menai(module_path=[str(tmp_path)])
@@ -874,7 +874,7 @@ class TestStructErrors:
         result = menai.evaluate(
             '(letrec ((Point (struct (x y)))'
             '         (make (lambda (a b) (Point a b)))'
-            '         (get-x (lambda (p) (match p ((Point x _) x)))))'
+            '         (get-x (lambda (p) (match p ((: Point x _) x)))))'
             '  (get-x (make 42 99)))'
         )
         assert str(result) == '42'

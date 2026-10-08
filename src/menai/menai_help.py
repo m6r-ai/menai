@@ -294,7 +294,7 @@ Syntax: (operator arg1 arg2 ...)
 - Functional update (returns new struct — pure): (struct-with p 'x 10) → new point with x=10, y unchanged
 - Equality: (struct=? p1 p2) → #t if same type tag and all fields equal; (struct!=? p1 p2) → negation
 - Display format: (point 1 2) — this is display-only; construction always uses (TypeName field1 field2 ...)
-- Pattern matching destructuring form: (match p ((point x y) (integer+ x y)) (_ 0)) — binds each field positionally to the pattern variables
+- Pattern matching destructuring form: (match p ((: point x y) (integer+ x y)) (_ 0)) — the type name is preceded by the : head symbol and each field binds positionally to a pattern variable
 - Hashability: structs are hashable (usable as set members or dict keys) if all their fields are hashable scalars
 - Structs are nominal: (let ((point (struct (x y))) (Vec (struct (x y)))) ...) — point and Vec are distinct types even with identical fields
 
@@ -320,7 +320,7 @@ Syntax: (operator arg1 arg2 ...)
 - Type predicate (any enum): (enum? x) → #t for any enum value, #f for anything else
 - Equality: (enum=? a b) → #t if same enum type and same variant; (enum!=? a b) → negation
 - Display format: (state idle) — display-only; construction always uses (TypeName 'variant)
-- Pattern matching: (match s ((state 'idle) "i") ((state 'running) "r") (_ "other")) — the enumtype is the pattern head and the variant is a quoted symbol
+- Pattern matching: (match s ((: state 'idle) "i") ((: state 'running) "r") (_ "other")) — the type name is preceded by the : head symbol and the variant is a quoted symbol
 - An enum pattern is total: matching a value of another type falls through to the next arm rather than raising
 - A match whose arms are all enum patterns of the same type compiles to a jump table
 - Hashability: enum values are hashable unconditionally (usable as set members or dict keys)
@@ -491,7 +491,7 @@ Syntax: (operator arg1 arg2 ...)
 - Predicate patterns: (? pred var) — pred can be any expression, including user-defined predicates: (? integer? n), (? string? s), (? my-pred? x)
 - Empty list: (match lst (() "empty") ((x) "singleton") (_ "multiple"))
 - List destructuring: (match lst ((a b c) (integer+ a b c)) ((head . tail) (list-prepend tail head)))
-- Enum variants: (match s ((state 'idle) "i") ((state 'running) "r") (_ "other")) — the enumtype is the pattern head, the variant a quoted symbol
+- Enum variants: (match s ((: state 'idle) "i") ((: state 'running) "r") (_ "other")) — the type name is preceded by the : head symbol, the variant a quoted symbol
 - Nested patterns: (match data (((? integer? x) (? string? y)) (list x y)) (_ "no match"))
 - First match wins: patterns are tested in order, use specific patterns before general ones
 - Example: (match data (42 "answer") ((? integer? n) (integer* n 2)) ((? string? s) (string-upcase s)) ((head . tail) (list head (list-length tail))) (_ "unknown"))

@@ -1908,27 +1908,15 @@ class MenaiASTDesugarer:
         Returns:
             (test_expression, bindings)
         """
-        # Struct destructuring pattern: (TypeName field1 field2 ...)
-        # Detected when the first element names a struct type in scope.
-        if not pattern.is_empty() and isinstance(pattern.elements[0], MenaiASTSymbol):
-            head_name = pattern.elements[0].name
-            struct_node = self._lookup_struct(head_name)
-            if struct_node is not None:
-                n_patterns = len(pattern.elements) - 1
-                n_fields = len(struct_node.field_names)
-                if n_patterns == n_fields:
-                    return self._desugar_struct_pattern(pattern, temp_var)
-
-        # Enum variant pattern: (TypeName 'variant)
-        # Detected when the first element names an enum type in scope and the
-        # second is a quoted variant name.
-        if len(pattern.elements) == 2 and isinstance(pattern.elements[0], MenaiASTSymbol):
-            head_name = pattern.elements[0].name
-            enum_node = self._lookup_enum(head_name)
-            if enum_node is not None:
-                variant_name = _quoted_symbol_name(pattern.elements[1])
-                if variant_name is not None:
-                    return self._desugar_enum_pattern(pattern, temp_var, enum_node, variant_name)
+        # Type pattern: (: TypeName ...).  The head is the reserved symbol ':'
+        # and the next element is the type name, mirroring the predicate
+        # pattern (? pred var).  A type pattern is recognised by its shape and
+        # never by resolving a bare head name against the scope, so the meaning
+        # of a pattern does not depend on what types are in scope.
+        if (not pattern.is_empty()
+                and isinstance(pattern.elements[0], MenaiASTSymbol)
+                and pattern.elements[0].name == ':'):
+            return self._desugar_type_pattern(pattern, temp_var)
 
         # Empty list pattern: ()
         if pattern.is_empty():
@@ -2456,6 +2444,83 @@ class MenaiASTDesugarer:
 
         combined_test = self._make_and([enum_test, eq_test], pattern)
         return (combined_test, [])
+
+    def _desugar_type_pattern(
+        self,
+        pattern: MenaiASTList,
+        temp_var: str,
+    ) -> tuple[MenaiASTNode, list[tuple[str, Any]]]:
+        """
+        Desugar a type pattern (: TypeName ...).
+
+        The head is the reserved symbol ':' and the next element names a struct
+        or enum type in scope.  A struct pattern is (: TypeName field1 ...) and
+        an enum pattern is (: TypeName 'variant).
+
+        The type name is resolved here, so a head that does not name a type in
+        scope is a compile-time error rather than a list pattern.  The pattern is
+        normalised to the internal (TypeName ...) shape and delegated to the
+        struct or enum desugarer, which both expect the type name in head
+        position.
+
+        Args:
+            pattern: The type pattern, e.g. (: Point x y) or (: state 'idle)
+            temp_var: Name of temp variable holding the match value
+
+        Returns:
+            (test_expression, bindings)
+        """
+        type_name_expr = pattern.elements[1]
+        assert isinstance(type_name_expr, MenaiASTSymbol)
+        type_name = type_name_expr.name
+
+        normalised = MenaiASTList(
+            pattern.elements[1:],
+            line=pattern.line, column=pattern.column, source_file=pattern.source_file,
+        )
+
+        enum_node = self._lookup_enum(type_name)
+        if enum_node is not None:
+            variant_name = _quoted_symbol_name(pattern.elements[2])
+            if variant_name is None:
+                raise MenaiEvalError(
+                    message=f"Enum pattern for '{type_name}' must name a quoted variant",
+                    received=f"Pattern: {pattern}",
+                    expected=f"A quoted variant name, one of: {list(enum_node.variant_names)}",
+                    example=f"(: {type_name} '{enum_node.variant_names[0]})",
+                    suggestion="Quote the variant name after the enum type",
+                    line=pattern.line,
+                    column=pattern.column,
+                )
+
+            return self._desugar_enum_pattern(normalised, temp_var, enum_node, variant_name)
+
+        struct_node = self._lookup_struct(type_name)
+        if struct_node is not None:
+            n_patterns = len(pattern.elements) - 2
+            n_fields = len(struct_node.field_names)
+            if n_patterns != n_fields:
+                raise MenaiEvalError(
+                    message=f"Struct pattern for '{type_name}' has the wrong number of field patterns",
+                    received=f"Got {n_patterns} field pattern{'s' if n_patterns != 1 else ''}",
+                    expected=f"Exactly {n_fields} for fields: {list(struct_node.field_names)}",
+                    example=f"(: {type_name} {' '.join(struct_node.field_names)})",
+                    suggestion="Match the field pattern count to the struct's field count",
+                    line=pattern.line,
+                    column=pattern.column,
+                )
+
+            return self._desugar_struct_pattern(normalised, temp_var)
+
+        raise MenaiEvalError(
+            message=f"'{type_name}' does not name a struct or enum type in scope",
+            received=f"Pattern: {pattern}",
+            expected="The name of a struct or enum type in scope",
+            example="(: Point x y) or (: state 'idle)",
+            suggestion="Check the type name, or remove the : head to write a list pattern",
+            line=pattern.line,
+            column=pattern.column,
+        )
 
     def _desugar_struct_pattern(
         self,

@@ -205,11 +205,11 @@ class TestEnumPatternMatching:
             '(let ((State (enum (idle running stopped))))'
             '  (list'
             '    (match (State \'idle)'
-            '      ((State \'idle) "i") ((State \'running) "r") ((State \'stopped) "s"))'
+            '      ((: State \'idle) "i") ((: State \'running) "r") ((: State \'stopped) "s"))'
             '    (match (State \'running)'
-            '      ((State \'idle) "i") ((State \'running) "r") ((State \'stopped) "s"))'
+            '      ((: State \'idle) "i") ((: State \'running) "r") ((: State \'stopped) "s"))'
             '    (match (State \'stopped)'
-            '      ((State \'idle) "i") ((State \'running) "r") ((State \'stopped) "s"))))'
+            '      ((: State \'idle) "i") ((: State \'running) "r") ((: State \'stopped) "s"))))'
         ) == '("i" "r" "s")'
 
     def test_match_with_wildcard_default(self, menai):
@@ -217,7 +217,7 @@ class TestEnumPatternMatching:
         assert menai.evaluate_and_format(
             '(let ((State (enum (idle running))))'
             '  (match (State \'running)'
-            '    ((State \'idle) "i")'
+            '    ((: State \'idle) "i")'
             '    (_ "other")))'
         ) == '"other"'
 
@@ -226,7 +226,7 @@ class TestEnumPatternMatching:
         assert menai.evaluate_and_format(
             '(let ((State (enum (idle running))))'
             '  (match 5'
-            '    ((State \'idle) "i")'
+            '    ((: State \'idle) "i")'
             '    (_ "other")))'
         ) == '"other"'
 
@@ -246,9 +246,9 @@ class TestEnumPatternMatching:
             '(letrec ((State (enum (idle running stopped)))'
             '         (describe (lambda (s)'
             '                     (match s'
-            '                       ((State \'idle) "idle")'
-            '                       ((State \'running) "running")'
-            '                       ((State \'stopped) "stopped")))))'
+            '                       ((: State \'idle) "idle")'
+            '                       ((: State \'running) "running")'
+            '                       ((: State \'stopped) "stopped")))))'
             '  (list (describe (State \'idle))'
             '        (describe (State \'stopped))))'
         ) == '("idle" "stopped")'

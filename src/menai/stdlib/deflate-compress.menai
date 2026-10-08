@@ -38,7 +38,7 @@
       (if (integer=? count 0)
           w
           (match w
-            ((writer bytes bit acc)
+            ((: writer bytes bit acc)
              (let ((combined (integer-bit-or acc
                                              (integer-bit-shift-left
                                                (integer-bit-and value

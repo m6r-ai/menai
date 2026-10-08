@@ -384,7 +384,7 @@ MONO_SRC = """
 (letrec ((point (struct (x y)))
          (get-x (lambda (p)
                   (match p
-                         ((point a b) (integer+ a b))
+                         ((: point a b) (integer+ a b))
                          (_ 0)))))
   (get-x (point 1 2)))
 """
@@ -394,7 +394,7 @@ POLY_SRC = """
          (vec (struct (x y)))
          (get-x (lambda (p)
                   (match p
-                         ((point a b) (integer+ a b))
+                         ((: point a b) (integer+ a b))
                          (_ 0)))))
   (list (get-x (point 1 2)) (get-x (vec 3 4))))
 """
@@ -403,7 +403,7 @@ UNKNOWN_RECEIVER_SRC = """
 (let ((point (struct (x y))))
   (letrec ((get-x (lambda (p)
                     (match p
-                           ((point a b) (integer+ a b))
+                           ((: point a b) (integer+ a b))
                            (_ 0)))))
     (list (get-x (point 1 2)) (get-x (dict "x" 1)))))
 """
@@ -414,7 +414,7 @@ JOINED_STRUCT_SRC = """
   (letrec ((pick (lambda (n) (if (integer<=? n 0) (point 1 2) (vec 3 4))))
            (get-x (lambda (p)
                     (match p
-                           ((point a b) (integer+ a b))
+                           ((: point a b) (integer+ a b))
                            (_ 0)))))
     (get-x (pick 1))))
 """
@@ -424,7 +424,7 @@ REFINED_RECEIVER_SRC = """
       (box (struct (item tag))))
   (let ((inner (struct-get (box (point 1 2) 9) 'item)))
     (match inner
-           ((point a b) (integer+ a b))
+           ((: point a b) (integer+ a b))
            (_ 0))))
 """
 

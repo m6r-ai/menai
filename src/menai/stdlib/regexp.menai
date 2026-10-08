@@ -247,34 +247,34 @@
    (regexp-m
     (lambda (node pos s k)
       (match (list-first node)
-        ((regexp-op 'empty) (k pos))
-        ((regexp-op 'char) (if (and (integer<? pos (string-length s))
+        ((: regexp-op 'empty) (k pos))
+        ((: regexp-op 'char) (if (and (integer<? pos (string-length s))
                     (string=? (string-nth s pos) (list-nth node 1)))
                (k (integer+ pos 1))
                #none))
-        ((regexp-op 'any) (if (integer<? pos (string-length s))
+        ((: regexp-op 'any) (if (integer<? pos (string-length s))
                (k (integer+ pos 1))
                #none))
-        ((regexp-op 'class) (if (and (integer<? pos (string-length s))
+        ((: regexp-op 'class) (if (and (integer<? pos (string-length s))
                     (regexp-class-match? (list-nth node 1)
                                   (list-nth node 2)
                                   (string-nth s pos)))
                (k (integer+ pos 1))
                #none))
-        ((regexp-op 'bol) (if (integer=? pos 0) (k pos) #none))
-        ((regexp-op 'eol) (if (integer=? pos (string-length s)) (k pos) #none))
-        ((regexp-op 'seq) (regexp-m (list-nth node 1) pos s
+        ((: regexp-op 'bol) (if (integer=? pos 0) (k pos) #none))
+        ((: regexp-op 'eol) (if (integer=? pos (string-length s)) (k pos) #none))
+        ((: regexp-op 'seq) (regexp-m (list-nth node 1) pos s
               (lambda (p2)
                 (regexp-m (list-nth node 2) p2 s k))))
-        ((regexp-op 'alt) (let ((r (regexp-m (list-nth node 1) pos s k)))
+        ((: regexp-op 'alt) (let ((r (regexp-m (list-nth node 1) pos s k)))
              (if (none? r)
                  (regexp-m (list-nth node 2) pos s k)
                  r)))
-        ((regexp-op 'opt) (let ((r (regexp-m (list-nth node 1) pos s k)))
+        ((: regexp-op 'opt) (let ((r (regexp-m (list-nth node 1) pos s k)))
              (if (none? r)
                  (k pos)
                  r)))
-        ((regexp-op 'star) (letrec
+        ((: regexp-op 'star) (letrec
              ((loop
                (lambda (p)
                  (let ((r (regexp-m (list-nth node 1) p s
@@ -305,8 +305,8 @@
    (regexp-literal-prefix
     (lambda (node)
       (match (list-first node)
-        ((regexp-op 'char) (list-nth node 1))
-        ((regexp-op 'seq) (let ((a (list-nth node 1)))
+        ((: regexp-op 'char) (list-nth node 1))
+        ((: regexp-op 'seq) (let ((a (list-nth node 1)))
              (let ((pa (regexp-literal-prefix a)))
                (if (integer=? (string-length pa) (regexp-literal-length a))
                    (string-concat pa (regexp-literal-prefix (list-nth node 2)))
@@ -318,8 +318,8 @@
    (regexp-literal-length
     (lambda (node)
       (match (list-first node)
-        ((regexp-op 'char) 1)
-        ((regexp-op 'seq) (let ((n (regexp-literal-length (list-nth node 1))))
+        ((: regexp-op 'char) 1)
+        ((: regexp-op 'seq) (let ((n (regexp-literal-length (list-nth node 1))))
              (if (integer=? n -1)
                  -1
                  (let ((regexp-m (regexp-literal-length (list-nth node 2))))

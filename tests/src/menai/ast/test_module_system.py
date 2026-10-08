@@ -837,7 +837,7 @@ class TestImportedStructAsPatternHead:
         (make-point (:: shapes make-point)))
     (let ((p (make-point 3 4)))
       (match p
-        ((Point x y) (integer+ x y))))))
+        ((: Point x y) (integer+ x y))))))
 ''')
 
         assert result == 7
@@ -870,9 +870,9 @@ class TestImportedEnumAsPatternHead:
 (letrec ((light (enum (red amber green)))
          (next (lambda (l)
                  (match l
-                   ((light 'red) (light 'green))
-                   ((light 'amber) (light 'red))
-                   ((light 'green) (light 'amber))))))
+                   ((: light 'red) (light 'green))
+                   ((: light 'amber) (light 'red))
+                   ((: light 'green) (light 'amber))))))
   (export light next))
 """)
 
@@ -894,9 +894,9 @@ class TestImportedEnumAsPatternHead:
          (green (lambda () (light 'green)))
          (describe (lambda (l)
                      (match l
-                       ((light 'red) "stop")
-                       ((light 'amber) "wait")
-                       ((light 'green) (string-upcase "go"))))))
+                       ((: light 'red) "stop")
+                       ((: light 'amber) "wait")
+                       ((: light 'green) (string-upcase "go"))))))
   (export light green describe))
 """)
 

@@ -473,7 +473,7 @@ NESTED_DESTRUCTURE_SRC = """
 (let ((point (struct (x y)))
        (box (struct (item tag))))
   (match (box (point 1 2) 9)
-    ((box inner tag) (match inner ((point a b) (integer+ a b))))
+    ((: box inner tag) (match inner ((: point a b) (integer+ a b))))
     (_ 0)))
 """
 

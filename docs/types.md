@@ -406,13 +406,13 @@ Type predicate:
 Enum values are hashable unconditionally, and support no arithmetic, ordering, or
 bitwise operations: `(integer+ (state 'idle) 1)` is a type error.
 
-An enum is matched with the enumtype as the pattern head and a quoted variant to
-select:
+An enum is matched with the type name preceded by the `:` head symbol and a quoted
+variant to select:
 
 ```menai
 (match (state 'running)
-  ((state 'idle) "idle")
-  ((state 'running) "running")
+  ((: state 'idle) "idle")
+  ((: state 'running) "running")
   (_ "other"))
 → "running"
 ```

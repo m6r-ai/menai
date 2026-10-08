@@ -204,7 +204,7 @@ destructuring pattern head:
   (let ((Point (:: shapes point))
         (make-point (:: shapes make-point)))
     (match (make-point 3 4)
-      ((Point x y) (integer+ x y)))))
+      ((: Point x y) (integer+ x y)))))
 → 7
 ```
 

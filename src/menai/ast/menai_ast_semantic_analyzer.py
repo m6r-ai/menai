@@ -30,6 +30,21 @@ from menai.menai_error import MenaiEvalError
 from menai.ast.menai_ast import MenaiASTStruct, MenaiASTEnum
 
 
+def _is_quoted_symbol(expr: MenaiASTNode) -> bool:
+    """
+    Return True if expr is a quoted symbol, written 'name.
+
+    The reader produces a quoted symbol as the two-element form (quote name).
+    The check is purely structural and does not verify that the name is bound.
+    """
+    if not isinstance(expr, MenaiASTList) or len(expr.elements) != 2:
+        return False
+
+    head, name_expr = expr.elements
+    return (isinstance(head, MenaiASTSymbol) and head.name == 'quote'
+            and isinstance(name_expr, MenaiASTSymbol))
+
+
 class MenaiASTSemanticAnalyzer:
     """
     Validates Menai AST structure and semantics.
@@ -902,6 +917,22 @@ class MenaiASTSemanticAnalyzer:
 
             return set()
 
+        # Type pattern (: TypeName ...).  The head and the type name bind
+        # nothing.  A struct pattern's field patterns bind; an enum pattern's
+        # variant is a quoted symbol, which binds nothing, so skipping quoted
+        # symbols covers both without needing to know the type's kind.
+        if (isinstance(pattern.elements[0], MenaiASTSymbol)
+                and pattern.elements[0].name == ':'
+                and len(pattern.elements) >= 2):
+            type_pattern_names: set[str] = set()
+            for elem in pattern.elements[2:]:
+                if _is_quoted_symbol(elem):
+                    continue
+
+                type_pattern_names |= self._collect_pattern_names(elem)
+
+            return type_pattern_names
+
         names: set[str] = set()
         for elem in pattern.elements:
             if isinstance(elem, MenaiASTSymbol) and elem.name == '.':
@@ -959,6 +990,49 @@ class MenaiASTSemanticAnalyzer:
 
             # Analyze the predicate expression — can be any valid expression
             self.analyze(pred_expr, self.source)
+            return
+
+        # Check for type pattern: (: TypeName ...).  The head is the reserved
+        # symbol ':' and the next element names a struct or enum type.
+        if (len(pattern.elements) >= 1 and
+            isinstance(pattern.elements[0], MenaiASTSymbol) and
+            pattern.elements[0].name == ':'):
+
+            if len(pattern.elements) < 2:
+                raise MenaiEvalError(
+                    message=f"Invalid type pattern in clause {clause_num}",
+                    received=f"Pattern: {pattern}",
+                    expected="At least 2 elements: (: TypeName ...)",
+                    example="(: Point x y) or (: state 'idle)",
+                    suggestion="Name a struct or enum type after the : head symbol",
+                    line=pattern.line,
+                    column=pattern.column,
+                    source=self.source
+                )
+
+            type_name_expr = pattern.elements[1]
+            if not isinstance(type_name_expr, MenaiASTSymbol):
+                raise MenaiEvalError(
+                    message=f"Type name must be a symbol in clause {clause_num}",
+                    received=f"Type name: {type_name_expr}",
+                    expected="Symbol (type name)",
+                    example="(: Point x y) not (: \"Point\" x y)",
+                    suggestion="Use an unquoted type name after the : head symbol",
+                    line=type_name_expr.line,
+                    column=type_name_expr.column,
+                    source=self.source
+                )
+
+            # Validate the trailing sub-patterns.  A quoted symbol (an enum
+            # variant) binds nothing and is not a sub-pattern.  Whether the
+            # trailing elements are field patterns or a variant needs the type's
+            # kind, which the desugarer resolves, so it is not checked here.
+            for elem in pattern.elements[2:]:
+                if _is_quoted_symbol(elem):
+                    continue
+
+                self._analyze_match_pattern(elem, clause_num)
+
             return
 
         # Check for cons pattern: (head . tail) or (a b . rest)

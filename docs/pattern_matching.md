@@ -137,14 +137,15 @@ Patterns can be nested to any depth:
 
 ## Struct destructuring patterns
 
-A struct pattern `(TypeName field1 field2 ...)` matches a struct instance of the
-given type and binds each field by position:
+A struct pattern `(: TypeName field1 field2 ...)` matches a struct instance of the
+given type and binds each field by position. The type name is preceded by the `:`
+head symbol, following the shape of the predicate pattern `(? pred var)`:
 
 ```menai
 (let ((point (struct (x y))))
   (let ((p (point 3 4)))
     (match p
-      ((point x y) (integer+ x y))
+      ((: point x y) (integer+ x y))
       (_ 0))))
 → 7
 ```
@@ -162,15 +163,16 @@ destructuring:
 
 ## Enum patterns
 
-An enum pattern `(TypeName 'variant)` matches an enum value of the given type at the
-given variant. The enumtype is the pattern head and the variant is a quoted symbol:
+An enum pattern `(: TypeName 'variant)` matches an enum value of the given type at the
+given variant. The type name is preceded by the `:` head symbol and the variant is a
+quoted symbol:
 
 ```menai
 (let ((state (enum (idle running stopped))))
   (match (state 'running)
-    ((state 'idle) "idle")
-    ((state 'running) "running")
-    ((state 'stopped) "stopped")))
+    ((: state 'idle) "idle")
+    ((: state 'running) "running")
+    ((: state 'stopped) "stopped")))
 → "running"
 ```
 
@@ -182,7 +184,7 @@ through to the next arm, so a wildcard arm catches it:
 
 ```menai
 (match 5
-  ((state 'idle) "idle")
+  ((: state 'idle) "idle")
   (_ "not an enum"))
 → "not an enum"
 ```

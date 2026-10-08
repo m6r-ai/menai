@@ -109,21 +109,11 @@ A variant name that is not declared by the enumtype is a compile-time error.
 
 ### Pattern matching
 
-An enum is matched with the enumtype as the pattern head and a quoted variant to
-select:
-
-```menai
-(match m
-  ((mode 'stored) (write-stored-block ...))
-  ((mode 'auto)   (encode-auto b))
-  ((mode 'fixed)  (encode-tokens tokens 'fixed))
-  ((mode 'dynamic) (encode-tokens tokens 'dynamic)))
-```
-
-The enumtype head is resolved against the enclosing lexical binders, exactly as a
-struct pattern head is. The quoted variant makes the variant unmistakably a name
-rather than a binding, which is what allows the pattern to name the variant the
-constants in `regexp.menai` cannot.
+An enum is matched by naming the enum type and the variant to select. The type name
+is resolved against the enclosing lexical binders, exactly as a struct pattern's type
+name is. The variant is written as a quoted symbol, which makes it unmistakably a
+name rather than a binding, and is what allows the pattern to name the variant that
+the integer constants in `regexp.menai` cannot.
 
 Matching an enum value against a pattern for a different enum type does not match, and
 does not raise.
@@ -213,10 +203,11 @@ Two constraints are recorded so that the bare-tag enum does not foreclose it:
    later payload-carrying enum could not tighten it without breaking programs that
    ignored the warning.
 
-The surface syntax is already forward-compatible: `(state 'idle)` extends to
-`(state 'running task)` and `((state 'idle) ...)` to `((state 'running t) ...)` by
-treating the trailing elements as a payload, exactly as a struct's positional fields.
-The bare-tag enum is a restriction of the tagged union, not a different design.
+The form is forward-compatible with payloads. A variant that carries data extends to
+one that carries trailing elements, and a pattern that selects a variant extends to
+one that binds those elements, exactly as a struct's positional fields extend. The
+bare-tag enum is a restriction of the tagged union, not a different design, so
+deciding it now does not foreclose the larger feature.
 
 ## Alternatives considered
 
