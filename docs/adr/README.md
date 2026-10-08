@@ -112,3 +112,4 @@ What costs, risks, or constraints does this decision impose?
 | [0041](0041-standard-library-module-taxonomy.md) | Standard library module taxonomy | Accepted |
 | [0042](0042-regular-expression-matching.md) | Regular-expression matching — the `regexp` capability module | Accepted |
 | [0043](0043-enum-type.md) | Enum type | Accepted |
+| [0044](0044-type-pattern-heads-are-syntactically-distinct.md) | Type pattern heads are syntactically distinct | Accepted |

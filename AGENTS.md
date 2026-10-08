@@ -675,7 +675,7 @@ An `enum` is a nominal, closed set of named variants, compared for identity only
 It is declared with `(enum (variant ...))` as the RHS of a `let`/`let*`/`letrec`
 binding, producing an **enumtype** value that mirrors structtype; the enumtype is
 callable, and `(state 'idle)` constructs a value. A `match` names the enumtype as the
-pattern head and the variant as a quoted symbol: `((state 'idle) ...)`. Variants are
+pattern head and the variant as a quoted symbol: `((: state 'idle) ...)`. Variants are
 namespaced by their enumtype, which is what lets many enum types coexist.
 
 Enum values are hashable unconditionally, and support no arithmetic, ordering, or
@@ -690,6 +690,34 @@ currently rejected, and the ADR records that when it is added it must be an erro
 rather than a warning, and must be computed as a variant set so that it extends to
 nested patterns.
 See [ADR-0043](docs/adr/0043-enum-type.md).
+
+### A type pattern head is written with a leading `:` head symbol
+
+A `match` pattern head that names a struct or enum type is written `(: TypeName ...)`,
+following the shape of the predicate pattern `(? pred var)`. The type name remains an
+ordinary symbol after the `:`; the `:` is a separate head symbol, not part of the name.
+
+```menai
+(match p ((: Point x y) (integer+ x y)) (_ 0))
+(match s ((: state 'idle) "idle") (_ "other"))
+```
+
+A bare `(Name p1 ... pn)` is always a list pattern, whatever `Name` denotes. A
+`(: TypeName ...)` head that does not resolve to a struct or enum type in scope is a
+compile-time error, never a list pattern.
+
+This exists because a bare-symbol type head is resolved by name against the enclosing
+scope, so the meaning of a pattern would otherwise depend on what types happen to be in
+scope. `(Name p1 ... pn)` is both a list pattern and a struct pattern with no shape to
+distinguish them, which silently compiles a list pattern as a struct pattern; in a
+nested pattern that misresolution raises a runtime type error. The same applies to an
+enum head that fails to resolve, which silently degrades to a list pattern and falls
+through every arm. The `:` makes the pattern's form decide its meaning, as it already
+does for member access.
+
+Declaration and construction are unchanged: `(struct (x y))` and `(point 3 4)` are
+written as before. Only the pattern head carries the marker.
+See [ADR-0044](docs/adr/0044-type-pattern-heads-are-syntactically-distinct.md).
 
 ## VM implementation
 
