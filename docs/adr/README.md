@@ -113,3 +113,4 @@ What costs, risks, or constraints does this decision impose?
 | [0042](0042-regular-expression-matching.md) | Regular-expression matching — the `regexp` capability module | Accepted |
 | [0043](0043-enum-type.md) | Enum type | Accepted |
 | [0044](0044-type-pattern-heads-are-syntactically-distinct.md) | Type pattern heads are syntactically distinct | Accepted |
+| [0045](0045-desugared-match-size-is-bounded.md) | A match's desugared form is bounded | Accepted |

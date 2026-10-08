@@ -767,3 +767,29 @@ class TestPatternMatching:
 
         result = menai.evaluate_and_format('(match (list 1 2 3 4) ((a b . rest) (list-length rest)))')
         assert result == '2'
+
+    def test_match_exceeding_desugared_size_limit_is_rejected(self, menai):
+        """A match whose desugared form is too large is a compile-time error."""
+        # Each arm is a list pattern whose length grows, and whose body is itself
+        # a match, so the desugared form grows well past the limit.
+        inner = " ".join(
+            f"(({' '.join(chr(97 + i) for i in range(k))}) {k})" for k in range(1, 19)
+        )
+        arms = " ".join(
+            f"(({' '.join(chr(97 + i) for i in range(k))}) (match (list 1 2) {inner} (_ 0)))"
+            for k in range(1, 19)
+        )
+        source = f"(match (list 1 2) {arms} (_ 0))"
+
+        with pytest.raises(MenaiEvalError, match="Match expression expands to too large a form"):
+            menai.evaluate(source)
+
+    def test_match_within_desugared_size_limit_is_accepted(self, menai):
+        """A match whose desugared form is within the limit compiles and runs."""
+        arms = " ".join(
+            f"(({' '.join(chr(97 + i) for i in range(k))}) {k})" for k in range(1, 11)
+        )
+        source = f"(match (list 1 2 3) {arms} (_ 0))"
+
+        result = menai.evaluate(source)
+        assert result == 3

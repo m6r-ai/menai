@@ -70,6 +70,16 @@ _SLICE_LENGTH_FNS = {
     'vector-slice': 'vector-length',
 }
 
+# The largest desugared form a single match expression may expand to, counted in
+# AST nodes.  A list pattern expands to a list?/list-length/list-nth test chain,
+# and the expansion grows super-linearly with the number of arms and the nesting
+# depth of the patterns, so a modest-looking match can expand to an enormous
+# tree.  The limit is a compile-time error rather than a silent acceptance: the
+# expanded tree would otherwise be handed to the later passes, whose cost is
+# super-linear in its size.  The largest match in the standard library expands to
+# 290 nodes, so the limit leaves ample room for hand-written code.
+MAX_DESUGARED_MATCH_NODES = 4096
+
 
 def _constant_default(cls: type, value: Any, *, has_value: bool = True) -> Any:
     """Return a factory building a default node of `cls` holding `value`."""
@@ -141,6 +151,19 @@ def _namespace_member_access(expr: MenaiASTNode) -> tuple[str, str] | None:
         return None
 
     return namespace_expr.name, member_expr.name
+
+
+def _count_ast_nodes(expr: MenaiASTNode) -> int:
+    """
+    Count the nodes in an AST subtree.
+
+    Used to bound the size of a desugared match.  A list node counts as one
+    plus its elements; every other node counts as one.
+    """
+    if isinstance(expr, MenaiASTList):
+        return 1 + sum(_count_ast_nodes(e) for e in expr.elements)
+
+    return 1
 
 
 def _quoted_symbol_name(expr: MenaiASTNode) -> str | None:
@@ -1378,12 +1401,15 @@ class MenaiASTDesugarer:
         # temp binding needed.  The temp exists solely to avoid re-evaluating a
         # compound expression; a variable reference is free to repeat.
         if isinstance(desugared_value, MenaiASTSymbol):
-            return self.desugar(self._build_match_clauses(desugared_value.name, clauses))
+            match_logic = self._build_match_clauses(desugared_value.name, clauses)
+            self._check_match_size(match_logic, expr)
+            return self.desugar(match_logic)
 
         # Scrutinee is a compound expression: bind it once to a temp so that
         # each pattern test references the same evaluated value.
         temp_var = self._gen_temp()
         match_logic = self._build_match_clauses(temp_var, clauses)
+        self._check_match_size(match_logic, expr)
         result = MenaiASTList((
             MenaiASTSymbol('let*'),
             MenaiASTList((
@@ -1392,6 +1418,36 @@ class MenaiASTDesugarer:
             match_logic
         ))
         return self.desugar(result)
+
+    def _check_match_size(self, match_logic: MenaiASTNode, expr: MenaiASTList) -> None:
+        """
+        Reject a match whose desugared form is larger than MAX_DESUGARED_MATCH_NODES.
+
+        A list pattern expands to a list?/list-length/list-nth test chain, and
+        the expansion grows super-linearly with the number of arms and the
+        nesting depth of the patterns.  Without a bound, a modest-looking match
+        can expand to a tree whose size makes every later pass impractically
+        expensive.  The bound is a compile-time error so the cause is reported
+        at the match, rather than surfacing as an unexplained slow compile.
+        """
+        size = _count_ast_nodes(match_logic)
+        if size <= MAX_DESUGARED_MATCH_NODES:
+            return
+
+        raise MenaiEvalError(
+            message="Match expression expands to too large a form",
+            received=f"Desugared match is {size} nodes",
+            expected=f"At most {MAX_DESUGARED_MATCH_NODES} nodes",
+            example="(match v ((a b) ...) ((a b c) ...) (_ ...))",
+            suggestion=(
+                "Reduce the number of arms or the nesting depth of the patterns. "
+                "A list pattern expands to a list?/list-length/list-nth test "
+                "chain, which grows super-linearly with nesting, so a deeply "
+                "nested match can expand enormously."
+            ),
+            line=expr.line,
+            column=expr.column,
+        )
 
     def _build_match_clauses(self, temp_var: str, clauses: list[MenaiASTNode]) -> MenaiASTNode:
         """

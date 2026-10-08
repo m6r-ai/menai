@@ -719,6 +719,30 @@ Declaration and construction are unchanged: `(struct (x y))` and `(point 3 4)` a
 written as before. Only the pattern head carries the marker.
 See [ADR-0044](docs/adr/0044-type-pattern-heads-are-syntactically-distinct.md).
 
+### A match's desugared form is bounded
+
+The desugarer rejects a `match` whose desugared form exceeds `MAX_DESUGARED_MATCH_NODES`
+(4096) AST nodes, as a compile-time error. The bound is on the desugared size of one
+match, not on the size of the source pattern.
+
+A list pattern expands to a `list?`/`list-length`/`list-nth` test chain, and the
+expansion grows super-linearly (roughly cubically) with the number of arms and the
+nesting depth of the patterns. The expansion is unbounded, and the cost of every pass
+after the desugarer is super-linear in the size of the tree it is handed, so a large
+expansion makes the compiler unusable rather than merely slow. A ten-arm match over
+enum variants desugars to 258 nodes when fused into a jump table, but to 81,759 nodes
+when the same arms are list patterns — a 317× increase that does not compile in
+practical time.
+
+This is the consequence ADR-0043 warns about when it records that an enum match which
+degrades to a list pattern "can explode the CFG of any function it is inlined into".
+The bound exists so that explosion is a reported error rather than an apparent hang.
+
+The largest match in the standard library desugars to 290 nodes, so the limit leaves
+ample room for hand-written code. The expansion itself is still super-linear; improving
+it is worthwhile and is not foreclosed by the bound.
+See [ADR-0045](docs/adr/0045-desugared-match-size-is-bounded.md).
+
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and
