@@ -52,45 +52,43 @@
                           "idat" (apply bytes-concat (list-reverse idat-chunks))
                           "palette" palette
                           "transparency" transparency)
-                    (if (string=? typ "IHDR")
-                        (loop next
-                              (dict
-                                "width" (bytes-read-u32-be data 0)
-                                "height" (bytes-read-u32-be data 4)
-                                "bit-depth" (bytes-nth data 8)
-                                "colour-type" (bytes-nth data 9)
-                                "compression" (bytes-nth data 10)
-                                "filter" (bytes-nth data 11)
-                                "interlace" (bytes-nth data 12))
-                              idat-chunks palette transparency)
-                        (if (string=? typ "IDAT")
-                            (loop next header (list-prepend idat-chunks data)
-                                  palette transparency)
-                            (if (string=? typ "PLTE")
-                                (loop next header idat-chunks data transparency)
-                                (if (string=? typ "tRNS")
-                                    (loop next header idat-chunks palette data)
-                                    (loop next header idat-chunks palette transparency)))))))))))
+                    (match typ
+                      ("IHDR"
+                       (loop next
+                             (dict
+                               "width" (bytes-read-u32-be data 0)
+                               "height" (bytes-read-u32-be data 4)
+                               "bit-depth" (bytes-nth data 8)
+                               "colour-type" (bytes-nth data 9)
+                               "compression" (bytes-nth data 10)
+                               "filter" (bytes-nth data 11)
+                               "interlace" (bytes-nth data 12))
+                             idat-chunks palette transparency))
+                      ("IDAT"
+                       (loop next header (list-prepend idat-chunks data)
+                             palette transparency))
+                      ("PLTE"
+                       (loop next header idat-chunks data transparency))
+                      ("tRNS"
+                       (loop next header idat-chunks palette data))
+                      (_
+                       (loop next header idat-chunks palette transparency)))))))))
         (loop 8 #none (list) #none #none))))
 
    ; Number of channels stored per pixel for a colour type.  This is the count
    ; in the raw scanline data, not the count in the normalised output.
    (channels-for
     (lambda (colour-type)
-      (if (integer=? colour-type 0)
-          1
-          (if (integer=? colour-type 2)
-              3
-              (if (integer=? colour-type 3)
-                  1
-                  (if (integer=? colour-type 4)
-                      2
-                      (if (integer=? colour-type 6)
-                          4
-                          (error (string-concat
-                                   "Unsupported PNG: colour type "
-                                   (integer->string colour-type)
-                                   " is not supported")))))))))
+      (match colour-type
+        (0 1)
+        (2 3)
+        (3 1)
+        (4 2)
+        (6 4)
+        (_ (error (string-concat
+                    "Unsupported PNG: colour type "
+                    (integer->string colour-type)
+                    " is not supported"))))))
 
    ; The Paeth predictor (PNG spec §9.4): returns whichever of a (left),
    ; b (above), c (upper-left) is closest to p = a + b - c.
@@ -126,22 +124,18 @@
                              (bytes-nth prev (integer- i bpp))
                              0)))
                   (let ((value
-                         (if (integer=? filter-type 0)
-                             x
-                             (if (integer=? filter-type 1)
-                                 (integer-bit-and (integer+ x a) #xff)
-                                 (if (integer=? filter-type 2)
-                                     (integer-bit-and (integer+ x b) #xff)
-                                     (if (integer=? filter-type 3)
-                                         (integer-bit-and
-                                           (integer+ x (integer/ (integer+ a b) 2))
-                                           #xff)
-                                         (if (integer=? filter-type 4)
-                                             (integer-bit-and (integer+ x (paeth a b c)) #xff)
-                                             (error (string-concat
-                                                      "Unsupported PNG: filter type "
-                                                      (integer->string filter-type)
-                                                      " is not valid")))))))))
+                         (match filter-type
+                           (0 x)
+                           (1 (integer-bit-and (integer+ x a) #xff))
+                           (2 (integer-bit-and (integer+ x b) #xff))
+                           (3 (integer-bit-and
+                                (integer+ x (integer/ (integer+ a b) 2))
+                                #xff))
+                           (4 (integer-bit-and (integer+ x (paeth a b c)) #xff))
+                           (_ (error (string-concat
+                                       "Unsupported PNG: filter type "
+                                       (integer->string filter-type)
+                                       " is not valid"))))))
                     (loop (integer+ i 1) (bytes-append-u8 acc value))))))))
         (loop 0 (string->bytes "")))))
 
@@ -193,23 +187,20 @@
    ; RGB or RGBA vector.  `palette` and `transparency` are used for colour type 3.
    (normalise-pixel
     (lambda (colour-type pixel-bytes palette transparency)
-      (if (integer=? colour-type 0)
-          (let ((g (list-nth pixel-bytes 0)))
-            (vector g g g))
-          (if (integer=? colour-type 2)
-              (vector (list-nth pixel-bytes 0) (list-nth pixel-bytes 1) (list-nth pixel-bytes 2))
-              (if (integer=? colour-type 3)
-                  (let* ((index (list-nth pixel-bytes 0))
-                         (rgb (palette-entry palette index))
-                         (alpha (palette-alpha transparency index)))
-                    (if (integer=? alpha 255)
-                        rgb
-                        (vector (vector-nth rgb 0) (vector-nth rgb 1) (vector-nth rgb 2) alpha)))
-                  (if (integer=? colour-type 4)
-                      (let ((g (list-nth pixel-bytes 0)))
-                        (vector g g g (list-nth pixel-bytes 1)))
-                      (vector (list-nth pixel-bytes 0) (list-nth pixel-bytes 1)
-                              (list-nth pixel-bytes 2) (list-nth pixel-bytes 3))))))))
+      (match colour-type
+        (0 (let ((g (list-nth pixel-bytes 0)))
+             (vector g g g)))
+        (2 (vector (list-nth pixel-bytes 0) (list-nth pixel-bytes 1) (list-nth pixel-bytes 2)))
+        (3 (let* ((index (list-nth pixel-bytes 0))
+                  (rgb (palette-entry palette index))
+                  (alpha (palette-alpha transparency index)))
+             (if (integer=? alpha 255)
+                 rgb
+                 (vector (vector-nth rgb 0) (vector-nth rgb 1) (vector-nth rgb 2) alpha))))
+        (4 (let ((g (list-nth pixel-bytes 0)))
+             (vector g g g (list-nth pixel-bytes 1))))
+        (_ (vector (list-nth pixel-bytes 0) (list-nth pixel-bytes 1)
+                   (list-nth pixel-bytes 2) (list-nth pixel-bytes 3))))))
 
    ; Group a row's channel values into normalised pixels.
    (to-pixels
