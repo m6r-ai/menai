@@ -24,6 +24,10 @@
    (fixed-lit-lengths (:: tables fixed-lit-lengths))
    (fixed-dist-lengths (:: tables fixed-dist-lengths))
 
+   ; The block encoding to emit: choose the smallest of the three encodings, or
+   ; force a stored, fixed Huffman, or dynamic Huffman block.
+   (mode (enum (auto stored fixed dynamic)))
+
    ; The bit-writer state: an output bytes value, the number of bits held in the
    ; accumulator (0-7), and the accumulator itself.
    (writer (struct (bytes bit acc)))
@@ -630,17 +634,19 @@
 
    ; Encode a token stream as a fixed or dynamic Huffman block.
    (encode-tokens
-    (lambda (tokens mode)
-      (if (string=? mode "fixed")
-          (writer->bytes (write-fixed-block (make-writer) tokens #t))
-          (writer->bytes (write-dynamic-block (make-writer) tokens #t)))))
+    (lambda (tokens block-mode)
+      (match block-mode
+        ((: mode 'fixed) (writer->bytes (write-fixed-block (make-writer) tokens #t)))
+        ((: mode 'dynamic) (writer->bytes (write-dynamic-block (make-writer) tokens #t))))))
 
    ; Encode the whole input as a single block of the requested type.
    (encode-block
-    (lambda (b mode)
-      (if (string=? mode "stored")
-          (writer->bytes (write-stored-block (make-writer) b 0 (bytes-length b) #t))
-          (encode-tokens (tokenize b) mode))))
+    (lambda (b block-mode)
+      (match block-mode
+        ((: mode 'auto) (encode-auto b))
+        ((: mode 'stored) (writer->bytes (write-stored-block (make-writer) b 0 (bytes-length b) #t)))
+        ((: mode 'fixed) (encode-tokens (tokenize b) block-mode))
+        ((: mode 'dynamic) (encode-tokens (tokenize b) block-mode)))))
 
    ; Encode the input with each block type and return the shortest result.  The
    ; LZ77 token stream is shared between the fixed and dynamic encoders, so the
@@ -649,37 +655,24 @@
     (lambda (b)
       (let ((tokens (tokenize b)))
         (let ((stored (writer->bytes (write-stored-block (make-writer) b 0 (bytes-length b) #t)))
-              (fixed (encode-tokens tokens "fixed"))
-              (dynamic (encode-tokens tokens "dynamic")))
+              (fixed (encode-tokens tokens (mode 'fixed)))
+              (dynamic (encode-tokens tokens (mode 'dynamic))))
           (letrec ((shortest (lambda (a c)
                                (if (integer<? (bytes-length a) (bytes-length c)) a c))))
             (shortest (shortest stored fixed) dynamic))))))
 
    ; Compress a bytes value into a raw DEFLATE stream that decompresses back to
-   ; the input.  The optional second argument selects the block encoding, as
-   ; documented at the top of this module.
+   ; the input.  The optional second argument selects the block encoding:
    ;
-   ; The optional second argument selects the block encoding:
-   ;
-   ;   "auto"    — chooses the smallest of stored/fixed/dynamic (default)
-   ;   "stored"  — emit a stored (BTYPE = 00) block
-   ;   "fixed"   — emit a fixed Huffman (BTYPE = 01) block
-   ;   "dynamic" — emit a dynamic Huffman (BTYPE = 10) block
+   ;   (mode 'auto)    — chooses the smallest of stored/fixed/dynamic (default)
+   ;   (mode 'stored)  — emit a stored (BTYPE = 00) block
+   ;   (mode 'fixed)   — emit a fixed Huffman (BTYPE = 01) block
+   ;   (mode 'dynamic) — emit a dynamic Huffman (BTYPE = 10) block
    (compress
     (lambda (b . rest)
       (if (bytes? b)
-          (let ((mode (if (list-null? rest) "auto" (list-first rest))))
-            (if (string? mode)
-                (if (or (string=? mode "auto")
-                        (string=? mode "stored")
-                        (string=? mode "fixed")
-                        (string=? mode "dynamic"))
-                    (if (string=? mode "auto")
-                        (encode-auto b)
-                        (encode-block b mode))
-                    (error (string-concat "deflate-compress: unknown mode \"" mode
-                                          "\" (expected \"auto\", \"stored\", \"fixed\", or \"dynamic\")")))
-                (error "deflate-compress: mode must be a string")))
+          (let ((block-mode (if (list-null? rest) (mode 'auto) (list-first rest))))
+            (encode-block b block-mode))
           (error "deflate-compress: compress expects a bytes value")))))
 
-  (export compress))
+  (export compress mode))

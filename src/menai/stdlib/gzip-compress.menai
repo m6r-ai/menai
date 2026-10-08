@@ -20,6 +20,22 @@
 
 (letrec
   ((deflate-lib (import "deflate-compress"))
+   (deflate-lib-mode (:: deflate-lib mode))
+
+   ; The DEFLATE block encoding to request: choose the smallest of the three
+   ; encodings, or force a stored, fixed Huffman, or dynamic Huffman block.
+   (mode (enum (auto stored fixed dynamic)))
+
+   ; Map this module's mode to deflate-compress's mode.  The two enum types are
+   ; distinct, so the mapping is explicit; a change to either variant set is a
+   ; compile-time error here until it is decided how to expose it.
+   (deflate-mode
+    (lambda (m)
+      (match m
+        ((: mode 'auto) (deflate-lib-mode 'auto))
+        ((: mode 'stored) (deflate-lib-mode 'stored))
+        ((: mode 'fixed) (deflate-lib-mode 'fixed))
+        ((: mode 'dynamic) (deflate-lib-mode 'dynamic)))))
 
    ; The fixed 10-byte gzip header: magic 0x1f 0x8b, CM 0x08 (DEFLATE),
    ; FLG 0x00 (no optional fields), MTIME 0x00000000, XFL 0x00, OS 0xff.
@@ -30,18 +46,18 @@
    ; (decompress (compress b)) reproduces b.
    ;
    ; The optional second argument selects the DEFLATE block encoding and is
-   ; passed straight through to deflate-compress ("auto", "stored", "fixed", or
-   ; "dynamic"); it defaults to "auto".  It does not affect decompression.
+   ; mapped to the equivalent deflate-compress mode; it defaults to (mode 'auto).
+   ; It does not affect decompression.
    (compress
     (lambda (b . rest)
       (if (bytes? b)
-          (let ((mode (if (list-null? rest) "auto" (list-first rest))))
+          (let ((block-mode (if (list-null? rest) (mode 'auto) (list-first rest))))
             (let ((deflate (:: deflate-lib compress)))
               (bytes-concat header
-                            (deflate b mode)
+                            (deflate b (deflate-mode block-mode))
                             (bytes-append-u32-le
                               (bytes-append-u32-le (bytes-concat) (bytes-crc32 b))
                               (integer-bit-and (bytes-length b) #xffffffff)))))
           (error "gzip-compress: compress expects a bytes value")))))
 
-  (export compress))
+  (export compress mode))

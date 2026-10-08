@@ -235,9 +235,10 @@ menai`. Currently it includes:
   quoted only when necessary; the optional second argument is the
   single-character field delimiter (default `,`) (`encode`)
 - `deflate-compress.menai` — compresses a bytes value to a raw DEFLATE stream
-  (RFC 1951); the optional second argument selects the block encoding (`"auto"`,
-  `"stored"`, `"fixed"`, or `"dynamic"`), with `"auto"` choosing the smallest of
-  the three (`compress`)
+  (RFC 1951); the optional second argument is a `mode` enum value selecting the
+  block encoding (`(mode 'auto)`, `(mode 'stored)`, `(mode 'fixed)`, or
+  `(mode 'dynamic)`), with `(mode 'auto)` choosing the smallest of the three.
+  Exports the `mode` enum and `compress`
 - `deflate-decompress.menai` — decompresses a raw DEFLATE stream (RFC 1951) to
   bytes; supports stored, fixed Huffman, and dynamic Huffman blocks
   (`decompress`)
@@ -247,7 +248,8 @@ menai`. Currently it includes:
 - `gzip-compress.menai` — compresses bytes to a gzip stream (RFC 1952), writing
   the fixed 10-byte header, delegating the DEFLATE data to `deflate-compress`,
   and appending the CRC-32 and ISIZE trailer; the optional second argument
-  selects the DEFLATE block encoding (`compress`)
+  selects the DEFLATE block encoding as a `mode` enum value.  Exports the `mode`
+  enum and `compress`
 - `gzip-decompress.menai` — decompresses a gzip stream (RFC 1952), verifying the
   magic number and compression method, parsing and skipping the optional header
   fields, delegating the DEFLATE data to `deflate-decompress`, and verifying the
@@ -297,7 +299,8 @@ menai`. Currently it includes:
 - `zlib-compress.menai` — compresses bytes to a zlib stream (RFC 1950), writing
   the 2-byte header, delegating the DEFLATE data to `deflate-compress`, and
   appending the Adler-32 trailer; the optional second argument selects the
-  DEFLATE block encoding (`compress`)
+  DEFLATE block encoding as a `mode` enum value.  Exports the `mode` enum and
+  `compress`
 - `zlib-decompress.menai` — decompresses a zlib stream (RFC 1950), stripping the
   2-byte header, delegating the DEFLATE data to `deflate-decompress`, and
   verifying the Adler-32 trailer (`decompress`)

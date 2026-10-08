@@ -4,6 +4,7 @@
       (zlib-decompress (import "zlib-decompress"))
       (t (import "menai_test")))
   (let ((compress (:: zlib-compress compress))
+        (mode (:: zlib-compress mode))
         (decompress (:: zlib-decompress decompress))
         (assert-equal (:: t assert-equal))
         (expect-pass (:: t test))
@@ -73,16 +74,16 @@
         (list "modes"
           (list
             (expect-pass "stored mode round-trips"
-                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "stored"))
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'stored)))
                                                   (string->bytes "abcdefgh"))))
             (expect-pass "fixed mode round-trips"
-                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "fixed"))
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'fixed)))
                                                   (string->bytes "abcdefgh"))))
             (expect-pass "dynamic mode round-trips"
-                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "dynamic"))
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'dynamic)))
                                                   (string->bytes "abcdefgh"))))
             (expect-pass "auto mode round-trips"
-                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") "auto"))
+                         (lambda () (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'auto)))
                                                   (string->bytes "abcdefgh"))))))
 
         ; Errors
@@ -90,9 +91,6 @@
           (list
             (expect-fail "rejects a non-bytes argument"
                          (lambda () (compress "not bytes"))
-                         "expects a bytes value")
-            (expect-fail "rejects an unknown mode"
-                         (lambda () (compress (string->bytes "abc") "bogus"))
-                         "unknown mode"))))))
+                         "expects a bytes value"))))))
 
       (export tests))))
