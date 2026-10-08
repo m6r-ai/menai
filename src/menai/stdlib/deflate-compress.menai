@@ -632,21 +632,29 @@
 
    ; --- Top-level entry point -----------------------------------------------
 
-   ; Encode a token stream as a fixed or dynamic Huffman block.
-   (encode-tokens
-    (lambda (tokens block-mode)
-      (match block-mode
-        ((: mode 'fixed) (writer->bytes (write-fixed-block (make-writer) tokens #t)))
-        ((: mode 'dynamic) (writer->bytes (write-dynamic-block (make-writer) tokens #t))))))
+   ; Encode the whole input as a single stored (BTYPE = 00) block.
+   (encode-stored
+    (lambda (b)
+      (writer->bytes (write-stored-block (make-writer) b 0 (bytes-length b) #t))))
+
+   ; Encode a token stream as a single fixed Huffman (BTYPE = 01) block.
+   (encode-fixed
+    (lambda (tokens)
+      (writer->bytes (write-fixed-block (make-writer) tokens #t))))
+
+   ; Encode a token stream as a single dynamic Huffman (BTYPE = 10) block.
+   (encode-dynamic
+    (lambda (tokens)
+      (writer->bytes (write-dynamic-block (make-writer) tokens #t))))
 
    ; Encode the whole input as a single block of the requested type.
    (encode-block
     (lambda (b block-mode)
       (match block-mode
         ((: mode 'auto) (encode-auto b))
-        ((: mode 'stored) (writer->bytes (write-stored-block (make-writer) b 0 (bytes-length b) #t)))
-        ((: mode 'fixed) (encode-tokens (tokenize b) block-mode))
-        ((: mode 'dynamic) (encode-tokens (tokenize b) block-mode)))))
+        ((: mode 'stored) (encode-stored b))
+        ((: mode 'fixed) (encode-fixed (tokenize b)))
+        ((: mode 'dynamic) (encode-dynamic (tokenize b))))))
 
    ; Encode the input with each block type and return the shortest result.  The
    ; LZ77 token stream is shared between the fixed and dynamic encoders, so the
@@ -654,9 +662,9 @@
    (encode-auto
     (lambda (b)
       (let ((tokens (tokenize b)))
-        (let ((stored (writer->bytes (write-stored-block (make-writer) b 0 (bytes-length b) #t)))
-              (fixed (encode-tokens tokens (mode 'fixed)))
-              (dynamic (encode-tokens tokens (mode 'dynamic))))
+        (let ((stored (encode-stored b))
+              (fixed (encode-fixed tokens))
+              (dynamic (encode-dynamic tokens)))
           (letrec ((shortest (lambda (a c)
                                (if (integer<? (bytes-length a) (bytes-length c)) a c))))
             (shortest (shortest stored fixed) dynamic))))))
