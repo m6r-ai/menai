@@ -63,44 +63,49 @@
                             (loop (integer+ j 1) (list-prepend ranges (list cp cp)))))))))))
         (loop i (list)))))
 
+   ; regexp-parse-escape parses an escape sequence: the backslash at p[i] and the
+   ; character after it.  Returns (list <node> <next-index>).  The shorthand classes
+   ; \d \D \w \W \s \S map to character-class nodes; any other escaped character is
+   ; a literal.
+   (regexp-parse-escape
+    (lambda (p i)
+      (let ((esc (string-nth p (integer+ i 1))))
+        (match esc
+          ("d" (list (regexp-n-class (list (list 48 57)) #f) (integer+ i 2)))
+          ("D" (list (regexp-n-class (list (list 48 57)) #t) (integer+ i 2)))
+          ("w" (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #f) (integer+ i 2)))
+          ("W" (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #t) (integer+ i 2)))
+          ("s" (list (regexp-n-class (list (list 9 13) (list 32 32)) #f) (integer+ i 2)))
+          ("S" (list (regexp-n-class (list (list 9 13) (list 32 32)) #t) (integer+ i 2)))
+          (_ (list (regexp-n-char esc) (integer+ i 2)))))))
+
+   ; regexp-parse-atom parses a single atom starting at p[i]: a group, a character
+   ; class, an escape sequence, an anchor, or a literal character.  Returns
+   ; (list <node> <next-index>).
    (regexp-parse-atom
     (lambda (p i)
       (let ((ch (string-nth p i)))
-        (if (string=? ch "(")
-            (let ((inner (regexp-parse-alt p (integer+ i 1))))
-              (if (and (integer<? (list-nth inner 1) (string-length p))
-                       (string=? (string-nth p (list-nth inner 1)) ")"))
-                  (list (list-first inner) (integer+ (list-nth inner 1) 1))
-                  (error "Unterminated group in pattern")))
-            (if (string=? ch "[")
-                (let* ((neg (and (integer<? (integer+ i 1) (string-length p))
-                                 (string=? (string-nth p (integer+ i 1)) "^")))
-                       (start (if neg (integer+ i 2) (integer+ i 1)))
-                       (cls (regexp-parse-class p start)))
-                  (list (regexp-n-class (list-first cls) neg) (list-nth cls 1)))
-                (if (string=? ch "\\")
-                    (let ((esc (string-nth p (integer+ i 1))))
-                      (if (string=? esc "d")
-                          (list (regexp-n-class (list (list 48 57)) #f) (integer+ i 2))
-                          (if (string=? esc "D")
-                              (list (regexp-n-class (list (list 48 57)) #t) (integer+ i 2))
-                              (if (string=? esc "w")
-                                  (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #f) (integer+ i 2))
-                                  (if (string=? esc "W")
-                                      (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #t) (integer+ i 2))
-                                      (if (string=? esc "s")
-                                          (list (regexp-n-class (list (list 9 13) (list 32 32)) #f) (integer+ i 2))
-                                          (if (string=? esc "S")
-                                              (list (regexp-n-class (list (list 9 13) (list 32 32)) #t) (integer+ i 2))
-                                              (list (regexp-n-char esc) (integer+ i 2)))))))))
-                    (if (string=? ch ".")
-                        (list (regexp-n-any) (integer+ i 1))
-                        (if (string=? ch "^")
-                            (list (regexp-n-bol) (integer+ i 1))
-                            (if (string=? ch "$")
-                                (list (regexp-n-eol) (integer+ i 1))
-                                (list (regexp-n-char ch) (integer+ i 1)))))))))))
+        (match ch
+          ("("
+           (let ((inner (regexp-parse-alt p (integer+ i 1))))
+             (if (and (integer<? (list-nth inner 1) (string-length p))
+                      (string=? (string-nth p (list-nth inner 1)) ")"))
+                 (list (list-first inner) (integer+ (list-nth inner 1) 1))
+                 (error "Unterminated group in pattern"))))
+          ("["
+           (let* ((neg (and (integer<? (integer+ i 1) (string-length p))
+                            (string=? (string-nth p (integer+ i 1)) "^")))
+                  (start (if neg (integer+ i 2) (integer+ i 1)))
+                  (cls (regexp-parse-class p start)))
+             (list (regexp-n-class (list-first cls) neg) (list-nth cls 1))))
+          ("\\" (regexp-parse-escape p i))
+          ("." (list (regexp-n-any) (integer+ i 1)))
+          ("^" (list (regexp-n-bol) (integer+ i 1)))
+          ("$" (list (regexp-n-eol) (integer+ i 1)))
+          (_ (list (regexp-n-char ch) (integer+ i 1)))))))
 
+   ; regexp-parse-quant parses an atom followed by an optional quantifier.  Returns
+   ; (list <node> <next-index>).
    (regexp-parse-quant
     (lambda (p i)
       (let* ((atom-result (regexp-parse-atom p i))
@@ -109,19 +114,17 @@
         (if (integer>=? after (string-length p))
             (list node after)
             (let ((q (string-nth p after)))
-              (if (string=? q "*")
-                  (list (regexp-n-star node) (integer+ after 1))
-                  (if (string=? q "+")
-                      (list (regexp-n-seq node (regexp-n-star node)) (integer+ after 1))
-                      (if (string=? q "?")
-                          (list (regexp-n-opt node) (integer+ after 1))
-                          (if (string=? q "{")
-                              (let ((br (regexp-parse-brace p after)))
-                                (if (none? br)
-                                    (list node after)
-                                    (list (regexp-expand-repeat node (list-nth br 0) (list-nth br 1))
-                                          (list-nth br 2))))
-                              (list node after))))))))))
+              (match q
+                ("*" (list (regexp-n-star node) (integer+ after 1)))
+                ("+" (list (regexp-n-seq node (regexp-n-star node)) (integer+ after 1)))
+                ("?" (list (regexp-n-opt node) (integer+ after 1)))
+                ("{"
+                 (let ((br (regexp-parse-brace p after)))
+                   (if (none? br)
+                       (list node after)
+                       (list (regexp-expand-repeat node (list-nth br 0) (list-nth br 1))
+                             (list-nth br 2)))))
+                (_ (list node after))))))))
 
    ; regexp-parse-brace parses a brace quantifier starting at the "{" at p[i].
    ; Returns (list <min> <max> <next-index>) where max is #none for an open-ended

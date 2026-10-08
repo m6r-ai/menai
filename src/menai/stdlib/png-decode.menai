@@ -128,9 +128,7 @@
                            (0 x)
                            (1 (integer-bit-and (integer+ x a) #xff))
                            (2 (integer-bit-and (integer+ x b) #xff))
-                           (3 (integer-bit-and
-                                (integer+ x (integer/ (integer+ a b) 2))
-                                #xff))
+                           (3 (integer-bit-and (integer+ x (integer/ (integer+ a b) 2)) #xff))
                            (4 (integer-bit-and (integer+ x (paeth a b c)) #xff))
                            (_ (error (string-concat
                                        "Unsupported PNG: filter type "
