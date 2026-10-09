@@ -187,6 +187,55 @@ def _quoted_symbol_name(expr: MenaiASTNode) -> str | None:
     return name_expr.name
 
 
+def _is_type_pattern_head(expr: MenaiASTNode) -> bool:
+    """
+    Return True when expr is the reserved ':' head of a type pattern.
+
+    A type pattern is written (: TypeName ...), mirroring the predicate pattern
+    (? pred var).  The ':' is a separate head symbol, not part of the type name,
+    so the shape of the form decides its meaning.
+    """
+    return isinstance(expr, MenaiASTSymbol) and expr.name == ':'
+
+
+def _normalise_type_pattern(pattern: MenaiASTNode) -> MenaiASTNode:
+    """
+    Return the internal (TypeName ...) form of a written (: TypeName ...) pattern.
+
+    A type pattern is written with the reserved ':' head symbol, mirroring the
+    predicate pattern (? pred var).  Every consumer downstream of _desugar_pattern
+    works on the normalised (TypeName ...) shape, in which the type name is the
+    head element.  Normalising once at the single entry point keeps the ':' head
+    known to exactly one place, so a change to the written form cannot leave a
+    downstream consumer behind.
+
+    A pattern that is not a type pattern is returned unchanged.
+    """
+    if not isinstance(pattern, MenaiASTList) or pattern.is_empty():
+        return pattern
+
+    if not _is_type_pattern_head(pattern.elements[0]):
+        return pattern
+
+    return MenaiASTList(
+        pattern.elements[1:],
+        line=pattern.line, column=pattern.column, source_file=pattern.source_file,
+    )
+
+
+def _enum_pattern_variant_name(pattern: MenaiASTList) -> str | None:
+    """
+    Return the variant name of a normalised enum variant pattern (TypeName 'variant).
+
+    The pattern is expected to be in the normalised shape, which is what
+    _desugar_pattern produces before any consumer sees it.
+    """
+    if len(pattern.elements) != 2:
+        return None
+
+    return _quoted_symbol_name(pattern.elements[1])
+
+
 class MenaiASTDesugarer:
     """Transforms complex Menai constructs into core language."""
 
@@ -1509,7 +1558,7 @@ class MenaiASTDesugarer:
                 groups.append((lit_type, group))
                 i = j
 
-            elif (enum_type := self._enum_pattern_type(pattern)) is not None:
+            elif (enum_type := self._enum_pattern_type(_normalise_type_pattern(pattern))) is not None:
                 # Start or extend an enum group of this enum type.  Grouping is
                 # by enum type identity so the hoisted guard proves the right
                 # type for every arm it covers.
@@ -1518,7 +1567,8 @@ class MenaiASTDesugarer:
                 while j < len(clauses):
                     next_clause = clauses[j]
                     assert isinstance(next_clause, MenaiASTList)
-                    if self._enum_pattern_type(next_clause.elements[0]) is not enum_type:
+                    if self._enum_pattern_type(
+                            _normalise_type_pattern(next_clause.elements[0])) is not enum_type:
                         break
 
                     group.append(next_clause)
@@ -1587,14 +1637,22 @@ class MenaiASTDesugarer:
         two arms naming the same enum type share one hoisted (enum? tmp) guard,
         while arms naming different enum types must not, because the guard
         establishes the scrutinee's type for the arms it covers.
+
+        The pattern is expected in the normalised (TypeName 'variant) shape.
+        Callers normalise a written (: TypeName 'variant) first, so this
+        predicate never needs to know about the ':' head.
         """
         if not isinstance(pattern, MenaiASTList):
             return None
 
-        if len(pattern.elements) != 2 or not isinstance(pattern.elements[0], MenaiASTSymbol):
+        if len(pattern.elements) != 2:
             return None
 
-        enum_node = self._lookup_enum(pattern.elements[0].name)
+        name_expr = pattern.elements[0]
+        if not isinstance(name_expr, MenaiASTSymbol):
+            return None
+
+        enum_node = self._lookup_enum(name_expr.name)
         if enum_node is None:
             return None
 
@@ -1682,12 +1740,12 @@ class MenaiASTDesugarer:
         inner: MenaiASTNode = else_expr
         for clause in reversed(clauses):
             assert isinstance(clause, MenaiASTList)
-            pattern = clause.elements[0]
+            pattern = _normalise_type_pattern(clause.elements[0])
             assert isinstance(pattern, MenaiASTList)
             enum_node = self._enum_pattern_type(pattern)
             assert enum_node is not None
 
-            variant_name = _quoted_symbol_name(pattern.elements[1])
+            variant_name = _enum_pattern_variant_name(pattern)
             assert variant_name is not None
 
             variant_const = MenaiASTConstant(
@@ -1808,6 +1866,25 @@ class MenaiASTDesugarer:
             Temp: "#:match-tmp-1"
             Returns: ((number? #:match-tmp-1), [("n", #:match-tmp-1)])  ; pred called directly
         """
+        # Type pattern: (: TypeName ...).  The head is the reserved symbol ':'
+        # and the next element is the type name, mirroring the predicate pattern
+        # (? pred var).  A type pattern is recognised by its shape and never by
+        # resolving a bare head name against the scope, so the meaning of a
+        # pattern does not depend on what types are in scope.
+        #
+        # This is the single point at which the written ':' head is interpreted.
+        # The pattern is normalised to (TypeName ...) before it reaches any
+        # consumer, so no other code needs to know about the ':' head.
+        is_type_pattern = (
+            isinstance(pattern, MenaiASTList)
+            and not pattern.is_empty()
+            and _is_type_pattern_head(pattern.elements[0])
+        )
+        if is_type_pattern:
+            normalised = _normalise_type_pattern(pattern)
+            assert isinstance(normalised, MenaiASTList)
+            return self._desugar_type_pattern(normalised, temp_var)
+
         # Literal patterns: #none, booleans, numbers, strings
         #
         # Each literal pattern is compiled as:
@@ -1912,16 +1989,6 @@ class MenaiASTDesugarer:
         Returns:
             (test_expression, bindings)
         """
-        # Type pattern: (: TypeName ...).  The head is the reserved symbol ':'
-        # and the next element is the type name, mirroring the predicate
-        # pattern (? pred var).  A type pattern is recognised by its shape and
-        # never by resolving a bare head name against the scope, so the meaning
-        # of a pattern does not depend on what types are in scope.
-        if (not pattern.is_empty()
-                and isinstance(pattern.elements[0], MenaiASTSymbol)
-                and pattern.elements[0].name == ':'):
-            return self._desugar_type_pattern(pattern, temp_var)
-
         # Empty list pattern: ()
         if pattern.is_empty():
             # Test: ($list-null? temp_var)
@@ -2455,37 +2522,30 @@ class MenaiASTDesugarer:
         temp_var: str,
     ) -> tuple[MenaiASTNode, list[tuple[str, Any]]]:
         """
-        Desugar a type pattern (: TypeName ...).
+        Desugar a normalised type pattern (TypeName ...).
 
-        The head is the reserved symbol ':' and the next element names a struct
-        or enum type in scope.  A struct pattern is (: TypeName field1 ...) and
-        an enum pattern is (: TypeName 'variant).
+        The head names a struct or enum type in scope.  A struct pattern is
+        (TypeName field1 ...) and an enum pattern is (TypeName 'variant).  The
+        caller has already stripped the written ':' head, so the type name is
+        the head element here.
 
         The type name is resolved here, so a head that does not name a type in
-        scope is a compile-time error rather than a list pattern.  The pattern is
-        normalised to the internal (TypeName ...) shape and delegated to the
-        struct or enum desugarer, which both expect the type name in head
-        position.
+        scope is a compile-time error rather than a list pattern.
 
         Args:
-            pattern: The type pattern, e.g. (: Point x y) or (: state 'idle)
+            pattern: The normalised type pattern, e.g. (Point x y) or (state 'idle)
             temp_var: Name of temp variable holding the match value
 
         Returns:
             (test_expression, bindings)
         """
-        type_name_expr = pattern.elements[1]
+        type_name_expr = pattern.elements[0]
         assert isinstance(type_name_expr, MenaiASTSymbol)
         type_name = type_name_expr.name
 
-        normalised = MenaiASTList(
-            pattern.elements[1:],
-            line=pattern.line, column=pattern.column, source_file=pattern.source_file,
-        )
-
         enum_node = self._lookup_enum(type_name)
         if enum_node is not None:
-            variant_name = _quoted_symbol_name(pattern.elements[2])
+            variant_name = _quoted_symbol_name(pattern.elements[1])
             if variant_name is None:
                 raise MenaiEvalError(
                     message=f"Enum pattern for '{type_name}' must name a quoted variant",
@@ -2497,11 +2557,11 @@ class MenaiASTDesugarer:
                     column=pattern.column,
                 )
 
-            return self._desugar_enum_pattern(normalised, temp_var, enum_node, variant_name)
+            return self._desugar_enum_pattern(pattern, temp_var, enum_node, variant_name)
 
         struct_node = self._lookup_struct(type_name)
         if struct_node is not None:
-            n_patterns = len(pattern.elements) - 2
+            n_patterns = len(pattern.elements) - 1
             n_fields = len(struct_node.field_names)
             if n_patterns != n_fields:
                 raise MenaiEvalError(
@@ -2514,7 +2574,7 @@ class MenaiASTDesugarer:
                     column=pattern.column,
                 )
 
-            return self._desugar_struct_pattern(normalised, temp_var)
+            return self._desugar_struct_pattern(pattern, temp_var)
 
         raise MenaiEvalError(
             message=f"'{type_name}' does not name a struct or enum type in scope",
