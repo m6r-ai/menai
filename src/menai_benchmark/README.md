@@ -183,6 +183,22 @@ Decompresses raw DEFLATE streams.  Five cases cover text that compresses well,
 incompressible data, long runs, and a stored-block stream.  Inputs are
 generated fixtures (see [Fixtures](#fixtures)).
 
+### DOCX Decode
+Decodes DOCX packages: a ZIP of XML parts, read with `zip-extract` and parsed
+with `xml-decode`.  Eight cases exercise the document part at 1 to 2000
+paragraphs, a package with 100 styles, one with a nine-level numbering
+definition, one with 16 media parts, and a full package combining all of them.
+The timings are dominated by the XML parser, so they track the size of
+`word/document.xml` rather than the package's compressed size.  Inputs are
+generated fixtures (see [Fixtures](#fixtures)).
+
+### DOCX Encode
+Encodes DOCX value trees: serialising each part with `xml-encode` and building
+the package with `zip-create`.  Seven cases mirror the DOCX Decode cases
+(document size, styles, numbering, media, and a full package).  The value trees
+are constructed as Menai expressions rather than parsed from bytes, so the
+timing measures encoding alone.
+
 ### JSON Decode
 Decodes JSON strings of varying structure and size using a hand-written decoder
 in Menai. Nine cases cover primitives (integer, float, booleans, null), strings
