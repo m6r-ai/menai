@@ -62,42 +62,37 @@
             (error (string-concat "base64-decode: invalid character \"" ch "\""))
             v))))
 
-   ; Decode a full group of four data characters (no padding) to three bytes.
+   ; Decode a full group of four data characters (no padding) to a list of
+   ; three byte values.
    (decode-group
     (lambda (alphabet c0 c1 c2 c3)
       (let ((v0 (require-value alphabet c0))
             (v1 (require-value alphabet c1))
             (v2 (require-value alphabet c2))
             (v3 (require-value alphabet c3)))
-        (bytes-append-u8
-          (bytes-append-u8
-            (bytes-append-u8 (bytes-concat)
-                             (integer-bit-or (integer-bit-shift-left v0 2)
-                                             (integer-bit-shift-right v1 4)))
-            (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0)
-                            (integer-bit-shift-right v2 2)))
-          (integer-bit-or (integer-bit-and (integer-bit-shift-left v2 6) #xc0)
-                          v3)))))
+        (list (integer-bit-or (integer-bit-shift-left v0 2)
+                              (integer-bit-shift-right v1 4))
+              (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0)
+                              (integer-bit-shift-right v2 2))
+              (integer-bit-or (integer-bit-and (integer-bit-shift-left v2 6) #xc0)
+                              v3)))))
 
-   ; Decode a final group of two data characters to one byte.
+   ; Decode a final group of two data characters to a list of one byte value.
    (decode-final-one
     (lambda (alphabet c0 c1)
-      (bytes-append-u8 (bytes-concat)
-                       (integer-bit-or (integer-bit-shift-left (require-value alphabet c0) 2)
-                                       (integer-bit-shift-right (require-value alphabet c1) 4)))))
+      (list (integer-bit-or (integer-bit-shift-left (require-value alphabet c0) 2)
+                            (integer-bit-shift-right (require-value alphabet c1) 4)))))
 
-   ; Decode a final group of three data characters to two bytes.
+   ; Decode a final group of three data characters to a list of two byte values.
    (decode-final-two
     (lambda (alphabet c0 c1 c2)
       (let ((v0 (require-value alphabet c0))
             (v1 (require-value alphabet c1))
             (v2 (require-value alphabet c2)))
-        (bytes-append-u8
-          (bytes-append-u8 (bytes-concat)
-                           (integer-bit-or (integer-bit-shift-left v0 2)
-                                           (integer-bit-shift-right v1 4)))
-          (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0)
-                          (integer-bit-shift-right v2 2))))))
+        (list (integer-bit-or (integer-bit-shift-left v0 2)
+                              (integer-bit-shift-right v1 4))
+              (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0)
+                              (integer-bit-shift-right v2 2))))))
 
    ; Raise if "=" appears anywhere other than as the final one or two
    ; characters of the input.  This runs before decoding so that misplaced
@@ -142,16 +137,9 @@
             (if (integer=? n 0)
                 (bytes-concat)
                 (and (validate-padding-position s n)
-                     (letrec ((loop (lambda (i acc)
-                                      (if (integer>=? (integer+ i 4) n)
-                                          (bytes-concat acc (decode-final-group alphabet s i))
-                                          (loop (integer+ i 4)
-                                                (bytes-concat acc (decode-group alphabet
-                                                                                (string-nth s i)
-                                                                                (string-nth s (integer+ i 1))
-                                                                                (string-nth s (integer+ i 2))
-                                                                                (string-nth s (integer+ i 3)))))))))
-                       (loop 0 (bytes-concat)))))
+                     (list->bytes
+                       (list-reverse
+                         (decode-padded-bytes s alphabet n 0 (list))))))
             (error "base64-decode: input length is not a multiple of four")))))
 
    ; Decode an unpadded input: it must contain no "=", and its length modulo
@@ -161,26 +149,51 @@
       (let ((n (string-length s)))
         (if (integer=? (integer% n 4) 1)
             (error "base64-decode: input length is invalid for unpadded Base64")
-            (letrec ((loop (lambda (i acc)
-                             (let ((remaining (integer- n i)))
-                               (if (integer>=? remaining 4)
-                                   (loop (integer+ i 4)
-                                         (bytes-concat acc (decode-group alphabet
-                                                                         (string-nth s i)
-                                                                         (string-nth s (integer+ i 1))
-                                                                         (string-nth s (integer+ i 2))
-                                                                         (string-nth s (integer+ i 3)))))
-                                   (if (integer=? remaining 3)
-                                       (bytes-concat acc (decode-final-two alphabet
-                                                                           (string-nth s i)
-                                                                           (string-nth s (integer+ i 1))
-                                                                           (string-nth s (integer+ i 2))))
-                                       (if (integer=? remaining 2)
-                                           (bytes-concat acc (decode-final-one alphabet
-                                                                               (string-nth s i)
-                                                                               (string-nth s (integer+ i 1))))
-                                           acc)))))))
-              (loop 0 (bytes-concat)))))))
+            (list->bytes
+              (list-reverse
+                (decode-unpadded-bytes s alphabet n 0 (list))))))))
+
+   ; Prepend a group's byte values (in forward order) onto a reversed
+   ; accumulator.  Each byte is a separate O(1) prepend, so a group costs its
+   ; own length rather than a copy of the accumulator.
+   (prepend-bytes
+    (lambda (acc group)
+      (fold-list (lambda (a byte) (list-prepend a byte)) acc group)))
+
+   ; The decoded byte values of a padded input, in reverse order.  The final
+   ; group carries the padding.
+   (decode-padded-bytes
+    (lambda (s alphabet n i acc)
+      (if (integer>=? (integer+ i 4) n)
+          (prepend-bytes acc (decode-final-group alphabet s i))
+          (decode-padded-bytes s alphabet n (integer+ i 4)
+                               (prepend-bytes acc (decode-group alphabet
+                                                               (string-nth s i)
+                                                               (string-nth s (integer+ i 1))
+                                                               (string-nth s (integer+ i 2))
+                                                               (string-nth s (integer+ i 3))))))))
+
+   ; The decoded byte values of an unpadded input, in reverse order.
+   (decode-unpadded-bytes
+    (lambda (s alphabet n i acc)
+      (let ((remaining (integer- n i)))
+        (if (integer>=? remaining 4)
+            (decode-unpadded-bytes s alphabet n (integer+ i 4)
+                                   (prepend-bytes acc (decode-group alphabet
+                                                                   (string-nth s i)
+                                                                   (string-nth s (integer+ i 1))
+                                                                   (string-nth s (integer+ i 2))
+                                                                   (string-nth s (integer+ i 3)))))
+            (if (integer=? remaining 3)
+                (prepend-bytes acc (decode-final-two alphabet
+                                                     (string-nth s i)
+                                                     (string-nth s (integer+ i 1))
+                                                     (string-nth s (integer+ i 2))))
+                (if (integer=? remaining 2)
+                    (prepend-bytes acc (decode-final-one alphabet
+                                                         (string-nth s i)
+                                                         (string-nth s (integer+ i 1))))
+                    acc))))))
 
    ; Decode Base64 text to bytes.  It is the inverse of base64-encode's encode.
    ;
