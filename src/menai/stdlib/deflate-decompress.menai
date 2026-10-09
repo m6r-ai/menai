@@ -14,18 +14,31 @@
 ; Decompressed output is carried as an output state value threaded through the
 ; decode:
 ;
-;   (output <reversed list of every appended bytes value>
-;           <reversed list of bytes appended since the window was last refreshed>
+;   (output <reversed list of committed blocks>
+;           <reversed list of uncommitted fragments>
+;           <reversed list of fragments not yet folded into the window>
 ;           <bytes: the most recent output, coalesced>
 ;           <integer: total bytes produced>)
 ;
-; Appending only prepends to `chunks` and `pending`, so it is O(1) regardless
-; of how much output has already been produced.  `window` is a coalesced
-; contiguous view of the most recent output and is refreshed lazily, only when
-; a back-reference needs to read from it.  A back-reference can reach back at
-; most the maximum DEFLATE distance, so refreshing keeps only the most recent
-; `window-cap` bytes; `chunks` retains everything for the final concatenation.
-; This makes the decode linear in the output size rather than quadratic.
+; Appending only prepends to the two fragment lists, so it is O(1) regardless of
+; how much output has already been produced.  `window` is a coalesced contiguous
+; view of the most recent output and is refreshed lazily, only when a
+; back-reference needs to read from it.  A back-reference can reach back at most
+; the maximum DEFLATE distance, so refreshing keeps only the most recent
+; `window-cap` bytes.
+;
+; `fragments` is bounded: once it holds `fragment-max` entries they are
+; coalesced into a single block and committed to `blocks`.  A stream can append a
+; fragment per match, so without this bound a decode of a large match-heavy
+; stream would hold one list cell and one bytes value per match for the whole
+; decode.  Committing keeps the number of live fragments proportional to the
+; output size divided by `fragment-max`, not to the number of matches.
+;
+; `pending` tracks which fragments have not yet been folded into `window`, so
+; that a refresh folds each fragment exactly once.  It is cleared by a refresh
+; and is independent of committing.
+;
+; The full output is `reverse(blocks) ++ reverse(fragments)`.
 
 (letrec
   ((tables (import "deflate-tables"))
@@ -50,30 +63,63 @@
    ; back-reference can be resolved.
    (window-cap 32768)
 
+   ; The number of recent fragments the output state keeps before coalescing
+   ; them into a committed block.  Bounding this bounds the number of live
+   ; fragment values and list cells, which would otherwise grow with the number
+   ; of matches in the stream.
+   (fragment-max 64)
+
    ; Create an empty output state.
-   (output (struct (chunks pending window total)))
+   (output (struct (blocks fragments pending window total)))
 
    (make-output
     (lambda ()
       (output (list)
               (list)
+              (list)
               (string->bytes "")
               0)))
 
    ; Append a bytes value to the output.  O(1): the value is prepended to the
-   ; chunk list (for the final concatenation) and to the pending list (for the
-   ; next window refresh).
+   ; fragment list.  When that list reaches `fragment-max` entries they are
+   ; coalesced into one block and committed, so the fragment list never grows
+   ; without bound.  Committing does not touch `pending` or `window`: the next
+   ; refresh folds every fragment appended since the last refresh, whether it
+   ; has been committed or not.
    (output-append-bytes
     (lambda (out bs)
-      (output (list-prepend (struct-get out 'chunks) bs)
-              (list-prepend (struct-get out 'pending) bs)
-              (struct-get out 'window)
-              (integer+ (struct-get out 'total) (bytes-length bs)))))
+      (let ((fragments (list-prepend (struct-get out 'fragments) bs)))
+        (let ((pending (list-prepend (struct-get out 'pending) bs)))
+          (let ((total (integer+ (struct-get out 'total) (bytes-length bs))))
+            (if (integer>=? (list-length fragments) fragment-max)
+                (let ((block (concat-blocks (list-reverse fragments))))
+                  (output (list-prepend (struct-get out 'blocks) block)
+                          (list)
+                          pending
+                          (struct-get out 'window)
+                          total))
+                (output (struct-get out 'blocks)
+                        fragments
+                        pending
+                        (struct-get out 'window)
+                        total)))))))
+
+   ; Concatenate a list of bytes values, in list order, into one bytes value.
+   ; The list is merged pairwise rather than folded, so each byte is copied
+   ; O(log n) times rather than O(n).
+   (concat-blocks
+    (lambda (fragments)
+      (if (list-null? fragments)
+          (string->bytes "")
+          (if (list-null? (list-rest fragments))
+              (list-first fragments)
+              (let ((half (integer/ (list-length fragments) 2)))
+                (bytes-concat (concat-blocks (list-slice fragments 0 half))
+                              (concat-blocks (list-slice fragments half))))))))
 
    ; Coalesce the pending appends onto the window, keeping only the most recent
-   ; `window-cap` bytes (all a back-reference can reach).  Returns the output
-   ; state with an empty pending list.  O(window-cap + pending).  A no-op when
-   ; there is nothing pending, so it is cheap to call before every read.
+   ; `window-cap` bytes (all a back-reference can reach).  A no-op when there is
+   ; nothing pending, so it is cheap to call before every read.
    (output-refresh-window
     (lambda (out)
       (let ((pending (struct-get out 'pending)))
@@ -81,7 +127,8 @@
             out
             (let ((win (apply bytes-concat
                               (list-prepend (list-reverse pending) (struct-get out 'window)))))
-              (output (struct-get out 'chunks)
+              (output (struct-get out 'blocks)
+                      (struct-get out 'fragments)
                       (list)
                       (if (integer>? (bytes-length win) window-cap)
                           (bytes-slice win (integer- (bytes-length win) window-cap)
@@ -89,23 +136,11 @@
                           win)
                       (struct-get out 'total)))))))
 
-   ; Concatenate a list of bytes values in a balanced tree rather than a left
-   ; fold.  A left fold copies the growing prefix once per element, which is
-   ; O(total * n); merging pairs instead copies each byte O(log n) times.
-   (concat-chunks
-    (lambda (chunks)
-      (if (list-null? chunks)
-          (string->bytes "")
-          (if (list-null? (list-rest chunks))
-              (list-first chunks)
-              (let ((half (integer/ (list-length chunks) 2)))
-                (bytes-concat (concat-chunks (list-slice chunks 0 half))
-                              (concat-chunks (list-slice chunks half))))))))
-
    ; Flatten the output state into a single bytes value.  O(total * log n).
    (output-finalize
     (lambda (out)
-      (concat-chunks (list-reverse (struct-get out 'chunks)))))
+      (concat-blocks (list-concat (list-reverse (struct-get out 'blocks))
+                                  (list-reverse (struct-get out 'fragments))))))
 
    ; Read a single bit, returning (list <0-or-1> <new-state>).
    (read-bit
