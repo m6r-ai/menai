@@ -678,6 +678,33 @@ the `domain-operation` shape used throughout. See
 [ADR-0041](docs/adr/0041-standard-library-module-taxonomy.md) and
 [ADR-0042](docs/adr/0042-regular-expression-matching.md).
 
+### The DOCX codec is the OOXML capture layer, not a document model
+
+`docx-decode` and `docx-encode` are a symmetric operation-module pair (ADR-0041) that
+decode a `.docx` package to a value tree and encode it back, carrying the value
+round-trip guarantee. The representation is a **faithful capture** of the package's
+parts: the decoded `document`, `styles`, and `numbering` are the `xml-decode` element
+trees of `word/document.xml`, `word/styles.xml`, and `word/numbering.xml`, and
+`relationships` and `media` capture the relationship map and the media parts. Nothing
+is interpreted; namespace prefixes are kept verbatim, as `xml-decode` keeps them.
+
+A **semantic document model** — headings, paragraphs, runs, lists, tables, with styles
+and numbering resolved — is deliberately **not** part of the codec. It is not specific
+to DOCX, so it belongs in a separate higher layer that DOCX, HTML, and Markdown can
+share, rather than duplicated inside each format's codec. Do not fold interpretation
+into `docx-decode`: the codec stays a codec.
+
+A relationships entry keeps the relationship's type and target mode, not only its
+target, because the type is what distinguishes an image from a hyperlink and a
+relationship without it is unusable.
+
+The codec composes `zip-extract`/`xml-decode` to decode and `zip-create`/`xml-encode`
+to encode; it adds only the DOCX-specific structure. The round-trip is a value
+round-trip, not a byte round-trip: `[Content_Types].xml` and `_rels/.rels` are
+generated, not carried.
+
+See [ADR-0046](docs/adr/0046-docx-codec-ooxml-capture-layer.md).
+
 ### Enums are bare-tag, and the bare-tag form must not foreclose payloads
 
 An `enum` is a nominal, closed set of named variants, compared for identity only.

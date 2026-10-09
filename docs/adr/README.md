@@ -114,3 +114,4 @@ What costs, risks, or constraints does this decision impose?
 | [0043](0043-enum-type.md) | Enum type | Accepted |
 | [0044](0044-type-pattern-heads-are-syntactically-distinct.md) | Type pattern heads are syntactically distinct | Accepted |
 | [0045](0045-desugared-match-size-is-bounded.md) | A match's desugared form is bounded | Accepted |
+| [0046](0046-docx-codec-ooxml-capture-layer.md) | DOCX codec — the OOXML capture layer | Accepted |
