@@ -52,12 +52,21 @@
 
    ; The index of the first occurrence of `needle` at or after `i`, raising if
    ; it does not occur.
+   ;
+   ; The scan advances one character at a time and tests the needle in place,
+   ; rather than slicing the remainder of the string and searching that.  A
+   ; slice would copy the whole tail on every call, making the parser quadratic
+   ; in the input length; scanning in place costs only the distance to the
+   ; needle.
    (require-index
     (lambda (s needle i)
-      (let ((idx (string-index (string-slice s i) needle)))
-        (if (none? idx)
-            (error (string-concat "xml-decode: expected \"" needle "\""))
-            (integer+ i idx)))))
+      (letrec ((loop (lambda (j)
+                       (if (integer>=? j (string-length s))
+                           (error (string-concat "xml-decode: expected \"" needle "\""))
+                           (if (starts-at? s j needle)
+                               j
+                               (loop (integer+ j 1)))))))
+        (loop i))))
 
    ; #t when `s` starts with `prefix` at index `i`.  Unlike slicing to a fixed
    ; end, this is safe when fewer than (string-length prefix) characters remain.
