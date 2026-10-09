@@ -87,6 +87,18 @@
             (expect-pass "XML declaration is skipped"
                          (lambda () (assert-equal (decode "<?xml version=\"1.0\"?><a/>")
                                                   (dict "tag" "a" "attrs" (dict) "children" (list)))))
+            (expect-pass "whitespace after the XML declaration is skipped"
+                         (lambda () (assert-equal (decode "<?xml version=\"1.0\"?>\n<a/>")
+                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
+            (expect-pass "whitespace before the XML declaration is skipped"
+                         (lambda () (assert-equal (decode "\n  <?xml version=\"1.0\"?>\n<a/>")
+                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
+            (expect-pass "whitespace between prolog items is skipped"
+                         (lambda () (assert-equal (decode "<?xml version=\"1.0\"?>\n<!-- c -->\n<a/>")
+                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
+            (expect-pass "whitespace after the document element is skipped"
+                         (lambda () (assert-equal (decode "<a/>\n")
+                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
             (expect-pass "comment before the root is skipped"
                          (lambda () (assert-equal (decode "<!-- c --><a/>")
                                                   (dict "tag" "a" "attrs" (dict) "children" (list)))))
