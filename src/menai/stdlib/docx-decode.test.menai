@@ -1,0 +1,113 @@
+; Tests for docx-decode.menai
+
+(let ((docx-decode (import "docx-decode"))
+      (docx-encode (import "docx-encode"))
+      (zip-create (import "zip-create"))
+      (t (import "menai_test")))
+  (let ((decode (:: docx-decode decode))
+        (encode (:: docx-encode encode))
+        (create (:: zip-create create))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error))
+        (main-ns "http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+        (rels-ns "http://schemas.openxmlformats.org/package/2006/relationships")
+        (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
+        (document-xml
+         (string->bytes
+           (string-concat
+             "<w:document xmlns:w=\""
+             main-ns
+             "\"><w:body><w:p><w:r><w:t>Hi</w:t></w:r></w:p></w:body></w:document>")))
+        (styles-xml (string->bytes (string-concat "<w:styles xmlns:w=\"" main-ns "\"/>")))
+        (numbering-xml (string->bytes (string-concat "<w:numbering xmlns:w=\"" main-ns "\"/>")))
+        (rels-xml
+         (string->bytes
+           (string-concat
+             "<Relationships xmlns=\""
+             rels-ns
+             "\"><Relationship Id=\"rId5\" Type=\""
+             image-rel
+             "\" Target=\"media/dot.png\"/>"
+             "<Relationship Id=\"rId6\" Type=\""
+             image-rel
+             "\" Target=\"https://example.com/\" TargetMode=\"External\"/></Relationships>")))
+        (media-bytes (string-hex->bytes "89504e470d0a1a0a")))
+    (let ((package-of
+           (lambda (parts)
+             (create (dict "entries"
+                           (map-list (lambda (p) (dict "name" (list-first p) "content" (list-nth p 1)))
+                                     parts)
+                           "meta" (dict))))))
+      (let ((minimal (package-of (list (list "word/document.xml" document-xml))))
+            (full
+             (package-of
+               (list
+                 (list "word/document.xml" document-xml)
+                 (list "word/styles.xml" styles-xml)
+                 (list "word/numbering.xml" numbering-xml)
+                 (list "word/_rels/document.xml.rels" rels-xml)
+                 (list "word/media/dot.png" media-bytes)))))
+        (let ((tests
+          (list
+            (list "package"
+              (list
+                (expect-pass "document part is decoded"
+                             (lambda () (assert-equal (dict-get (decode minimal) "document")
+                                                      (dict "tag" "w:document"
+                                                            "attrs" (dict "xmlns:w" main-ns)
+                                                            "children" (list (dict "tag" "w:body" "attrs" (dict)
+                                                                                   "children" (list (dict "tag" "w:p" "attrs" (dict)
+                                                                                                          "children" (list (dict "tag" "w:r" "attrs" (dict)
+                                                                                                                                 "children" (list (dict "tag" "w:t" "attrs" (dict)
+                                                                                                                                                        "children" (list "Hi")))))))))))))
+                (expect-pass "styles is #none when absent"
+                             (lambda () (assert-equal (dict-get (decode minimal) "styles") #none)))
+                (expect-pass "numbering is #none when absent"
+                             (lambda () (assert-equal (dict-get (decode minimal) "numbering") #none)))
+                (expect-pass "media is #none when absent"
+                             (lambda () (assert-equal (dict-get (decode minimal) "media") #none)))
+                (expect-pass "relationships is empty when absent"
+                             (lambda () (assert-equal (dict-get (decode minimal) "relationships") (dict))))))
+            (list "optional-parts"
+              (list
+                (expect-pass "styles is decoded when present"
+                             (lambda () (assert-equal (dict-get (dict-get (decode full) "styles") "tag")
+                                                      "w:styles")))
+                (expect-pass "numbering is decoded when present"
+                             (lambda () (assert-equal (dict-get (dict-get (decode full) "numbering") "tag")
+                                                      "w:numbering")))
+                (expect-pass "media is decoded to a dict of bytes"
+                             (lambda () (assert-equal (dict-get (dict-get (decode full) "media") "word/media/dot.png")
+                                                      media-bytes)))))
+            (list "relationships"
+              (list
+                (expect-pass "relationship id maps to a relationship dict"
+                             (lambda () (assert-equal (dict-get (dict-get (decode full) "relationships") "rId5")
+                                                      (dict "type" image-rel "target" "media/dot.png" "mode" #none))))
+                (expect-pass "relationship target mode is preserved"
+                             (lambda () (assert-equal (dict-get (dict-get (dict-get (decode full) "relationships") "rId6") "mode")
+                                                      "External")))
+                (expect-pass "relationship target is preserved verbatim"
+                             (lambda () (assert-equal (dict-get (dict-get (dict-get (decode full) "relationships") "rId6") "target")
+                                                      "https://example.com/")))))
+            (list "round-trips"
+              (list
+                (expect-pass "minimal package"
+                             (lambda () (assert-equal (decode (encode (decode minimal))) (decode minimal))))
+                (expect-pass "package with all parts"
+                             (lambda () (assert-equal (decode (encode (decode full))) (decode full))))))
+            (list "errors"
+              (list
+                (expect-fail "rejects a non-bytes argument"
+                             (lambda () (decode "not a package"))
+                             "expects a bytes value")
+                (expect-fail "rejects a package with no document part"
+                             (lambda () (decode (package-of (list (list "[Content_Types].xml"
+                                                                       (string->bytes "<Types/>"))))))
+                             "package has no word/document.xml")
+                (expect-fail "rejects a package whose document is not XML"
+                             (lambda () (decode (package-of (list (list "word/document.xml"
+                                                                       (string->bytes "not xml"))))))
+                             "xml-decode"))))))
+          (export tests))))))

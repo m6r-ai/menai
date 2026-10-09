@@ -1,0 +1,259 @@
+; docx-encode — encodes a DOCX value tree as a DOCX package.
+;
+; The input is a value tree in the shape docx-decode produces and the output is
+; a bytes value containing a .docx file.  A .docx file is an OOXML package: a
+; ZIP archive whose parts are XML documents (and media).
+;
+; The input dict has this shape:
+;
+;   (dict
+;     "document"      <element>              ; word/document.xml
+;     "styles"        <element> or #none     ; word/styles.xml
+;     "numbering"     <element> or #none     ; word/numbering.xml
+;     "relationships" <dict>                 ; relationship id -> relationship
+;     "media"         <dict> or #none)       ; part name -> bytes
+;
+; An <element> is the value tree xml-decode produces for an XML document:
+;
+;   (dict "tag" <string> "attrs" <dict> "children" <list>)
+;
+; "document" is required and is serialised to word/document.xml with
+; xml-encode.  "styles" and "numbering", when they are elements, are serialised
+; to word/styles.xml and word/numbering.xml.  "relationships" maps each
+; relationship id to a relationship dict:
+;
+;   (dict "type" <string> "target" <string> "mode" <string> or #none)
+;
+; and is written to word/_rels/document.xml.rels as a <Relationship> element per
+; entry, carrying the type, target, and (when not #none) the target mode.
+; "media" is written verbatim, each entry as a package part under its own name.
+;
+; The package's two structural parts, [Content_Types].xml and _rels/.rels, are
+; generated from the parts present: a default for the "rels" and "xml"
+; extensions, a default content type for each distinct media extension, an
+; override for each XML part, and the single root relationship pointing at
+; word/document.xml.
+;
+; It is the inverse of docx-decode's decode: for every value tree v that encode
+; accepts, (decode (encode v)) reproduces v.  This is a value round-trip, not a
+; byte round-trip: the generated structural parts and the ordering of the
+; relationships are canonical, so the package need not be byte-identical to any
+; package the same value tree came from.
+;
+; A value that is not a well-formed DOCX value tree raises a runtime error: a
+; missing or non-element "document", a non-dict "relationships", a relationship
+; that is not a dict or lacks a string "type" or "target", a non-dict "media",
+; or a non-bytes media part.
+
+(letrec
+  ((zip-create (import "zip-create"))
+   (xml-encode (import "xml-encode"))
+
+   (content-types-part "[Content_Types].xml")
+   (root-rels-part "_rels/.rels")
+   (document-part "word/document.xml")
+   (styles-part "word/styles.xml")
+   (numbering-part "word/numbering.xml")
+   (document-rels-part "word/_rels/document.xml.rels")
+
+   (rels-namespace "http://schemas.openxmlformats.org/package/2006/relationships")
+   (content-types-namespace "http://schemas.openxmlformats.org/package/2006/content-types")
+   (office-document-relationship "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument")
+   (document-content-type "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml")
+   (styles-content-type "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml")
+   (numbering-content-type "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml")
+   (rels-content-type "application/vnd.openxmlformats-package.relationships+xml")
+   (xml-content-type "application/xml")
+
+   ; An XML element with the given tag, attributes, and children.
+   (element
+    (lambda (tag attrs children)
+      (dict "tag" tag "attrs" attrs "children" children)))
+
+   ; Serialise an element to a UTF-8 bytes value.
+   (element-bytes
+    (lambda (e)
+      (string->bytes ((:: xml-encode encode) e))))
+
+   ; The lowercased extension of a part name: the text after the last ".",
+   ; or the whole name when it has none.
+   (extension-of
+    (lambda (name)
+      (let ((dot (string-index name ".")))
+        (if (none? dot)
+            (string-downcase name)
+            (letrec ((last-dot (lambda (i found)
+                                 (if (integer>=? i (string-length name))
+                                     found
+                                     (last-dot (integer+ i 1)
+                                               (if (string=? (string-nth name i) ".")
+                                                   i
+                                                   found))))))
+              (string-downcase (string-slice name (integer+ (last-dot 0 dot) 1))))))))
+
+   ; The attributes of one <Relationship> element.  The target mode is omitted
+   ; when it is #none.
+   (relationship-attributes
+    (lambda (id relationship)
+      (let ((type (dict-get relationship "type"))
+            (target (dict-get relationship "target"))
+            (mode (dict-get relationship "mode")))
+        (if (string? type)
+            (if (string? target)
+                (let ((attrs (dict "Id" id "Type" type "Target" target)))
+                  (if (string? mode)
+                      (dict-with attrs "TargetMode" mode)
+                      attrs))
+                (error (string-concat
+                         "docx-encode: relationship \""
+                         id
+                         "\" \"target\" must be a string")))
+            (error (string-concat
+                     "docx-encode: relationship \""
+                     id
+                     "\" \"type\" must be a string"))))))
+
+   ; One <Relationship> element for a relationship id and relationship dict.
+   (relationship-element
+    (lambda (id relationship)
+      (if (dict? relationship)
+          (element "Relationship" (relationship-attributes id relationship) (list))
+          (error (string-concat
+                   "docx-encode: relationship \""
+                   id
+                   "\" must be a dict")))))
+
+   ; The <Relationships> root for the document relationships.  Entries are
+   ; emitted in the dict's insertion order.
+   (relationships-element
+    (lambda (relationships)
+      (element "Relationships"
+               (dict "xmlns" rels-namespace)
+               (map-list (lambda (id) (relationship-element id (dict-get relationships id)))
+                         (dict-keys relationships)))))
+
+   ; The root relationships part, pointing at word/document.xml.
+   (root-rels-element
+    (lambda ()
+      (element "Relationships"
+               (dict "xmlns" rels-namespace)
+               (list (element "Relationship"
+                              (dict "Id" "rId1"
+                                    "Type" office-document-relationship
+                                    "Target" document-part)
+                              (list))))))
+
+   ; One <Default> content-type element.
+   (default-element
+    (lambda (extension content-type)
+      (element "Default" (dict "Extension" extension "ContentType" content-type) (list))))
+
+   ; One <Override> content-type element.
+   (override-element
+    (lambda (part-name content-type)
+      (element "Override" (dict "PartName" part-name "ContentType" content-type) (list))))
+
+   ; The distinct lowercased extensions of the media part names, in first-seen
+   ; order.
+   (media-extensions
+    (lambda (media)
+      (letrec ((loop (lambda (names seen acc)
+                       (if (list-null? names)
+                           (list-reverse acc)
+                           (let ((ext (extension-of (list-first names))))
+                             (if (list-member? seen ext)
+                                 (loop (list-rest names) seen acc)
+                                 (loop (list-rest names)
+                                       (list-append seen ext)
+                                       (list-prepend acc ext))))))))
+        (loop (dict-keys media) (list) (list)))))
+
+   ; The <Default> elements for the media extensions.
+   (media-defaults
+    (lambda (media)
+      (map-list (lambda (ext) (default-element ext (string-concat "image/" ext)))
+                (media-extensions media))))
+
+   ; The <Override> elements for the XML parts present.
+   (part-overrides
+    (lambda (styles numbering)
+      (list-concat
+        (list (override-element (string-concat "/" document-part) document-content-type))
+        (if (dict? styles)
+            (list (override-element (string-concat "/" styles-part) styles-content-type))
+            (list))
+        (if (dict? numbering)
+            (list (override-element (string-concat "/" numbering-part) numbering-content-type))
+            (list)))))
+
+   ; The [Content_Types].xml part.
+   (content-types-element
+    (lambda (styles numbering media)
+      (element "Types"
+               (dict "xmlns" content-types-namespace)
+               (list-concat
+                 (list (default-element "rels" rels-content-type)
+                       (default-element "xml" xml-content-type))
+                 (if (dict? media) (media-defaults media) (list))
+                 (part-overrides styles numbering)))))
+
+   ; The package parts as a list of entry dicts for zip-create, in a canonical
+   ; order: the structural parts first, then the XML parts, then the media.
+   (package-entries
+    (lambda (v)
+      (let ((document (dict-get v "document"))
+            (styles (dict-get v "styles"))
+            (numbering (dict-get v "numbering"))
+            (relationships (dict-get v "relationships"))
+            (media (dict-get v "media")))
+        (if (dict? document)
+            (if (dict? relationships)
+                (let ((xml-entries
+                       (list-concat
+                         (list (dict "name" content-types-part
+                                     "content" (element-bytes (content-types-element styles numbering media)))
+                               (dict "name" root-rels-part
+                                     "content" (element-bytes (root-rels-element)))
+                               (dict "name" document-part
+                                     "content" (element-bytes document))
+                               (dict "name" document-rels-part
+                                     "content" (element-bytes (relationships-element relationships))))
+                         (if (dict? styles)
+                             (list (dict "name" styles-part "content" (element-bytes styles)))
+                             (list))
+                         (if (dict? numbering)
+                             (list (dict "name" numbering-part "content" (element-bytes numbering)))
+                             (list)))))
+                  (list-concat
+                    xml-entries
+                    (if (dict? media)
+                        (media-entries media)
+                        (list))))
+                (error "docx-encode: \"relationships\" must be a dict"))
+            (error "docx-encode: \"document\" must be an element dict")))))
+
+   ; The media parts as entry dicts, in the dict's insertion order.  A part
+   ; whose value is not bytes raises.
+   (media-entries
+    (lambda (media)
+      (map-list (lambda (name)
+                  (let ((content (dict-get media name)))
+                    (if (bytes? content)
+                        (dict "name" name "content" content)
+                        (error (string-concat
+                                 "docx-encode: media part \""
+                                 name
+                                 "\" must be bytes")))))
+                (dict-keys media))))
+
+   ; Encode a DOCX value tree as a bytes value containing a .docx package.  It
+   ; is the inverse of docx-decode's decode.
+   (encode
+    (lambda (v)
+      (if (dict? v)
+          ((:: zip-create create)
+           (dict "entries" (package-entries v)
+                 "meta" (dict)))
+          (error "docx-encode: encode expects a dict")))))
+
+  (export encode))

@@ -258,6 +258,21 @@ menai`. Currently it includes:
 - `deflate-tables.menai` — the constant tables defined by RFC 1951, shared by
   `deflate-compress` and `deflate-decompress`.  Not an operation module; it
   exports specification data
+- `docx-decode.menai` — decodes a DOCX package (as bytes) into a value tree that
+  faithfully captures the package's parts, without interpreting the
+  wordprocessingML semantics.  The result is a dict with `"document"` (the
+  `xml-decode` element tree of `word/document.xml`), `"styles"` and
+  `"numbering"` (the element trees of `word/styles.xml` and `word/numbering.xml`,
+  or `#none`), `"relationships"` (a dict mapping each relationship id to a dict
+  of `"type"`, `"target"`, and `"mode"`), and `"media"` (a dict mapping each part
+  name under `word/media/` to its bytes, or `#none`).  Namespace prefixes are
+  kept verbatim.  A semantic document model is a separate, higher layer (`decode`)
+- `docx-encode.menai` — encodes a DOCX value tree (the shape `docx-decode`
+  produces) as a DOCX package; the inverse of `docx-decode`, so
+  `(decode (encode v))` reproduces `v` for every value tree `v` that `encode`
+  accepts.  The package's structural parts, `[Content_Types].xml` and
+  `_rels/.rels`, are generated from the parts present, so this is a value
+  round-trip rather than a byte round-trip (`encode`)
 - `gzip-compress.menai` — compresses bytes to a gzip stream (RFC 1952), writing
   the fixed 10-byte header, delegating the DEFLATE data to `deflate-compress`,
   and appending the CRC-32 and ISIZE trailer; the optional second argument

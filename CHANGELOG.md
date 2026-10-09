@@ -22,6 +22,9 @@ New features:
   regular-expression pattern and searches, splits, or replaces within strings.
 - Added `xml-decode` and `xml-encode` modules to the standard library.  They
   parse XML text into a value tree and serialise it back.
+- Added `docx-decode` and `docx-encode` modules to the standard library.  They
+  decode a DOCX package into a value tree that faithfully captures its OOXML parts
+  and encode it back.
 - Added an `enum` type: a nominal, closed set of named variants, compared for
   identity only.
 

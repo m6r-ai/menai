@@ -1,0 +1,142 @@
+; docx-decode — decodes a DOCX package into a value tree.
+;
+; The input is a bytes value containing a .docx file and the output is a value
+; tree describing the package's parts.  A .docx file is an OOXML package: a ZIP
+; archive whose parts are XML documents (and media).  This module reads the
+; package and decodes the parts, without interpreting the wordprocessingML
+; semantics; a semantic document model is a separate concern layered on top.
+;
+; The result is a dict:
+;
+;   (dict
+;     "document"      <element>              ; word/document.xml, decoded
+;     "styles"        <element> or #none     ; word/styles.xml, decoded
+;     "numbering"     <element> or #none     ; word/numbering.xml, decoded
+;     "relationships" <dict>                 ; relationship id -> relationship
+;     "media"         <dict> or #none)       ; part name -> bytes
+;
+; An <element> is the value tree xml-decode produces for an XML document:
+;
+;   (dict "tag" <string> "attrs" <dict> "children" <list>)
+;
+; "document" is the decoded word/document.xml and is always present: a package
+; without it is not a Word document and raises.  "styles" and "numbering" are
+; the decoded word/styles.xml and word/numbering.xml, or #none when the package
+; does not carry them.  "relationships" maps each relationship id declared in
+; word/_rels/document.xml.rels (e.g. "rId5") to a relationship dict:
+;
+;   (dict "type" <string> "target" <string> "mode" <string> or #none)
+;
+; "type" is the relationship type URI (e.g. the image or hyperlink relationship
+; type), "target" is the target (e.g. "media/dot.png" or an external URL), and
+; "mode" is the target mode (e.g. "External") or #none when the relationship
+; declares none.  Keeping the type is what makes the map usable: it is how a
+; consumer tells an image relationship from a hyperlink relationship.  The map
+; is empty when the package carries no document relationships.  "media" maps
+; each part name under word/media/ (e.g. "word/media/dot.png") to its raw bytes,
+; or is #none when the package carries no media.
+;
+; Namespace prefixes in the decoded XML are kept verbatim, exactly as
+; xml-decode keeps them: a qualified name such as "w:p" stays "w:p" and is not
+; resolved against its namespace declaration.
+;
+; The package is read with zip-extract, so a corrupt or unsupported ZIP raises
+; from there.  A package whose word/document.xml is not well-formed XML raises
+; from xml-decode.
+;
+; It is the inverse of docx-encode's encode: for every value tree v that encode
+; accepts, (decode (encode v)) reproduces v.
+
+(letrec
+  ((zip-extract (import "zip-extract"))
+   (xml-decode (import "xml-decode"))
+
+   (document-part "word/document.xml")
+   (styles-part "word/styles.xml")
+   (numbering-part "word/numbering.xml")
+   (document-rels-part "word/_rels/document.xml.rels")
+   (media-prefix "word/media/")
+
+   ; The package's parts as a dict from part name to bytes.
+   (parts-of
+    (lambda (b)
+      (fold-list (lambda (acc entry)
+                   (dict-with acc (dict-get entry "name") (dict-get entry "content")))
+                 (dict)
+                 (dict-get ((:: zip-extract extract) b) "entries"))))
+
+   ; The decoded element for a part, or #none when the part is absent.
+   (decode-part
+    (lambda (parts name)
+      (let ((content (dict-get parts name)))
+        (if (bytes? content)
+            ((:: xml-decode decode) (bytes->string content))
+            #none))))
+
+   ; The decoded element for a part that must be present.
+   (decode-required-part
+    (lambda (parts name)
+      (let ((content (dict-get parts name)))
+        (if (bytes? content)
+            ((:: xml-decode decode) (bytes->string content))
+            (error (string-concat "docx-decode: package has no " name))))))
+
+   ; Add one <Relationship> element to the relationships dict.  A child that is
+   ; not an element (the whitespace text nodes between the elements), or an
+   ; element missing its Id, Type, or Target, contributes nothing.  The target
+   ; mode is #none when the element declares none.
+   (add-relationship
+    (lambda (rels child)
+      (if (dict? child)
+          (let ((attrs (dict-get child "attrs")))
+            (let ((id (dict-get attrs "Id"))
+                  (type (dict-get attrs "Type"))
+                  (target (dict-get attrs "Target"))
+                  (mode (dict-get attrs "TargetMode")))
+              (if (and (string? id) (and (string? type) (string? target)))
+                  (dict-with rels id (dict "type" type "target" target "mode" mode))
+                  rels)))
+          rels)))
+
+   ; The document relationships map from the decoded relationships part.  The
+   ; root element's children are the <Relationship> elements.  The map is empty
+   ; when the part is absent.
+   (relationships-of
+    (lambda (parts)
+      (let ((root (decode-part parts document-rels-part)))
+        (if (dict? root)
+            (fold-list add-relationship (dict) (dict-get root "children"))
+            (dict)))))
+
+   ; The media parts as a dict from part name to bytes, or #none when there are
+   ; none.  Only parts with byte content are included, so a directory entry
+   ; under word/media/ is not mistaken for a media part.
+   (media-of
+    (lambda (parts)
+      (let ((names (filter-list
+                     (lambda (name)
+                       (and (string-prefix? name media-prefix)
+                            (bytes? (dict-get parts name))))
+                     (dict-keys parts))))
+        (if (list-null? names)
+            #none
+            (fold-list (lambda (acc name)
+                         (dict-with acc name (dict-get parts name)))
+                       (dict)
+                       names)))))
+
+   ; Decode a bytes value containing a DOCX package into a value tree.  It is
+   ; the inverse of docx-encode's encode.
+   (decode
+    (lambda (b)
+      (if (bytes? b)
+          (let ((parts (parts-of b)))
+            (dict
+              "document" (decode-required-part parts document-part)
+              "styles" (decode-part parts styles-part)
+              "numbering" (decode-part parts numbering-part)
+              "relationships" (relationships-of parts)
+              "media" (media-of parts)))
+          (error "docx-decode: decode expects a bytes value")))))
+
+  (export decode))

@@ -1,0 +1,174 @@
+; Tests for docx-encode.menai
+
+(let ((docx-encode (import "docx-encode"))
+      (docx-decode (import "docx-decode"))
+      (zip-entries (import "zip-entries"))
+      (zip-extract (import "zip-extract"))
+      (xml (import "xml-decode"))
+      (t (import "menai_test")))
+  (let ((encode (:: docx-encode encode))
+        (decode (:: docx-decode decode))
+        (entries (:: zip-entries entries))
+        (extract (:: zip-extract extract))
+        (xml-decode (:: xml decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t test))
+        (expect-fail (:: t test-error))
+        (main-ns "http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+        (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
+        (hyperlink-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink")
+        (document
+         (dict "tag" "w:document"
+               "attrs" (dict "xmlns:w" main-ns)
+               "children" (list (dict "tag" "w:body" "attrs" (dict)
+                                      "children" (list (dict "tag" "w:p" "attrs" (dict)
+                                                            "children" (list (dict "tag" "w:r" "attrs" (dict)
+                                                                                  "children" (list (dict "tag" "w:t" "attrs" (dict)
+                                                                                                         "children" (list "Hi")))))))))))
+        (styles (dict "tag" "w:styles" "attrs" (dict "xmlns:w" main-ns) "children" (list)))
+        (numbering (dict "tag" "w:numbering" "attrs" (dict "xmlns:w" main-ns) "children" (list)))
+        (media (dict "word/media/a.png" (string-hex->bytes "89504e47")
+                     "word/media/b.jpg" (string-hex->bytes "ffd8ff")))
+        (relationships (dict "rId5" (dict "type" image-rel "target" "media/a.png" "mode" #none)
+                             "rId6" (dict "type" hyperlink-rel "target" "https://example.com/" "mode" "External")))
+
+        ; The value tree with every part present.
+        (full (dict "document" document
+                    "styles" styles
+                    "numbering" numbering
+                    "relationships" relationships
+                    "media" media))
+
+        ; The value tree with only the required part.
+        (minimal (dict "document" document
+                       "styles" #none
+                       "numbering" #none
+                       "relationships" (dict)
+                       "media" #none))
+
+        ; The names of the parts in an encoded package.
+        (part-names
+         (lambda (v)
+           (map-list (lambda (e) (dict-get e "name"))
+                     (dict-get (entries (encode v)) "entries"))))
+
+        ; The decoded element for one XML part of an encoded package.
+        (decode-part
+         (lambda (v name)
+           (let ((part (find-list (lambda (e) (string=? (dict-get e "name") name))
+                                  (dict-get (extract (encode v)) "entries"))))
+             (xml-decode (bytes->string (dict-get part "content"))))))
+        (part-content
+         (lambda (v name)
+           (let ((part (find-list (lambda (e) (string=? (dict-get e "name") name))
+                                  (dict-get (extract (encode v)) "entries"))))
+             (dict-get part "content")))))
+
+    (let ((tests
+      (list
+        ; The package structure.
+        (list "package"
+          (list
+            (expect-pass "minimal package contains the required parts"
+                         (lambda () (assert-equal (part-names minimal)
+                                                  (list "[Content_Types].xml"
+                                                        "_rels/.rels"
+                                                        "word/document.xml"
+                                                        "word/_rels/document.xml.rels"))))
+            (expect-pass "full package contains every part"
+                         (lambda () (assert-equal (part-names full)
+                                                  (list "[Content_Types].xml"
+                                                        "_rels/.rels"
+                                                        "word/document.xml"
+                                                        "word/_rels/document.xml.rels"
+                                                        "word/styles.xml"
+                                                        "word/numbering.xml"
+                                                        "word/media/a.png"
+                                                        "word/media/b.jpg"))))
+            (expect-pass "media parts are written verbatim"
+                         (lambda () (assert-equal (part-content full "word/media/a.png")
+                                                  (string-hex->bytes "89504e47"))))))
+
+        ; The generated structural parts.
+        (list "structural-parts"
+          (list
+            (expect-pass "content types declares the rels and xml defaults"
+                         (lambda ()
+                           (let ((types (decode-part minimal "[Content_Types].xml")))
+                             (assert-equal (list (dict-get (list-first (dict-get types "children")) "attrs")
+                                                 (dict-get (list-nth (dict-get types "children") 1) "attrs"))
+                                           (list (dict "Extension" "rels"
+                                                       "ContentType" "application/vnd.openxmlformats-package.relationships+xml")
+                                                 (dict "Extension" "xml"
+                                                       "ContentType" "application/xml"))))))
+            (expect-pass "content types declares a default per media extension"
+                         (lambda ()
+                           (let ((types (decode-part full "[Content_Types].xml")))
+                             (assert-equal (map-list (lambda (c) (dict-get (dict-get c "attrs") "Extension"))
+                                                     (filter-list (lambda (c) (string=? (dict-get c "tag") "Default"))
+                                                                  (dict-get types "children")))
+                                           (list "rels" "xml" "png" "jpg")))))
+            (expect-pass "root rels points at word/document.xml"
+                         (lambda ()
+                           (let ((rels (decode-part minimal "_rels/.rels")))
+                             (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Target")
+                                           "word/document.xml"))))))
+
+        ; Relationships.
+        (list "relationships"
+          (list
+            (expect-pass "relationship type and target are emitted"
+                         (lambda ()
+                           (let ((rels (decode-part full "word/_rels/document.xml.rels")))
+                             (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Type")
+                                           image-rel))))
+            (expect-pass "target mode is emitted when present"
+                         (lambda ()
+                           (let ((rels (decode-part full "word/_rels/document.xml.rels")))
+                             (assert-equal (dict-get (dict-get (list-nth (dict-get rels "children") 1) "attrs") "TargetMode")
+                                           "External"))))
+            (expect-pass "target mode is omitted when #none"
+                         (lambda ()
+                           (let ((rels (decode-part full "word/_rels/document.xml.rels")))
+                             (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "TargetMode")
+                                           #none))))))
+
+        ; Round-trips through docx-decode: the pair carries a value round-trip
+        ; guarantee, so (decode (encode v)) must reproduce v.
+        (list "round-trips"
+          (list
+            (expect-pass "minimal value tree"
+                         (lambda () (assert-equal (decode (encode minimal)) minimal)))
+            (expect-pass "value tree with every part"
+                         (lambda () (assert-equal (decode (encode full)) full)))))
+
+        ; Errors
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-dict value"
+                         (lambda () (encode "not a value tree"))
+                         "expects a dict")
+            (expect-fail "rejects a missing document"
+                         (lambda () (encode (dict "relationships" (dict))))
+                         "\"document\" must be an element dict")
+            (expect-fail "rejects a non-dict relationships"
+                         (lambda () (encode (dict "document" document "relationships" "nope")))
+                         "\"relationships\" must be a dict")
+            (expect-fail "rejects a relationship that is not a dict"
+                         (lambda () (encode (dict "document" document "relationships" (dict "rId5" "nope"))))
+                         "must be a dict")
+            (expect-fail "rejects a relationship with no type"
+                         (lambda () (encode (dict "document" document
+                                                  "relationships" (dict "rId5" (dict "target" "media/a.png")))))
+                         "\"type\" must be a string")
+            (expect-fail "rejects a relationship with no target"
+                         (lambda () (encode (dict "document" document
+                                                  "relationships" (dict "rId5" (dict "type" image-rel)))))
+                         "\"target\" must be a string")
+            (expect-fail "rejects a non-bytes media part"
+                         (lambda () (encode (dict "document" document
+                                                  "relationships" (dict)
+                                                  "media" (dict "word/media/a.png" "nope"))))
+                         "must be bytes"))))))
+
+      (export tests))))
