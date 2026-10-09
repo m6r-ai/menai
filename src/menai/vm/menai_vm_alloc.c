@@ -298,6 +298,12 @@ _bucket_for(size_t size)
  * size bytes from the per-instance power-of-2 free-list pool.  A
  * MenaiPoolHeader is prepended to record the bucket index.  The returned
  * pointer is suitable for any use — no MenaiValue assumptions.
+ *
+ * A request served from a free-list costs no new memory, so it is neither
+ * checked nor charged: the budget gates only the calls that actually reach
+ * malloc.  This keeps the budget a measure of resident memory rather than of
+ * allocation churn, and means a program that reuses pooled blocks is never
+ * refused for doing so.
  */
 void *
 menai_pool_alloc(MenaiVMState *vs, size_t size)
@@ -305,13 +311,22 @@ menai_pool_alloc(MenaiVMState *vs, size_t size)
     size_t total = size + sizeof(MenaiPoolHeader);
 
     if (total > MENAI_POOL_MAX_SIZE) {
-        char *raw = (char *)malloc(total);
+        int size_class = menai_pool_size_class(total);
+        size_t block = (size_t)1 << size_class;
+
+        if (vs->_bytes_in_use > vs->_byte_budget ||
+                block > vs->_byte_budget - vs->_bytes_in_use) {
+            return NULL;
+        }
+
+        char *raw = (char *)malloc(block);
         if (!raw) {
             return NULL;
         }
 
         MenaiPoolHeader *hdr = (MenaiPoolHeader *)raw;
-        hdr->bucket = -1;
+        hdr->bucket = (int16_t)(-size_class - 2);
+        vs->_bytes_in_use += block;
         return raw + sizeof(MenaiPoolHeader);
     }
 
@@ -324,11 +339,19 @@ menai_pool_alloc(MenaiVMState *vs, size_t size)
         pool_bucket->head = *(void **)user_ptr;
         pool_bucket->depth--;
     } else {
-        char *raw = (char *)malloc((size_t)1 << (bucket + MENAI_POOL_LOG_MIN_SIZE));
+        size_t block = (size_t)1 << (bucket + MENAI_POOL_LOG_MIN_SIZE);
+
+        if (vs->_bytes_in_use > vs->_byte_budget ||
+                block > vs->_byte_budget - vs->_bytes_in_use) {
+            return NULL;
+        }
+
+        char *raw = (char *)malloc(block);
         if (!raw) {
             return NULL;
         }
         user_ptr = raw + sizeof(MenaiPoolHeader);
+        vs->_bytes_in_use += block;
     }
 
     menai_get_pool_header(user_ptr)->bucket = (int16_t)bucket;
@@ -339,6 +362,10 @@ menai_pool_alloc(MenaiVMState *vs, size_t size)
  * menai_pool_free — return a block to the pool.  Reads the bucket index from
  * the hidden MenaiPoolHeader to route the block to the correct free-list, or
  * frees it directly if it was an out-of-pool allocation.
+ *
+ * A block returned to a free-list stays accounted as in use: it is still
+ * resident, and it will be handed out again without a fresh malloc.  Only a
+ * block actually returned to malloc leaves the accounting.
  */
 void
 menai_pool_free(MenaiVMState *vs, void *ptr)
@@ -350,7 +377,8 @@ menai_pool_free(MenaiVMState *vs, void *ptr)
     MenaiPoolHeader *hdr = menai_get_pool_header(ptr);
     int16_t bucket = hdr->bucket;
 
-    if (bucket == -1) {
+    if (bucket < 0) {
+        vs->_bytes_in_use -= menai_pool_block_size(hdr);
         free(hdr);
         return;
     }
@@ -363,5 +391,6 @@ menai_pool_free(MenaiVMState *vs, void *ptr)
         return;
     }
 
+    vs->_bytes_in_use -= menai_pool_block_size(hdr);
     free(hdr);
 }

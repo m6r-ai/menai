@@ -182,17 +182,6 @@ _menai_shl_overflow(long a, long shift, long *r) {
 #define MAX_FRAME_DEPTH 1024
 
 /*
- * Portable stack allocation — alloca for GCC/Clang, _alloca for MSVC.
- */
-#ifdef _MSC_VER
-#include <malloc.h>
-#define menai_alloca(size) _alloca(size)
-#else
-#include <alloca.h>
-#define menai_alloca(size) alloca(size)
-#endif
-
-/*
  * Cancellation check interval.
  */
 #define CANCEL_CHECK_INTERVAL (1 << 20)
@@ -1303,8 +1292,19 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiList *list = (MenaiList *)raw_args;
             int arity = (int)list->length;
 
-            /* Collect cons-cell elements into a stack-local array. */
-            MenaiValue **apply_elems = menai_alloca(arity * sizeof(MenaiValue *));
+            /*
+             * Collect cons-cell elements into a scratch array.  The array is
+             * sized by the argument count, which a Menai program controls, so
+             * it must come from the heap: a stack allocation of an unbounded
+             * size would run off the end of the C stack and fault rather than
+             * reporting an error.
+             */
+            MenaiValue **apply_elems = (MenaiValue **)menai_pool_alloc(vs, (size_t)arity * sizeof(MenaiValue *));
+            if (MENAI_UNLIKELY(apply_elems == NULL)) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
             MenaiList *cur = list;
             for (int i = 0; i < arity; i++) {
                 apply_elems[i] = cur->head;
@@ -1314,6 +1314,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             if (IS_MENAI_FUNCTION(raw_func)) {
                 if (frame_depth >= MAX_FRAME_DEPTH) {
                     vm_err = MENAI_ERR_CALL_DEPTH_EXCEEDED;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
@@ -1337,6 +1338,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 if (needed_regs > vs->num_regs) {
                     vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
+                        menai_pool_free(vs, apply_elems);
                         goto error;
                     }
 
@@ -1351,6 +1353,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     menai_value_release(vs, regs[callee_base + i]);
                     regs[callee_base + i] = val;
                 }
+
+                menai_pool_free(vs, apply_elems);
 
                 frame_depth++;
                 frame++;
@@ -1373,15 +1377,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 int n_fields = sraw_func->nfields;
                 if (arity != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
                 MenaiStruct *instance = alloc_menai_struct(vs, sraw_func, apply_elems, n_fields);
                 if (instance == NULL) {
                     vm_err = MENAI_ERR_NOMEM;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
+                menai_pool_free(vs, apply_elems);
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = (MenaiValue *)instance;
                 break;
@@ -1395,12 +1402,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 MenaiEnumType *eraw_func = (MenaiEnumType *)raw_func;
                 if (arity != 1) {
                     vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
                 MenaiValue *arg = apply_elems[0];
                 if (MENAI_UNLIKELY(!IS_MENAI_SYMBOL(arg))) {
                     vm_err = MENAI_ERR_NOT_SYMBOL;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
@@ -1409,21 +1418,25 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                                                         menai_string_hash(variant_name));
                 if (variant_index < 0) {
                     vm_err = MENAI_ERR_ENUM_VARIANT_NOT_FOUND;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
                 MenaiEnum *instance = alloc_menai_enum(vs, eraw_func, (int)variant_index);
                 if (instance == NULL) {
                     vm_err = MENAI_ERR_NOMEM;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
+                menai_pool_free(vs, apply_elems);
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = (MenaiValue *)instance;
                 break;
             }
 
             vm_err = MENAI_ERR_APPLY_FIRST_NOT_FUNCTION;
+            menai_pool_free(vs, apply_elems);
             goto error;
         }
 
@@ -1445,8 +1458,19 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiList *list = (MenaiList *)raw_args;
             int arity = (int)list->length;
 
-            /* Collect cons-cell elements into a stack-local array. */
-            MenaiValue **apply_elems = menai_alloca(arity * sizeof(MenaiValue *));
+            /*
+             * Collect cons-cell elements into a scratch array.  The array is
+             * sized by the argument count, which a Menai program controls, so
+             * it must come from the heap: a stack allocation of an unbounded
+             * size would run off the end of the C stack and fault rather than
+             * reporting an error.
+             */
+            MenaiValue **apply_elems = (MenaiValue **)menai_pool_alloc(vs, (size_t)arity * sizeof(MenaiValue *));
+            if (MENAI_UNLIKELY(apply_elems == NULL)) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
             MenaiList *cur = list;
             for (int i = 0; i < arity; i++) {
                 apply_elems[i] = cur->head;
@@ -1476,6 +1500,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     vm_err = ensure_reg_capacity(vs, needed_regs, frames, frame_depth);
                     if (vm_err < 0) {
                         menai_value_release(vs, raw_func);
+                        menai_pool_free(vs, apply_elems);
                         goto error;
                     }
 
@@ -1509,10 +1534,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 vm_err = call_setup(vs, frame, callee_co, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     menai_value_release(vs, raw_func);
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
                 menai_value_release(vs, raw_func);
+                menai_pool_free(vs, apply_elems);
                 frame_regs = frame->frame_regs;
                 constants_items = frame->constants_items;
                 instrs = frame->instrs;
@@ -1524,15 +1551,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 int n_fields = sraw_func->nfields;
                 if (arity != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
                 MenaiStruct *retval = alloc_menai_struct(vs, sraw_func, apply_elems, n_fields);
                 if (retval == NULL) {
                     vm_err = MENAI_ERR_NOMEM;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
+                menai_pool_free(vs, apply_elems);
                 int saved_return_dest = frame->return_dest;
                 menai_code_object_release(vs, frame->code_obj);
                 frame->code_obj = NULL;
@@ -1558,12 +1588,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 MenaiEnumType *eraw_func = (MenaiEnumType *)raw_func;
                 if (arity != 1) {
                     vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
                 MenaiValue *arg = apply_elems[0];
                 if (MENAI_UNLIKELY(!IS_MENAI_SYMBOL(arg))) {
                     vm_err = MENAI_ERR_NOT_SYMBOL;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
@@ -1572,15 +1604,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                                                         menai_string_hash(variant_name));
                 if (variant_index < 0) {
                     vm_err = MENAI_ERR_ENUM_VARIANT_NOT_FOUND;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
                 MenaiEnum *retval = alloc_menai_enum(vs, eraw_func, (int)variant_index);
                 if (retval == NULL) {
                     vm_err = MENAI_ERR_NOMEM;
+                    menai_pool_free(vs, apply_elems);
                     goto error;
                 }
 
+                menai_pool_free(vs, apply_elems);
                 int saved_return_dest = frame->return_dest;
                 menai_code_object_release(vs, frame->code_obj);
                 frame->code_obj = NULL;
@@ -1599,6 +1634,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             vm_err = MENAI_ERR_APPLY_FIRST_NOT_FUNCTION;
+            menai_pool_free(vs, apply_elems);
             goto error;
         }
 

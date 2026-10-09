@@ -337,9 +337,19 @@ typedef uint16_t MenaiType;
 /*
  * MenaiPoolHeader — hidden header prepended to every block allocated through
  * the pool allocator (menai_pool_alloc).  Stored immediately before the
- * user-visible pointer.  The bucket index lets menai_pool_free route the
- * block back to the correct free-list without any assumptions about what the
- * caller stores in the block itself.
+ * user-visible pointer.
+ *
+ * `bucket` serves two purposes, because the block's size must be recoverable
+ * when the block is freed and there is no room for a separate size field:
+ *
+ *   bucket >= 0   a pooled block; its size is 1 << (bucket + MENAI_POOL_LOG_MIN_SIZE).
+ *                 menai_pool_free routes it back to that free-list.
+ *   bucket <= -2  an out-of-pool block; its size class is (-bucket - 2), so its
+ *                 size is 1 << (-bucket - 2).  menai_pool_free returns it to malloc.
+ *
+ * The size is rounded up to a power of two in the out-of-pool case.  That is an
+ * approximation, which is all the allocation budget needs: the budget exists to
+ * stop a runaway program exhausting the process, not to account exactly.
  *
  * When a block is in the free-list, the link is threaded through the first
  * sizeof(void *) bytes of the user data area (not the header).
@@ -348,7 +358,7 @@ typedef uint16_t MenaiType;
  * aligned for any type.
  */
 typedef struct {
-    int16_t bucket;                     /* pool bucket index, or -1 for out-of-pool */
+    int16_t bucket;                     /* pool bucket index, or a negative size class */
     MenaiType ob_type;                  /* Only used for reference counted objects */
     uint32_t ob_refcnt;                 /* Only used for reference counted objects */
 } MenaiPoolHeader;
@@ -955,6 +965,14 @@ int menai_validate(MenaiCodeObject *co, MenaiValidationError *out_err);
 #define MENAI_POOL_MAX_DEPTH GC_THRESHOLD
 
 /*
+ * Default allocation budget for one VM instance, in bytes.  A pure Menai
+ * program that tries to hold more than this live fails with MENAI_ERR_NOMEM
+ * rather than exhausting the process.  The value is deliberately generous: it
+ * is a backstop against unbounded allocation, not a working-set target.
+ */
+#define MENAI_DEFAULT_BYTE_BUDGET ((size_t)8 * 1024 * 1024 * 1024)
+
+/*
  * Small integer cache — covers [MENAI_INT_CACHE_MIN, MENAI_INT_CACHE_MAX].
  */
 #define MENAI_INT_CACHE_MIN (-5)
@@ -1036,6 +1054,23 @@ typedef struct MenaiVMState {
     BucketEntry pool[MENAI_POOL_NUM_BUCKETS];
 
     /*
+     * Allocation accounting.  _bytes_in_use is the total size of the blocks
+     * currently obtained from malloc by the pool allocator, including blocks
+     * sitting on a free-list (they are still resident and will be reused
+     * without a fresh malloc).  Blocks served from a free-list are neither
+     * checked nor charged, so the figure tracks resident memory rather than
+     * allocation churn.
+     *
+     * _byte_budget is the ceiling: an allocation that would take _bytes_in_use
+     * past it is refused, so the VM reports MENAI_ERR_NOMEM instead of letting
+     * the process be killed.  Without a budget a pure Menai program can
+     * allocate without bound, and on macOS the resulting exhaustion faults
+     * inside malloc rather than returning NULL, which takes the process down.
+     */
+    size_t _bytes_in_use;
+    size_t _byte_budget;
+
+    /*
      * Register file for the current execution.  Set by menai_vm_execute_native
      * before calling execute_loop and cleared on return.  When the registry
      * count exceeds _gc_threshold, alloc_menai_function triggers a collection
@@ -1104,6 +1139,41 @@ void menai_leak_set_report(MenaiVMState *vs);
 
 void *menai_pool_alloc(MenaiVMState *vs, size_t size);
 void menai_pool_free(MenaiVMState *vs, void *ptr);
+
+/*
+ * menai_pool_block_size — recover the size of a block from its header.
+ *
+ * Returns the total block size in bytes, header included.  For an out-of-pool
+ * block this is the power-of-two size class the block was charged to the
+ * allocation budget at, which may exceed the size actually requested.
+ */
+static inline size_t
+menai_pool_block_size(const MenaiPoolHeader *hdr)
+{
+    if (hdr->bucket >= 0) {
+        return (size_t)1 << (hdr->bucket + MENAI_POOL_LOG_MIN_SIZE);
+    }
+
+    return (size_t)1 << (-hdr->bucket - 2);
+}
+
+/*
+ * menai_pool_size_class — the size class of an out-of-pool block of `total`
+ * bytes: the smallest c such that 1 << c >= total.  Encoded in the header as
+ * bucket = -(c + 2), which is always <= -2 for total >= 1.
+ */
+static inline int
+menai_pool_size_class(size_t total)
+{
+    int c = 0;
+    size_t block = 1;
+    while (block < total) {
+        block <<= 1;
+        c++;
+    }
+
+    return c;
+}
 
 static inline MenaiPoolHeader *
 menai_get_pool_header(void *user_ptr)

@@ -21,6 +21,13 @@ menai_vm_state_alloc(void)
         return NULL;
     }
 
+    /*
+     * Set the allocation budget before the first allocation, so that the
+     * singleton values are accounted against it like any other value.
+     */
+    vs->_bytes_in_use = 0;
+    vs->_byte_budget = MENAI_DEFAULT_BYTE_BUDGET;
+
 #ifdef MENAI_DEBUG_LEAKS
     menai_leak_set_init(&vs->_leak_set);
 #endif
