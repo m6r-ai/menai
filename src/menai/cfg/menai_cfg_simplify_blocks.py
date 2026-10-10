@@ -1,7 +1,7 @@
 """
 CFG pass: simplify blocks.
 
-Two sub-passes run to a joint fixed point:
+Three sub-passes run to a joint fixed point:
 
 1. Empty-block bypass
    Eliminates blocks that are pure indirections — no instructions, no
@@ -16,6 +16,16 @@ Two sub-passes run to a joint fixed point:
    block via an unconditional jump, the jump is replaced by a copy of the
    block's content (with a fresh SSA value when a const is involved).  If
    all jump predecessors are inlined the terminal block itself is removed.
+
+3. Equivalent raise merging
+   Folds duplicate raise blocks into one.  A trivial raise block has no
+   patch_instrs, a MenaiCFGRaiseTerm, and either no instructions or a single
+   MenaiCFGConstInstr.  When several such blocks raise the same message —
+   the same constant value, or the same SSA value — every edge that targets
+   one of them is redirected to a single canonical block and the rest are
+   removed.  This is the raise analogue of sub-pass 2: a raise block reached
+   by a branch or switch edge cannot be inlined into its predecessor, so the
+   duplication is removed by merging the blocks instead.
 """
 
 
@@ -29,6 +39,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGInstr,
     MenaiCFGJumpTerm,
     MenaiCFGPhiInstr,
+    MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
     MenaiCFGValue,
@@ -41,6 +52,7 @@ from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
     MenaiCFGPerFunctionPass,
 )
+from menai.menai_value import MenaiValue
 
 
 class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
@@ -68,6 +80,17 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
       already holds its contributing value, so that value becomes the return
       directly — no fresh allocation needed.  If all jump predecessors are
       inlined, T is removed from the function.
+
+    Sub-pass 3 — equivalent raise merging:
+      For each group of blocks with no patch_instrs, a MenaiCFGRaiseTerm, at
+      most one MenaiCFGConstInstr, and the same raise message, keep the first
+      block in block-list order and redirect every edge that targets the
+      others at it.  The others are removed.
+
+      Two blocks raise the same message when both raise the same SSA value,
+      or both materialise equal constant values.  A raise block reached by a
+      branch or switch edge cannot be inlined into its predecessor the way a
+      trivial return is, so folding the duplicates means merging the blocks.
     """
 
     def _optimize_function(
@@ -81,6 +104,9 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
         changed = changed or c
 
         func, c = self._inline_trivial_returns(func)
+        changed = changed or c
+
+        func, c = self._merge_equivalent_raises(func)
         changed = changed or c
 
         return func, changed
@@ -365,6 +391,113 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
             if b.id not in inlined_block_ids
         ]
         return replace(func, blocks=tuple(new_blocks)), True
+
+    def _merge_equivalent_raises(
+        self,
+        func: MenaiCFGFunction,
+    ) -> tuple[MenaiCFGFunction, bool]:
+        """
+        Fold duplicate raise blocks into a single canonical block.
+
+        Every non-entry block that is a trivial raise block (see
+        _trivial_raise_key) is grouped by the message it raises.  Within a
+        group the first block in block-list order is the canonical block;
+        every edge that targets another block in the group is redirected at
+        the canonical block, and the other blocks are removed.
+
+        The entry block is never merged: it is pinned first in the block list
+        and must remain the entry.
+
+        A trivial raise block's only instruction is its message constant, and
+        its only reference is its own terminator, so removing a non-canonical
+        block leaves no dangling value reference.  The block has no
+        successors, so no edge leaves the group and redirection never needs to
+        chase a chain.
+        """
+        entry_id = func.blocks[0].id
+
+        groups: dict[tuple[str, MenaiValue] | tuple[str, int], _RaiseGroup] = {}
+        for block in func.blocks:
+            if block.id == entry_id:
+                continue
+
+            key = _trivial_raise_key(block)
+            if key is None:
+                continue
+
+            group = groups.get(key)
+            if group is None:
+                groups[key] = _RaiseGroup(block)
+
+            else:
+                group.removed_ids.append(block.id)
+
+        redirect: dict[int, int] = {}
+        for group in groups.values():
+            for removed_id in group.removed_ids:
+                redirect[removed_id] = group.canonical_id
+
+        if not redirect:
+            return func, False
+
+        def remap_block(block_id: int) -> int:
+            return redirect.get(block_id, block_id)
+
+        new_blocks: list[MenaiCFGBlock] = []
+        for block in func.blocks:
+            if block.id in redirect:
+                continue
+
+            terminator = block.terminator
+            if terminator is not None:
+                terminator = remap_term(terminator, remap_block)
+
+            new_blocks.append(replace(block, terminator=terminator))
+
+        return replace(func, blocks=tuple(new_blocks)), True
+
+
+def _trivial_raise_key(
+    block: MenaiCFGBlock,
+) -> tuple[str, MenaiValue] | tuple[str, int] | None:
+    """
+    Return a key identifying the message a trivial raise block raises.
+
+    A trivial raise block has no patch_instrs, a MenaiCFGRaiseTerm, and either
+    no instructions or a single MenaiCFGConstInstr whose result is the raise
+    message.  Any other block returns None.
+
+    The key is ("const", value) when the block materialises the message as a
+    constant, so that two blocks raising equal constants compare equal even
+    though their SSA values differ, and ("value", id) when the message is an
+    SSA value defined elsewhere, so that two blocks raising the same value
+    compare equal.  The two forms are tagged so a constant can never compare
+    equal to an SSA value id.
+    """
+    if block.patch_instrs:
+        return None
+
+    term = block.terminator
+    if not isinstance(term, MenaiCFGRaiseTerm):
+        return None
+
+    if len(block.instrs) == 0:
+        return ("value", term.message.id)
+
+    if len(block.instrs) == 1 and isinstance(block.instrs[0], MenaiCFGConstInstr):
+        const = block.instrs[0]
+        if const.result.id == term.message.id:
+            return ("const", const.value)
+
+    return None
+
+
+class _RaiseGroup:
+    """The canonical block for a group of equivalent raise blocks."""
+
+    def __init__(self, canonical: MenaiCFGBlock) -> None:
+        self.canonical_id = canonical.id
+        self.removed_ids: list[int] = []
 
 
 def _max_value_id(func: MenaiCFGFunction) -> int:
