@@ -64,8 +64,8 @@ If you need to use an API read the source code to understand it first.
 - Do not filter or truncate the output of any tool.  Do not pipe a command through `grep`, `head`, `tail`, `awk`, or
   any other filter, and do not add `| tail -N` to a command to "save tokens".  Filtering hides the very lines that
   explain a failure, and it silently discards output you will need.  Run the command with no filtering and read the
-  full output.  The one exception is pytest, whose progress dots are noise: see the rule above.  If output is genuinely
-  too long to read, read it in full anyway, or ask the user how to narrow the command — do not filter it yourself.
+  full output.  If output is genuinely too long to read, read it in full anyway, or ask the user how to narrow the
+  command — do not filter it yourself.
 - The standard library module tests (`tests/src/menai/stdlib/`) are slow: each parametrised
   case compiles and runs a full Menai suite.  Use `make test-fast` to run everything except
   them when iterating.  `make test` runs the full suite, and CI runs the full suite, so the
