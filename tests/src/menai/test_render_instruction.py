@@ -126,6 +126,34 @@ class TestInstructionLines:
         marked_index = next(i for i, ln in enumerate(lines) if "\u25ba" in ln)
         assert lines[marked_index - 1] == ""
 
+    def test_switch_integer_arm_target_is_marked_and_preceded_by_blank(self):
+        code = _code(
+            instructions=[
+                Instruction(opcode=Opcode.SWITCH_INTEGER, src0=0, src1=0),
+                Instruction(opcode=Opcode.RETURN, src0=0),
+                Instruction(opcode=Opcode.RETURN, src0=0),
+            ],
+            jump_tables=((0, 2, [1, 2]),),
+        )
+        lines = render_instruction_lines(code, lambda _i, _instr: "")
+        marked = [i for i, ln in enumerate(lines) if "\u25ba" in ln]
+        assert len(marked) == 2
+        assert all(lines[i - 1] == "" for i in marked)
+
+    def test_switch_enum_arm_target_is_marked_and_preceded_by_blank(self):
+        code = _code(
+            instructions=[
+                Instruction(opcode=Opcode.SWITCH_ENUM, src0=0, src1=0),
+                Instruction(opcode=Opcode.RETURN, src0=0),
+                Instruction(opcode=Opcode.RETURN, src0=0),
+            ],
+            jump_tables=((0, 2, [1, 2]),),
+        )
+        lines = render_instruction_lines(code, lambda _i, _instr: "")
+        marked = [i for i, ln in enumerate(lines) if "\u25ba" in ln]
+        assert len(marked) == 2
+        assert all(lines[i - 1] == "" for i in marked)
+
     def test_control_flow_opcode_followed_by_blank(self):
         code = _code(instructions=[
             Instruction(opcode=Opcode.RETURN, src0=0),

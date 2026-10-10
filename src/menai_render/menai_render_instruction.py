@@ -30,13 +30,14 @@ def jump_targets(code: CodeObject) -> set[int]:
     Return the instruction indices that are jump targets in a code object.
 
     A JUMP carries its target in src0; JUMP_IF_FALSE and JUMP_IF_TRUE carry it
-    in src1.  SWITCH_INTEGER targets come from its jump table — every arm target
-    plus the default.
+    in src1.  SWITCH_INTEGER and SWITCH_ENUM targets come from their jump table —
+    every arm target plus the default.
     """
     switch_targets = {
         t
         for instr in instructions(code)
-        if instr.opcode == Opcode.SWITCH_INTEGER and instr.src1 < len(code.jump_tables)
+        if instr.opcode in (Opcode.SWITCH_INTEGER, Opcode.SWITCH_ENUM)
+        and instr.src1 < len(code.jump_tables)
         for t in (*code.jump_tables[instr.src1][2], code.jump_tables[instr.src1][1])
     }
     return {
