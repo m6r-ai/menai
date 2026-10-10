@@ -18,6 +18,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGMakeClosureInstr,
     MenaiCFGPatchClosureInstr,
     MenaiCFGPhiInstr,
+    MenaiCFGRaiseTerm,
     MenaiCFGReturnTerm,
     MenaiCFGTailCallTerm,
     MenaiCFGValue,
@@ -589,6 +590,237 @@ class TestTrivialReturnInlining:
         assert _max_value_id(f) == 999, (
             "_max_value_id must include phi incoming value ids"
         )
+
+
+class TestEquivalentRaiseMerging:
+
+    def test_duplicate_const_raises_merged(self):
+        """
+        Two raise blocks that materialise equal constants are merged into the
+        first, and every edge that targeted the second is redirected at it.
+        """
+        from menai.menai_value import MenaiString
+
+        v_cond = v("cond")
+        v_c1 = v("c1")
+        v_c2 = v("c2")
+        raise_a = block(
+            1,
+            MenaiCFGConstInstr(result=v_c1, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c1),
+            label="raise_a",
+        )
+        raise_b = block(
+            2,
+            MenaiCFGConstInstr(result=v_c2, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c2),
+            label="raise_b",
+        )
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=1, false_block=2),
+            label="entry",
+        )
+        f = func(entry, raise_a, raise_b)
+
+        new_f, changed = _pass._merge_equivalent_raises(f)
+        assert changed
+        assert block_ids(new_f) == [0, 1], "the duplicate raise block is removed"
+        term = new_f.blocks[0].terminator
+        assert isinstance(term, MenaiCFGBranchTerm)
+        assert term.true_block == 1
+        assert term.false_block == 1, "both edges must target the canonical block"
+
+    def test_switch_edges_redirected_to_canonical(self):
+        """
+        A raise block reached by a switch default is redirected to the
+        canonical raise block, so the switch and the branch share one raise.
+        """
+        from menai.cfg.menai_cfg import MenaiCFGSwitchEnumTerm
+        from menai.menai_value import MenaiString
+
+        v_scrut = v("scrut")
+        v_c1 = v("c1")
+        v_c2 = v("c2")
+        raise_a = block(
+            1,
+            MenaiCFGConstInstr(result=v_c1, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c1),
+            label="raise_a",
+        )
+        raise_b = block(
+            2,
+            MenaiCFGConstInstr(result=v_c2, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c2),
+            label="raise_b",
+        )
+        entry = block(
+            0,
+            terminator=MenaiCFGSwitchEnumTerm(
+                value=v_scrut, targets=(1,), default_block=2,
+            ),
+            label="entry",
+        )
+        f = func(entry, raise_a, raise_b)
+
+        new_f, changed = _pass._merge_equivalent_raises(f)
+        assert changed
+        assert block_ids(new_f) == [0, 1]
+        term = new_f.blocks[0].terminator
+        assert isinstance(term, MenaiCFGSwitchEnumTerm)
+        assert term.targets == (1,)
+        assert term.default_block == 1, "the switch default must target the canonical block"
+
+    def test_distinct_const_raises_not_merged(self):
+        """Raise blocks with different messages are left alone."""
+        from menai.menai_value import MenaiString
+
+        v_c1 = v("c1")
+        v_c2 = v("c2")
+        raise_a = block(
+            1,
+            MenaiCFGConstInstr(result=v_c1, value=MenaiString("one")),
+            terminator=MenaiCFGRaiseTerm(message=v_c1),
+            label="raise_a",
+        )
+        raise_b = block(
+            2,
+            MenaiCFGConstInstr(result=v_c2, value=MenaiString("two")),
+            terminator=MenaiCFGRaiseTerm(message=v_c2),
+            label="raise_b",
+        )
+        entry = block(0, terminator=MenaiCFGJumpTerm(target=1), label="entry")
+        f = func(entry, raise_a, raise_b)
+
+        new_f, changed = _pass._merge_equivalent_raises(f)
+        assert not changed
+        assert block_ids(new_f) == [0, 1, 2]
+
+    def test_shared_value_raises_merged(self):
+        """
+        Two raise blocks that raise the same SSA value defined elsewhere are
+        merged, even though neither materialises a constant.
+        """
+        v_cond = v("cond")
+        v_msg = v("msg")
+        raise_a = block(1, terminator=MenaiCFGRaiseTerm(message=v_msg), label="raise_a")
+        raise_b = block(2, terminator=MenaiCFGRaiseTerm(message=v_msg), label="raise_b")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=1, false_block=2),
+            label="entry",
+        )
+        f = func(entry, raise_a, raise_b)
+
+        new_f, changed = _pass._merge_equivalent_raises(f)
+        assert changed
+        assert block_ids(new_f) == [0, 1]
+        term = new_f.blocks[0].terminator
+        assert isinstance(term, MenaiCFGBranchTerm)
+        assert term.true_block == 1
+        assert term.false_block == 1
+
+    def test_raise_block_with_patch_instrs_not_merged(self):
+        """A raise block with patch_instrs is not a candidate for merging."""
+        from menai.menai_value import MenaiString
+
+        v_cond = v("cond")
+        v_c1 = v("c1")
+        v_c2 = v("c2")
+        v_closure = v("closure")
+        v_val = v("val")
+        raise_a = block(
+            1,
+            MenaiCFGConstInstr(result=v_c1, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c1),
+            label="raise_a",
+        )
+        raise_b = block(
+            2,
+            MenaiCFGConstInstr(result=v_c2, value=MenaiString("boom")),
+            patch_instrs=[
+                MenaiCFGPatchClosureInstr(closure=v_closure, capture_index=0, value=v_val),
+            ],
+            terminator=MenaiCFGRaiseTerm(message=v_c2),
+            label="raise_b",
+        )
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=1, false_block=2),
+            label="entry",
+        )
+        f = func(entry, raise_a, raise_b)
+
+        new_f, changed = _pass._merge_equivalent_raises(f)
+        assert not changed
+        assert block_ids(new_f) == [0, 1, 2]
+
+    def test_entry_raise_block_never_merged(self):
+        """
+        The entry block is never merged even when it is itself a trivial raise
+        block equivalent to others.  The others merge with each other; the
+        entry stays.
+        """
+        from menai.menai_value import MenaiString
+
+        v_c1 = v("c1")
+        v_c2 = v("c2")
+        v_c3 = v("c3")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=v_c1, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c1),
+            label="entry",
+        )
+        raise_b = block(
+            1,
+            MenaiCFGConstInstr(result=v_c2, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c2),
+            label="raise_b",
+        )
+        raise_c = block(
+            2,
+            MenaiCFGConstInstr(result=v_c3, value=MenaiString("boom")),
+            terminator=MenaiCFGRaiseTerm(message=v_c3),
+            label="raise_c",
+        )
+        f = func(entry, raise_b, raise_c)
+
+        new_f, changed = _pass._merge_equivalent_raises(f)
+        assert changed
+        assert block_ids(new_f) == [0, 1], "the entry raise block is kept"
+        assert isinstance(new_f.blocks[0].terminator, MenaiCFGRaiseTerm)
+        assert isinstance(new_f.blocks[1].terminator, MenaiCFGRaiseTerm)
+
+    def test_non_trivial_raise_block_not_merged(self):
+        """
+        A raise block whose message is computed by a non-const instruction is
+        not a candidate, even when another raise block raises the same value.
+        """
+        v_cond = v("cond")
+        v_msg = v("msg")
+        v_arg = v("arg")
+        raise_a = block(
+            1,
+            MenaiCFGBuiltinInstr(result=v_msg, op="string-append", args=(v_arg, v_arg)),
+            terminator=MenaiCFGRaiseTerm(message=v_msg),
+            label="raise_a",
+        )
+        raise_b = block(2, terminator=MenaiCFGRaiseTerm(message=v_msg), label="raise_b")
+        entry = block(
+            0,
+            MenaiCFGConstInstr(result=v_cond, value=MenaiInteger(1)),
+            terminator=MenaiCFGBranchTerm(cond=v_cond, true_block=1, false_block=2),
+            label="entry",
+        )
+        f = func(entry, raise_a, raise_b)
+
+        new_f, changed = _pass._merge_equivalent_raises(f)
+        assert not changed
+        assert block_ids(new_f) == [0, 1, 2]
 
 
 class TestIntegration:
