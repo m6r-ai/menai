@@ -234,6 +234,8 @@ BUILTINS: dict[str, MenaiBuiltinInfo] = {
     'enum=?': MenaiBuiltinInfo(Opcode.ENUM_EQ_P, 2, 2),
     'enum!=?': MenaiBuiltinInfo(Opcode.ENUM_NEQ_P, 2, 2),
     'enum-variant': MenaiBuiltinInfo(Opcode.ENUM_VARIANT, 1, 1),
+    'enum-type': MenaiBuiltinInfo(Opcode.ENUM_TYPE, 1, 1),
+    'enum-is-instance?': MenaiBuiltinInfo(Opcode.ENUM_IS_INSTANCE_P, 2, 2),
     'enumtype?': MenaiBuiltinInfo(Opcode.ENUMTYPE_P, 1, 1),
     'enumtype=?': MenaiBuiltinInfo(Opcode.ENUMTYPE_EQ_P, 2, 2),
     'enumtype!=?': MenaiBuiltinInfo(Opcode.ENUMTYPE_NEQ_P, 2, 2),

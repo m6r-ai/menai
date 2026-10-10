@@ -245,6 +245,8 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'enumtype-name': (['enumtype'], 'string'),
     'enumtype-variants': (['enumtype'], 'list'),
     'enum-variant': (['enum'], 'symbol'),
+    'enum-type': (['enum'], 'enumtype'),
+    'enum-is-instance?': (['enum', 'enumtype'], 'boolean'),
     'enum=?': (['enum', 'enum'], 'boolean'),
     'enum!=?': (['enum', 'enum'], 'boolean'),
 

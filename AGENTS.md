@@ -725,6 +725,20 @@ through rather than raising. A `match` over an enum is fused into a dense `SWITC
 jump table by `MenaiCFGEnumSwitchDispatch`, mirroring the integer
 `MenaiCFGSwitchDispatch`.
 
+The enum instance operations mirror the struct ones: `enum-type` is the analogue of
+`struct-type`, and `enum-is-instance?` of `struct-is-instance?`, including their error
+behaviour — both raise on an argument of the wrong kind, so a caller testing an arbitrary
+value must guard with `enum?` first, exactly as the `struct-is-instance?` caller guards
+with `struct?`.
+
+An enum match group's guard is `(and ($enum? tmp) ($enum-is-instance? tmp TypeName))`, and
+the identity test is load-bearing rather than decorative. `SWITCH_ENUM` dispatches on the
+variant index alone and never reads the enum type, and an index is meaningful only
+relative to its type, so without the identity test a value of another enum type whose
+index is in range would jump to the wrong arm. `MenaiCFGEnumInstanceFold` removes the
+test where the interprocedural type analysis proves the scrutinee's type, mirroring
+`MenaiCFGStructInstanceFold`; where the type is not proven the test stays.
+
 This ADR decides the **bare-tag** enum only; a variant carries no payload. Exhaustiveness
 checking is **not implemented**: a `match` over an enum that omits a variant is not
 currently rejected, and the ADR records that when it is added it must be an error

@@ -117,7 +117,7 @@ from menai.cfg.menai_cfg_optimization_pass import (
 )
 from menai.cfg.menai_cfg_type_fact import ANY, TypeFact, BOTTOM, fact_for_value, join
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
-from menai.menai_value import MenaiBoolean, MenaiStructType, MenaiSymbol
+from menai.menai_value import MenaiBoolean, MenaiEnumType, MenaiStructType, MenaiSymbol
 
 # Builtins whose result is a struct of the same type as their first argument.
 _STRUCT_PRESERVING_OPS = {'struct-with'}
@@ -1071,16 +1071,17 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     ) -> tuple[int, TypeFact] | None:
         """
         If pred branches to succ on the true edge and the condition is
-        (struct-is-instance? v TypeName), return (v.id, Known('struct', type)).
+        (struct-is-instance? v TypeName) or (enum-is-instance? v TypeName),
+        return (v.id, Known(kind, type)).
 
-        The struct type is resolved from the structtype argument, which may be a
-        constant (a struct declared in this function) or a free variable (a
-        struct declared in an enclosing function or imported).
+        The type is resolved from the test's type argument, which may be a
+        constant (a type declared in this function) or a free variable (a type
+        declared in an enclosing function or imported).
 
-        The condition may also be a phi that joins a struct-is-instance? result
-        with constant #f values, which is the shape an (and ...) guard lowers to.
-        On the true edge only the struct-is-instance? branch can have been taken,
-        so the refinement holds there too.
+        The condition may also be a phi that joins an instance-test result with
+        constant #f values, which is the shape an (and ...) guard lowers to.  On
+        the true edge only the instance-test branch can have been taken, so the
+        refinement holds there too.
         """
         term = pred.terminator
         if not isinstance(term, MenaiCFGBranchTerm) or term.true_block != succ.id:
@@ -1099,15 +1100,24 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         info: _FunctionInfo,
     ) -> tuple[int, TypeFact] | None:
         """
-        If instr is (struct-is-instance? v TypeName) whose structtype argument
-        resolves to a struct type, return (v.id, Known('struct', type)), else
-        None.
+        If instr is an instance test whose type argument resolves to a type,
+        return (v.id, Known(kind, type)), else None.
+
+        Two instance tests are recognised, and they are exact mirrors of one
+        another:
+
+          (struct-is-instance? v TypeName) -> Known('struct', struct_type)
+          (enum-is-instance? v TypeName)   -> Known('enum', enum_type)
+
+        The type argument is resolved through the enclosing lexical scope in
+        both cases, and the resolution is recorded on the context so that the
+        corresponding fold pass reads the same type the analysis used rather
+        than re-deriving it and drifting.
         """
-        if (
-            isinstance(instr, MenaiCFGBuiltinInstr)
-            and instr.op == 'struct-is-instance?'
-            and len(instr.args) == 2
-        ):
+        if not isinstance(instr, MenaiCFGBuiltinInstr) or len(instr.args) != 2:
+            return None
+
+        if instr.op == 'struct-is-instance?':
             struct_type = self._struct_type_of_value(instr.args[1].id, value_defs, info)
             if struct_type is not None:
                 if self._context is not None:
@@ -1116,6 +1126,16 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                     )
 
                 return instr.args[0].id, TypeFact(kind='struct', struct_type=struct_type)
+
+        elif instr.op == 'enum-is-instance?':
+            enum_type = self._enum_type_of_value(instr.args[1].id, value_defs, info)
+            if enum_type is not None:
+                if self._context is not None:
+                    self._context.record_enum_type_of_test(
+                        info.func, instr.args[1].id, enum_type,
+                    )
+
+                return instr.args[0].id, TypeFact(kind='enum', enum_type=enum_type)
 
         return None
 
@@ -1126,16 +1146,16 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         info: _FunctionInfo,
     ) -> tuple[int, TypeFact] | None:
         """
-        Refine through a phi that joins a struct-is-instance? result with #f.
+        Refine through a phi that joins an instance-test result with #f.
 
-        This is the shape an (and (struct? v) (struct-is-instance? v T)) guard
-        lowers to: the struct? test guards the struct-is-instance? test, and the
-        two are joined by a phi.  The true edge can only have been reached
-        through the struct-is-instance? branch, because the other incoming values
-        are constant #f, so the refinement is sound.
+        This is the shape an (and (kind? v) (X-is-instance? v T)) guard lowers
+        to: the kind test guards the instance test, and the two are joined by a
+        phi.  The true edge can only have been reached through the instance-test
+        branch, because the other incoming values are constant #f, so the
+        refinement is sound.  Both the struct and enum guards have this shape.
 
-        Requires exactly one incoming value to be a struct-is-instance? result
-        and every other incoming value to be a constant false.
+        Requires exactly one incoming value to be an instance-test result and
+        every other incoming value to be a constant false.
         """
         refinement: tuple[int, TypeFact] | None = None
         for incoming_val, _ in phi.incoming:
@@ -1339,6 +1359,59 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             result: MenaiStructType | None = None
             for incoming_val, _ in instr.incoming:
                 resolved = self._struct_type_of_value(incoming_val.id, value_defs, info)
+                if resolved is None:
+                    return None
+
+                if result is None:
+                    result = resolved
+
+                elif result is not resolved:
+                    return None
+
+            return result
+
+        return None
+
+    def _enum_type_of_value(
+        self,
+        value_id: int,
+        value_defs: dict[int, object],
+        info: _FunctionInfo,
+    ) -> MenaiEnumType | None:
+        """
+        Resolve an SSA value to the MenaiEnumType it names, where it can be
+        resolved.
+
+        The enumtype argument of an enum-is-instance? test is a name reference,
+        exactly as the structtype argument of a struct-is-instance? test is, so
+        it is either a constant (an enum declared in the same function) or a
+        free variable (an enum declared in an enclosing function or imported).
+        A free variable is resolved through the parent value it captures,
+        mirroring `_free_var_fact`; a phi whose incoming values all name the
+        same enum type is resolved to that type.
+
+        Returns None when the value does not name a single enum type.
+        """
+        instr = value_defs.get(value_id)
+        if isinstance(instr, MenaiCFGConstInstr) and isinstance(instr.value, MenaiEnumType):
+            return instr.value
+
+        if isinstance(instr, MenaiCFGFreeVarInstr):
+            parent = info.parent
+            parent_closure = info.parent_closure
+            if parent is None or parent_closure is None:
+                return None
+
+            captured = self._captured_parent_value(instr, parent_closure, parent)
+            if captured is None:
+                return None
+
+            return self._enum_type_of_value(captured.id, _value_defs(parent.func), parent)
+
+        if isinstance(instr, MenaiCFGPhiInstr):
+            result: MenaiEnumType | None = None
+            for incoming_val, _ in instr.incoming:
+                resolved = self._enum_type_of_value(incoming_val.id, value_defs, info)
                 if resolved is None:
                     return None
 

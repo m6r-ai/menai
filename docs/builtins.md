@@ -1000,6 +1000,18 @@ Enumtype values are produced by `(enum (variant1 variant2 ...))` as the RHS of a
   (enumtype-variants state))       → (idle running stopped)
 ```
 
+### Instance check
+
+| Function | Description |
+|----------|-------------|
+| `(enum-is-instance? instance type-val)` | `→ #t` if instance is an enum of the given type specifically |
+
+```menai
+(let ((state (enum (idle running))))
+  (let ((s (state 'idle)))
+    (enum-is-instance? s state)))     → #t
+```
+
 Enum-type values are hashable and can be used as set members or dict keys.
 
 ---
@@ -1038,10 +1050,13 @@ Enum instances are created by calling an enumtype value with a quoted variant na
 | Function | Description |
 |----------|-------------|
 | `(enum-variant instance)` | Returns the variant name symbol for a given instance |
+| `(enum-type instance)` | Returns the enumtype value for a given instance |
 
 ```menai
 (let ((state (enum (idle running))))
   (enum-variant (state 'running)))   → running
+(let ((state (enum (idle running))))
+  (enumtype-name (enum-type (state 'running))))   → "state"
 ```
 
 ### Nominal typing

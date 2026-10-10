@@ -490,6 +490,9 @@ class Opcode(IntEnum):
     # Control flow (enum jump table)
     SWITCH_ENUM = _op(354, 2)                       # SWITCH_ENUM r_src0, jt[src1] — dense enum jump table dispatch
 
+    ENUM_TYPE = _op(355, 1, _FOLD_SRC0)             # r_dest = (enum-type r_src0) → MenaiEnumType value
+    ENUM_IS_INSTANCE_P = _op(356, 2, _FOLD_SRC01)   # r_dest = (enum-is-instance? r_src0 r_src1)
+
 
 # Packed instruction encoding
 #

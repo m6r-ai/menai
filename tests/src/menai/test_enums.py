@@ -130,6 +130,80 @@ class TestEnumIntrospection:
             '(let ((State (enum (idle running)))) (enum-variant (State \'running)))'
         ) == 'running'
 
+    def test_enum_type(self, menai):
+        """enum-type returns the enumtype value for an instance."""
+        assert menai.evaluate_and_format(
+            '(let ((State (enum (idle running)))) (enumtype-name (enum-type (State \'running))))'
+        ) == '"State"'
+
+    def test_enum_type_result_is_an_enumtype(self, menai):
+        """The value enum-type returns is an enumtype, not an instance."""
+        assert menai.evaluate_and_format(
+            '(let ((State (enum (idle running)))) (enumtype? (enum-type (State \'running))))'
+        ) == '#t'
+
+    def test_enum_type_round_trips_by_identity(self, menai):
+        """The returned enumtype is identical to the type the value was built from."""
+        assert menai.evaluate_and_format(
+            '(let ((State (enum (idle running)))) (enumtype=? (enum-type (State \'running)) State))'
+        ) == '#t'
+
+    def test_enum_type_of_one_type_is_not_another(self, menai):
+        """enum-type distinguishes nominally distinct enum types."""
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (idle running)))'
+            '      (B (enum (idle running))))'
+            '  (enumtype=? (enum-type (A \'idle)) B))'
+        ) == '#f'
+
+    def test_enum_type_requires_an_enum(self, menai):
+        """enum-type raises when its argument is not an enum."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(enum-type 42)')
+
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(let ((State (enum (idle running)))) (enum-type State))')
+
+    def test_enum_is_instance_true(self, menai):
+        """enum-is-instance? is #t for an instance of the named type."""
+        assert menai.evaluate_and_format(
+            '(let ((State (enum (idle running))))'
+            '  (let ((s (State \'idle)))'
+            '    (enum-is-instance? s State)))'
+        ) == '#t'
+
+    def test_enum_is_instance_false_for_another_type(self, menai):
+        """enum-is-instance? is #f for an instance of a nominally distinct type."""
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (idle running)))'
+            '      (B (enum (idle running))))'
+            '  (let ((s (B \'idle)))'
+            '    (enum-is-instance? s A)))'
+        ) == '#f'
+
+    def test_enum_is_instance_raises_on_non_enum(self, menai):
+        """enum-is-instance? raises when the first argument is not an enum."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(
+                '(let ((State (enum (idle running)))) (enum-is-instance? 42 State))'
+            )
+
+    def test_enum_is_instance_raises_on_non_enumtype(self, menai):
+        """enum-is-instance? raises when the second argument is not an enumtype."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(
+                '(let ((State (enum (idle running))))'
+                '  (let ((s (State \'idle)))'
+                '    (enum-is-instance? s 42)))'
+            )
+
+    def test_enum_is_instance_raises_on_enumtype_first_arg(self, menai):
+        """enum-is-instance? raises when the first argument is a type, not an instance."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate(
+                '(let ((State (enum (idle running)))) (enum-is-instance? State State))'
+            )
+
     def test_enum_predicate_rejects_non_enums(self, menai):
         """enum? is total and returns #f for non-enum values."""
         assert menai.evaluate_and_format('(enum? 5)') == '#f'
@@ -168,6 +242,125 @@ class TestEnumIntrospection:
             '(let ((A (enum (idle running))))'
             '  (enumtype!=? A A))'
         ) == '#f'
+
+
+class TestEnumSwitchTypeSafety:
+    """A fused enum switch must not match a value of a different enum type.
+
+    SWITCH_ENUM dispatches on the variant index alone and never reads the enum
+    type.  Variant indices are only meaningful relative to their type, so
+    without a type-identity guard a value of another enum type whose index is
+    in range would jump to the wrong arm.  These tests pin the guard.
+    """
+
+    def test_wrong_typed_scrutinee_falls_through(self, menai):
+        """A match over one type, fed a value of another, falls through.
+
+        Both types have the same variant names, so the variant indices collide:
+        without the identity guard, B.y (index 1) would match A.y.
+        """
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (x y z)))'
+            '      (B (enum (x y z))))'
+            '  (match (B \'y)'
+            '    ((: A \'x) "ax")'
+            '    ((: A \'y) "ay")'
+            '    ((: A \'z) "az")'
+            '    (_ "fallthrough")))'
+        ) == '"fallthrough"'
+
+    def test_wrong_typed_scrutinee_with_different_names_falls_through(self, menai):
+        """The guard tests type identity, not variant names.
+
+        B.q has index 1, which is in range for A's table, and the name differs
+        from A.y.  A type-blind switch would dispatch to A.y.
+        """
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (x y z)))'
+            '      (B (enum (p q r))))'
+            '  (match (B \'q)'
+            '    ((: A \'x) "ax")'
+            '    ((: A \'y) "ay")'
+            '    ((: A \'z) "az")'
+            '    (_ "fallthrough")))'
+        ) == '"fallthrough"'
+
+    def test_wrong_typed_scrutinee_through_a_parameter(self, menai):
+        """The guard holds when the scrutinee's type is not known at the call site."""
+        assert menai.evaluate_and_format(
+            '(letrec ((A (enum (x y z)))'
+            '         (B (enum (x y z)))'
+            '         (classify (lambda (v)'
+            '                     (match v'
+            '                       ((: A \'x) "ax")'
+            '                       ((: A \'y) "ay")'
+            '                       ((: A \'z) "az")'
+            '                       (_ "fallthrough")))))'
+            '  (classify (B \'y)))'
+        ) == '"fallthrough"'
+
+    def test_mixed_type_match_reaches_the_right_group(self, menai):
+        """A match naming two enum types dispatches to the group that owns the value.
+
+        The desugarer builds one guard and one switch per enum type.  The first
+        group's switch is type-blind, so without the guard it would shadow the
+        second group and B.q would match A.y.
+        """
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (x y z)))'
+            '      (B (enum (p q r))))'
+            '  (match (B \'q)'
+            '    ((: A \'x) "ax")'
+            '    ((: A \'y) "ay")'
+            '    ((: A \'z) "az")'
+            '    ((: B \'p) "bp")'
+            '    ((: B \'q) "bq")'
+            '    ((: B \'r) "br")'
+            '    (_ "fallthrough")))'
+        ) == '"bq"'
+
+    def test_mixed_type_match_reaches_the_first_group(self, menai):
+        """The first group still matches its own values."""
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (x y z)))'
+            '      (B (enum (p q r))))'
+            '  (match (A \'z)'
+            '    ((: A \'x) "ax")'
+            '    ((: A \'y) "ay")'
+            '    ((: A \'z) "az")'
+            '    ((: B \'p) "bp")'
+            '    ((: B \'q) "bq")'
+            '    ((: B \'r) "br")'
+            '    (_ "fallthrough")))'
+        ) == '"az"'
+
+    def test_every_variant_of_the_right_type_still_dispatches(self, menai):
+        """The guard does not disturb correct dispatch for the match's own type."""
+        assert menai.evaluate_and_format(
+            '(letrec ((State (enum (idle running stopped paused)))'
+            '         (classify (lambda (s)'
+            '           (match s'
+            '             ((: State \'idle) "i")'
+            '             ((: State \'running) "r")'
+            '             ((: State \'stopped) "s")'
+            '             ((: State \'paused) "p")'
+            '             (_ "other")))))'
+            '  (list (classify (State \'idle))'
+            '        (classify (State \'running))'
+            '        (classify (State \'stopped))'
+            '        (classify (State \'paused))))'
+        ) == '("i" "r" "s" "p")'
+
+    def test_non_enum_scrutinee_still_falls_through(self, menai):
+        """The kind guard keeps the pattern total for a non-enum scrutinee."""
+        assert menai.evaluate_and_format(
+            '(let ((A (enum (x y z))))'
+            '  (match 42'
+            '    ((: A \'x) "ax")'
+            '    ((: A \'y) "ay")'
+            '    ((: A \'z) "az")'
+            '    (_ "fallthrough")))'
+        ) == '"fallthrough"'
 
 
 class TestEnumHashability:

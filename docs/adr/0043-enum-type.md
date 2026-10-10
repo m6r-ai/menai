@@ -151,11 +151,48 @@ The enum instance operations mirror the struct operations:
 |---|---|
 | `(enum? x)` | `#t` if `x` is an enum value |
 | `(enum-variant (state 'idle))` | `'idle` |
+| `(enum-type (state 'idle))` | the `state` enumtype value |
+| `(enum-is-instance? v state)` | `#t` if `v` is a `state` value |
 | `(enum=? (state 'idle) (state 'idle))` | `#t` |
 | `(enum!=? a b)` | negation of `enum=?` |
 
 `enum=?` is `#f` for two values of different enum types, and for an enum compared with
 a non-enum.
+
+`enum-type` and `enum-is-instance?` are the exact analogues of `struct-type` and
+`struct-is-instance?`, and they share their error behaviour: both raise on an argument of
+the wrong kind rather than returning `#f`, so a caller testing an arbitrary value must
+guard with `enum?` first, exactly as the `struct-is-instance?` caller guards with
+`struct?`.
+
+### The type-identity guard, and why the jump table needs it
+
+An enum `match` group lowers to
+
+```menai
+(if ($enum? tmp)
+    (if ($enum-is-instance? tmp TypeName)
+```
+
+The kind test is not sufficient on its own. `SWITCH_ENUM` dispatches on the variant index
+alone and never reads the enum type, and a variant index is meaningful only relative to
+its enum type. Two enum types with the same variant names have colliding indices, so a
+value of one type would otherwise dispatch to the arm of the other. The identity test is
+what makes the fused switch equivalent to the `enum=?` chain it replaced: that chain
+compared `(tag, variant_index)` and so returned `#f` for a value of another type, whereas
+the switch compares only the index.
+
+The guard is emitted per group, not per arm, and the desugarer groups arms by enum type
+identity. A `match` naming two enum types therefore compiles to two guarded switches, and
+the first group's false edge leads to the second group's guard. Without the identity test
+the first group's switch would shadow the second and a value of the second type would
+match an arm of the first.
+
+Where the interprocedural type analysis proves the scrutinee is an enum of exactly the
+tested type, the identity test is statically `#t` and `MenaiCFGEnumInstanceFold` removes
+it, mirroring `MenaiCFGStructInstanceFold`. Where the type is not proven the test stays
+and is load-bearing. This is a pure optimisation: the fold never changes a program's
+result.
 
 ### No arithmetic, no ordering, no bitwise operations
 

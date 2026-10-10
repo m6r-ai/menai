@@ -1721,20 +1721,52 @@ class MenaiASTDesugarer:
 
         Emits:
             (if ($enum? tmp)
-                (if ($enum=? tmp variant0) result0
-                (if ($enum=? tmp variant1) result1
-                    ...
-                    else_expr))
+                (if ($enum-is-instance? tmp TypeName)
+                    (if ($enum=? tmp variant0) result0
+                    (if ($enum=? tmp variant1) result1
+                        ...
+                        else_expr))
+                    else_expr)
                 else_expr)
 
         The enum guard is emitted once, exactly as _build_literal_group hoists
         the type guard over a run of literal arms.  Each arm uses only the bare
         equality check, so the emitted chain is the const / enum=? / branch shape
         MenaiCFGEnumSwitchDispatch recognises and fuses into a SWITCH_ENUM jump
-        table.  Hoisting also keeps the pattern total: a scrutinee that is not an
-        enum fails the guard and falls through to else_expr.
+        table.
+
+        The guard has two parts, mirroring the struct pattern's
+        (and ($struct? tmp) ($struct-is-instance? tmp TypeName)):
+
+          - ($enum? tmp) makes the test total.  enum-is-instance? raises on a
+            non-enum first argument, exactly as struct-is-instance? raises on a
+            non-struct one, so the kind guard must short-circuit it.
+
+          - ($enum-is-instance? tmp TypeName) is the type-IDENTITY test.  It is
+            what makes the fused SWITCH_ENUM safe: the switch dispatches on the
+            variant index alone and never reads the enum type, so a value of a
+            different enum type whose variant index is in range would otherwise
+            jump to the wrong arm.  Variant indices are meaningful only relative
+            to their enum type, so identity must be established before the index
+            is used.
+
+        A scrutinee that is not an enum, or is an enum of a different type, fails
+        a guard and falls through to else_expr, keeping the pattern total.
         """
         tmp_sym = MenaiASTSymbol(temp_var)
+
+        # The type test references the name the enum is in scope under, which is
+        # the pattern head (a local name, possibly an imported enum bound to a
+        # local name), not the enum's original declaration name.  Every arm in
+        # the group names the same enum type, so the head of the first arm's
+        # pattern is the name to use.
+        first_clause = clauses[0]
+        assert isinstance(first_clause, MenaiASTList)
+        first_pattern = _normalise_type_pattern(first_clause.elements[0])
+        assert isinstance(first_pattern, MenaiASTList)
+        head = first_pattern.elements[0]
+        assert isinstance(head, MenaiASTSymbol)
+        type_sym = self._make_symbol(head.name, first_clause)
 
         # Build the inner equality chain right-to-left, falling through to else_expr.
         inner: MenaiASTNode = else_expr
@@ -1764,9 +1796,16 @@ class MenaiASTDesugarer:
             eq_test = MenaiASTList((MenaiASTSymbol('$enum=?'), tmp_sym, variant_const))
             inner = MenaiASTList((MenaiASTSymbol('if'), eq_test, desugared_result, inner))
 
-        # Wrap in the single enum guard.
+        # Wrap in the single enum guard: a kind check that makes the identity
+        # check total, then the identity check itself.
         enum_test = MenaiASTList((MenaiASTSymbol('$enum?'), tmp_sym))
-        return MenaiASTList((MenaiASTSymbol('if'), enum_test, inner, else_expr))
+        instance_test = MenaiASTList((
+            MenaiASTSymbol('$enum-is-instance?'),
+            tmp_sym,
+            type_sym,
+        ))
+        guarded_inner = MenaiASTList((MenaiASTSymbol('if'), instance_test, inner, else_expr))
+        return MenaiASTList((MenaiASTSymbol('if'), enum_test, guarded_inner, else_expr))
 
     def _build_clause_with_bindings(
         self,

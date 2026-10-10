@@ -323,6 +323,7 @@ Syntax: (operator arg1 arg2 ...)
 - Pattern matching: (match s ((: state 'idle) "i") ((: state 'running) "r") (_ "other")) — the type name is preceded by the : head symbol and the variant is a quoted symbol
 - An enum pattern is total: matching a value of another type falls through to the next arm rather than raising
 - A match whose arms are all enum patterns of the same type compiles to a jump table
+- A match naming two enum types compiles to one guarded jump table per type; the first group's false edge leads to the second group's guard
 - Hashability: enum values are hashable unconditionally (usable as set members or dict keys)
 - No arithmetic, ordering, or bitwise operations: (integer+ (state 'idle) 1) is a type error
 - Enums are nominal: two enum types with identical variant names are distinct types
@@ -334,6 +335,8 @@ Syntax: (operator arg1 arg2 ...)
 - Equality: (enumtype=? state state) → #t; (enumtype=? state other) → #f (different types); (enumtype!=? state other) → #t
 - Name: (enumtype-name state) → "state" (takes an enumtype value, not an instance)
 - Variants: (enumtype-variants state) → ('idle 'running 'stopped) list of variant name symbols, in declaration order (takes an enumtype value)
+- Instance check: (enum-is-instance? s state) → #t if s is a state instance; first arg must be an enum, second must be an enumtype
+- Get enumtype from instance: (enum-type (state 'running)) → returns the enumtype value (e.g. state) for a given instance
 - Get variant from instance: (enum-variant (state 'running)) → running (returns the variant name symbol)
 
 ## Bytes operations:

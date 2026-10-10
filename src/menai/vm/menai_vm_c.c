@@ -8113,6 +8113,32 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_ENUM_TYPE: {
+            MenaiEnum *e = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *val = (MenaiValue *)e->enum_type;
+            menai_value_retain(val);
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = val;
+            break;
+        }
+
+        /*
+         * Enum type-identity test.  The operands are not checked here: the
+         * compiler inserts ASSERT_ENUM / ASSERT_ENUMTYPE guards on any operand
+         * whose type is not statically known, exactly as it does for
+         * STRUCT_IS_INSTANCE_P.  Variant indices are meaningful only relative
+         * to their enum type, so identity is compared by tag.
+         */
+        case OP_ENUM_IS_INSTANCE_P: {
+            MenaiEnum *e = (MenaiEnum *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiEnumType *etype = (MenaiEnumType *)operand(constants_items, frame_regs, src1, tag & 2);
+            int tag_a = ((MenaiEnumType *)e->enum_type)->tag;
+            int tag_b = etype->tag;
+            bool_store(vs, frame_regs, dest, tag_a == tag_b);
+            break;
+        }
+
         case OP_ENUMTYPE_P: {
             bool_store(vs, frame_regs, dest, IS_MENAI_ENUMTYPE(operand(constants_items, frame_regs, src0, tag & 1)));
             break;

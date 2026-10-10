@@ -34,6 +34,7 @@ from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlo
 from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_struct_instance_fold import MenaiCFGStructInstanceFold
+from menai.cfg.menai_cfg_enum_instance_fold import MenaiCFGEnumInstanceFold
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.cfg.menai_cfg_enum_switch_dispatch import MenaiCFGEnumSwitchDispatch
 from menai.cfg.menai_cfg import MenaiCFGFunction
@@ -107,6 +108,7 @@ class MenaiCompiler:
             MenaiCFGEnumSwitchDispatch(),
             MenaiCFGInterprocTypeAnalysis(),
             MenaiCFGStructInstanceFold(),
+            MenaiCFGEnumInstanceFold(),
             MenaiCFGPredicateFold(),
             MenaiCFGGuardInsertion(),
             MenaiCFGLICM(),

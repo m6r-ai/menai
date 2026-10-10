@@ -60,6 +60,33 @@ TWO_TYPES_SRC = """
 """
 
 
+def _enum_switches(cfg) -> list:
+    """Return every enum switch terminator reachable in the CFG.
+
+    The switch need not be in the top-level function: a match inside a
+    letrec-bound lambda is compiled into a nested function, and the guard's
+    reference to the enum type makes that lambda capture the type, which can
+    keep it from being inlined into the caller.  Walk the whole function tree,
+    exactly as _count_switches does.
+    """
+    found = []
+
+    def walk(func):
+        for block in func.blocks:
+            if isinstance(block.terminator, MenaiCFGSwitchEnumTerm):
+                found.append(block.terminator)
+
+            for instr in block.instrs:
+                inner = getattr(instr, 'function', None)
+                if inner is not None:
+                    walk(inner)
+
+    for top in cfg if isinstance(cfg, list) else [cfg]:
+        walk(top)
+
+    return found
+
+
 def _count_switches(cfg) -> int:
     count = 0
 
@@ -91,14 +118,12 @@ class TestChainToSwitch:
         """The switch covers every variant index and has a real target for each."""
         cfg = _build_cfg(CHAIN_SRC)
 
-        for block in cfg.blocks:
-            term = block.terminator
-            if isinstance(term, MenaiCFGSwitchEnumTerm):
-                assert len(term.targets) == 4
-                assert all(t is not None for t in term.targets)
-                return
+        switches = _enum_switches(cfg)
+        assert len(switches) == 1, "expected exactly one enum switch terminator"
 
-        raise AssertionError("no enum switch terminator found")
+        term = switches[0]
+        assert len(term.targets) == 4
+        assert all(t is not None for t in term.targets)
 
     def test_single_arm_not_transformed(self):
         """A single enum arm is not a chain and is left alone."""

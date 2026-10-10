@@ -44,7 +44,7 @@ from menai.cfg.menai_cfg import (
     value_ids_in_term,
 )
 from menai.cfg.menai_cfg_type_fact import TypeFact
-from menai.menai_value import MenaiStructType
+from menai.menai_value import MenaiEnumType, MenaiStructType
 
 
 @dataclass
@@ -74,9 +74,17 @@ class MenaiCFGContext:
     is statically true.  Recording it here keeps the resolution in one place:
     the analysis already performs it to refine the receiver's type on the true
     edge, and a consumer must not re-derive it and drift.
+
+    `enum_type_of_test` is the enum counterpart: it maps a function's `fact_key`
+    to a map from the SSA value id of an enum-is-instance? test's enumtype
+    argument to the MenaiEnumType that argument names.  It is written by the
+    same analysis, by the same resolution, and read by enum instance folding.
+    The two are kept separate rather than merged into one map keyed by type
+    kind so that a consumer cannot confuse a struct type with an enum type.
     """
     type_facts: dict[int, dict[int, TypeFact]] = field(default_factory=dict)
     struct_type_of_test: dict[int, dict[int, MenaiStructType]] = field(default_factory=dict)
+    enum_type_of_test: dict[int, dict[int, MenaiEnumType]] = field(default_factory=dict)
 
     def facts_for(self, func: MenaiCFGFunction) -> dict[int, TypeFact]:
         """Return the type facts recorded for `func`, or an empty map."""
@@ -114,6 +122,29 @@ class MenaiCFGContext:
             return None
 
         return self.struct_type_of_test.get(func.fact_key, {}).get(value_id)
+
+    def record_enum_type_of_test(
+        self,
+        func: MenaiCFGFunction,
+        value_id: int,
+        enum_type: MenaiEnumType,
+    ) -> None:
+        """Record the enum type named by an enum-is-instance? test's argument."""
+        if func.fact_key is None:
+            return
+
+        self.enum_type_of_test.setdefault(func.fact_key, {})[value_id] = enum_type
+
+    def enum_type_for_test(
+        self,
+        func: MenaiCFGFunction,
+        value_id: int,
+    ) -> MenaiEnumType | None:
+        """Return the enum type named by a test's enumtype argument, or None."""
+        if func.fact_key is None:
+            return None
+
+        return self.enum_type_of_test.get(func.fact_key, {}).get(value_id)
 
 
 def replace_block_instrs(
