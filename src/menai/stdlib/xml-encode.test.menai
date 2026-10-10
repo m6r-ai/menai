@@ -2,12 +2,12 @@
 
 (let ((xml-encode (import "xml-encode"))
       (xml-decode (import "xml-decode"))
-      (t (import "menai_test")))
+      (t (import "menai-test")))
   (let ((encode (:: xml-encode encode))
         (decode (:: xml-decode decode))
         (assert-equal (:: t assert-equal))
-        (expect-pass (:: t test))
-        (expect-fail (:: t test-error)))
+        (expect-pass (:: t expect-pass))
+        (expect-fail (:: t expect-fail)))
     (let ((tests
       (list
         ; Direct encoding of element trees.

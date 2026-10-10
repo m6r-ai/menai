@@ -161,7 +161,7 @@ Test files use the `*.test.menai` convention and are run by the `menai-test` too
 Here is the structure of a test module:
 
 ```menai
-(let ((t (import "menai_test")))
+(let ((t (import "menai-test")))
   (let ((assert-equal (:: t assert-equal)))
     (let ((tests (list
                    (list "addition" (lambda () (assert-equal (integer+ 1 2) 3)))

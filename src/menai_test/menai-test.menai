@@ -1,45 +1,51 @@
-; Menai test support — injected by the test runner.
+; menai-test — test support module injected by the test runner.
 ;
-; Provides:
-;   assert-equal  — raises if two values are not equal (polymorphic)
-;   test          — builds a positive test node (thunk should return normally)
-;   test-error    — builds a negative test node (thunk should raise)
-;   test-find     — navigates a node-list tree by path to return a leaf thunk
+; Provides the assertion and node-construction helpers that a *.test.menai
+; suite uses to build its exported "tests" node-list.  The runner prepends
+; its own directory to the module path, so this module is available only
+; under the runner and is not part of the standard library.
 
 (letrec (
 
   ; Polymorphic equality: dispatches on the type of the first argument.
   ; Two values are equal if they have the same type and the same value.
-  ; For lists and dicts, equality is structural (element-wise).
+  ; Lists, vectors, dicts and sets compare structurally (element-wise).
+  ; Structs compare nominally: same struct type and all fields equal.
+  ; Enums compare by identity: same enum type and same variant.
+  ; Structtype and enumtype values compare by nominal type identity.
   (value=?
    (lambda (a b)
      (match a
-       ((? boolean? x)    (and (boolean? b) (boolean=? x b)))
-       ((? integer? x)    (and (integer? b) (integer=? x b)))
-       ((? float? x)      (and (float? b)   (float=? x b)))
-       ((? complex? x)    (and (complex? b) (complex=? x b)))
-       ((? string? x)     (and (string? b)  (string=? x b)))
-       ((? bytes? x)      (and (bytes? b)   (bytes=? x b)))
-       ((? symbol? x)     (and (symbol? b)  (symbol=? x b)))
-       ((? none? x)       (none? b))
-       ((? list? x)       (and (list? b) (list=? x b)))
-       ((? vector? x)     (and (vector? b) (vector=? x b)))
-       ((? dict? x)       (and (dict? b) (dict=? x b)))
-       ((? set? x)        (and (set? b)  (set=? x b)))
+       ((? boolean? x) (and (boolean? b) (boolean=? x b)))
+       ((? integer? x) (and (integer? b) (integer=? x b)))
+       ((? float? x) (and (float? b) (float=? x b)))
+       ((? complex? x) (and (complex? b) (complex=? x b)))
+       ((? string? x) (and (string? b) (string=? x b)))
+       ((? bytes? x) (and (bytes? b) (bytes=? x b)))
+       ((? symbol? x) (and (symbol? b) (symbol=? x b)))
+       ((? none? x) (none? b))
+       ((? list? x) (and (list? b) (list=? x b)))
+       ((? vector? x) (and (vector? b) (vector=? x b)))
+       ((? dict? x) (and (dict? b) (dict=? x b)))
+       ((? set? x) (and (set? b) (set=? x b)))
+       ((? structtype? x) (and (structtype? b) (structtype=? x b)))
+       ((? enumtype? x) (and (enumtype? b) (enumtype=? x b)))
+       ((? struct? x) (and (struct? b) (struct=? x b)))
+       ((? enum? x) (and (enum? b) (enum=? x b)))
        (_ #f))))
 
   ; Polymorphic describe: returns a string representation of any value.
   (value-describe
    (lambda (v)
      (match v
-       ((? boolean? x)    (if x "#t" "#f"))
-       ((? integer? x)    (integer->string x))
-       ((? float? x)      (float->string x))
-       ((? complex? x)    (complex->string x))
-       ((? string? x)     (string-concat "\"" x "\""))
-       ((? bytes? x)      (string-concat "#bytes\"" (bytes->string-hex x) "\""))
-       ((? symbol? x)     (symbol->string x))
-       ((? none? x)       "#none")
+       ((? boolean? x) (if x "#t" "#f"))
+       ((? integer? x) (integer->string x))
+       ((? float? x) (float->string x))
+       ((? complex? x) (complex->string x))
+       ((? string? x) (string-concat "\"" x "\""))
+       ((? bytes? x) (string-concat "#bytes\"" (bytes->string-hex x) "\""))
+       ((? symbol? x) (symbol->string x))
+       ((? none? x) "#none")
        ((? list? x)
         (if (list-null? x)
             "()"
@@ -63,6 +69,29 @@
                       (dict-keys x))
             " ")
           "}"))
+       ((? structtype? x)
+        (string-concat "(struct ("
+          (list->string
+            (map-list symbol->string (structtype-fields x))
+            " ")
+          "))"))
+       ((? enumtype? x)
+        (string-concat "(enum ("
+          (list->string
+            (map-list symbol->string (enumtype-variants x))
+            " ")
+          "))"))
+       ((? struct? x)
+        (let ((t (struct-type x)))
+          (string-concat "("
+            (structtype-name t)
+            (list->string
+              (map-list (lambda (f) (string-concat " " (value-describe (struct-get x f))))
+                        (structtype-fields t))
+              "")
+            ")")))
+       ((? enum? x)
+        (string-concat "(" (enumtype-name (enum-type x)) " " (symbol->string (enum-variant x)) ")"))
        (_ "<value>"))))
 
   (assert-equal
@@ -78,14 +107,14 @@
   ; Build a positive test node.  The thunk returns normally on success; any
   ; raised error is a failure.  Use assert-equal inside the thunk to check
   ; the produced value.
-  (test
+  (expect-pass
    (lambda (name thunk)
      (list name (dict "thunk" thunk))))
 
   ; Build a negative test node.  The thunk is expected to raise.  When
   ; `contains` is supplied, the raised error's message must contain it as a
   ; substring, ensuring the intended error fired rather than an unrelated one.
-  (test-error
+  (expect-fail
    (lambda (name thunk . rest)
      (if (list-null? rest)
          (list name (dict "thunk" thunk "expect-error" #t))
@@ -97,7 +126,7 @@
   ; Raises if any segment of the path is not found or if the final node is
   ; not a thunk (i.e. the path does not reach a leaf).
   ; A leaf is either a function (plain test) or a dict with a "thunk" key
-  ; (expect-error test).
+  ; (expect-fail test).
   (test-find
    (lambda (nodes path)
      (letrec ((walk (lambda (node-list remaining-path)
@@ -126,4 +155,4 @@
                                 (search node-list)))))))
        (walk nodes path)))))
 
-(export assert-equal test test-error test-find))
+(export assert-equal expect-pass expect-fail test-find))

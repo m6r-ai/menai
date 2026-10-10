@@ -211,7 +211,7 @@ def _run_leaf(
     """
     path_literal = _menai_path_literal(path)
     expression = (
-        f'(let ((t (import "menai_test")))'
+        f'(let ((t (import "menai-test")))'
         f'    (let ((m (import "{module_name}")))'
         f'      (let ((thunk ((:: t test-find) (:: m tests) {path_literal})))'
         f'        (thunk))))'

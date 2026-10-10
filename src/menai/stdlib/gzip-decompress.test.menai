@@ -1,11 +1,11 @@
 ; Tests for gzip-decompress.menai
 
 (let ((gzip-mod (import "gzip-decompress"))
-      (t (import "menai_test")))
+      (t (import "menai-test")))
   (let ((decompress (:: gzip-mod decompress))
         (assert-equal (:: t assert-equal))
-        (expect-pass (:: t test))
-        (expect-fail (:: t test-error)))
+        (expect-pass (:: t expect-pass))
+        (expect-fail (:: t expect-fail)))
     (let ((tests (list
        (list "decompress"
          (list

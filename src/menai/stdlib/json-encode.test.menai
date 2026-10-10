@@ -2,12 +2,12 @@
 
 (let ((json-encode (import "json-encode"))
       (json-decode (import "json-decode"))
-      (t (import "menai_test")))
+      (t (import "menai-test")))
   (let ((encode (:: json-encode encode))
         (decode (:: json-decode decode))
         (assert-equal (:: t assert-equal))
-        (expect-pass (:: t test))
-        (expect-fail (:: t test-error)))
+        (expect-pass (:: t expect-pass))
+        (expect-fail (:: t expect-fail)))
     (let ((tests
       (list
         ; Direct encoding of scalar values
