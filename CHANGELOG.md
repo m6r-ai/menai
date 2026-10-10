@@ -42,6 +42,8 @@ Bug fixes:
   which previously inflated the depth reported for the next parse.
 - Two top-level expressions are no longer misreported as a premature closing
   parenthesis.
+- A structural error caused by a `)` that closed an enclosing form before its body
+  is now reported at that `)`.
 - Fixed a miscompile in the CFG branch constant propagation pass.  It dropped a
   phi whose result fed a branch directly and was also used downstream, leaving
   the downstream use undefined.

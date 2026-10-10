@@ -29,6 +29,7 @@ cannot be complete.
 from dataclasses import dataclass
 
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
+from menai.menai_error import MenaiError
 
 
 # Forms whose body is required, with the number of elements they must have
@@ -41,6 +42,11 @@ _MINIMUM_ELEMENTS = {
     'letrec': 3,
     'lambda': 3,
     'if': 4,
+    'quote': 2,
+    'match': 3,
+    '::': 3,
+    'import': 2,
+    'apply': 3,
 }
 
 
@@ -70,6 +76,11 @@ class ParenDiagnosis:
     ``extra_column`` are the first ``)`` that cannot be matched, and are set only
     when closes are extra.  ``suspected_*`` name an earlier ``)`` that closed a
     form before its body, which is the likely cause of an extra close.
+
+    ``suspected_open_line`` and ``suspected_open_column`` are where that form
+    opened.  A caller comparing them with the form it is reporting can tell
+    whether the early close is that form's own error or a misplaced ``)`` that
+    closed an enclosing form.
     """
 
     insertion_line: int | None
@@ -82,6 +93,8 @@ class ParenDiagnosis:
     suspected_line: int | None
     suspected_column: int | None
     suspected_form: str | None
+    suspected_open_line: int | None
+    suspected_open_column: int | None
 
 
 @dataclass
@@ -142,6 +155,8 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
     suspected_line: int | None = None
     suspected_column: int | None = None
     suspected_form: str | None = None
+    suspected_open_line: int | None = None
+    suspected_open_column: int | None = None
 
     for index, token in enumerate(tokens):
         line_index = token.line - 1
@@ -211,6 +226,8 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
                     suspected_line = token.line
                     suspected_column = token.column
                     suspected_form = closed.form_type
+                    suspected_open_line = closed.line
+                    suspected_open_column = closed.column
 
             elif extra_line is None:
                 extra_line = token.line
@@ -244,6 +261,8 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
         suspected_line=suspected_line,
         suspected_column=suspected_column,
         suspected_form=suspected_form,
+        suspected_open_line=suspected_open_line,
+        suspected_open_column=suspected_open_column,
     )
 
 
@@ -320,3 +339,91 @@ def format_depth_table(
         rows.append(f"  {entry.line:>{width}} | {depth:^11} | {entry.content}")
 
     return "\n".join(rows)
+
+
+def early_close_error(
+    diagnosis: ParenDiagnosis,
+    error_class: type[MenaiError],
+    source: str,
+    source_file: str,
+    form_name: str,
+    form_line: int,
+    form_column: int,
+) -> MenaiError | None:
+    """
+    Build an error for a form whose enclosing form closed before its body.
+
+    A structural error — a form with the wrong number of elements — is often
+    the symptom of a misplaced ``)`` that closed an enclosing form before its
+    body, so the elements that follow are read as further elements of the form.
+    The parser reports the symptom at whichever form it happened to be reading,
+    which is nowhere near the mistake.  The diagnosis identifies the ``)`` that
+    closed the enclosing form early, and that is the line the reader has to
+    change.
+
+    The diagnosis also fires when a form closed before its *own* body, which is
+    a genuine structural error rather than a misplaced ``)``.  The two are told
+    apart by position: when the form that closed early is the same form whose
+    structural check failed, the error is genuine and this returns None so the
+    caller reports its own message.
+
+    The caller supplies the error class so that the AST builder and the semantic
+    analyzer can each raise their own error type from one shared diagnosis.
+
+    Args:
+        diagnosis: The parenthesis diagnosis for the token stream.
+        error_class: The error class to instantiate (MenaiASTBuildError or
+            MenaiEvalError).
+        source: The original source text, for context display.
+        source_file: The source file name, for location display.
+        form_name: The name of the form whose structural check failed, used in
+            the message.
+        form_line: Line of the form whose structural check failed.
+        form_column: Column of the form whose structural check failed.
+
+    Returns:
+        An error pointing at the ``)`` that closed the enclosing form early, or
+        None when the diagnosis shows no such close.
+    """
+    if diagnosis.suspected_line is None or diagnosis.suspected_column is None:
+        return None
+
+    if (
+        diagnosis.suspected_open_line == form_line
+        and diagnosis.suspected_open_column == form_column
+    ):
+        # The form that closed early is the form being reported, so this is its
+        # own structural error, not a misplaced ')' in an enclosing form.
+        return None
+
+    line = diagnosis.suspected_line
+    column = diagnosis.suspected_column
+    closed_form = diagnosis.suspected_form or "form"
+
+    depth_table = format_depth_table(diagnosis, line - 3, line + 3)
+    table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+
+    context = (
+        f"The '{form_name}' has the wrong number of elements because the ')' at "
+        f"line {line}, column {column} closed the '{closed_form}' before its body. "
+        f"The elements that follow were read as further elements of the '{form_name}' "
+        f"rather than as the body of the '{closed_form}'. The parentheses balance, "
+        f"so no ')' is missing or extra \u2014 it is in the wrong place."
+        f"{table_block}"
+    )
+
+    return error_class(
+        message=(
+            f"'{closed_form}' closed before its body at line {line}, "
+            f"column {column} (reported as '{form_name}' structure error)"
+        ),
+        line=line,
+        column=column,
+        received=f"The ')' at line {line}, column {column} closed the '{closed_form}' before its body",
+        expected=f"A body expression before the ')' that closes the '{closed_form}'",
+        example=f"Correct: ({closed_form} ((x 5)) (integer+ x 1))\nIncorrect: ({closed_form} ((x 5))) (integer+ x 1)",
+        suggestion=f"Move the ')' at line {line}, column {column} to after the body of the '{closed_form}'",
+        context=context,
+        source=source,
+        source_file=source_file,
+    )

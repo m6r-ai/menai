@@ -28,6 +28,7 @@ from menai.ast.menai_ast import (
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
 from menai.ast.menai_ast import MenaiASTStruct, MenaiASTEnum
+from menai.ast.menai_paren_diagnostic import ParenDiagnosis, early_close_error
 
 
 def _is_quoted_symbol(expr: MenaiASTNode) -> bool:
@@ -56,6 +57,8 @@ class MenaiASTSemanticAnalyzer:
     def __init__(self) -> None:
         """Initialize the semantic analyzer."""
         self.source = ""
+        self.source_file = ""
+        self._diagnosis: ParenDiagnosis | None = None
         self._next_struct_tag: int = 0
         self._next_enum_tag: int = 0
 
@@ -95,13 +98,24 @@ class MenaiASTSemanticAnalyzer:
         """Return True if name is bound to a module namespace in scope."""
         return any(name in frame for frame in self._namespace_stack)
 
-    def analyze(self, expr: MenaiASTNode, source: str = "") -> MenaiASTNode:
+    def analyze(
+        self,
+        expr: MenaiASTNode,
+        source: str = "",
+        source_file: str = "",
+        diagnosis: ParenDiagnosis | None = None,
+    ) -> MenaiASTNode:
         """
         Analyze an expression recursively, validating all special forms.
 
         Args:
             expr: AST to analyze
             source: Original source code (for error reporting with line/column)
+            source_file: Source file name for location display
+            diagnosis: Parenthesis diagnosis for the token stream.  When a
+                structural check fails, it identifies a ')' that closed an
+                enclosing form before its body, which is the misplaced ')' the
+                reader has to change.
 
         Returns:
             The same AST (unmodified) if validation passes
@@ -111,6 +125,14 @@ class MenaiASTSemanticAnalyzer:
         """
         # Store source for error reporting
         self.source = source
+        self.source_file = source_file
+
+        # The diagnosis is set by the outermost call and kept for the whole
+        # traversal.  Recursive calls pass no diagnosis, so they must not clear
+        # it: a nested form's structural error still needs the diagnosis to tell
+        # whether a misplaced ')' caused it.
+        if diagnosis is not None:
+            self._diagnosis = diagnosis
 
         # Lists need inspection
         if isinstance(expr, MenaiASTList):
@@ -124,6 +146,38 @@ class MenaiASTSemanticAnalyzer:
 
         # Self-evaluating values need no validation
         return expr
+
+    def _raise_if_early_close(self, expr: MenaiASTNode, form_name: str) -> None:
+        """
+        Raise an early-close error when a structural check failed because of a
+        misplaced ')'.
+
+        A form with the wrong number of elements is often the symptom of a ')'
+        that closed an enclosing form before its body.  When the diagnosis
+        identifies such a close, it is raised here so the reader is sent to the
+        ')' to change rather than to the form the analyzer happened to flag.
+
+        Args:
+            expr: The form whose structural check failed.  Only its position is
+                used, so any node will do.
+            form_name: The name of the form whose structural check failed.
+
+        Raises:
+            MenaiEvalError: When the diagnosis shows an enclosing form closed
+                before its body.
+        """
+        if self._diagnosis is None:
+            return
+
+        if expr.line is None or expr.column is None:
+            return
+
+        error = early_close_error(
+            self._diagnosis, MenaiEvalError, self.source, self.source_file,
+            form_name, expr.line, expr.column,
+        )
+        if error is not None:
+            raise error
 
     def _analyze_list(self, expr: MenaiASTList) -> MenaiASTList:
         """Analyze a list expression (special form or function call)."""
@@ -194,6 +248,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_if(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate if expression: (if condition then else)"""
         if len(expr.elements) != 4:
+            self._raise_if_early_close(expr, "if")
             raise MenaiEvalError(
                 message="If expression has wrong number of arguments",
                 received=f"Got {len(expr.elements) - 1} arguments: {expr.describe()}",
@@ -217,6 +272,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_let(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate let expression: (let ((var val) ...) body)"""
         if len(expr.elements) < 3:
+            self._raise_if_early_close(expr, "let")
             raise MenaiEvalError(
                 message="Let expression structure is incorrect",
                 received=f"Got {len(expr.elements)} elements",
@@ -237,6 +293,7 @@ class MenaiASTSemanticAnalyzer:
 
         _, bindings_list, body = expr.elements
         if not isinstance(bindings_list, MenaiASTList):
+            self._raise_if_early_close(expr, "let")
             raise MenaiEvalError(
                 message="Let binding list must be a list",
                 received=f"Binding list: {bindings_list.type_name()}",
@@ -254,6 +311,7 @@ class MenaiASTSemanticAnalyzer:
         new_bindings: list[MenaiASTNode] = []
         for i, binding in enumerate(bindings_list.elements):
             if not isinstance(binding, MenaiASTList):
+                self._raise_if_early_close(expr, "let")
                 raise MenaiEvalError(
                     message=f"Let binding {i+1} must be a list",
                     received=f"Binding {i+1}: {binding.type_name()}",
@@ -267,6 +325,7 @@ class MenaiASTSemanticAnalyzer:
 
             if len(binding.elements) != 2:
                 binding_str = f"{len(binding.elements)} elements"
+                self._raise_if_early_close(expr, "let")
                 raise MenaiEvalError(
                     message=f"Let binding {i+1} has wrong number of elements",
                     received=f"Binding {i+1}: {binding_str}",
@@ -320,6 +379,7 @@ class MenaiASTSemanticAnalyzer:
                 continue
 
             if not isinstance(name_expr, MenaiASTSymbol):
+                self._raise_if_early_close(expr, "let")
                 raise MenaiEvalError(
                     message=f"Let binding {i+1} variable must be a symbol",
                     received=f"Variable: {name_expr.type_name()}",
@@ -379,6 +439,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_let_star(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate let* expression: (let* ((var val) ...) body)"""
         if len(expr.elements) < 3:
+            self._raise_if_early_close(expr, "let*")
             raise MenaiEvalError(
                 message="Let* expression structure is incorrect",
                 received=f"Got {len(expr.elements)} elements",
@@ -400,6 +461,7 @@ class MenaiASTSemanticAnalyzer:
         _, bindings_list, body = expr.elements
 
         if not isinstance(bindings_list, MenaiASTList):
+            self._raise_if_early_close(expr, "let*")
             raise MenaiEvalError(
                 message="Let* binding list must be a list",
                 received=f"Binding list: {bindings_list.type_name()}",
@@ -417,6 +479,7 @@ class MenaiASTSemanticAnalyzer:
         new_bindings: list[MenaiASTNode] = []
         for i, binding in enumerate(bindings_list.elements):
             if not isinstance(binding, MenaiASTList):
+                self._raise_if_early_close(expr, "let*")
                 raise MenaiEvalError(
                     message=f"Let* binding {i+1} must be a list",
                     received=f"Binding {i+1}: {binding.type_name()}",
@@ -430,6 +493,7 @@ class MenaiASTSemanticAnalyzer:
 
             if len(binding.elements) != 2:
                 binding_str = f"{len(binding.elements)} elements"
+                self._raise_if_early_close(expr, "let*")
                 raise MenaiEvalError(
                     message=f"Let* binding {i+1} has wrong number of elements",
                     received=f"Binding {i+1}: {binding_str}",
@@ -487,6 +551,7 @@ class MenaiASTSemanticAnalyzer:
                 continue
 
             if not isinstance(name_expr, MenaiASTSymbol):
+                self._raise_if_early_close(expr, "let*")
                 raise MenaiEvalError(
                     message=f"Let* binding {i+1} variable must be a symbol",
                     received=f"Variable: {name_expr.type_name()}",
@@ -540,6 +605,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_letrec(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate letrec expression: (letrec ((var val) ...) body)"""
         if len(expr.elements) < 3:
+            self._raise_if_early_close(expr, "letrec")
             raise MenaiEvalError(
                 message="Letrec expression structure is incorrect",
                 received=f"Got {len(expr.elements)} elements",
@@ -560,6 +626,7 @@ class MenaiASTSemanticAnalyzer:
 
         _, bindings_list, body = expr.elements
         if not isinstance(bindings_list, MenaiASTList):
+            self._raise_if_early_close(expr, "letrec")
             raise MenaiEvalError(
                 message="Letrec binding list must be a list",
                 received=f"Binding list: {bindings_list.type_name()}",
@@ -594,6 +661,7 @@ class MenaiASTSemanticAnalyzer:
         self._push_namespace_scope(letrec_namespaces)
         for i, binding in enumerate(bindings_list.elements):
             if not isinstance(binding, MenaiASTList):
+                self._raise_if_early_close(expr, "letrec")
                 raise MenaiEvalError(
                     message=f"Letrec binding {i+1} must be a list",
                     received=f"Binding {i+1}: {binding.type_name()}",
@@ -606,6 +674,7 @@ class MenaiASTSemanticAnalyzer:
                 )
 
             if len(binding.elements) != 2:
+                self._raise_if_early_close(expr, "letrec")
                 raise MenaiEvalError(
                     message=f"Letrec binding {i+1} has wrong number of elements",
                     received=f"Binding {i+1}: has {len(binding.elements)} elements",
@@ -661,6 +730,7 @@ class MenaiASTSemanticAnalyzer:
                 continue
 
             if not isinstance(name_expr, MenaiASTSymbol):
+                self._raise_if_early_close(expr, "letrec")
                 raise MenaiEvalError(
                     message=f"Letrec binding {i+1} variable must be a symbol",
                     received=f"Variable: {name_expr.type_name()}",
@@ -716,6 +786,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_lambda(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate lambda expression: (lambda (params...) body)"""
         if len(expr.elements) != 3:
+            self._raise_if_early_close(expr, "lambda")
             raise MenaiEvalError(
                 message="Lambda expression structure is incorrect",
                 received=f"Got {len(expr.elements)} elements",
@@ -730,6 +801,7 @@ class MenaiASTSemanticAnalyzer:
         _, params_list, body = expr.elements
 
         if not isinstance(params_list, MenaiASTList):
+            self._raise_if_early_close(expr, "lambda")
             raise MenaiEvalError(
                 message="Lambda parameters must be a list",
                 received=f"Parameter list: {params_list.type_name()}",
@@ -752,6 +824,7 @@ class MenaiASTSemanticAnalyzer:
 
         for i, param in enumerate(elements):
             if not isinstance(param, MenaiASTSymbol):
+                self._raise_if_early_close(expr, "lambda")
                 raise MenaiEvalError(
                     message=f"Lambda parameter {i+1} must be a symbol",
                     received=f"Parameter {i+1}: {param.type_name()}",
@@ -765,6 +838,7 @@ class MenaiASTSemanticAnalyzer:
 
             if param.name == '.':
                 if dot_index is not None:
+                    self._raise_if_early_close(expr, "lambda")
                     raise MenaiEvalError(
                         message="Lambda parameter list has more than one dot",
                         received=f"Second dot at parameter position {i+1}",
@@ -784,6 +858,7 @@ class MenaiASTSemanticAnalyzer:
         if dot_index is not None:
             # Dot must be second-to-last: exactly one symbol must follow it
             if dot_index != len(elements) - 2:
+                self._raise_if_early_close(expr, "lambda")
                 raise MenaiEvalError(
                     message="Rest parameter must be the last element after the dot",
                     received=f"Dot at position {dot_index+1} with {len(elements) - dot_index - 1} element(s) after it",
@@ -799,6 +874,7 @@ class MenaiASTSemanticAnalyzer:
         # Check for duplicate parameters
         if len(param_names) != len(set(param_names)):
             duplicates = [p for p in param_names if param_names.count(p) > 1]
+            self._raise_if_early_close(expr, "lambda")
             raise MenaiEvalError(
                 message="Lambda parameters must be unique",
                 received=f"Duplicate parameters: {duplicates}",
@@ -823,6 +899,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_quote(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate quote expression: (quote expr)"""
         if len(expr.elements) != 2:
+            self._raise_if_early_close(expr, "quote")
             raise MenaiEvalError(
                 message="Quote expression has wrong number of arguments",
                 received=f"Got {len(expr.elements) - 1} arguments: {expr.describe()}",
@@ -841,6 +918,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_match(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate match expression: (match value (pattern result) ...)"""
         if len(expr.elements) < 3:
+            self._raise_if_early_close(expr, "match")
             raise MenaiEvalError(
                 message="Match expression has wrong number of arguments",
                 received=f"Got {len(expr.elements) - 1} arguments",
@@ -861,6 +939,7 @@ class MenaiASTSemanticAnalyzer:
         # Validate all clauses
         for i, clause in enumerate(clauses):
             if not isinstance(clause, MenaiASTList):
+                self._raise_if_early_close(expr, "match")
                 raise MenaiEvalError(
                     message=f"Match clause {i+1} must be a list",
                     received=f"Clause {i+1}: {clause.type_name()}",
@@ -873,6 +952,7 @@ class MenaiASTSemanticAnalyzer:
                 )
 
             if len(clause.elements) != 2:
+                self._raise_if_early_close(expr, "match")
                 raise MenaiEvalError(
                     message=f"Match clause {i+1} has wrong number of elements",
                     received=f"Clause {i+1}: {clause}",
@@ -963,6 +1043,7 @@ class MenaiASTSemanticAnalyzer:
             pattern.elements[0].name == '?'):
 
             if len(pattern.elements) != 3:
+                self._raise_if_early_close(pattern, "match")
                 raise MenaiEvalError(
                     message=f"Invalid predicate pattern in clause {clause_num}",
                     received=f"Pattern: {pattern}",
@@ -977,6 +1058,7 @@ class MenaiASTSemanticAnalyzer:
             pred_expr = pattern.elements[1]
             var_pattern = pattern.elements[2]
             if not isinstance(var_pattern, MenaiASTSymbol):
+                self._raise_if_early_close(pattern, "match")
                 raise MenaiEvalError(
                     message=f"Pattern variable must be a symbol in clause {clause_num}",
                     received=f"Variable in predicate pattern: {var_pattern}",
@@ -999,6 +1081,7 @@ class MenaiASTSemanticAnalyzer:
             pattern.elements[0].name == ':'):
 
             if len(pattern.elements) < 2:
+                self._raise_if_early_close(pattern, "match")
                 raise MenaiEvalError(
                     message=f"Invalid type pattern in clause {clause_num}",
                     received=f"Pattern: {pattern}",
@@ -1012,6 +1095,7 @@ class MenaiASTSemanticAnalyzer:
 
             type_name_expr = pattern.elements[1]
             if not isinstance(type_name_expr, MenaiASTSymbol):
+                self._raise_if_early_close(pattern, "match")
                 raise MenaiEvalError(
                     message=f"Type name must be a symbol in clause {clause_num}",
                     received=f"Type name: {type_name_expr}",
@@ -1043,6 +1127,7 @@ class MenaiASTSemanticAnalyzer:
 
         # Validate: at most one dot
         if len(dot_positions) > 1:
+            self._raise_if_early_close(pattern, "match")
             raise MenaiEvalError(
                 message=f"Invalid pattern in clause {clause_num}",
                 received=f"Pattern: {pattern} - multiple dots",
@@ -1059,6 +1144,7 @@ class MenaiASTSemanticAnalyzer:
             dot_position = dot_positions[0]
 
             if dot_position == 0:
+                self._raise_if_early_close(pattern, "match")
                 raise MenaiEvalError(
                     message=f"Invalid pattern in clause {clause_num}",
                     received=f"Pattern: {pattern} - dot at beginning",
@@ -1071,6 +1157,7 @@ class MenaiASTSemanticAnalyzer:
                 )
 
             if dot_position == len(pattern.elements) - 1:
+                self._raise_if_early_close(pattern, "match")
                 raise MenaiEvalError(
                     message=f"Invalid pattern in clause {clause_num}",
                     received=f"Pattern: {pattern} - dot at end",
@@ -1137,6 +1224,7 @@ class MenaiASTSemanticAnalyzer:
         which has the module's export map.
         """
         if len(expr.elements) != 3:
+            self._raise_if_early_close(expr, "::")
             raise MenaiEvalError(
                 message="Namespace member access has wrong number of arguments",
                 received=f"Got {len(expr.elements) - 1} arguments: {expr.describe()}",
@@ -1269,6 +1357,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_import(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate import expression: (import "module-name")"""
         if len(expr.elements) != 2:
+            self._raise_if_early_close(expr, "import")
             raise MenaiEvalError(
                 message="Import expression has wrong number of arguments",
                 received=f"Got {len(expr.elements) - 1} arguments: {expr.describe()}",
@@ -1310,6 +1399,7 @@ class MenaiASTSemanticAnalyzer:
     def _analyze_apply(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate apply expression: (apply f args)"""
         if len(expr.elements) != 3:
+            self._raise_if_early_close(expr, "apply")
             raise MenaiEvalError(
                 message="Apply expression has wrong number of arguments",
                 received=f"Got {len(expr.elements) - 1} arguments: {expr.describe()}",
@@ -1484,6 +1574,7 @@ class MenaiASTSemanticAnalyzer:
             A MenaiASTStruct node with name, tag, and field_names populated
         """
         if len(expr.elements) != 2:
+            self._raise_if_early_close(expr, "struct")
             raise MenaiEvalError(
                 message="Struct definition has wrong number of elements",
                 received=f"Got {len(expr.elements) - 1} argument(s)",
@@ -1498,6 +1589,7 @@ class MenaiASTSemanticAnalyzer:
         _, fields_expr = expr.elements
 
         if not isinstance(fields_expr, MenaiASTList):
+            self._raise_if_early_close(expr, "struct")
             raise MenaiEvalError(
                 message="Struct field list must be a list",
                 received=f"Got {fields_expr.type_name()}",
@@ -1512,6 +1604,7 @@ class MenaiASTSemanticAnalyzer:
         field_names: list[str] = []
         for i, field in enumerate(fields_expr.elements):
             if not isinstance(field, MenaiASTSymbol):
+                self._raise_if_early_close(expr, "struct")
                 raise MenaiEvalError(
                     message=f"Struct field {i+1} must be a symbol",
                     received=f"Got {field.type_name()}",
@@ -1577,6 +1670,7 @@ class MenaiASTSemanticAnalyzer:
             A MenaiASTEnum node with name, tag, and variant_names populated
         """
         if len(expr.elements) != 2:
+            self._raise_if_early_close(expr, "enum")
             raise MenaiEvalError(
                 message="Enum definition has wrong number of elements",
                 received=f"Got {len(expr.elements) - 1} argument(s)",
@@ -1591,6 +1685,7 @@ class MenaiASTSemanticAnalyzer:
         _, variants_expr = expr.elements
 
         if not isinstance(variants_expr, MenaiASTList):
+            self._raise_if_early_close(expr, "enum")
             raise MenaiEvalError(
                 message="Enum variant list must be a list",
                 received=f"Got {variants_expr.type_name()}",
@@ -1603,6 +1698,7 @@ class MenaiASTSemanticAnalyzer:
             )
 
         if variants_expr.is_empty():
+            self._raise_if_early_close(expr, "enum")
             raise MenaiEvalError(
                 message="Enum must declare at least one variant",
                 received="An empty variant list",
@@ -1617,6 +1713,7 @@ class MenaiASTSemanticAnalyzer:
         variant_names: list[str] = []
         for i, variant in enumerate(variants_expr.elements):
             if not isinstance(variant, MenaiASTSymbol):
+                self._raise_if_early_close(expr, "enum")
                 raise MenaiEvalError(
                     message=f"Enum variant {i+1} must be a symbol",
                     received=f"Got {variant.type_name()}",

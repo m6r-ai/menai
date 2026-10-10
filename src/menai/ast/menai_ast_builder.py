@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from menai.menai_error import MenaiASTBuildError
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
 from menai.ast.menai_paren_diagnostic import (
-    ParenDiagnosis, diagnose_parens, format_depth_table,
+    ParenDiagnosis, diagnose_parens, format_depth_table, early_close_error,
 )
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex, MenaiASTString,
@@ -321,6 +321,177 @@ class MenaiASTBuilder:
 
         diagnosis = self._diagnose_parens()
         return format_depth_table(diagnosis, line - context, line + context)
+
+    def _depth_table_block(self, line: int | None) -> str:
+        """
+        Render the depth table around a line as a labelled block for an error.
+
+        Args:
+            line: The line to centre the table on, or None to omit the table.
+
+        Returns:
+            The labelled table block, or an empty string when there is no source.
+        """
+        if line is None:
+            return ""
+
+        depth_table = self._depth_table_around(line)
+        if not depth_table:
+            return ""
+
+        return f"\n\nParenthesis depth by line (start->end):\n{depth_table}"
+
+    def _detect_early_bindings_close(
+        self, keyword_line: int, keyword_column: int
+    ) -> tuple[int, int] | None:
+        """
+        Detect a binding form whose bindings list closed before its last binding.
+
+        A binding form is ``(let* <bindings-list> <body>)``: exactly two forms
+        sit directly inside it, the bindings list and the body.  When a ``)``
+        that should have closed a binding's value instead closes the bindings
+        list, the forms that follow are read as further body expressions, and
+        the parser reports a spurious "second body expression" at one of them.
+
+        This is distinct from a *named* form closing before its body, which the
+        parenthesis diagnosis reports as ``suspected_line``.  A bindings list is
+        a bare ``(`` with no head symbol, so it has no minimum element count and
+        the diagnosis cannot see it; the shape of the forms it leaves behind is
+        the only signal.
+
+        The token stream says where this happened: the bindings list opens at
+        the form's content depth and closes on the line where the depth first
+        returns to it.  If more than one form then opens at that depth before
+        the binding form itself closes, the bindings list closed early, and the
+        line that closed it is the line the reader has to change.
+
+        Not every "second body expression" is an early close, however.  A
+        genuine second body — ``(let ((x 5)) (integer+ x 1) (integer+ x 2))`` —
+        also leaves more than one form after the bindings list.  The two are
+        told apart by shape: the forms an early close leaves behind are bindings
+        (a two-element ``(name value)`` form) that the bindings list should have
+        kept, whereas a genuine body is an ordinary expression.  The diagnosis
+        is only reported when every form after the bindings list except the
+        last (the body) has the shape of a binding.
+
+        Args:
+            keyword_line: Line of the binding form's opening parenthesis.
+            keyword_column: Column of the binding form's opening parenthesis.
+
+        Returns:
+            The (line, column) of the ``)`` that closed the bindings list early,
+            or None when the structure is not an early close.
+        """
+        tokens = cast(list[MenaiToken], self.tokens) if self.tokens is not None else []
+        if not tokens:
+            return None
+
+        form_index: int | None = None
+        for index, token in enumerate(tokens):
+            if (
+                token.type == MenaiTokenType.LPAREN
+                and token.line == keyword_line
+                and token.column == keyword_column
+            ):
+                form_index = index
+                break
+
+        if form_index is None:
+            return None
+
+        depth = 0
+        content_depth = 0
+        bindings_open_depth: int | None = None
+        bindings_close_line: int | None = None
+        bindings_close_column: int | None = None
+        form_starts: list[int] = []
+
+        for index, token in enumerate(tokens):
+            if index < form_index:
+                continue
+
+            if token.type == MenaiTokenType.LPAREN:
+                if index == form_index:
+                    content_depth = depth + 1
+
+                elif depth == content_depth:
+                    if bindings_open_depth is None:
+                        bindings_open_depth = depth
+
+                    else:
+                        form_starts.append(index)
+
+                depth += 1
+
+            elif token.type == MenaiTokenType.RPAREN:
+                depth -= 1
+                if index == form_index:
+                    break
+
+                if (
+                    bindings_open_depth is not None
+                    and depth == content_depth
+                    and bindings_close_line is None
+                ):
+                    bindings_close_line = token.line
+                    bindings_close_column = token.column
+
+                if depth < content_depth:
+                    break
+
+        if len(form_starts) <= 1:
+            return None
+
+        for start in form_starts[:-1]:
+            if not self._is_binding_shape(tokens, start):
+                return None
+
+        if bindings_close_line is None or bindings_close_column is None:
+            return None
+
+        return bindings_close_line, bindings_close_column
+
+    def _is_binding_shape(self, tokens: list[MenaiToken], start: int) -> bool:
+        """
+        Report whether the form opening at *start* has the shape of a binding.
+
+        A binding is a two-element ``(name value)`` form: a symbol followed by a
+        single expression.  This is the shape a bindings list keeps when a ``)``
+        closes it early and the remaining bindings are read as body expressions.
+
+        Args:
+            tokens: The full token stream.
+            start: Index of the form's opening parenthesis.
+
+        Returns:
+            True when the form is a two-element symbol-headed list.
+        """
+        depth = 0
+        elements = 0
+        head_is_symbol = False
+
+        for index in range(start, len(tokens)):
+            token = tokens[index]
+
+            if token.type == MenaiTokenType.LPAREN:
+                if depth == 1:
+                    elements += 1
+
+                depth += 1
+
+            elif token.type == MenaiTokenType.RPAREN:
+                depth -= 1
+                if depth == 0:
+                    break
+
+            else:
+                if depth == 1:
+                    if elements == 0 and token.type == MenaiTokenType.SYMBOL:
+                        head_is_symbol = True
+
+                    elements += 1
+
+        return head_is_symbol and elements == 2
 
     def detect_expression_type(self, line: int, column: int) -> str:
         """
@@ -677,6 +848,66 @@ class MenaiASTBuilder:
             source_file=self.source_file,
         )
 
+    def _create_early_bindings_close_error(
+        self,
+        keyword: str,
+        start_line: int,
+        start_col: int,
+        close_line: int,
+        close_column: int,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a binding form whose bindings list closed early.
+
+        The parser reports a "second body expression" because a ``)`` closed
+        the bindings list before its last binding, so the forms that follow are
+        read as body expressions.  The depth profile identifies the ``)`` that
+        closed the bindings list, and that is the line the reader has to change,
+        not the form the parser happened to flag.
+
+        Args:
+            keyword: The binding form keyword ('let', 'let*', or 'letrec').
+            start_line: Line where the binding form started.
+            start_col: Column where the binding form started.
+            close_line: Line of the ``)`` that closed the bindings list early.
+            close_column: Column of that ``)``.
+
+        Returns:
+            MenaiASTBuildError describing the early close.
+        """
+        depth_table = self._depth_table_around(close_line)
+        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+
+        context = (
+            f"The bindings list of the {keyword} starting at line {start_line}, "
+            f"column {start_col} closed at line {close_line}, column {close_column}, "
+            f"but more forms follow at the same depth before the {keyword} closes. "
+            f"The ')' at line {close_line}, column {close_column} therefore ended the "
+            f"bindings list one binding too early, and the forms after it were read as "
+            f"body expressions. The parentheses balance, so no ')' is missing or extra "
+            f"\u2014 it is in the wrong place."
+            f"{table_block}"
+        )
+
+        return MenaiASTBuildError(
+            message=(
+                f"{keyword} bindings list closed early at line {close_line}, "
+                f"column {close_column}"
+            ),
+            line=close_line,
+            column=close_column,
+            received=f"Bindings list closed at line {close_line}, column {close_column}, with further forms inside the {keyword}",
+            expected="The bindings list to stay open until its last binding, before the single body",
+            example=f"Correct: ({keyword} ((x 5)) (integer+ x 1))\nIncorrect: ({keyword} ((x 5)) (integer+ x 1)",
+            suggestion=(
+                f"Move the ')' at line {close_line}, column {close_column} to after the "
+                f"last binding, so the forms that follow are inside the bindings list"
+            ),
+            context=context,
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
     def _parse_list(self) -> MenaiASTList:
         """Parse (element1 element2 ...) with enhanced error tracking."""
         # Push opening paren onto tracking stack
@@ -780,6 +1011,20 @@ class MenaiASTBuilder:
             raise self._create_enhanced_unterminated_error(start_line, start_col)
 
         if self.current_token.type != MenaiTokenType.RPAREN:
+            diagnosis = self._diagnose_parens()
+            error = early_close_error(
+                diagnosis, MenaiASTBuildError, self.expression, self.source_file,
+                keyword, start_line, start_col,
+            )
+            if error is not None:
+                raise error
+
+            early_close = self._detect_early_bindings_close(start_line, start_col)
+            if early_close is not None:
+                raise self._create_early_bindings_close_error(
+                    keyword, start_line, start_col, early_close[0], early_close[1]
+                )
+
             raise self._create_multiple_body_error(keyword, start_line, start_col)
 
         # Pop from stack when successfully closed
@@ -929,6 +1174,14 @@ class MenaiASTBuilder:
                     form_name = tokens[peek_pos].value
 
             var_name = binding_frame.related_symbol or f"#{binding_index}"
+            diagnosis = self._diagnose_parens()
+            error = early_close_error(
+                diagnosis, MenaiASTBuildError, self.expression, self.source_file,
+                "binding", binding_start_line, binding_start_col,
+            )
+            if error is not None:
+                raise error
+
             raise self._create_third_element_error(
                 var_name=var_name,
                 form_name=form_name,
@@ -1013,6 +1266,7 @@ class MenaiASTBuilder:
                     f"column {token.column} appears as a third element. "
                     f"This means the value expression is missing a ')' — its close paren "
                     f"was consumed by the binding instead."
+                    f"{self._depth_table_block(token.line)}"
                 ),
                 source=self.expression,
                 source_file=self.source_file,
@@ -1046,6 +1300,7 @@ class MenaiASTBuilder:
                 f"  2. The enclosing bindings list is missing its ')' after binding "
                 f"'{prev_binding_name}' (line {prev_binding_end_line}, "
                 f"column {prev_binding_end_column}), so the body was read as a binding."
+                f"{self._depth_table_block(prev_binding_end_line)}"
             ),
             source=self.expression,
             source_file=self.source_file,

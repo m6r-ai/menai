@@ -1,7 +1,7 @@
 """Tests for missing parenthesis error detection and reporting."""
 
 import pytest
-from menai import Menai, MenaiASTBuildError
+from menai import Menai, MenaiASTBuildError, MenaiEvalError
 
 
 class TestMissingParens:
@@ -312,6 +312,203 @@ class TestExtraCloseLocation:
         """Two adjacent expressions are reported as such, not as an extra ')'."""
         with pytest.raises(MenaiASTBuildError, match="Unexpected token after complete expression"):
             menai.evaluate("(integer+ 1 2) (integer+ 3 4)")
+
+
+class TestEarlyBindingsClose:
+    """
+    A bindings list closed one binding too early is reported at that ')'.
+
+    When a ')' that should have closed a binding's value instead closes the
+    bindings list, the remaining bindings are read as body expressions and the
+    parser reports a spurious "second body expression" at one of them.  The
+    message must point at the misplaced ')' — the line the reader has to change
+    — not at the form the parser happened to flag.
+    """
+
+    def test_early_close_reports_the_closing_paren(self, menai):
+        """The error location is the ')' that closed the bindings list early."""
+        source = (
+            "(letrec\n"
+            "  ((a (lambda () 1))\n"
+            "   (b (lambda () 2)))\n"
+            "  (c (lambda () 3))\n"
+            "  (d (lambda () 4))\n"
+            "  (export a))\n"
+        )
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate(source)
+
+        error = exc_info.value
+        assert error.line == 3
+        assert error.column == 21
+        assert "bindings list closed early" in str(error)
+
+    def test_early_close_includes_depth_table(self, menai):
+        """The message includes the per-line depth profile."""
+        source = (
+            "(letrec\n"
+            "  ((a (lambda () 1))\n"
+            "   (b (lambda () 2)))\n"
+            "  (c (lambda () 3))\n"
+            "  (d (lambda () 4))\n"
+            "  (export a))\n"
+        )
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate(source)
+
+        error = str(exc_info.value)
+        assert "Parenthesis depth by line" in error
+        assert "2->1" in error
+
+    def test_early_close_suggests_moving_the_paren(self, menai):
+        """The suggestion names the ')' to move and where it belongs."""
+        source = (
+            "(letrec\n"
+            "  ((a (lambda () 1))\n"
+            "   (b (lambda () 2)))\n"
+            "  (c (lambda () 3))\n"
+            "  (d (lambda () 4))\n"
+            "  (export a))\n"
+        )
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate(source)
+
+        error = str(exc_info.value)
+        assert "Move the ')' at line 3, column 21" in error
+        assert "wrong place" in error
+
+    def test_genuine_second_body_is_not_an_early_close(self, menai):
+        """
+        A genuine second body expression keeps the original message.
+
+        ``(let ((x 1)) x x)`` has two body expressions and no misplaced ')'.
+        The extra form is not binding-shaped, so it must not be reported as an
+        early bindings-list close.
+        """
+        with pytest.raises(MenaiASTBuildError, match="let body must be a single expression"):
+            menai.evaluate("(let ((x 1)) x x)")
+
+    def test_genuine_second_body_with_call_shape(self, menai):
+        """
+        A body that looks like a binding does not trigger the early-close error.
+
+        ``(let ((x 1)) (f x) (g x))`` has a first body ``(f x)`` that is
+        binding-shaped, but the final form ``(g x)`` is the genuine second body,
+        so this is not an early close.
+        """
+        with pytest.raises(MenaiASTBuildError, match="let body must be a single expression"):
+            menai.evaluate("(let ((x 1)) (integer+ x 1) (integer+ x 2))")
+
+
+class TestEnclosingFormClosedEarly:
+    """
+    A structural error caused by a ')' that closed an enclosing form early is
+    reported at that ')'.
+
+    A form with the wrong number of elements is often the symptom of a ')' that
+    closed an enclosing form before its body, so the elements that follow are
+    read as further elements of the form.  The message must point at the ')' to
+    change, not at the form the analyzer happened to flag.
+    """
+
+    def test_if_arity_error_points_at_enclosing_close(self, menai):
+        """
+        An 'if' with four arguments because a 'let' closed early is reported at
+        the ')' that closed the 'let'.
+
+        The 'let' at line 2 has no body before its ')' at line 2, so the 'if'
+        absorbs the following expressions as further arguments.
+        """
+        source = (
+            "(if #t\n"
+            "    (let ((x 5)))\n"
+            "    (integer+ x 1)\n"
+            "    (integer+ x 2))\n"
+        )
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate(source)
+
+        error = exc_info.value
+        assert error.line == 2
+        assert "'let' closed before its body" in str(error)
+
+    def test_enclosing_close_includes_depth_table(self, menai):
+        """The message includes the per-line depth profile."""
+        source = (
+            "(if #t\n"
+            "    (let ((x 5)))\n"
+            "    (integer+ x 1)\n"
+            "    (integer+ x 2))\n"
+        )
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate(source)
+
+        error = str(exc_info.value)
+        assert "Parenthesis depth by line" in error
+
+    def test_genuine_if_arity_error_is_not_an_early_close(self, menai):
+        """
+        A genuine 'if' arity error keeps the original message.
+
+        ``(if 1 2 3 4)`` has four arguments but no enclosing form closed early,
+        so it must not be reported as an early close.
+        """
+        with pytest.raises(MenaiEvalError, match="If expression has wrong number of arguments"):
+            menai.evaluate("(if 1 2 3 4)")
+
+    def test_genuine_letrec_too_few_elements_is_not_an_early_close(self, menai):
+        """
+        A 'letrec' with too few elements keeps the original message.
+
+        ``(letrec ())`` has no body, but the 'letrec' itself is the form that
+        closed early, so this is its own structural error, not a misplaced ')'.
+        """
+        with pytest.raises(MenaiEvalError, match="Letrec expression structure is incorrect"):
+            menai.evaluate("(letrec ())")
+
+    def test_binding_third_element_points_at_enclosing_close(self, menai):
+        """
+        A binding read with a third element because a 'let' closed early is
+        reported at the ')' that closed the 'let'.
+
+        The inner 'let' at line 2 has no body before its ')', so the following
+        expression lands as a third element of binding 'b'.
+        """
+        source = (
+            "(let ((a 1)\n"
+            "      (b (let ((c 2))) (integer+ c 1))\n"
+            "  (integer+ a b))\n"
+        )
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate(source)
+
+        error = exc_info.value
+        assert error.line == 2
+        assert error.column == 22
+        assert "'let' closed before its body" in str(error)
+
+    def test_nested_structural_error_points_at_enclosing_close(self, menai):
+        """
+        A structural error in a nested form is still reported at the misplaced
+        ')'.
+
+        The 'if' at line 2 is inside the outer 'let'.  The inner 'let' at line 3
+        closes early, so the 'if' absorbs its body as a fourth argument.  The
+        diagnosis must survive the recursive descent into the outer 'let' body.
+        """
+        source = (
+            "(let ((x 5))\n"
+            "  (if #t\n"
+            "      (let ((y 1)))\n"
+            "      (integer+ y 1)\n"
+            "      (integer+ x 2)))\n"
+        )
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate(source)
+
+        error = exc_info.value
+        assert error.line == 3
+        assert "'let' closed before its body" in str(error)
 
 
 @pytest.fixture
