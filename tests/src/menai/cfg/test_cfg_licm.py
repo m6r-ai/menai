@@ -6,25 +6,26 @@ hoists loop-invariant instructions into a preamble block that executes once
 on function entry.  The self-loop's jump target skips the preamble on every
 iteration after the first.
 
-Two safety checks prevent overly aggressive hoisting:
+Two rules govern what may be hoisted:
 
-  - Dominance check: only instructions in blocks that dominate the back-edge
-    (the block containing the SelfLoopTerm) are hoisted.  This prevents
-    hoisting from conditional blocks that may not execute on every iteration.
-  - Use-def safety check: only instructions whose results are consumed by the
-    loop (used by the self-loop args or by other safe instructions) are
-    hoisted.  This prevents hoisting values that are only used on exit paths
-    (e.g. a constant #t used only by the base-case return).
+  - An instruction is hoisted only if it is loop-invariant: all of its operands
+    are invariant, where constants, free vars, and params the loop does not
+    reassign are invariant.
+  - An instruction that can raise is hoisted only from a block that executes on
+    every iteration of the loop, i.e. one that dominates every back-edge block.
+    Hoisting a raising instruction from a block that does not execute on every
+    iteration would make it execute on iterations that previously skipped it,
+    which can make a program raise where it previously completed (ADR-0049).
 
 These tests verify that:
   - Loop-invariant computations (builtins, constants) used by the loop are hoisted.
   - Loop-variant computations remain in the loop body.
   - Hoisted values survive across the back-edge (correct results).
   - Functions without self-loops are unaffected.
-  - Guards on type-preserving params are hoisted.
-  - Guards on non-type-preserving params are kept in the loop body.
-  - Constants used only on exit paths are NOT hoisted.
-  - Invariant instructions in non-dominating blocks are NOT hoisted.
+  - Guards on params whose type is preserved across the back-edge are hoisted.
+  - Guards on params whose type is not preserved are kept in the loop body.
+  - Raising instructions in blocks that do not execute on every iteration are
+    NOT hoisted.
 """
 
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
@@ -532,29 +533,24 @@ class TestGuardHoisting:
           (loop 0 0))
         """)
         assert result == 25
-    def test_phi_back_edge_guard_hoisted(self):
+    def test_guard_in_non_dominating_block_not_hoisted(self):
         """
-        A guard on a param whose back-edge value is a phi node (from an
-        inner if that either transforms or passes through the param) should
-        be hoisted when the type is preserved across the back-edge.
+        A guard that does not execute on every iteration is not hoisted.
 
-        The back-edge value for acc is a phi merging:
-          - list-prepend result (type 'list')
-          - acc itself (passed through on the skip path)
+        The guard is inserted before `list-prepend`, which sits in the `then`
+        branch of the inner if.  The `else` branch reaches the loop back-edge
+        without passing through that block, so the guard does not dominate
+        every back-edge and does not execute on every iteration.
 
-        The phi's type is unknown because acc's type is unknown on the skip
-        path (the guard is only on the prepend path).  The type preservation
-        check handles this: assuming acc is 'list', both phi incoming values
-        are 'list', so the back-edge preserves 'list', and the guard is
-        loop-invariant.
+        A guard can raise, so hoisting it would make it execute on iterations
+        that previously skipped it, which can make a program raise where it
+        previously completed (ADR-0049).  The guard must therefore stay in the
+        loop body.
 
-        'acc' is fed by 'flip', whose return type is ambiguous, so acc's type
-        is not provable and the ASSERT_LIST guard is inserted.
-
-        Two ASSERT_LIST guards are emitted: one on the loop-carried acc at the
-        top of the loop (hoisted into the preamble, so the loop is entered only
-        after it passes) and one on the exit path before list->vector.  The
-        exit-path guard is not in the loop, so it is not hoisted.
+        The guard is on `acc`, which is fed by `flip`, whose return type is
+        ambiguous, so `acc`'s type is not provable and the ASSERT_LIST guard is
+        inserted.  A second ASSERT_LIST guard is emitted on the exit path
+        before list->vector; it is outside the loop and is not hoisted either.
         """
         src = """
         (letrec ((loop
@@ -579,13 +575,11 @@ class TestGuardHoisting:
             i for i, instr in enumerate(loop_fn.instructions)
             if unpack_instruction(instr).opcode == int(Opcode.ASSERT_LIST)
         ]
+        assert guard_indices, "the ASSERT_LIST guard must be present"
         hoisted = [gi for gi in guard_indices if gi < target]
-        assert hoisted, (
-            "the loop guard must be hoisted into the preamble, before the "
-            "loop entry"
-        )
-        assert target > hoisted[0], (
-            "self-loop must skip the hoisted ASSERT_LIST guard"
+        assert not hoisted, (
+            "a guard that does not execute on every iteration must not be "
+            "hoisted into the preamble"
         )
 
     def test_phi_back_edge_guard_correct_results(self):
@@ -614,3 +608,116 @@ class TestGuardHoisting:
           (loop (integer- (vector-length v) 1) (list)))
         """)
         assert str(result) == "[10, 30, 50]"
+
+
+class TestRaisingInstructionHoisting:
+    """
+    A raising instruction is hoisted only from a block that executes on every
+    iteration.  Hoisting one from a block that does not would make it execute
+    on iterations that previously skipped it, which can make a program raise
+    where it previously completed (ADR-0049).
+    """
+
+    def test_raising_instruction_in_non_dominating_block_not_hoisted(self):
+        """
+        The division sits behind (integer>? n 100), which is never true for
+        n in 0..3, so it never executes.  Its operands are loop-invariant
+        (100 is a constant and d is a free var), so it is a candidate for
+        hoisting, but its block does not execute on every iteration.  It must
+        stay in the loop body.
+        """
+        src = """
+        (let ((d 0))
+          (letrec ((loop (lambda (n)
+                           (if (integer=? n 0)
+                               42
+                               (if (integer>? n 100)
+                                   (loop (integer- n (integer/ 100 d)))
+                                   (loop (integer- n 1)))))))
+            (loop 3)))
+        """
+        code = _compile(src)
+        loop_fn = _loop_function(code, "loop")
+        target = _self_loop_target(loop_fn)
+        assert target is not None
+        div_indices = [
+            i for i, instr in enumerate(loop_fn.instructions)
+            if unpack_instruction(instr).opcode == int(Opcode.INTEGER_DIV)
+        ]
+        assert div_indices, "the INTEGER_DIV must be present"
+        hoisted = [di for di in div_indices if di < target]
+        assert not hoisted, (
+            "a raising instruction in a block that does not execute on every "
+            "iteration must not be hoisted into the preamble"
+        )
+
+    def test_raising_instruction_not_executed_correct_results(self):
+        """
+        End-to-end: the guarded division never executes, so the program
+        returns 42.  Before the fix, LICM hoisted the division into the
+        preamble, where it executed unconditionally on entry and raised
+        division by zero.
+        """
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (let ((d 0))
+          (letrec ((loop (lambda (n)
+                           (if (integer=? n 0)
+                               42
+                               (if (integer>? n 100)
+                                   (loop (integer- n (integer/ 100 d)))
+                                   (loop (integer- n 1)))))))
+            (loop 3)))
+        """)
+        assert result == 42
+
+    def test_raising_instruction_on_every_iteration_hoisted(self):
+        """
+        A raising instruction whose block executes on every iteration may be
+        hoisted: it already ran on the first iteration, so hoisting it to the
+        preamble cannot introduce a raise on an iteration that did not
+        previously execute it.
+
+        (integer/ 100 d) is an operand of the self-loop argument, so its block
+        is on the back-edge path and executes on every iteration.
+        """
+        src = """
+        (let ((d 1))
+          (letrec ((loop (lambda (n acc)
+                           (if (integer=? n 0)
+                               acc
+                               (loop (integer- n 1) (integer+ acc (integer/ 100 d)))))))
+            (loop 3 0)))
+        """
+        code = _compile(src)
+        loop_fn = _loop_function(code, "loop")
+        target = _self_loop_target(loop_fn)
+        assert target is not None
+        div_indices = [
+            i for i, instr in enumerate(loop_fn.instructions)
+            if unpack_instruction(instr).opcode == int(Opcode.INTEGER_DIV)
+        ]
+        assert len(div_indices) == 1, "the INTEGER_DIV must be hoisted exactly once"
+        assert target > div_indices[0], (
+            "self-loop must skip the hoisted INTEGER_DIV"
+        )
+
+    def test_raising_instruction_on_every_iteration_correct_results(self):
+        """
+        End-to-end: hoisting the division is sound here because it executes on
+        every iteration.  100 / 1 = 100, accumulated 3 times = 300.
+        """
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (let ((d 1))
+          (letrec ((loop (lambda (n acc)
+                           (if (integer=? n 0)
+                               acc
+                               (loop (integer- n 1) (integer+ acc (integer/ 100 d)))))))
+            (loop 3 0)))
+        """)
+        assert result == 300

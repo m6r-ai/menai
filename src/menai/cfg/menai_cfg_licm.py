@@ -41,9 +41,20 @@ dominates the rest of the function even though that code is not in the loop.
 The back-edge walk stops at the header, so it reaches neither an enclosing
 loop nor the code that follows the loop.
 
-As Menai is pure (no side effects, no mutation) any instruction whose
-operands are all loop-invariant can be hoisted unconditionally.  There is no
-need to check for side effects, memory aliasing, or ordering hazards.
+Menai is pure (no side effects, no mutation), so hoisting cannot change the
+*result* an instruction computes: there are no side effects, memory aliasing,
+or ordering hazards to check.  Purity does not, however, make hoisting safe in
+general, because an instruction can also *raise*.
+
+A raise is observable — the language has no handlers, so a raise terminates
+the program — and hoisting moves an instruction to the preamble, which runs
+once before the first iteration.  Hoisting a raising instruction out of a
+block that does not execute on every iteration would make it execute on
+iterations that previously skipped it, which can make a program raise where it
+previously completed.  A raising instruction is therefore hoisted only from a
+block that dominates every back-edge block, i.e. one that executes on every
+iteration (ADR-0049).  An instruction that cannot raise is hoisted whenever it
+is loop-invariant.
 
 Loop-invariant values
 ---------------------
@@ -123,6 +134,7 @@ moves instructions between block.instrs lists and may create a new block.
 from dataclasses import replace
 
 from menai.bytecode.menai_type_signatures import BUILTIN_TYPE_SIGNATURES
+from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.cfg.menai_cfg import (
     MenaiCFGApplyInstr,
     MenaiCFGBlock,
@@ -297,6 +309,15 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         # out of a loop it is not invariant for.
         loop_block_ids = self._loop_region(func, header, self_loops)
 
+        # Blocks that execute on every iteration.  A raising instruction may be
+        # hoisted only from one of these: hoisting it moves it to the preamble,
+        # which runs once before the first iteration, so an instruction that
+        # does not execute on every iteration would be made to execute on
+        # iterations that did not previously execute it (ADR-0049).
+        every_iteration_ids = self._blocks_on_every_iteration(
+            func, header, self_loops, loop_block_ids,
+        )
+
         # Collect hoistable instructions from blocks inside the loop.
         preamble_instrs: list[MenaiCFGInstr] = []
         seen_guards: set[tuple[int, str]] = set()
@@ -309,7 +330,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
             remaining: list[MenaiCFGInstr] = []
             for instr in block.instrs:
-                if self._is_hoistable(instr, invariant_ids):
+                if self._is_hoistable(instr, invariant_ids, block.id, every_iteration_ids):
                     if isinstance(instr, MenaiCFGGuardInstr):
                         key = (instr.value.id, instr.expected_type)
                         if key in seen_guards:
@@ -517,14 +538,27 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         self,
         instr: MenaiCFGInstr,
         invariant_ids: set[int],
+        block_id: int,
+        every_iteration_ids: set[int],
     ) -> bool:
         """
         Return True if an instruction should be hoisted into the preamble.
 
         A hoistable instruction type whose result is loop-invariant is
         hoisted.  Guards are hoisted when their operand is invariant.
+
+        An instruction that can raise is hoisted only from a block that
+        executes on every iteration of the loop.  Hoisting moves it to the
+        preamble, which runs once before the first iteration; hoisting a
+        raising instruction from a block that does not execute on every
+        iteration would make it execute on iterations that did not previously
+        execute it, which can make a program raise where it previously
+        completed (ADR-0049).
         """
         if not isinstance(instr, _HOISTABLE_TYPES):
+            return False
+
+        if self._instruction_may_raise(instr) and block_id not in every_iteration_ids:
             return False
 
         if isinstance(instr, MenaiCFGGuardInstr):
@@ -535,6 +569,27 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             return False
 
         return result.id in invariant_ids
+
+    def _instruction_may_raise(self, instr: MenaiCFGInstr) -> bool:
+        """
+        Return True if an instruction can raise a runtime error.
+
+        A guard raises on a type mismatch.  A call or apply can raise
+        unconditionally: it can reach `error`, or recurse into a function that
+        raises.  A builtin raises when the registry classifies it as raising.
+        The remaining hoistable instructions (constants, and the container and
+        closure constructors) are total.
+        """
+        if isinstance(instr, MenaiCFGGuardInstr):
+            return True
+
+        if isinstance(instr, (MenaiCFGCallInstr, MenaiCFGApplyInstr)):
+            return True
+
+        if isinstance(instr, MenaiCFGBuiltinInstr):
+            return MenaiBuiltinRegistry.builtin_may_raise(instr.op)
+
+        return False
 
     def _build_def_map(
         self, func: MenaiCFGFunction,
@@ -846,6 +901,89 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
                     stack.append(pred)
 
         return region
+
+    def _blocks_on_every_iteration(
+        self,
+        func: MenaiCFGFunction,
+        header: MenaiCFGBlock,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+        region: set[int],
+    ) -> set[int]:
+        """
+        Return the ids of the blocks that execute on every iteration of the loop.
+
+        A block executes on every iteration exactly when it dominates every
+        back-edge block: every path from the loop header to any back-edge then
+        passes through it, so no iteration can reach the back-edge without
+        executing it.
+
+        This is the condition under which a *raising* instruction may be
+        hoisted.  Hoisting moves the instruction to the preamble, which runs
+        once before the first iteration; if the instruction executes on every
+        iteration it already ran on the first, so hoisting cannot introduce a
+        raise on an iteration that did not previously execute it (ADR-0049).
+
+        Dominators are computed over the loop region only, with the header as
+        the root.  Edges entering the region from outside (the header's
+        pre-header, or a block in an enclosing loop) are ignored: the question
+        is which blocks every *iteration* passes through, not which blocks
+        every execution of the enclosing function passes through.
+        """
+        back_edge_ids = self._self_loop_block_ids(func, self_loops)
+        if not back_edge_ids:
+            return set()
+
+        by_id = blocks_by_id(func)
+        region_preds: dict[int, list[int]] = {}
+        for block_id in region:
+            region_preds[block_id] = [
+                pred for pred in self._predecessor_ids(by_id, block_id)
+                if pred in region
+            ]
+
+        # Standard iterative dominator computation.  dom(header) = {header};
+        # dom(B) = {B} union the intersection of dom(p) over B's in-region
+        # predecessors.  A block with no in-region predecessor other than
+        # itself starts as {B} and is only reached if it is the header.
+        all_ids = set(region)
+        dom: dict[int, set[int]] = {
+            block_id: ({block_id} if block_id == header.id else set(all_ids))
+            for block_id in region
+        }
+
+        changed = True
+        while changed:
+            changed = False
+            for block_id in region:
+                if block_id == header.id:
+                    continue
+
+                preds = region_preds[block_id]
+                if not preds:
+                    new_dom = {block_id}
+
+                else:
+                    common = set(dom[preds[0]])
+                    for pred in preds[1:]:
+                        common &= dom[pred]
+
+                    new_dom = common | {block_id}
+
+                if new_dom != dom[block_id]:
+                    dom[block_id] = new_dom
+                    changed = True
+
+        # A block executes on every iteration when it dominates every back-edge
+        # block.  A back-edge block that is not in the region cannot be
+        # dominated by anything in it, so the whole set is then empty.
+        if not back_edge_ids <= region:
+            return set()
+
+        result = set(region)
+        for back_edge_id in back_edge_ids:
+            result &= dom[back_edge_id]
+
+        return result
 
     def _predecessor_ids(
         self,

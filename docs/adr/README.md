@@ -117,3 +117,4 @@ What costs, risks, or constraints does this decision impose?
 | [0046](0046-docx-codec-ooxml-capture-layer.md) | DOCX codec — the OOXML capture layer | Accepted |
 | [0047](0047-pptx-codec-ooxml-capture-layer.md) | PPTX codec — the OOXML capture layer | Accepted |
 | [0048](0048-vm-errors-carry-structured-diagnostic-context.md) | VM errors carry structured diagnostic context | Accepted |
+| [0049](0049-hoisting-must-not-introduce-a-raise.md) | Hoisting must not introduce a raise on a path that did not have one | Accepted |

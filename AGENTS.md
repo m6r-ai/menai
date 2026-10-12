@@ -344,6 +344,26 @@ side effects.
 
 See [ADR-0007](docs/adr/0007-dead-code-elimination-always-safe.md).
 
+### Hoisting must not introduce a raise on a path that did not have one
+
+Purity makes *elimination* safe (ADR-0007), but it does not make *motion* safe.
+Menai expressions can raise, a raise is observable (there are no handlers, so it
+terminates the program), and moving an expression to a point where it executes on
+more paths than before can make a program raise where it previously completed.
+
+An optimisation pass may move a potentially-raising expression only to a point
+where it is guaranteed to execute on every path that reached any of its original
+execution points. An expression that cannot raise may be moved freely.
+
+Which builtins can raise is builtin metadata, recorded in the builtin registry
+next to the opcode and arity so it cannot drift from the set of builtins it
+describes. A call, `apply`, and `error` can raise unconditionally.
+
+For loop-invariant code motion the condition is that the instruction's block must
+dominate every back-edge block of the loop.
+
+See [ADR-0049](docs/adr/0049-hoisting-must-not-introduce-a-raise.md).
+
 ### `letrec` reaching the IR builder is always a genuine mutually-recursive group
 
 The desugarer guarantees that by the time `letrec` reaches the IR builder, every
