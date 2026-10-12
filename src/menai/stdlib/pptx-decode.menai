@@ -1,0 +1,258 @@
+; pptx-decode — decodes a PPTX package into a value tree.
+;
+; The input is a bytes value containing a .pptx file and the output is a value
+; tree describing the package's parts.  A .pptx file is an OOXML package: a ZIP
+; archive whose parts are XML documents (and media).  This module reads the
+; package and decodes the parts, without interpreting the presentationML
+; semantics; a semantic presentation model is a separate concern layered on top.
+;
+; The result is a dict:
+;
+;   (dict
+;     "presentation"  <element>              ; ppt/presentation.xml, decoded
+;     "slides"        <list>                 ; ordered, one entry per slide
+;     "slide-masters" <list>                 ; ppt/slideMasters/*.xml, decoded
+;     "slide-layouts" <list>                 ; ppt/slideLayouts/*.xml, decoded
+;     "theme"         <element> or #none     ; ppt/theme/theme1.xml, decoded
+;     "relationships" <dict>                 ; presentation rels: id -> relationship
+;     "media"         <dict> or #none)       ; part name -> bytes
+;
+; An <element> is the value tree xml-decode produces for an XML document:
+;
+;   (dict "tag" <string> "attrs" <dict> "children" <list>)
+;
+; "presentation" is the decoded ppt/presentation.xml and is always present: a
+; package without it is not a presentation and raises.
+;
+; "slides" is the presentation's slides in presentation order.  A slide's order
+; is not its part name: the order lives in the presentation part's
+; <p:sldIdLst>, each <p:sldId> naming a relationship id that resolves through
+; the presentation's relationships to the slide part.  Each entry is a dict:
+;
+;   (dict
+;     "part"          <string>              ; e.g. "ppt/slides/slide1.xml"
+;     "element"       <element>             ; the decoded slide part
+;     "relationships" <dict>)              ; the slide's own rels: id -> relationship
+;
+; "relationships" carries the slide's own relationships, read from
+; ppt/slides/_rels/<name>.rels; it is empty when the slide has no relationships
+; part.  A slide's images and hyperlinks live in its own relationships, so
+; dropping them would lose the slide's content.
+;
+; "slide-masters" and "slide-layouts" are the decoded ppt/slideMasters/*.xml and
+; ppt/slideLayouts/*.xml parts, in part-name order, and are empty when the
+; package carries none.  "theme" is the decoded ppt/theme/theme1.xml, or #none.
+;
+; A relationship is a dict:
+;
+;   (dict "type" <string> "target" <string> "mode" <string> or #none)
+;
+; "type" is the relationship type URI, "target" is the target, and "mode" is
+; the target mode (e.g. "External") or #none when the relationship declares
+; none.  Keeping the type is what makes the map usable: it is how a consumer
+; tells an image relationship from a hyperlink relationship.
+;
+; "media" maps each part name under ppt/media/ (e.g. "ppt/media/image1.png") to
+; its raw bytes, or is #none when the package carries no media.
+;
+; Namespace prefixes in the decoded XML are kept verbatim, exactly as
+; xml-decode keeps them: a qualified name such as "p:sld" stays "p:sld" and is
+; not resolved against its namespace declaration.
+;
+; The package is read with zip-extract, so a corrupt or unsupported ZIP raises
+; from there.  A package whose ppt/presentation.xml is not well-formed XML
+; raises from xml-decode.
+;
+; It is the inverse of pptx-encode's encode: for every value tree v that encode
+; accepts, (decode (encode v)) reproduces v.
+
+(letrec
+  ((zip-extract (import "zip-extract"))
+   (xml-decode (import "xml-decode"))
+
+   (presentation-part "ppt/presentation.xml")
+   (presentation-rels-part "ppt/_rels/presentation.xml.rels")
+   (slide-masters-prefix "ppt/slideMasters/")
+   (slide-layouts-prefix "ppt/slideLayouts/")
+   (theme-part "ppt/theme/theme1.xml")
+   (media-prefix "ppt/media/")
+
+   ; The package's parts as a dict from part name to bytes.
+   (parts-of
+    (lambda (b)
+      (fold-list (lambda (acc entry)
+                   (dict-with acc (dict-get entry "name") (dict-get entry "content")))
+                 (dict)
+                 (dict-get ((:: zip-extract extract) b) "entries"))))
+
+   ; The decoded element for a part, or #none when the part is absent.
+   (decode-part
+    (lambda (parts name)
+      (let ((content (dict-get parts name)))
+        (if (bytes? content)
+            ((:: xml-decode decode) (bytes->string content))
+            #none))))
+
+   ; The decoded element for a part that must be present.
+   (decode-required-part
+    (lambda (parts name)
+      (let ((content (dict-get parts name)))
+        (if (bytes? content)
+            ((:: xml-decode decode) (bytes->string content))
+            (error (string-concat "pptx-decode: package has no " name))))))
+
+   ; Add one <Relationship> element to the relationships dict.  A child that is
+   ; not an element (the whitespace text nodes between the elements), or an
+   ; element missing its Id, Type, or Target, contributes nothing.  The target
+   ; mode is #none when the element declares none.
+   (add-relationship
+    (lambda (rels child)
+      (if (dict? child)
+          (let ((attrs (dict-get child "attrs")))
+            (let ((id (dict-get attrs "Id"))
+                  (type (dict-get attrs "Type"))
+                  (target (dict-get attrs "Target"))
+                  (mode (dict-get attrs "TargetMode")))
+              (if (and (string? id) (and (string? type) (string? target)))
+                  (dict-with rels id (dict "type" type "target" target "mode" mode))
+                  rels)))
+          rels)))
+
+   ; The relationships map from a decoded relationships part, or an empty map
+   ; when the part is absent.  The root element's children are the
+   ; <Relationship> elements.
+   (relationships-of-part
+    (lambda (parts name)
+      (let ((root (decode-part parts name)))
+        (if (dict? root)
+            (fold-list add-relationship (dict) (dict-get root "children"))
+            (dict)))))
+
+   ; The presentation's relationships map.
+   (relationships-of
+    (lambda (parts)
+      (relationships-of-part parts presentation-rels-part)))
+
+   ; The relationship target of a relationship id, or #none when the id is
+   ; unknown.
+   (relationship-target
+    (lambda (rels id)
+      (if (string? id)
+          (let ((relationship (dict-get rels id)))
+            (if (dict? relationship)
+                (dict-get relationship "target")
+                #none))
+          #none)))
+
+   ; The part names under a prefix, in part-name order, restricted to parts with
+   ; byte content so a directory entry is not mistaken for a part.
+   (parts-under
+    (lambda (parts prefix)
+      (filter-list
+        (lambda (name)
+          (and (string-prefix? name prefix)
+               (bytes? (dict-get parts name))))
+        (dict-keys parts))))
+
+   ; The decoded elements of the parts under a prefix, in part-name order.
+   (decode-parts-under
+    (lambda (parts prefix)
+      (map-list (lambda (name) (decode-part parts name))
+                (parts-under parts prefix))))
+
+   ; The <p:sldId> children of the presentation's <p:sldIdLst>, in order.  The
+   ; presentation part's children are the <p:sldIdLst> element; its children are
+   ; the <p:sldId> elements.  Returns an empty list when the presentation has no
+   ; slide list.
+   (sld-ids
+    (lambda (presentation)
+      (let ((lists (filter-list (lambda (child)
+                                  (and (dict? child)
+                                       (string=? (dict-get child "tag") "p:sldIdLst")))
+                                (dict-get presentation "children"))))
+        (if (list-null? lists)
+            (list)
+            (dict-get (list-first lists) "children")))))
+
+   ; The relationship id carried by one <p:sldId> element, or #none.
+   (sld-id-relationship
+    (lambda (child)
+      (if (dict? child)
+          (dict-get (dict-get child "attrs") "r:id")
+          #none)))
+
+   ; The slide part name for one <p:sldId> element.  The relationship target is
+   ; relative to the presentation part's directory ("ppt/"), so "slides/slide1.xml"
+   ; resolves to "ppt/slides/slide1.xml".  Raises when the relationship id is
+   ; missing or does not resolve, because a slide that cannot be located is a
+   ; malformed package rather than a slide to skip.
+   (slide-part-of
+    (lambda (rels child)
+      (let ((target (relationship-target rels (sld-id-relationship child))))
+        (if (string? target)
+            (string-concat "ppt/" target)
+            (error "pptx-decode: a slide has no resolvable relationship")))))
+
+   ; One slide entry: the slide's part name, its decoded element, and its own
+   ; relationships.
+   (slide-entry
+    (lambda (parts rels child)
+      (let ((part (slide-part-of rels child)))
+        (dict
+          "part" part
+          "element" (decode-required-part parts part)
+          "relationships" (relationships-of-part
+                            parts
+                            (string-concat "ppt/slides/_rels/"
+                                           (last-path-segment part)
+                                           ".rels"))))))
+
+   ; The final "/"-separated segment of a part name.
+   (last-path-segment
+    (lambda (name)
+      (letrec ((loop (lambda (i found)
+                       (if (integer>=? i (string-length name))
+                           found
+                           (loop (integer+ i 1)
+                                 (if (string=? (string-nth name i) "/")
+                                     (integer+ i 1)
+                                     found))))))
+        (string-slice name (loop 0 0)))))
+
+   ; The presentation's slides, in presentation order.
+   (slides-of
+    (lambda (parts presentation)
+      (let ((rels (relationships-of parts)))
+        (map-list (lambda (child) (slide-entry parts rels child))
+                  (sld-ids presentation)))))
+
+   ; The media parts as a dict from part name to bytes, or #none when there are
+   ; none.
+   (media-of
+    (lambda (parts)
+      (let ((names (parts-under parts media-prefix)))
+        (if (list-null? names)
+            #none
+            (fold-list (lambda (acc name)
+                         (dict-with acc name (dict-get parts name)))
+                       (dict)
+                       names)))))
+
+   ; Decode a bytes value containing a PPTX package into a value tree.  It is
+   ; the inverse of pptx-encode's encode.
+   (decode
+    (lambda (b)
+      (if (bytes? b)
+          (let ((parts (parts-of b)))
+            (let ((presentation (decode-required-part parts presentation-part)))
+              (dict
+                "presentation" presentation
+                "slides" (slides-of parts presentation)
+                "slide-masters" (decode-parts-under parts slide-masters-prefix)
+                "slide-layouts" (decode-parts-under parts slide-layouts-prefix)
+                "theme" (decode-part parts theme-part)
+                "relationships" (relationships-of parts)
+                "media" (media-of parts))))
+          (error "pptx-decode: decode expects a bytes value")))))
+
+  (export decode))

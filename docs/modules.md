@@ -297,6 +297,28 @@ menai`. Currently it includes:
   with alpha (type 6) according to the channel count; the decoder normalises
   every source colour type to RGB or RGBA, so the other colour types cannot be
   reconstructed.  The inverse of `png-decode` for truecolour images (`encode`)
+- `pptx-decode.menai` — decodes a PPTX package (as bytes) into a value tree that
+  faithfully captures the package's parts, without interpreting the
+  presentationML semantics.  The result is a dict with `"presentation"` (the
+  `xml-decode` element tree of `ppt/presentation.xml`), `"slides"` (the slides in
+  presentation order, each a dict of `"part"`, `"element"`, and its own
+  `"relationships"`), `"slide-masters"` and `"slide-layouts"` (the element trees
+  of `ppt/slideMasters/*.xml` and `ppt/slideLayouts/*.xml`), `"theme"` (the
+  element tree of `ppt/theme/theme1.xml`, or `#none`), `"relationships"` (a dict
+  mapping each presentation relationship id to a dict of `"type"`, `"target"`,
+  and `"mode"`), and `"media"` (a dict mapping each part name under `ppt/media/`
+  to its bytes, or `#none`).  A slide's order is resolved from the presentation's
+  `<p:sldIdLst>` and its relationships, not from the slide part names.  Namespace
+  prefixes are kept verbatim.  A semantic presentation model is a separate,
+  higher layer (`decode`)
+- `pptx-encode.menai` — encodes a PPTX value tree (the shape `pptx-decode`
+  produces) as a PPTX package; the inverse of `pptx-decode`, so
+  `(decode (encode v))` reproduces `v` for every value tree `v` that `encode`
+  accepts.  The presentation part and its relationships are written verbatim, so
+  the caller is responsible for their slide list and slide relationships agreeing
+  with `"slides"`.  The package's structural parts, `[Content_Types].xml` and
+  `_rels/.rels`, are generated from the parts present, so this is a value
+  round-trip rather than a byte round-trip (`encode`)
 - `regexp.menai` — compiles a regular-expression pattern and searches, splits,
   or replaces within strings.  Exports the compiled-regexp type `regexp` and the
   operations `compile`, `search`, `search?`, `search-all`, `split`, and

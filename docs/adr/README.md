@@ -115,3 +115,5 @@ What costs, risks, or constraints does this decision impose?
 | [0044](0044-type-pattern-heads-are-syntactically-distinct.md) | Type pattern heads are syntactically distinct | Accepted |
 | [0045](0045-desugared-match-size-is-bounded.md) | A match's desugared form is bounded | Accepted |
 | [0046](0046-docx-codec-ooxml-capture-layer.md) | DOCX codec — the OOXML capture layer | Accepted |
+| [0047](0047-pptx-codec-ooxml-capture-layer.md) | PPTX codec — the OOXML capture layer | Accepted |
+| [0048](0048-vm-errors-carry-structured-diagnostic-context.md) | VM errors carry structured diagnostic context | Accepted |

@@ -1,0 +1,387 @@
+; pptx-encode — encodes a PPTX value tree as a PPTX package.
+;
+; The input is a value tree in the shape pptx-decode produces and the output is
+; a bytes value containing a .pptx file.  A .pptx file is an OOXML package: a
+; ZIP archive whose parts are XML documents (and media).
+;
+; The input dict has this shape:
+;
+;   (dict
+;     "presentation"  <element>              ; ppt/presentation.xml
+;     "slides"        <list>                 ; ordered, one entry per slide
+;     "slide-masters" <list>                 ; ppt/slideMasters/*.xml
+;     "slide-layouts" <list>                 ; ppt/slideLayouts/*.xml
+;     "theme"         <element> or #none     ; ppt/theme/theme1.xml
+;     "relationships" <dict>                 ; presentation rels: id -> relationship
+;     "media"         <dict> or #none)       ; part name -> bytes
+;
+; An <element> is the value tree xml-decode produces for an XML document:
+;
+;   (dict "tag" <string> "attrs" <dict> "children" <list>)
+;
+; "presentation" is required and is serialised to ppt/presentation.xml.
+;
+; "slides" is the slides in presentation order.  Each entry is a dict:
+;
+;   (dict
+;     "part"          <string>              ; e.g. "ppt/slides/slide1.xml"
+;     "element"       <element>             ; the slide part
+;     "relationships" <dict>)              ; the slide's own rels: id -> relationship
+;
+; The slide part is emitted under "part", and its relationships are written to
+; ppt/slides/_rels/<name>.rels when the map is non-empty.  The presentation's
+; <p:sldIdLst> and the presentation's relationships are not derived from
+; "slides": "presentation" and "relationships" are written verbatim, so the
+; caller is responsible for their slide list and slide relationships agreeing
+; with "slides".  A value tree produced by pptx-decode's decode satisfies this,
+; because both were read from the same package.
+;
+; A relationship is a dict:
+;
+;   (dict "type" <string> "target" <string> "mode" <string> or #none)
+;
+; and is written as a <Relationship> element carrying the type, target, and
+; (when not #none) the target mode.
+;
+; "slide-masters" and "slide-layouts" are written to ppt/slideMasters/*.xml and
+; ppt/slideLayouts/*.xml under generated names (slideMaster1.xml,
+; slideLayout1.xml, ...) in list order.  "theme", when it is an element, is
+; written to ppt/theme/theme1.xml.  "media" is written verbatim, each entry as a
+; package part under its own name.
+;
+; The package's two structural parts, [Content_Types].xml and _rels/.rels, are
+; generated from the parts present: a default for the "rels" and "xml"
+; extensions, a default content type for each distinct media extension, an
+; override for each XML part, and the single root relationship pointing at
+; ppt/presentation.xml.
+;
+; It is the inverse of pptx-decode's decode: for every value tree v that encode
+; accepts, (decode (encode v)) reproduces v.  This is a value round-trip, not a
+; byte round-trip: the generated structural parts, the generated slide master
+; and layout part names, and the ordering of the relationships are canonical, so
+; the package need not be byte-identical to any package the same value tree came
+; from.
+;
+; A value that is not a well-formed PPTX value tree raises a runtime error: a
+; missing or non-element "presentation", a non-list "slides", a slide that is
+; not a dict or lacks a string "part" or an element "element", a relationship
+; that is not a dict or lacks a string "type" or "target", a non-dict "media",
+; or a non-bytes media part.
+
+(letrec
+  ((zip-create (import "zip-create"))
+   (xml-encode (import "xml-encode"))
+
+   (content-types-part "[Content_Types].xml")
+   (root-rels-part "_rels/.rels")
+   (presentation-part "ppt/presentation.xml")
+   (presentation-rels-part "ppt/_rels/presentation.xml.rels")
+   (theme-part "ppt/theme/theme1.xml")
+
+   (rels-namespace "http://schemas.openxmlformats.org/package/2006/relationships")
+   (content-types-namespace "http://schemas.openxmlformats.org/package/2006/content-types")
+   (office-document-relationship "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument")
+   (presentation-content-type "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml")
+   (slide-content-type "application/vnd.openxmlformats-officedocument.presentationml.slide+xml")
+   (slide-master-content-type "application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml")
+   (slide-layout-content-type "application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml")
+   (theme-content-type "application/vnd.openxmlformats-officedocument.theme+xml")
+   (rels-content-type "application/vnd.openxmlformats-package.relationships+xml")
+   (xml-content-type "application/xml")
+
+   ; An XML element with the given tag, attributes, and children.
+   (element
+    (lambda (tag attrs children)
+      (dict "tag" tag "attrs" attrs "children" children)))
+
+   ; Serialise an element to a UTF-8 bytes value.
+   (element-bytes
+    (lambda (e)
+      (string->bytes ((:: xml-encode encode) e))))
+
+   ; The lowercased extension of a part name: the text after the last ".",
+   ; or the whole name when it has none.
+   (extension-of
+    (lambda (name)
+      (let ((dot (string-index name ".")))
+        (if (none? dot)
+            (string-downcase name)
+            (letrec ((last-dot (lambda (i found)
+                                 (if (integer>=? i (string-length name))
+                                     found
+                                     (last-dot (integer+ i 1)
+                                               (if (string=? (string-nth name i) ".")
+                                                   i
+                                                   found))))))
+              (string-downcase (string-slice name (integer+ (last-dot 0 dot) 1))))))))
+
+   ; The final "/"-separated segment of a part name.
+   (last-path-segment
+    (lambda (name)
+      (letrec ((loop (lambda (i found)
+                       (if (integer>=? i (string-length name))
+                           found
+                           (loop (integer+ i 1)
+                                 (if (string=? (string-nth name i) "/")
+                                     (integer+ i 1)
+                                     found))))))
+        (string-slice name (loop 0 0)))))
+
+   ; The attributes of one <Relationship> element.  The target mode is omitted
+   ; when it is #none.
+   (relationship-attributes
+    (lambda (id relationship)
+      (let ((type (dict-get relationship "type"))
+            (target (dict-get relationship "target"))
+            (mode (dict-get relationship "mode")))
+        (if (string? type)
+            (if (string? target)
+                (let ((attrs (dict "Id" id "Type" type "Target" target)))
+                  (if (string? mode)
+                      (dict-with attrs "TargetMode" mode)
+                      attrs))
+                (error (string-concat
+                         "pptx-encode: relationship \""
+                         id
+                         "\" \"target\" must be a string")))
+            (error (string-concat
+                     "pptx-encode: relationship \""
+                     id
+                     "\" \"type\" must be a string"))))))
+
+   ; One <Relationship> element for a relationship id and relationship dict.
+   (relationship-element
+    (lambda (id relationship)
+      (if (dict? relationship)
+          (element "Relationship" (relationship-attributes id relationship) (list))
+          (error (string-concat
+                   "pptx-encode: relationship \""
+                   id
+                   "\" must be a dict")))))
+
+   ; The <Relationships> root for a relationships map.  Entries are emitted in
+   ; the dict's insertion order.
+   (relationships-element
+    (lambda (relationships)
+      (element "Relationships"
+               (dict "xmlns" rels-namespace)
+               (map-list (lambda (id) (relationship-element id (dict-get relationships id)))
+                         (dict-keys relationships)))))
+
+   ; The root relationships part, pointing at ppt/presentation.xml.
+   (root-rels-element
+    (lambda ()
+      (element "Relationships"
+               (dict "xmlns" rels-namespace)
+               (list (element "Relationship"
+                              (dict "Id" "rId1"
+                                    "Type" office-document-relationship
+                                    "Target" presentation-part)
+                              (list))))))
+
+   ; One <Default> content-type element.
+   (default-element
+    (lambda (extension content-type)
+      (element "Default" (dict "Extension" extension "ContentType" content-type) (list))))
+
+   ; One <Override> content-type element.
+   (override-element
+    (lambda (part-name content-type)
+      (element "Override" (dict "PartName" part-name "ContentType" content-type) (list))))
+
+   ; The distinct lowercased extensions of the media part names, in first-seen
+   ; order.
+   (media-extensions
+    (lambda (media)
+      (letrec ((loop (lambda (names seen acc)
+                       (if (list-null? names)
+                           (list-reverse acc)
+                           (let ((ext (extension-of (list-first names))))
+                             (if (list-member? seen ext)
+                                 (loop (list-rest names) seen acc)
+                                 (loop (list-rest names)
+                                       (list-append seen ext)
+                                       (list-prepend acc ext))))))))
+        (loop (dict-keys media) (list) (list)))))
+
+   ; The <Default> elements for the media extensions.
+   (media-defaults
+    (lambda (media)
+      (map-list (lambda (ext) (default-element ext (string-concat "image/" ext)))
+                (media-extensions media))))
+
+   ; The <Override> elements for the XML parts present.
+   (part-overrides
+    (lambda (slides masters layouts theme)
+      (list-concat
+        (list (override-element (string-concat "/" presentation-part) presentation-content-type))
+        (map-list (lambda (s) (override-element (string-concat "/" (slide-part-of s)) slide-content-type))
+                  slides)
+        (map-list (lambda (name) (override-element (string-concat "/" name) slide-master-content-type))
+                  (master-part-names masters))
+        (map-list (lambda (name) (override-element (string-concat "/" name) slide-layout-content-type))
+                  (layout-part-names layouts))
+        (if (dict? theme)
+            (list (override-element (string-concat "/" theme-part) theme-content-type))
+            (list)))))
+
+   ; The [Content_Types].xml part.
+   (content-types-element
+    (lambda (slides masters layouts theme media)
+      (element "Types"
+               (dict "xmlns" content-types-namespace)
+               (list-concat
+                 (list (default-element "rels" rels-content-type)
+                       (default-element "xml" xml-content-type))
+                 (if (dict? media) (media-defaults media) (list))
+                 (part-overrides slides masters layouts theme)))))
+
+   ; The slide master part names, generated in list order.
+   (master-part-names
+    (lambda (masters)
+      (letrec ((loop (lambda (rest i acc)
+                       (if (list-null? rest)
+                           (list-reverse acc)
+                           (loop (list-rest rest)
+                                 (integer+ i 1)
+                                 (list-prepend acc
+                                               (string-concat "ppt/slideMasters/slideMaster"
+                                                              (integer->string i)
+                                                              ".xml")))))))
+        (loop masters 1 (list)))))
+
+   ; The slide layout part names, generated in list order.
+   (layout-part-names
+    (lambda (layouts)
+      (letrec ((loop (lambda (rest i acc)
+                       (if (list-null? rest)
+                           (list-reverse acc)
+                           (loop (list-rest rest)
+                                 (integer+ i 1)
+                                 (list-prepend acc
+                                               (string-concat "ppt/slideLayouts/slideLayout"
+                                                              (integer->string i)
+                                                              ".xml")))))))
+        (loop layouts 1 (list)))))
+
+   ; The part name of one slide, raising when the slide is not a dict or its
+   ; "part" is not a string.
+   (slide-part-of
+    (lambda (s)
+      (if (dict? s)
+          (let ((part (dict-get s "part")))
+            (if (string? part)
+                part
+                (error "pptx-encode: a slide \"part\" must be a string")))
+          (error "pptx-encode: a slide \"part\" must be a string"))))
+
+   ; The entries for one slide: the slide part, plus its rels part when the
+   ; relationships map is non-empty.
+   (slide-entries
+    (lambda (s)
+      (let ((part (slide-part-of s))
+            (slide-element (dict-get s "element"))
+            (rels (dict-get s "relationships")))
+        (if (dict? slide-element)
+            (if (dict? rels)
+                (list-concat
+                  (list (dict "name" part "content" (element-bytes slide-element)))
+                  (if (integer=? (dict-length rels) 0)
+                      (list)
+                      (list (dict "name" (string-concat "ppt/slides/_rels/"
+                                                        (last-path-segment part)
+                                                        ".rels")
+                                  "content" (element-bytes (relationships-element rels))))))
+                (error "pptx-encode: a slide \"relationships\" must be a dict"))
+            (error "pptx-encode: a slide \"element\" must be an element dict")))))
+
+   ; The entries for every slide, in slide order.
+   (all-slide-entries
+    (lambda (slides)
+      (fold-list (lambda (acc s) (list-concat acc (slide-entries s)))
+                 (list)
+                 slides)))
+
+   ; The media parts as entry dicts, in the dict's insertion order.  A part
+   ; whose value is not bytes raises.
+   (media-entries
+    (lambda (media)
+      (map-list (lambda (name)
+                  (let ((content (dict-get media name)))
+                    (if (bytes? content)
+                        (dict "name" name "content" content)
+                        (error (string-concat
+                                 "pptx-encode: media part \""
+                                 name
+                                 "\" must be bytes")))))
+                (dict-keys media))))
+
+   ; The package parts as a list of entry dicts for zip-create, in a canonical
+   ; order: the structural parts first, then the presentation, then the slides,
+   ; then the masters and layouts, then the theme, then the media.
+   (package-entries
+    (lambda (v)
+      (let ((presentation (dict-get v "presentation"))
+            (slides (dict-get v "slides"))
+            (masters (dict-get v "slide-masters"))
+            (layouts (dict-get v "slide-layouts"))
+            (theme (dict-get v "theme"))
+            (relationships (dict-get v "relationships"))
+            (media (dict-get v "media")))
+        (if (dict? presentation)
+            (if (list? slides)
+                (if (list? masters)
+                    (if (list? layouts)
+                        (if (dict? relationships)
+                            (list-concat
+                              (list
+                                (dict "name" content-types-part
+                                      "content" (element-bytes
+                                                  (content-types-element slides masters layouts theme media)))
+                                (dict "name" root-rels-part
+                                      "content" (element-bytes (root-rels-element)))
+                                (dict "name" presentation-part
+                                      "content" (element-bytes presentation))
+                                (dict "name" presentation-rels-part
+                                      "content" (element-bytes
+                                                  (relationships-element relationships))))
+                              (all-slide-entries slides)
+                                (map-list (lambda (pair)
+                                            (dict "name" (list-first pair)
+                                                  "content" (element-bytes (list-nth pair 1))))
+                                          (zip-lists (master-part-names masters) masters))
+                                (map-list (lambda (pair)
+                                            (dict "name" (list-first pair)
+                                                  "content" (element-bytes (list-nth pair 1))))
+                                          (zip-lists (layout-part-names layouts) layouts))
+                                (if (dict? theme)
+                                    (list (dict "name" theme-part "content" (element-bytes theme)))
+                                    (list))
+                                (if (dict? media)
+                                    (media-entries media)
+                                    (list)))
+                            (error "pptx-encode: \"relationships\" must be a dict"))
+                        (error "pptx-encode: \"slide-layouts\" must be a list"))
+                    (error "pptx-encode: \"slide-masters\" must be a list"))
+                (error "pptx-encode: \"slides\" must be a list"))
+            (error "pptx-encode: \"presentation\" must be an element dict")))))
+
+   ; Pair up two equal-length lists element-wise.
+   (zip-lists
+    (lambda (a b)
+      (if (list-null? a)
+          (list)
+          (list-prepend (zip-lists (list-rest a) (list-rest b))
+                        (list (list-first a) (list-first b))))))
+
+   ; Encode a PPTX value tree as a bytes value containing a .pptx package.  It
+   ; is the inverse of pptx-decode's decode.
+   (encode
+    (lambda (v)
+      (if (dict? v)
+          ((:: zip-create create)
+           (dict "entries" (package-entries v)
+                 "meta" (dict)))
+          (error "pptx-encode: encode expects a dict")))))
+
+  (export encode))

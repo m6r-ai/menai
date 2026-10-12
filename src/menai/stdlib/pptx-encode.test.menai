@@ -1,0 +1,227 @@
+; Tests for pptx-encode.menai
+
+(let ((pptx-encode (import "pptx-encode"))
+      (pptx-decode (import "pptx-decode"))
+      (zip-entries (import "zip-entries"))
+      (zip-extract (import "zip-extract"))
+      (xml (import "xml-decode"))
+      (t (import "menai-test")))
+  (let ((encode (:: pptx-encode encode))
+        (decode (:: pptx-decode decode))
+        (entries (:: zip-entries entries))
+        (extract (:: zip-extract extract))
+        (xml-decode (:: xml decode))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t expect-pass))
+        (expect-fail (:: t expect-fail))
+        (main-ns "http://schemas.openxmlformats.org/presentationml/2006/main")
+        (rels-ns "http://schemas.openxmlformats.org/package/2006/relationships")
+        (slide-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide")
+        (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
+        (presentation
+         (dict "tag" "p:presentation"
+               "attrs" (dict "xmlns:p" main-ns)
+               "children" (list)))
+        (presentation-with-slides
+         (dict "tag" "p:presentation"
+               "attrs" (dict "xmlns:p" main-ns
+                             "xmlns:r" "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+               "children" (list (dict "tag" "p:sldIdLst"
+                                      "attrs" (dict)
+                                      "children" (list (dict "tag" "p:sldId"
+                                                             "attrs" (dict "id" "256" "r:id" "rId2")
+                                                             "children" (list))
+                                                       (dict "tag" "p:sldId"
+                                                             "attrs" (dict "id" "257" "r:id" "rId3")
+                                                             "children" (list)))))))
+        (slide1
+         (dict "tag" "p:sld"
+               "attrs" (dict "xmlns:p" main-ns)
+               "children" (list (dict "tag" "p:cSld" "attrs" (dict) "children" (list)))))
+        (slide2
+         (dict "tag" "p:sld"
+               "attrs" (dict "xmlns:p" main-ns)
+               "children" (list (dict "tag" "p:cSld" "attrs" (dict) "children" (list)))))
+        (master (dict "tag" "p:sldMaster" "attrs" (dict "xmlns:p" main-ns) "children" (list)))
+        (layout (dict "tag" "p:sldLayout" "attrs" (dict "xmlns:p" main-ns) "children" (list)))
+        (theme (dict "tag" "a:theme" "attrs" (dict "xmlns:a" main-ns) "children" (list)))
+        (slide1-rels (dict "rId1" (dict "type" image-rel "target" "../media/image1.png" "mode" #none)))
+        (slide-relationships
+         (dict "rId2" (dict "type" slide-rel "target" "slides/slide1.xml" "mode" #none)
+               "rId3" (dict "type" slide-rel "target" "slides/slide2.xml" "mode" #none)))
+        (media (dict "ppt/media/image1.png" (string-hex->bytes "89504e47")))
+
+        ; The value tree with every part present.
+        (full (dict "presentation" presentation-with-slides
+                    "slides" (list (dict "part" "ppt/slides/slide1.xml"
+                                         "element" slide1
+                                         "relationships" slide1-rels)
+                                   (dict "part" "ppt/slides/slide2.xml"
+                                         "element" slide2
+                                         "relationships" (dict)))
+                    "slide-masters" (list master)
+                    "slide-layouts" (list layout)
+                    "theme" theme
+                    "relationships" slide-relationships
+                    "media" media))
+
+        ; The value tree with only the required part.
+        (minimal (dict "presentation" presentation
+                       "slides" (list)
+                       "slide-masters" (list)
+                       "slide-layouts" (list)
+                       "theme" #none
+                       "relationships" (dict)
+                       "media" #none))
+
+        ; The names of the parts in an encoded package.
+        (part-names
+         (lambda (v)
+           (map-list (lambda (e) (dict-get e "name"))
+                     (dict-get (entries (encode v)) "entries"))))
+
+        ; The content of one part of an encoded package.
+        (part-content
+         (lambda (v name)
+           (let ((part (find-list (lambda (e) (string=? (dict-get e "name") name))
+                                  (dict-get (extract (encode v)) "entries"))))
+             (if (dict? part)
+                 (dict-get part "content")
+                 #none))))
+
+        ; The decoded element for one XML part of an encoded package.
+        (decode-part
+         (lambda (v name)
+           (xml-decode (bytes->string (part-content v name))))))
+
+    (let ((tests
+      (list
+        (list "package"
+          (list
+            (expect-pass "minimal package contains the required parts"
+                         (lambda ()
+                           (assert-equal (part-names minimal)
+                                         (list "[Content_Types].xml"
+                                               "_rels/.rels"
+                                               "ppt/presentation.xml"
+                                               "ppt/_rels/presentation.xml.rels"))))
+            (expect-pass "full package contains every part"
+                         (lambda ()
+                           (assert-equal (part-names full)
+                                         (list "[Content_Types].xml"
+                                               "_rels/.rels"
+                                               "ppt/presentation.xml"
+                                               "ppt/_rels/presentation.xml.rels"
+                                               "ppt/slides/slide1.xml"
+                                               "ppt/slides/_rels/slide1.xml.rels"
+                                               "ppt/slides/slide2.xml"
+                                               "ppt/slideMasters/slideMaster1.xml"
+                                               "ppt/slideLayouts/slideLayout1.xml"
+                                               "ppt/theme/theme1.xml"
+                                               "ppt/media/image1.png"))))
+            (expect-pass "media parts are written verbatim"
+                         (lambda ()
+                           (assert-equal (part-content full "ppt/media/image1.png")
+                                         (string-hex->bytes "89504e47"))))
+            (expect-pass "a slide with no relationships writes no rels part"
+                         (lambda ()
+                           (assert-equal (part-content full "ppt/slides/_rels/slide2.xml.rels")
+                                         #none)))))
+
+        (list "structural-parts"
+          (list
+            (expect-pass "content types declares the rels and xml defaults"
+                         (lambda ()
+                           (let ((types (decode-part minimal "[Content_Types].xml")))
+                             (assert-equal (list (dict-get (list-first (dict-get types "children")) "attrs")
+                                                 (dict-get (list-nth (dict-get types "children") 1) "attrs"))
+                                           (list (dict "Extension" "rels"
+                                                       "ContentType" "application/vnd.openxmlformats-package.relationships+xml")
+                                                 (dict "Extension" "xml"
+                                                       "ContentType" "application/xml"))))))
+            (expect-pass "content types declares a default per media extension"
+                         (lambda ()
+                           (let ((types (decode-part full "[Content_Types].xml")))
+                             (assert-equal (map-list (lambda (c) (dict-get (dict-get c "attrs") "Extension"))
+                                                     (filter-list (lambda (c) (string=? (dict-get c "tag") "Default"))
+                                                                  (dict-get types "children")))
+                                           (list "rels" "xml" "png")))))
+            (expect-pass "content types overrides the presentation part"
+                         (lambda ()
+                           (let ((types (decode-part full "[Content_Types].xml")))
+                             (assert-equal (dict-get (dict-get (list-first (dict-get types "children")) "attrs") "Extension")
+                                           "rels"))))
+            (expect-pass "root rels points at ppt/presentation.xml"
+                         (lambda ()
+                           (let ((rels (decode-part minimal "_rels/.rels")))
+                             (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Target")
+                                           "ppt/presentation.xml"))))))
+
+        (list "relationships"
+          (list
+            (expect-pass "presentation relationships are emitted verbatim"
+                         (lambda ()
+                           (let ((rels (decode-part full "ppt/_rels/presentation.xml.rels")))
+                             (assert-equal (dict-get rels "tag") "Relationships"))))
+            (expect-pass "a slide's own relationships are emitted"
+                         (lambda ()
+                           (let ((rels (decode-part full "ppt/slides/_rels/slide1.xml.rels")))
+                             (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Type")
+                                           image-rel))))))
+
+        (list "round-trips"
+          (list
+            (expect-pass "minimal value tree"
+                         (lambda () (assert-equal (decode (encode minimal)) minimal)))
+            (expect-pass "value tree with every part"
+                         (lambda () (assert-equal (decode (encode full)) full)))))
+
+        (list "errors"
+          (list
+            (expect-fail "rejects a non-dict value"
+                         (lambda () (encode "not a value tree"))
+                         "expects a dict")
+            (expect-fail "rejects a missing presentation"
+                         (lambda () (encode (dict "slides" (list))))
+                         "\"presentation\" must be an element dict")
+            (expect-fail "rejects a non-list slides"
+                         (lambda () (encode (dict "presentation" presentation "slides" "nope")))
+                         "\"slides\" must be a list")
+            (expect-fail "rejects a slide that is not a dict"
+                         (lambda () (encode (dict "presentation" presentation
+                                                  "slides" (list "nope")
+                                                  "slide-masters" (list)
+                                                  "slide-layouts" (list)
+                                                  "relationships" (dict))))
+                         "a slide \"part\" must be a string")
+            (expect-fail "rejects a non-dict relationships"
+                         (lambda () (encode (dict "presentation" presentation
+                                                  "slides" (list)
+                                                  "slide-masters" (list)
+                                                  "slide-layouts" (list)
+                                                  "relationships" "nope")))
+                         "\"relationships\" must be a dict")
+            (expect-fail "rejects a relationship that is not a dict"
+                         (lambda () (encode (dict "presentation" presentation
+                                                  "slides" (list)
+                                                  "slide-masters" (list)
+                                                  "slide-layouts" (list)
+                                                  "relationships" (dict "rId1" "nope"))))
+                         "must be a dict")
+            (expect-fail "rejects a relationship with no type"
+                         (lambda () (encode (dict "presentation" presentation
+                                                  "slides" (list)
+                                                  "slide-masters" (list)
+                                                  "slide-layouts" (list)
+                                                  "relationships" (dict "rId1" (dict "target" "x")))))
+                         "\"type\" must be a string")
+            (expect-fail "rejects a non-bytes media part"
+                         (lambda () (encode (dict "presentation" presentation
+                                                  "slides" (list)
+                                                  "slide-masters" (list)
+                                                  "slide-layouts" (list)
+                                                  "relationships" (dict)
+                                                  "media" (dict "ppt/media/a.png" "nope"))))
+                         "must be bytes"))))))
+
+      (export tests))))

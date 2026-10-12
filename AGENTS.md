@@ -560,6 +560,28 @@ shared across VM instances or threads.
 
 See [ADR-0006](docs/adr/0006-no-process-global-mutable-state-in-c-vm.md).
 
+### A VM error code that needs context gets a typed field for it
+
+`MenaiVMError` carries the context an error code needs, set at the raise site in
+`menai_vm_c.c` and threaded to the bridge alongside the code and execution context.
+The C VM records raw values; `menai_vm_errors.translate_vm_error` formats the message.
+Message text must not be composed in C — the Python error table is the single source
+of truth for code-to-message mapping.
+
+`user_value` is the precedent (the raised value for `USER_ERROR`, the variable name for
+`UNDEFINED_VARIABLE`); the arity fields (`arity_expected`, `arity_actual`,
+`arity_callee`) are the second case. A field shaped to its context is preferred over a
+general-purpose formatted-detail string, which would split formatting across two
+languages.
+
+Any field holding a pointer that must outlive the code objects — a name, a string — is a
+`strdup`'d copy owned by the error struct and freed by the bridge after translation,
+because the code objects are released before the bridge runs. The bridge frees it on
+every path, and `menai_vm_execute_native` resets it on entry so a run that errors and is
+never translated does not leave a stale pointer.
+
+See [ADR-0048](docs/adr/0048-vm-errors-carry-structured-diagnostic-context.md).
+
 ### The closure cycle collector only frees closures with refcnt == 0
 
 The GC runs at the end of every `menai_vm_execute_native` call and at VM
