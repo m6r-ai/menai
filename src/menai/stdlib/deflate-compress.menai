@@ -102,15 +102,18 @@
    (nice-match 128)
 
    ; Find the index of the largest base value not exceeding `value`.  The base
-   ; vectors are strictly increasing, so a scan from the end is simple and
-   ; correct.
+   ; vectors are strictly increasing, so the index is found by binary search;
+   ; `value` is always at least `bases[0]`, so the search always has an answer.
    (find-base-index
     (lambda (bases value)
-      (letrec ((loop (lambda (i)
-                       (if (integer<=? (vector-nth bases i) value)
-                           i
-                           (loop (integer- i 1))))))
-        (loop (integer- (vector-length bases) 1)))))
+      (letrec ((search (lambda (lo hi)
+                         (if (integer>=? lo hi)
+                             lo
+                             (let ((mid (integer/ (integer+ lo hi 1) 2)))
+                               (if (integer<=? (vector-nth bases mid) value)
+                                   (search mid hi)
+                                   (search lo (integer- mid 1))))))))
+        (search 0 (integer- (vector-length bases) 1)))))
 
    ; Encode a match length (3-258) as (list <symbol> <extra-bits> <extra-count>).
    (encode-length
@@ -180,6 +183,25 @@
 
    ; --- LZ77 matching -------------------------------------------------------
 
+   ; The candidate table maps a 3-byte prefix to a most-recent-first list of the
+   ; positions at which it occurs.  A dict update copies the whole dict, so the
+   ; table is sharded into `shard-count` sub-dicts, each holding the keys that
+   ; hash to it.  An update then copies one shard plus the small top-level dict,
+   ; rather than the whole table.
+   (shard-count 16)
+
+   ; Return the position list recorded for `key`, or the empty list.
+   (table-get
+    (lambda (table key)
+      (dict-get (dict-get table (integer% key shard-count) (dict)) key (list))))
+
+   ; Return the table with `key` mapped to `positions`.
+   (table-put
+    (lambda (table key positions)
+      (let ((shard (integer% key shard-count)))
+        (dict-with table shard
+                  (dict-with (dict-get table shard (dict)) key positions)))))
+
    ; Compute a 3-byte key at position `i` of `b`, or #none if fewer than three
    ; bytes remain.  The key is a single integer so it can index a dict.
    (prefix-key
@@ -226,7 +248,7 @@
       (let ((key (prefix-key b i)))
         (if (none? key)
             (list 0 0)
-            (let ((candidates (dict-get table key (list))))
+            (let ((candidates (table-get table key)))
               (let ((limit (integer-min max-match (integer- (bytes-length b) i))))
                 (letrec
                   ((loop (lambda (cands best-len best-dist chain)
@@ -271,21 +293,21 @@
             (let ((key (prefix-key b i)))
               (if (none? key)
                   table
-                  (dict-with table key
-                            (list-prepend (dict-get table key (list)) i))))))
+                  (table-put table key
+                             (list-prepend (table-get table key) i))))))
          (add-candidates
           (lambda (b i len dist table)
             (let ((last-full (integer- len 3)))
               (letrec
-                ((collect (lambda (k acc)
-                            (if (integer>? k last-full)
-                                acc
-                                (collect (integer+ k dist) (list-prepend acc (integer+ i k))))))
+                ((prepend-group (lambda (k acc)
+                                  (if (integer>? k last-full)
+                                      acc
+                                      (prepend-group (integer+ k dist)
+                                                     (list-prepend acc (integer+ i k))))))
                  (add-group (lambda (p acc)
                               (let ((key (prefix-key b (integer+ i p))))
-                                (dict-with acc key
-                                          (list-concat (collect p (list))
-                                                       (dict-get acc key (list)))))))
+                                (table-put acc key
+                                           (prepend-group p (table-get acc key))))))
                  (add-groups (lambda (p count acc)
                                (if (integer>=? p count)
                                    acc
