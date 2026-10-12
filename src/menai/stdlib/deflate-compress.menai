@@ -252,6 +252,17 @@
 
    ; Build the LZ77 token list for `b`.  Each token is either
    ; (list "lit" <byte>) or (list "match" <length> <distance>).
+   ;
+   ; Every consumed position is recorded in the candidate table so a later
+   ; position can find it as a back-reference.  A match covers `len` positions.
+   ; When the match is longer than its distance the matched region repeats, so
+   ; the 3-byte keys of those positions are periodic with period `dist` over the
+   ; part of the match whose key lies wholly inside it.  `add-candidates` inserts
+   ; one dict update per period rather than one per position, which keeps the
+   ; cost of a long match proportional to its distance rather than its length.
+   ; The last two positions have a key that extends past the matched region and
+   ; are inserted individually, as is every position when the match is no longer
+   ; than its distance (there is no repetition to exploit).
    (tokenize
     (lambda (b)
       (letrec
@@ -263,12 +274,30 @@
                   (dict-with table key
                             (list-prepend (dict-get table key (list)) i))))))
          (add-candidates
-          (lambda (b i len table)
-            (letrec ((loop (lambda (k acc)
+          (lambda (b i len dist table)
+            (let ((last-full (integer- len 3)))
+              (letrec
+                ((collect (lambda (k acc)
+                            (if (integer>? k last-full)
+                                acc
+                                (collect (integer+ k dist) (list-prepend acc (integer+ i k))))))
+                 (add-group (lambda (p acc)
+                              (let ((key (prefix-key b (integer+ i p))))
+                                (dict-with acc key
+                                          (list-concat (collect p (list))
+                                                       (dict-get acc key (list)))))))
+                 (add-groups (lambda (p count acc)
+                               (if (integer>=? p count)
+                                   acc
+                                   (add-groups (integer+ p 1) count (add-group p acc)))))
+                 (add-tail (lambda (k acc)
                              (if (integer>=? k len)
                                  acc
-                                 (loop (integer+ k 1) (add-candidate b (integer+ i k) acc))))))
-              (loop 0 table))))
+                                 (add-tail (integer+ k 1) (add-candidate b (integer+ i k) acc))))))
+                (if (integer<? dist (integer- len 2))
+                    (add-tail (integer-max 0 (integer- len 2))
+                              (add-groups 0 (integer-min dist (integer+ last-full 1)) table))
+                    (add-tail 0 table))))))
          (loop (lambda (i table acc)
                  (if (integer>=? i (bytes-length b))
                      (list-reverse acc)
@@ -277,7 +306,7 @@
                              (dist (list-nth match 1)))
                          (if (integer>=? len min-match)
                              (loop (integer+ i len)
-                                   (add-candidates b i len table)
+                                   (add-candidates b i len dist table)
                                    (list-prepend acc (list "match" len dist)))
                              (loop (integer+ i 1)
                                    (add-candidate b i table)
