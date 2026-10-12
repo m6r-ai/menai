@@ -195,9 +195,17 @@
    (build-huffman-table
     (lambda (lengths)
       (letrec
-        ((max-length
-          (lambda (lst)
-            (fold-list (lambda (acc len) (integer-max acc len)) 0 lst)))
+        (; Count the codes of each length and find the longest, in one walk.
+         ; Returns (list <bl-count> <maxlen>).
+         (count-lengths
+          (lambda (lst acc maxlen)
+            (if (list-null? lst)
+                (list acc maxlen)
+                (let ((len (list-first lst)))
+                  (count-lengths (list-rest lst)
+                                 (dict-with acc len
+                                           (integer+ (dict-get acc len 0) 1))
+                                 (integer-max maxlen len))))))
 
          ; Compute the first canonical code for each length 1..maxlen.
          ; bl_count[len] = number of codes of that length.
@@ -212,37 +220,31 @@
                                                1)))
                                    (loop (integer+ len 1) next
                                          (dict-with acc len code)))))))
-              (loop 1 0 (dict))))))
-        (let ((maxlen (max-length lengths)))
-          (letrec
-            ((count-lengths
-              (lambda (lst acc)
-                (if (list-null? lst)
-                    acc
-                    (count-lengths (list-rest lst)
-                                    (dict-with acc (list-first lst)
-                                              (integer+ (dict-get acc (list-first lst) 0) 1))))))
+              (loop 1 0 (dict)))))
 
-             ; Walk symbols in order, assigning each its canonical code.
-             ; Returns a table dict keyed by (1 << length) + code.
-             (assign
-              (lambda (symbols lens codes table)
-                (if (list-null? symbols)
-                    table
-                    (let ((len (list-first lens))
-                          (sym (list-first symbols)))
-                      (if (integer=? len 0)
-                          (assign (list-rest symbols) (list-rest lens) codes table)
-                          (let ((code (dict-get codes len)))
-                            (if (none? code)
-                                (error "deflate-decompress: internal error building Huffman table")
-                                (let ((key (integer+ (integer-bit-shift-left 1 len) code)))
-                                  (assign (list-rest symbols)
-                                          (list-rest lens)
-                                          (dict-with codes len (integer+ code 1))
-                                          (dict-with table key sym)))))))))))
-            (let ((symbols (range 0 (list-length lengths))))
-              (assign symbols lengths (first-codes (count-lengths lengths (dict)) maxlen) (dict))))))))
+         ; Walk symbols in order, assigning each its canonical code.  The
+         ; symbol index is carried as an integer rather than read from a
+         ; range list.  Returns a table dict keyed by (1 << length) + code.
+         (assign
+          (lambda (lens sym codes table)
+            (if (list-null? lens)
+                table
+                (let ((len (list-first lens)))
+                  (if (integer=? len 0)
+                      (assign (list-rest lens) (integer+ sym 1) codes table)
+                      (let ((code (dict-get codes len)))
+                        (if (none? code)
+                            (error "deflate-decompress: internal error building Huffman table")
+                            (let ((key (integer+ (integer-bit-shift-left 1 len) code)))
+                              (assign (list-rest lens)
+                                      (integer+ sym 1)
+                                      (dict-with codes len (integer+ code 1))
+                                      (dict-with table key sym)))))))))))
+
+        (let ((counted (count-lengths lengths (dict) 0)))
+          (assign lengths 0
+                  (first-codes (list-first counted) (list-nth counted 1))
+                  (dict))))))
 
    ; Decode one symbol using a canonical Huffman table, reading bits one at a
    ; time until a code matches.  The table is keyed by (1 << length) + code, so
