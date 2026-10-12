@@ -845,6 +845,15 @@ struct MenaiVector {
  * It is a retained MenaiValue * that the bridge must release after
  * converting it to a Python object.
  *
+ * arity_expected and arity_actual are set for MENAI_ERR_ARITY_MISMATCH and
+ * MENAI_ERR_STRUCT_ARITY_MISMATCH.  They carry the parameter count the callee
+ * declared and the number of arguments the caller supplied, so the bridge can
+ * report which call was wrong and by how much.  Both are -1 when the error is
+ * not an arity error.  arity_callee is a strdup'd copy of the callee's name
+ * (the code object's name), or NULL when unavailable.  It is owned by the error
+ * struct and freed by the bridge after translation, because the code objects
+ * are released before the bridge runs and a borrowed pointer would dangle.
+ *
  * backtrace_names, backtrace_lines, and backtrace_files capture the call
  * stack at error time.  backtrace_count is the number of valid entries
  * (0..MENAI_MAX_BACKTRACE).  The strings are borrowed from the frame
@@ -886,6 +895,11 @@ typedef struct {
     int ip;                 /* instruction pointer (0 if unknown) */
     int call_depth;         /* call stack depth at time of error */
     MenaiValue *user_value;    /* retained MenaiValue *; bridge releases */
+
+    /* Arity diagnostics (MENAI_ERR_ARITY_MISMATCH / STRUCT_ARITY_MISMATCH). */
+    int arity_expected;     /* callee's declared parameter count, or -1 */
+    int arity_actual;       /* arguments supplied by the caller, or -1 */
+    char *arity_callee;     /* strdup'd; bridge frees */
 
     /* Call stack backtrace (borrowed strings, valid only during translation). */
     int backtrace_count;

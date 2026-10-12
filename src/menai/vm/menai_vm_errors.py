@@ -149,6 +149,10 @@ class _MenaiVMRuntimeError(Exception):
             register contents of each live frame at error time (deepest frame
             first), or empty list if none.  Used to diagnose register-level
             errors such as "cannot call non-function value".
+        arity_expected: Parameter count the callee declared, or -1 when the
+            error is not an arity error.
+        arity_actual: Number of arguments the caller supplied, or -1.
+        arity_callee: Name of the callee for an arity error, or "" if unknown.
     """
 
     def __init__(
@@ -160,6 +164,9 @@ class _MenaiVMRuntimeError(Exception):
         user_value: MenaiValue | None = None,
         backtrace: list[tuple[str | None, int, str | None]] | None = None,
         frame_dump: list[tuple[str | None, int, list[MenaiValue]]] | None = None,
+        arity_expected: int = -1,
+        arity_actual: int = -1,
+        arity_callee: str = "",
     ) -> None:
         self.code = code
         self.opcode = opcode
@@ -168,6 +175,9 @@ class _MenaiVMRuntimeError(Exception):
         self.user_value = user_value
         self.backtrace = backtrace or []
         self.frame_dump = frame_dump or []
+        self.arity_expected = arity_expected
+        self.arity_actual = arity_actual
+        self.arity_callee = arity_callee
         super().__init__(f"VM error {code}")
 
 
@@ -264,6 +274,9 @@ def translate_vm_error(
     user_value: MenaiValue | None = None,
     backtrace: list[tuple[str | None, int, str | None]] | None = None,
     frame_dump: list[tuple[str | None, int, list[MenaiValue]]] | None = None,
+    arity_expected: int = -1,
+    arity_actual: int = -1,
+    arity_callee: str = "",
 ) -> Exception:
     """
     Translate a structured VM error into the appropriate MenaiError exception.
@@ -286,6 +299,10 @@ def translate_vm_error(
             C VM call stack at error time, or None if unavailable.
         frame_dump: List of (name, ip, [register values]) tuples from the C VM
             capturing each live frame's registers at error time, or None.
+        arity_expected: Parameter count the callee declared, or -1 when the
+            error is not an arity error.
+        arity_actual: Number of arguments the caller supplied, or -1.
+        arity_callee: Name of the callee for an arity error, or "" if unknown.
 
     Returns:
         An exception instance ready to be raised.
@@ -338,6 +355,19 @@ def translate_vm_error(
 
     if user_value is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
         message = f"undefined variable: {user_value.to_python()}"
+
+    if code == VMErrorCode.ARITY_MISMATCH:
+        callee = f'"{arity_callee}" ' if arity_callee else ""
+        message = (
+            f"arity mismatch: {callee}expects {arity_expected} "
+            f"argument{'s' if arity_expected != 1 else ''} but got {arity_actual}"
+        )
+
+    elif code == VMErrorCode.STRUCT_ARITY_MISMATCH:
+        message = (
+            f"struct constructor expects {arity_expected} "
+            f"field{'s' if arity_expected != 1 else ''} but got {arity_actual}"
+        )
 
     return exc_class(
         message,

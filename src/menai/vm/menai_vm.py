@@ -46,6 +46,9 @@ class MenaiVM:
                 exc.user_value,
                 exc.backtrace,
                 exc.frame_dump,
+                exc.arity_expected,
+                exc.arity_actual,
+                exc.arity_callee,
             ) from None
 
     def cancel(self) -> None:

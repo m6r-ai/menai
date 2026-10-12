@@ -666,10 +666,15 @@ ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int fra
  *   - variadic rest-list packing
  *   - capture slot population
  *
+ * On an arity mismatch, *out_expected receives the parameter count the callee
+ * declared (the minimum, for a variadic callee) and *out_callee the callee's
+ * name, so the caller can report which call was wrong.  Both are left untouched
+ * on success.
+ *
  * Returns MENAI_OK on success, or a MENAI_ERR_* code on error.
  */
 static int
-call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue **regs, int callee_base, int arity, int return_dest, ssize_t ncap, MenaiValue **captures)
+call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue **regs, int callee_base, int arity, int return_dest, ssize_t ncap, MenaiValue **captures, int *out_expected, const char **out_callee)
 {
     int param_count = co->param_count;
     int is_variadic = co->is_variadic;
@@ -677,6 +682,8 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
     if (is_variadic) {
         int min_arity = param_count - 1;
         if (arity < min_arity) {
+            *out_expected = min_arity;
+            *out_callee = co->name;
             return MENAI_ERR_ARITY_MISMATCH;
         }
 
@@ -703,6 +710,8 @@ call_setup(MenaiVMState *vs, Frame *new_frame, MenaiCodeObject *co, MenaiValue *
         menai_value_release(vs, regs[callee_base + min_arity]);
         regs[callee_base + min_arity] = (MenaiValue *)rest_list;
     } else if (arity != param_count) {
+        *out_expected = param_count;
+        *out_callee = co->name;
         return MENAI_ERR_ARITY_MISMATCH;
     }
 
@@ -755,6 +764,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
     MenaiValue *vm_user_value = NULL;
 
     /*
+     * Arity diagnostics.  Set at each arity error site so the bridge can name
+     * the callee and report both counts.  -1 means "not an arity error".
+     */
+    int vm_arity_expected = -1;
+    int vm_arity_actual = -1;
+    const char *vm_arity_callee = NULL;
+
+    /*
      * Clear any register dump left by a previous error.  The bridge consumes
      * and releases it after each error, but a run that errors and is never
      * translated (or a subsequent successful run) must not leave a stale
@@ -776,7 +793,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
      * Set up frame at depth 1 — emulate a call from frame 0 (the sentinel)
      * with zero arguments and no captures.
      */
-    vm_err = call_setup(vs, &frames[1], code, regs, 0, 0, 0, 0, NULL);
+    vm_err = call_setup(vs, &frames[1], code, regs, 0, 0, 0, 0, NULL, &vm_arity_expected, &vm_arity_callee);
     assert(vm_err == MENAI_OK);
 
     int frame_depth = 1;
@@ -1062,8 +1079,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
                 frame_depth++;
                 frame++;
-                vm_err = call_setup(vs, frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
+                vm_err = call_setup(vs, frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures, &vm_arity_expected, &vm_arity_callee);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    vm_arity_actual = arity;
                     frame--;
                     frame_depth--;
                     goto error;
@@ -1082,6 +1100,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 int n_fields = sraw->nfields;
                 if (arity != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
+                    vm_arity_expected = (int)n_fields;
+                    vm_arity_actual = arity;
                     goto error;
                 }
 
@@ -1105,6 +1125,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 MenaiEnumType *eraw = (MenaiEnumType *)raw;
                 if (arity != 1) {
                     vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    vm_arity_expected = 1;
+                    vm_arity_actual = arity;
                     goto error;
                 }
 
@@ -1177,8 +1199,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     regs = vs->regs;
                 }
 
-                vm_err = call_setup(vs, frame, callee_co, regs, frame->base, n_args, saved_return_dest, fraw->ncap, fraw->captures);
+                vm_err = call_setup(vs, frame, callee_co, regs, frame->base, n_args, saved_return_dest, fraw->ncap, fraw->captures, &vm_arity_expected, &vm_arity_callee);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    vm_arity_actual = n_args;
                     menai_value_release(vs, raw);
                     goto error;
                 }
@@ -1195,6 +1218,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 int n_fields = sraw->nfields;
                 if (n_args != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
+                    vm_arity_expected = (int)n_fields;
+                    vm_arity_actual = n_args;
                     goto error;
                 }
 
@@ -1231,6 +1256,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 MenaiEnumType *eraw = (MenaiEnumType *)raw;
                 if (n_args != 1) {
                     vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    vm_arity_expected = 1;
+                    vm_arity_actual = n_args;
                     goto error;
                 }
 
@@ -1358,8 +1385,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
                 frame_depth++;
                 frame++;
-                vm_err = call_setup(vs, frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures);
+                vm_err = call_setup(vs, frame, callee_co, regs, callee_base, arity, dest, fraw->ncap, fraw->captures, &vm_arity_expected, &vm_arity_callee);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    vm_arity_actual = arity;
                     frame--;
                     frame_depth--;
                     goto error;
@@ -1377,6 +1405,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 int n_fields = sraw_func->nfields;
                 if (arity != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
+                    vm_arity_expected = (int)n_fields;
+                    vm_arity_actual = arity;
                     menai_pool_free(vs, apply_elems);
                     goto error;
                 }
@@ -1402,6 +1432,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 MenaiEnumType *eraw_func = (MenaiEnumType *)raw_func;
                 if (arity != 1) {
                     vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    vm_arity_expected = 1;
+                    vm_arity_actual = arity;
                     menai_pool_free(vs, apply_elems);
                     goto error;
                 }
@@ -1531,8 +1563,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 frame->code_obj = NULL;
 
                 int saved_return_dest = frame->return_dest;
-                vm_err = call_setup(vs, frame, callee_co, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures);
+                vm_err = call_setup(vs, frame, callee_co, regs, frame->base, arity, saved_return_dest, fraw->ncap, fraw->captures, &vm_arity_expected, &vm_arity_callee);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
+                    vm_arity_actual = arity;
                     menai_value_release(vs, raw_func);
                     menai_pool_free(vs, apply_elems);
                     goto error;
@@ -1551,6 +1584,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 int n_fields = sraw_func->nfields;
                 if (arity != (int)n_fields) {
                     vm_err = MENAI_ERR_STRUCT_ARITY_MISMATCH;
+                    vm_arity_expected = (int)n_fields;
+                    vm_arity_actual = arity;
                     menai_pool_free(vs, apply_elems);
                     goto error;
                 }
@@ -1588,6 +1623,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 MenaiEnumType *eraw_func = (MenaiEnumType *)raw_func;
                 if (arity != 1) {
                     vm_err = MENAI_ERR_ARITY_MISMATCH;
+                    vm_arity_expected = 1;
+                    vm_arity_actual = arity;
                     menai_pool_free(vs, apply_elems);
                     goto error;
                 }
@@ -8320,6 +8357,9 @@ error:
         vs->error.ip = cur_ip;
         vs->error.call_depth = frame_depth;
         vs->error.user_value = vm_user_value;
+        vs->error.arity_expected = vm_arity_expected;
+        vs->error.arity_actual = vm_arity_actual;
+        vs->error.arity_callee = vm_arity_callee ? strdup(vm_arity_callee) : NULL;
         return NULL;
     }
 }
@@ -8361,6 +8401,9 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code)
     vs->error.ip = 0;
     vs->error.call_depth = 0;
     vs->error.user_value = NULL;
+    vs->error.arity_expected = -1;
+    vs->error.arity_actual = -1;
+    vs->error.arity_callee = NULL;
     vs->error.backtrace_count = 0;
 
     /* Size and zero the trace arrays for this code tree (no-op if disabled). */

@@ -1988,7 +1988,8 @@ bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
 {
     /*
      * Construct _MenaiVMRuntimeError(code, opcode, ip, call_depth,
-     * user_value, backtrace, frame_dump).
+     * user_value, backtrace, frame_dump, arity_expected, arity_actual,
+     * arity_callee).
      */
     PyObject *py_user_val;
     PyObject *args;
@@ -2094,7 +2095,7 @@ bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
         Py_INCREF(py_user_val);
     }
 
-    args = Py_BuildValue("(iiiiNNN)", err->code, err->opcode, err->ip, err->call_depth, py_user_val, py_backtrace, py_frame_dump);
+    args = Py_BuildValue("(iiiiNNNiis)", err->code, err->opcode, err->ip, err->call_depth, py_user_val, py_backtrace, py_frame_dump, err->arity_expected, err->arity_actual, err->arity_callee ? err->arity_callee : "");
     if (!args) {
         goto cleanup_bt_strings;
     }
@@ -2109,6 +2110,9 @@ bridge_translate_error(MenaiVMState *vs, const MenaiVMError *err)
     Py_DECREF(exc);
 
 cleanup_bt_strings:
+    /* Free the strdup'd callee name owned by the error struct (NULL if none). */
+    free((char *)err->arity_callee);
+
     /* Free the strdup'd backtrace strings owned by the error struct. */
     for (int i = 0; i < err->backtrace_count; i++) {
         free((char *)err->backtrace_names[i]);
