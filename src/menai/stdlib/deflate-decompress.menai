@@ -266,12 +266,14 @@
                                    (let ((new-code (integer-bit-or
                                                      (integer-bit-shift-left code 1)
                                                      bit)))
-                                     (let ((key (integer+ (integer-bit-shift-left 1 (integer+ length 1))
-                                                          new-code)))
-                                       (let ((sym (dict-get table key)))
-                                         (if (none? sym)
-                                             (loop (integer+ pos 1) (integer+ length 1) new-code)
-                                             (list sym (integer+ pos 1)))))))))))))
+                                     (let ((next-length (integer+ length 1))
+                                           (next-pos (integer+ pos 1)))
+                                       (let ((key (integer+ (integer-bit-shift-left 1 next-length)
+                                                            new-code)))
+                                         (let ((sym (dict-get table key)))
+                                           (if (none? sym)
+                                               (loop next-pos next-length new-code)
+                                               (list sym next-pos)))))))))))))
         (loop p 0 0))))
 
    ; Read `n` extra bits and return (list <integer> <new-bit-position>).
