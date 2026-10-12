@@ -2,6 +2,10 @@
 
 ## v0.9.0 (2026-10-xx)
 
+New features:
+
+- Added `pptx-decode` and `pptx-encode` modules to the standard library.
+
 ## v0.8.0 (2026-10-10)
 
 New features:
