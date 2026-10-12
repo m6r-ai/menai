@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 
 _ITERATIONS = 5
@@ -95,7 +97,7 @@ def _presentation_relationships(slides: int) -> str:
     return f"(dict {entries})"
 
 
-def _element_list(count: int, factory) -> str:
+def _element_list(count: int, factory: Callable[[], str]) -> str:
     """Return a Menai expression for a list of `count` elements from `factory`."""
     return f"(list {' '.join(factory() for _ in range(count))})"
 
