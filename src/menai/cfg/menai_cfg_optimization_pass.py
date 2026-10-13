@@ -32,14 +32,38 @@ Two pass contracts are provided:
 from dataclasses import dataclass, field, replace
 
 from menai.cfg.menai_cfg import (
+    MenaiCFGApplyInstr,
     MenaiCFGBlock,
+    MenaiCFGBranchTerm,
+    MenaiCFGBuiltinInstr,
+    MenaiCFGCallInstr,
     MenaiCFGFreeVarInstr,
     MenaiCFGFunction,
+    MenaiCFGGuardInstr,
     MenaiCFGInstr,
     MenaiCFGMakeClosureInstr,
+    MenaiCFGMakeDictInstr,
+    MenaiCFGMakeListInstr,
+    MenaiCFGMakeSetInstr,
+    MenaiCFGMakeStructInstr,
+    MenaiCFGMakeVectorInstr,
     MenaiCFGParamInstr,
+    MenaiCFGPatchClosureInstr,
+    MenaiCFGPhiInstr,
+    MenaiCFGRaiseTerm,
+    MenaiCFGReturnTerm,
+    MenaiCFGSelfLoopTerm,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
+    MenaiCFGSwitchEnumTerm,
+    MenaiCFGSwitchIntegerTerm,
+    MenaiCFGTailApplyTerm,
+    MenaiCFGTailCallTerm,
     MenaiCFGTerminator,
+    MenaiCFGValue,
+    blocks_by_id,
     result_id_in_instr,
+    successor_ids,
     value_ids_in_instr,
     value_ids_in_term,
 )
@@ -296,6 +320,230 @@ def prune_dead_definitions(
         changed_overall = True
 
     return func, changed_overall
+
+
+def compute_dominators_in_subgraph(
+    block_ids: set[int],
+    root_id: int,
+    preds: dict[int, list[int]],
+) -> dict[int, set[int]]:
+    """
+    Return the dominator set of every block in a subgraph, keyed by block id.
+
+    A block D dominates a block B when every path from `root_id` to B within
+    the subgraph passes through D.  Every block dominates itself, and the root
+    is dominated only by itself.
+
+    `preds` maps each block id in `block_ids` to its predecessors, already
+    restricted to the subgraph.  Restricting the predecessors is what makes
+    the result relative to the subgraph: an edge entering from outside the
+    subgraph is not a path into the block for this computation.
+
+    The computation is the standard iterative fixed point: the root's
+    dominator set is itself, and every other block's set starts as all blocks
+    and shrinks to {B} union the intersection of its predecessors' sets.  A
+    block with no predecessor within the subgraph is dominated only by itself.
+    """
+    dom: dict[int, set[int]] = {
+        block_id: ({block_id} if block_id == root_id else set(block_ids))
+        for block_id in block_ids
+    }
+
+    changed = True
+    while changed:
+        changed = False
+        for block_id in block_ids:
+            if block_id == root_id:
+                continue
+
+            block_preds = preds[block_id]
+            if not block_preds:
+                new_dom = {block_id}
+
+            else:
+                common = set(dom[block_preds[0]])
+                for pred in block_preds[1:]:
+                    common &= dom[pred]
+
+                new_dom = common | {block_id}
+
+            if new_dom != dom[block_id]:
+                dom[block_id] = new_dom
+                changed = True
+
+    return dom
+
+
+def compute_dominators(func: MenaiCFGFunction) -> dict[int, set[int]]:
+    """
+    Return the dominator set of every block in `func`, keyed by block id.
+
+    A block D dominates a block B when every path from the entry block to B
+    passes through D.  Every block dominates itself, and the entry block is
+    dominated only by itself.
+
+    Dominators are a pure function of the block list and the terminators, so
+    the result cannot go stale while the function is unchanged.
+    """
+    by_id = blocks_by_id(func)
+    all_ids = set(by_id)
+
+    preds: dict[int, list[int]] = {block_id: [] for block_id in all_ids}
+    for block in func.blocks:
+        for succ in successor_ids(block.terminator):
+            if succ in preds:
+                preds[succ].append(block.id)
+
+    return compute_dominators_in_subgraph(all_ids, func.entry().id, preds)
+
+
+def substitute_value_in_instr(
+    instr: MenaiCFGInstr,
+    replacements: dict[int, MenaiCFGValue],
+) -> MenaiCFGInstr:
+    """
+    Return a copy of `instr` with every referenced value id replaced.
+
+    A value id present in `replacements` is replaced by the mapped value; ids
+    not present are left alone.  The instruction's own result is never a
+    substitution target.
+    """
+    def sub(value: MenaiCFGValue) -> MenaiCFGValue:
+        return replacements.get(value.id, value)
+
+    if isinstance(instr, MenaiCFGBuiltinInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGCallInstr):
+        return replace(instr, func=sub(instr.func), args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGApplyInstr):
+        return replace(instr, func=sub(instr.func), arg_list=sub(instr.arg_list))
+
+    if isinstance(instr, MenaiCFGMakeClosureInstr):
+        return replace(instr, captures=tuple(sub(c) for c in instr.captures))
+
+    if isinstance(instr, MenaiCFGMakeStructInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeListInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeVectorInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeSetInstr):
+        return replace(instr, args=tuple(sub(a) for a in instr.args))
+
+    if isinstance(instr, MenaiCFGMakeDictInstr):
+        return replace(instr, pairs=tuple((sub(k), sub(v)) for k, v in instr.pairs))
+
+    if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+        return replace(instr, struct=sub(instr.struct))
+
+    if isinstance(instr, MenaiCFGStructWithIndexedInstr):
+        return replace(instr, struct=sub(instr.struct), value=sub(instr.value))
+
+    if isinstance(instr, MenaiCFGGuardInstr):
+        return replace(instr, value=sub(instr.value))
+
+    if isinstance(instr, MenaiCFGPhiInstr):
+        return MenaiCFGPhiInstr(
+            result=instr.result,
+            incoming=tuple((sub(val), pred) for val, pred in instr.incoming),
+        )
+
+    # MenaiCFGConstInstr, MenaiCFGParamInstr, MenaiCFGFreeVarInstr: no input
+    # value references.
+    return instr
+
+
+def substitute_value_in_term(
+    term: MenaiCFGTerminator,
+    replacements: dict[int, MenaiCFGValue],
+) -> MenaiCFGTerminator:
+    """Return a copy of `term` with every referenced value id replaced."""
+    def sub(value: MenaiCFGValue) -> MenaiCFGValue:
+        return replacements.get(value.id, value)
+
+    if isinstance(term, MenaiCFGBranchTerm):
+        return replace(term, cond=sub(term.cond))
+
+    if isinstance(term, MenaiCFGSwitchIntegerTerm):
+        return replace(term, value=sub(term.value))
+
+    if isinstance(term, MenaiCFGSwitchEnumTerm):
+        return replace(term, value=sub(term.value))
+
+    if isinstance(term, MenaiCFGReturnTerm):
+        return replace(term, value=sub(term.value))
+
+    if isinstance(term, MenaiCFGTailCallTerm):
+        return replace(term, func=sub(term.func), args=tuple(sub(a) for a in term.args))
+
+    if isinstance(term, MenaiCFGTailApplyTerm):
+        return replace(term, func=sub(term.func), arg_list=sub(term.arg_list))
+
+    if isinstance(term, MenaiCFGSelfLoopTerm):
+        return replace(term, args=tuple(sub(a) for a in term.args))
+
+    if isinstance(term, MenaiCFGRaiseTerm):
+        return replace(term, message=sub(term.message))
+
+    # MenaiCFGJumpTerm: no value references.
+    return term
+
+
+def substitute_value_in_patch(
+    patch: MenaiCFGPatchClosureInstr,
+    replacements: dict[int, MenaiCFGValue],
+) -> MenaiCFGPatchClosureInstr:
+    """Return a copy of `patch` with every referenced value id replaced."""
+    return replace(
+        patch,
+        closure=replacements.get(patch.closure.id, patch.closure),
+        value=replacements.get(patch.value.id, patch.value),
+    )
+
+
+def substitute_value_in_block(
+    block: MenaiCFGBlock,
+    replacements: dict[int, MenaiCFGValue],
+) -> MenaiCFGBlock:
+    """
+    Return a copy of `block` with every referenced value id replaced.
+
+    Covers instruction operands, patch-closure operands, and the terminator,
+    so a caller cannot substitute in one place and miss a reference in another.
+    """
+    return replace(
+        block,
+        instrs=tuple(
+            substitute_value_in_instr(instr, replacements) for instr in block.instrs
+        ),
+        patch_instrs=tuple(
+            substitute_value_in_patch(patch, replacements)
+            for patch in block.patch_instrs
+        ),
+        terminator=(
+            substitute_value_in_term(block.terminator, replacements)
+            if block.terminator is not None
+            else None
+        ),
+    )
+
+
+def substitute_value_in_function(
+    func: MenaiCFGFunction,
+    replacements: dict[int, MenaiCFGValue],
+) -> MenaiCFGFunction:
+    """Return a copy of `func` with every referenced value id replaced."""
+    return replace(
+        func,
+        blocks=tuple(
+            substitute_value_in_block(block, replacements) for block in func.blocks
+        ),
+    )
 
 
 class MenaiCFGOptimizationPass:

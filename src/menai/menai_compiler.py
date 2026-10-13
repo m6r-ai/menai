@@ -28,6 +28,7 @@ from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
 from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
 from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
 from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAnalysis
+from menai.cfg.menai_cfg_cse import MenaiCFGCSE
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
 from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
 from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlocks
@@ -111,6 +112,7 @@ class MenaiCompiler:
             MenaiCFGEnumInstanceFold(),
             MenaiCFGPredicateFold(),
             MenaiCFGGuardInsertion(),
+            MenaiCFGCSE(),
             MenaiCFGLICM(),
             MenaiCFGLoopRotation(),
             MenaiCFGDeadCaptures(),

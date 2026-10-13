@@ -7,6 +7,7 @@ New features:
 - Added `pptx-decode` and `pptx-encode` modules to the standard library.
 - Significantly improved performance of `deflate-decompress`.
 - Significantly improved performance of `deflate-compress`.
+- Added a common subexpression elimination (CSE) optimization.
 
 ## v0.8.0 (2026-10-10)
 

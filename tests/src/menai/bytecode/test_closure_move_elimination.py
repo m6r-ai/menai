@@ -154,13 +154,18 @@ class TestClosureMoveElimination:
         assert _count_op(code, Opcode.MOVE) == 2
 
     def test_letrec_closure_as_call_arg(self):
-        """A letrec closure (needs_patching=True) used as a call argument
-        should also be back-propagated when no barrier exists.
+        """A letrec closure (needs_patching=True) used as a call argument,
+        with a value live across the call.
 
         Mutual recursion forces needs_patching=True: even? and odd? capture
-        each other.  When even? is passed to filter-list as a call argument
-        and no barrier exists between MAKE_CLOSURE and the CALL, the closure
-        register is assigned directly to its outgoing zone slot.
+        each other.  even? is passed to filter-list as a call argument.
+
+        Common subexpression elimination reuses the list-first result from the
+        predicate path in the prepend path, which extends that register's live
+        range across the CALL.  A register live across a call cannot be
+        back-propagated into the outgoing zone, because the call clobbers it,
+        so a MOVE stages it.  The closure register itself is still
+        back-propagated.
         """
         src = """
             (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
@@ -168,10 +173,8 @@ class TestClosureMoveElimination:
               (list-length (filter-list even? (list 0 1 2 3 4 5))))
         """
         code = _compile(src)
-        # Both closures and the list argument are back-propagated into the
-        # outgoing zone — no MOVEs needed.
         assert _count_op(code, Opcode.PATCH_CLOSURE) > 0
-        assert _count_op(code, Opcode.MOVE) == 0
+        assert _count_op(code, Opcode.MOVE) == 1
 
     def test_letrec_closure_correct_result(self, menai):
         """Verify the optimised letrec code produces correct results."""

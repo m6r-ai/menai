@@ -68,32 +68,11 @@ from dataclasses import replace
 
 from menai.cfg.menai_cfg import (
     MenaiCFGBlock,
-    MenaiCFGApplyInstr,
-    MenaiCFGBranchTerm,
-    MenaiCFGBuiltinInstr,
-    MenaiCFGCallInstr,
     MenaiCFGFunction,
     MenaiCFGInstr,
     MenaiCFGJumpTerm,
-    MenaiCFGMakeClosureInstr,
-    MenaiCFGMakeDictInstr,
-    MenaiCFGMakeListInstr,
-    MenaiCFGMakeSetInstr,
-    MenaiCFGMakeStructInstr,
-    MenaiCFGMakeVectorInstr,
-    MenaiCFGPatchClosureInstr,
     MenaiCFGPhiInstr,
-    MenaiCFGGuardInstr,
-    MenaiCFGRaiseTerm,
-    MenaiCFGReturnTerm,
     MenaiCFGSelfLoopTerm,
-    MenaiCFGStructGetIndexedInstr,
-    MenaiCFGStructWithIndexedInstr,
-    MenaiCFGSwitchIntegerTerm,
-    MenaiCFGSwitchEnumTerm,
-    MenaiCFGTailApplyTerm,
-    MenaiCFGTailCallTerm,
-    MenaiCFGTerminator,
     MenaiCFGValue,
     value_ids_in_instr,
     value_ids_in_term,
@@ -103,6 +82,7 @@ from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGPerFunctionPass,
     replace_block_instrs,
     replace_blocks,
+    substitute_value_in_block,
 )
 
 
@@ -222,22 +202,18 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
 
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
-            new_instrs: list[MenaiCFGInstr] = []
-            for instr in block.instrs:
-                if isinstance(instr, MenaiCFGPhiInstr) and instr.result.id in replacements:
-                    continue
-
-                new_instrs.append(_substitute_value_in_instr(instr, replacements))
-
-            terminator = block.terminator
-            if terminator is not None:
-                terminator = _substitute_value_in_term(terminator, replacements)
-
-            new_blocks.append(replace(
-                block,
-                instrs=tuple(new_instrs),
-                terminator=terminator,
-            ))
+            # Drop the phis whose result is being replaced, then substitute
+            # through the rest of the block.
+            kept = tuple(
+                instr for instr in block.instrs
+                if not (
+                    isinstance(instr, MenaiCFGPhiInstr)
+                    and instr.result.id in replacements
+                )
+            )
+            new_blocks.append(
+                substitute_value_in_block(replace(block, instrs=kept), replacements)
+            )
 
         return replace_blocks(func, tuple(new_blocks)), True
 
@@ -421,104 +397,3 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
             ]
 
         return replace_blocks(func, tuple(new_blocks)), True
-
-
-def _substitute_value_in_instr(
-    instr: MenaiCFGInstr,
-    replacements: dict[int, MenaiCFGValue],
-) -> MenaiCFGInstr:
-    """
-    Return a copy of instr with every referenced value id replaced.
-
-    A value id present in `replacements` is replaced by the mapped value;
-    ids not present are left alone.  The instruction's own result is never
-    a substitution target — a phi defining a replaced id has already been
-    dropped by the caller.
-    """
-    def sub(v: MenaiCFGValue) -> MenaiCFGValue:
-        return replacements.get(v.id, v)
-
-    if isinstance(instr, MenaiCFGBuiltinInstr):
-        return replace(instr, args=tuple(sub(a) for a in instr.args))
-
-    if isinstance(instr, MenaiCFGCallInstr):
-        return replace(instr, func=sub(instr.func), args=tuple(sub(a) for a in instr.args))
-
-    if isinstance(instr, MenaiCFGApplyInstr):
-        return replace(instr, func=sub(instr.func), arg_list=sub(instr.arg_list))
-
-    if isinstance(instr, MenaiCFGMakeClosureInstr):
-        return replace(instr, captures=tuple(sub(c) for c in instr.captures))
-
-    if isinstance(instr, MenaiCFGMakeStructInstr):
-        return replace(instr, args=tuple(sub(a) for a in instr.args))
-
-    if isinstance(instr, MenaiCFGMakeListInstr):
-        return replace(instr, args=tuple(sub(a) for a in instr.args))
-
-    if isinstance(instr, MenaiCFGMakeVectorInstr):
-        return replace(instr, args=tuple(sub(a) for a in instr.args))
-
-    if isinstance(instr, MenaiCFGMakeSetInstr):
-        return replace(instr, args=tuple(sub(a) for a in instr.args))
-
-    if isinstance(instr, MenaiCFGMakeDictInstr):
-        return replace(instr, pairs=tuple((sub(k), sub(v)) for k, v in instr.pairs))
-
-    if isinstance(instr, MenaiCFGStructGetIndexedInstr):
-        return replace(instr, struct=sub(instr.struct))
-
-    if isinstance(instr, MenaiCFGStructWithIndexedInstr):
-        return replace(instr, struct=sub(instr.struct), value=sub(instr.value))
-
-    if isinstance(instr, MenaiCFGPatchClosureInstr):
-        return replace(instr, closure=sub(instr.closure), value=sub(instr.value))
-
-    if isinstance(instr, MenaiCFGGuardInstr):
-        return replace(instr, value=sub(instr.value))
-
-    if isinstance(instr, MenaiCFGPhiInstr):
-        return MenaiCFGPhiInstr(
-            result=instr.result,
-            incoming=tuple((sub(val), pred) for val, pred in instr.incoming),
-        )
-
-    # MenaiCFGConstInstr, MenaiCFGParamInstr, MenaiCFGFreeVarInstr: no input
-    # value references.
-    return instr
-
-
-def _substitute_value_in_term(
-    term: MenaiCFGTerminator,
-    replacements: dict[int, MenaiCFGValue],
-) -> MenaiCFGTerminator:
-    """Return a copy of term with every referenced value id replaced."""
-    def sub(v: MenaiCFGValue) -> MenaiCFGValue:
-        return replacements.get(v.id, v)
-
-    if isinstance(term, MenaiCFGBranchTerm):
-        return replace(term, cond=sub(term.cond))
-
-    if isinstance(term, MenaiCFGSwitchIntegerTerm):
-        return replace(term, value=sub(term.value))
-
-    if isinstance(term, MenaiCFGSwitchEnumTerm):
-        return replace(term, value=sub(term.value))
-
-    if isinstance(term, MenaiCFGReturnTerm):
-        return replace(term, value=sub(term.value))
-
-    if isinstance(term, MenaiCFGTailCallTerm):
-        return replace(term, func=sub(term.func), args=tuple(sub(a) for a in term.args))
-
-    if isinstance(term, MenaiCFGTailApplyTerm):
-        return replace(term, func=sub(term.func), arg_list=sub(term.arg_list))
-
-    if isinstance(term, MenaiCFGSelfLoopTerm):
-        return replace(term, args=tuple(sub(a) for a in term.args))
-
-    if isinstance(term, MenaiCFGRaiseTerm):
-        return replace(term, message=sub(term.message))
-
-    # MenaiCFGJumpTerm: no value references.
-    return term

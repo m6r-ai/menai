@@ -166,6 +166,7 @@ from menai.cfg.menai_cfg import (
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
     MenaiCFGPerFunctionPass,
+    compute_dominators_in_subgraph,
 )
 from menai.menai_value import (
     MenaiBoolean,
@@ -941,37 +942,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
                 if pred in region
             ]
 
-        # Standard iterative dominator computation.  dom(header) = {header};
-        # dom(B) = {B} union the intersection of dom(p) over B's in-region
-        # predecessors.  A block with no in-region predecessor other than
-        # itself starts as {B} and is only reached if it is the header.
-        all_ids = set(region)
-        dom: dict[int, set[int]] = {
-            block_id: ({block_id} if block_id == header.id else set(all_ids))
-            for block_id in region
-        }
-
-        changed = True
-        while changed:
-            changed = False
-            for block_id in region:
-                if block_id == header.id:
-                    continue
-
-                preds = region_preds[block_id]
-                if not preds:
-                    new_dom = {block_id}
-
-                else:
-                    common = set(dom[preds[0]])
-                    for pred in preds[1:]:
-                        common &= dom[pred]
-
-                    new_dom = common | {block_id}
-
-                if new_dom != dom[block_id]:
-                    dom[block_id] = new_dom
-                    changed = True
+        dom = compute_dominators_in_subgraph(region, header.id, region_preds)
 
         # A block executes on every iteration when it dominates every back-edge
         # block.  A back-edge block that is not in the region cannot be
