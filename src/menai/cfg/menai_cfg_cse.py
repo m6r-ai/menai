@@ -51,6 +51,7 @@ result is raising, which the dominance condition covers.
 
 from menai.cfg.menai_cfg import (
     MenaiCFGBuiltinInstr,
+    MenaiCFGConstInstr,
     MenaiCFGFunction,
     MenaiCFGInstr,
     MenaiCFGMakeDictInstr,
@@ -71,7 +72,47 @@ from menai.cfg.menai_cfg_optimization_pass import (
 )
 
 
-def _expression_key(instr: MenaiCFGInstr) -> tuple[tuple, MenaiCFGValue] | None:
+def _canonical_const_ids(func: MenaiCFGFunction) -> dict[int, int]:
+    """
+    Map each constant value id to a canonical id shared by equal constants.
+
+    The CFG builder emits a fresh constant instruction for each literal
+    occurrence, so two occurrences of the same literal have different SSA ids
+    even though they denote the same value.  A constant is immutable and pure,
+    so equal constants are interchangeable, and an expression that uses one is
+    the same expression as one that uses the other.  Keying operands by
+    canonical id lets CSE recognise them as the same expression.
+
+    Constants are compared by value.  The canonical id for a group is the id of
+    its first-seen member.  A constant value that is not hashable (a list or a
+    dict) is compared with `==` against the representatives seen so far, which
+    is a value comparison for those types.
+    """
+    canonical: dict[int, int] = {}
+    representatives: list[tuple[object, int]] = []
+
+    for block in func.blocks:
+        for instr in block.instrs:
+            if not isinstance(instr, MenaiCFGConstInstr):
+                continue
+
+            value = instr.value
+            for seen_value, seen_id in representatives:
+                if seen_value == value:
+                    canonical[instr.result.id] = seen_id
+                    break
+
+            else:
+                representatives.append((value, instr.result.id))
+                canonical[instr.result.id] = instr.result.id
+
+    return canonical
+
+
+def _expression_key(
+    instr: MenaiCFGInstr,
+    canonical: dict[int, int],
+) -> tuple[tuple, MenaiCFGValue] | None:
     """
     Return a (key, result) pair for a mergeable instruction, or None.
 
@@ -79,32 +120,42 @@ def _expression_key(instr: MenaiCFGInstr) -> tuple[tuple, MenaiCFGValue] | None:
     the operation and the identity of every operand value, so it is only equal
     for the same operation on the same operands.
 
+    Operand ids are mapped through `canonical`, so two operands that are equal
+    constants are treated as the same operand even though they are distinct
+    constant instructions.
+
     A non-mergeable instruction returns None and is left alone.
     """
+    def cid(value: MenaiCFGValue) -> int:
+        return canonical.get(value.id, value.id)
+
     if isinstance(instr, MenaiCFGBuiltinInstr):
-        return ("builtin", instr.op, tuple(a.id for a in instr.args)), instr.result
+        return ("builtin", instr.op, tuple(cid(a) for a in instr.args)), instr.result
 
     if isinstance(instr, MenaiCFGMakeListInstr):
-        return ("make_list", tuple(a.id for a in instr.args)), instr.result
+        return ("make_list", tuple(cid(a) for a in instr.args)), instr.result
 
     if isinstance(instr, MenaiCFGMakeVectorInstr):
-        return ("make_vector", tuple(a.id for a in instr.args)), instr.result
+        return ("make_vector", tuple(cid(a) for a in instr.args)), instr.result
 
     if isinstance(instr, MenaiCFGMakeSetInstr):
-        return ("make_set", tuple(a.id for a in instr.args)), instr.result
+        return ("make_set", tuple(cid(a) for a in instr.args)), instr.result
 
     if isinstance(instr, MenaiCFGMakeDictInstr):
-        return ("make_dict", tuple((k.id, v.id) for k, v in instr.pairs)), instr.result
+        return (
+            "make_dict",
+            tuple((cid(k), cid(v)) for k, v in instr.pairs),
+        ), instr.result
 
     if isinstance(instr, MenaiCFGMakeStructInstr):
         return (
             "make_struct",
             instr.struct_type.name,
-            tuple(a.id for a in instr.args),
+            tuple(cid(a) for a in instr.args),
         ), instr.result
 
     if isinstance(instr, MenaiCFGStructGetIndexedInstr):
-        return ("struct_get_indexed", instr.struct.id, instr.index), instr.result
+        return ("struct_get_indexed", cid(instr.struct), instr.index), instr.result
 
     return None
 
@@ -149,6 +200,7 @@ class MenaiCFGCSE(MenaiCFGPerFunctionPass):
         """
         by_id = blocks_by_id(func)
         dom = compute_dominators(func)
+        canonical = _canonical_const_ids(func)
 
         # The immediate dominator of a block is its dominator (other than
         # itself) with the largest dominator set: every other dominator of the
@@ -180,7 +232,7 @@ class MenaiCFGCSE(MenaiCFGPerFunctionPass):
             block = by_id[block_id]
 
             for instr in block.instrs:
-                entry = _expression_key(instr)
+                entry = _expression_key(instr, canonical)
                 if entry is None:
                     continue
 
