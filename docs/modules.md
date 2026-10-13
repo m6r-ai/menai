@@ -352,6 +352,29 @@ menai`. Currently it includes:
   accepts.  Text and attribute values are escaped minimally, and the output is a
   single unbroken document, so it is a value round-trip rather than a byte
   round-trip (`encode`)
+- `xlsx-decode.menai` — decodes an XLSX package (as bytes) into a value tree that
+  faithfully captures the package's parts, without interpreting the
+  spreadsheetML semantics.  The result is a dict with `"workbook"` (the
+  `xml-decode` element tree of `xl/workbook.xml`), `"relationships"` (a dict
+  mapping each workbook relationship id to a dict of `"type"`, `"target"`, and
+  `"mode"`), `"shared-strings"` (the decoded `<si>` elements of
+  `xl/sharedStrings.xml`, or `#none`), `"styles"` and `"theme"` (the element
+  trees of `xl/styles.xml` and `xl/theme/theme1.xml`, or `#none`), `"sheets"`
+  (the sheets in workbook order, each a dict of `"name"`, `"part"`, `"element"`,
+  and its own `"relationships"`), and `"media"` (a dict mapping each part name
+  under `xl/media/` to its bytes, or `#none`).  A sheet's order and name are
+  resolved from the workbook's `<sheets>` and its relationships, not from the
+  worksheet part names, and a cell's `"s"`-typed value is not resolved against
+  the shared string table.  Namespace prefixes are kept verbatim.  A semantic
+  workbook model is a separate, higher layer (`decode`)
+- `xlsx-encode.menai` — encodes an XLSX value tree (the shape `xlsx-decode`
+  produces) as an XLSX package; the inverse of `xlsx-decode`, so
+  `(decode (encode v))` reproduces `v` for every value tree `v` that `encode`
+  accepts.  The workbook part and its relationships are written verbatim, so the
+  caller is responsible for their sheet list and sheet relationships agreeing
+  with `"sheets"`.  The package's structural parts, `[Content_Types].xml` and
+  `_rels/.rels`, are generated from the parts present, so this is a value
+  round-trip rather than a byte round-trip (`encode`)
 - `zip-entries.menai` — reads a ZIP file (as bytes) and returns its central
   directory as a list of entry dicts, without decompressing the contents
   (`entries`)

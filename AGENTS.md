@@ -752,6 +752,25 @@ generated, not carried.
 
 See [ADR-0046](docs/adr/0046-docx-codec-ooxml-capture-layer.md).
 
+### The XLSX codec is the OOXML capture layer, not a workbook model
+
+`xlsx-decode` and `xlsx-encode` are a symmetric operation-module pair (ADR-0041) that
+decode a `.xlsx` package to a value tree and encode it back, carrying the value
+round-trip guarantee, on the same terms as the DOCX and PPTX codecs. The representation
+is a **faithful capture** of the package's parts, and nothing is interpreted.
+
+Two things are XLSX-specific and must not be "helpfully" resolved in the codec. First,
+`sheets` is an **ordered list** carrying each sheet's `name` and `part`, because neither
+sheet order nor sheet name is recoverable from the worksheet part name. Second,
+`shared-strings` is the decoded `<si>` elements of `xl/sharedStrings.xml`, and a cell's
+`"s"`-typed value is **not** resolved to the string it indexes: resolution is
+interpretation, and the codec stays a codec.
+
+As with the PPTX codec, the workbook and its relationships are carried **verbatim** on
+encode rather than regenerated from `sheets`, which is what makes the round-trip exact.
+
+See [ADR-0050](docs/adr/0050-xlsx-codec-ooxml-capture-layer.md).
+
 ### Enums are bare-tag, and the bare-tag form must not foreclose payloads
 
 An `enum` is a nominal, closed set of named variants, compared for identity only.
