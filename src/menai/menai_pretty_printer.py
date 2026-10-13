@@ -1,7 +1,14 @@
-"""Multi-pass Menai pretty printer with clean separation of concerns."""
+"""
+Menai source formatter.
 
+Implements the formatting style defined by ADR-0051.  The formatter lexes the
+source (preserving comments), builds a tree, and renders it with a single
+recursive pass that decides compact versus multi-line layout at each list from
+the column at which the list starts.
+"""
+
+from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
 
 from menai.ast.menai_lexer import MenaiLexer
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
@@ -11,14 +18,15 @@ from menai.ast.menai_token import MenaiToken, MenaiTokenType
 class FormatOptions:
     """Options for controlling pretty-printer behavior."""
     indent_size: int = 2
-    compact_threshold: int = 60
+    max_width: int = 100
     comment_spacing: int = 2
 
 
 class ASTNode:
     """Base class for AST nodes."""
-    start_line: int   # Line where node starts
-    end_line: int     # Line where node ends (for tracking EOL comments)
+    start_line: int
+    end_line: int
+    blank_before: bool
 
 
 @dataclass
@@ -30,6 +38,7 @@ class ASTAtom(ASTNode):
         self.value = source_value
         self.start_line = start_line
         self.end_line = start_line
+        self.blank_before = False
 
 
 @dataclass
@@ -41,61 +50,40 @@ class ASTQuote(ASTNode):
         self.expr = expr
         self.start_line = start_line
         self.end_line = expr.end_line if expr else start_line
+        self.blank_before = False
 
 
 @dataclass
 class ASTComment(ASTNode):
     """A comment."""
     text: str
-    is_eol: bool  # True if end-of-line comment, False if standalone
+    is_eol: bool
 
     def __init__(self, text: str, start_line: int, is_eol: bool):
         self.text = text
         self.start_line = start_line
         self.end_line = start_line
         self.is_eol = is_eol
+        self.blank_before = False
 
 
 @dataclass
 class ASTList(ASTNode):
     """A list with elements and associated comments."""
-    elements: list[ASTNode | ASTComment]  # Mix of nodes and comments
+    elements: list[ASTNode | ASTComment]
 
     def __init__(self, elements: list[ASTNode | ASTComment], start_line: int):
         self.elements = elements
         self.start_line = start_line
-        self.end_line = start_line  # Will be updated when we know the closing paren line
+        self.end_line = start_line
+        self.blank_before = False
 
 
-# === Special Form Rules ===
-
-# Maps special form names to number of elements that should stay on first line
-SPECIAL_FORM_RULES = {
-    'lambda': 2,
-    'let': 1,
-    'let*': 1,
-    'letrec': 1,
-    'match': 2,
-}
-
-# === PASS 2: Formatting Decisions ===
-
-class FormatStyle(Enum):
-    """How a list should be formatted."""
-    COMPACT = 1   # All on one line
-    MULTILINE = 2  # Each element on its own line
-
-
-@dataclass
-class FormatDecision:
-    """Formatting decision for a list."""
-    style: FormatStyle
-    column: int  # Column where '(' appears
-    elements_on_first_line: int = 1  # How many elements stay on first line
+SPECIAL_FORMS = frozenset({'lambda', 'let', 'let*', 'letrec', 'match'})
 
 
 class TreeBuilder:
-    """Build tree from tokens (Pass 1)."""
+    """Build tree from tokens."""
 
     def __init__(self, tokens: list[MenaiToken]):
         self.tokens = tokens
@@ -104,23 +92,27 @@ class TreeBuilder:
     def build(self) -> list[ASTNode]:
         """Build list of top-level expressions."""
         result: list[ASTNode] = []
-        last_code_line = -1  # Track the line of the last code element
+        last_code_line = -1
+        prev_end_line = -1
 
         while self.pos < len(self.tokens):
             token = self.tokens[self.pos]
 
             if token.type == MenaiTokenType.COMMENT:
-                # Check if this is an EOL comment at top level
                 is_eol = bool(token.line == last_code_line)
                 comment_node = ASTComment(token.value, token.line, is_eol)
+                comment_node.blank_before = token.line - prev_end_line > 1
                 self.pos += 1
                 result.append(comment_node)
+                prev_end_line = token.line
 
             else:
                 node = self._parse_expr()
                 if node:
+                    node.blank_before = node.start_line - prev_end_line > 1
                     result.append(node)
                     last_code_line = node.end_line
+                    prev_end_line = node.end_line
 
         return result
 
@@ -140,310 +132,109 @@ class TreeBuilder:
             expr = self._parse_expr()
             return ASTQuote(expr, start_line) if expr else None
 
-        # Atom
         atom = ASTAtom(self._format_atom_value(token), token.line)
         self.pos += 1
         return atom
 
     def _format_atom_value(self, token: MenaiToken) -> str:
         """Format an atom's value as a string."""
-        if token.type == MenaiTokenType.STRING:
-            return f'"{self._escape_string(token.value)}"'
-
-        if token.type == MenaiTokenType.BOOLEAN:
-            return '#t' if token.value else '#f'
+        if token.raw is not None:
+            return token.raw
 
         if token.type == MenaiTokenType.NONE:
             return '#none'
 
         return str(token.value)
 
-    def _escape_string(self, s: str) -> str:
-        """Escape a string."""
-        result = []
-        for char in s:
-            if char == '"':
-                result.append('\\"')
-
-            elif char == '\\':
-                result.append('\\\\')
-
-            elif char == '\n':
-                result.append('\\n')
-
-            elif char == '\t':
-                result.append('\\t')
-
-            elif char == '\r':
-                result.append('\\r')
-
-            elif ord(char) < 32:
-                result.append(f'\\u{ord(char):04x}')
-
-            else:
-                result.append(char)
-
-        return ''.join(result)
-
     def _parse_list(self) -> ASTList:
         """Parse a list."""
         start_line = self.tokens[self.pos].line
-        self.pos += 1  # consume '('
-        end_line = start_line  # Track where the list ends
+        self.pos += 1
+        end_line = start_line
 
         elements: list[ASTNode | ASTComment] = []
         last_code_line = start_line
+        prev_end_line = start_line
 
         while self.pos < len(self.tokens) and self.tokens[self.pos].type != MenaiTokenType.RPAREN:
             token = self.tokens[self.pos]
 
             if token.type == MenaiTokenType.COMMENT:
-                # Determine if EOL or standalone
                 is_eol = bool(token.line == last_code_line)
                 comment = ASTComment(token.value, token.line, is_eol)
+                comment.blank_before = token.line - prev_end_line > 1
                 elements.append(comment)
                 self.pos += 1
+                prev_end_line = token.line
 
             else:
                 expr = self._parse_expr()
                 if expr:
+                    expr.blank_before = expr.start_line - prev_end_line > 1
                     elements.append(expr)
                     if isinstance(expr, (ASTAtom, ASTList, ASTQuote)):
                         last_code_line = expr.end_line
+                        prev_end_line = expr.end_line
 
         if self.pos < len(self.tokens):
-            # Track the line where the closing ')' appears
             end_line = self.tokens[self.pos].line
-            self.pos += 1  # consume ')'
+            self.pos += 1
 
         result = ASTList(elements, start_line)
         result.end_line = end_line
         return result
 
 
-class FormatPlanner:
-    """Decide formatting for each node (Pass 2)."""
+class Renderer:
+    """
+    Render a tree to formatted source.
+
+    Layout is decided top-down: a list is rendered compactly when it contains no
+    comments and its compact rendering ends at or before the configured width,
+    and multi-line otherwise.  Because a list's column depends on how its parent
+    was laid out, planning and rendering are a single recursive pass.
+    """
 
     def __init__(self, options: FormatOptions):
         self.options = options
-        self.decisions: dict[int, FormatDecision] = {}  # Map from ASTList node id to FormatDecision
-
-    def plan(self, nodes: list[ASTNode], start_column: int = 0) -> None:
-        """Plan formatting for all nodes."""
-        for node in nodes:
-            self._plan_node(node, start_column)
-
-    def _plan_node(self, node: ASTNode, column: int) -> None:
-        """Plan formatting for a single node."""
-        if isinstance(node, ASTList):
-            self._plan_list(node, column)
-
-        elif isinstance(node, ASTQuote):
-            if node.expr:
-                self._plan_node(node.expr, column + 1)  # +1 for the '
-
-    def _get_first_line_element_count(self, lst: ASTList) -> tuple[int, bool]:
-        """
-        Determine how many elements should stay on the first line.
-
-        Returns:
-            (elements_on_first_line, is_special_form)
-        """
-        if not lst.elements:
-            return (1, False)
-
-        first_elem = lst.elements[0]
-        if not isinstance(first_elem, ASTAtom):
-            return (1, False)
-
-        form_name = first_elem.value
-        is_special_form = form_name in SPECIAL_FORM_RULES
-
-        if is_special_form:
-            return (SPECIAL_FORM_RULES[form_name], True)
-
-        # Regular function calls: use traditional Lisp alignment
-        # (function name + first argument on same line)
-        return (2, False)
-
-    def _calculate_subsequent_column(self, lst: ASTList, column: int, is_special_form: bool) -> int:
-        """
-        Calculate the column for elements after the first line.
-
-        For special forms: column + indent_size
-        For regular lists: align with first argument position
-        """
-        if is_special_form:
-            return column + self.options.indent_size
-
-        # For traditional Lisp alignment, subsequent arguments align with first argument
-        # First argument position = column + '(' + function_name + ' '
-        if lst.elements and isinstance(lst.elements[0], ASTAtom):
-            func_name_len = len(lst.elements[0].value)
-            return column + 1 + func_name_len + 1
-
-        return column + 1
-
-    def _plan_compact_list(self, lst: ASTList, column: int) -> None:
-        """Plan a list that will be rendered compactly."""
-        self.decisions[id(lst)] = FormatDecision(FormatStyle.COMPACT, column)
-
-        # Still need to plan nested lists in case they appear in compact mode
-        for elem in lst.elements:
-            if isinstance(elem, (ASTList, ASTQuote)):
-                self._plan_node(elem, 0)  # Column doesn't matter for compact
-
-    def _plan_multiline_list(self, lst: ASTList, column: int) -> None:
-        """Plan a list that will be rendered in multiline format."""
-        # Determine formatting parameters
-        elements_on_first_line, is_special_form = self._get_first_line_element_count(lst)
-        subsequent_col = self._calculate_subsequent_column(lst, column, is_special_form)
-
-        self.decisions[id(lst)] = FormatDecision(FormatStyle.MULTILINE, column, elements_on_first_line)
-
-        # Plan children
-        child_atom_col = column + 1  # After the '('
-        elements_on_current_line = 0
-
-        for elem in lst.elements:
-            if isinstance(elem, ASTComment):
-                continue  # Comments handled during render
-
-            if elements_on_current_line < elements_on_first_line:
-                # This element stays on the first line
-                # For the first element, use child_atom_col
-                # For subsequent elements on the first line, use subsequent_col
-                # This better approximates where they'll actually be rendered
-                plan_col = child_atom_col if elements_on_current_line == 0 else subsequent_col
-                self._plan_node(elem, plan_col)
-                elements_on_current_line += 1
-
-            else:
-                # Subsequent elements get indented
-                self._plan_node(elem, subsequent_col)
-
-    def _plan_list(self, lst: ASTList, column: int) -> None:
-        """Plan formatting for a list."""
-        # Try a compact format first
-        compact_str = self._try_compact(lst)
-        if compact_str and len(compact_str) <= self.options.compact_threshold:
-            self._plan_compact_list(lst, column)
-            return
-
-        self._plan_multiline_list(lst, column)
-
-    def _try_compact(self, lst: ASTList) -> str | None:
-        """Try to render list compactly, return None if not possible."""
-        # Can't be compact if it has comments
-        if any(isinstance(elem, ASTComment) for elem in lst.elements):
-            return None
-
-        parts = ['(']
-        for i, elem in enumerate(lst.elements):
-            if i > 0:
-                parts.append(' ')
-
-            if isinstance(elem, ASTAtom):
-                parts.append(elem.value)
-
-            elif isinstance(elem, ASTQuote):
-                parts.append("'")
-                if elem.expr:
-                    compact_expr = self._try_compact_expr(elem.expr)
-                    if not compact_expr:
-                        return None
-
-                    parts.append(compact_expr)
-
-            elif isinstance(elem, ASTList):
-                compact_list = self._try_compact(elem)
-                if not compact_list:
-                    return None
-
-                parts.append(compact_list)
-
-        parts.append(')')
-        return ''.join(parts)
-
-    def _try_compact_expr(self, node: ASTNode) -> str | None:
-        """Try to render any expression compactly."""
-        if isinstance(node, ASTAtom):
-            return node.value
-
-        if isinstance(node, ASTList):
-            return self._try_compact(node)
-
-        if isinstance(node, ASTQuote):
-            if node.expr:
-                compact = self._try_compact_expr(node.expr)
-                return f"'{compact}" if compact else None
-
-            return "'"
-
-        return None
-
-
-class Renderer:
-    """Render tree to string (Pass 3)."""
-
-    def __init__(self, options: FormatOptions, decisions: dict):
-        self.options = options
-        self.decisions: dict[int, FormatDecision] = decisions
 
     def render(self, nodes: list[ASTNode]) -> str:
         """Render all top-level nodes."""
         parts: list[str] = []
-        prev_was_comment = False
-        prev_line = 0
 
         i = 0
         while i < len(nodes):
             node = nodes[i]
 
-            if isinstance(node, ASTComment):
-                # Top-level comment
-                current_line = node.start_line
-                if parts and (current_line - prev_line > 1 or not prev_was_comment):
-                    parts.append('\n')
+            if parts and node.blank_before:
+                parts.append('\n')
 
+            if isinstance(node, ASTComment):
                 parts.append(node.text)
                 parts.append('\n')
-                prev_was_comment = True
-                prev_line = current_line
 
             else:
-                # Code
-                if parts and i > 0 and isinstance(nodes[i - 1], ASTComment):
-                    # Previous was comment, check for blank line in source
-                    pass  # Already handled above
-
                 rendered = self._render_node(node, 0)
                 parts.append(rendered)
 
-                # Check if next node is an EOL comment
                 if i + 1 < len(nodes):
                     comment = nodes[i + 1]
                     if isinstance(comment, ASTComment) and comment.is_eol:
-                        # Next node is EOL comment, append it on same line
                         parts.append(' ' * self.options.comment_spacing)
                         parts.append(comment.text)
-                        i += 1  # Skip the comment node since we just rendered it
+                        i += 1
 
                 parts.append('\n')
 
-                prev_was_comment = False
-                prev_line = node.end_line
-
             i += 1
 
-        result = ''.join(parts)
+        return self._cleanup(''.join(parts))
 
-        # Clean up trailing spaces
-        lines = result.split('\n')
-        lines = [line.rstrip() for line in lines]
+    def _cleanup(self, text: str) -> str:
+        """Strip trailing whitespace and collapse runs of blank lines."""
+        lines = [line.rstrip() for line in text.split('\n')]
 
-        # Remove excessive blank lines
-        cleaned = []
+        cleaned: list[str] = []
         blank_count = 0
         for line in lines:
             if line == '':
@@ -462,182 +253,385 @@ class Renderer:
         return result
 
     def _render_node(self, node: ASTNode, column: int) -> str:
-        """Render a single node."""
+        """Render a single node starting at the given column."""
         if isinstance(node, ASTAtom):
             return node.value
 
+        if isinstance(node, ASTComment):
+            return node.text
+
         if isinstance(node, ASTQuote):
-            expr_str = self._render_node(node.expr, column + 1) if node.expr else ""
+            expr_str = self._render_node(node.expr, column + 1) if node.expr else ''
             return f"'{expr_str}"
 
         if isinstance(node, ASTList):
             return self._render_list(node, column)
 
-        return ""
+        return ''
 
-    def _render_list(self, lst: ASTList, column: int) -> str:
-        """Render a list."""
-        decision = self.decisions.get(id(lst))
-        if not decision:
-            # Fallback to multiline
-            decision = FormatDecision(FormatStyle.MULTILINE, column)
+    def _try_compact(self, node: ASTNode) -> str | None:
+        """Return the compact single-line rendering, or None if not possible."""
+        if isinstance(node, ASTAtom):
+            return node.value
 
-        if decision.style == FormatStyle.COMPACT:
-            return self._render_compact(lst)
+        if isinstance(node, ASTQuote):
+            inner = self._try_compact(node.expr) if node.expr else ''
+            return f"'{inner}" if inner is not None else None
 
-        return self._render_multiline(lst, decision)
+        if isinstance(node, ASTList):
+            if any(isinstance(elem, ASTComment) for elem in node.elements):
+                return None
 
-    def _render_compact(self, lst: ASTList) -> str:
-        """Render list compactly."""
-        parts = ['(']
-        for i, elem in enumerate(lst.elements):
-            if isinstance(elem, ASTComment):
-                continue  # Skip comments in compact mode
+            if any(elem.blank_before for elem in node.elements[1:]):
+                return None
 
-            if i > 0:
-                parts.append(' ')
+            head = node.elements[0] if node.elements else None
+            if isinstance(head, ASTAtom):
+                if head.value == 'match':
+                    return None
 
-            parts.append(self._render_node(elem, 0))
+                if head.value in ('and', 'or') and len(node.elements) >= 3:
+                    return None
 
-        parts.append(')')
-        return ''.join(parts)
-
-    def _render_multiline(self, lst: ASTList, decision: FormatDecision) -> str:
-        """Render list in multiline format."""
-        lparen_col = decision.column
-        elements_on_first_line = decision.elements_on_first_line
-        indent = lparen_col + 1
-
-        # Check if this is a special form
-        is_special_form = False
-        if lst.elements:
-            first_elem = lst.elements[0]
-            if isinstance(first_elem, ASTAtom):
-                is_special_form = first_elem.value in SPECIAL_FORM_RULES
-
-        # For special forms, indent subsequent elements by indent_size
-        # For regular lists, align subsequent elements with first argument position
-        if is_special_form:
-            subsequent_col = lparen_col + self.options.indent_size
-
-        else:
-            # For traditional Lisp alignment, subsequent arguments align with first argument
-            # First argument position = column + '(' + function_name + ' '
-            # We need to calculate function name length
-            if lst.elements and isinstance(lst.elements[0], ASTAtom):
-                func_name_len = len(lst.elements[0].value)
-                subsequent_col = lparen_col + 1 + func_name_len + 1
-
-            else:
-                subsequent_col = lparen_col + 1
-
-
-        parts = ['(']
-        elements_on_current_line = 0
-        prev_comment_line = None
-        prev_code_indent = None
-        just_output_newline = False
-        prev_was_standalone_comment = False
-
-        for elem in lst.elements:
-            if isinstance(elem, ASTComment):
-                if elem.is_eol:
-                    # End-of-line comment
-                    parts.append(' ' * self.options.comment_spacing)
-
-                else:
-                    # Standalone comment
-                    if not parts[-1].endswith('\n'):
-                        parts.append('\n')
-
-                    blank_line_added = False
-
-                    # Check for blank line from source
-                    if prev_comment_line and elem.start_line - prev_comment_line > 1:
-                        parts.append('\n')
-                        blank_line_added = True
-
-                    # Comments align with subsequent elements
-                    comment_indent = subsequent_col
-
-                    # Add blank line if comment is at same or lower indent than previous code
-                    # But not if previous element was also a standalone comment
-                    if not blank_line_added and not prev_was_standalone_comment and \
-                       prev_code_indent is not None and comment_indent <= prev_code_indent:
-                        parts.append('\n')
-
-                    parts.append(' ' * comment_indent)
-                    prev_comment_line = elem.start_line
-                    prev_was_standalone_comment = True
-
-                parts.append(elem.text)
-                parts.append('\n')
-                just_output_newline = True
-
-                # After a comment, we're past the "first line"
-                elements_on_current_line = elements_on_first_line
-                continue
-
-            # Code element
-            if elements_on_current_line < elements_on_first_line:
-                # This element stays on the first line
-                if elements_on_current_line > 0:
-                    # Add space before this element (not before the very first)
+            parts = ['(']
+            for i, elem in enumerate(node.elements):
+                if i > 0:
                     parts.append(' ')
 
-                prev_code_indent = indent
-                parts.append(self._render_node(elem, indent))
-                elements_on_current_line += 1
+                compact = self._try_compact(elem)
+                if compact is None:
+                    return None
 
-            else:
-                # This element goes on a new line with indent
-                if not just_output_newline:
-                    parts.append('\n')
+                parts.append(compact)
 
-                indent = subsequent_col
-                parts.append(' ' * indent)
-
-                prev_code_indent = indent
-                parts.append(self._render_node(elem, indent))
-
-            just_output_newline = False
-            prev_was_standalone_comment = False
-
-        # Add closing paren with proper indentation
-        if just_output_newline:
-            # Last element ended with newline, indent closing paren to match opening
-            parts.append(' ' * lparen_col)
-
-        parts.append(')')
-        return ''.join(parts)
-
-    def _find_next_code_element(self, elements: list, start_idx: int) -> ASTNode | None:
-        """Find the next non-comment element."""
-        for i in range(start_idx + 1, len(elements)):
-            if not isinstance(elements[i], ASTComment):
-                return elements[i]
+            parts.append(')')
+            return ''.join(parts)
 
         return None
 
+    def _render_list(self, lst: ASTList, column: int) -> str:
+        """Render a list, choosing compact or multi-line layout."""
+        if not lst.elements:
+            return '()'
+
+        head = lst.elements[0]
+        head_name = head.value if isinstance(head, ASTAtom) else None
+        body = lst.elements[1:]
+
+        if head_name in ('and', 'or') and len(body) >= 2:
+            return self._render_general(head, body, column)
+
+        if head_name == 'match':
+            return self._render_match(body, column)
+
+        compact = self._try_compact(lst)
+        if compact is not None and column + len(compact) <= self.options.max_width:
+            return compact
+
+        if head_name == 'dict':
+            return self._render_dict(head, body, column)
+
+        if head_name in ('let', 'let*', 'letrec'):
+            return self._render_binding_form(head_name, body, column)
+
+        if head_name == 'lambda':
+            return self._render_lambda(body, column)
+
+        return self._render_general(head, body, column)
+
+    def _render_general(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int) -> str:
+        """Render a general list: head and first argument, then one per line."""
+        head_str = self._render_node(head, column + 1)
+        first_col = column + 1 + len(head_str) + 1
+
+        if not body:
+            return f'({head_str})'
+
+        if isinstance(body[0], ASTComment):
+            lines = [f'({head_str}']
+            lines.extend(self._render_tail(body, first_col))
+
+        else:
+            first_str = self._render_node(body[0], first_col)
+            lines = [f'({head_str} {first_str}']
+            lines.extend(self._render_tail(body[1:], first_col))
+
+        lines[-1] += ')'
+        return '\n'.join(lines)
+
+    def _render_dict(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int) -> str:
+        """Render a dict: each key/value pair on its own line, aligned under the first key."""
+        head_str = self._render_node(head, column + 1)
+        key_col = column + 1 + len(head_str) + 1
+
+        if not body:
+            return f'({head_str})'
+
+        entries: list[str] = []
+        pending: list[ASTNode] = []
+        for elem in body:
+            if isinstance(elem, ASTComment):
+                if pending:
+                    entries.append(self._render_pair(pending, key_col))
+                    pending = []
+
+                if elem.blank_before and entries:
+                    entries.append('')
+
+                entries.append(elem.text)
+                continue
+
+            pending.append(elem)
+            if len(pending) == 2:
+                entries.append(self._render_pair(pending, key_col))
+                pending = []
+
+        if pending:
+            entries.append(self._render_pair(pending, key_col))
+
+        if not entries:
+            return f'({head_str})'
+
+        lines = [f'({head_str} {entries[0]}']
+        lines.extend(' ' * key_col + entry if entry else '' for entry in entries[1:])
+
+        lines[-1] += ')'
+        return '\n'.join(lines)
+
+    def _render_pair(self, pair: list[ASTNode], column: int) -> str:
+        """Render a key/value pair: the value's first line shares the key's line."""
+        key_str = self._render_node(pair[0], column)
+        if len(pair) < 2:
+            return key_str
+
+        value_col = column + len(key_str) + 1
+        value_str = self._render_node(pair[1], value_col)
+        return f'{key_str} {value_str}'
+
+    def _render_tail(
+        self,
+        elements: list[ASTNode | ASTComment],
+        column: int,
+        renderer: Callable[[ASTNode, int], str] | None = None,
+    ) -> list[str]:
+        """Render elements one per line at the given column, with comments and blanks."""
+        render = renderer or self._render_node
+        lines: list[str] = []
+        for elem in elements:
+            if elem.blank_before:
+                lines.append('')
+
+            if isinstance(elem, ASTComment):
+                lines.append(' ' * column + elem.text)
+                continue
+
+            lines.append(' ' * column + render(elem, column))
+
+        return lines
+
+    def _render_binding_form(self, name: str, body: list[ASTNode | ASTComment], column: int) -> str:
+        """Render let/let*/letrec: bindings then body, both indented by two."""
+        if not body:
+            return f'({name})'
+
+        inner_col = column + self.options.indent_size
+
+        leading: list[ASTComment] = []
+        index = 0
+        while index < len(body):
+            candidate = body[index]
+            if not isinstance(candidate, ASTComment):
+                break
+
+            leading.append(candidate)
+            index += 1
+
+        if index >= len(body):
+            return self._render_general(ASTAtom(name, 0), body, column)
+
+        bindings = body[index]
+        if not isinstance(bindings, ASTList):
+            return self._render_general(ASTAtom(name, 0), body, column)
+
+        tail = body[index + 1:]
+
+        inline_col = column + 1 + len(name) + 1
+        binding_lines = self._render_bindings(bindings, inline_col)
+
+        binding_elems = [e for e in bindings.elements if not isinstance(e, ASTComment)]
+        single_binding = len(binding_elems) <= 1
+        all_single_line = all(
+            '\n' not in self._render_binding(e, inline_col + 1) for e in binding_elems
+        )
+        first_is_binding = bool(bindings.elements) and \
+            not isinstance(bindings.elements[0], ASTComment)
+
+        first_line = binding_lines[0].split('\n')[0]
+        inline = not leading and first_is_binding and binding_elems and \
+            (single_binding or all_single_line) and \
+            inline_col + len(first_line) <= self.options.max_width
+
+        if inline:
+            lines = [f'({name} {binding_lines[0]}']
+            lines.extend(binding_lines[1:])
+
+        else:
+            binding_lines = self._render_bindings(bindings, inner_col)
+            lines = [f'({name}']
+            lines.extend(' ' * inner_col + comment.text for comment in leading)
+            lines.append(' ' * inner_col + binding_lines[0])
+            lines.extend(binding_lines[1:])
+
+        lines.extend(self._render_tail(tail, inner_col))
+
+        lines[-1] += ')'
+        return '\n'.join(lines)
+
+    def _render_bindings(self, bindings: ASTList, column: int) -> list[str]:
+        """Render a binding list: each binding aligned under the first."""
+        if not bindings.elements:
+            return ['()']
+
+        binding_col = column + 1
+
+        # Group each binding with the comments that precede it.
+        groups: list[tuple[list[str], str, bool]] = []
+        comments: list[str] = []
+        blank = False
+        for elem in bindings.elements:
+            if isinstance(elem, ASTComment):
+                blank = blank or elem.blank_before
+                comments.append(elem.text)
+                continue
+
+            groups.append((comments, self._render_binding(elem, binding_col), blank or elem.blank_before))
+            comments = []
+            blank = False
+
+        lines: list[str] = []
+        prev_multiline = False
+        for index, (group_comments, rendered, blank) in enumerate(groups):
+            multiline = '\n' in rendered
+            if index > 0 and (prev_multiline or multiline or blank):
+                lines.append('')
+
+            if index == 0:
+                if group_comments:
+                    lines.append('(' + group_comments[0])
+                    lines.extend(' ' * binding_col + c for c in group_comments[1:])
+                    lines.append(' ' * binding_col + rendered)
+
+                else:
+                    lines.append('(' + rendered)
+
+            else:
+                lines.extend(' ' * binding_col + c for c in group_comments)
+                lines.append(' ' * binding_col + rendered)
+
+            prev_multiline = multiline
+
+        for comment in comments:
+            lines.append(' ' * binding_col + comment)
+
+        lines[-1] += ')'
+        return lines
+
+    def _render_binding(self, binding: ASTNode, column: int) -> str:
+        """Render a single binding: (name value), value on the next line if long."""
+        if not isinstance(binding, ASTList) or not binding.elements:
+            return self._render_node(binding, column)
+
+        name = binding.elements[0]
+        rest = binding.elements[1:]
+
+        if not isinstance(name, ASTAtom):
+            return self._render_node(binding, column)
+
+        name_col = column + 1
+        value_col = name_col
+
+        if not rest:
+            return f'({name.value})'
+
+        value = rest[0]
+        if isinstance(value, ASTComment):
+            return f'({name.value} {value.text})'
+
+        value_str = self._render_node(value, value_col)
+        if '\n' in value_str:
+            return f'({name.value}\n' + ' ' * value_col + value_str + ')'
+
+        return f'({name.value} {value_str})'
+
+    def _render_lambda(self, body: list[ASTNode | ASTComment], column: int) -> str:
+        """Render a lambda: params on the head line, body indented by two."""
+        inner_col = column + self.options.indent_size
+        params_col = column + 1 + len('lambda') + 1
+
+        if not body:
+            return '(lambda)'
+
+        if isinstance(body[0], ASTComment):
+            lines = ['(lambda']
+            lines.extend(self._render_tail(body, inner_col))
+
+        else:
+            params_str = self._render_node(body[0], params_col)
+            lines = [f'(lambda {params_str}']
+            lines.extend(self._render_tail(body[1:], inner_col))
+
+        lines[-1] += ')'
+        return '\n'.join(lines)
+
+    def _render_match(self, body: list[ASTNode | ASTComment], column: int) -> str:
+        """Render a match: scrutinee on the head line, arms indented by two."""
+        inner_col = column + self.options.indent_size
+        scrutinee_col = column + 1 + len('match') + 1
+
+        if not body:
+            return '(match)'
+
+        if isinstance(body[0], ASTComment):
+            lines = ['(match']
+            lines.extend(self._render_tail(body, inner_col))
+
+        else:
+            scrutinee_str = self._render_node(body[0], scrutinee_col)
+            lines = [f'(match {scrutinee_str}']
+            lines.extend(self._render_tail(body[1:], inner_col, self._render_arm))
+
+        lines[-1] += ')'
+        return '\n'.join(lines)
+
+    def _render_arm(self, arm: ASTNode, column: int) -> str:
+        """Render a match arm: (pattern body), body on the next line if long."""
+        if not isinstance(arm, ASTList) or len(arm.elements) < 2:
+            return self._render_node(arm, column)
+
+        pattern = arm.elements[0]
+        body = arm.elements[1]
+        if isinstance(body, ASTComment):
+            return self._render_node(arm, column)
+
+        pattern_str = self._render_node(pattern, column + 1)
+        body_col = column + 1
+        body_str = self._render_node(body, body_col)
+
+        if '\n' in body_str:
+            return f'({pattern_str}\n' + ' ' * body_col + body_str + ')'
+
+        return f'({pattern_str} {body_str})'
+
 
 class MenaiPrettyPrinter:
-    """Main pretty printer using multi-pass approach."""
+    """Format Menai source code."""
 
     def __init__(self, options: FormatOptions | None = None):
         self.options = options or FormatOptions()
 
     def format(self, source_code: str) -> str:
         """Format Menai source code."""
-        # Pass 1: Lex and build tree
         lexer = MenaiLexer()
         tokens = lexer.lex(source_code, preserve_comments=True)
-        builder = TreeBuilder(tokens)
-        tree = builder.build()
-
-        # Pass 2: Plan formatting
-        planner = FormatPlanner(self.options)
-        planner.plan(tree, start_column=0)
-
-        # Pass 3: Render
-        renderer = Renderer(self.options, planner.decisions)
-        return renderer.render(tree)
+        tree = TreeBuilder(tokens).build()
+        return Renderer(self.options).render(tree)

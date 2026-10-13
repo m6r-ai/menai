@@ -39,7 +39,9 @@
   ((is-space?
     (lambda (ch)
       (or (string=? ch " ")
-          (or (string=? ch "\t") (or (string=? ch "\n") (string=? ch "\r"))))))
+          (string=? ch "\t")
+          (string=? ch "\n")
+          (string=? ch "\r"))))
 
    ; The index of the first non-whitespace character at or after `i`.
    (skip-space
@@ -156,7 +158,9 @@
                            (if (integer>=? j (string-length s))
                                (error "xml-decode: unterminated start tag")
                                (let ((ch (string-nth s j)))
-                                 (if (or (is-space? ch) (or (string=? ch ">") (string=? ch "/")))
+                                 (if (or (is-space? ch)
+                                         (string=? ch ">")
+                                         (string=? ch "/"))
                                      j
                                      (name-end (integer+ j 1))))))))
         (let ((ne (name-end (integer+ i 1))))

@@ -23,8 +23,9 @@
                            #f
                            (let ((ch (string-nth field i)))
                              (if (or (string=? ch delim)
-                                     (or (string=? ch "\"")
-                                         (or (string=? ch "\r") (string=? ch "\n"))))
+                                     (string=? ch "\"")
+                                     (string=? ch "\r")
+                                     (string=? ch "\n"))
                                  #t
                                  (loop (integer+ i 1))))))))
         (loop 0))))

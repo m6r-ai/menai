@@ -13,9 +13,9 @@
                            i
                            (let ((ch (string-nth s i)))
                              (if (or (string=? ch " ")
-                                 (or (string=? ch "\t")
-                                 (or (string=? ch "\n")
-                                     (string=? ch "\r"))))
+                                     (string=? ch "\t")
+                                     (string=? ch "\n")
+                                     (string=? ch "\r"))
                                  (loop (integer+ i 1))
                                  i))))))
         (loop pos))))
@@ -49,8 +49,8 @@
                                       (let ((esc (string-nth s (integer+ i 1))))
                                         (let ((chunks2
                                                (if (integer<? run-start i)
-                                                (list-prepend chunks (string-slice s run-start i))
-                                                chunks)))
+                                                   (list-prepend chunks (string-slice s run-start i))
+                                                   chunks)))
                                           (let ((unescaped
                                                  (match esc
                                                    ("\"" "\"")
@@ -85,11 +85,11 @@
                            j
                            (let ((ch (string-nth s j)))
                              (if (or (string=? ch "-")
-                                     (or (string=? ch "+")
-                                         (or (string=? ch ".")
-                                             (or (string=? ch "e")
-                                                 (or (string=? ch "E")
-                                                     (is-digit? ch))))))
+                                     (string=? ch "+")
+                                     (string=? ch ".")
+                                     (string=? ch "e")
+                                     (string=? ch "E")
+                                     (is-digit? ch))
                                  (loop (integer+ j 1))
                                  j))))))
        (loop i))))
@@ -199,7 +199,7 @@
                                              (parse-keyword s pos2 "null" #none)
                                              (if (or (string=? ch "-") (is-digit? ch))
                                                  (parse-number s pos2)
-                                                (error "Unexpected character in JSON"))))))))
+                                                 (error "Unexpected character in JSON"))))))))
                          (resume (list-first scalar-result) (list-nth scalar-result 1) stack)))))))))
 
    ; Decode a JSON string into the equivalent Menai value: objects become

@@ -147,7 +147,8 @@
     (lambda (entry)
       (let ((typeflag (entry-type entry)))
         (if (boolean-not (or (string=? typeflag "0")
-                             (or (string=? typeflag "5") (string=? typeflag "2"))))
+                             (string=? typeflag "5")
+                             (string=? typeflag "2")))
             (error (string-concat
                      "tar-create: unsupported typeflag \"" typeflag
                      "\" (only \"0\" (file), \"5\" (directory), and \"2\" (symlink) are supported)"))

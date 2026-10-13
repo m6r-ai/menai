@@ -181,7 +181,8 @@
    (normalise-typeflag
     (lambda (typeflag)
       (if (or (string=? typeflag "0")
-              (or (string=? typeflag (integer-codepoint->string 0)) (string=? typeflag "7")))
+              (string=? typeflag (integer-codepoint->string 0))
+              (string=? typeflag "7"))
           "0"
           (if (or (string=? typeflag "5") (string=? typeflag "2"))
               typeflag

@@ -53,10 +53,10 @@ Examples:
         help='Number of spaces per indentation level (default: 2)'
     )
     parser.add_argument(
-        '--compact-threshold',
+        '--max-width',
         type=int,
-        default=60,
-        help='Maximum length for compact formatting (default: 60)'
+        default=100,
+        help='Maximum column for compact formatting (default: 100)'
     )
     parser.add_argument(
         '--comment-spacing',
@@ -96,7 +96,7 @@ Examples:
     # Create format options
     options = FormatOptions(
         indent_size=args.indent,
-        compact_threshold=args.compact_threshold,
+        max_width=args.max_width,
         comment_spacing=args.comment_spacing
     )
 

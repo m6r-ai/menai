@@ -859,6 +859,33 @@ ample room for hand-written code. The expansion itself is still super-linear; im
 it is worthwhile and is not foreclosed by the bound.
 See [ADR-0045](docs/adr/0045-desugared-match-size-is-bounded.md).
 
+### Menai source formatting is defined by a fixed style
+
+`menai-pretty-print` implements one style, recorded in ADR-0051. The width is 100
+columns, measured as the column a form's compact rendering would end at; a form is
+compact when it ends at or before column 100 and multi-line otherwise. Every form
+follows the general-list rule — `head` and the first argument on the first line,
+each remaining argument on its own line aligned under the first argument — except
+the five special forms (`lambda`, `let`, `let*`, `letrec`, `match`), which indent
+their trailing elements by two, and bindings, which put the value on the next line
+at the name's column. A multi-line binding is separated from the next binding by a
+blank line (before any comment that precedes it) and from the previous binding by
+one too; single-line bindings are not separated.
+A multi-line `dict` is the general-list rule with arguments grouped in pairs:
+each key/value pair goes on its own line, aligned under the first key.
+
+`and` and `or` are variadic and are written flat (`(or a b c d)`), never as a
+right-nested cascade. The nesting carries no meaning and drives the formatter's
+indentation one level right per condition. An `and`/`or` with two or more operands
+is always laid out multi-line, one operand per line, even when it would fit; a
+chain of conditions is the one case where the compact form is less readable.
+
+The style is a specification, not a description of the corpus: the hand-written
+standard library contains local inconsistencies that no rule reproduces, and
+reformatting normalises them. Do not "fix" the formatter to match an individual
+file; change the ADR if the style itself is wrong.
+See [ADR-0051](docs/adr/0051-menai-source-formatting-style.md).
+
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and

@@ -1,704 +1,378 @@
-"""Tests for the Menai pretty-printer."""
+"""Tests for the Menai source formatter.
+
+These tests define the formatting style specified by ADR-0051.  They are a
+specification of behaviour, not a description of any particular implementation.
+"""
+
+import glob
+from pathlib import Path
 
 import pytest
 
+from menai.ast.menai_lexer import MenaiLexer
 from menai.menai_pretty_printer import MenaiPrettyPrinter, FormatOptions
 
 
-class TestPrettyPrinterBasic:
-    """Test basic pretty-printer functionality."""
+def format_code(code: str, **kwargs) -> str:
+    """Format a source string with the given options."""
+    return MenaiPrettyPrinter(FormatOptions(**kwargs)).format(code)
 
-    def test_simple_atoms(self):
-        """Test formatting of simple atomic values."""
-        printer = MenaiPrettyPrinter()
 
-        assert printer.format("42") == "42\n"
-        assert printer.format("3.14") == "3.14\n"
-        assert printer.format("#t") == "#t\n"
-        assert printer.format("#f") == "#f\n"
-        assert printer.format('"hello"') == '"hello"\n'
-        assert printer.format("symbol") == "symbol\n"
+def token_texts(source: str) -> list[str]:
+    """Return the exact source text of every non-comment token."""
+    tokens = MenaiLexer().lex(source, preserve_comments=True)
+    return [t.raw if t.raw is not None else str(t.value) for t in tokens if t.type.name != 'COMMENT']
+
+
+def comment_tokens(source: str) -> list[str]:
+    """Return the comment texts of a source string, in order."""
+    tokens = MenaiLexer().lex(source, preserve_comments=True)
+    return [str(t.value) for t in tokens if t.type.name == 'COMMENT']
+
+
+class TestAtoms:
+    """Atomic values are rendered unchanged."""
+
+    @pytest.mark.parametrize('code', ['42', '3.14', '#t', '#f', '#none', 'symbol', '"hello"'])
+    def test_atom(self, code):
+        """An atom renders as itself with a trailing newline."""
+        assert format_code(code) == code + '\n'
 
     def test_empty_list(self):
-        """Test formatting of empty list."""
-        printer = MenaiPrettyPrinter()
-        assert printer.format("()") == "()\n"
-
-    def test_compact_list(self):
-        """Test that short lists stay compact."""
-        printer = MenaiPrettyPrinter()
+        """An empty list renders as ()."""
+        assert format_code('()') == '()\n'
 
-        # Simple arithmetic
-        assert printer.format("(+ 1 2 3)") == "(+ 1 2 3)\n"
+    def test_string_escapes(self):
+        """A string's escapes are preserved."""
+        assert format_code(r'"a\tb\nc\"d"') == r'"a\tb\nc\"d"' + '\n'
 
-        # Short nested lists
-        assert printer.format("(* n (factorial (- n 1)))") == "(* n (factorial (- n 1)))\n"
-
-    def test_multiline_list(self):
-        """Test that long lists are formatted multi-line."""
-        printer = MenaiPrettyPrinter()
-
-        # Very long list should be multi-line
-        code = "(very-long-function-name-that-exceeds-threshold arg1 arg2 arg3 arg4 arg5)"
-        result = printer.format(code)
-        assert "\n" in result
-        assert result.count("\n") > 1  # More than just trailing newline
-
 
-class TestPrettyPrinterAlignment:
-    """Test traditional Lisp-style alignment."""
-
-    def test_multiline_list_alignment(self):
-        """Test that multi-line lists use traditional Lisp alignment."""
-        # Force multi-line with low threshold
-        options = FormatOptions(compact_threshold=20)
-        printer = MenaiPrettyPrinter(options)
-        code = "(+ 1 2 3 4 5 6 7 8 9 10)"
-        result = printer.format(code)
+class TestCompact:
+    """A list is compact when its rendering ends at or before the width."""
 
-        # Should have first argument on same line as function
-        lines = result.split("\n")
-        assert lines[0] == "(+ 1"
+    def test_short_call(self):
+        """A short call is compact."""
+        assert format_code('(foo a b c)') == '(foo a b c)\n'
 
-        # Subsequent arguments should align under first argument
-        # First argument starts at position 3 (after "(+ ")
-        assert lines[1] == "   2"
-        assert lines[2] == "   3"
+    def test_nested_short_call(self):
+        """A short call with a nested short call is compact."""
+        assert format_code('(foo (bar a) b)') == '(foo (bar a) b)\n'
 
-        # All argument lines should have same indentation
-        for i in range(1, 10):
-            assert lines[i].startswith("   ")
+    def test_compact_at_width(self):
+        """A list whose rendering ends exactly at the width is compact."""
+        code = '(foo ' + 'a' * 92 + ' b)'
+        assert len(code) == 100
+        assert format_code(code) == code + '\n'
 
-
-class TestPrettyPrinterLetForms:
-    """Test formatting of let/let*/letrec forms."""
+    def test_multiline_over_width(self):
+        """A list whose rendering ends past the width is multi-line."""
+        code = '(foo ' + 'a' * 93 + ' b)'
+        assert len(code) == 101
+        result = format_code(code)
+        assert result.count('\n') > 1
 
-    def test_simple_let(self):
-        """Test formatting of simple let expression."""
-        printer = MenaiPrettyPrinter()
-        code = "(let ((x 5)(y 10)) (+ x y))"
-        result = printer.format(code)
-
-        expected = "(let ((x 5) (y 10)) (+ x y))\n"
-        assert result == expected
-
-    def test_let_star(self):
-        """Test formatting of let* expression."""
-        printer = MenaiPrettyPrinter()
-        code = "(let* ((x 5)(y (* x 2))) (+ x y))"
-        result = printer.format(code)
-
-        expected = "(let* ((x 5) (y (* x 2))) (+ x y))\n"
-        assert result == expected
-
-    def test_letrec_with_lambda(self):
-        """Test formatting of letrec with lambda."""
-        printer = MenaiPrettyPrinter()
-        code = "(letrec ((factorial (lambda (n) (if (<= n 1) 1 (* n (factorial (- n 1))))))) (factorial 5))"
-        result = printer.format(code)
-
-        # Should have proper indentation
-        assert "letrec" in result
-        assert "lambda" in result
-        assert "(* n (factorial (- n 1)))" in result  # Should be compact
-
-
-class TestPrettyPrinterLambda:
-    """Test formatting of lambda expressions."""
-
-    def test_simple_lambda(self):
-        """Test formatting of simple lambda."""
-        printer = MenaiPrettyPrinter()
-        code = "(lambda (x y) (* x y))"
-        result = printer.format(code)
-
-        expected = "(lambda (x y) (* x y))\n"
-        assert result == expected
-
-    def test_lambda_with_complex_body(self):
-        """Test formatting of lambda with complex body."""
-        printer = MenaiPrettyPrinter()
-        code = "(lambda (n) (if (<= n 1) 1 (* n (factorial (- n 1)))))"
-        result = printer.format(code)
-
-        # Should be compact since it fits on one line
-        assert "lambda" in result
-        assert "if" in result
-
-
-class TestPrettyPrinterConditionals:
-    """Test formatting of conditional expressions."""
-
-    def test_if_expression(self):
-        """Test formatting of if expression."""
-        printer = MenaiPrettyPrinter()
-        code = "(if (> x 5) (+ x 10) (- x 5))"
-        result = printer.format(code)
-
-        expected = "(if (> x 5) (+ x 10) (- x 5))\n"
-        assert result == expected
-
-    def test_nested_if(self):
-        """Test formatting of nested if expressions."""
-        printer = MenaiPrettyPrinter()
-        code = "(if (> x 0) (if (< x 10) 1 2) 3)"
-        result = printer.format(code)
-
-        # Should be compact since it fits on one line
-        assert "if" in result
-        # Compact: (if (> x 0) (if (< x 10) 1 2) 3)
-
-
-class TestPrettyPrinterComments:
-    """Test comment preservation and formatting."""
-
-    def test_end_of_line_comment(self):
-        """Test that end-of-line comments are preserved."""
-        printer = MenaiPrettyPrinter()
-        code = "(let ((x 5)  ; initial value\n      (y 10))  ; second value\n  (+ x y))"
-        result = printer.format(code)
-
-        assert "; initial value" in result
-        assert "; second value" in result
-
-    def test_standalone_comment_before_code(self):
-        """Test standalone comment before code."""
-        printer = MenaiPrettyPrinter()
-        code = "; This is a comment\n(+ 1 2)"
-        result = printer.format(code)
-
-        assert "; This is a comment" in result
-        assert result.startswith("; This is a comment")
-
-    def test_multiple_adjacent_comments(self):
-        """Test multiple adjacent comments stay together."""
-        printer = MenaiPrettyPrinter()
-        code = "; Comment 1\n; Comment 2\n; Comment 3\n(+ 1 2)"
-        result = printer.format(code)
-
-        lines = result.split("\n")
-        # First three lines should be comments with no blank lines between
-        assert lines[0] == "; Comment 1"
-        assert lines[1] == "; Comment 2"
-        assert lines[2] == "; Comment 3"
-
-    def test_blank_line_between_comments_preserved(self):
-        """Test that blank lines between comments are preserved."""
-        printer = MenaiPrettyPrinter()
-        code = "; First comment\n\n; Second comment\n(+ 1 2)"
-        result = printer.format(code)
-
-        lines = result.split("\n")
-        # Should have blank line between comments
-        assert lines[0] == "; First comment"
-        assert lines[1] == ""
-        assert lines[2] == "; Second comment"
-
-    def test_comment_after_code_gets_blank_line(self):
-        """Test that comment after code gets a blank line for readability."""
-        printer = MenaiPrettyPrinter()
-        code = "(+ 1 2)\n; Comment after code\n(+ 3 4)"
-        result = printer.format(code)
-
-        lines = result.split("\n")
-        # Should have blank line before comment
-        assert "(+ 1 2)" in lines[0]
-        assert lines[1] == ""
-        assert "; Comment after code" in lines[2]
-
-
-class TestPrettyPrinterIndentation:
-    """Test indentation correctness."""
-
-    def test_let_binding_indentation(self):
-        """Test that let bindings are properly indented."""
-        printer = MenaiPrettyPrinter()
-        code = "(let ((x 5)(y 10)) (+ x y))"
-        result = printer.format(code)
-
-        # Now uses compact format since it fits on one line
-        expected = "(let ((x 5) (y 10)) (+ x y))\n"
-        assert result == expected
-
-    def test_letrec_binding_value_indentation(self):
-        """Test that letrec binding values are indented correctly."""
-        printer = MenaiPrettyPrinter()
-        code = "(letrec ((factorial (lambda (n) (if (integer=? n 0) 1 (integer* n (factorial (integer- n 1))))))) (factorial 5))"
-        result = printer.format(code)
-
-        # Now uses expanded format with bindings on next line
-        lines = result.split("\n")
-        # Check structure: letrec on first line, bindings on next line
-        assert lines[0].strip() == "(letrec"
-        # Bindings list should be indented
-        assert lines[1].strip().startswith("((factorial")
-        # Body should be on its own line
-        factorial_call_line = [line for line in lines if "(factorial 5)" in line][0]
-        assert factorial_call_line.strip() == "(factorial 5))"
-
-    def test_nested_expression_indentation(self):
-        """Test that nested expressions maintain proper indentation."""
-        printer = MenaiPrettyPrinter()
-        code = "(let ((x (let ((y 5)) (+ y 1)))) (+ x 10))"
-        result = printer.format(code)
-
-        # Now uses compact format since it fits on one line
-        # But inner let has its own formatting
-        assert "let" in result
-        expected = "(let ((x (let ((y 5)) (+ y 1)))) (+ x 10))\n"
-        assert result == expected
-
-
-class TestPrettyPrinterOptions:
-    """Test formatting options."""
-
-    def test_custom_indent_size(self):
-        """Test custom indentation size."""
-        options = FormatOptions(indent_size=4)
-        printer = MenaiPrettyPrinter(options)
-        code = "(let ((x 5)) (+ x 10))"
-        result = printer.format(code)
-
-        # Uses compact format, so all on one line
-        assert result == "(let ((x 5)) (+ x 10))\n"
-
-    def test_custom_comment_spacing(self):
-        """Test custom comment spacing."""
-        options = FormatOptions(comment_spacing=4)
-        printer = MenaiPrettyPrinter(options)
-        code = "(let ((x 5)  ; comment\n      (y 10))\n  (+ x y))"
-        result = printer.format(code)
-
-        # Comment should have 4 spaces before it
-        assert "    ; comment" in result
-
-    def test_custom_compact_threshold(self):
-        """Test custom compact threshold."""
-        options = FormatOptions(compact_threshold=20)
-        printer = MenaiPrettyPrinter(options)
-        code = "(+ 1 2 3 4 5 6 7 8 9 10)"
-        result = printer.format(code)
-
-        # Should be multi-line due to low threshold
-        assert result.count("\n") > 1
-
-
-class TestPrettyPrinterEdgeCases:
-    """Test edge cases and special scenarios."""
-
-    def test_quoted_expressions(self):
-        """Test formatting of quoted expressions."""
-        printer = MenaiPrettyPrinter()
-        code = "'(a b c)"
-        result = printer.format(code)
-
-        assert result == "'(a b c)\n"
-
-    def test_deeply_nested_lists(self):
-        """Test formatting of deeply nested lists."""
-        printer = MenaiPrettyPrinter()
-        code = "(+ 1 (+ 2 (+ 3 (+ 4 5))))"
-        result = printer.format(code)
-
-        # Should stay compact since it's under threshold
-        assert "(+ 1 (+ 2 (+ 3 (+ 4 5))))" in result
-
-    def test_empty_let_bindings(self):
-        """Test formatting of let with no bindings."""
-        printer = MenaiPrettyPrinter()
-        code = "(let () 42)"
-        result = printer.format(code)
-
-        assert "let" in result
-        assert "42" in result
-
-    def test_match_expression(self):
-        """Test formatting of match expression."""
-        printer = MenaiPrettyPrinter()
-        code = "(match x (1 'one) (2 'two) (_ 'other))"
-        result = printer.format(code)
-
-        # Now uses compact format since it fits on one line
-        assert "match" in result
-        assert result == "(match x (1 'one) (2 'two) (_ 'other))\n"
-
-    def test_idempotence(self):
-        """Test that formatting is idempotent."""
-        printer = MenaiPrettyPrinter()
-        code = "(let ((x 5)(y 10)) (+ x y))"
-
-        # Format once
-        result1 = printer.format(code)
-
-        # Format the result again
-        result2 = printer.format(result1)
-
-        # Should be identical
-        assert result1 == result2
-
-    def test_preserves_string_escapes(self):
-        """Test that string escape sequences are preserved."""
-        printer = MenaiPrettyPrinter()
-        code = '"hello\\nworld"'
-        result = printer.format(code)
-
-        assert '"hello\\nworld"' in result
-
-    def test_complex_numbers(self):
-        """Test formatting of complex numbers."""
-        printer = MenaiPrettyPrinter()
-        code = "(+ 3+4j 5j)"
-        result = printer.format(code)
-
-        assert "3+4j" in result or "(3+4j)" in result
-        assert "5j" in result
-
-
-class TestPrettyPrinterRealWorldExamples:
-    """Test with real-world code examples."""
-
-    def test_factorial_function(self):
-        """Test formatting of factorial function."""
-        printer = MenaiPrettyPrinter()
-        code = """(letrec ((factorial (lambda (n) (if (<= n 1) 1 (* n (factorial (- n 1))))))) (factorial 5))"""
-        result = printer.format(code)
-
-        # Should be properly formatted
-        assert "letrec" in result
-        assert "factorial" in result
-        assert "lambda" in result
-        assert "(* n (factorial (- n 1)))" in result  # Should be compact
-
-    def test_mutual_recursion(self):
-        """Test formatting of map with lambda."""
-        printer = MenaiPrettyPrinter()
-        code = "(map (lambda (x) (* x 2)) (list 1 2 3 4 5))"
-        result = printer.format(code)
-
-        # Should stay compact
-        assert "(map (lambda (x) (* x 2)) (list 1 2 3 4 5))" in result
-
-
-
-class TestPrettyPrinterNestedLambdaIndentation:
-    """Test proper indentation of nested lambdas in multiline lists."""
-
-    def test_nested_lambda_body_indentation(self):
-        """Test that nested lambda bodies are indented correctly relative to their position."""
-        # Use a low compact threshold to force multiline formatting
-        options = FormatOptions(compact_threshold=40)
-        printer = MenaiPrettyPrinter(options)
-
-        # This pattern from validation.menai exposed a bug where the inner lambda
-        # body was indented relative to the wrong base position
-        code = '(map (lambda (dep) (dict-get dep "to-task")) (filter (lambda (dep) (string=? (dict-get dep "from-task") task-id)) dependencies))'
-        result = printer.format(code)
+    def test_custom_width(self):
+        """The width is configurable."""
+        assert format_code('(foo a b)', max_width=5).count('\n') > 1
 
+
+class TestGeneralList:
+    """A multi-line general list aligns arguments under the first argument."""
+
+    def test_arguments_align_under_first(self):
+        """Each argument after the first goes on its own line under the first."""
+        result = format_code('(foo aaaa bbbb cccc)', max_width=10)
+        assert result == '(foo aaaa\n     bbbb\n     cccc)\n'
+
+    def test_if_is_a_general_list(self):
+        """if lays out its condition on the head line and branches under it."""
+        result = format_code('(if (integer>? a b) (foo a) (bar b))', max_width=20)
+        assert result == (
+            '(if (integer>? a b)\n'
+            '    (foo a)\n'
+            '    (bar b))\n'
+        )
+
+
+class TestAndOr:
+    """and/or are variadic, written flat, and always multi-line with 2+ operands."""
+
+    def test_two_operands_multiline(self):
+        """Two operands always expand one per line."""
+        assert format_code('(and a b)') == '(and a\n     b)\n'
+
+    def test_three_operands_multiline(self):
+        """Three operands expand one per line."""
+        assert format_code('(or a b c)') == '(or a\n    b\n    c)\n'
+
+    def test_single_operand_compact(self):
+        """A single-operand and/or is compact."""
+        assert format_code('(and a)') == '(and a)\n'
+
+    def test_zero_operands_compact(self):
+        """A zero-operand and/or is compact."""
+        assert format_code('(and)') == '(and)\n'
+
+    def test_flat_form_is_preserved(self):
+        """A flat or is not re-nested into a cascade."""
+        assert format_code('(or a b c d)') == '(or a\n    b\n    c\n    d)\n'
+
+
+class TestMatch:
+    """A match is always multi-line, with arms indented by two."""
+
+    def test_match_always_multiline(self):
+        """A short match is still multi-line."""
+        assert format_code('(match x (1 "one") (_ "other"))') == (
+            '(match x\n'
+            '  (1 "one")\n'
+            '  (_ "other"))\n'
+        )
+
+    def test_arm_compact_when_it_fits(self):
+        """An arm is compact when it fits."""
+        result = format_code('(match x (1 (foo a b)) (_ "other"))')
+        assert '  (1 (foo a b))' in result
+
+    def test_arm_body_on_next_line_when_long(self):
+        """An arm's body goes on the next line when the arm does not fit."""
+        result = format_code('(match x (1 (foo aaaa bbbb cccc dddd)) (_ "z"))', max_width=20)
+        assert '  (1\n   (foo aaaa' in result
+
+
+class TestLambda:
+    """A lambda indents its body by two from the opening parenthesis."""
+
+    def test_compact_lambda(self):
+        """A short lambda is compact."""
+        assert format_code('(lambda (x) x)') == '(lambda (x) x)\n'
+
+    def test_body_indent(self):
+        """A multi-line lambda indents its body by two."""
+        result = format_code('(lambda (x) (foo aaaa bbbb cccc))', max_width=10)
+        assert result == '(lambda (x)\n  (foo aaaa\n       bbbb\n       cccc))\n'
+
+
+class TestBindings:
+    """Bindings put the value on the next line at the name's column."""
+
+    def test_compact_binding(self):
+        """A short binding is compact."""
+        assert format_code('(let ((x 5)) x)') == '(let ((x 5)) x)\n'
+
+    def test_value_on_next_line(self):
+        """A binding whose value is multi-line puts the value on the next line."""
+        code = '(let ((f (lambda (x) (foo aaaa bbbb cccc dddd)))) (f 1))'
+        result = format_code(code, max_width=20)
+        assert '(f\n       (lambda (x)' in result
+
+    def test_value_column_is_name_column(self):
+        """The value aligns with the binding name."""
+        result = format_code('(let ((f (lambda (x) (foo aaaa bbbb cccc)))) (f 1))', max_width=20)
         lines = result.split('\n')
-
-        # Find the line with the inner lambda (inside filter)
-        filter_lambda_line = None
-        string_eq_line = None
-        for i, line in enumerate(lines):
-            if 'filter (lambda' in line:
-                filter_lambda_line = i
-            if '(string=?' in line and string_eq_line is None:
-                string_eq_line = i
-
-        assert filter_lambda_line is not None, "Should find filter lambda line"
-        assert string_eq_line is not None, "Should find string=? line"
-
-        # The string=? should be indented 2 spaces from where (lambda starts
-        lambda_pos = lines[filter_lambda_line].index('(lambda')
-        string_eq_indent = len(lines[string_eq_line]) - len(lines[string_eq_line].lstrip())
-        expected_indent = lambda_pos + 2
-
-        assert string_eq_indent == expected_indent, \
-            f"Lambda body at line {string_eq_line} should be indented {expected_indent} spaces " \
-            f"(lambda at column {lambda_pos} + 2), but got {string_eq_indent} spaces.\\n" \
-            f"Filter lambda line: {repr(lines[filter_lambda_line])}\\n" \
-            f"String=? line: {repr(lines[string_eq_line])}"
+        assert lines[0] == '(let ((f'
+        assert lines[1] == '       (lambda (x)'
 
 
-class TestPrettyPrinterCommentsInSpecialForms:
-    """Test comment handling in special forms (lambda, if, let, match)."""
+class TestBindingList:
+    """A binding list is inline when its bindings are short, else on the next line."""
 
-    def test_lambda_with_comment_before_body(self):
-        """Test lambda with comment before body expression."""
+    def test_single_binding_inline(self):
+        """A single binding keeps the binding list on the form line."""
+        code = '(letrec ((loop (lambda (i) (foo aaaa bbbb cccc dddd)))) (loop 0))'
+        result = format_code(code, max_width=20)
+        assert result.startswith('(letrec ((loop\n')
+
+    def test_all_short_bindings_inline(self):
+        """A binding list of short bindings stays inline."""
+        code = '(let ((a 1) (b 2) (c 3)) (foo aaaa bbbb cccc dddd eeee))'
+        result = format_code(code, max_width=20)
+        assert result.startswith('(let ((a 1)\n')
+
+    def test_long_bindings_on_next_line(self):
+        """A binding list with a multi-line binding goes on the next line."""
+        code = '(letrec ((f (lambda (x) (foo aaaa bbbb cccc dddd))) (g (lambda (y) y))) (f 1))'
+        result = format_code(code, max_width=20)
+        assert result.startswith('(letrec\n  ((f\n')
+
+    def test_body_indent(self):
+        """The body is indented by two from the form."""
+        code = '(let ((x 5)) (foo aaaa bbbb cccc dddd))'
+        result = format_code(code, max_width=20)
+        assert '\n  (foo' in result
+
+
+class TestComments:
+    """Comments are preserved and placed on their own lines."""
+
+    def test_standalone_comment_in_list(self):
+        """A standalone comment in a list is placed on its own line."""
+        result = format_code('(foo a ; hello\n b)')
+        assert '; hello' in result
+        assert result == '(foo a\n     ; hello\n     b)\n'
+
+    def test_comment_before_binding(self):
+        """A comment before a binding is placed on its own line."""
+        code = '(letrec\n  (; note\n   (a 1))\n  a)'
+        result = format_code(code)
+        assert result == '(letrec\n  (; note\n   (a 1))\n  a)\n'
+
+    def test_comment_preserved_in_compact(self):
+        """A comment prevents compact rendering."""
+        result = format_code('(foo a b) ; trailing')
+        assert '; trailing' in result
+
+    def test_header_comments_preserved(self):
+        """Top-level comments are preserved."""
+        result = format_code('; header\n(foo a b)')
+        assert result.startswith('; header\n(foo a b)')
+
+
+class TestBlankLines:
+    """Blank lines between elements are preserved, up to two."""
+
+    def test_blank_line_between_bindings(self):
+        """A blank line between bindings is preserved."""
+        code = '(letrec\n  ((a 1)\n\n   (b 2))\n  (+ a b))'
+        result = format_code(code)
+        assert '(a 1)\n\n' in result
+
+    def test_blank_line_between_top_level_forms(self):
+        """A blank line between top-level forms is preserved."""
+        result = format_code('(foo)\n\n(bar)')
+        assert result == '(foo)\n\n(bar)\n'
+
+    def test_excess_blank_lines_collapsed(self):
+        """Runs of more than two blank lines are collapsed."""
+        result = format_code('(foo)\n\n\n\n\n(bar)')
+        assert result == '(foo)\n\n(bar)\n'
+
+    def test_blank_line_after_multiline_binding(self):
+        """A multi-line binding is followed by a blank line before the next."""
+        code = '(letrec ((a (lambda (x) (foo aaaa bbbb cccc dddd))) (b 2)) (+ a b))'
+        result = format_code(code, max_width=20)
+        assert 'dddd)))\n\n   (b 2)' in result
+
+    def test_blank_line_before_multiline_binding(self):
+        """A multi-line binding is preceded by a blank line after the previous."""
+        code = '(letrec ((a 1) (b (lambda (x) (foo aaaa bbbb cccc dddd))) (c 3)) (+ a b c))'
+        result = format_code(code, max_width=20)
+        assert '(a 1)\n\n   (b\n' in result
+        assert 'dddd)))\n\n   (c 3)' in result
+
+    def test_blank_line_before_comment_after_multiline_binding(self):
+        """The blank line goes before a comment that precedes the next binding."""
+        code = '(letrec ((a (lambda (x) (foo aaaa bbbb cccc dddd)))\n; note\n(b 2)) (+ a b))'
+        result = format_code(code, max_width=20)
+        assert 'dddd)))\n\n   ; note\n   (b 2)' in result
+
+    def test_no_blank_line_between_single_line_bindings(self):
+        """Single-line bindings are not separated by blank lines."""
+        result = format_code('(let ((a 1) (b 2) (c 3)) (foo aaaa bbbb cccc dddd))', max_width=20)
+        assert '(a 1)\n      (b 2)\n      (c 3)' in result
+
+
+class TestQuote:
+    """Quoted expressions are preserved."""
+
+    def test_quoted_symbol(self):
+        """A quoted symbol is preserved."""
+        assert format_code("(list 'a 'b)") == "(list 'a 'b)\n"
+
+    def test_quoted_list(self):
+        """A quoted list is preserved."""
+        assert format_code("(list '(a b) '(c d))") == "(list '(a b) '(c d))\n"
+
+
+class TestDict:
+    """A multi-line dict keeps each key with its value."""
+
+    def test_pairs_on_own_lines(self):
+        """Each key/value pair goes on its own line, aligned under the first key."""
+        code = '(dict "function?" function? "symbol?" symbol? "none?" none?)'
+        result = format_code(code, max_width=20)
+        assert result == (
+            '(dict "function?" function?\n'
+            '      "symbol?" symbol?\n'
+            '      "none?" none?)\n'
+        )
+
+    def test_value_shares_key_line(self):
+        """A pair whose value is multi-line keeps the value's opening on the key line."""
+        code = '(dict "a" (list aaaa bbbb cccc dddd) "b" 2)'
+        result = format_code(code, max_width=20)
+        assert result.startswith('(dict "a" (list aaaa\n')
+
+    def test_compact_dict(self):
+        """A short dict is compact."""
+        assert format_code('(dict "a" 1 "b" 2)') == '(dict "a" 1 "b" 2)\n'
+
+
+class TestLiteralPreservation:
+    """A literal's exact source text is preserved."""
+
+    @pytest.mark.parametrize('literal', [
+        '#xffffffff', '#o755', '#b1010', '#d42',
+        '3.140', '43.0e9', '1e10', '0.5', '1+2j',
+        '#t', '#f', '#none',
+    ])
+    def test_literal_text_preserved(self, literal):
+        """A literal renders exactly as written."""
+        assert format_code(literal) == literal + '\n'
+
+    def test_string_escapes_preserved(self):
+        """A string's escape sequences are preserved verbatim."""
+        assert format_code(r'"a\tb"') == r'"a\tb"' + '\n'
+        assert format_code(r'"\u0041"') == r'"\u0041"' + '\n'
+
+
+class TestIdempotency:
+    """Formatting is idempotent: formatting twice equals formatting once."""
+
+    @pytest.mark.parametrize('code', [
+        '(let ((x 5) (y 10)) (+ x y))',
+        '(and a b c)',
+        '(match x (1 "one") (_ "other"))',
+        '(letrec ((f (lambda (n) (if (integer<=? n 1) 1 (integer* n (f (integer- n 1))))))) (f 5))',
+        '(foo a ; c\n b)',
+        '(letrec\n  ((a 1)\n\n   (b 2))\n  (+ a b))',
+    ])
+    def test_idempotent(self, code):
+        """Formatting the formatted output changes nothing."""
+        once = format_code(code)
+        assert format_code(once) == once
+
+
+class TestStdlibInvariants:
+    """Formatting the standard library preserves the program and its comments."""
+
+    @staticmethod
+    def _files():
+        root = Path(__file__).resolve().parents[3]
+        prelude = root / 'src' / 'menai' / 'prelude.menai'
+        stdlib = sorted(glob.glob(str(root / 'src' / 'menai' / 'stdlib' / '*.menai')))
+        return [str(prelude)] + stdlib
+
+    def test_preserves_tokens(self):
+        """Formatting preserves the exact non-comment token stream."""
         printer = MenaiPrettyPrinter()
-        code = """(lambda (x)
-  ; This is the body
-  (* x 2))"""
-        result = printer.format(code)
+        for path in self._files():
+            source = Path(path).read_text(encoding='utf-8')
+            formatted = printer.format(source)
+            assert token_texts(source) == token_texts(formatted), path
 
-        # Comment should be preserved and body should follow
-        assert "; This is the body" in result
-        assert "(* x 2)" in result
-        lines = result.split("\n")
-        # Find comment line and body line
-        comment_idx = next(i for i, line in enumerate(lines) if "; This is the body" in line)
-        body_idx = next(i for i, line in enumerate(lines) if "(* x 2)" in line)
-        # Body should come after comment
-        assert body_idx > comment_idx
-
-    def test_lambda_with_multiple_comments_before_body(self):
-        """Test lambda with multiple comments before body."""
+    def test_preserves_comments(self):
+        """Formatting preserves every comment."""
         printer = MenaiPrettyPrinter()
-        code = """(lambda (x)
-  ; Comment 1
-  ; Comment 2
-  (* x 2))"""
-        result = printer.format(code)
+        for path in self._files():
+            source = Path(path).read_text(encoding='utf-8')
+            formatted = printer.format(source)
+            assert comment_tokens(source) == comment_tokens(formatted), path
 
-        assert "; Comment 1" in result
-        assert "; Comment 2" in result
-        assert "(* x 2)" in result
-
-    def test_if_with_comment_before_then_branch(self):
-        """Test if with comment before then branch."""
+    def test_idempotent(self):
+        """Formatting the standard library is idempotent."""
         printer = MenaiPrettyPrinter()
-        code = """(if (> x 0)
-  ; Positive case
-  (+ x 1)
-  (- x 1))"""
-        result = printer.format(code)
-
-        assert "; Positive case" in result
-        assert "(+ x 1)" in result
-        assert "(- x 1)" in result
-
-    def test_if_with_comment_before_else_branch(self):
-        """Test if with comment before else branch."""
-        printer = MenaiPrettyPrinter()
-        code = """(if (> x 0)
-  (+ x 1)
-  ; Negative case
-  (- x 1))"""
-        result = printer.format(code)
-
-        assert "(+ x 1)" in result
-        assert "; Negative case" in result
-        assert "(- x 1)" in result
-        lines = result.split("\n")
-        # Find indices
-        then_idx = next(i for i, line in enumerate(lines) if "(+ x 1)" in line)
-        comment_idx = next(i for i, line in enumerate(lines) if "; Negative case" in line)
-        else_idx = next(i for i, line in enumerate(lines) if "(- x 1)" in line)
-        # Order should be: then, comment, else
-        assert then_idx < comment_idx < else_idx
-
-    def test_if_with_comments_before_both_branches(self):
-        """Test if with comments before both then and else branches."""
-        printer = MenaiPrettyPrinter()
-        code = """(if (> x 0)
-  ; Positive case
-  (+ x 1)
-  ; Negative case
-  (- x 1))"""
-        result = printer.format(code)
-
-        assert "; Positive case" in result
-        assert "; Negative case" in result
-        assert "(+ x 1)" in result
-        assert "(- x 1)" in result
-
-    def test_nested_if_with_comments(self):
-        """Test nested if expressions with comments."""
-        printer = MenaiPrettyPrinter()
-        code = """(if (> x 0)
-  ; Check if we've seen this task in current path (cycle!)
-  (if (list-member? task-id visited-in-path)
-    ; Found a cycle - extract the cycle from path
-    (let ((cycle-start-pos (list-position task-id path)))
-      (if (!= cycle-start-pos #f)
-        (list (list-slice (list-concat path (list task-id)) cycle-start-pos))
-        (list)))
-    ; Not a cycle yet, continue DFS
-    (let* ((successors (get-successors task-id dependencies))
-           (new-path (list-concat path (list task-id)))
-           (new-visited (list-prepend visited-in-path task-id)))
-      (fold list-concat (list)
-            (map (lambda (succ) (dfs-visit succ new-path new-visited))
-                 successors))))
-  ; Else branch
-  42)"""
-        result = printer.format(code)
-
-        # All comments should be preserved
-        assert "; Check if we've seen this task in current path (cycle!)" in result
-        assert "; Found a cycle - extract the cycle from path" in result
-        assert "; Not a cycle yet, continue DFS" in result
-        assert "; Else branch" in result
-
-        # All code should be present
-        assert "list-member?" in result
-        assert "get-successors" in result
-        assert "dfs-visit" in result
-
-    def test_let_with_comment_before_body(self):
-        """Test let with comment before body."""
-        printer = MenaiPrettyPrinter()
-        code = """(let ((x 5)
-      (y 10))
-  ; Calculate sum
-  (+ x y))"""
-        result = printer.format(code)
-
-        assert "; Calculate sum" in result
-        assert "(+ x y)" in result
-
-    def test_let_with_multiple_comments_before_body(self):
-        """Test let with multiple comments before body."""
-        printer = MenaiPrettyPrinter()
-        code = """(let ((x 5))
-  ; Comment 1
-  ; Comment 2
-  (+ x 1))"""
-        result = printer.format(code)
-
-        assert "; Comment 1" in result
-        assert "; Comment 2" in result
-        assert "(+ x 1)" in result
-
-    def test_match_with_comments_between_clauses(self):
-        """Test match with comments between clauses."""
-        printer = MenaiPrettyPrinter()
-        code = """(match x
-  ; First case
-  (1 "one")
-  ; Second case
-  (2 "two")
-  ; Default case
-  (_ "other"))"""
-        result = printer.format(code)
-
-        assert "; First case" in result
-        assert "; Second case" in result
-        assert "; Default case" in result
-        assert '(1 "one")' in result
-        assert '(2 "two")' in result
-        assert '(_ "other")' in result
-
-    def test_match_with_end_of_line_comments(self):
-        """Test match with end-of-line comments."""
-        printer = MenaiPrettyPrinter()
-        code = """(match x
-  (1 "one")  ; First
-  (2 "two")  ; Second
-  (_ "other"))  ; Default"""
-        result = printer.format(code)
-
-        assert "; First" in result
-        assert "; Second" in result
-        assert "; Default" in result
-
-    def test_letrec_with_comments_in_lambda_body(self):
-        """Test letrec with comments inside lambda bodies."""
-        printer = MenaiPrettyPrinter()
-        code = """(letrec ((factorial (lambda (n)
-                      ; Base case
-                      (if (<= n 1)
-                        1
-                        ; Recursive case
-                        (* n (factorial (- n 1)))))))
-  (factorial 5))"""
-        result = printer.format(code)
-
-        assert "; Base case" in result
-        assert "; Recursive case" in result
-        assert "factorial" in result
-        assert "(* n (factorial (- n 1)))" in result
-
-    def test_complex_nested_comments(self):
-        """Test complex nesting with comments at multiple levels."""
-        printer = MenaiPrettyPrinter()
-        code = """(let ((x 5))
-  ; Start of computation
-  (let ((y 10))
-    ; Inner let
-    (if (> x 0)
-      ; Positive branch
-      (+ x y)
-      ; Negative branch
-      (- x y))))"""
-        result = printer.format(code)
-
-        assert "; Start of computation" in result
-        assert "; Inner let" in result
-        assert "; Positive branch" in result
-        assert "; Negative branch" in result
-        assert "(+ x y)" in result
-        assert "(- x y)" in result
-
-    def test_comment_indentation_in_nested_structures(self):
-        """Test that comments are properly indented in nested structures."""
-        printer = MenaiPrettyPrinter()
-        code = """(lambda (x)
-  ; Outer comment
-  (if (> x 0)
-    ; Inner comment
-    (+ x 1)
-    (- x 1)))"""
-        result = printer.format(code)
-
-        lines = result.split("\n")
-        outer_comment_line = next(line for line in lines if "; Outer comment" in line)
-        inner_comment_line = next(line for line in lines if "; Inner comment" in line)
-
-        # Inner comment should be more indented than outer
-        outer_indent = len(outer_comment_line) - len(outer_comment_line.lstrip())
-        inner_indent = len(inner_comment_line) - len(inner_comment_line.lstrip())
-        assert inner_indent > outer_indent
-
-    def test_end_of_line_comment_after_closing_paren(self):
-        """Test end-of-line comment after closing paren."""
-        printer = MenaiPrettyPrinter()
-        code = """(let ((x 5)
-      (y 10))  ; End of bindings
-  (+ x y))"""
-        result = printer.format(code)
-
-        assert "; End of bindings" in result
-        # Comment should be on same line as closing paren
-        assert "))  ; End of bindings" in result
-
-    def test_validation_menai_style_comments(self):
-        """Test the style of comments found in validation.menai."""
-        printer = MenaiPrettyPrinter()
-        # Simplified version of the detect-cycles function structure
-        code = """(lambda (task-id path visited-in-path)
-  ; Check if we've seen this task in current path (cycle!)
-  (if (list-member? task-id visited-in-path)
-    ; Found a cycle - extract the cycle from path
-    (let ((cycle-start-pos (list-position task-id path)))
-      (if (!= cycle-start-pos #f)
-        (list (list-slice (list-concat path (list task-id)) cycle-start-pos))
-        (list)))
-    ; Not a cycle yet, continue DFS
-    (let* ((successors (get-successors task-id dependencies))
-           (new-path (list-concat path (list task-id)))
-           (new-visited (list-prepend visited-in-path task-id)))
-      (fold list-concat (list)
-            (map (lambda (succ) (dfs-visit succ new-path new-visited))
-                 successors)))))"""
-        result = printer.format(code)
-
-        # All three major comments should be present
-        assert "; Check if we've seen this task in current path (cycle!)" in result
-        assert "; Found a cycle - extract the cycle from path" in result
-        assert "; Not a cycle yet, continue DFS" in result
-
-        # The if expression should have both branches
-        assert "list-member?" in result
-        assert "get-successors" in result
-        assert "dfs-visit" in result
-
-        # Structure should be maintained
-        lines = result.split("\n")
-        # Find key lines to verify structure
-        member_idx = next(i for i, line in enumerate(lines) if "list-member?" in line)
-        cycle_comment_idx = next(i for i, line in enumerate(lines) if "; Found a cycle" in line)
-        dfs_comment_idx = next(i for i, line in enumerate(lines) if "; Not a cycle yet" in line)
-
-        # Comments should be in the right order
-        assert member_idx < cycle_comment_idx < dfs_comment_idx
+        for path in self._files():
+            source = Path(path).read_text(encoding='utf-8')
+            once = printer.format(source)
+            assert printer.format(once) == once, path

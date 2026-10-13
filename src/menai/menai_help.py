@@ -438,9 +438,11 @@ Syntax: (operator arg1 arg2 ...)
 ## And/or special forms
 
 - (and #t #f) and (or #t #f) short-circuit and are optimized at compile time; they are not builtin functions
+- Both are variadic and take any number of arguments (including zero): (or a b c d) is a single flat form, not a nested chain
 - All arguments must be booleans; any non-boolean argument is a type error: (and #t 42) → error
 - Always return a boolean: (and #t #t) → #t, (and #t #f) → #f, (or #f #t) → #t, (or #f #f) → #f
 - (and) → #t, (or) → #f (zero-arg identities)
+- (or (string=? ch " ") (string=? ch "\\t") (string=? ch "\\n")) → #t if ch is any of the three
 - Unlike Scheme, and/or do NOT return the last evaluated value; they only return #t or #f
 
 ## Lambda functions

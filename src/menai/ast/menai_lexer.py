@@ -212,7 +212,10 @@ class MenaiLexer:
 
         try:
             string_value, length = self._read_string(self._expression, self._position)
-            self._tokens.append(MenaiToken(MenaiTokenType.STRING, string_value, length, start_line, start_col))
+            self._tokens.append(MenaiToken(
+                MenaiTokenType.STRING, string_value, length, start_line, start_col,
+                raw=self._expression[start_pos:start_pos + length],
+            ))
 
             # Advance position for each character in the string
             for j in range(length):
@@ -303,7 +306,10 @@ class MenaiLexer:
                 number_value, length, token_type = self._read_hash_number(
                     self._expression, self._position, start_line, start_col
                 )
-                self._tokens.append(MenaiToken(token_type, number_value, length, start_line, start_col))
+                self._tokens.append(MenaiToken(
+                    token_type, number_value, length, start_line, start_col,
+                    raw=self._expression[self._position:self._position + length],
+                ))
                 self._column += length
                 self._position += length
 
@@ -337,7 +343,10 @@ class MenaiLexer:
             )
 
         boolean_value = self._expression[self._position + 1] == 't'
-        self._tokens.append(MenaiToken(MenaiTokenType.BOOLEAN, boolean_value, 2, self._line, self._column))
+        self._tokens.append(MenaiToken(
+            MenaiTokenType.BOOLEAN, boolean_value, 2, self._line, self._column,
+            raw=self._expression[self._position:self._position + 2],
+        ))
         self._column += 2
         self._position += 2
 
@@ -373,7 +382,10 @@ class MenaiLexer:
         number_value, length, token_type = self._read_number(
             self._expression, self._position, start_line, start_col
         )
-        self._tokens.append(MenaiToken(token_type, number_value, length, start_line, start_col))
+        self._tokens.append(MenaiToken(
+            token_type, number_value, length, start_line, start_col,
+            raw=self._expression[self._position:self._position + length],
+        ))
         self._column += length
         self._position += length
 
