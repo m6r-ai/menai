@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-Menai source is both hand-written and tool-generated, and `menai-pretty-print`
+Menai source is both hand-written and tool-generated, and `menai-format`
 formats it. Until now the formatter's rules were its own, and they did not match
 the style the standard library and prelude were written in: running the formatter
 over a stdlib module reported that a hand-written file needed reformatting. A
@@ -140,7 +140,7 @@ and the branches aligned under the condition.
 
 ### Positive
 
-- The formatter agrees with the canonical corpus, so `menai-pretty-print --check`
+- The formatter agrees with the canonical corpus, so `menai-format --check`
   is meaningful and can be enforced in CI.
 - The rules are uniform: only the five special forms and bindings are exceptions,
   and everything else follows one general-list rule.

@@ -127,7 +127,7 @@ Menai ships with a full set of command-line tools:
 |------|---------|
 | `menai-eval` | Compile and run a `.menai` file, with optional compiler and VM profiling |
 | `menai-test` | Discover and run `*.test.menai` suites |
-| `menai-pretty-print` | Format Menai source |
+| `menai-format` | Format Menai source |
 | `menai-disassemble` | Print annotated bytecode disassembly |
 | `menai-benchmark` | Run the performance benchmark suites |
 | `menai-pipeline` | Run a JSON-defined pipeline of tool and Menai steps |
@@ -221,8 +221,8 @@ menai/
 │   ├── menai_benchmark/        # performance benchmarking tool
 │   ├── menai_disassemble/      # bytecode disassembler
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
+│   ├── menai_format/           # code formatter
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
-│   ├── menai_pretty_print/     # code formatter
 │   ├── menai_render/           # shared bytecode rendering and code-object walk
 │   ├── menai_trace/            # VM instruction and call trace rendering
 │   └── menai_test/             # test runner for *.test.menai files

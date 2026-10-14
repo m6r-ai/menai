@@ -10,12 +10,12 @@ from pathlib import Path
 import pytest
 
 from menai.ast.menai_lexer import MenaiLexer
-from menai.menai_pretty_printer import MenaiPrettyPrinter, FormatOptions
+from menai_format.menai_formatter import MenaiFormatter, FormatOptions
 
 
 def format_code(code: str, **kwargs) -> str:
     """Format a source string with the given options."""
-    return MenaiPrettyPrinter(FormatOptions(**kwargs)).format(code)
+    return MenaiFormatter(FormatOptions(**kwargs)).format(code)
 
 
 def token_texts(source: str) -> list[str]:
@@ -355,24 +355,24 @@ class TestStdlibInvariants:
 
     def test_preserves_tokens(self):
         """Formatting preserves the exact non-comment token stream."""
-        printer = MenaiPrettyPrinter()
+        formatter = MenaiFormatter()
         for path in self._files():
             source = Path(path).read_text(encoding='utf-8')
-            formatted = printer.format(source)
+            formatted = formatter.format(source)
             assert token_texts(source) == token_texts(formatted), path
 
     def test_preserves_comments(self):
         """Formatting preserves every comment."""
-        printer = MenaiPrettyPrinter()
+        formatter = MenaiFormatter()
         for path in self._files():
             source = Path(path).read_text(encoding='utf-8')
-            formatted = printer.format(source)
+            formatted = formatter.format(source)
             assert comment_tokens(source) == comment_tokens(formatted), path
 
     def test_idempotent(self):
         """Formatting the standard library is idempotent."""
-        printer = MenaiPrettyPrinter()
+        formatter = MenaiFormatter()
         for path in self._files():
             source = Path(path).read_text(encoding='utf-8')
-            once = printer.format(source)
-            assert printer.format(once) == once, path
+            once = formatter.format(source)
+            assert formatter.format(once) == once, path

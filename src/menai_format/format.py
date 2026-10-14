@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command-line tool for Menai pretty-printer."""
+"""Command-line tool for the Menai formatter."""
 
 import sys
 import argparse
@@ -7,30 +7,30 @@ from pathlib import Path
 import traceback
 
 from menai import MenaiError
-from menai.menai_pretty_printer import MenaiPrettyPrinter, FormatOptions
+from menai_format.menai_formatter import MenaiFormatter, FormatOptions
 
 
 def main() -> None:
-    """Main entry point for the Menai pretty-printer CLI."""
+    """Main entry point for the Menai formatter CLI."""
     parser = argparse.ArgumentParser(
-        description='Pretty-print Menai source code',
+        description='Format Menai source code',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Format a file and print to stdout
-  menai-pretty-print myfile.menai
+  menai-format myfile.menai
   
   # Format a file and save to output file
-  menai-pretty-print myfile.menai -o formatted.menai
+  menai-format myfile.menai -o formatted.menai
   
   # Format from stdin
-  echo "(let ((x 5)(y 10)) (+ x y))" | menai-pretty-print -
+  echo "(let ((x 5)(y 10)) (+ x y))" | menai-format -
   
   # Format in-place (overwrites original file)
-  menai-pretty-print myfile.menai --in-place
+  menai-format myfile.menai --in-place
   
   # Check if file is already formatted
-  menai-pretty-print myfile.menai --check
+  menai-format myfile.menai --check
 """
     )
     parser.add_argument(
@@ -102,8 +102,8 @@ Examples:
 
     # Format the code
     try:
-        printer = MenaiPrettyPrinter(options)
-        formatted_code = printer.format(source_code)
+        formatter = MenaiFormatter(options)
+        formatted_code = formatter.format(source_code)
 
     except MenaiError as e:
         print(f"Error formatting code: {e}", file=sys.stderr)

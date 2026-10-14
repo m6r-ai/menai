@@ -9,6 +9,8 @@ New features:
 - Significantly improved performance of `deflate-compress`.
 - Added a common subexpression elimination (CSE) optimization.
 - Added `xlsx-decode` and `xlsx-encode` modules to the standard library.
+- Renamed `menai-pretty-print` to `menai-format` as it more accurately reflects its
+  role as a canonical formatter.
 
 ## v0.8.0 (2026-10-10)
 

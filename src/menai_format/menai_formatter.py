@@ -16,7 +16,7 @@ from menai.ast.menai_token import MenaiToken, MenaiTokenType
 
 @dataclass
 class FormatOptions:
-    """Options for controlling pretty-printer behavior."""
+    """Options for controlling formatter behavior."""
     indent_size: int = 2
     max_width: int = 100
     comment_spacing: int = 2
@@ -623,7 +623,7 @@ class Renderer:
         return f'({pattern_str} {body_str})'
 
 
-class MenaiPrettyPrinter:
+class MenaiFormatter:
     """Format Menai source code."""
 
     def __init__(self, options: FormatOptions | None = None):

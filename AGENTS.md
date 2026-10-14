@@ -88,7 +88,8 @@ underlying modules with `python -m`; use the console scripts.
   stdin) and prints the result. `--cprofile` profiles the compiler; `--profile`,
   `--opcodes`, and `--annotate` profile VM execution (per-function, per-opcode, and
   annotated disassembly respectively).
-- `menai-pretty-print <file>...` — formats Menai source.
+- `menai-format <file>...` — formats Menai source. `--check` exits non-zero if a
+  file does not match the canonical style.
 - `menai-disassemble <file>` — compiles and prints annotated bytecode disassembly.
 - `menai-benchmark` — runs the performance benchmark suites. `--profile`, `--opcodes`,
   and `--annotate` profile VM execution.
@@ -189,8 +190,8 @@ menai/
 │   ├── menai_benchmark/        # performance benchmarking tool
 │   ├── menai_disassemble/      # bytecode disassembler
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file
+│   ├── menai_format/           # code formatter
 │   ├── menai_pipeline/         # JSON-defined pipeline runner (tool + Menai steps)
-│   ├── menai_pretty_print/     # code formatter
 │   ├── menai_render/           # shared bytecode rendering and code-object walk
 │   ├── menai_trace/            # VM instruction and call trace resolution and rendering
 │   └── menai_test/             # test runner for *.test.menai files
@@ -199,6 +200,7 @@ menai/
     │   ├── menai/              # compiler core tests
     │   │   └── stdlib/         # standard library module tests
     │   ├── menai_eval/         # evaluator tests
+    │   ├── menai_format/       # formatter tests
     │   └── menai_pipeline/     # pipeline runner tests
     └── tools/
         └── style_checker/      # style checker tests
@@ -861,7 +863,7 @@ See [ADR-0045](docs/adr/0045-desugared-match-size-is-bounded.md).
 
 ### Menai source formatting is defined by a fixed style
 
-`menai-pretty-print` implements one style, recorded in ADR-0051. The width is 100
+`menai-format` implements one style, recorded in ADR-0051. The width is 100
 columns, measured as the column a form's compact rendering would end at; a form is
 compact when it ends at or before column 100 and multi-line otherwise. Every form
 follows the general-list rule — `head` and the first argument on the first line,
