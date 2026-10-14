@@ -84,6 +84,16 @@ class TestGeneralList:
         result = format_code('(foo aaaa bbbb cccc)', max_width=10)
         assert result == '(foo aaaa\n     bbbb\n     cccc)\n'
 
+    def test_single_argument_on_next_line(self):
+        """A general list with one argument puts it on the next line, indented by two."""
+        result = format_code('(foo aaaaaaaaaaaaaaaaaaaa)', max_width=10)
+        assert result == '(foo\n  aaaaaaaaaaaaaaaaaaaa)\n'
+
+    def test_single_argument_does_not_align_under_head(self):
+        """A lone argument is not pulled up onto the head line."""
+        result = format_code('(outer (inner aaaaaaaaaaaaaaaaaaaa))', max_width=10)
+        assert result == '(outer\n  (inner\n    aaaaaaaaaaaaaaaaaaaa))\n'
+
     def test_if_is_a_general_list(self):
         """if lays out its condition on the head line and branches under it."""
         result = format_code('(if (integer>? a b) (foo a) (bar b))', max_width=20)
@@ -92,6 +102,73 @@ class TestGeneralList:
             '    (foo a)\n'
             '    (bar b))\n'
         )
+
+
+class TestPeers:
+    """A general list whose arguments are all nested forms breaks after the head."""
+
+    def test_all_nested_arguments_break_after_head(self):
+        """A list of nested peers puts each on its own line indented by two."""
+        result = format_code('(list (foo aaaa bbbb) (bar cccc dddd))', max_width=20)
+        assert result == '(list\n  (foo aaaa bbbb)\n  (bar cccc dddd))\n'
+
+    def test_atom_argument_keeps_the_alignment_rule(self):
+        """A list with an atom argument aligns under the first argument."""
+        result = format_code('(list acc (foo aaaa bbbb cccc))', max_width=27)
+        assert result == '(list acc\n      (foo aaaa bbbb cccc))\n'
+
+    def test_if_is_exempt(self):
+        """if keeps its condition on the head line even when all parts are nested."""
+        result = format_code('(if (foo aaaa) (bar bbbb) (baz cccc))', max_width=20)
+        assert result == '(if (foo aaaa)\n    (bar bbbb)\n    (baz cccc))\n'
+
+
+class TestCompoundForms:
+    """A compound form with a nested body is multi-line even when it fits."""
+
+    def test_if_with_nested_body_is_multiline(self):
+        """An if with a nested condition or branch expands."""
+        result = format_code('(if (integer>? a b) (foo a) (bar b))')
+        assert result == '(if (integer>? a b)\n    (foo a)\n    (bar b))\n'
+
+    def test_if_of_atoms_is_compact(self):
+        """An if whose parts are all atoms stays compact."""
+        assert format_code('(if a b c)') == '(if a b c)\n'
+
+    def test_let_with_nested_body_is_multiline(self):
+        """A let with a nested body expands."""
+        result = format_code('(let ((x 5)) (foo x))')
+        assert result == '(let ((x 5))\n  (foo x))\n'
+
+    def test_let_with_atom_body_is_compact(self):
+        """A let whose body is an atom stays compact."""
+        assert format_code('(let ((x 5)) x)') == '(let ((x 5)) x)\n'
+
+    def test_loop_is_an_ordinary_call(self):
+        """A binding named loop is an ordinary call, compact when it fits."""
+        assert format_code('(loop (integer+ i 1) acc)') == '(loop (integer+ i 1) acc)\n'
+
+    def test_loop_follows_the_general_list_rule(self):
+        """A binding named loop aligns its arguments under the first when it does not fit."""
+        result = format_code('(loop (integer+ i 1) aaaaaaaaaaaaaaaaaaaa)', max_width=20)
+        assert result == '(loop (integer+ i 1)\n      aaaaaaaaaaaaaaaaaaaa)\n'
+
+    def test_lambda_with_nested_body_is_multiline(self):
+        """A lambda with a nested body expands, body indented by two."""
+        result = format_code('(lambda (x) (foo x))')
+        assert result == '(lambda (x)\n  (foo x))\n'
+
+    def test_lambda_with_atom_body_is_compact(self):
+        """A lambda whose body is an atom stays compact."""
+        assert format_code('(lambda (x) x)') == '(lambda (x) x)\n'
+
+    def test_lambda_body_ignores_params(self):
+        """A lambda with an empty body is compact even though its params are a list."""
+        assert format_code('(lambda ())') == '(lambda ())\n'
+
+    def test_plain_call_is_not_a_compound_form(self):
+        """A plain call is compact when it fits, even with a nested argument."""
+        assert format_code('(foo (bar a) b)') == '(foo (bar a) b)\n'
 
 
 class TestAndOr:
@@ -139,6 +216,11 @@ class TestMatch:
         result = format_code('(match x (1 (foo aaaa bbbb cccc dddd)) (_ "z"))', max_width=20)
         assert '  (1\n   (foo aaaa' in result
 
+    def test_arm_body_measured_after_pattern(self):
+        """An arm body is measured at the column it occupies after the pattern."""
+        result = format_code('(match x (a-long-pattern (foo a b c d e f g h)) (_ "z"))', max_width=30)
+        assert '  (a-long-pattern\n' in result
+
 
 class TestLambda:
     """A lambda indents its body by two from the opening parenthesis."""
@@ -160,6 +242,11 @@ class TestBindings:
         """A short binding is compact."""
         assert format_code('(let ((x 5)) x)') == '(let ((x 5)) x)\n'
 
+    def test_lambda_value_on_next_line(self):
+        """A binding whose value is a lambda puts the lambda on the next line."""
+        result = format_code('(letrec ((f (lambda () 1)) (g 2)) (f))')
+        assert '(f\n    (lambda () 1))' in result
+
     def test_value_on_next_line(self):
         """A binding whose value is multi-line puts the value on the next line."""
         code = '(let ((f (lambda (x) (foo aaaa bbbb cccc dddd)))) (f 1))'
@@ -172,6 +259,28 @@ class TestBindings:
         lines = result.split('\n')
         assert lines[0] == '(let ((f'
         assert lines[1] == '       (lambda (x)'
+
+    def test_compact_value_measured_after_name(self):
+        """A value is measured at the column it occupies after the binding name."""
+        code = '(let ((a-long-binding-name (foo aaaa bbbb cccc dddd eeee))) x)'
+        result = format_code(code, max_width=40)
+        assert result.startswith('(let ((a-long-binding-name\n')
+
+    def test_binding_counts_its_closing_paren(self):
+        """A binding is compact only when its closing paren fits within the width."""
+        at_width = '(let ((f (foo ' + 'a' * 60 + '))) x)'
+        over_width = '(let ((f (foo ' + 'a' * 61 + '))) x)'
+        assert len(at_width) == 80
+        assert len(over_width) == 81
+        assert format_code(at_width, max_width=80) == at_width + '\n'
+        result = format_code(over_width, max_width=80)
+        assert result == '(let ((f (foo ' + 'a' * 61 + ')))\n  x)\n'
+
+    def test_long_name_forces_value_onto_next_line(self):
+        """A long binding name leaves no room, so the value goes on the next line."""
+        code = '(let ((name-that-is-quite-long (foo a b c d e f g h))) x)'
+        result = format_code(code, max_width=30)
+        assert '(name-that-is-quite-long\n' in result
 
 
 class TestBindingList:
@@ -306,6 +415,12 @@ class TestDict:
     def test_compact_dict(self):
         """A short dict is compact."""
         assert format_code('(dict "a" 1 "b" 2)') == '(dict "a" 1 "b" 2)\n'
+
+    def test_only_the_last_pair_reserves_the_closing_paren(self):
+        """A pair that is not last is measured without the dict's closing paren."""
+        code = '(dict "k" (foo ' + 'a' * 24 + ') "b" 2 "c" 3)'
+        result = format_code(code, max_width=40)
+        assert result == '(dict "k" (foo ' + 'a' * 24 + ')\n      "b" 2\n      "c" 3)\n'
 
 
 class TestLiteralPreservation:

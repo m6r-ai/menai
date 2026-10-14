@@ -79,7 +79,8 @@ class ASTList(ASTNode):
         self.blank_before = False
 
 
-SPECIAL_FORMS = frozenset({'lambda', 'let', 'let*', 'letrec', 'match'})
+COMPOUND_FORMS = frozenset({'if', 'lambda', 'let', 'let*', 'letrec'})
+ALIGN_ONLY_FORMS = frozenset({'if', 'and', 'or'})
 
 
 class TreeBuilder:
@@ -252,8 +253,8 @@ class Renderer:
 
         return result
 
-    def _render_node(self, node: ASTNode, column: int) -> str:
-        """Render a single node starting at the given column."""
+    def _render_node(self, node: ASTNode, column: int, trailing: int = 0) -> str:
+        """Render a single node starting at the given column, with trailing columns reserved after it."""
         if isinstance(node, ASTAtom):
             return node.value
 
@@ -261,11 +262,11 @@ class Renderer:
             return node.text
 
         if isinstance(node, ASTQuote):
-            expr_str = self._render_node(node.expr, column + 1) if node.expr else ''
+            expr_str = self._render_node(node.expr, column + 1, trailing) if node.expr else ''
             return f"'{expr_str}"
 
         if isinstance(node, ASTList):
-            return self._render_list(node, column)
+            return self._render_list(node, column, trailing)
 
         return ''
 
@@ -309,8 +310,26 @@ class Renderer:
 
         return None
 
-    def _render_list(self, lst: ASTList, column: int) -> str:
-        """Render a list, choosing compact or multi-line layout."""
+    def _has_nested_body(self, head_name: str, body: list[ASTNode | ASTComment]) -> bool:
+        """Return whether a compound form has a nested body, so it must be multi-line."""
+        if head_name in ('lambda', 'let', 'let*', 'letrec'):
+            body = body[1:]
+
+        return any(isinstance(elem, (ASTList, ASTQuote)) for elem in body)
+
+    def _all_peers(self, head: ASTNode, body: list[ASTNode | ASTComment]) -> bool:
+        """Return whether a general list is a list of peers, each on its own line."""
+        head_name = head.value if isinstance(head, ASTAtom) else None
+        if head_name in ALIGN_ONLY_FORMS:
+            return False
+
+        if len(body) < 2:
+            return False
+
+        return all(isinstance(elem, (ASTList, ASTQuote)) for elem in body)
+
+    def _render_list(self, lst: ASTList, column: int, trailing: int = 0) -> str:
+        """Render a list, choosing compact or multi-line layout, with trailing columns reserved after it."""
         if not lst.elements:
             return '()'
 
@@ -319,47 +338,66 @@ class Renderer:
         body = lst.elements[1:]
 
         if head_name in ('and', 'or') and len(body) >= 2:
-            return self._render_general(head, body, column)
+            return self._render_general(head, body, column, trailing)
 
         if head_name == 'match':
-            return self._render_match(body, column)
+            return self._render_match(body, column, trailing)
 
         compact = self._try_compact(lst)
-        if compact is not None and column + len(compact) <= self.options.max_width:
+        compound = head_name in COMPOUND_FORMS and self._has_nested_body(head_name, body)
+
+        if (
+            compact is not None
+            and not compound
+            and column + len(compact) + trailing <= self.options.max_width
+        ):
             return compact
 
         if head_name == 'dict':
-            return self._render_dict(head, body, column)
+            return self._render_dict(head, body, column, trailing)
 
         if head_name in ('let', 'let*', 'letrec'):
-            return self._render_binding_form(head_name, body, column)
+            return self._render_binding_form(head_name, body, column, trailing)
 
         if head_name == 'lambda':
-            return self._render_lambda(body, column)
+            return self._render_lambda(body, column, trailing)
 
-        return self._render_general(head, body, column)
+        return self._render_general(head, body, column, trailing)
 
-    def _render_general(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int) -> str:
-        """Render a general list: head and first argument, then one per line."""
+    def _render_general(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
+        """Render a general list: head and first argument, then one per line, or head alone when there is one argument."""
         head_str = self._render_node(head, column + 1)
-        first_col = column + 1 + len(head_str) + 1
 
         if not body:
             return f'({head_str})'
 
+        if self._all_peers(head, body):
+            inner_col = column + self.options.indent_size
+            lines = [f'({head_str}']
+            lines.extend(self._render_tail(body, inner_col, trailing + 1))
+            lines[-1] += ')'
+            return '\n'.join(lines)
+
+        if len(body) == 1 and not isinstance(body[0], ASTComment):
+            inner_col = column + self.options.indent_size
+            arg_str = self._render_node(body[0], inner_col, trailing + 1)
+            return f'({head_str}\n' + ' ' * inner_col + arg_str + ')'
+
+        first_col = column + 1 + len(head_str) + 1
+
         if isinstance(body[0], ASTComment):
             lines = [f'({head_str}']
-            lines.extend(self._render_tail(body, first_col))
+            lines.extend(self._render_tail(body, first_col, trailing + 1))
 
         else:
             first_str = self._render_node(body[0], first_col)
             lines = [f'({head_str} {first_str}']
-            lines.extend(self._render_tail(body[1:], first_col))
+            lines.extend(self._render_tail(body[1:], first_col, trailing + 1))
 
         lines[-1] += ')'
         return '\n'.join(lines)
 
-    def _render_dict(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int) -> str:
+    def _render_dict(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
         """Render a dict: each key/value pair on its own line, aligned under the first key."""
         head_str = self._render_node(head, column + 1)
         key_col = column + 1 + len(head_str) + 1
@@ -369,6 +407,7 @@ class Renderer:
 
         entries: list[str] = []
         pending: list[ASTNode] = []
+        last_pair_end = self._last_pair_end(body)
         for elem in body:
             if isinstance(elem, ASTComment):
                 if pending:
@@ -383,11 +422,13 @@ class Renderer:
 
             pending.append(elem)
             if len(pending) == 2:
-                entries.append(self._render_pair(pending, key_col))
+                reserve = trailing + 1 if elem is last_pair_end else 0
+                entries.append(self._render_pair(pending, key_col, reserve))
                 pending = []
 
         if pending:
-            entries.append(self._render_pair(pending, key_col))
+            reserve = trailing + 1 if pending[-1] is last_pair_end else 0
+            entries.append(self._render_pair(pending, key_col, reserve))
 
         if not entries:
             return f'({head_str})'
@@ -398,26 +439,36 @@ class Renderer:
         lines[-1] += ')'
         return '\n'.join(lines)
 
-    def _render_pair(self, pair: list[ASTNode], column: int) -> str:
+    def _last_pair_end(self, body: list[ASTNode | ASTComment]) -> ASTNode | None:
+        """Return the value of the last key/value pair in a dict body, or None if it does not end with one."""
+        values = [elem for elem in body if not isinstance(elem, ASTComment)]
+        if len(values) < 2:
+            return None
+
+        return values[-1]
+
+    def _render_pair(self, pair: list[ASTNode], column: int, trailing: int = 0) -> str:
         """Render a key/value pair: the value's first line shares the key's line."""
         key_str = self._render_node(pair[0], column)
         if len(pair) < 2:
             return key_str
 
         value_col = column + len(key_str) + 1
-        value_str = self._render_node(pair[1], value_col)
+        value_str = self._render_node(pair[1], value_col, trailing)
         return f'{key_str} {value_str}'
 
     def _render_tail(
         self,
         elements: list[ASTNode | ASTComment],
         column: int,
-        renderer: Callable[[ASTNode, int], str] | None = None,
+        trailing: int = 0,
+        renderer: Callable[[ASTNode, int, int], str] | None = None,
     ) -> list[str]:
-        """Render elements one per line at the given column, with comments and blanks."""
+        """Render elements one per line at the given column, reserving trailing columns after the last."""
         render = renderer or self._render_node
         lines: list[str] = []
-        for elem in elements:
+        last = self._last_renderable_index(elements)
+        for index, elem in enumerate(elements):
             if elem.blank_before:
                 lines.append('')
 
@@ -425,11 +476,20 @@ class Renderer:
                 lines.append(' ' * column + elem.text)
                 continue
 
-            lines.append(' ' * column + render(elem, column))
+            reserve = trailing if index == last else 0
+            lines.append(' ' * column + render(elem, column, reserve))
 
         return lines
 
-    def _render_binding_form(self, name: str, body: list[ASTNode | ASTComment], column: int) -> str:
+    def _last_renderable_index(self, elements: list[ASTNode | ASTComment]) -> int:
+        """Return the index of the last non-comment element, or -1 if there is none."""
+        for index in range(len(elements) - 1, -1, -1):
+            if not isinstance(elements[index], ASTComment):
+                return index
+
+        return -1
+
+    def _render_binding_form(self, name: str, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
         """Render let/let*/letrec: bindings then body, both indented by two."""
         if not body:
             return f'({name})'
@@ -455,8 +515,9 @@ class Renderer:
 
         tail = body[index + 1:]
 
+        binding_reserve = trailing if not tail else 0
         inline_col = column + 1 + len(name) + 1
-        binding_lines = self._render_bindings(bindings, inline_col)
+        binding_lines = self._render_bindings(bindings, inline_col, binding_reserve)
 
         binding_elems = [e for e in bindings.elements if not isinstance(e, ASTComment)]
         single_binding = len(binding_elems) <= 1
@@ -476,18 +537,19 @@ class Renderer:
             lines.extend(binding_lines[1:])
 
         else:
-            binding_lines = self._render_bindings(bindings, inner_col)
+            binding_lines = self._render_bindings(bindings, inner_col, binding_reserve)
             lines = [f'({name}']
             lines.extend(' ' * inner_col + comment.text for comment in leading)
             lines.append(' ' * inner_col + binding_lines[0])
             lines.extend(binding_lines[1:])
 
-        lines.extend(self._render_tail(tail, inner_col))
+        if tail:
+            lines.extend(self._render_tail(tail, inner_col, trailing + 1))
 
         lines[-1] += ')'
         return '\n'.join(lines)
 
-    def _render_bindings(self, bindings: ASTList, column: int) -> list[str]:
+    def _render_bindings(self, bindings: ASTList, column: int, trailing: int = 0) -> list[str]:
         """Render a binding list: each binding aligned under the first."""
         if not bindings.elements:
             return ['()']
@@ -498,13 +560,15 @@ class Renderer:
         groups: list[tuple[list[str], str, bool]] = []
         comments: list[str] = []
         blank = False
-        for elem in bindings.elements:
+        last = self._last_renderable_index(bindings.elements)
+        for index, elem in enumerate(bindings.elements):
             if isinstance(elem, ASTComment):
                 blank = blank or elem.blank_before
                 comments.append(elem.text)
                 continue
 
-            groups.append((comments, self._render_binding(elem, binding_col), blank or elem.blank_before))
+            reserve = trailing + 1 if index == last else 0
+            groups.append((comments, self._render_binding(elem, binding_col, reserve), blank or elem.blank_before))
             comments = []
             blank = False
 
@@ -536,16 +600,16 @@ class Renderer:
         lines[-1] += ')'
         return lines
 
-    def _render_binding(self, binding: ASTNode, column: int) -> str:
+    def _render_binding(self, binding: ASTNode, column: int, trailing: int = 0) -> str:
         """Render a single binding: (name value), value on the next line if long."""
         if not isinstance(binding, ASTList) or not binding.elements:
-            return self._render_node(binding, column)
+            return self._render_node(binding, column, trailing)
 
         name = binding.elements[0]
         rest = binding.elements[1:]
 
         if not isinstance(name, ASTAtom):
-            return self._render_node(binding, column)
+            return self._render_node(binding, column, trailing)
 
         name_col = column + 1
         value_col = name_col
@@ -557,13 +621,29 @@ class Renderer:
         if isinstance(value, ASTComment):
             return f'({name.value} {value.text})'
 
-        value_str = self._render_node(value, value_col)
-        if '\n' in value_str:
-            return f'({name.value}\n' + ' ' * value_col + value_str + ')'
+        inline_col = column + 1 + len(name.value) + 1
+        compact = self._try_compact(value)
+        lambda_value = self._is_lambda(value)
 
-        return f'({name.value} {value_str})'
+        if (
+            compact is not None
+            and not lambda_value
+            and inline_col + len(compact) + 1 + trailing <= self.options.max_width
+        ):
+            return f'({name.value} {compact})'
 
-    def _render_lambda(self, body: list[ASTNode | ASTComment], column: int) -> str:
+        value_str = self._render_node(value, value_col, trailing + 1)
+        return f'({name.value}\n' + ' ' * value_col + value_str + ')'
+
+    def _is_lambda(self, node: ASTNode) -> bool:
+        """Return whether a node is a lambda form."""
+        if not isinstance(node, ASTList) or not node.elements:
+            return False
+
+        head = node.elements[0]
+        return isinstance(head, ASTAtom) and head.value == 'lambda'
+
+    def _render_lambda(self, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
         """Render a lambda: params on the head line, body indented by two."""
         inner_col = column + self.options.indent_size
         params_col = column + 1 + len('lambda') + 1
@@ -573,17 +653,17 @@ class Renderer:
 
         if isinstance(body[0], ASTComment):
             lines = ['(lambda']
-            lines.extend(self._render_tail(body, inner_col))
+            lines.extend(self._render_tail(body, inner_col, trailing + 1))
 
         else:
             params_str = self._render_node(body[0], params_col)
             lines = [f'(lambda {params_str}']
-            lines.extend(self._render_tail(body[1:], inner_col))
+            lines.extend(self._render_tail(body[1:], inner_col, trailing + 1))
 
         lines[-1] += ')'
         return '\n'.join(lines)
 
-    def _render_match(self, body: list[ASTNode | ASTComment], column: int) -> str:
+    def _render_match(self, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
         """Render a match: scrutinee on the head line, arms indented by two."""
         inner_col = column + self.options.indent_size
         scrutinee_col = column + 1 + len('match') + 1
@@ -593,34 +673,36 @@ class Renderer:
 
         if isinstance(body[0], ASTComment):
             lines = ['(match']
-            lines.extend(self._render_tail(body, inner_col))
+            lines.extend(self._render_tail(body, inner_col, trailing + 1))
 
         else:
             scrutinee_str = self._render_node(body[0], scrutinee_col)
             lines = [f'(match {scrutinee_str}']
-            lines.extend(self._render_tail(body[1:], inner_col, self._render_arm))
+            lines.extend(self._render_tail(body[1:], inner_col, trailing + 1, self._render_arm))
 
         lines[-1] += ')'
         return '\n'.join(lines)
 
-    def _render_arm(self, arm: ASTNode, column: int) -> str:
+    def _render_arm(self, arm: ASTNode, column: int, trailing: int = 0) -> str:
         """Render a match arm: (pattern body), body on the next line if long."""
         if not isinstance(arm, ASTList) or len(arm.elements) < 2:
-            return self._render_node(arm, column)
+            return self._render_node(arm, column, trailing)
 
         pattern = arm.elements[0]
         body = arm.elements[1]
         if isinstance(body, ASTComment):
-            return self._render_node(arm, column)
+            return self._render_node(arm, column, trailing)
 
         pattern_str = self._render_node(pattern, column + 1)
         body_col = column + 1
-        body_str = self._render_node(body, body_col)
 
-        if '\n' in body_str:
-            return f'({pattern_str}\n' + ' ' * body_col + body_str + ')'
+        inline_col = column + 1 + len(pattern_str) + 1
+        body_inline = self._render_node(body, inline_col, 1 + trailing)
+        if '\n' not in body_inline:
+            return f'({pattern_str} {body_inline})'
 
-        return f'({pattern_str} {body_str})'
+        body_str = self._render_node(body, body_col, trailing + 1)
+        return f'({pattern_str}\n' + ' ' * body_col + body_str + ')'
 
 
 class MenaiFormatter:
