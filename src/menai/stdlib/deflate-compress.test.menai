@@ -1,130 +1,188 @@
 ; Tests for deflate-compress.menai
 
-(let ((deflate-mod (import "deflate-compress"))
-      (decompress-mod (import "deflate-decompress"))
-      (t (import "menai-test")))
-  (let ((compress (:: deflate-mod compress))
-        (mode (:: deflate-mod mode))
-        (decompress (:: decompress-mod decompress))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail)))
-    (letrec
-      ((round-trip
-        (lambda (text block-mode)
-          (let ((input (string->bytes text)))
-            (bytes->string (decompress (compress input block-mode))))))
-       (round-trip-bytes
-        (lambda (input block-mode)
-          (bytes=? (decompress (compress input block-mode)) input)))
-       (repeat
-        (lambda (unit count)
-          (list->string (map-list (lambda (i) unit) (range 0 count))))))
-       (let ((tests (list
-          (list "round-trip through decompress"
-            (list
-              (expect-pass "empty input, all modes"
-                           (lambda ()
-                             (and (assert-equal (round-trip "" (mode 'stored)) "")
-                                  (and (assert-equal (round-trip "" (mode 'fixed)) "")
-                                       (and (assert-equal (round-trip "" (mode 'dynamic)) "")
-                                            (assert-equal (round-trip "" (mode 'auto)) ""))))))
-              (expect-pass "single byte, all modes"
-                           (lambda ()
-                             (and (assert-equal (round-trip "A" (mode 'stored)) "A")
-                                  (and (assert-equal (round-trip "A" (mode 'fixed)) "A")
-                                       (and (assert-equal (round-trip "A" (mode 'dynamic)) "A")
-                                            (assert-equal (round-trip "A" (mode 'auto)) "A"))))))
-              (expect-pass "short text, all modes"
-                           (lambda ()
-                             (and (assert-equal (round-trip "hello" (mode 'stored)) "hello")
-                                  (and (assert-equal (round-trip "hello" (mode 'fixed)) "hello")
-                                       (and (assert-equal (round-trip "hello" (mode 'dynamic)) "hello")
-                                            (assert-equal (round-trip "hello" (mode 'auto)) "hello"))))))
-              (expect-pass "repetitive text exercises back-references"
-                           (lambda ()
-                             (and (assert-equal (round-trip "hello hello hello" (mode 'stored)) "hello hello hello")
-                                  (and (assert-equal (round-trip "hello hello hello" (mode 'fixed)) "hello hello hello")
-                                       (and (assert-equal (round-trip "hello hello hello" (mode 'dynamic)) "hello hello hello")
-                                            (assert-equal (round-trip "hello hello hello" (mode 'auto)) "hello hello hello"))))))
-              (expect-pass "long run of a single byte"
-                           (lambda ()
-                             (let ((text (repeat "a" 500)))
-                               (and (assert-equal (round-trip text (mode 'fixed)) text)
-                                    (assert-equal (round-trip text (mode 'dynamic)) text)))))
-              (expect-pass "repeating two-byte pattern"
-                           (lambda ()
-                             (let ((text (repeat "ab" 200)))
-                               (and (assert-equal (round-trip text (mode 'fixed)) text)
-                                    (assert-equal (round-trip text (mode 'dynamic)) text)))))
-              (expect-pass "skewed alphabet favours dynamic coding"
-                           (lambda ()
-                             (let ((text (list->string
-                                           (map-list (lambda (i) (if (integer=? (integer% i 10) 0) "b" "a"))
-                                                     (range 0 300)))))
-                               (and (assert-equal (round-trip text (mode 'dynamic)) text)
-                                    (assert-equal (round-trip text (mode 'auto)) text)))))
-              (expect-pass "all byte values round-trip"
-                           (lambda ()
-                             (let ((input (list->bytes (range 0 256))))
-                               (and (assert-equal (round-trip-bytes input (mode 'stored)) #t)
-                                    (and (assert-equal (round-trip-bytes input (mode 'fixed)) #t)
-                                         (and (assert-equal (round-trip-bytes input (mode 'dynamic)) #t)
-                                              (assert-equal (round-trip-bytes input (mode 'auto)) #t)))))))
-              (expect-pass "auto round-trips a range of lengths"
-                           (lambda ()
-                             (and (assert-equal (round-trip "x" (mode 'auto)) "x")
-                                  (and (assert-equal (round-trip "xyz" (mode 'auto)) "xyz")
-                                       (and (assert-equal (round-trip "abcdefghijklmnop" (mode 'auto)) "abcdefghijklmnop")
-                                            (assert-equal (round-trip "the quick brown fox jumps over the lazy dog" (mode 'auto))
-                                                          "the quick brown fox jumps over the lazy dog"))))))))
+(letrec
+  ((deflate-mod (import "deflate-compress"))
+   (decompress-mod (import "deflate-decompress"))
+   (t (import "menai-test"))
+   (compress (:: deflate-mod compress))
+   (mode (:: deflate-mod mode))
+   (decompress (:: decompress-mod decompress))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-          (list "block type selection"
-            (list
-              (expect-pass "stored mode emits a stored block"
-                           (lambda ()
-                             (let ((stream (compress (string->bytes "abc") (mode 'stored))))
-                               (assert-equal (integer-bit-and (bytes-nth stream 0) 6) 0))))
-              (expect-pass "fixed mode emits a fixed Huffman block"
-                           (lambda ()
-                             (let ((stream (compress (string->bytes "abc") (mode 'fixed))))
-                               (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-nth stream 0) 6) 1) 1))))
-              (expect-pass "dynamic mode emits a dynamic Huffman block"
-                           (lambda ()
-                             (let ((stream (compress (string->bytes "abc") (mode 'dynamic))))
-                               (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-nth stream 0) 6) 1) 2))))
-              (expect-pass "every mode sets the final-block bit"
-                           (lambda ()
-                             (and (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") (mode 'stored)) 0) 1) 1)
-                                  (and (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") (mode 'fixed)) 0) 1) 1)
-                                       (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") (mode 'dynamic)) 0) 1) 1)))))
-              (expect-pass "auto never exceeds the smallest single-mode output"
-                           (lambda ()
-                             (let ((input (string->bytes "hello hello hello hello hello")))
-                               (let ((auto (bytes-length (compress input (mode 'auto))))
-                                     (stored (bytes-length (compress input (mode 'stored))))
-                                     (fixed (bytes-length (compress input (mode 'fixed))))
-                                     (dynamic (bytes-length (compress input (mode 'dynamic)))))
-                                 (assert-equal (integer<=? auto (integer-min stored (integer-min fixed dynamic))) #t)))))))
+   ; Compress text then decompress it, returning the recovered text.
+   (round-trip
+    (lambda (text block-mode)
+      (let ((input (string->bytes text)))
+        (bytes->string (decompress (compress input block-mode))))))
 
-          (list "compression"
-            (list
-              (expect-pass "repetitive input compresses below its original size"
-                           (lambda ()
-                             (let ((input (string->bytes (repeat "a" 1000))))
-                               (and (assert-equal (integer<? (bytes-length (compress input (mode 'fixed))) 1000) #t)
-                                    (assert-equal (integer<? (bytes-length (compress input (mode 'dynamic))) 1000) #t)))))
-              (expect-pass "stored output carries the original bytes verbatim"
-                           (lambda ()
-                             (let ((input (string->bytes "hello world")))
-                               (let ((stream (compress input (mode 'stored))))
-                                 (assert-equal (bytes-index stream input) 5)))))))
+   ; Compress bytes then decompress them, returning whether they are recovered.
+   (round-trip-bytes
+    (lambda (input block-mode)
+      (bytes=? (decompress (compress input block-mode)) input)))
 
-          (list "errors"
-            (list
-              (expect-fail "rejects non-bytes argument"
-                           (lambda ()
-                             (compress "not bytes"))
-                           "expects a bytes value"))))))
+   ; Build a string by repeating a unit the given number of times.
+   (repeat
+    (lambda (unit count)
+      (list->string (map-list (lambda (i) unit) (range 0 count)))))
 
-      (export tests)))))
+   ; The empty input round-trips in every mode.
+   (test-empty-all-modes
+    (lambda ()
+      (and (assert-equal (round-trip "" (mode 'stored)) "")
+           (and (assert-equal (round-trip "" (mode 'fixed)) "")
+                (and (assert-equal (round-trip "" (mode 'dynamic)) "")
+                     (assert-equal (round-trip "" (mode 'auto)) ""))))))
+
+   ; A single byte round-trips in every mode.
+   (test-single-byte-all-modes
+    (lambda ()
+      (and (assert-equal (round-trip "A" (mode 'stored)) "A")
+           (and (assert-equal (round-trip "A" (mode 'fixed)) "A")
+                (and (assert-equal (round-trip "A" (mode 'dynamic)) "A")
+                     (assert-equal (round-trip "A" (mode 'auto)) "A"))))))
+
+   ; A short text round-trips in every mode.
+   (test-short-text-all-modes
+    (lambda ()
+      (and (assert-equal (round-trip "hello" (mode 'stored)) "hello")
+           (and (assert-equal (round-trip "hello" (mode 'fixed)) "hello")
+                (and (assert-equal (round-trip "hello" (mode 'dynamic)) "hello")
+                     (assert-equal (round-trip "hello" (mode 'auto)) "hello"))))))
+
+   ; Repetitive text exercises back-references in every mode.
+   (test-repetitive-text-all-modes
+    (lambda ()
+      (and (assert-equal (round-trip "hello hello hello" (mode 'stored)) "hello hello hello")
+           (and (assert-equal (round-trip "hello hello hello" (mode 'fixed)) "hello hello hello")
+                (and (assert-equal (round-trip "hello hello hello" (mode 'dynamic)) "hello hello hello")
+                     (assert-equal (round-trip "hello hello hello" (mode 'auto)) "hello hello hello"))))))
+
+   ; A long run of a single byte round-trips.
+   (test-long-run
+    (lambda ()
+      (let ((text (repeat "a" 500)))
+        (and (assert-equal (round-trip text (mode 'fixed)) text)
+             (assert-equal (round-trip text (mode 'dynamic)) text)))))
+
+   ; A repeating two-byte pattern round-trips.
+   (test-repeating-two-byte-pattern
+    (lambda ()
+      (let ((text (repeat "ab" 200)))
+        (and (assert-equal (round-trip text (mode 'fixed)) text)
+             (assert-equal (round-trip text (mode 'dynamic)) text)))))
+
+   ; A skewed alphabet round-trips under dynamic and auto coding.
+   (test-skewed-alphabet
+    (lambda ()
+      (let ((text (list->string
+                    (map-list (lambda (i) (if (integer=? (integer% i 10) 0) "b" "a"))
+                              (range 0 300)))))
+        (and (assert-equal (round-trip text (mode 'dynamic)) text)
+             (assert-equal (round-trip text (mode 'auto)) text)))))
+
+   ; Every byte value round-trips in every mode.
+   (test-all-byte-values
+    (lambda ()
+      (let ((input (list->bytes (range 0 256))))
+        (and (assert-equal (round-trip-bytes input (mode 'stored)) #t)
+             (and (assert-equal (round-trip-bytes input (mode 'fixed)) #t)
+                  (and (assert-equal (round-trip-bytes input (mode 'dynamic)) #t)
+                       (assert-equal (round-trip-bytes input (mode 'auto)) #t)))))))
+
+   ; Auto mode round-trips a range of input lengths.
+   (test-auto-range-of-lengths
+    (lambda ()
+      (and (assert-equal (round-trip "x" (mode 'auto)) "x")
+           (and (assert-equal (round-trip "xyz" (mode 'auto)) "xyz")
+                (and (assert-equal (round-trip "abcdefghijklmnop" (mode 'auto)) "abcdefghijklmnop")
+                     (assert-equal (round-trip "the quick brown fox jumps over the lazy dog" (mode 'auto))
+                                   "the quick brown fox jumps over the lazy dog"))))))
+
+   ; Stored mode emits a stored block.
+   (test-stored-block-type
+    (lambda ()
+      (let ((stream (compress (string->bytes "abc") (mode 'stored))))
+        (assert-equal (integer-bit-and (bytes-nth stream 0) 6) 0))))
+
+   ; Fixed mode emits a fixed Huffman block.
+   (test-fixed-block-type
+    (lambda ()
+      (let ((stream (compress (string->bytes "abc") (mode 'fixed))))
+        (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-nth stream 0) 6) 1) 1))))
+
+   ; Dynamic mode emits a dynamic Huffman block.
+   (test-dynamic-block-type
+    (lambda ()
+      (let ((stream (compress (string->bytes "abc") (mode 'dynamic))))
+        (assert-equal (integer-bit-shift-right (integer-bit-and (bytes-nth stream 0) 6) 1) 2))))
+
+   ; Every mode sets the final-block bit.
+   (test-final-block-bit
+    (lambda ()
+      (and (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") (mode 'stored)) 0) 1) 1)
+           (and (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") (mode 'fixed)) 0) 1) 1)
+                (assert-equal (integer-bit-and (bytes-nth (compress (string->bytes "abc") (mode 'dynamic)) 0) 1) 1)))))
+
+   ; Auto mode never exceeds the smallest single-mode output.
+   (test-auto-smallest-output
+    (lambda ()
+      (let ((input (string->bytes "hello hello hello hello hello")))
+        (let ((auto (bytes-length (compress input (mode 'auto))))
+              (stored (bytes-length (compress input (mode 'stored))))
+              (fixed (bytes-length (compress input (mode 'fixed))))
+              (dynamic (bytes-length (compress input (mode 'dynamic)))))
+          (assert-equal (integer<=? auto (integer-min stored (integer-min fixed dynamic))) #t)))))
+
+   ; Repetitive input compresses below its original size.
+   (test-repetitive-compresses
+    (lambda ()
+      (let ((input (string->bytes (repeat "a" 1000))))
+        (and (assert-equal (integer<? (bytes-length (compress input (mode 'fixed))) 1000) #t)
+             (assert-equal (integer<? (bytes-length (compress input (mode 'dynamic))) 1000) #t)))))
+
+   ; Stored output carries the original bytes verbatim.
+   (test-stored-verbatim
+    (lambda ()
+      (let ((input (string->bytes "hello world")))
+        (let ((stream (compress input (mode 'stored))))
+          (assert-equal (bytes-index stream input) 5)))))
+
+   ; A non-bytes argument is rejected.
+   (test-rejects-non-bytes
+    (lambda ()
+      (compress "not bytes")))
+
+   (tests
+    (list
+      (list "round-trip through decompress"
+        (list
+          (expect-pass "empty input, all modes" test-empty-all-modes)
+          (expect-pass "single byte, all modes" test-single-byte-all-modes)
+          (expect-pass "short text, all modes" test-short-text-all-modes)
+          (expect-pass "repetitive text exercises back-references" test-repetitive-text-all-modes)
+          (expect-pass "long run of a single byte" test-long-run)
+          (expect-pass "repeating two-byte pattern" test-repeating-two-byte-pattern)
+          (expect-pass "skewed alphabet favours dynamic coding" test-skewed-alphabet)
+          (expect-pass "all byte values round-trip" test-all-byte-values)
+          (expect-pass "auto round-trips a range of lengths" test-auto-range-of-lengths)))
+
+      (list "block type selection"
+        (list
+          (expect-pass "stored mode emits a stored block" test-stored-block-type)
+          (expect-pass "fixed mode emits a fixed Huffman block" test-fixed-block-type)
+          (expect-pass "dynamic mode emits a dynamic Huffman block" test-dynamic-block-type)
+          (expect-pass "every mode sets the final-block bit" test-final-block-bit)
+          (expect-pass "auto never exceeds the smallest single-mode output" test-auto-smallest-output)))
+
+      (list "compression"
+        (list
+          (expect-pass "repetitive input compresses below its original size" test-repetitive-compresses)
+          (expect-pass "stored output carries the original bytes verbatim" test-stored-verbatim)))
+
+      (list "errors"
+        (list
+          (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
+
+  (export tests))

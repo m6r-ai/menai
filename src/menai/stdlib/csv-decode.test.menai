@@ -1,142 +1,272 @@
 ; Tests for csv-decode.menai
 
-(let ((csv (import "csv-decode"))
-      (t (import "menai-test")))
-  (let ((decode (:: csv decode))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail)))
-    (let ((tests
-      (list
-        ; Records and fields
-        (list "records"
-          (list
-            (expect-pass "single field"
-                         (lambda () (assert-equal (decode "abc")
-                                                  (vector (vector "abc")))))
-            (expect-pass "single row"
-                         (lambda () (assert-equal (decode "a,b,c")
-                                                  (vector (vector "a" "b" "c")))))
-            (expect-pass "two rows"
-                         (lambda () (assert-equal (decode "a,b\nc,d")
-                                                  (vector (vector "a" "b") (vector "c" "d")))))
-            (expect-pass "three rows"
-                         (lambda () (assert-equal (decode "a\nb\nc")
-                                                  (vector (vector "a") (vector "b") (vector "c")))))
-            (expect-pass "ragged rows"
-                         (lambda () (assert-equal (decode "a,b\nc\nd,e,f")
-                                                  (vector (vector "a" "b")
-                                                          (vector "c")
-                                                          (vector "d" "e" "f")))))))
+(letrec
+  ((csv (import "csv-decode"))
+   (t (import "menai-test"))
+   (decode (:: csv decode))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-        ; Empty fields
-        (list "empty-fields"
-          (list
-            (expect-pass "empty input is one empty field"
-                         (lambda () (assert-equal (decode "")
-                                                  (vector (vector "")))))
-            (expect-pass "leading delimiter"
-                         (lambda () (assert-equal (decode ",a")
-                                                  (vector (vector "" "a")))))
-            (expect-pass "trailing delimiter"
-                         (lambda () (assert-equal (decode "a,")
-                                                  (vector (vector "a" "")))))
-            (expect-pass "two empty fields"
-                         (lambda () (assert-equal (decode ",")
-                                                  (vector (vector "" "")))))
-            (expect-pass "empty field between values"
-                         (lambda () (assert-equal (decode "a,,b")
-                                                  (vector (vector "a" "" "b")))))))
+   ; A single field decodes to a one-row, one-field table.
+   (test-single-field
+    (lambda ()
+      (assert-equal (decode "abc")
+                    (vector (vector "abc")))))
 
-        ; Line terminators
-        (list "line-terminators"
-          (list
-            (expect-pass "CRLF separates rows"
-                         (lambda () (assert-equal (decode "a,b\r\nc,d")
-                                                  (vector (vector "a" "b") (vector "c" "d")))))
-            (expect-pass "bare CR separates rows"
-                         (lambda () (assert-equal (decode "a,b\rc,d")
-                                                  (vector (vector "a" "b") (vector "c" "d")))))
-            (expect-pass "trailing LF does not add a row"
-                         (lambda () (assert-equal (decode "a,b\n")
-                                                  (vector (vector "a" "b")))))
-            (expect-pass "trailing CRLF does not add a row"
-                         (lambda () (assert-equal (decode "a,b\r\n")
-                                                  (vector (vector "a" "b")))))
-            (expect-pass "blank line is one empty field"
-                         (lambda () (assert-equal (decode "a\n\nb")
-                                                  (vector (vector "a") (vector "") (vector "b")))))
-            (expect-pass "trailing blank line is one empty field"
-                         (lambda () (assert-equal (decode "a\n\n")
-                                                  (vector (vector "a") (vector "")))))))
+   ; A single row decodes to a one-row table.
+   (test-single-row
+    (lambda ()
+      (assert-equal (decode "a,b,c")
+                    (vector (vector "a" "b" "c")))))
 
-        ; Quoted fields
-        (list "quoting"
-          (list
-            (expect-pass "quoted field"
-                         (lambda () (assert-equal (decode "\"abc\"")
-                                                  (vector (vector "abc")))))
-            (expect-pass "quoted field with delimiter"
-                         (lambda () (assert-equal (decode "\"a,b\",c")
-                                                  (vector (vector "a,b" "c")))))
-            (expect-pass "quoted field with newline"
-                         (lambda () (assert-equal (decode "\"a\nb\",c")
-                                                  (vector (vector "a\nb" "c")))))
-            (expect-pass "quoted field with CRLF"
-                         (lambda () (assert-equal (decode "\"a\r\nb\",c")
-                                                  (vector (vector "a\r\nb" "c")))))
-            (expect-pass "doubled quote is a literal quote"
-                         (lambda () (assert-equal (decode "\"a\"\"b\"")
-                                                  (vector (vector "a\"b")))))
-            (expect-pass "field that is just a quote"
-                         (lambda () (assert-equal (decode "\"\"\"\"")
-                                                  (vector (vector "\"")))))
-            (expect-pass "empty quoted field"
-                         (lambda () (assert-equal (decode "\"\"")
-                                                  (vector (vector "")))))
-            (expect-pass "quoted and unquoted fields mixed"
-                         (lambda () (assert-equal (decode "a,\"b,c\",d")
-                                                  (vector (vector "a" "b,c" "d")))))
-            (expect-pass "quotes are literal inside an unquoted field"
-                         (lambda () (assert-equal (decode "a\"b")
-                                                  (vector (vector "a\"b")))))))
+   ; Two rows decode to a two-row table.
+   (test-two-rows
+    (lambda ()
+      (assert-equal (decode "a,b\nc,d")
+                    (vector (vector "a" "b") (vector "c" "d")))))
 
-        ; Custom delimiter
-        (list "delimiter"
-          (list
-            (expect-pass "semicolon delimiter"
-                         (lambda () (assert-equal (decode "a;b;c" ";")
-                                                  (vector (vector "a" "b" "c")))))
-            (expect-pass "tab delimiter"
-                         (lambda () (assert-equal (decode "a\tb\tc" "\t")
-                                                  (vector (vector "a" "b" "c")))))
-            (expect-pass "quoted field with custom delimiter"
-                         (lambda () (assert-equal (decode "\"a;b\";c" ";")
-                                                  (vector (vector "a;b" "c")))))
-            (expect-pass "comma is literal when delimiter is semicolon"
-                         (lambda () (assert-equal (decode "a,b;c" ";")
-                                                  (vector (vector "a,b" "c")))))))
+   ; Three rows decode to a three-row table.
+   (test-three-rows
+    (lambda ()
+      (assert-equal (decode "a\nb\nc")
+                    (vector (vector "a") (vector "b") (vector "c")))))
 
-        ; Errors
-        (list "errors"
-          (list
-            (expect-fail "unterminated quoted field"
-                         (lambda () (decode "\"abc"))
-                         "Unterminated quoted field")
-            (expect-fail "text after a closing quote"
-                         (lambda () (decode "\"a\"x"))
-                         "Unexpected character after quoted field")
-            (expect-fail "multi-character delimiter"
-                         (lambda () (decode "a,b" "::"))
-                         "single-character")
-            (expect-fail "empty delimiter"
-                         (lambda () (decode "a,b" ""))
-                         "single-character")
-            (expect-fail "non-string input"
-                         (lambda () (decode 42))
-                         "must be a string")
-            (expect-fail "non-string delimiter"
-                         (lambda () (decode "a,b" 1))
-                         "single-character"))))))
+   ; Rows of differing widths are preserved.
+   (test-ragged-rows
+    (lambda ()
+      (assert-equal (decode "a,b\nc\nd,e,f")
+                    (vector (vector "a" "b")
+                            (vector "c")
+                            (vector "d" "e" "f")))))
 
-      (export tests))))
+   ; Empty input decodes to one empty field.
+   (test-empty-input
+    (lambda ()
+      (assert-equal (decode "")
+                    (vector (vector "")))))
+
+   ; A leading delimiter produces a leading empty field.
+   (test-leading-delimiter
+    (lambda ()
+      (assert-equal (decode ",a")
+                    (vector (vector "" "a")))))
+
+   ; A trailing delimiter produces a trailing empty field.
+   (test-trailing-delimiter
+    (lambda ()
+      (assert-equal (decode "a,")
+                    (vector (vector "a" "")))))
+
+   ; Two delimiters produce two empty fields.
+   (test-two-empty-fields
+    (lambda ()
+      (assert-equal (decode ",")
+                    (vector (vector "" "")))))
+
+   ; An empty field between values is preserved.
+   (test-empty-field-between
+    (lambda ()
+      (assert-equal (decode "a,,b")
+                    (vector (vector "a" "" "b")))))
+
+   ; CRLF separates rows.
+   (test-crlf-separates
+    (lambda ()
+      (assert-equal (decode "a,b\r\nc,d")
+                    (vector (vector "a" "b") (vector "c" "d")))))
+
+   ; A bare CR separates rows.
+   (test-bare-cr-separates
+    (lambda ()
+      (assert-equal (decode "a,b\rc,d")
+                    (vector (vector "a" "b") (vector "c" "d")))))
+
+   ; A trailing LF does not add a row.
+   (test-trailing-lf
+    (lambda ()
+      (assert-equal (decode "a,b\n")
+                    (vector (vector "a" "b")))))
+
+   ; A trailing CRLF does not add a row.
+   (test-trailing-crlf
+    (lambda ()
+      (assert-equal (decode "a,b\r\n")
+                    (vector (vector "a" "b")))))
+
+   ; A blank line is one empty field.
+   (test-blank-line
+    (lambda ()
+      (assert-equal (decode "a\n\nb")
+                    (vector (vector "a") (vector "") (vector "b")))))
+
+   ; A trailing blank line is one empty field.
+   (test-trailing-blank-line
+    (lambda ()
+      (assert-equal (decode "a\n\n")
+                    (vector (vector "a") (vector "")))))
+
+   ; A quoted field decodes to its content.
+   (test-quoted-field
+    (lambda ()
+      (assert-equal (decode "\"abc\"")
+                    (vector (vector "abc")))))
+
+   ; A quoted field may contain the delimiter.
+   (test-quoted-with-delimiter
+    (lambda ()
+      (assert-equal (decode "\"a,b\",c")
+                    (vector (vector "a,b" "c")))))
+
+   ; A quoted field may contain a newline.
+   (test-quoted-with-newline
+    (lambda ()
+      (assert-equal (decode "\"a\nb\",c")
+                    (vector (vector "a\nb" "c")))))
+
+   ; A quoted field may contain a CRLF.
+   (test-quoted-with-crlf
+    (lambda ()
+      (assert-equal (decode "\"a\r\nb\",c")
+                    (vector (vector "a\r\nb" "c")))))
+
+   ; A doubled quote inside a quoted field is a literal quote.
+   (test-doubled-quote
+    (lambda ()
+      (assert-equal (decode "\"a\"\"b\"")
+                    (vector (vector "a\"b")))))
+
+   ; A field that is just a quote decodes correctly.
+   (test-just-a-quote
+    (lambda ()
+      (assert-equal (decode "\"\"\"\"")
+                    (vector (vector "\"")))))
+
+   ; An empty quoted field decodes to the empty string.
+   (test-empty-quoted-field
+    (lambda ()
+      (assert-equal (decode "\"\"")
+                    (vector (vector "")))))
+
+   ; Quoted and unquoted fields can be mixed.
+   (test-mixed-quoting
+    (lambda ()
+      (assert-equal (decode "a,\"b,c\",d")
+                    (vector (vector "a" "b,c" "d")))))
+
+   ; Quotes are literal inside an unquoted field.
+   (test-quotes-literal-in-unquoted
+    (lambda ()
+      (assert-equal (decode "a\"b")
+                    (vector (vector "a\"b")))))
+
+   ; A semicolon delimiter separates fields.
+   (test-semicolon-delimiter
+    (lambda ()
+      (assert-equal (decode "a;b;c" ";")
+                    (vector (vector "a" "b" "c")))))
+
+   ; A tab delimiter separates fields.
+   (test-tab-delimiter
+    (lambda ()
+      (assert-equal (decode "a\tb\tc" "\t")
+                    (vector (vector "a" "b" "c")))))
+
+   ; A quoted field may contain a custom delimiter.
+   (test-quoted-with-custom-delimiter
+    (lambda ()
+      (assert-equal (decode "\"a;b\";c" ";")
+                    (vector (vector "a;b" "c")))))
+
+   ; A comma is literal when the delimiter is a semicolon.
+   (test-comma-literal-with-semicolon
+    (lambda ()
+      (assert-equal (decode "a,b;c" ";")
+                    (vector (vector "a,b" "c")))))
+
+   ; An unterminated quoted field is rejected.
+   (test-rejects-unterminated-quote
+    (lambda ()
+      (decode "\"abc")))
+
+   ; Text after a closing quote is rejected.
+   (test-rejects-text-after-quote
+    (lambda ()
+      (decode "\"a\"x")))
+
+   ; A multi-character delimiter is rejected.
+   (test-rejects-multi-char-delimiter
+    (lambda ()
+      (decode "a,b" "::")))
+
+   ; An empty delimiter is rejected.
+   (test-rejects-empty-delimiter
+    (lambda ()
+      (decode "a,b" "")))
+
+   ; A non-string input is rejected.
+   (test-rejects-non-string-input
+    (lambda ()
+      (decode 42)))
+
+   ; A non-string delimiter is rejected.
+   (test-rejects-non-string-delimiter
+    (lambda ()
+      (decode "a,b" 1)))
+
+   (tests
+    (list
+      (list "records"
+        (list
+          (expect-pass "single field" test-single-field)
+          (expect-pass "single row" test-single-row)
+          (expect-pass "two rows" test-two-rows)
+          (expect-pass "three rows" test-three-rows)
+          (expect-pass "ragged rows" test-ragged-rows)))
+
+      (list "empty-fields"
+        (list
+          (expect-pass "empty input is one empty field" test-empty-input)
+          (expect-pass "leading delimiter" test-leading-delimiter)
+          (expect-pass "trailing delimiter" test-trailing-delimiter)
+          (expect-pass "two empty fields" test-two-empty-fields)
+          (expect-pass "empty field between values" test-empty-field-between)))
+
+      (list "line-terminators"
+        (list
+          (expect-pass "CRLF separates rows" test-crlf-separates)
+          (expect-pass "bare CR separates rows" test-bare-cr-separates)
+          (expect-pass "trailing LF does not add a row" test-trailing-lf)
+          (expect-pass "trailing CRLF does not add a row" test-trailing-crlf)
+          (expect-pass "blank line is one empty field" test-blank-line)
+          (expect-pass "trailing blank line is one empty field" test-trailing-blank-line)))
+
+      (list "quoting"
+        (list
+          (expect-pass "quoted field" test-quoted-field)
+          (expect-pass "quoted field with delimiter" test-quoted-with-delimiter)
+          (expect-pass "quoted field with newline" test-quoted-with-newline)
+          (expect-pass "quoted field with CRLF" test-quoted-with-crlf)
+          (expect-pass "doubled quote is a literal quote" test-doubled-quote)
+          (expect-pass "field that is just a quote" test-just-a-quote)
+          (expect-pass "empty quoted field" test-empty-quoted-field)
+          (expect-pass "quoted and unquoted fields mixed" test-mixed-quoting)
+          (expect-pass "quotes are literal inside an unquoted field" test-quotes-literal-in-unquoted)))
+
+      (list "delimiter"
+        (list
+          (expect-pass "semicolon delimiter" test-semicolon-delimiter)
+          (expect-pass "tab delimiter" test-tab-delimiter)
+          (expect-pass "quoted field with custom delimiter" test-quoted-with-custom-delimiter)
+          (expect-pass "comma is literal when delimiter is semicolon" test-comma-literal-with-semicolon)))
+
+      (list "errors"
+        (list
+          (expect-fail "unterminated quoted field" test-rejects-unterminated-quote "Unterminated quoted field")
+          (expect-fail "text after a closing quote" test-rejects-text-after-quote "Unexpected character after quoted field")
+          (expect-fail "multi-character delimiter" test-rejects-multi-char-delimiter "single-character")
+          (expect-fail "empty delimiter" test-rejects-empty-delimiter "single-character")
+          (expect-fail "non-string input" test-rejects-non-string-input "must be a string")
+          (expect-fail "non-string delimiter" test-rejects-non-string-delimiter "single-character"))))))
+
+  (export tests))

@@ -1,117 +1,169 @@
 ; Tests for zip-extract.menai
 
-(let ((zip-mod (import "zip-extract"))
-      (zip-create-mod (import "zip-create"))
-      (t (import "menai-test")))
-  (let ((extract (:: zip-mod extract))
-        (extract-entry (:: zip-mod extract-entry))
-        (extract-matching (:: zip-mod extract-matching))
-        (create (:: zip-create-mod create))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail)))
-    (let ((tests (list
-       (list "extract"
-         (list
-           (expect-pass "deflate entry is decompressed"
-                        (lambda ()
-                          (let ((r (extract (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000"))))
-                            (assert-equal (bytes->string (dict-get (list-first (dict-get r "entries")) "content")) "hello world"))))
-           (expect-pass "stored entry is returned verbatim"
-                        (lambda ()
-                          (let ((r (extract (string-hex->bytes "504b030414000000000007542f5df1080d9b040000000400000005000000612e74787441414141504b0102140314000000000007542f5df1080d9b0400000004000000050000000000000000000000800100000000612e747874504b0506000000000100010033000000270000000000"))))
-                            (assert-equal (bytes->string (dict-get (list-first (dict-get r "entries")) "content")) "AAAA"))))
-           (expect-pass "directory entry has no content"
-                        (lambda ()
-                          (let ((r (extract (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000"))))
-                            (assert-equal (dict-get (list-first (dict-get r "entries")) "content") #none))))
-           (expect-pass "nested file content"
-                        (lambda ()
-                          (let ((r (extract (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000"))))
-                            (assert-equal (bytes->string (dict-get (list-nth (dict-get r "entries") 1) "content")) "nested content"))))))
+(letrec
+  ((zip-mod (import "zip-extract"))
+   (zip-create-mod (import "zip-create"))
+   (t (import "menai-test"))
+   (extract (:: zip-mod extract))
+   (extract-entry (:: zip-mod extract-entry))
+   (extract-matching (:: zip-mod extract-matching))
+   (create (:: zip-create-mod create))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-       (list "extract-entry"
-         (list
-           (expect-pass "returns the named entry with content filled in"
-                        (lambda ()
-                          (let ((r (extract-entry (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000")
-                                                 "dir/file.txt")))
-                            (assert-equal (bytes->string (dict-get r "content")) "nested content"))))
-           (expect-pass "returns the entry metadata unchanged"
-                        (lambda ()
-                          (let ((r (extract-entry (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")
-                                                 "hello.txt")))
-                            (assert-equal (dict-get r "compression") 8))))
-           (expect-pass "returns a directory entry with no content"
-                        (lambda ()
-                          (let ((r (extract-entry (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000")
-                                                 "dir/")))
-                            (assert-equal (dict-get r "content") #none))))))
+   ; A one-entry archive whose entry is deflate-compressed.
+   (deflate-archive
+    (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000"))
 
-       (list "extract-matching"
-         (list
-           (expect-pass "returns a single-element list for a unique name"
-                        (lambda ()
-                          (let ((r (extract-matching (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")
-                                                    "hello.txt")))
-                            (assert-equal (list-length r) 1))))
-           (expect-pass "returns an empty list when nothing matches"
-                        (lambda ()
-                          (let ((r (extract-matching (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")
-                                                    "absent.txt")))
-                            (assert-equal r (list)))))
-           (expect-pass "returns every entry with a duplicated name"
-                        (lambda ()
-                          (let ((b (create (dict
-                                             "entries" (list
-                                                         (dict "name" "fred/foo.txt" "content" (string->bytes "first"))
-                                                         (dict "name" "fred/foo.txt" "content" (string->bytes "second")))
-                                             "meta" (dict "comment" #none)))))
-                            (let ((r (extract-matching b "fred/foo.txt")))
-                              (assert-equal (list-length r) 2)))))
-           (expect-pass "duplicated entries are returned in archive order"
-                        (lambda ()
-                          (let ((b (create (dict
-                                             "entries" (list
-                                                         (dict "name" "fred/foo.txt" "content" (string->bytes "first"))
-                                                         (dict "name" "fred/foo.txt" "content" (string->bytes "second")))
-                                             "meta" (dict "comment" #none)))))
-                            (let ((r (extract-matching b "fred/foo.txt")))
-                              (assert-equal (bytes->string (dict-get (list-first r) "content")) "first")))))))
+   ; A one-entry archive whose entry is stored.
+   (stored-archive
+    (string-hex->bytes "504b030414000000000007542f5df1080d9b040000000400000005000000612e74787441414141504b0102140314000000000007542f5df1080d9b0400000004000000050000000000000000000000800100000000612e747874504b0506000000000100010033000000270000000000"))
 
-       (list "errors"
-         (list
-           (expect-fail "rejects non-bytes argument"
-                        (lambda ()
-                          (extract "not bytes"))
-                        "expects a bytes value")
-           (expect-fail "rejects an entry with a bad CRC"
-                        (lambda ()
-                          (extract (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d00114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")))
-                        "checksum mismatch")
-           (expect-fail "extract-entry rejects a missing name"
-                        (lambda ()
-                          (extract-entry (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")
-                                         "absent.txt"))
-                        "no entry named")
-           (expect-fail "extract-entry rejects an ambiguous name"
-                        (lambda ()
-                          (let ((b (create (dict
-                                             "entries" (list
-                                                         (dict "name" "fred/foo.txt" "content" (string->bytes "first"))
-                                                         (dict "name" "fred/foo.txt" "content" (string->bytes "second")))
-                                             "meta" (dict "comment" #none)))))
-                            (extract-entry b "fred/foo.txt")))
-                        "is ambiguous")
-           (expect-fail "extract-entry rejects a non-string name"
-                        (lambda ()
-                          (extract-entry (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")
-                                         42))
-                        "expects a string entry name")
-           (expect-fail "extract-matching rejects a non-string name"
-                        (lambda ()
-                          (extract-matching (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d85114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000")
-                                            42))
-                        "expects a string entry name"))))))
+   ; A two-entry archive with a directory entry and a nested file entry.
+   (two-entry-archive
+    (string-hex->bytes "504b030414000000080007542f5d000000000200000000000000040000006469722f0300504b030414000000080007542f5d4b2a9034100000000e0000000c0000006469722f66696c652e747874cb4b2d2e494d5148cecf2b49cd2b0100504b0102140314000000080007542f5d000000000200000000000000040000000000000000001000fd41000000006469722f504b0102140314000000080007542f5d4b2a9034100000000e0000000c00000000000000000000008001240000006469722f66696c652e747874504b050600000000020002006c0000005e0000000000"))
 
-      (export tests))))
+   ; A deflate entry's content is decompressed.
+   (test-deflate-decompressed
+    (lambda ()
+      (let ((r (extract deflate-archive)))
+        (assert-equal (bytes->string (dict-get (list-first (dict-get r "entries")) "content")) "hello world"))))
+
+   ; A stored entry's content is returned verbatim.
+   (test-stored-verbatim
+    (lambda ()
+      (let ((r (extract stored-archive)))
+        (assert-equal (bytes->string (dict-get (list-first (dict-get r "entries")) "content")) "AAAA"))))
+
+   ; A directory entry has no content.
+   (test-directory-no-content
+    (lambda ()
+      (let ((r (extract two-entry-archive)))
+        (assert-equal (dict-get (list-first (dict-get r "entries")) "content") #none))))
+
+   ; A nested file entry's content is decompressed.
+   (test-nested-file-content
+    (lambda ()
+      (let ((r (extract two-entry-archive)))
+        (assert-equal (bytes->string (dict-get (list-nth (dict-get r "entries") 1) "content")) "nested content"))))
+
+   ; extract-entry returns the named entry with its content filled in.
+   (test-extract-entry-content
+    (lambda ()
+      (let ((r (extract-entry two-entry-archive "dir/file.txt")))
+        (assert-equal (bytes->string (dict-get r "content")) "nested content"))))
+
+   ; extract-entry returns the entry metadata unchanged.
+   (test-extract-entry-metadata
+    (lambda ()
+      (let ((r (extract-entry deflate-archive "hello.txt")))
+        (assert-equal (dict-get r "compression") 8))))
+
+   ; extract-entry returns a directory entry with no content.
+   (test-extract-entry-directory
+    (lambda ()
+      (let ((r (extract-entry two-entry-archive "dir/")))
+        (assert-equal (dict-get r "content") #none))))
+
+   ; extract-matching returns a single-element list for a unique name.
+   (test-extract-matching-unique
+    (lambda ()
+      (let ((r (extract-matching deflate-archive "hello.txt")))
+        (assert-equal (list-length r) 1))))
+
+   ; extract-matching returns an empty list when nothing matches.
+   (test-extract-matching-empty
+    (lambda ()
+      (let ((r (extract-matching deflate-archive "absent.txt")))
+        (assert-equal r (list)))))
+
+   ; extract-matching returns every entry with a duplicated name.
+   (test-extract-matching-duplicates
+    (lambda ()
+      (let ((b (create (dict
+                         "entries" (list
+                                     (dict "name" "fred/foo.txt" "content" (string->bytes "first"))
+                                     (dict "name" "fred/foo.txt" "content" (string->bytes "second")))
+                         "meta" (dict "comment" #none)))))
+        (let ((r (extract-matching b "fred/foo.txt")))
+          (assert-equal (list-length r) 2)))))
+
+   ; extract-matching returns duplicated entries in archive order.
+   (test-extract-matching-order
+    (lambda ()
+      (let ((b (create (dict
+                         "entries" (list
+                                     (dict "name" "fred/foo.txt" "content" (string->bytes "first"))
+                                     (dict "name" "fred/foo.txt" "content" (string->bytes "second")))
+                         "meta" (dict "comment" #none)))))
+        (let ((r (extract-matching b "fred/foo.txt")))
+          (assert-equal (bytes->string (dict-get (list-first r) "content")) "first")))))
+
+   ; A non-bytes argument is rejected.
+   (test-rejects-non-bytes
+    (lambda ()
+      (extract "not bytes")))
+
+   ; An entry with a bad CRC is rejected.
+   (test-rejects-bad-crc
+    (lambda ()
+      (extract (string-hex->bytes "504b030414000000080007542f5d85114a0d0d0000000b0000000900000068656c6c6f2e747874cb48cdc9c95728cf2fca490100504b0102140314000000080007542f5d00114a0d0d0000000b00000009000000000000000000000080010000000068656c6c6f2e747874504b0506000000000100010037000000340000000000"))))
+
+   ; extract-entry rejects a name that is not present.
+   (test-extract-entry-missing
+    (lambda ()
+      (extract-entry deflate-archive "absent.txt")))
+
+   ; extract-entry rejects a name that matches more than one entry.
+   (test-extract-entry-ambiguous
+    (lambda ()
+      (let ((b (create (dict
+                         "entries" (list
+                                     (dict "name" "fred/foo.txt" "content" (string->bytes "first"))
+                                     (dict "name" "fred/foo.txt" "content" (string->bytes "second")))
+                         "meta" (dict "comment" #none)))))
+        (extract-entry b "fred/foo.txt"))))
+
+   ; extract-entry rejects a non-string name.
+   (test-extract-entry-non-string-name
+    (lambda ()
+      (extract-entry deflate-archive 42)))
+
+   ; extract-matching rejects a non-string name.
+   (test-extract-matching-non-string-name
+    (lambda ()
+      (extract-matching deflate-archive 42)))
+
+   (tests
+    (list
+      (list "extract"
+        (list
+          (expect-pass "deflate entry is decompressed" test-deflate-decompressed)
+          (expect-pass "stored entry is returned verbatim" test-stored-verbatim)
+          (expect-pass "directory entry has no content" test-directory-no-content)
+          (expect-pass "nested file content" test-nested-file-content)))
+
+      (list "extract-entry"
+        (list
+          (expect-pass "returns the named entry with content filled in" test-extract-entry-content)
+          (expect-pass "returns the entry metadata unchanged" test-extract-entry-metadata)
+          (expect-pass "returns a directory entry with no content" test-extract-entry-directory)))
+
+      (list "extract-matching"
+        (list
+          (expect-pass "returns a single-element list for a unique name" test-extract-matching-unique)
+          (expect-pass "returns an empty list when nothing matches" test-extract-matching-empty)
+          (expect-pass "returns every entry with a duplicated name" test-extract-matching-duplicates)
+          (expect-pass "duplicated entries are returned in archive order" test-extract-matching-order)))
+
+      (list "errors"
+        (list
+          (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
+          (expect-fail "rejects an entry with a bad CRC" test-rejects-bad-crc "checksum mismatch")
+          (expect-fail "extract-entry rejects a missing name" test-extract-entry-missing "no entry named")
+          (expect-fail "extract-entry rejects an ambiguous name" test-extract-entry-ambiguous "is ambiguous")
+          (expect-fail "extract-entry rejects a non-string name" test-extract-entry-non-string-name "expects a string entry name")
+          (expect-fail "extract-matching rejects a non-string name" test-extract-matching-non-string-name "expects a string entry name"))))))
+
+  (export tests))

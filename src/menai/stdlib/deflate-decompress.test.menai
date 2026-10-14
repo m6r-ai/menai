@@ -1,99 +1,152 @@
 ; Tests for deflate-decompress.menai
 
-(let ((deflate-mod (import "deflate-decompress"))
-      (t (import "menai-test")))
-  (let ((decompress (:: deflate-mod decompress))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail)))
-     (let ((tests (list
-        (list "stored blocks"
-          (list
-            (expect-pass "empty stream"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "010000ffff"))
-                                         (string->bytes ""))))
-            (expect-pass "single byte"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "010100feff41"))
-                                         (string->bytes "A"))))
-            (expect-pass "hello"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "010500faff68656c6c6f"))
-                                         (string->bytes "hello"))))
-            (expect-pass "abc"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "010300fcff616263"))
-                                         (string->bytes "abc"))))
-            (expect-pass "run of repeated bytes"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "010a00f5ff61616161616161616161"))
-                                         (string->bytes "aaaaaaaaaa"))))
-            (expect-pass "multiple stored blocks with an empty sync-flush block"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes
-                                           "000500faff68656c6c6f000000ffff010500faff776f726c64"))
-                                         (string->bytes "helloworld"))))))
+(letrec
+  ((deflate-mod (import "deflate-decompress"))
+   (t (import "menai-test"))
+   (decompress (:: deflate-mod decompress))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-        (list "fixed Huffman blocks"
-          (list
-            (expect-pass "single literal"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "730400"))
-                                         (string->bytes "A"))))
-            (expect-pass "literal run with back-reference"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "cb48cdc9c957c8409000"))
-                                         (string->bytes "hello hello hello"))))
-            (expect-pass "repeated pattern"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "4b4c4a4e042300"))
-                                         (string->bytes "abcabcabc"))))
-            (expect-pass "overlapping back-reference replicates a run"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "abaaa23d0000"))
-                                         (string->bytes "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"))))
-            (expect-pass "overlapping back-reference replicates a two-byte pattern"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes "4b4c4aa4390400"))
-                                         (string->bytes "abababababababababababababababababababababababababababababababababababababababababababababababababab"))))
-            (expect-pass "text with several back-references"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes
-                                           "2bc94855282ccd4cce56482aca2fcf5348cbaf50c82acd2d2856c82f4b2d5228014ae72456552aa4e4a70300"))
-                                         (string->bytes "the quick brown fox jumps over the lazy dog"))))))
+   ; An empty stored stream decompresses to the empty bytes value.
+   (test-stored-empty
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "010000ffff"))
+                    (string->bytes ""))))
 
-        (list "dynamic Huffman blocks"
-          (list
-            (expect-pass "skewed alphabet"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes
-                                           "0dcc090e80200c04c0b76eb70710a18209515faff38011a307d0455eed1a88b456d09c48ad59170fbd1290ad4123dd6759e329187b7a95ee82f1e050484b042af3b69770c87f21b94faa7d"))
-                                         (string->bytes "becfgaambbzdmdgagoejhajfcaodioircldsoaabvdgceccffqhrnyhanvqfibmfbanyaldabjoagaicoxezcafabdgaaocvpcde"))))
-            (expect-pass "zero runs exercise repeat codes"
-                         (lambda ()
-                           (assert-equal (decompress (string-hex->bytes
-                                           "158fd99684300805cbb8f4b82519a3edb8b5c636faff7f38e481732e055c4095675ad4147a02e68e3bd8165e9290265b6172ab789ed54530b21136f0e90dfa4f4818239f2813064cd461e680cdf040eca0a64185acfac8dc02ef2fd7dec4461c8b881ecaade51494485470dcb6ab457a17d0d9204e3f831fdc74d2f99de95369ea16f3ec03439dacbc69325cde468b5f19b3c9819567ce5d9693af5b7f8192a2ce596f113bae92a385ad9126dacea123958fe5185cd18e4c9e6f8fd29e6a9f2e65e817d3ff03"))
-                                         (string-hex->bytes
-                                           "02092203060b00060e190000001a12002625100d0000070000000003011d060f0510020027271c130000000017001d00251d000021032600000e18000000251700000000190009010015000f00000000251a002000001d0f0027000018000000000b000c000225040a1e0000211b0000162300241f0c000000250013001b0c0000140000091d0d0022000000010000000a0000202610120b000000211325000e0415002700081521151319220012211f00191e0a0e000b0d000f271f1500150b011c0016000c040013050d2200000011000021100120001000001a221f000b0000051c1d14240000020000000e05001c260200001f00130a0019000002001c0000000e010e101a251200030000031400000013060d1700192100231400020e21000a1f1924020f00141b0f14"))))))
+   ; A single-byte stored stream decompresses to that byte.
+   (test-stored-single-byte
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "010100feff41"))
+                    (string->bytes "A"))))
 
-        (list "errors"
-          (list
-            (expect-fail "rejects non-bytes argument"
-                         (lambda ()
-                           (decompress "not bytes"))
-                         "expects a bytes value")
-            (expect-fail "rejects truncated input"
-                         (lambda ()
-                           (decompress (string-hex->bytes "000500faff6865")))
-                         "unexpected end of input")
-            (expect-fail "rejects stored block with mismatched LEN and NLEN"
-                         (lambda ()
-                           (decompress (string-hex->bytes "010500000068656c6c6f")))
-                         "LEN does not match NLEN")
-            (expect-fail "rejects invalid block type"
-                         (lambda ()
-                           (decompress (string-hex->bytes "07")))
-                         "invalid block type"))))))
+   ; A stored stream decompresses to its text.
+   (test-stored-hello
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "010500faff68656c6c6f"))
+                    (string->bytes "hello"))))
 
-      (export tests))))
+   ; A stored stream decompresses to "abc".
+   (test-stored-abc
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "010300fcff616263"))
+                    (string->bytes "abc"))))
+
+   ; A stored stream of repeated bytes decompresses correctly.
+   (test-stored-repeated-bytes
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "010a00f5ff61616161616161616161"))
+                    (string->bytes "aaaaaaaaaa"))))
+
+   ; Multiple stored blocks with an empty sync-flush block decompress correctly.
+   (test-stored-multiple-blocks
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes
+                                  "000500faff68656c6c6f000000ffff010500faff776f726c64"))
+                    (string->bytes "helloworld"))))
+
+   ; A fixed-Huffman stream with a single literal decompresses correctly.
+   (test-fixed-single-literal
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "730400"))
+                    (string->bytes "A"))))
+
+   ; A fixed-Huffman stream with a literal run and a back-reference decompresses correctly.
+   (test-fixed-literal-run
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "cb48cdc9c957c8409000"))
+                    (string->bytes "hello hello hello"))))
+
+   ; A fixed-Huffman stream of a repeated pattern decompresses correctly.
+   (test-fixed-repeated-pattern
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "4b4c4a4e042300"))
+                    (string->bytes "abcabcabc"))))
+
+   ; An overlapping back-reference replicates a single-byte run.
+   (test-fixed-overlapping-run
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "abaaa23d0000"))
+                    (string->bytes "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"))))
+
+   ; An overlapping back-reference replicates a two-byte pattern.
+   (test-fixed-overlapping-two-byte
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes "4b4c4aa4390400"))
+                    (string->bytes "abababababababababababababababababababababababababababababababababababababababababababababababababab"))))
+
+   ; A fixed-Huffman stream with several back-references decompresses correctly.
+   (test-fixed-several-back-references
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes
+                                  "2bc94855282ccd4cce56482aca2fcf5348cbaf50c82acd2d2856c82f4b2d5228014ae72456552aa4e4a70300"))
+                    (string->bytes "the quick brown fox jumps over the lazy dog"))))
+
+   ; A dynamic-Huffman stream with a skewed alphabet decompresses correctly.
+   (test-dynamic-skewed-alphabet
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes
+                                  "0dcc090e80200c04c0b76eb70710a18209515faff38011a307d0455eed1a88b456d09c48ad59170fbd1290ad4123dd6759e329187b7a95ee82f1e050484b042af3b69770c87f21b94faa7d"))
+                    (string->bytes "becfgaambbzdmdgagoejhajfcaodioircldsoaabvdgceccffqhrnyhanvqfibmfbanyaldabjoagaicoxezcafabdgaaocvpcde"))))
+
+   ; A dynamic-Huffman stream with zero runs exercises the repeat codes.
+   (test-dynamic-zero-runs
+    (lambda ()
+      (assert-equal (decompress (string-hex->bytes
+                                  "158fd99684300805cbb8f4b82519a3edb8b5c636faff7f38e481732e055c4095675ad4147a02e68e3bd8165e9290265b6172ab789ed54530b21136f0e90dfa4f4818239f2813064cd461e680cdf040eca0a64185acfac8dc02ef2fd7dec4461c8b881ecaade51494485470dcb6ab457a17d0d9204e3f831fdc74d2f99de95369ea16f3ec03439dacbc69325cde468b5f19b3c9819567ce5d9693af5b7f8192a2ce596f113bae92a385ad9126dacea123958fe5185cd18e4c9e6f8fd29e6a9f2e65e817d3ff03"))
+                    (string-hex->bytes
+                      "02092203060b00060e190000001a12002625100d0000070000000003011d060f0510020027271c130000000017001d00251d000021032600000e18000000251700000000190009010015000f00000000251a002000001d0f0027000018000000000b000c000225040a1e0000211b0000162300241f0c000000250013001b0c0000140000091d0d0022000000010000000a0000202610120b000000211325000e0415002700081521151319220012211f00191e0a0e000b0d000f271f1500150b011c0016000c040013050d2200000011000021100120001000001a221f000b0000051c1d14240000020000000e05001c260200001f00130a0019000002001c0000000e010e101a251200030000031400000013060d1700192100231400020e21000a1f1924020f00141b0f14"))))
+
+   ; A non-bytes argument is rejected.
+   (test-rejects-non-bytes
+    (lambda ()
+      (decompress "not bytes")))
+
+   ; Truncated input is rejected.
+   (test-rejects-truncated
+    (lambda ()
+      (decompress (string-hex->bytes "000500faff6865"))))
+
+   ; A stored block with mismatched LEN and NLEN is rejected.
+   (test-rejects-len-mismatch
+    (lambda ()
+      (decompress (string-hex->bytes "010500000068656c6c6f"))))
+
+   ; An invalid block type is rejected.
+   (test-rejects-invalid-block-type
+    (lambda ()
+      (decompress (string-hex->bytes "07"))))
+
+   (tests
+    (list
+      (list "stored blocks"
+        (list
+          (expect-pass "empty stream" test-stored-empty)
+          (expect-pass "single byte" test-stored-single-byte)
+          (expect-pass "hello" test-stored-hello)
+          (expect-pass "abc" test-stored-abc)
+          (expect-pass "run of repeated bytes" test-stored-repeated-bytes)
+          (expect-pass "multiple stored blocks with an empty sync-flush block" test-stored-multiple-blocks)))
+
+      (list "fixed Huffman blocks"
+        (list
+          (expect-pass "single literal" test-fixed-single-literal)
+          (expect-pass "literal run with back-reference" test-fixed-literal-run)
+          (expect-pass "repeated pattern" test-fixed-repeated-pattern)
+          (expect-pass "overlapping back-reference replicates a run" test-fixed-overlapping-run)
+          (expect-pass "overlapping back-reference replicates a two-byte pattern" test-fixed-overlapping-two-byte)
+          (expect-pass "text with several back-references" test-fixed-several-back-references)))
+
+      (list "dynamic Huffman blocks"
+        (list
+          (expect-pass "skewed alphabet" test-dynamic-skewed-alphabet)
+          (expect-pass "zero runs exercise repeat codes" test-dynamic-zero-runs)))
+
+      (list "errors"
+        (list
+          (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
+          (expect-fail "rejects truncated input" test-rejects-truncated "unexpected end of input")
+          (expect-fail "rejects stored block with mismatched LEN and NLEN" test-rejects-len-mismatch "LEN does not match NLEN")
+          (expect-fail "rejects invalid block type" test-rejects-invalid-block-type "invalid block type"))))))
+
+  (export tests))

@@ -1,127 +1,225 @@
 ; Tests for xml-encode.menai
 
-(let ((xml-encode (import "xml-encode"))
-      (xml-decode (import "xml-decode"))
-      (t (import "menai-test")))
-  (let ((encode (:: xml-encode encode))
-        (decode (:: xml-decode decode))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail)))
-    (let ((tests
-      (list
-        ; Direct encoding of element trees.
-        (list "elements"
-          (list
-            (expect-pass "childless element is self-closing"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list)))
-                                                  "<a/>")))
-            (expect-pass "element with text"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "hi")))
-                                                  "<a>hi</a>")))
-            (expect-pass "nested element"
-                         (lambda () (assert-equal
-                                      (encode (dict "tag" "a" "attrs" (dict)
-                                                    "children" (list (dict "tag" "b" "attrs" (dict) "children" (list)))))
-                                      "<a><b/></a>")))
-            (expect-pass "mixed content is emitted in order"
-                         (lambda () (assert-equal
-                                      (encode (dict "tag" "p" "attrs" (dict)
-                                                    "children" (list "Hello "
-                                                                     (dict "tag" "b" "attrs" (dict) "children" (list "world"))
-                                                                     "!")))
-                                      "<p>Hello <b>world</b>!</p>")))))
+(letrec
+  ((xml-encode (import "xml-encode"))
+   (xml-decode (import "xml-decode"))
+   (t (import "menai-test"))
+   (encode (:: xml-encode encode))
+   (decode (:: xml-decode decode))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-        ; Attributes.
-        (list "attributes"
-          (list
-            (expect-pass "one attribute"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "1") "children" (list)))
-                                                  "<a x=\"1\"/>")))
-            (expect-pass "two attributes keep insertion order"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "1" "y" "2") "children" (list)))
-                                                  "<a x=\"1\" y=\"2\"/>")))
-            (expect-pass "qualified attribute name"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict "w:x" "1") "children" (list)))
-                                                  "<a w:x=\"1\"/>")))
-            (expect-pass "attribute value escapes a double quote"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "\"q\"") "children" (list)))
-                                                  "<a x=\"&quot;q&quot;\"/>")))
-            (expect-pass "attribute value escapes an ampersand"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "a&b") "children" (list)))
-                                                  "<a x=\"a&amp;b\"/>")))
-            (expect-pass "attribute value escapes an angle bracket"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "<b>") "children" (list)))
-                                                  "<a x=\"&lt;b&gt;\"/>")))
-            (expect-pass "empty attribute value"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "") "children" (list)))
-                                                  "<a x=\"\"/>")))
-            (expect-pass "no attributes"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "t")))
-                                                  "<a>t</a>")))))
+   ; An element with no children is emitted self-closing.
+   (test-childless-self-closing
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list)))
+                    "<a/>")))
 
-        ; Text escaping.
-        (list "escaping"
-          (list
-            (expect-pass "ampersand"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "a&b")))
-                                                  "<a>a&amp;b</a>")))
-            (expect-pass "less than"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "a<b")))
-                                                  "<a>a&lt;b</a>")))
-            (expect-pass "greater than"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "a>b")))
-                                                  "<a>a&gt;b</a>")))
-            (expect-pass "double quote is not escaped in text"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "\"q\"")))
-                                                  "<a>\"q\"</a>")))
-            (expect-pass "non-ASCII is emitted literally"
-                         (lambda () (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "\u03c0")))
-                                                  "<a>\u03c0</a>")))))
+   ; An element with text content is emitted with the text inline.
+   (test-element-with-text
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "hi")))
+                    "<a>hi</a>")))
 
-        ; Round-trips through xml-decode: the pair carries a value round-trip
-        ; guarantee, so (decode (encode v)) must reproduce v.
-        (list "round-trips"
-          (list
-            (expect-pass "self-closing"
-                         (lambda () (assert-equal (decode (encode (dict "tag" "a" "attrs" (dict) "children" (list))))
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "text with all escaped characters"
-                         (lambda ()
-                           (let ((v (dict "tag" "a" "attrs" (dict) "children" (list "&<>\"'"))))
-                             (assert-equal (decode (encode v)) v))))
-            (expect-pass "attribute with all escaped characters"
-                         (lambda ()
-                           (let ((v (dict "tag" "a" "attrs" (dict "x" "&<>\"'") "children" (list))))
-                             (assert-equal (decode (encode v)) v))))
-            (expect-pass "deeply nested structure"
-                         (lambda ()
-                           (let ((v (decode "<r><a><b><c>x</c></b></a><d/></r>")))
-                             (assert-equal (decode (encode v)) v))))))
+   ; A nested element is emitted inside its parent.
+   (test-nested-element
+    (lambda ()
+      (assert-equal
+        (encode (dict "tag" "a" "attrs" (dict)
+                      "children" (list (dict "tag" "b" "attrs" (dict) "children" (list)))))
+        "<a><b/></a>")))
 
-        ; Errors
-        (list "errors"
-          (list
-            (expect-fail "rejects a non-dict value"
-                         (lambda () (encode "not an element"))
-                         "expects an element dict")
-            (expect-fail "rejects a non-string tag"
-                         (lambda () (encode (dict "tag" 42 "attrs" (dict) "children" (list))))
-                         "must be a string")
-            (expect-fail "rejects a missing tag"
-                         (lambda () (encode (dict "attrs" (dict) "children" (list))))
-                         "must be a string")
-            (expect-fail "rejects a non-dict attrs"
-                         (lambda () (encode (dict "tag" "a" "attrs" "nope" "children" (list))))
-                         "must be a dict")
-            (expect-fail "rejects a non-string attribute value"
-                         (lambda () (encode (dict "tag" "a" "attrs" (dict "x" 42) "children" (list))))
-                         "value must be a string")
-            (expect-fail "rejects a non-list children"
-                         (lambda () (encode (dict "tag" "a" "attrs" (dict) "children" "nope")))
-                         "must be a list")
-            (expect-fail "rejects a child that is neither string nor element"
-                         (lambda () (encode (dict "tag" "a" "attrs" (dict) "children" (list 42))))
-                         "must be a string or an element dict"))))))
+   ; Mixed content is emitted in order.
+   (test-mixed-content-in-order
+    (lambda ()
+      (assert-equal
+        (encode (dict "tag" "p" "attrs" (dict)
+                      "children" (list "Hello "
+                                       (dict "tag" "b" "attrs" (dict) "children" (list "world"))
+                                       "!")))
+        "<p>Hello <b>world</b>!</p>")))
 
-      (export tests))))
+   ; A single attribute is emitted.
+   (test-one-attribute
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "1") "children" (list)))
+                    "<a x=\"1\"/>")))
+
+   ; Two attributes keep insertion order.
+   (test-two-attributes-order
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "1" "y" "2") "children" (list)))
+                    "<a x=\"1\" y=\"2\"/>")))
+
+   ; A namespace-qualified attribute name is emitted verbatim.
+   (test-qualified-attribute
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict "w:x" "1") "children" (list)))
+                    "<a w:x=\"1\"/>")))
+
+   ; A double quote in an attribute value is escaped.
+   (test-attribute-escapes-quote
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "\"q\"") "children" (list)))
+                    "<a x=\"&quot;q&quot;\"/>")))
+
+   ; An ampersand in an attribute value is escaped.
+   (test-attribute-escapes-ampersand
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "a&b") "children" (list)))
+                    "<a x=\"a&amp;b\"/>")))
+
+   ; Angle brackets in an attribute value are escaped.
+   (test-attribute-escapes-angle-brackets
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "<b>") "children" (list)))
+                    "<a x=\"&lt;b&gt;\"/>")))
+
+   ; An empty attribute value is emitted as an empty quoted string.
+   (test-empty-attribute-value
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict "x" "") "children" (list)))
+                    "<a x=\"\"/>")))
+
+   ; An element with no attributes emits no attribute list.
+   (test-no-attributes
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "t")))
+                    "<a>t</a>")))
+
+   ; An ampersand in text is escaped.
+   (test-text-escapes-ampersand
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "a&b")))
+                    "<a>a&amp;b</a>")))
+
+   ; A less-than sign in text is escaped.
+   (test-text-escapes-less-than
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "a<b")))
+                    "<a>a&lt;b</a>")))
+
+   ; A greater-than sign in text is escaped.
+   (test-text-escapes-greater-than
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "a>b")))
+                    "<a>a&gt;b</a>")))
+
+   ; A double quote in text is not escaped.
+   (test-text-quote-not-escaped
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "\"q\"")))
+                    "<a>\"q\"</a>")))
+
+   ; A non-ASCII character in text is emitted literally.
+   (test-text-non-ascii-literal
+    (lambda ()
+      (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "\u03c0")))
+                    "<a>\u03c0</a>")))
+
+   ; A self-closing element round-trips through encode then decode unchanged.
+   (test-round-trip-self-closing
+    (lambda ()
+      (assert-equal (decode (encode (dict "tag" "a" "attrs" (dict) "children" (list))))
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
+
+   ; Text with every escaped character round-trips through encode then decode unchanged.
+   (test-round-trip-escaped-text
+    (lambda ()
+      (let ((v (dict "tag" "a" "attrs" (dict) "children" (list "&<>\"'"))))
+        (assert-equal (decode (encode v)) v))))
+
+   ; An attribute with every escaped character round-trips through encode then decode unchanged.
+   (test-round-trip-escaped-attribute
+    (lambda ()
+      (let ((v (dict "tag" "a" "attrs" (dict "x" "&<>\"'") "children" (list))))
+        (assert-equal (decode (encode v)) v))))
+
+   ; A deeply nested structure round-trips through encode then decode unchanged.
+   (test-round-trip-deeply-nested
+    (lambda ()
+      (let ((v (decode "<r><a><b><c>x</c></b></a><d/></r>")))
+        (assert-equal (decode (encode v)) v))))
+
+   ; A non-dict value is rejected.
+   (test-rejects-non-dict
+    (lambda ()
+      (encode "not an element")))
+
+   ; A non-string tag is rejected.
+   (test-rejects-non-string-tag
+    (lambda ()
+      (encode (dict "tag" 42 "attrs" (dict) "children" (list)))))
+
+   ; A missing tag is rejected.
+   (test-rejects-missing-tag
+    (lambda ()
+      (encode (dict "attrs" (dict) "children" (list)))))
+
+   ; A non-dict attrs value is rejected.
+   (test-rejects-non-dict-attrs
+    (lambda ()
+      (encode (dict "tag" "a" "attrs" "nope" "children" (list)))))
+
+   ; A non-string attribute value is rejected.
+   (test-rejects-non-string-attribute-value
+    (lambda ()
+      (encode (dict "tag" "a" "attrs" (dict "x" 42) "children" (list)))))
+
+   ; A non-list children value is rejected.
+   (test-rejects-non-list-children
+    (lambda ()
+      (encode (dict "tag" "a" "attrs" (dict) "children" "nope"))))
+
+   ; A child that is neither a string nor an element dict is rejected.
+   (test-rejects-bad-child
+    (lambda ()
+      (encode (dict "tag" "a" "attrs" (dict) "children" (list 42)))))
+
+   (tests
+    (list
+      (list "elements"
+        (list
+          (expect-pass "childless element is self-closing" test-childless-self-closing)
+          (expect-pass "element with text" test-element-with-text)
+          (expect-pass "nested element" test-nested-element)
+          (expect-pass "mixed content is emitted in order" test-mixed-content-in-order)))
+
+      (list "attributes"
+        (list
+          (expect-pass "one attribute" test-one-attribute)
+          (expect-pass "two attributes keep insertion order" test-two-attributes-order)
+          (expect-pass "qualified attribute name" test-qualified-attribute)
+          (expect-pass "attribute value escapes a double quote" test-attribute-escapes-quote)
+          (expect-pass "attribute value escapes an ampersand" test-attribute-escapes-ampersand)
+          (expect-pass "attribute value escapes an angle bracket" test-attribute-escapes-angle-brackets)
+          (expect-pass "empty attribute value" test-empty-attribute-value)
+          (expect-pass "no attributes" test-no-attributes)))
+
+      (list "escaping"
+        (list
+          (expect-pass "ampersand" test-text-escapes-ampersand)
+          (expect-pass "less than" test-text-escapes-less-than)
+          (expect-pass "greater than" test-text-escapes-greater-than)
+          (expect-pass "double quote is not escaped in text" test-text-quote-not-escaped)
+          (expect-pass "non-ASCII is emitted literally" test-text-non-ascii-literal)))
+
+      (list "round-trips"
+        (list
+          (expect-pass "self-closing" test-round-trip-self-closing)
+          (expect-pass "text with all escaped characters" test-round-trip-escaped-text)
+          (expect-pass "attribute with all escaped characters" test-round-trip-escaped-attribute)
+          (expect-pass "deeply nested structure" test-round-trip-deeply-nested)))
+
+      (list "errors"
+        (list
+          (expect-fail "rejects a non-dict value" test-rejects-non-dict "expects an element dict")
+          (expect-fail "rejects a non-string tag" test-rejects-non-string-tag "must be a string")
+          (expect-fail "rejects a missing tag" test-rejects-missing-tag "must be a string")
+          (expect-fail "rejects a non-dict attrs" test-rejects-non-dict-attrs "must be a dict")
+          (expect-fail "rejects a non-string attribute value" test-rejects-non-string-attribute-value "value must be a string")
+          (expect-fail "rejects a non-list children" test-rejects-non-list-children "must be a list")
+          (expect-fail "rejects a child that is neither string nor element" test-rejects-bad-child "must be a string or an element dict"))))))
+
+  (export tests))

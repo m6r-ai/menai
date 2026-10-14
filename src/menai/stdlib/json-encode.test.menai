@@ -1,150 +1,325 @@
 ; Tests for json-encode.menai
 
-(let ((json-encode (import "json-encode"))
-      (json-decode (import "json-decode"))
-      (t (import "menai-test")))
-  (let ((encode (:: json-encode encode))
-        (decode (:: json-decode decode))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail)))
-    (let ((tests
-      (list
-        ; Direct encoding of scalar values
-        (list "scalars"
-          (list
-            (expect-pass "null"
-                         (lambda () (assert-equal (encode #none) "null")))
-            (expect-pass "true"
-                         (lambda () (assert-equal (encode #t) "true")))
-            (expect-pass "false"
-                         (lambda () (assert-equal (encode #f) "false")))
-            (expect-pass "integer"
-                         (lambda () (assert-equal (encode 42) "42")))
-            (expect-pass "negative integer"
-                         (lambda () (assert-equal (encode -7) "-7")))
-            (expect-pass "float"
-                         (lambda () (assert-equal (encode 3.14) "3.14")))
-            (expect-pass "float with positive exponent drops the plus sign"
-                         (lambda () (assert-equal (encode 1e10) "1e10")))
-            (expect-pass "float with negative exponent"
-                         (lambda () (assert-equal (encode 0.001) "0.001")))))
+(letrec
+  ((json-encode (import "json-encode"))
+   (json-decode (import "json-decode"))
+   (t (import "menai-test"))
+   (encode (:: json-encode encode))
+   (decode (:: json-decode decode))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-        ; Direct encoding of strings
-        (list "strings"
-          (list
-            (expect-pass "empty string"
-                         (lambda () (assert-equal (encode "") "\"\"")))
-            (expect-pass "simple string"
-                         (lambda () (assert-equal (encode "hello") "\"hello\"")))
-            (list "escapes"
-              (list
-                (expect-pass "double quote"
-                             (lambda () (assert-equal (encode "\"") "\"\\\"\"")))
-                (expect-pass "backslash"
-                             (lambda () (assert-equal (encode "\\") "\"\\\\\"")))
-                (expect-pass "newline"
-                             (lambda () (assert-equal (encode "\n") "\"\\n\"")))
-                (expect-pass "tab"
-                             (lambda () (assert-equal (encode "\t") "\"\\t\"")))
-                (expect-pass "carriage return"
-                             (lambda () (assert-equal (encode "\r") "\"\\r\"")))
-                (expect-pass "form feed"
-                             (lambda () (assert-equal (encode "\u000c") "\"\\f\"")))
-                (expect-pass "backspace"
-                             (lambda () (assert-equal (encode "\u0008") "\"\\b\"")))
-                (expect-pass "other control character"
-                             (lambda () (assert-equal (encode "\u0001") "\"\\u0001\"")))))))
+   ; #none encodes to null.
+   (test-scalar-null
+    (lambda ()
+      (assert-equal (encode #none) "null")))
 
-        ; Direct encoding of collections
-        (list "collections"
-          (list
-            (expect-pass "empty array"
-                         (lambda () (assert-equal (encode (list)) "[]")))
-            (expect-pass "integer array"
-                         (lambda () (assert-equal (encode (list 1 2 3)) "[1,2,3]")))
-            (expect-pass "nested array"
-                         (lambda () (assert-equal (encode (list (list 1 2) (list 3 4)))
-                                                  "[[1,2],[3,4]]")))
-            (expect-pass "empty object"
-                         (lambda () (assert-equal (encode (dict)) "{}")))
-            (expect-pass "single-key object"
-                         (lambda () (assert-equal (encode (dict "a" 1)) "{\"a\":1}")))
-            (expect-pass "multi-key object preserves insertion order"
-                         (lambda () (assert-equal (encode (dict "a" 1 "b" 2))
-                                                  "{\"a\":1,\"b\":2}")))
-            (expect-pass "nested object"
-                         (lambda () (assert-equal (encode (dict "a" (dict "b" 2)))
-                                                  "{\"a\":{\"b\":2}}")))))
+   ; #t encodes to true.
+   (test-scalar-true
+    (lambda ()
+      (assert-equal (encode #t) "true")))
 
-        ; Round-trips through json-decode
-        (list "round-trips"
-          (list
-            (expect-pass "null"
-                         (lambda () (assert-equal (decode (encode #none)) #none)))
-            (expect-pass "booleans"
-                         (lambda () (assert-equal (list (decode (encode #t)) (decode (encode #f)))
-                                                  (list #t #f))))
-            (expect-pass "integer"
-                         (lambda () (assert-equal (decode (encode 42)) 42)))
-            (expect-pass "negative integer"
-                         (lambda () (assert-equal (decode (encode -1234)) -1234)))
-            (expect-pass "float"
-                         (lambda () (assert-equal (decode (encode 3.14)) 3.14)))
-            (expect-pass "integral float stays a float"
-                         (lambda () (assert-equal (decode (encode 1.0)) 1.0)))
-            (expect-pass "float with exponent"
-                         (lambda () (assert-equal (decode (encode 1e10)) 1e10)))
-            (expect-pass "string"
-                         (lambda () (assert-equal (decode (encode "hello world")) "hello world")))
-            (expect-pass "string with escapes"
-                         (lambda () (assert-equal (decode (encode "a\"b\\c\nd\te")) "a\"b\\c\nd\te")))
-            (expect-pass "string with control character"
-                         (lambda () (assert-equal (decode (encode "\u0001")) "\u0001")))
-            (expect-pass "array"
-                         (lambda () (assert-equal (decode (encode (list 1 2 3))) (list 1 2 3))))
-            (expect-pass "nested array"
-                         (lambda () (assert-equal (decode (encode (list (list 1 2) (list 3 4))))
-                                                  (list (list 1 2) (list 3 4)))))
-            (expect-pass "object"
-                         (lambda () (assert-equal (decode (encode (dict "a" 1 "b" "two")))
-                                                  (dict "a" 1 "b" "two"))))
-            (expect-pass "nested object"
-                         (lambda () (assert-equal (decode (encode (dict "a" (dict "b" (list 1 2)))))
-                                                  (dict "a" (dict "b" (list 1 2))))))
-            (expect-pass "mixed structure"
-                         (lambda () (assert-equal
-                                      (decode (encode (dict "name" "Alice"
-                                                            "age" 30
-                                                            "active" #t
-                                                            "tags" (list "admin" "user")
-                                                            "address" (dict "city" "Wonderland" "zip" #none))))
-                                      (dict "name" "Alice"
-                                            "age" 30
-                                            "active" #t
-                                            "tags" (list "admin" "user")
-                                            "address" (dict "city" "Wonderland" "zip" #none)))))))
+   ; #f encodes to false.
+   (test-scalar-false
+    (lambda ()
+      (assert-equal (encode #f) "false")))
 
-        ; Errors
-        (list "errors"
-          (list
-            (expect-fail "bytes has no JSON representation"
-                         (lambda () (encode (string->bytes "abc")))
-                         "no JSON representation")
-            (expect-fail "symbol has no JSON representation"
-                         (lambda () (encode 'foo))
-                         "no JSON representation")
-            (expect-fail "vector has no JSON representation"
-                         (lambda () (encode (vector 1 2 3)))
-                         "no JSON representation")
-            (expect-fail "set has no JSON representation"
-                         (lambda () (encode (set 1 2 3)))
-                         "no JSON representation")
-            (expect-fail "complex has no JSON representation"
-                         (lambda () (encode (float->complex 1.0 2.0)))
-                         "no JSON representation")
-            (expect-fail "non-string dict key"
-                         (lambda () (encode (dict 1 "value")))
-                         "dict keys must be strings"))))))
+   ; An integer encodes to its decimal form.
+   (test-scalar-integer
+    (lambda ()
+      (assert-equal (encode 42) "42")))
 
-      (export tests))))
+   ; A negative integer encodes to its decimal form.
+   (test-scalar-negative-integer
+    (lambda ()
+      (assert-equal (encode -7) "-7")))
+
+   ; A float encodes to its decimal form.
+   (test-scalar-float
+    (lambda ()
+      (assert-equal (encode 3.14) "3.14")))
+
+   ; A float with a positive exponent drops the plus sign.
+   (test-scalar-float-positive-exponent
+    (lambda ()
+      (assert-equal (encode 1e10) "1e10")))
+
+   ; A float with a negative exponent keeps the minus sign.
+   (test-scalar-float-negative-exponent
+    (lambda ()
+      (assert-equal (encode 0.001) "0.001")))
+
+   ; The empty string encodes to an empty JSON string.
+   (test-string-empty
+    (lambda ()
+      (assert-equal (encode "") "\"\"")))
+
+   ; A simple string encodes to itself, quoted.
+   (test-string-simple
+    (lambda ()
+      (assert-equal (encode "hello") "\"hello\"")))
+
+   ; A double quote is escaped.
+   (test-escape-double-quote
+    (lambda ()
+      (assert-equal (encode "\"") "\"\\\"\"")))
+
+   ; A backslash is escaped.
+   (test-escape-backslash
+    (lambda ()
+      (assert-equal (encode "\\") "\"\\\\\"")))
+
+   ; A newline is escaped.
+   (test-escape-newline
+    (lambda ()
+      (assert-equal (encode "\n") "\"\\n\"")))
+
+   ; A tab is escaped.
+   (test-escape-tab
+    (lambda ()
+      (assert-equal (encode "\t") "\"\\t\"")))
+
+   ; A carriage return is escaped.
+   (test-escape-carriage-return
+    (lambda ()
+      (assert-equal (encode "\r") "\"\\r\"")))
+
+   ; A form feed is escaped.
+   (test-escape-form-feed
+    (lambda ()
+      (assert-equal (encode "\u000c") "\"\\f\"")))
+
+   ; A backspace is escaped.
+   (test-escape-backspace
+    (lambda ()
+      (assert-equal (encode "\u0008") "\"\\b\"")))
+
+   ; Any other control character is escaped as a unicode escape.
+   (test-escape-other-control
+    (lambda ()
+      (assert-equal (encode "\u0001") "\"\\u0001\"")))
+
+   ; An empty list encodes to an empty JSON array.
+   (test-collection-empty-array
+    (lambda ()
+      (assert-equal (encode (list)) "[]")))
+
+   ; A list of integers encodes to a JSON array.
+   (test-collection-integer-array
+    (lambda ()
+      (assert-equal (encode (list 1 2 3)) "[1,2,3]")))
+
+   ; A nested list encodes to a nested JSON array.
+   (test-collection-nested-array
+    (lambda ()
+      (assert-equal (encode (list (list 1 2) (list 3 4)))
+                    "[[1,2],[3,4]]")))
+
+   ; An empty dict encodes to an empty JSON object.
+   (test-collection-empty-object
+    (lambda ()
+      (assert-equal (encode (dict)) "{}")))
+
+   ; A single-key dict encodes to a JSON object.
+   (test-collection-single-key
+    (lambda ()
+      (assert-equal (encode (dict "a" 1)) "{\"a\":1}")))
+
+   ; A multi-key dict preserves insertion order.
+   (test-collection-multi-key
+    (lambda ()
+      (assert-equal (encode (dict "a" 1 "b" 2))
+                    "{\"a\":1,\"b\":2}")))
+
+   ; A nested dict encodes to a nested JSON object.
+   (test-collection-nested-object
+    (lambda ()
+      (assert-equal (encode (dict "a" (dict "b" 2)))
+                    "{\"a\":{\"b\":2}}")))
+
+   ; #none round-trips through encode then decode unchanged.
+   (test-round-trip-null
+    (lambda ()
+      (assert-equal (decode (encode #none)) #none)))
+
+   ; Booleans round-trip through encode then decode unchanged.
+   (test-round-trip-booleans
+    (lambda ()
+      (assert-equal (list (decode (encode #t)) (decode (encode #f)))
+                    (list #t #f))))
+
+   ; An integer round-trips through encode then decode unchanged.
+   (test-round-trip-integer
+    (lambda ()
+      (assert-equal (decode (encode 42)) 42)))
+
+   ; A negative integer round-trips through encode then decode unchanged.
+   (test-round-trip-negative-integer
+    (lambda ()
+      (assert-equal (decode (encode -1234)) -1234)))
+
+   ; A float round-trips through encode then decode unchanged.
+   (test-round-trip-float
+    (lambda ()
+      (assert-equal (decode (encode 3.14)) 3.14)))
+
+   ; An integral float stays a float through a round-trip.
+   (test-round-trip-integral-float
+    (lambda ()
+      (assert-equal (decode (encode 1.0)) 1.0)))
+
+   ; A float with an exponent round-trips through encode then decode unchanged.
+   (test-round-trip-float-exponent
+    (lambda ()
+      (assert-equal (decode (encode 1e10)) 1e10)))
+
+   ; A string round-trips through encode then decode unchanged.
+   (test-round-trip-string
+    (lambda ()
+      (assert-equal (decode (encode "hello world")) "hello world")))
+
+   ; A string with escapes round-trips through encode then decode unchanged.
+   (test-round-trip-string-escapes
+    (lambda ()
+      (assert-equal (decode (encode "a\"b\\c\nd\te")) "a\"b\\c\nd\te")))
+
+   ; A string with a control character round-trips through encode then decode unchanged.
+   (test-round-trip-string-control
+    (lambda ()
+      (assert-equal (decode (encode "\u0001")) "\u0001")))
+
+   ; An array round-trips through encode then decode unchanged.
+   (test-round-trip-array
+    (lambda ()
+      (assert-equal (decode (encode (list 1 2 3))) (list 1 2 3))))
+
+   ; A nested array round-trips through encode then decode unchanged.
+   (test-round-trip-nested-array
+    (lambda ()
+      (assert-equal (decode (encode (list (list 1 2) (list 3 4))))
+                    (list (list 1 2) (list 3 4)))))
+
+   ; An object round-trips through encode then decode unchanged.
+   (test-round-trip-object
+    (lambda ()
+      (assert-equal (decode (encode (dict "a" 1 "b" "two")))
+                    (dict "a" 1 "b" "two"))))
+
+   ; A nested object round-trips through encode then decode unchanged.
+   (test-round-trip-nested-object
+    (lambda ()
+      (assert-equal (decode (encode (dict "a" (dict "b" (list 1 2)))))
+                    (dict "a" (dict "b" (list 1 2))))))
+
+   ; A mixed structure round-trips through encode then decode unchanged.
+   (test-round-trip-mixed
+    (lambda ()
+      (assert-equal
+        (decode (encode (dict "name" "Alice"
+                              "age" 30
+                              "active" #t
+                              "tags" (list "admin" "user")
+                              "address" (dict "city" "Wonderland" "zip" #none))))
+        (dict "name" "Alice"
+              "age" 30
+              "active" #t
+              "tags" (list "admin" "user")
+              "address" (dict "city" "Wonderland" "zip" #none)))))
+
+   ; A bytes value has no JSON representation.
+   (test-rejects-bytes
+    (lambda ()
+      (encode (string->bytes "abc"))))
+
+   ; A symbol has no JSON representation.
+   (test-rejects-symbol
+    (lambda ()
+      (encode 'foo)))
+
+   ; A vector has no JSON representation.
+   (test-rejects-vector
+    (lambda ()
+      (encode (vector 1 2 3))))
+
+   ; A set has no JSON representation.
+   (test-rejects-set
+    (lambda ()
+      (encode (set 1 2 3))))
+
+   ; A complex value has no JSON representation.
+   (test-rejects-complex
+    (lambda ()
+      (encode (float->complex 1.0 2.0))))
+
+   ; A dict with a non-string key is rejected.
+   (test-rejects-non-string-key
+    (lambda ()
+      (encode (dict 1 "value"))))
+
+   (tests
+    (list
+      (list "scalars"
+        (list
+          (expect-pass "null" test-scalar-null)
+          (expect-pass "true" test-scalar-true)
+          (expect-pass "false" test-scalar-false)
+          (expect-pass "integer" test-scalar-integer)
+          (expect-pass "negative integer" test-scalar-negative-integer)
+          (expect-pass "float" test-scalar-float)
+          (expect-pass "float with positive exponent drops the plus sign" test-scalar-float-positive-exponent)
+          (expect-pass "float with negative exponent" test-scalar-float-negative-exponent)))
+
+      (list "strings"
+        (list
+          (expect-pass "empty string" test-string-empty)
+          (expect-pass "simple string" test-string-simple)
+          (list "escapes"
+            (list
+              (expect-pass "double quote" test-escape-double-quote)
+              (expect-pass "backslash" test-escape-backslash)
+              (expect-pass "newline" test-escape-newline)
+              (expect-pass "tab" test-escape-tab)
+              (expect-pass "carriage return" test-escape-carriage-return)
+              (expect-pass "form feed" test-escape-form-feed)
+              (expect-pass "backspace" test-escape-backspace)
+              (expect-pass "other control character" test-escape-other-control)))))
+
+      (list "collections"
+        (list
+          (expect-pass "empty array" test-collection-empty-array)
+          (expect-pass "integer array" test-collection-integer-array)
+          (expect-pass "nested array" test-collection-nested-array)
+          (expect-pass "empty object" test-collection-empty-object)
+          (expect-pass "single-key object" test-collection-single-key)
+          (expect-pass "multi-key object preserves insertion order" test-collection-multi-key)
+          (expect-pass "nested object" test-collection-nested-object)))
+
+      (list "round-trips"
+        (list
+          (expect-pass "null" test-round-trip-null)
+          (expect-pass "booleans" test-round-trip-booleans)
+          (expect-pass "integer" test-round-trip-integer)
+          (expect-pass "negative integer" test-round-trip-negative-integer)
+          (expect-pass "float" test-round-trip-float)
+          (expect-pass "integral float stays a float" test-round-trip-integral-float)
+          (expect-pass "float with exponent" test-round-trip-float-exponent)
+          (expect-pass "string" test-round-trip-string)
+          (expect-pass "string with escapes" test-round-trip-string-escapes)
+          (expect-pass "string with control character" test-round-trip-string-control)
+          (expect-pass "array" test-round-trip-array)
+          (expect-pass "nested array" test-round-trip-nested-array)
+          (expect-pass "object" test-round-trip-object)
+          (expect-pass "nested object" test-round-trip-nested-object)
+          (expect-pass "mixed structure" test-round-trip-mixed)))
+
+      (list "errors"
+        (list
+          (expect-fail "bytes has no JSON representation" test-rejects-bytes "no JSON representation")
+          (expect-fail "symbol has no JSON representation" test-rejects-symbol "no JSON representation")
+          (expect-fail "vector has no JSON representation" test-rejects-vector "no JSON representation")
+          (expect-fail "set has no JSON representation" test-rejects-set "no JSON representation")
+          (expect-fail "complex has no JSON representation" test-rejects-complex "no JSON representation")
+          (expect-fail "non-string dict key" test-rejects-non-string-key "dict keys must be strings"))))))
+
+  (export tests))

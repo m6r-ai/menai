@@ -1,158 +1,293 @@
 ; Tests for xml-decode.menai
 
-(let ((xml-decode (import "xml-decode"))
-      (xml-encode (import "xml-encode"))
-      (t (import "menai-test")))
-  (let ((decode (:: xml-decode decode))
-        (encode (:: xml-encode encode))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail)))
-    (let ((tests
-      (list
-        ; The shape of a decoded element.
-        (list "elements"
-          (list
-            (expect-pass "self-closing element"
-                         (lambda () (assert-equal (decode "<a/>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "empty element"
-                         (lambda () (assert-equal (decode "<a></a>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "element with text"
-                         (lambda () (assert-equal (decode "<a>hi</a>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list "hi")))))
-            (expect-pass "nested elements"
-                         (lambda () (assert-equal (decode "<a><b/></a>")
-                                                  (dict "tag" "a" "attrs" (dict)
-                                                        "children" (list (dict "tag" "b" "attrs" (dict) "children" (list)))))))
-            (expect-pass "qualified name is kept verbatim"
-                         (lambda () (assert-equal (dict-get (decode "<w:p/>") "tag") "w:p")))))
+(letrec
+  ((xml-decode (import "xml-decode"))
+   (xml-encode (import "xml-encode"))
+   (t (import "menai-test"))
+   (decode (:: xml-decode decode))
+   (encode (:: xml-encode encode))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-        ; Attributes.
-        (list "attributes"
-          (list
-            (expect-pass "one attribute"
-                         (lambda () (assert-equal (dict-get (decode "<a x=\"1\"/>") "attrs")
-                                                  (dict "x" "1"))))
-            (expect-pass "two attributes"
-                         (lambda () (assert-equal (dict-get (decode "<a x=\"1\" y=\"2\"/>") "attrs")
-                                                  (dict "x" "1" "y" "2"))))
-            (expect-pass "single-quoted attribute"
-                         (lambda () (assert-equal (dict-get (decode "<a x='1'/>") "attrs")
-                                                  (dict "x" "1"))))
-            (expect-pass "attribute entities are decoded"
-                         (lambda () (assert-equal (dict-get (decode "<a x=\"&quot;q&quot;\"/>") "attrs")
-                                                  (dict "x" "\"q\""))))
-            (expect-pass "qualified attribute name is kept verbatim"
-                         (lambda () (assert-equal (dict-get (decode "<a w:x=\"1\"/>") "attrs")
-                                                  (dict "w:x" "1"))))))
+   ; A self-closing element decodes to an empty element.
+   (test-self-closing
+    (lambda ()
+      (assert-equal (decode "<a/>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
 
-        ; Mixed content is preserved as one ordered list of nodes.
-        (list "mixed-content"
-          (list
-            (expect-pass "text around a child element"
-                         (lambda () (assert-equal (decode "<p>Hello <b>world</b>!</p>")
-                                                  (dict "tag" "p" "attrs" (dict)
-                                                        "children" (list "Hello "
-                                                                         (dict "tag" "b" "attrs" (dict)
-                                                                               "children" (list "world"))
-                                                                         "!")))))
-            (expect-pass "two child elements with text between"
-                         (lambda () (assert-equal (decode "<a><b/>mid<c/></a>")
-                                                  (dict "tag" "a" "attrs" (dict)
-                                                        "children" (list (dict "tag" "b" "attrs" (dict) "children" (list))
-                                                                         "mid"
-                                                                         (dict "tag" "c" "attrs" (dict) "children" (list)))))))))
+   ; An element with an explicit end tag decodes to an empty element.
+   (test-empty-element
+    (lambda ()
+      (assert-equal (decode "<a></a>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
 
-        ; Entities and CDATA.
-        (list "text-decoding"
-          (list
-            (expect-pass "the five predefined entities"
-                         (lambda () (assert-equal (dict-get (decode "<a>&amp;&lt;&gt;&quot;&apos;</a>") "children")
-                                                  (list "&<>\"'"))))
-            (expect-pass "decimal character reference"
-                         (lambda () (assert-equal (dict-get (decode "<a>&#38;</a>") "children")
-                                                  (list "&"))))
-            (expect-pass "hex character reference"
-                         (lambda () (assert-equal (dict-get (decode "<a>&#x26;</a>") "children")
-                                                  (list "&"))))
-            (expect-pass "CDATA is decoded to text"
-                         (lambda () (assert-equal (dict-get (decode "<a><![CDATA[<x> & y]]></a>") "children")
-                                                  (list "<x> & y"))))))
+   ; Text content is captured as a child.
+   (test-element-with-text
+    (lambda ()
+      (assert-equal (decode "<a>hi</a>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list "hi")))))
 
-        ; Prolog, comments, and processing instructions are discarded.
-        (list "discarded"
-          (list
-            (expect-pass "XML declaration is skipped"
-                         (lambda () (assert-equal (decode "<?xml version=\"1.0\"?><a/>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "whitespace after the XML declaration is skipped"
-                         (lambda () (assert-equal (decode "<?xml version=\"1.0\"?>\n<a/>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "whitespace before the XML declaration is skipped"
-                         (lambda () (assert-equal (decode "\n  <?xml version=\"1.0\"?>\n<a/>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "whitespace between prolog items is skipped"
-                         (lambda () (assert-equal (decode "<?xml version=\"1.0\"?>\n<!-- c -->\n<a/>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "whitespace after the document element is skipped"
-                         (lambda () (assert-equal (decode "<a/>\n")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "comment before the root is skipped"
-                         (lambda () (assert-equal (decode "<!-- c --><a/>")
-                                                  (dict "tag" "a" "attrs" (dict) "children" (list)))))
-            (expect-pass "comment inside an element is skipped"
-                         (lambda () (assert-equal (dict-get (decode "<a><!-- c --></a>") "children")
-                                                  (list))))
-            (expect-pass "processing instruction inside an element is skipped"
-                         (lambda () (assert-equal (dict-get (decode "<a><?pi x?></a>") "children")
-                                                  (list))))))
+   ; A nested element is captured as a child element.
+   (test-nested-elements
+    (lambda ()
+      (assert-equal (decode "<a><b/></a>")
+                    (dict "tag" "a" "attrs" (dict)
+                          "children" (list (dict "tag" "b" "attrs" (dict) "children" (list)))))))
 
-        ; Errors
-        (list "errors"
-          (list
-            (expect-fail "no document element"
-                         (lambda () (decode ""))
-                         "no document element")
-            (expect-fail "mismatched end tag"
-                         (lambda () (decode "<a></b>"))
-                         "does not match")
-            (expect-fail "unterminated element"
-                         (lambda () (decode "<a>"))
-                         "missing end tag")
-            (expect-fail "content after the document element"
-                         (lambda () (decode "<a/><b/>"))
-                         "content after the document element")
-            (expect-fail "DOCTYPE is not supported"
-                         (lambda () (decode "<!DOCTYPE a><a/>"))
-                         "document type definitions are not supported")
-            (expect-fail "unsupported entity"
-                         (lambda () (decode "<a>&foo;</a>"))
-                         "unsupported entity")
-            (expect-fail "unquoted attribute value"
-                         (lambda () (decode "<a x=1/>"))
-                         "must be quoted")
-            (expect-fail "rejects a non-string argument"
-                         (lambda () (decode 42))
-                         "expects a string")))
+   ; A namespace-qualified element name is kept verbatim as the tag.
+   (test-qualified-tag
+    (lambda ()
+      (assert-equal (dict-get (decode "<w:p/>") "tag") "w:p")))
 
-        ; Round-trips through xml-encode.
-        (list "round-trips"
-          (list
-            (expect-pass "self-closing"
-                         (lambda () (assert-equal (decode (encode (decode "<a/>"))) (decode "<a/>"))))
-            (expect-pass "mixed content"
-                         (lambda () (assert-equal (decode (encode (decode "<p>Hello <b>world</b>!</p>")))
-                                                  (decode "<p>Hello <b>world</b>!</p>"))))
-            (expect-pass "attributes"
-                         (lambda () (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>")))
-                                                  (decode "<a x=\"1\" y=\"2\">t</a>"))))
-            (expect-pass "entities survive the round-trip"
-                         (lambda () (assert-equal (decode (encode (decode "<a>&amp;&lt;&gt;</a>")))
-                                                  (decode "<a>&amp;&lt;&gt;</a>"))))
-            (expect-pass "nested structure"
-                         (lambda () (assert-equal (decode (encode (decode "<r><a><b>x</b></a><c/></r>")))
-                                                  (decode "<r><a><b>x</b></a><c/></r>")))))))))
+   ; A single attribute is captured.
+   (test-one-attribute
+    (lambda ()
+      (assert-equal (dict-get (decode "<a x=\"1\"/>") "attrs")
+                    (dict "x" "1"))))
 
-      (export tests))))
+   ; Two attributes are both captured.
+   (test-two-attributes
+    (lambda ()
+      (assert-equal (dict-get (decode "<a x=\"1\" y=\"2\"/>") "attrs")
+                    (dict "x" "1" "y" "2"))))
+
+   ; A single-quoted attribute value is captured.
+   (test-single-quoted-attribute
+    (lambda ()
+      (assert-equal (dict-get (decode "<a x='1'/>") "attrs")
+                    (dict "x" "1"))))
+
+   ; Entities in an attribute value are decoded.
+   (test-attribute-entities
+    (lambda ()
+      (assert-equal (dict-get (decode "<a x=\"&quot;q&quot;\"/>") "attrs")
+                    (dict "x" "\"q\""))))
+
+   ; A namespace-qualified attribute name is kept verbatim.
+   (test-qualified-attribute
+    (lambda ()
+      (assert-equal (dict-get (decode "<a w:x=\"1\"/>") "attrs")
+                    (dict "w:x" "1"))))
+
+   ; Text around a child element is preserved as one ordered list of nodes.
+   (test-mixed-content-text-around-child
+    (lambda ()
+      (assert-equal (decode "<p>Hello <b>world</b>!</p>")
+                    (dict "tag" "p" "attrs" (dict)
+                          "children" (list "Hello "
+                                           (dict "tag" "b" "attrs" (dict)
+                                                 "children" (list "world"))
+                                           "!")))))
+
+   ; Two child elements with text between are preserved in order.
+   (test-mixed-content-two-children
+    (lambda ()
+      (assert-equal (decode "<a><b/>mid<c/></a>")
+                    (dict "tag" "a" "attrs" (dict)
+                          "children" (list (dict "tag" "b" "attrs" (dict) "children" (list))
+                                           "mid"
+                                           (dict "tag" "c" "attrs" (dict) "children" (list)))))))
+
+   ; The five predefined entities are decoded.
+   (test-predefined-entities
+    (lambda ()
+      (assert-equal (dict-get (decode "<a>&amp;&lt;&gt;&quot;&apos;</a>") "children")
+                    (list "&<>\"'"))))
+
+   ; A decimal character reference is decoded.
+   (test-decimal-character-reference
+    (lambda ()
+      (assert-equal (dict-get (decode "<a>&#38;</a>") "children")
+                    (list "&"))))
+
+   ; A hexadecimal character reference is decoded.
+   (test-hex-character-reference
+    (lambda ()
+      (assert-equal (dict-get (decode "<a>&#x26;</a>") "children")
+                    (list "&"))))
+
+   ; CDATA content is decoded to text.
+   (test-cdata
+    (lambda ()
+      (assert-equal (dict-get (decode "<a><![CDATA[<x> & y]]></a>") "children")
+                    (list "<x> & y"))))
+
+   ; An XML declaration is skipped.
+   (test-xml-declaration-skipped
+    (lambda ()
+      (assert-equal (decode "<?xml version=\"1.0\"?><a/>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
+
+   ; Whitespace after the XML declaration is skipped.
+   (test-whitespace-after-declaration
+    (lambda ()
+      (assert-equal (decode "<?xml version=\"1.0\"?>\n<a/>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
+
+   ; Whitespace before the XML declaration is skipped.
+   (test-whitespace-before-declaration
+    (lambda ()
+      (assert-equal (decode "\n  <?xml version=\"1.0\"?>\n<a/>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
+
+   ; Whitespace between prolog items is skipped.
+   (test-whitespace-between-prolog-items
+    (lambda ()
+      (assert-equal (decode "<?xml version=\"1.0\"?>\n<!-- c -->\n<a/>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
+
+   ; Whitespace after the document element is skipped.
+   (test-whitespace-after-document
+    (lambda ()
+      (assert-equal (decode "<a/>\n")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
+
+   ; A comment before the root element is skipped.
+   (test-comment-before-root
+    (lambda ()
+      (assert-equal (decode "<!-- c --><a/>")
+                    (dict "tag" "a" "attrs" (dict) "children" (list)))))
+
+   ; A comment inside an element is skipped.
+   (test-comment-inside-element
+    (lambda ()
+      (assert-equal (dict-get (decode "<a><!-- c --></a>") "children")
+                    (list))))
+
+   ; A processing instruction inside an element is skipped.
+   (test-processing-instruction-inside-element
+    (lambda ()
+      (assert-equal (dict-get (decode "<a><?pi x?></a>") "children")
+                    (list))))
+
+   ; An empty document with no document element is rejected.
+   (test-rejects-no-document-element
+    (lambda ()
+      (decode "")))
+
+   ; A mismatched end tag is rejected.
+   (test-rejects-mismatched-end-tag
+    (lambda ()
+      (decode "<a></b>")))
+
+   ; An element with no end tag is rejected.
+   (test-rejects-unterminated-element
+    (lambda ()
+      (decode "<a>")))
+
+   ; Content after the document element is rejected.
+   (test-rejects-content-after-document
+    (lambda ()
+      (decode "<a/><b/>")))
+
+   ; A DOCTYPE declaration is rejected.
+   (test-rejects-doctype
+    (lambda ()
+      (decode "<!DOCTYPE a><a/>")))
+
+   ; An unsupported entity is rejected.
+   (test-rejects-unsupported-entity
+    (lambda ()
+      (decode "<a>&foo;</a>")))
+
+   ; An unquoted attribute value is rejected.
+   (test-rejects-unquoted-attribute
+    (lambda ()
+      (decode "<a x=1/>")))
+
+   ; A non-string argument is rejected.
+   (test-rejects-non-string
+    (lambda ()
+      (decode 42)))
+
+   ; A self-closing element round-trips through encode then decode unchanged.
+   (test-round-trip-self-closing
+    (lambda ()
+      (assert-equal (decode (encode (decode "<a/>"))) (decode "<a/>"))))
+
+   ; Mixed content round-trips through encode then decode unchanged.
+   (test-round-trip-mixed-content
+    (lambda ()
+      (assert-equal (decode (encode (decode "<p>Hello <b>world</b>!</p>")))
+                    (decode "<p>Hello <b>world</b>!</p>"))))
+
+   ; Attributes round-trip through encode then decode unchanged.
+   (test-round-trip-attributes
+    (lambda ()
+      (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>")))
+                    (decode "<a x=\"1\" y=\"2\">t</a>"))))
+
+   ; Entities survive a round-trip through encode then decode.
+   (test-round-trip-entities
+    (lambda ()
+      (assert-equal (decode (encode (decode "<a>&amp;&lt;&gt;</a>")))
+                    (decode "<a>&amp;&lt;&gt;</a>"))))
+
+   ; A nested structure round-trips through encode then decode unchanged.
+   (test-round-trip-nested
+    (lambda ()
+      (assert-equal (decode (encode (decode "<r><a><b>x</b></a><c/></r>")))
+                    (decode "<r><a><b>x</b></a><c/></r>"))))
+
+   (tests
+    (list
+      (list "elements"
+        (list
+          (expect-pass "self-closing element" test-self-closing)
+          (expect-pass "empty element" test-empty-element)
+          (expect-pass "element with text" test-element-with-text)
+          (expect-pass "nested elements" test-nested-elements)
+          (expect-pass "qualified name is kept verbatim" test-qualified-tag)))
+
+      (list "attributes"
+        (list
+          (expect-pass "one attribute" test-one-attribute)
+          (expect-pass "two attributes" test-two-attributes)
+          (expect-pass "single-quoted attribute" test-single-quoted-attribute)
+          (expect-pass "attribute entities are decoded" test-attribute-entities)
+          (expect-pass "qualified attribute name is kept verbatim" test-qualified-attribute)))
+
+      (list "mixed-content"
+        (list
+          (expect-pass "text around a child element" test-mixed-content-text-around-child)
+          (expect-pass "two child elements with text between" test-mixed-content-two-children)))
+
+      (list "text-decoding"
+        (list
+          (expect-pass "the five predefined entities" test-predefined-entities)
+          (expect-pass "decimal character reference" test-decimal-character-reference)
+          (expect-pass "hex character reference" test-hex-character-reference)
+          (expect-pass "CDATA is decoded to text" test-cdata)))
+
+      (list "discarded"
+        (list
+          (expect-pass "XML declaration is skipped" test-xml-declaration-skipped)
+          (expect-pass "whitespace after the XML declaration is skipped" test-whitespace-after-declaration)
+          (expect-pass "whitespace before the XML declaration is skipped" test-whitespace-before-declaration)
+          (expect-pass "whitespace between prolog items is skipped" test-whitespace-between-prolog-items)
+          (expect-pass "whitespace after the document element is skipped" test-whitespace-after-document)
+          (expect-pass "comment before the root is skipped" test-comment-before-root)
+          (expect-pass "comment inside an element is skipped" test-comment-inside-element)
+          (expect-pass "processing instruction inside an element is skipped" test-processing-instruction-inside-element)))
+
+      (list "errors"
+        (list
+          (expect-fail "no document element" test-rejects-no-document-element "no document element")
+          (expect-fail "mismatched end tag" test-rejects-mismatched-end-tag "does not match")
+          (expect-fail "unterminated element" test-rejects-unterminated-element "missing end tag")
+          (expect-fail "content after the document element" test-rejects-content-after-document "content after the document element")
+          (expect-fail "DOCTYPE is not supported" test-rejects-doctype "document type definitions are not supported")
+          (expect-fail "unsupported entity" test-rejects-unsupported-entity "unsupported entity")
+          (expect-fail "unquoted attribute value" test-rejects-unquoted-attribute "must be quoted")
+          (expect-fail "rejects a non-string argument" test-rejects-non-string "expects a string")))
+
+      (list "round-trips"
+        (list
+          (expect-pass "self-closing" test-round-trip-self-closing)
+          (expect-pass "mixed content" test-round-trip-mixed-content)
+          (expect-pass "attributes" test-round-trip-attributes)
+          (expect-pass "entities survive the round-trip" test-round-trip-entities)
+          (expect-pass "nested structure" test-round-trip-nested))))))
+
+  (export tests))

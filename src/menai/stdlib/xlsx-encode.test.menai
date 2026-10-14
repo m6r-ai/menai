@@ -1,266 +1,355 @@
 ; Tests for xlsx-encode.menai
 
-(let ((xlsx-encode (import "xlsx-encode"))
-      (xlsx-decode (import "xlsx-decode"))
-      (zip-entries (import "zip-entries"))
-      (zip-extract (import "zip-extract"))
-      (xml (import "xml-decode"))
-      (t (import "menai-test")))
-  (let ((encode (:: xlsx-encode encode))
-        (decode (:: xlsx-decode decode))
-        (entries (:: zip-entries entries))
-        (extract (:: zip-extract extract))
-        (xml-decode (:: xml decode))
-        (assert-equal (:: t assert-equal))
-        (expect-pass (:: t expect-pass))
-        (expect-fail (:: t expect-fail))
-        (main-ns "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
-        (rels-ns "http://schemas.openxmlformats.org/package/2006/relationships")
-        (worksheet-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet")
-        (shared-strings-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings")
-        (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
-        (workbook
-         (dict "tag" "workbook"
-               "attrs" (dict "xmlns" main-ns)
-               "children" (list)))
-        (workbook-with-sheets
-         (dict "tag" "workbook"
-               "attrs" (dict "xmlns" main-ns
-                             "xmlns:r" "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
-               "children" (list (dict "tag" "sheets"
-                                      "attrs" (dict)
-                                      "children" (list (dict "tag" "sheet"
-                                                             "attrs" (dict "name" "First" "sheetId" "1" "r:id" "rId1")
-                                                             "children" (list))
-                                                       (dict "tag" "sheet"
-                                                             "attrs" (dict "name" "Second" "sheetId" "2" "r:id" "rId2")
-                                                             "children" (list)))))))
-        (sheet1
-         (dict "tag" "worksheet"
-               "attrs" (dict "xmlns" main-ns)
-               "children" (list (dict "tag" "sheetData" "attrs" (dict) "children" (list)))))
-        (sheet2
-         (dict "tag" "worksheet"
-               "attrs" (dict "xmlns" main-ns)
-               "children" (list (dict "tag" "sheetData" "attrs" (dict) "children" (list)))))
-        (styles (dict "tag" "styleSheet" "attrs" (dict "xmlns" main-ns) "children" (list)))
-        (theme (dict "tag" "a:theme" "attrs" (dict "xmlns:a" main-ns) "children" (list)))
-        (shared-strings (list (dict "tag" "si" "attrs" (dict) "children" (list (dict "tag" "t" "attrs" (dict) "children" (list "Hello"))))
-                              (dict "tag" "si" "attrs" (dict) "children" (list (dict "tag" "t" "attrs" (dict) "children" (list "World"))))))
-        (sheet1-rels (dict "rId1" (dict "type" image-rel "target" "../media/image1.png" "mode" #none)))
-        (workbook-relationships
-         (dict "rId1" (dict "type" worksheet-rel "target" "worksheets/sheet1.xml" "mode" #none)
-               "rId2" (dict "type" worksheet-rel "target" "worksheets/sheet2.xml" "mode" #none)
-               "rId3" (dict "type" shared-strings-rel "target" "sharedStrings.xml" "mode" #none)))
-        (media (dict "xl/media/image1.png" (string-hex->bytes "89504e47")))
+(letrec
+  ((xlsx-encode (import "xlsx-encode"))
+   (xlsx-decode (import "xlsx-decode"))
+   (zip-entries (import "zip-entries"))
+   (zip-extract (import "zip-extract"))
+   (xml (import "xml-decode"))
+   (t (import "menai-test"))
+   (encode (:: xlsx-encode encode))
+   (decode (:: xlsx-decode decode))
+   (entries (:: zip-entries entries))
+   (extract (:: zip-extract extract))
+   (xml-decode (:: xml decode))
+   (assert-equal (:: t assert-equal))
+   (expect-pass (:: t expect-pass))
+   (expect-fail (:: t expect-fail))
 
-        (full (dict "workbook" workbook-with-sheets
-                    "relationships" workbook-relationships
-                    "shared-strings" shared-strings
-                    "styles" styles
-                    "theme" theme
-                    "sheets" (list (dict "name" "First"
-                                         "part" "xl/worksheets/sheet1.xml"
-                                         "element" sheet1
-                                         "relationships" sheet1-rels)
-                                   (dict "name" "Second"
-                                         "part" "xl/worksheets/sheet2.xml"
-                                         "element" sheet2
-                                         "relationships" (dict)))
-                    "media" media))
+   (main-ns "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
+   (rels-ns "http://schemas.openxmlformats.org/package/2006/relationships")
+   (worksheet-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet")
+   (shared-strings-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings")
+   (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
 
-        (minimal (dict "workbook" workbook
-                       "relationships" (dict)
-                       "shared-strings" #none
-                       "styles" #none
-                       "theme" #none
-                       "sheets" (list)
-                       "media" #none))
+   (workbook
+    (dict "tag" "workbook"
+          "attrs" (dict "xmlns" main-ns)
+          "children" (list)))
 
-        (part-names
-         (lambda (v)
-           (map-list (lambda (e) (dict-get e "name"))
-                     (dict-get (entries (encode v)) "entries"))))
+   (workbook-with-sheets
+    (dict "tag" "workbook"
+          "attrs" (dict "xmlns" main-ns
+                        "xmlns:r" "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+          "children" (list (dict "tag" "sheets"
+                                 "attrs" (dict)
+                                 "children" (list (dict "tag" "sheet"
+                                                        "attrs" (dict "name" "First" "sheetId" "1" "r:id" "rId1")
+                                                        "children" (list))
+                                                  (dict "tag" "sheet"
+                                                        "attrs" (dict "name" "Second" "sheetId" "2" "r:id" "rId2")
+                                                        "children" (list)))))))
 
-        (part-content
-         (lambda (v name)
-           (let ((part (find-list (lambda (e) (string=? (dict-get e "name") name))
-                                  (dict-get (extract (encode v)) "entries"))))
-             (if (dict? part)
-                 (dict-get part "content")
-                 #none))))
+   (sheet1
+    (dict "tag" "worksheet"
+          "attrs" (dict "xmlns" main-ns)
+          "children" (list (dict "tag" "sheetData" "attrs" (dict) "children" (list)))))
 
-        (decode-part
-         (lambda (v name)
-           (xml-decode (bytes->string (part-content v name))))))
+   (sheet2
+    (dict "tag" "worksheet"
+          "attrs" (dict "xmlns" main-ns)
+          "children" (list (dict "tag" "sheetData" "attrs" (dict) "children" (list)))))
 
-    (let ((tests
-           (list
-             (list "package"
-               (list
-                 (expect-pass "minimal package contains the required parts"
-                              (lambda ()
-                                (assert-equal (part-names minimal)
-                                              (list "[Content_Types].xml"
-                                                    "_rels/.rels"
-                                                    "xl/workbook.xml"
-                                                    "xl/_rels/workbook.xml.rels"))))
-                 (expect-pass "full package contains every part"
-                              (lambda ()
-                                (assert-equal (part-names full)
-                                              (list "[Content_Types].xml"
-                                                    "_rels/.rels"
-                                                    "xl/workbook.xml"
-                                                    "xl/_rels/workbook.xml.rels"
-                                                    "xl/worksheets/sheet1.xml"
-                                                    "xl/worksheets/_rels/sheet1.xml.rels"
-                                                    "xl/worksheets/sheet2.xml"
-                                                    "xl/sharedStrings.xml"
-                                                    "xl/styles.xml"
-                                                    "xl/theme/theme1.xml"
-                                                    "xl/media/image1.png"))))
-                 (expect-pass "media parts are written verbatim"
-                              (lambda ()
-                                (assert-equal (part-content full "xl/media/image1.png")
-                                              (string-hex->bytes "89504e47"))))
-                 (expect-pass "a sheet with no relationships writes no rels part"
-                              (lambda ()
-                                (assert-equal (part-content full "xl/worksheets/_rels/sheet2.xml.rels")
-                                              #none)))))
+   (styles (dict "tag" "styleSheet" "attrs" (dict "xmlns" main-ns) "children" (list)))
+   (theme (dict "tag" "a:theme" "attrs" (dict "xmlns:a" main-ns) "children" (list)))
 
-             (list "structural-parts"
-               (list
-                 (expect-pass "content types declares the rels and xml defaults"
-                              (lambda ()
-                                (let ((types (decode-part minimal "[Content_Types].xml")))
-                                  (assert-equal (list (dict-get (list-first (dict-get types "children")) "attrs")
-                                                      (dict-get (list-nth (dict-get types "children") 1) "attrs"))
-                                                (list (dict "Extension" "rels"
-                                                            "ContentType" "application/vnd.openxmlformats-package.relationships+xml")
-                                                      (dict "Extension" "xml"
-                                                            "ContentType" "application/xml"))))))
-                 (expect-pass "content types declares a default per media extension"
-                              (lambda ()
-                                (let ((types (decode-part full "[Content_Types].xml")))
-                                  (assert-equal (map-list (lambda (c) (dict-get (dict-get c "attrs") "Extension"))
-                                                          (filter-list (lambda (c) (string=? (dict-get c "tag") "Default"))
-                                                                       (dict-get types "children")))
-                                                (list "rels" "xml" "png")))))
-                 (expect-pass "content types overrides the workbook part"
-                              (lambda ()
-                                (let ((types (decode-part full "[Content_Types].xml")))
-                                  (assert-equal (dict-get (dict-get (list-first (dict-get types "children")) "attrs") "Extension")
-                                                "rels"))))
-                 (expect-pass "root rels points at xl/workbook.xml"
-                              (lambda ()
-                                (let ((rels (decode-part minimal "_rels/.rels")))
-                                  (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Target")
-                                                "xl/workbook.xml"))))))
+   (shared-strings
+    (list (dict "tag" "si" "attrs" (dict) "children" (list (dict "tag" "t" "attrs" (dict) "children" (list "Hello"))))
+          (dict "tag" "si" "attrs" (dict) "children" (list (dict "tag" "t" "attrs" (dict) "children" (list "World"))))))
 
-             (list "relationships"
-               (list
-                 (expect-pass "workbook relationships are emitted verbatim"
-                              (lambda ()
-                                (let ((rels (decode-part full "xl/_rels/workbook.xml.rels")))
-                                  (assert-equal (dict-get rels "tag") "Relationships"))))
-                 (expect-pass "a sheet's own relationships are emitted"
-                              (lambda ()
-                                (let ((rels (decode-part full "xl/worksheets/_rels/sheet1.xml.rels")))
-                                  (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Type")
-                                                image-rel))))))
+   (sheet1-rels (dict "rId1" (dict "type" image-rel "target" "../media/image1.png" "mode" #none)))
 
-             (list "shared-strings"
-               (list
-                 (expect-pass "shared strings are written as an sst of si elements"
-                              (lambda ()
-                                (let ((sst (decode-part full "xl/sharedStrings.xml")))
-                                  (assert-equal (map-list (lambda (c) (dict-get c "tag"))
-                                                          (dict-get sst "children"))
-                                                (list "si" "si")))))
-                 (expect-pass "a shared string part is absent when shared-strings is #none"
-                              (lambda ()
-                                (assert-equal (part-content minimal "xl/sharedStrings.xml") #none)))))
+   (workbook-relationships
+    (dict "rId1" (dict "type" worksheet-rel "target" "worksheets/sheet1.xml" "mode" #none)
+          "rId2" (dict "type" worksheet-rel "target" "worksheets/sheet2.xml" "mode" #none)
+          "rId3" (dict "type" shared-strings-rel "target" "sharedStrings.xml" "mode" #none)))
 
-             (list "round-trips"
-               (list
-                 (expect-pass "minimal value tree"
-                              (lambda () (assert-equal (decode (encode minimal)) minimal)))
-                 (expect-pass "value tree with every part"
-                              (lambda () (assert-equal (decode (encode full)) full)))))
+   (media (dict "xl/media/image1.png" (string-hex->bytes "89504e47")))
 
-             (list "errors"
-               (list
-                 (expect-fail "rejects a non-dict value"
-                              (lambda () (encode "not a value tree"))
-                              "expects a dict")
-                 (expect-fail "rejects a missing workbook"
-                              (lambda () (encode (dict "sheets" (list))))
-                              "\"workbook\" must be an element dict")
-                 (expect-fail "rejects a non-list sheets"
-                              (lambda () (encode (dict "workbook" workbook "relationships" (dict) "sheets" "nope")))
-                              "\"sheets\" must be a list")
-                 (expect-fail "rejects a sheet that is not a dict"
-                              (lambda () (encode (dict "workbook" workbook
-                                                       "relationships" (dict)
-                                                       "sheets" (list "nope")
-                                                       "shared-strings" #none
-                                                       "styles" #none
-                                                       "theme" #none
-                                                       "media" #none)))
-                              "a sheet \"part\" must be a string")
-                 (expect-fail "rejects a non-dict relationships"
-                              (lambda () (encode (dict "workbook" workbook
-                                                       "relationships" "nope"
-                                                       "sheets" (list)
-                                                       "shared-strings" #none
-                                                       "styles" #none
-                                                       "theme" #none
-                                                       "media" #none)))
-                              "\"relationships\" must be a dict")
-                 (expect-fail "rejects a relationship that is not a dict"
-                              (lambda () (encode (dict "workbook" workbook
-                                                       "relationships" (dict "rId1" "nope")
-                                                       "sheets" (list)
-                                                       "shared-strings" #none
-                                                       "styles" #none
-                                                       "theme" #none
-                                                       "media" #none)))
-                              "must be a dict")
-                 (expect-fail "rejects a relationship with no type"
-                              (lambda () (encode (dict "workbook" workbook
-                                                       "relationships" (dict "rId1" (dict "target" "x"))
-                                                       "sheets" (list)
-                                                       "shared-strings" #none
-                                                       "styles" #none
-                                                       "theme" #none
-                                                       "media" #none)))
-                              "\"type\" must be a string")
-                 (expect-fail "rejects a shared-strings value that is not a list or #none"
-                              (lambda () (encode (dict "workbook" workbook
-                                                       "relationships" (dict)
-                                                       "sheets" (list)
-                                                       "shared-strings" "nope"
-                                                       "styles" #none
-                                                       "theme" #none
-                                                       "media" #none)))
-                              "\"shared-strings\" must be a list or #none")
-                 (expect-fail "rejects a shared-string entry that is not an element"
-                              (lambda () (encode (dict "workbook" workbook
-                                                       "relationships" (dict)
-                                                       "sheets" (list)
-                                                       "shared-strings" (list "nope")
-                                                       "styles" #none
-                                                       "theme" #none
-                                                       "media" #none)))
-                              "a shared-string entry must be an element dict")
-                 (expect-fail "rejects a non-bytes media part"
-                              (lambda () (encode (dict "workbook" workbook
-                                                       "relationships" (dict)
-                                                       "sheets" (list)
-                                                       "shared-strings" #none
-                                                       "styles" #none
-                                                       "theme" #none
-                                                       "media" (dict "xl/media/a.png" "nope"))))
-                              "must be bytes"))))))
+   (full (dict "workbook" workbook-with-sheets
+               "relationships" workbook-relationships
+               "shared-strings" shared-strings
+               "styles" styles
+               "theme" theme
+               "sheets" (list (dict "name" "First"
+                                    "part" "xl/worksheets/sheet1.xml"
+                                    "element" sheet1
+                                    "relationships" sheet1-rels)
+                              (dict "name" "Second"
+                                    "part" "xl/worksheets/sheet2.xml"
+                                    "element" sheet2
+                                    "relationships" (dict)))
+               "media" media))
 
-      (export tests))))
+   (minimal (dict "workbook" workbook
+                  "relationships" (dict)
+                  "shared-strings" #none
+                  "styles" #none
+                  "theme" #none
+                  "sheets" (list)
+                  "media" #none))
+
+   ; Encode a value tree and return the list of part names in the produced package.
+   (part-names
+    (lambda (v)
+      (map-list (lambda (e) (dict-get e "name"))
+                (dict-get (entries (encode v)) "entries"))))
+
+   ; Encode a value tree and return the content of the named part, or #none if absent.
+   (part-content
+    (lambda (v name)
+      (let ((part (find-list (lambda (e) (string=? (dict-get e "name") name))
+                             (dict-get (extract (encode v)) "entries"))))
+        (if (dict? part)
+            (dict-get part "content")
+            #none))))
+
+   ; Encode a value tree and decode the named XML part to an element tree.
+   (decode-part
+    (lambda (v name)
+      (xml-decode (bytes->string (part-content v name)))))
+
+   ; A minimal value tree produces exactly the required package parts.
+   (test-minimal-parts
+    (lambda ()
+      (assert-equal (part-names minimal)
+                    (list "[Content_Types].xml"
+                          "_rels/.rels"
+                          "xl/workbook.xml"
+                          "xl/_rels/workbook.xml.rels"))))
+
+   ; A full value tree produces every part, including sheets, shared strings, styles, theme, and media.
+   (test-full-parts
+    (lambda ()
+      (assert-equal (part-names full)
+                    (list "[Content_Types].xml"
+                          "_rels/.rels"
+                          "xl/workbook.xml"
+                          "xl/_rels/workbook.xml.rels"
+                          "xl/worksheets/sheet1.xml"
+                          "xl/worksheets/_rels/sheet1.xml.rels"
+                          "xl/worksheets/sheet2.xml"
+                          "xl/sharedStrings.xml"
+                          "xl/styles.xml"
+                          "xl/theme/theme1.xml"
+                          "xl/media/image1.png"))))
+
+   ; A media part's bytes are written verbatim.
+   (test-media-verbatim
+    (lambda ()
+      (assert-equal (part-content full "xl/media/image1.png")
+                    (string-hex->bytes "89504e47"))))
+
+   ; A sheet with no relationships writes no rels part.
+   (test-sheet-without-rels
+    (lambda ()
+      (assert-equal (part-content full "xl/worksheets/_rels/sheet2.xml.rels")
+                    #none)))
+
+   ; Content types declares default extensions for rels and xml.
+   (test-content-types-defaults
+    (lambda ()
+      (let ((types (decode-part minimal "[Content_Types].xml")))
+        (assert-equal (list (dict-get (list-first (dict-get types "children")) "attrs")
+                            (dict-get (list-nth (dict-get types "children") 1) "attrs"))
+                      (list (dict "Extension" "rels"
+                                  "ContentType" "application/vnd.openxmlformats-package.relationships+xml")
+                            (dict "Extension" "xml"
+                                  "ContentType" "application/xml"))))))
+
+   ; Content types declares a default for each media extension present.
+   (test-content-types-media-default
+    (lambda ()
+      (let ((types (decode-part full "[Content_Types].xml")))
+        (assert-equal (map-list (lambda (c) (dict-get (dict-get c "attrs") "Extension"))
+                                (filter-list (lambda (c) (string=? (dict-get c "tag") "Default"))
+                                             (dict-get types "children")))
+                      (list "rels" "xml" "png")))))
+
+   ; Content types overrides the workbook part.
+   (test-content-types-override
+    (lambda ()
+      (let ((types (decode-part full "[Content_Types].xml")))
+        (assert-equal (dict-get (dict-get (list-first (dict-get types "children")) "attrs") "Extension")
+                      "rels"))))
+
+   ; The root rels part points at xl/workbook.xml.
+   (test-root-rels-target
+    (lambda ()
+      (let ((rels (decode-part minimal "_rels/.rels")))
+        (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Target")
+                      "xl/workbook.xml"))))
+
+   ; Workbook relationships are emitted verbatim.
+   (test-workbook-relationships-verbatim
+    (lambda ()
+      (let ((rels (decode-part full "xl/_rels/workbook.xml.rels")))
+        (assert-equal (dict-get rels "tag") "Relationships"))))
+
+   ; A sheet's own relationships are emitted.
+   (test-sheet-relationships-emitted
+    (lambda ()
+      (let ((rels (decode-part full "xl/worksheets/_rels/sheet1.xml.rels")))
+        (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Type")
+                      image-rel))))
+
+   ; Shared strings are written as an sst of si elements.
+   (test-shared-strings-sst
+    (lambda ()
+      (let ((sst (decode-part full "xl/sharedStrings.xml")))
+        (assert-equal (map-list (lambda (c) (dict-get c "tag"))
+                                (dict-get sst "children"))
+                      (list "si" "si")))))
+
+   ; No shared-strings part is written when shared-strings is #none.
+   (test-shared-strings-absent
+    (lambda ()
+      (assert-equal (part-content minimal "xl/sharedStrings.xml") #none)))
+
+   ; A minimal value tree round-trips through encode then decode unchanged.
+   (test-round-trip-minimal
+    (lambda ()
+      (assert-equal (decode (encode minimal)) minimal)))
+
+   ; A value tree with every part round-trips through encode then decode unchanged.
+   (test-round-trip-full
+    (lambda ()
+      (assert-equal (decode (encode full)) full)))
+
+   ; A non-dict value is rejected.
+   (test-rejects-non-dict
+    (lambda ()
+      (encode "not a value tree")))
+
+   ; A value tree with no workbook is rejected.
+   (test-rejects-missing-workbook
+    (lambda ()
+      (encode (dict "sheets" (list)))))
+
+   ; A non-list sheets value is rejected.
+   (test-rejects-non-list-sheets
+    (lambda ()
+      (encode (dict "workbook" workbook "relationships" (dict) "sheets" "nope"))))
+
+   ; A sheet that is not a dict is rejected.
+   (test-rejects-non-dict-sheet
+    (lambda ()
+      (encode (dict "workbook" workbook
+                    "relationships" (dict)
+                    "sheets" (list "nope")
+                    "shared-strings" #none
+                    "styles" #none
+                    "theme" #none
+                    "media" #none))))
+
+   ; A non-dict relationships value is rejected.
+   (test-rejects-non-dict-relationships
+    (lambda ()
+      (encode (dict "workbook" workbook
+                    "relationships" "nope"
+                    "sheets" (list)
+                    "shared-strings" #none
+                    "styles" #none
+                    "theme" #none
+                    "media" #none))))
+
+   ; A relationship that is not a dict is rejected.
+   (test-rejects-non-dict-relationship
+    (lambda ()
+      (encode (dict "workbook" workbook
+                    "relationships" (dict "rId1" "nope")
+                    "sheets" (list)
+                    "shared-strings" #none
+                    "styles" #none
+                    "theme" #none
+                    "media" #none))))
+
+   ; A relationship with no type is rejected.
+   (test-rejects-relationship-without-type
+    (lambda ()
+      (encode (dict "workbook" workbook
+                    "relationships" (dict "rId1" (dict "target" "x"))
+                    "sheets" (list)
+                    "shared-strings" #none
+                    "styles" #none
+                    "theme" #none
+                    "media" #none))))
+
+   ; A shared-strings value that is neither a list nor #none is rejected.
+   (test-rejects-bad-shared-strings
+    (lambda ()
+      (encode (dict "workbook" workbook
+                    "relationships" (dict)
+                    "sheets" (list)
+                    "shared-strings" "nope"
+                    "styles" #none
+                    "theme" #none
+                    "media" #none))))
+
+   ; A shared-string entry that is not an element is rejected.
+   (test-rejects-bad-shared-string-entry
+    (lambda ()
+      (encode (dict "workbook" workbook
+                    "relationships" (dict)
+                    "sheets" (list)
+                    "shared-strings" (list "nope")
+                    "styles" #none
+                    "theme" #none
+                    "media" #none))))
+
+   ; A media part that is not bytes is rejected.
+   (test-rejects-non-bytes-media
+    (lambda ()
+      (encode (dict "workbook" workbook
+                    "relationships" (dict)
+                    "sheets" (list)
+                    "shared-strings" #none
+                    "styles" #none
+                    "theme" #none
+                    "media" (dict "xl/media/a.png" "nope")))))
+
+   (tests
+    (list
+      (list "package"
+        (list
+          (expect-pass "minimal package contains the required parts" test-minimal-parts)
+          (expect-pass "full package contains every part" test-full-parts)
+          (expect-pass "media parts are written verbatim" test-media-verbatim)
+          (expect-pass "a sheet with no relationships writes no rels part" test-sheet-without-rels)))
+
+      (list "structural-parts"
+        (list
+          (expect-pass "content types declares the rels and xml defaults" test-content-types-defaults)
+          (expect-pass "content types declares a default per media extension" test-content-types-media-default)
+          (expect-pass "content types overrides the workbook part" test-content-types-override)
+          (expect-pass "root rels points at xl/workbook.xml" test-root-rels-target)))
+
+      (list "relationships"
+        (list
+          (expect-pass "workbook relationships are emitted verbatim" test-workbook-relationships-verbatim)
+          (expect-pass "a sheet's own relationships are emitted" test-sheet-relationships-emitted)))
+
+      (list "shared-strings"
+        (list
+          (expect-pass "shared strings are written as an sst of si elements" test-shared-strings-sst)
+          (expect-pass "a shared string part is absent when shared-strings is #none" test-shared-strings-absent)))
+
+      (list "round-trips"
+        (list
+          (expect-pass "minimal value tree" test-round-trip-minimal)
+          (expect-pass "value tree with every part" test-round-trip-full)))
+
+      (list "errors"
+        (list
+          (expect-fail "rejects a non-dict value" test-rejects-non-dict "expects a dict")
+          (expect-fail "rejects a missing workbook" test-rejects-missing-workbook "\"workbook\" must be an element dict")
+          (expect-fail "rejects a non-list sheets" test-rejects-non-list-sheets "\"sheets\" must be a list")
+          (expect-fail "rejects a sheet that is not a dict" test-rejects-non-dict-sheet "a sheet \"part\" must be a string")
+          (expect-fail "rejects a non-dict relationships" test-rejects-non-dict-relationships "\"relationships\" must be a dict")
+          (expect-fail "rejects a relationship that is not a dict" test-rejects-non-dict-relationship "must be a dict")
+          (expect-fail "rejects a relationship with no type" test-rejects-relationship-without-type "\"type\" must be a string")
+          (expect-fail "rejects a shared-strings value that is not a list or #none" test-rejects-bad-shared-strings "\"shared-strings\" must be a list or #none")
+          (expect-fail "rejects a shared-string entry that is not an element" test-rejects-bad-shared-string-entry "a shared-string entry must be an element dict")
+          (expect-fail "rejects a non-bytes media part" test-rejects-non-bytes-media "must be bytes"))))))
+
+  (export tests))
