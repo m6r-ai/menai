@@ -1,1298 +1,2190 @@
 (letrec
   ((pi 3.141592653589793)
    (e 2.718281828459045)
-   (function? (lambda (x) ($function? x)))
-   (function=? (lambda (a b) ($function=? a b)))
-   (function!=? (lambda (a b) ($function!=? a b)))
-   (function-min-arity (lambda (f) ($function-min-arity f)))
-   (function-variadic? (lambda (f) ($function-variadic? f)))
-   (function-accepts? (lambda (f n) ($function-accepts? f n)))
-   (symbol? (lambda (x) ($symbol? x)))
-   (symbol=? (lambda (a b) ($symbol=? a b)))
-   (symbol!=? (lambda (a b) ($symbol!=? a b)))
-   (symbol->string (lambda (sym) ($symbol->string sym)))
-   (none? (lambda (x) ($none? x)))
-   (boolean? (lambda (x) ($boolean? x)))
-   (boolean=? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($boolean=? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'boolean=?' requires at least 2 arguments")
-                        (letrec
-                          ((loop (lambda (lst prev)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (if ($boolean=? prev ($list-first lst))
-                                           (loop ($list-rest lst) ($list-first lst))
-                                           #f)))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (boolean!=? (lambda (. args)
-                 (if ($integer=? ($list-length args) 2)
-                     ($boolean!=? ($list-first args) ($list-last args))
-                     (if ($integer<? ($list-length args) 2)
-                         (error "Function 'boolean!=?' requires at least 2 arguments")
-                         (letrec
-                           ((outer (lambda (lst)
-                                     (if ($list-null? lst)
-                                         #t
-                                         (letrec
-                                           ((inner (lambda (rest-lst)
-                                                     (if ($list-null? rest-lst)
-                                                         (outer ($list-rest lst))
-                                                         (if ($boolean!=? ($list-first lst) ($list-first rest-lst))
-                                                             (inner ($list-rest rest-lst))
-                                                             #f)))))
-                                           (inner ($list-rest lst)))))))
-                           (outer args))))))
-   (boolean-not (lambda (x) ($boolean-not x)))
-   (integer? (lambda (x) ($integer? x)))
-   (integer=? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($integer=? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'integer=?' requires at least 2 arguments")
-                        (letrec
-                          ((loop (lambda (lst prev)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (if ($integer=? prev ($list-first lst))
-                                           (loop ($list-rest lst) ($list-first lst))
-                                           #f)))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (integer!=? (lambda (. args)
-                 (if ($integer=? ($list-length args) 2)
-                     ($integer!=? ($list-first args) ($list-last args))
-                     (if ($integer<? ($list-length args) 2)
-                         (error "Function 'integer!=?' requires at least 2 arguments")
-                         (letrec
-                           ((outer (lambda (lst)
-                                     (if ($list-null? lst)
-                                         #t
-                                         (letrec
-                                           ((inner (lambda (rest-lst)
-                                                     (if ($list-null? rest-lst)
-                                                         (outer ($list-rest lst))
-                                                         (if ($integer!=? ($list-first lst) ($list-first rest-lst))
-                                                             (inner ($list-rest rest-lst))
-                                                             #f)))))
-                                           (inner ($list-rest lst)))))))
-                           (outer args))))))
-   (integer<? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($integer<? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'integer<?' requires at least 2 arguments")
-                        (letrec
-                          ((loop (lambda (lst prev)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (if ($integer<? prev ($list-first lst))
-                                           (loop ($list-rest lst) ($list-first lst))
-                                           #f)))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (integer>? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($integer>? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'integer>?' requires at least 2 arguments")
-                        (letrec
-                          ((loop (lambda (lst prev)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (if ($integer>? prev ($list-first lst))
-                                           (loop ($list-rest lst) ($list-first lst))
-                                           #f)))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (integer<=? (lambda (. args)
-                 (if ($integer=? ($list-length args) 2)
-                     ($integer<=? ($list-first args) ($list-last args))
-                     (if ($integer<? ($list-length args) 2)
-                         (error "Function 'integer<=?' requires at least 2 arguments")
-                         (letrec
-                           ((loop (lambda (lst prev)
-                                    (if ($list-null? lst)
-                                        #t
-                                        (if ($integer<=? prev ($list-first lst))
-                                            (loop ($list-rest lst) ($list-first lst))
-                                            #f)))))
-                           (loop ($list-rest args) ($list-first args)))))))
-   (integer>=? (lambda (. args)
-                 (if ($integer=? ($list-length args) 2)
-                     ($integer>=? ($list-first args) ($list-last args))
-                     (if ($integer<? ($list-length args) 2)
-                         (error "Function 'integer>=?' requires at least 2 arguments")
-                         (letrec
-                           ((loop (lambda (lst prev)
-                                    (if ($list-null? lst)
-                                        #t
-                                        (if ($integer>=? prev ($list-first lst))
-                                            (loop ($list-rest lst) ($list-first lst))
-                                            #f)))))
-                           (loop ($list-rest args) ($list-first args)))))))
-   (integer+ (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($integer+ ($list-first args) ($list-last args))
-                   (if ($list-null? args)
-                       0
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($integer+ acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (integer- (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($integer- ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'integer-' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($integer- acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (integer* (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($integer* ($list-first args) ($list-last args))
-                   (if ($list-null? args)
-                       1
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($integer* acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (integer/ (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($integer/ ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'integer/' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($integer/ acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (integer% (lambda (a b) ($integer% a b)))
-   (integer-neg (lambda (a) ($integer-neg a)))
-   (integer-expn (lambda (a b) ($integer-expn a b)))
-   (integer-abs (lambda (a) ($integer-abs a)))
-   (integer-bit-or (lambda (. args)
-                     (if ($integer=? ($list-length args) 2)
-                         ($integer-bit-or ($list-first args) ($list-last args))
-                         (if ($integer<? ($list-length args) 2)
-                             (error "Function 'integer-bit-or' requires at least 2 arguments")
-                             (letrec
-                               ((loop (lambda (lst acc)
-                                        (if ($list-null? lst)
-                                            acc
-                                            (loop ($list-rest lst)
-                                                  ($integer-bit-or acc ($list-first lst)))))))
-                               (loop ($list-rest args) ($list-first args)))))))
-   (integer-bit-and (lambda (. args)
-                      (if ($integer=? ($list-length args) 2)
-                          ($integer-bit-and ($list-first args) ($list-last args))
-                          (if ($integer<? ($list-length args) 2)
-                              (error "Function 'integer-bit-and' requires at least 2 arguments")
-                              (letrec
-                                ((loop (lambda (lst acc)
-                                         (if ($list-null? lst)
-                                             acc
-                                             (loop ($list-rest lst)
-                                                   ($integer-bit-and acc ($list-first lst)))))))
-                                (loop ($list-rest args) ($list-first args)))))))
-   (integer-bit-xor (lambda (. args)
-                      (if ($integer=? ($list-length args) 2)
-                          ($integer-bit-xor ($list-first args) ($list-last args))
-                          (if ($integer<? ($list-length args) 2)
-                              (error "Function 'integer-bit-xor' requires at least 2 arguments")
-                              (letrec
-                                ((loop (lambda (lst acc)
-                                         (if ($list-null? lst)
-                                             acc
-                                             (loop ($list-rest lst)
-                                                   ($integer-bit-xor acc ($list-first lst)))))))
-                                (loop ($list-rest args) ($list-first args)))))))
-   (integer-bit-not (lambda (a) ($integer-bit-not a)))
-   (integer-bit-shift-left (lambda (a b) ($integer-bit-shift-left a b)))
-   (integer-bit-shift-right (lambda (a b) ($integer-bit-shift-right a b)))
-   (integer-min (lambda (. args)
-                  (if ($integer=? ($list-length args) 2)
-                      ($integer-min ($list-first args) ($list-last args))
-                      (if ($list-null? args)
-                          (error "Function 'integer-min' requires at least 1 argument")
-                          (letrec
-                            ((loop (lambda (lst acc)
-                                     (if ($list-null? lst)
-                                         acc
-                                         (loop ($list-rest lst) ($integer-min acc ($list-first lst)))))))
-                            (loop ($list-rest args) ($list-first args)))))))
-   (integer-max (lambda (. args)
-                  (if ($integer=? ($list-length args) 2)
-                      ($integer-max ($list-first args) ($list-last args))
-                      (if ($list-null? args)
-                          (error "Function 'integer-max' requires at least 1 argument")
-                          (letrec
-                            ((loop (lambda (lst acc)
-                                     (if ($list-null? lst)
-                                         acc
-                                         (loop ($list-rest lst) ($integer-max acc ($list-first lst)))))))
-                            (loop ($list-rest args) ($list-first args)))))))
-   (integer->complex (lambda (real . rest)
-                       ($integer->complex real
-                                          (if ($list-null? rest) 0 ($list-first rest)))))
-   (integer->string (lambda (n . rest)
-                      (if ($list-null? rest)
-                          ($integer->string n 10)
-                          ($integer->string n ($list-first rest)))))
-   (integer->float (lambda (n) ($integer->float n)))
-   (integer-codepoint->string (lambda (n) ($integer-codepoint->string n)))
-   (float? (lambda (x) ($float? x)))
-   (float=? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($float=? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'float=?' requires at least 2 arguments")
-                      (letrec
-                        ((loop (lambda (lst prev)
-                                 (if ($list-null? lst)
-                                     #t
-                                     (if ($float=? prev ($list-first lst))
-                                         (loop ($list-rest lst) ($list-first lst))
-                                         #f)))))
-                        (loop ($list-rest args) ($list-first args)))))))
-   (float!=? (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($float!=? ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'float!=?' requires at least 2 arguments")
-                       (letrec
-                         ((outer (lambda (lst)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (letrec
-                                         ((inner (lambda (rest-lst)
-                                                   (if ($list-null? rest-lst)
-                                                       (outer ($list-rest lst))
-                                                       (if ($float!=? ($list-first lst) ($list-first rest-lst))
-                                                           (inner ($list-rest rest-lst))
-                                                           #f)))))
-                                         (inner ($list-rest lst)))))))
-                         (outer args))))))
-   (float<? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($float<? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'float<?' requires at least 2 arguments")
-                      (letrec
-                        ((loop (lambda (lst prev)
-                                 (if ($list-null? lst)
-                                     #t
-                                     (if ($float<? prev ($list-first lst))
-                                         (loop ($list-rest lst) ($list-first lst))
-                                         #f)))))
-                        (loop ($list-rest args) ($list-first args)))))))
-   (float>? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($float>? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'float>?' requires at least 2 arguments")
-                      (letrec
-                        ((loop (lambda (lst prev)
-                                 (if ($list-null? lst)
-                                     #t
-                                     (if ($float>? prev ($list-first lst))
-                                         (loop ($list-rest lst) ($list-first lst))
-                                         #f)))))
-                        (loop ($list-rest args) ($list-first args)))))))
-   (float<=? (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($float<=? ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'float<=?' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst prev)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (if ($float<=? prev ($list-first lst))
-                                          (loop ($list-rest lst) ($list-first lst))
-                                          #f)))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (float>=? (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($float>=? ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'float>=?' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst prev)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (if ($float>=? prev ($list-first lst))
-                                          (loop ($list-rest lst) ($list-first lst))
-                                          #f)))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (float+ (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($float+ ($list-first args) ($list-last args))
-                 (if ($list-null? args)
-                     0.0
-                     (letrec
-                       ((loop (lambda (lst acc)
-                                (if ($list-null? lst)
-                                    acc
-                                    (loop ($list-rest lst) ($float+ acc ($list-first lst)))))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (float- (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($float- ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'float-' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst acc)
-                                (if ($list-null? lst)
-                                    acc
-                                    (loop ($list-rest lst) ($float- acc ($list-first lst)))))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (float* (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($float* ($list-first args) ($list-last args))
-                 (if ($list-null? args)
-                     1.0
-                     (letrec
-                       ((loop (lambda (lst acc)
-                                (if ($list-null? lst)
-                                    acc
-                                    (loop ($list-rest lst) ($float* acc ($list-first lst)))))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (float/ (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($float/ ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'float/' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst acc)
-                                (if ($list-null? lst)
-                                    acc
-                                    (loop ($list-rest lst) ($float/ acc ($list-first lst)))))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (float// (lambda (a b) ($float// a b)))
-   (float% (lambda (a b) ($float% a b)))
-   (float-neg (lambda (a) ($float-neg a)))
-   (float-exp (lambda (a) ($float-exp a)))
-   (float-expn (lambda (. args)
-                 (if ($integer=? ($list-length args) 2)
-                     ($float-expn ($list-first args) ($list-last args))
-                     (if ($integer<? ($list-length args) 2)
-                         (error "Function 'float-expt' requires at least 2 arguments")
-                         (letrec
-                           ((loop (lambda (lst acc)
-                                    (if ($list-null? lst)
-                                        acc
-                                        (loop ($list-rest lst) ($float-expn acc ($list-first lst)))))))
-                           (loop ($list-rest args) ($list-first args)))))))
-   (float-log (lambda (a) ($float-log a)))
-   (float-log10 (lambda (a) ($float-log10 a)))
-   (float-log2 (lambda (a) ($float-log2 a)))
-   (float-logn (lambda (a b) ($float-logn a b)))
-   (float-sin (lambda (a) ($float-sin a)))
-   (float-cos (lambda (a) ($float-cos a)))
-   (float-tan (lambda (a) ($float-tan a)))
-   (float-sqrt (lambda (a) ($float-sqrt a)))
-   (float-abs (lambda (a) ($float-abs a)))
-   (float->integer (lambda (n) ($float->integer n)))
-   (float->complex (lambda (real . rest)
-                     ($float->complex real
-                                      (if ($list-null? rest) 0 ($list-first rest)))))
-   (float->string (lambda (n) ($float->string n)))
-   (float-floor (lambda (n) ($float-floor n)))
-   (float-ceil (lambda (n) ($float-ceil n)))
-   (float-round (lambda (n) ($float-round n)))
-   (float-min (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($float-min ($list-first args) ($list-last args))
-                    (if ($list-null? args)
-                        (error "Function 'float-min' requires at least 1 argument")
-                        (letrec
-                          ((loop (lambda (lst acc)
-                                   (if ($list-null? lst)
-                                       acc
-                                       (loop ($list-rest lst) ($float-min acc ($list-first lst)))))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (float-max (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($float-max ($list-first args) ($list-last args))
-                    (if ($list-null? args)
-                        (error "Function 'float-max' requires at least 1 argument")
-                        (letrec
-                          ((loop (lambda (lst acc)
-                                   (if ($list-null? lst)
-                                       acc
-                                       (loop ($list-rest lst) ($float-max acc ($list-first lst)))))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (float-atan2 (lambda (y x) ($float-atan2 y x)))
-   (float-cosh (lambda (a) ($float-cosh a)))
-   (float-sinh (lambda (a) ($float-sinh a)))
-   (float-tanh (lambda (a) ($float-tanh a)))
-   (float-asin (lambda (a) ($float-asin a)))
-   (float-acos (lambda (a) ($float-acos a)))
-   (float-atan (lambda (a) ($float-atan a)))
-   (float-hypot (lambda (a b) ($float-hypot a b)))
-   (float-exp2 (lambda (a) ($float-exp2 a)))
-   (float-cbrt (lambda (a) ($float-cbrt a)))
-   (float-expm1 (lambda (a) ($float-expm1 a)))
-   (float-log1p (lambda (a) ($float-log1p a)))
-   (float-trunc (lambda (a) ($float-trunc a)))
-   (float-copysign (lambda (a b) ($float-copysign a b)))
-   (complex? (lambda (x) ($complex? x)))
-   (complex=? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($complex=? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'complex=?' requires at least 2 arguments")
-                        (letrec
-                          ((loop (lambda (lst prev)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (if ($complex=? prev ($list-first lst))
-                                           (loop ($list-rest lst) ($list-first lst))
-                                           #f)))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (complex!=? (lambda (. args)
-                 (if ($integer=? ($list-length args) 2)
-                     ($complex!=? ($list-first args) ($list-last args))
-                     (if ($integer<? ($list-length args) 2)
-                         (error "Function 'complex!=?' requires at least 2 arguments")
-                         (letrec
-                           ((outer (lambda (lst)
-                                     (if ($list-null? lst)
-                                         #t
-                                         (letrec
-                                           ((inner (lambda (rest-lst)
-                                                     (if ($list-null? rest-lst)
-                                                         (outer ($list-rest lst))
-                                                         (if ($complex!=? ($list-first lst) ($list-first rest-lst))
-                                                             (inner ($list-rest rest-lst))
-                                                             #f)))))
-                                           (inner ($list-rest lst)))))))
-                           (outer args))))))
-   (complex+ (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($complex+ ($list-first args) ($list-last args))
-                   (if ($list-null? args)
-                       ($float->complex 0.0 0.0)
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($complex+ acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (complex- (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($complex- ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'complex-' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($complex- acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (complex* (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($complex* ($list-first args) ($list-last args))
-                   (if ($list-null? args)
-                       ($float->complex 1.0 0.0)
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($complex* acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (complex/ (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($complex/ ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'complex/' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst acc)
-                                  (if ($list-null? lst)
-                                      acc
-                                      (loop ($list-rest lst) ($complex/ acc ($list-first lst)))))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (complex-neg (lambda (a) ($complex-neg a)))
-   (complex-real (lambda (a) ($complex-real a)))
-   (complex-imag (lambda (a) ($complex-imag a)))
-   (complex-exp (lambda (a) ($complex-exp a)))
-   (complex-expn (lambda (. args)
-                   (if ($integer=? ($list-length args) 2)
-                       ($complex-expn ($list-first args) ($list-last args))
-                       (if ($integer<? ($list-length args) 2)
-                           (error "Function 'complex-expt' requires at least 2 arguments")
-                           (letrec
-                             ((loop (lambda (lst acc)
-                                      (if ($list-null? lst)
-                                          acc
-                                          (loop ($list-rest lst)
-                                                ($complex-expn acc ($list-first lst)))))))
-                             (loop ($list-rest args) ($list-first args)))))))
-   (complex-log (lambda (a) ($complex-log a)))
-   (complex-log10 (lambda (a) ($complex-log10 a)))
-   (complex-logn (lambda (a b) ($complex-logn a b)))
-   (complex-sin (lambda (a) ($complex-sin a)))
-   (complex-cos (lambda (a) ($complex-cos a)))
-   (complex-tan (lambda (a) ($complex-tan a)))
-   (complex-sqrt (lambda (a) ($complex-sqrt a)))
-   (complex-abs (lambda (a) ($complex-abs a)))
-   (complex->string (lambda (c) ($complex->string c)))
-   (number->string (lambda (n)
-                     (if ($integer? n)
-                         ($integer->string n 10)
-                         (if ($float? n)
-                             ($float->string n)
-                             (if ($complex? n)
-                                 ($complex->string n)
-                                 (error "Function 'number->string' requires a number argument"))))))
-   (string? (lambda (x) ($string? x)))
-   (string=? (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($string=? ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'string=?' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst prev)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (if ($string=? prev ($list-first lst))
-                                          (loop ($list-rest lst) ($list-first lst))
-                                          #f)))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (string!=? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($string!=? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'string!=?' requires at least 2 arguments")
-                        (letrec
-                          ((outer (lambda (lst)
-                                    (if ($list-null? lst)
-                                        #t
-                                        (letrec
-                                          ((inner (lambda (rest-lst)
-                                                    (if ($list-null? rest-lst)
-                                                        (outer ($list-rest lst))
-                                                        (if ($string!=? ($list-first lst) ($list-first rest-lst))
-                                                            (inner ($list-rest rest-lst))
-                                                            #f)))))
-                                          (inner ($list-rest lst)))))))
-                          (outer args))))))
-   (string<? (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($string<? ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'string<?' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst prev)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (if ($string<? prev ($list-first lst))
-                                          (loop ($list-rest lst) ($list-first lst))
-                                          #f)))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (string>? (lambda (. args)
-               (if ($integer=? ($list-length args) 2)
-                   ($string>? ($list-first args) ($list-last args))
-                   (if ($integer<? ($list-length args) 2)
-                       (error "Function 'string>?' requires at least 2 arguments")
-                       (letrec
-                         ((loop (lambda (lst prev)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (if ($string>? prev ($list-first lst))
-                                          (loop ($list-rest lst) ($list-first lst))
-                                          #f)))))
-                         (loop ($list-rest args) ($list-first args)))))))
-   (string<=? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($string<=? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'string<=?' requires at least 2 arguments")
-                        (letrec
-                          ((loop (lambda (lst prev)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (if ($string<=? prev ($list-first lst))
-                                           (loop ($list-rest lst) ($list-first lst))
-                                           #f)))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (string>=? (lambda (. args)
-                (if ($integer=? ($list-length args) 2)
-                    ($string>=? ($list-first args) ($list-last args))
-                    (if ($integer<? ($list-length args) 2)
-                        (error "Function 'string>=?' requires at least 2 arguments")
-                        (letrec
-                          ((loop (lambda (lst prev)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (if ($string>=? prev ($list-first lst))
-                                           (loop ($list-rest lst) ($list-first lst))
-                                           #f)))))
-                          (loop ($list-rest args) ($list-first args)))))))
-   (string-concat (lambda (. args)
-                    (if ($integer=? ($list-length args) 2)
-                        ($string-concat ($list-first args) ($list-last args))
-                        (if ($list-null? args)
-                            ""
-                            (letrec
-                              ((loop (lambda (lst acc)
-                                       (if ($list-null? lst)
-                                           acc
-                                           (loop ($list-rest lst)
-                                                 ($string-concat acc ($list-first lst)))))))
-                              (loop ($list-rest args) ($list-first args)))))))
-   (string-length (lambda (s) ($string-length s)))
-   (string-upcase (lambda (s) ($string-upcase s)))
-   (string-downcase (lambda (s) ($string-downcase s)))
-   (string-trim (lambda (s) ($string-trim s)))
-   (string-trim-left (lambda (s) ($string-trim-left s)))
-   (string-trim-right (lambda (s) ($string-trim-right s)))
-   (string-replace (lambda (s old new) ($string-replace s old new)))
-   (string-index (lambda (s sub) ($string-index s sub)))
-   (string-prefix? (lambda (s prefix) ($string-prefix? s prefix)))
-   (string-suffix? (lambda (s suffix) ($string-suffix? s suffix)))
-   (string-nth (lambda (s i) ($string-nth s i)))
-   (string-slice (lambda (str start . rest)
-                   (if ($list-null? rest)
-                       ($string-slice str start ($string-length str))
-                       ($string-slice str start ($list-first rest)))))
-   (string->float (lambda (s) ($string->float s)))
-   (string->complex (lambda (s) ($string->complex s)))
-   (string->number (lambda (s)
-                     (let ((n ($string->integer s 10)))
-                       (if ($integer? n)
-                           n
-                           (let ((f ($string->float s)))
-                             (if ($float? f)
-                                 f
-                                 ($string->complex s)))))))
-   (string->integer (lambda (s . rest)
-                      (if ($list-null? rest)
-                          ($string->integer s 10)
-                          ($string->integer s ($list-first rest)))))
-   (string->list (lambda (str . rest)
-                   ($string->list str
-                                  (if ($list-null? rest) "" ($list-first rest)))))
-   (string->integer-codepoint (lambda (s) ($string->integer-codepoint s)))
-   (bytes? (lambda (x) ($bytes? x)))
-   (bytes=? (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($bytes=? ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'bytes=?' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst prev)
-                                (if ($list-null? lst)
-                                    #t
-                                    (if ($bytes=? prev ($list-first lst))
-                                        (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (bytes!=? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($bytes!=? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'bytes!=?' requires at least 2 arguments")
-                      (letrec
-                        ((outer (lambda (lst)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (letrec
-                                        ((inner (lambda (rest-lst)
-                                                  (if ($list-null? rest-lst)
-                                                      (outer ($list-rest lst))
-                                                      (if ($bytes!=? ($list-first lst) ($list-first rest-lst))
-                                                          (inner ($list-rest rest-lst))
-                                                         #f)))))
-                                        (inner ($list-rest lst)))))))
-                        (outer args))))))
-   (bytes<? (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($bytes<? ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'bytes<?' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst prev)
-                                (if ($list-null? lst)
-                                    #t
-                                    (if ($bytes<? prev ($list-first lst))
-                                        (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (bytes>? (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($bytes>? ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'bytes>?' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst prev)
-                                (if ($list-null? lst)
-                                    #t
-                                    (if ($bytes>? prev ($list-first lst))
-                                        (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (bytes<=? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($bytes<=? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'bytes<=?' requires at least 2 arguments")
-                      (letrec
-                        ((loop (lambda (lst prev)
-                                 (if ($list-null? lst)
-                                     #t
-                                     (if ($bytes<=? prev ($list-first lst))
-                                         (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                        (loop ($list-rest args) ($list-first args)))))))
-   (bytes>=? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($bytes>=? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'bytes>=?' requires at least 2 arguments")
-                      (letrec
-                        ((loop (lambda (lst prev)
-                                 (if ($list-null? lst)
-                                     #t
-                                     (if ($bytes>=? prev ($list-first lst))
-                                         (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                        (loop ($list-rest args) ($list-first args)))))))
-   (bytes-length (lambda (b) ($bytes-length b)))
-   (bytes-nth (lambda (b i) ($bytes-nth b i)))
-   (bytes-append-u8 (lambda (b v) ($bytes-append-u8 b v)))
-   (bytes-slice (lambda (b start . rest)
-                  (if ($list-null? rest)
-                      ($bytes-slice b start ($bytes-length b))
-                      ($bytes-slice b start ($list-first rest)))))
-   (bytes-concat (lambda (. args)
-                   (if ($integer=? ($list-length args) 2)
-                       ($bytes-concat ($list-first args) ($list-last args))
-                       (if ($list-null? args)
-                           ($string-hex->bytes "")
-                           (letrec
-                             ((loop (lambda (lst acc)
-                                      (if ($list-null? lst)
-                                          acc
-                                          (loop ($list-rest lst)
-                                                ($bytes-concat acc ($list-first lst)))))))
-                             (loop ($list-rest args) ($list-first args)))))))
-   (string->bytes (lambda (s) ($string->bytes s)))
-   (bytes->string (lambda (b) ($bytes->string b)))
-   (bytes->list (lambda (b) ($bytes->list b)))
-   (bytes->string-hex (lambda (b) ($bytes->string-hex b)))
-   (string-hex->bytes (lambda (s) ($string-hex->bytes s)))
-   (list->bytes (lambda (lst) ($list->bytes lst)))
-   (bytes-index (lambda (haystack needle) ($bytes-index haystack needle)))
-   (bytes-index-int (lambda (b byte) ($bytes-index-int b byte)))
-   (bytes-read-u8 (lambda (b off) ($bytes-read-u8 b off)))
-   (bytes-read-u16-le (lambda (b off) ($bytes-read-u16-le b off)))
-   (bytes-read-u24-le (lambda (b off) ($bytes-read-u24-le b off)))
-   (bytes-read-u32-le (lambda (b off) ($bytes-read-u32-le b off)))
-   (bytes-read-u64-le (lambda (b off) ($bytes-read-u64-le b off)))
-   (bytes-read-u16-be (lambda (b off) ($bytes-read-u16-be b off)))
-   (bytes-read-u24-be (lambda (b off) ($bytes-read-u24-be b off)))
-   (bytes-read-u32-be (lambda (b off) ($bytes-read-u32-be b off)))
-   (bytes-read-u64-be (lambda (b off) ($bytes-read-u64-be b off)))
-   (bytes-read-i8 (lambda (b off) ($bytes-read-i8 b off)))
-   (bytes-read-i16-le (lambda (b off) ($bytes-read-i16-le b off)))
-   (bytes-read-i24-le (lambda (b off) ($bytes-read-i24-le b off)))
-   (bytes-read-i32-le (lambda (b off) ($bytes-read-i32-le b off)))
-   (bytes-read-i64-le (lambda (b off) ($bytes-read-i64-le b off)))
-   (bytes-read-i16-be (lambda (b off) ($bytes-read-i16-be b off)))
-   (bytes-read-i24-be (lambda (b off) ($bytes-read-i24-be b off)))
-   (bytes-read-i32-be (lambda (b off) ($bytes-read-i32-be b off)))
-   (bytes-read-i64-be (lambda (b off) ($bytes-read-i64-be b off)))
-   (bytes-append-u16-le (lambda (b v) ($bytes-append-u16-le b v)))
-   (bytes-append-u16-be (lambda (b v) ($bytes-append-u16-be b v)))
-   (bytes-append-u24-le (lambda (b v) ($bytes-append-u24-le b v)))
-   (bytes-append-u24-be (lambda (b v) ($bytes-append-u24-be b v)))
-   (bytes-append-u32-le (lambda (b v) ($bytes-append-u32-le b v)))
-   (bytes-append-u32-be (lambda (b v) ($bytes-append-u32-be b v)))
-   (bytes-append-u64-le (lambda (b v) ($bytes-append-u64-le b v)))
-   (bytes-append-u64-be (lambda (b v) ($bytes-append-u64-be b v)))
-   (bytes-append-i8 (lambda (b v) ($bytes-append-i8 b v)))
-   (bytes-append-i16-le (lambda (b v) ($bytes-append-i16-le b v)))
-   (bytes-append-i16-be (lambda (b v) ($bytes-append-i16-be b v)))
-   (bytes-append-i24-le (lambda (b v) ($bytes-append-i24-le b v)))
-   (bytes-append-i24-be (lambda (b v) ($bytes-append-i24-be b v)))
-   (bytes-append-i32-le (lambda (b v) ($bytes-append-i32-le b v)))
-   (bytes-append-i32-be (lambda (b v) ($bytes-append-i32-be b v)))
-   (bytes-append-i64-le (lambda (b v) ($bytes-append-i64-le b v)))
-   (bytes-append-i64-be (lambda (b v) ($bytes-append-i64-be b v)))
-   (bytes-write-u8 (lambda (b off v) ($bytes-write-u8 b off v)))
-   (bytes-write-u16-le (lambda (b off v) ($bytes-write-u16-le b off v)))
-   (bytes-write-u16-be (lambda (b off v) ($bytes-write-u16-be b off v)))
-   (bytes-write-u24-le (lambda (b off v) ($bytes-write-u24-le b off v)))
-   (bytes-write-u24-be (lambda (b off v) ($bytes-write-u24-be b off v)))
-   (bytes-write-u32-le (lambda (b off v) ($bytes-write-u32-le b off v)))
-   (bytes-write-u32-be (lambda (b off v) ($bytes-write-u32-be b off v)))
-   (bytes-write-u64-le (lambda (b off v) ($bytes-write-u64-le b off v)))
-   (bytes-write-u64-be (lambda (b off v) ($bytes-write-u64-be b off v)))
-   (bytes-write-i8 (lambda (b off v) ($bytes-write-i8 b off v)))
-   (bytes-write-i16-le (lambda (b off v) ($bytes-write-i16-le b off v)))
-   (bytes-write-i16-be (lambda (b off v) ($bytes-write-i16-be b off v)))
-   (bytes-write-i24-le (lambda (b off v) ($bytes-write-i24-le b off v)))
-   (bytes-write-i24-be (lambda (b off v) ($bytes-write-i24-be b off v)))
-   (bytes-write-i32-le (lambda (b off v) ($bytes-write-i32-le b off v)))
-   (bytes-write-i32-be (lambda (b off v) ($bytes-write-i32-be b off v)))
-   (bytes-write-i64-le (lambda (b off v) ($bytes-write-i64-le b off v)))
-   (bytes-write-i64-be (lambda (b off v) ($bytes-write-i64-be b off v)))
-   (bytes-read-uleb128 (lambda (b off) ($bytes-read-uleb128 b off)))
-   (bytes-append-uleb128 (lambda (b v) ($bytes-append-uleb128 b v)))
-   (bytes-read-sleb128 (lambda (b off) ($bytes-read-sleb128 b off)))
-   (bytes-append-sleb128 (lambda (b v) ($bytes-append-sleb128 b v)))
-   (bytes-read-f32-le (lambda (b off) ($bytes-read-f32-le b off)))
-   (bytes-read-f32-be (lambda (b off) ($bytes-read-f32-be b off)))
-   (bytes-read-f64-le (lambda (b off) ($bytes-read-f64-le b off)))
-   (bytes-read-f64-be (lambda (b off) ($bytes-read-f64-be b off)))
-   (bytes-append-f32-le (lambda (b v) ($bytes-append-f32-le b v)))
-   (bytes-append-f32-be (lambda (b v) ($bytes-append-f32-be b v)))
-   (bytes-append-f64-le (lambda (b v) ($bytes-append-f64-le b v)))
-   (bytes-append-f64-be (lambda (b v) ($bytes-append-f64-be b v)))
-   (bytes-write-f32-le (lambda (b off v) ($bytes-write-f32-le b off v)))
-   (bytes-write-f32-be (lambda (b off v) ($bytes-write-f32-be b off v)))
-   (bytes-write-f64-le (lambda (b off v) ($bytes-write-f64-le b off v)))
-   (bytes-write-f64-be (lambda (b off v) ($bytes-write-f64-be b off v)))
-   (bytes-crc32 (lambda (b) ($bytes-crc32 b)))
-   (bytes-hash-sha2-256 (lambda (b) ($bytes-hash-sha2-256 b)))
-   (bytes-hash-sha2-512 (lambda (b) ($bytes-hash-sha2-512 b)))
-   (bytes-hash-sha2-512-256 (lambda (b) ($bytes-hash-sha2-512-256 b)))
-   (bytes-hash-sha3-256 (lambda (b) ($bytes-hash-sha3-256 b)))
-   (map-bytes (lambda (f b)
-                (letrec ((loop (lambda (i acc)
-                                 (if ($integer=? i ($bytes-length b))
-                                     acc
-                                     (loop ($integer+ i 1)
-                                           ($bytes-append-u8 acc (f ($bytes-nth b i))))))))
-                  (loop 0 ($string-hex->bytes "")))))
-   (filter-bytes (lambda (f b)
-                   (letrec ((loop (lambda (i acc)
-                                    (if ($integer=? i ($bytes-length b))
-                                        acc
-                                        (let ((byte ($bytes-nth b i)))
-                                          (loop ($integer+ i 1)
-                                                (if (f byte)
-                                                    ($bytes-append-u8 acc byte)
-                                                    acc)))))))
-                     (loop 0 ($string-hex->bytes "")))))
-   (fold-bytes (lambda (f init b)
-                 (letrec ((loop (lambda (i acc)
-                                  (if ($integer=? i ($bytes-length b))
-                                      acc
-                                      (loop ($integer+ i 1)
-                                            (f acc ($bytes-nth b i)))))))
-                   (loop 0 init))))
-   (bytes-empty? (lambda (b) ($integer=? ($bytes-length b) 0)))
-   (bytes-prefix? (lambda (b prefix)
-                     (and ($integer<=? ($bytes-length prefix) ($bytes-length b))
-                          ($bytes=? ($bytes-slice b 0 ($bytes-length prefix)) prefix))))
-   (bytes-suffix? (lambda (b suffix)
-                     (and ($integer<=? ($bytes-length suffix) ($bytes-length b))
-                          ($bytes=? ($bytes-slice b ($integer- ($bytes-length b) ($bytes-length suffix)) ($bytes-length b))
-                         suffix))))
-   (bytes-split (lambda (b delimiter)
-                  (let ((dlen ($bytes-length delimiter)))
-                    (if ($integer=? dlen 0)
-                        (error "bytes-split: delimiter must be non-empty")
-                        (letrec ((loop (lambda (start acc)
-                                         (match ($bytes-index ($bytes-slice b start ($bytes-length b)) delimiter)
-                                          (#none ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
-                                           (pos (loop ($integer+ ($integer+ start pos) dlen)
-                                                     ($list-prepend acc ($bytes-slice b start ($integer+ start pos)))))))))
-                          (loop 0 (list)))))))
-   (bytes-split-int (lambda (b byte)
-                      (letrec ((loop (lambda (start acc)
-                                       (match ($bytes-index-int ($bytes-slice b start ($bytes-length b)) byte)
-                                        (#none ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
-                                         (pos (loop ($integer+ ($integer+ start pos) 1)
-                                                   ($list-prepend acc ($bytes-slice b start ($integer+ start pos)))))))))
-                        (loop 0 (list)))))
-   (list (lambda (. args) args))
-   (list? (lambda (x) ($list? x)))
-   (list=? (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($list=? ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'list=?' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst prev)
-                                (if ($list-null? lst)
-                                    #t
-                                    (if ($list=? prev ($list-first lst))
-                                        (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (list!=? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($list!=? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'list!=?' requires at least 2 arguments")
-                      (letrec
-                        ((outer (lambda (lst)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (letrec
-                                        ((inner (lambda (rest-lst)
-                                                  (if ($list-null? rest-lst)
-                                                      (outer ($list-rest lst))
-                                                      (if ($list!=? ($list-first lst) ($list-first rest-lst))
-                                                          (inner ($list-rest rest-lst))
-                                                          #f)))))
-                                        (inner ($list-rest lst)))))))
-                        (outer args))))))
-   (list-prepend (lambda (lst elem) ($list-prepend lst elem)))
-   (list-append (lambda (lst elem) ($list-append lst elem)))
-   (list-concat (lambda (. args)
-                  (if ($integer=? ($list-length args) 2)
-                      ($list-concat ($list-first args) ($list-last args))
-                      (if ($list-null? args)
-                          (list)
-                          (letrec
-                            ((loop (lambda (lst acc)
-                                     (if ($list-null? lst)
-                                         acc
-                                         (loop ($list-rest lst) ($list-concat acc ($list-first lst)))))))
-                            (loop ($list-rest args) ($list-first args)))))))
-   (list-reverse (lambda (lst) ($list-reverse lst)))
-   (list-first (lambda (lst) ($list-first lst)))
-   (list-rest (lambda (lst) ($list-rest lst)))
-   (list-length (lambda (lst) ($list-length lst)))
-   (list-last (lambda (lst) ($list-last lst)))
-   (list-member? (lambda (lst elem) ($list-member? lst elem)))
-   (list-null? (lambda (lst) ($list-null? lst)))
-   (list-index (lambda (lst elem) ($list-index lst elem)))
-   (list-slice (lambda (lst start . rest)
-                 (if ($list-null? rest)
-                     ($list-slice lst start ($list-length lst))
-                     ($list-slice lst start ($list-first rest)))))
-   (list-without (lambda (lst elem) ($list-without lst elem)))
-   (list-nth (lambda (lst i) ($list-nth lst i)))
-   (list->string (lambda (lst . rest)
-                   ($list->string lst
-                                  (if ($list-null? rest) "" ($list-first rest)))))
-   (list->set (lambda (lst) ($list->set lst)))
-   (dict (lambda (. args)
-           (if ($integer!=? ($integer% ($list-length args) 2) 0)
-               (error "dict: requires an even number of arguments")
-               (letrec
-                 ((loop (lambda (lst acc)
-                           (if ($list-null? lst)
-                               acc
-                               (loop ($list-rest ($list-rest lst))
-                                     ($dict-with acc
-                                                ($list-first lst)
-                                                ($list-first ($list-rest lst))))))))
-                 (loop args (dict))))))
-   (dict? (lambda (x) ($dict? x)))
-   (dict=? (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($dict=? ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'dict=?' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst prev)
-                                (if ($list-null? lst)
-                                    #t
-                                    (if ($dict=? prev ($list-first lst))
-                                        (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (dict!=? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($dict!=? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'dict!=?' requires at least 2 arguments")
-                      (letrec
-                        ((outer (lambda (lst)
-                                  (if ($list-null? lst)
-                                      #t
-                                      (letrec
-                                        ((inner (lambda (rest-lst)
-                                                  (if ($list-null? rest-lst)
-                                                      (outer ($list-rest lst))
-                                                      (if ($dict!=? ($list-first lst) ($list-first rest-lst))
-                                                          (inner ($list-rest rest-lst))
-                                                          #f)))))
-                                        (inner ($list-rest lst)))))))
-                        (outer args))))))
-   (dict-get (lambda (d key . rest)
-               ($dict-get d
-                          key
-                          (if ($list-null? rest) #none ($list-first rest)))))
-   (dict-with (lambda (d key value) ($dict-with d key value)))
-   (dict-without (lambda (d key) ($dict-without d key)))
-   (dict-has? (lambda (d key) ($dict-has? d key)))
-   (dict-keys (lambda (d) ($dict-keys d)))
-   (dict-values (lambda (d) ($dict-values d)))
-   (dict-merge (lambda (d1 d2) ($dict-merge d1 d2)))
-   (dict-length (lambda (d) ($dict-length d)))
-   (set (lambda (. args)
-          (letrec
-            ((loop (lambda (elems acc)
-                     (if ($list-null? elems)
-                         acc
-                         (loop ($list-rest elems)
-                               ($set-with acc ($list-first elems)))))))
-            (loop args (set)))))
-   (set? (lambda (x) ($set? x)))
-   (set=? (lambda (. args)
-             (if ($integer=? ($list-length args) 2)
-                 ($set=? ($list-first args) ($list-last args))
-                 (if ($integer<? ($list-length args) 2)
-                     (error "Function 'set=?' requires at least 2 arguments")
-                     (letrec
-                       ((loop (lambda (lst prev)
-                                (if ($list-null? lst)
-                                    #t
-                                    (if ($set=? prev ($list-first lst))
-                                        (loop ($list-rest lst) ($list-first lst))
-                                        #f)))))
-                       (loop ($list-rest args) ($list-first args)))))))
-   (set!=? (lambda (. args)
-              (if ($integer=? ($list-length args) 2)
-                  ($set!=? ($list-first args) ($list-last args))
-                  (if ($integer<? ($list-length args) 2)
-                      (error "Function 'set!=?' requires at least 2 arguments")
-                      (letrec
-                        ((outer (lambda (lst)
-                                   (if ($list-null? lst)
-                                       #t
-                                       (letrec
-                                         ((inner (lambda (rest-lst)
-                                                    (if ($list-null? rest-lst)
-                                                        (outer ($list-rest lst))
-                                                        (if ($set!=? ($list-first lst) ($list-first rest-lst))
-                                                            (inner ($list-rest rest-lst))
-                                                            #f)))))
-                                         (inner ($list-rest lst)))))))
-                        (outer args))))))
-   (set-member? (lambda (s x) ($set-member? s x)))
-   (set-with (lambda (s x) ($set-with s x)))
-   (set-without (lambda (s x) ($set-without s x)))
-   (set-length (lambda (s) ($set-length s)))
-   (set-union (lambda (s1 s2) ($set-union s1 s2)))
-   (set-intersection (lambda (s1 s2) ($set-intersection s1 s2)))
-   (set-difference (lambda (s1 s2) ($set-difference s1 s2)))
-   (set-subset? (lambda (s sub) ($set-subset? s sub)))
-   (set->list (lambda (s) ($set->list s)))
-   (struct? (lambda (x) ($struct? x)))
-   (struct-is-instance? (lambda (s t) ($struct-is-instance? s t)))
-   (struct-get (lambda (s field) ($struct-get s field)))
-   (struct-with (lambda (s field val) ($struct-with s field val)))
-   (struct=? (lambda (a b) ($struct=? a b)))
-   (struct!=? (lambda (a b) ($struct!=? a b)))
-   (struct-type (lambda (s) ($struct-type s)))
-   (structtype? (lambda (x) ($structtype? x)))
-   (structtype=? (lambda (a b) ($structtype=? a b)))
-   (structtype!=? (lambda (a b) ($structtype!=? a b)))
-   (structtype-name (lambda (t) ($structtype-name t)))
-   (structtype-fields (lambda (t) ($structtype-fields t)))
-   (map-list (lambda (f lst)
-               (letrec
-                 ((helper (lambda (f lst acc)
-                            (if ($list-null? lst)
-                                ($list-reverse acc)
-                                (helper f
-                                        ($list-rest lst)
-                                        ($list-prepend acc (f ($list-first lst))))))))
-                 (helper f lst (list)))))
-   (filter-list (lambda (pred lst)
-                  (letrec
-                    ((helper (lambda (pred lst acc)
-                               (if ($list-null? lst)
-                                   ($list-reverse acc)
-                                   (if (pred ($list-first lst))
-                                       (helper pred
-                                               ($list-rest lst)
-                                               ($list-prepend acc ($list-first lst)))
-                                       (helper pred ($list-rest lst) acc))))))
-                    (helper pred lst (list)))))
-   (fold-list (lambda (f init lst)
-                (letrec
-                  ((helper (lambda (f acc lst)
-                             (if ($list-null? lst)
-                                 acc
-                                 (helper f (f acc ($list-first lst)) ($list-rest lst))))))
-                  (helper f init lst))))
-   (find-list (lambda (pred lst)
-                (letrec
-                  ((helper (lambda (pred lst)
-                             (if ($list-null? lst)
-                                 #none
-                                 (if (pred ($list-first lst))
-                                     ($list-first lst)
-                                     (helper pred ($list-rest lst)))))))
-                  (helper pred lst))))
-   (any-list? (lambda (pred lst)
-                (letrec
-                  ((helper (lambda (pred lst)
-                             (if ($list-null? lst)
-                                 #f
-                                 (if (pred ($list-first lst))
-                                     #t
-                                     (helper pred ($list-rest lst)))))))
-                  (helper pred lst))))
-   (all-list? (lambda (pred lst)
-                (letrec
-                  ((helper (lambda (pred lst)
-                             (if ($list-null? lst)
-                                 #t
-                                 (if (pred ($list-first lst))
-                                     (helper pred ($list-rest lst))
-                                     #f)))))
-                  (helper pred lst))))
-   (list-zip (lambda (lst1 lst2)
-               (letrec
-                 ((helper (lambda (l1 l2 acc)
-                            (if (or ($list-null? l1) ($list-null? l2))
-                                ($list-reverse acc)
-                                (helper ($list-rest l1)
-                                        ($list-rest l2)
-                                        ($list-prepend acc (list ($list-first l1) ($list-first l2))))))))
-                 (helper lst1 lst2 (list)))))
-   (sort-list (lambda (cmp lst)
-                (letrec
-                 ((merge (lambda (cmp a b acc)
-                          (if ($list-null? a)
-                              ($list-concat ($list-reverse acc) b)
-                              (if ($list-null? b)
-                                  ($list-concat ($list-reverse acc) a)
-                                  (if (cmp ($list-first b) ($list-first a))
-                                      (merge cmp
-                                             a
-                                             ($list-rest b)
-                                             ($list-prepend acc ($list-first b)))
-                                      (merge cmp
-                                             ($list-rest a)
-                                             b
-                                             ($list-prepend acc ($list-first a))))))))
-                   (sort (lambda (cmp lst)
-                           (let
-                             ((n ($list-length lst)))
-                             (if ($integer<=? n 1)
-                                 lst
-                                 (let*
-                                   ((mid ($integer/ n 2))
-                                    (left (sort cmp ($list-slice lst 0 mid)))
-                                    (right (sort cmp ($list-slice lst mid n))))
-                                   (merge cmp left right (list))))))))
-                  (sort cmp lst))))
-   (map-dict (lambda (f al)
-               (letrec
-                 ((loop (lambda (keys acc)
-                          (if ($list-null? keys)
+
+   (function?
+    (lambda (x)
+      ($function? x)))
+
+   (function=?
+    (lambda (a b)
+      ($function=? a b)))
+
+   (function!=?
+    (lambda (a b)
+      ($function!=? a b)))
+
+   (function-min-arity
+    (lambda (f)
+      ($function-min-arity f)))
+
+   (function-variadic?
+    (lambda (f)
+      ($function-variadic? f)))
+
+   (function-accepts?
+    (lambda (f n)
+      ($function-accepts? f n)))
+
+   (symbol?
+    (lambda (x)
+      ($symbol? x)))
+
+   (symbol=?
+    (lambda (a b)
+      ($symbol=? a b)))
+
+   (symbol!=?
+    (lambda (a b)
+      ($symbol!=? a b)))
+
+   (symbol->string
+    (lambda (sym)
+      ($symbol->string sym)))
+
+   (none?
+    (lambda (x)
+      ($none? x)))
+
+   (boolean?
+    (lambda (x)
+      ($boolean? x)))
+
+   (boolean=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($boolean=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'boolean=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($boolean=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (boolean!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($boolean!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'boolean!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($boolean!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (boolean-not
+    (lambda (x)
+      ($boolean-not x)))
+
+   (integer?
+    (lambda (x)
+      ($integer? x)))
+
+   (integer=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($integer=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($integer!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (integer<?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer<? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer<?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($integer<? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer>?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer>? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer>?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($integer>? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer<=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer<=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer<=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($integer<=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer>=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer>=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer>=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($integer>=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer+
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer+ ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              0
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
                               acc
-                              (let*
-                                ((k ($list-first keys)) (v ($dict-get al k #none)))
-                                (loop ($list-rest keys) ($dict-with acc k (f k v))))))))
-                 (loop ($dict-keys al) (dict)))))
-   (filter-dict (lambda (pred al)
-                  (letrec
-                    ((loop (lambda (keys acc)
-                             (if ($list-null? keys)
-                                 acc
-                                 (let*
-                                   ((k ($list-first keys)) (v ($dict-get al k #none)))
-                                   (if (pred k v)
-                                       (loop ($list-rest keys) ($dict-with acc k v))
-                                       (loop ($list-rest keys) acc)))))))
-                    (loop ($dict-keys al) (dict)))))
-   (map-set (lambda (f s)
-              ($list->set (map-list f ($set->list s)))))
-   (filter-set (lambda (pred s)
-                 ($list->set (filter-list pred ($set->list s)))))
-   (fold-set (lambda (f init s)
-               (fold-list f init ($set->list s))))
-   (any-set? (lambda (pred s)
-               (any-list? pred ($set->list s))))
-   (all-set? (lambda (pred s)
-               (all-list? pred ($set->list s))))
-   (range (lambda (start end . rest)
-            ($range start
-                    end
-                    (if ($list-null? rest) 1 ($list-first rest)))))
-   (vector (lambda (. args) ($list->vector args)))
-   (vector? (lambda (x) ($vector? x)))
-   (vector=? (lambda (a b) ($vector=? a b)))
-   (vector!=? (lambda (a b) ($vector!=? a b)))
-   (vector-nth (lambda (v i) ($vector-nth v i)))
-   (vector-length (lambda (v) ($vector-length v)))
-   (vector-with (lambda (v i val) ($vector-with v i val)))
-   (vector-slice (lambda (v start . rest)
-                   (if ($list-null? rest)
-                       ($vector-slice v start ($vector-length v))
-                       ($vector-slice v start ($list-first rest)))))
-   (vector-concat (lambda (a b) ($vector-concat a b)))
-   (vector-empty? (lambda (v) ($vector-empty? v)))
-   (vector-member? (lambda (v x) ($vector-member? v x)))
-   (vector-index (lambda (v x) ($vector-index v x)))
-   (vector->list (lambda (v) ($vector->list v)))
-   (list->vector (lambda (lst) ($list->vector lst)))
-   (map-vector (lambda (f v)
-                 (letrec
-                   ((loop (lambda (i acc)
-                            (if ($integer=? i ($vector-length v))
-                                ($list->vector ($list-reverse acc))
-                                (loop ($integer+ i 1)
-                                      ($list-prepend acc (f ($vector-nth v i))))))))
-                   (loop 0 (list)))))
-   (filter-vector (lambda (pred v)
-                   (letrec
-                     ((loop (lambda (i acc)
-                              (if ($integer<? i 0)
-                                  ($list->vector acc)
-                                  (let ((elem ($vector-nth v i)))
-                                    (loop ($integer- i 1)
-                                          (if (pred elem)
-                                              ($list-prepend acc elem)
-                                              acc)))))))
-                     (loop ($integer- ($vector-length v) 1) (list)))))
-   (fold-vector (lambda (f init v)
-                  (letrec
-                    ((loop (lambda (i acc)
-                             (if ($integer=? i ($vector-length v))
-                                 acc
-                                 (loop ($integer+ i 1)
-                                       (f acc ($vector-nth v i)))))))
-                    (loop 0 init))))
-   (find-vector (lambda (pred v)
-                  (letrec
-                    ((loop (lambda (i)
-                             (if ($integer=? i ($vector-length v))
-                                 #none
-                                 (let ((elem ($vector-nth v i)))
-                                   (if (pred elem)
-                                       elem
-                                       (loop ($integer+ i 1))))))))
-                    (loop 0))))
-   (any-vector? (lambda (pred v)
-                  (letrec
-                    ((loop (lambda (i)
-                             (if ($integer=? i ($vector-length v))
-                                 #f
-                                 (if (pred ($vector-nth v i))
-                                     #t
-                                     (loop ($integer+ i 1)))))))
-                    (loop 0))))
-   (all-vector? (lambda (pred v)
-                  (letrec
-                    ((loop (lambda (i)
-                             (if ($integer=? i ($vector-length v))
-                                 #t
-                                 (if (pred ($vector-nth v i))
-                                     (loop ($integer+ i 1))
-                                     #f)))))
-                    (loop 0))))
-   (sort-vector (lambda (cmp v)
-                  ($list->vector (sort-list cmp ($vector->list v))))))
+                              (loop ($list-rest lst) ($integer+ acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer-
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer- ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer-' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer- acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer*
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer* ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              1
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer* acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer/
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer/ ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer/' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer/ acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer%
+    (lambda (a b)
+      ($integer% a b)))
+
+   (integer-neg
+    (lambda (a)
+      ($integer-neg a)))
+
+   (integer-expn
+    (lambda (a b)
+      ($integer-expn a b)))
+
+   (integer-abs
+    (lambda (a)
+      ($integer-abs a)))
+
+   (integer-bit-or
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer-bit-or ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer-bit-or' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer-bit-or acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer-bit-and
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer-bit-and ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer-bit-and' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer-bit-and acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer-bit-xor
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer-bit-xor ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'integer-bit-xor' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer-bit-xor acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer-bit-not
+    (lambda (a)
+      ($integer-bit-not a)))
+
+   (integer-bit-shift-left
+    (lambda (a b)
+      ($integer-bit-shift-left a b)))
+
+   (integer-bit-shift-right
+    (lambda (a b)
+      ($integer-bit-shift-right a b)))
+
+   (integer-min
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer-min ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              (error "Function 'integer-min' requires at least 1 argument")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer-min acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer-max
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($integer-max ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              (error "Function 'integer-max' requires at least 1 argument")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($integer-max acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (integer->complex
+    (lambda (real . rest)
+      ($integer->complex real (if ($list-null? rest) 0 ($list-first rest)))))
+
+   (integer->string
+    (lambda (n . rest)
+      (if ($list-null? rest)
+          ($integer->string n 10)
+          ($integer->string n ($list-first rest)))))
+
+   (integer->float
+    (lambda (n)
+      ($integer->float n)))
+
+   (integer-codepoint->string
+    (lambda (n)
+      ($integer-codepoint->string n)))
+
+   (float?
+    (lambda (x)
+      ($float? x)))
+
+   (float=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($float=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($float!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (float<?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float<? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float<?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($float<? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float>?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float>? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float>?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($float>? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float<=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float<=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float<=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($float<=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float>=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float>=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float>=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($float>=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float+
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float+ ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              0.0
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($float+ acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float-
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float- ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float-' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($float- acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float*
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float* ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              1.0
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($float* acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float/
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float/ ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float/' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($float/ acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float//
+    (lambda (a b)
+      ($float// a b)))
+
+   (float%
+    (lambda (a b)
+      ($float% a b)))
+
+   (float-neg
+    (lambda (a)
+      ($float-neg a)))
+
+   (float-exp
+    (lambda (a)
+      ($float-exp a)))
+
+   (float-expn
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float-expn ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'float-expt' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($float-expn acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float-log
+    (lambda (a)
+      ($float-log a)))
+
+   (float-log10
+    (lambda (a)
+      ($float-log10 a)))
+
+   (float-log2
+    (lambda (a)
+      ($float-log2 a)))
+
+   (float-logn
+    (lambda (a b)
+      ($float-logn a b)))
+
+   (float-sin
+    (lambda (a)
+      ($float-sin a)))
+
+   (float-cos
+    (lambda (a)
+      ($float-cos a)))
+
+   (float-tan
+    (lambda (a)
+      ($float-tan a)))
+
+   (float-sqrt
+    (lambda (a)
+      ($float-sqrt a)))
+
+   (float-abs
+    (lambda (a)
+      ($float-abs a)))
+
+   (float->integer
+    (lambda (n)
+      ($float->integer n)))
+
+   (float->complex
+    (lambda (real . rest)
+      ($float->complex real (if ($list-null? rest) 0 ($list-first rest)))))
+
+   (float->string
+    (lambda (n)
+      ($float->string n)))
+
+   (float-floor
+    (lambda (n)
+      ($float-floor n)))
+
+   (float-ceil
+    (lambda (n)
+      ($float-ceil n)))
+
+   (float-round
+    (lambda (n)
+      ($float-round n)))
+
+   (float-min
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float-min ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              (error "Function 'float-min' requires at least 1 argument")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($float-min acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float-max
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($float-max ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              (error "Function 'float-max' requires at least 1 argument")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($float-max acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (float-atan2
+    (lambda (y x)
+      ($float-atan2 y x)))
+
+   (float-cosh
+    (lambda (a)
+      ($float-cosh a)))
+
+   (float-sinh
+    (lambda (a)
+      ($float-sinh a)))
+
+   (float-tanh
+    (lambda (a)
+      ($float-tanh a)))
+
+   (float-asin
+    (lambda (a)
+      ($float-asin a)))
+
+   (float-acos
+    (lambda (a)
+      ($float-acos a)))
+
+   (float-atan
+    (lambda (a)
+      ($float-atan a)))
+
+   (float-hypot
+    (lambda (a b)
+      ($float-hypot a b)))
+
+   (float-exp2
+    (lambda (a)
+      ($float-exp2 a)))
+
+   (float-cbrt
+    (lambda (a)
+      ($float-cbrt a)))
+
+   (float-expm1
+    (lambda (a)
+      ($float-expm1 a)))
+
+   (float-log1p
+    (lambda (a)
+      ($float-log1p a)))
+
+   (float-trunc
+    (lambda (a)
+      ($float-trunc a)))
+
+   (float-copysign
+    (lambda (a b)
+      ($float-copysign a b)))
+
+   (complex?
+    (lambda (x)
+      ($complex? x)))
+
+   (complex=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($complex=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'complex=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($complex=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (complex!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($complex!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'complex!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($complex!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (complex+
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($complex+ ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              ($float->complex 0.0 0.0)
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($complex+ acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (complex-
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($complex- ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'complex-' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($complex- acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (complex*
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($complex* ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              ($float->complex 1.0 0.0)
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($complex* acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (complex/
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($complex/ ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'complex/' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($complex/ acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (complex-neg
+    (lambda (a)
+      ($complex-neg a)))
+
+   (complex-real
+    (lambda (a)
+      ($complex-real a)))
+
+   (complex-imag
+    (lambda (a)
+      ($complex-imag a)))
+
+   (complex-exp
+    (lambda (a)
+      ($complex-exp a)))
+
+   (complex-expn
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($complex-expn ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'complex-expt' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($complex-expn acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (complex-log
+    (lambda (a)
+      ($complex-log a)))
+
+   (complex-log10
+    (lambda (a)
+      ($complex-log10 a)))
+
+   (complex-logn
+    (lambda (a b)
+      ($complex-logn a b)))
+
+   (complex-sin
+    (lambda (a)
+      ($complex-sin a)))
+
+   (complex-cos
+    (lambda (a)
+      ($complex-cos a)))
+
+   (complex-tan
+    (lambda (a)
+      ($complex-tan a)))
+
+   (complex-sqrt
+    (lambda (a)
+      ($complex-sqrt a)))
+
+   (complex-abs
+    (lambda (a)
+      ($complex-abs a)))
+
+   (complex->string
+    (lambda (c)
+      ($complex->string c)))
+
+   (number->string
+    (lambda (n)
+      (if ($integer? n)
+          ($integer->string n 10)
+          (if ($float? n)
+              ($float->string n)
+              (if ($complex? n)
+                  ($complex->string n)
+                  (error "Function 'number->string' requires a number argument"))))))
+
+   (string?
+    (lambda (x)
+      ($string? x)))
+
+   (string=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($string=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'string=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($string=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (string!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($string!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'string!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($string!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (string<?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($string<? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'string<?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($string<? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (string>?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($string>? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'string>?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($string>? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (string<=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($string<=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'string<=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($string<=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (string>=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($string>=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'string>=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($string>=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (string-concat
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($string-concat ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              ""
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($string-concat acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (string-length
+    (lambda (s)
+      ($string-length s)))
+
+   (string-upcase
+    (lambda (s)
+      ($string-upcase s)))
+
+   (string-downcase
+    (lambda (s)
+      ($string-downcase s)))
+
+   (string-trim
+    (lambda (s)
+      ($string-trim s)))
+
+   (string-trim-left
+    (lambda (s)
+      ($string-trim-left s)))
+
+   (string-trim-right
+    (lambda (s)
+      ($string-trim-right s)))
+
+   (string-replace
+    (lambda (s old new)
+      ($string-replace s old new)))
+
+   (string-index
+    (lambda (s sub)
+      ($string-index s sub)))
+
+   (string-prefix?
+    (lambda (s prefix)
+      ($string-prefix? s prefix)))
+
+   (string-suffix?
+    (lambda (s suffix)
+      ($string-suffix? s suffix)))
+
+   (string-nth
+    (lambda (s i)
+      ($string-nth s i)))
+
+   (string-slice
+    (lambda (str start . rest)
+      (if ($list-null? rest)
+          ($string-slice str start ($string-length str))
+          ($string-slice str start ($list-first rest)))))
+
+   (string->float
+    (lambda (s)
+      ($string->float s)))
+
+   (string->complex
+    (lambda (s)
+      ($string->complex s)))
+
+   (string->number
+    (lambda (s)
+      (let ((n ($string->integer s 10)))
+        (if ($integer? n)
+            n
+            (let ((f ($string->float s)))
+              (if ($float? f)
+                  f
+                  ($string->complex s)))))))
+
+   (string->integer
+    (lambda (s . rest)
+      (if ($list-null? rest)
+          ($string->integer s 10)
+          ($string->integer s ($list-first rest)))))
+
+   (string->list
+    (lambda (str . rest)
+      ($string->list str (if ($list-null? rest) "" ($list-first rest)))))
+
+   (string->integer-codepoint
+    (lambda (s)
+      ($string->integer-codepoint s)))
+
+   (bytes?
+    (lambda (x)
+      ($bytes? x)))
+
+   (bytes=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($bytes=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'bytes=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($bytes=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (bytes!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($bytes!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'bytes!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($bytes!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (bytes<?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($bytes<? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'bytes<?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($bytes<? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (bytes>?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($bytes>? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'bytes>?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($bytes>? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (bytes<=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($bytes<=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'bytes<=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($bytes<=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (bytes>=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($bytes>=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'bytes>=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($bytes>=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (bytes-length
+    (lambda (b)
+      ($bytes-length b)))
+
+   (bytes-nth
+    (lambda (b i)
+      ($bytes-nth b i)))
+
+   (bytes-append-u8
+    (lambda (b v)
+      ($bytes-append-u8 b v)))
+
+   (bytes-slice
+    (lambda (b start . rest)
+      (if ($list-null? rest)
+          ($bytes-slice b start ($bytes-length b))
+          ($bytes-slice b start ($list-first rest)))))
+
+   (bytes-concat
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($bytes-concat ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              ($string-hex->bytes "")
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($bytes-concat acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (string->bytes
+    (lambda (s)
+      ($string->bytes s)))
+
+   (bytes->string
+    (lambda (b)
+      ($bytes->string b)))
+
+   (bytes->list
+    (lambda (b)
+      ($bytes->list b)))
+
+   (bytes->string-hex
+    (lambda (b)
+      ($bytes->string-hex b)))
+
+   (string-hex->bytes
+    (lambda (s)
+      ($string-hex->bytes s)))
+
+   (list->bytes
+    (lambda (lst)
+      ($list->bytes lst)))
+
+   (bytes-index
+    (lambda (haystack needle)
+      ($bytes-index haystack needle)))
+
+   (bytes-index-int
+    (lambda (b byte)
+      ($bytes-index-int b byte)))
+
+   (bytes-read-u8
+    (lambda (b off)
+      ($bytes-read-u8 b off)))
+
+   (bytes-read-u16-le
+    (lambda (b off)
+      ($bytes-read-u16-le b off)))
+
+   (bytes-read-u24-le
+    (lambda (b off)
+      ($bytes-read-u24-le b off)))
+
+   (bytes-read-u32-le
+    (lambda (b off)
+      ($bytes-read-u32-le b off)))
+
+   (bytes-read-u64-le
+    (lambda (b off)
+      ($bytes-read-u64-le b off)))
+
+   (bytes-read-u16-be
+    (lambda (b off)
+      ($bytes-read-u16-be b off)))
+
+   (bytes-read-u24-be
+    (lambda (b off)
+      ($bytes-read-u24-be b off)))
+
+   (bytes-read-u32-be
+    (lambda (b off)
+      ($bytes-read-u32-be b off)))
+
+   (bytes-read-u64-be
+    (lambda (b off)
+      ($bytes-read-u64-be b off)))
+
+   (bytes-read-i8
+    (lambda (b off)
+      ($bytes-read-i8 b off)))
+
+   (bytes-read-i16-le
+    (lambda (b off)
+      ($bytes-read-i16-le b off)))
+
+   (bytes-read-i24-le
+    (lambda (b off)
+      ($bytes-read-i24-le b off)))
+
+   (bytes-read-i32-le
+    (lambda (b off)
+      ($bytes-read-i32-le b off)))
+
+   (bytes-read-i64-le
+    (lambda (b off)
+      ($bytes-read-i64-le b off)))
+
+   (bytes-read-i16-be
+    (lambda (b off)
+      ($bytes-read-i16-be b off)))
+
+   (bytes-read-i24-be
+    (lambda (b off)
+      ($bytes-read-i24-be b off)))
+
+   (bytes-read-i32-be
+    (lambda (b off)
+      ($bytes-read-i32-be b off)))
+
+   (bytes-read-i64-be
+    (lambda (b off)
+      ($bytes-read-i64-be b off)))
+
+   (bytes-append-u16-le
+    (lambda (b v)
+      ($bytes-append-u16-le b v)))
+
+   (bytes-append-u16-be
+    (lambda (b v)
+      ($bytes-append-u16-be b v)))
+
+   (bytes-append-u24-le
+    (lambda (b v)
+      ($bytes-append-u24-le b v)))
+
+   (bytes-append-u24-be
+    (lambda (b v)
+      ($bytes-append-u24-be b v)))
+
+   (bytes-append-u32-le
+    (lambda (b v)
+      ($bytes-append-u32-le b v)))
+
+   (bytes-append-u32-be
+    (lambda (b v)
+      ($bytes-append-u32-be b v)))
+
+   (bytes-append-u64-le
+    (lambda (b v)
+      ($bytes-append-u64-le b v)))
+
+   (bytes-append-u64-be
+    (lambda (b v)
+      ($bytes-append-u64-be b v)))
+
+   (bytes-append-i8
+    (lambda (b v)
+      ($bytes-append-i8 b v)))
+
+   (bytes-append-i16-le
+    (lambda (b v)
+      ($bytes-append-i16-le b v)))
+
+   (bytes-append-i16-be
+    (lambda (b v)
+      ($bytes-append-i16-be b v)))
+
+   (bytes-append-i24-le
+    (lambda (b v)
+      ($bytes-append-i24-le b v)))
+
+   (bytes-append-i24-be
+    (lambda (b v)
+      ($bytes-append-i24-be b v)))
+
+   (bytes-append-i32-le
+    (lambda (b v)
+      ($bytes-append-i32-le b v)))
+
+   (bytes-append-i32-be
+    (lambda (b v)
+      ($bytes-append-i32-be b v)))
+
+   (bytes-append-i64-le
+    (lambda (b v)
+      ($bytes-append-i64-le b v)))
+
+   (bytes-append-i64-be
+    (lambda (b v)
+      ($bytes-append-i64-be b v)))
+
+   (bytes-write-u8
+    (lambda (b off v)
+      ($bytes-write-u8 b off v)))
+
+   (bytes-write-u16-le
+    (lambda (b off v)
+      ($bytes-write-u16-le b off v)))
+
+   (bytes-write-u16-be
+    (lambda (b off v)
+      ($bytes-write-u16-be b off v)))
+
+   (bytes-write-u24-le
+    (lambda (b off v)
+      ($bytes-write-u24-le b off v)))
+
+   (bytes-write-u24-be
+    (lambda (b off v)
+      ($bytes-write-u24-be b off v)))
+
+   (bytes-write-u32-le
+    (lambda (b off v)
+      ($bytes-write-u32-le b off v)))
+
+   (bytes-write-u32-be
+    (lambda (b off v)
+      ($bytes-write-u32-be b off v)))
+
+   (bytes-write-u64-le
+    (lambda (b off v)
+      ($bytes-write-u64-le b off v)))
+
+   (bytes-write-u64-be
+    (lambda (b off v)
+      ($bytes-write-u64-be b off v)))
+
+   (bytes-write-i8
+    (lambda (b off v)
+      ($bytes-write-i8 b off v)))
+
+   (bytes-write-i16-le
+    (lambda (b off v)
+      ($bytes-write-i16-le b off v)))
+
+   (bytes-write-i16-be
+    (lambda (b off v)
+      ($bytes-write-i16-be b off v)))
+
+   (bytes-write-i24-le
+    (lambda (b off v)
+      ($bytes-write-i24-le b off v)))
+
+   (bytes-write-i24-be
+    (lambda (b off v)
+      ($bytes-write-i24-be b off v)))
+
+   (bytes-write-i32-le
+    (lambda (b off v)
+      ($bytes-write-i32-le b off v)))
+
+   (bytes-write-i32-be
+    (lambda (b off v)
+      ($bytes-write-i32-be b off v)))
+
+   (bytes-write-i64-le
+    (lambda (b off v)
+      ($bytes-write-i64-le b off v)))
+
+   (bytes-write-i64-be
+    (lambda (b off v)
+      ($bytes-write-i64-be b off v)))
+
+   (bytes-read-uleb128
+    (lambda (b off)
+      ($bytes-read-uleb128 b off)))
+
+   (bytes-append-uleb128
+    (lambda (b v)
+      ($bytes-append-uleb128 b v)))
+
+   (bytes-read-sleb128
+    (lambda (b off)
+      ($bytes-read-sleb128 b off)))
+
+   (bytes-append-sleb128
+    (lambda (b v)
+      ($bytes-append-sleb128 b v)))
+
+   (bytes-read-f32-le
+    (lambda (b off)
+      ($bytes-read-f32-le b off)))
+
+   (bytes-read-f32-be
+    (lambda (b off)
+      ($bytes-read-f32-be b off)))
+
+   (bytes-read-f64-le
+    (lambda (b off)
+      ($bytes-read-f64-le b off)))
+
+   (bytes-read-f64-be
+    (lambda (b off)
+      ($bytes-read-f64-be b off)))
+
+   (bytes-append-f32-le
+    (lambda (b v)
+      ($bytes-append-f32-le b v)))
+
+   (bytes-append-f32-be
+    (lambda (b v)
+      ($bytes-append-f32-be b v)))
+
+   (bytes-append-f64-le
+    (lambda (b v)
+      ($bytes-append-f64-le b v)))
+
+   (bytes-append-f64-be
+    (lambda (b v)
+      ($bytes-append-f64-be b v)))
+
+   (bytes-write-f32-le
+    (lambda (b off v)
+      ($bytes-write-f32-le b off v)))
+
+   (bytes-write-f32-be
+    (lambda (b off v)
+      ($bytes-write-f32-be b off v)))
+
+   (bytes-write-f64-le
+    (lambda (b off v)
+      ($bytes-write-f64-le b off v)))
+
+   (bytes-write-f64-be
+    (lambda (b off v)
+      ($bytes-write-f64-be b off v)))
+
+   (bytes-crc32
+    (lambda (b)
+      ($bytes-crc32 b)))
+
+   (bytes-hash-sha2-256
+    (lambda (b)
+      ($bytes-hash-sha2-256 b)))
+
+   (bytes-hash-sha2-512
+    (lambda (b)
+      ($bytes-hash-sha2-512 b)))
+
+   (bytes-hash-sha2-512-256
+    (lambda (b)
+      ($bytes-hash-sha2-512-256 b)))
+
+   (bytes-hash-sha3-256
+    (lambda (b)
+      ($bytes-hash-sha3-256 b)))
+
+   (map-bytes
+    (lambda (f b)
+      (letrec ((loop
+                (lambda (i acc)
+                  (if ($integer=? i ($bytes-length b))
+                      acc
+                      (loop ($integer+ i 1) ($bytes-append-u8 acc (f ($bytes-nth b i))))))))
+        (loop 0 ($string-hex->bytes "")))))
+
+   (filter-bytes
+    (lambda (f b)
+      (letrec ((loop
+                (lambda (i acc)
+                  (if ($integer=? i ($bytes-length b))
+                      acc
+                      (let ((byte ($bytes-nth b i)))
+                        (loop ($integer+ i 1) (if (f byte) ($bytes-append-u8 acc byte) acc)))))))
+        (loop 0 ($string-hex->bytes "")))))
+
+   (fold-bytes
+    (lambda (f init b)
+      (letrec ((loop
+                (lambda (i acc)
+                  (if ($integer=? i ($bytes-length b))
+                      acc
+                      (loop ($integer+ i 1) (f acc ($bytes-nth b i)))))))
+        (loop 0 init))))
+
+   (bytes-empty?
+    (lambda (b)
+      ($integer=? ($bytes-length b) 0)))
+
+   (bytes-prefix?
+    (lambda (b prefix)
+      (and ($integer<=? ($bytes-length prefix) ($bytes-length b))
+           ($bytes=? ($bytes-slice b 0 ($bytes-length prefix)) prefix))))
+
+   (bytes-suffix?
+    (lambda (b suffix)
+      (and ($integer<=? ($bytes-length suffix) ($bytes-length b))
+           ($bytes=? ($bytes-slice b
+                                   ($integer- ($bytes-length b) ($bytes-length suffix))
+                                   ($bytes-length b))
+                     suffix))))
+
+   (bytes-split
+    (lambda (b delimiter)
+      (let ((dlen ($bytes-length delimiter)))
+        (if ($integer=? dlen 0)
+            (error "bytes-split: delimiter must be non-empty")
+            (letrec ((loop
+                      (lambda (start acc)
+                        (match ($bytes-index ($bytes-slice b start ($bytes-length b)) delimiter)
+                          (#none
+                           ($list-reverse
+                             ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
+                          (pos
+                           (loop
+                             ($integer+ ($integer+ start pos) dlen)
+                             ($list-prepend acc ($bytes-slice b start ($integer+ start pos)))))))))
+              (loop 0 (list)))))))
+
+   (bytes-split-int
+    (lambda (b byte)
+      (letrec ((loop
+                (lambda (start acc)
+                  (match ($bytes-index-int ($bytes-slice b start ($bytes-length b)) byte)
+                    (#none
+                     ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
+                    (pos
+                     (loop
+                       ($integer+ ($integer+ start pos) 1)
+                       ($list-prepend acc ($bytes-slice b start ($integer+ start pos)))))))))
+        (loop 0 (list)))))
+
+   (list
+    (lambda (. args) args))
+
+   (list?
+    (lambda (x)
+      ($list? x)))
+
+   (list=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($list=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'list=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($list=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (list!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($list!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'list!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($list!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (list-prepend
+    (lambda (lst elem)
+      ($list-prepend lst elem)))
+
+   (list-append
+    (lambda (lst elem)
+      ($list-append lst elem)))
+
+   (list-concat
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($list-concat ($list-first args) ($list-last args))
+          (if ($list-null? args)
+              (list)
+              (letrec ((loop
+                        (lambda (lst acc)
+                          (if ($list-null? lst)
+                              acc
+                              (loop ($list-rest lst) ($list-concat acc ($list-first lst)))))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (list-reverse
+    (lambda (lst)
+      ($list-reverse lst)))
+
+   (list-first
+    (lambda (lst)
+      ($list-first lst)))
+
+   (list-rest
+    (lambda (lst)
+      ($list-rest lst)))
+
+   (list-length
+    (lambda (lst)
+      ($list-length lst)))
+
+   (list-last
+    (lambda (lst)
+      ($list-last lst)))
+
+   (list-member?
+    (lambda (lst elem)
+      ($list-member? lst elem)))
+
+   (list-null?
+    (lambda (lst)
+      ($list-null? lst)))
+
+   (list-index
+    (lambda (lst elem)
+      ($list-index lst elem)))
+
+   (list-slice
+    (lambda (lst start . rest)
+      (if ($list-null? rest)
+          ($list-slice lst start ($list-length lst))
+          ($list-slice lst start ($list-first rest)))))
+
+   (list-without
+    (lambda (lst elem)
+      ($list-without lst elem)))
+
+   (list-nth
+    (lambda (lst i)
+      ($list-nth lst i)))
+
+   (list->string
+    (lambda (lst . rest)
+      ($list->string lst (if ($list-null? rest) "" ($list-first rest)))))
+
+   (list->set
+    (lambda (lst)
+      ($list->set lst)))
+
+   (dict
+    (lambda (. args)
+      (if ($integer!=? ($integer% ($list-length args) 2) 0)
+          (error "dict: requires an even number of arguments")
+          (letrec ((loop
+                    (lambda (lst acc)
+                      (if ($list-null? lst)
+                          acc
+                          (loop
+                            ($list-rest ($list-rest lst))
+                            ($dict-with acc ($list-first lst) ($list-first ($list-rest lst))))))))
+            (loop args (dict))))))
+
+   (dict?
+    (lambda (x)
+      ($dict? x)))
+
+   (dict=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($dict=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'dict=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($dict=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (dict!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($dict!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'dict!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($dict!=?
+                                                    ($list-first lst)
+                                                    ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (dict-get
+    (lambda (d key . rest)
+      ($dict-get d key (if ($list-null? rest) #none ($list-first rest)))))
+
+   (dict-with
+    (lambda (d key value)
+      ($dict-with d key value)))
+
+   (dict-without
+    (lambda (d key)
+      ($dict-without d key)))
+
+   (dict-has?
+    (lambda (d key)
+      ($dict-has? d key)))
+
+   (dict-keys
+    (lambda (d)
+      ($dict-keys d)))
+
+   (dict-values
+    (lambda (d)
+      ($dict-values d)))
+
+   (dict-merge
+    (lambda (d1 d2)
+      ($dict-merge d1 d2)))
+
+   (dict-length
+    (lambda (d)
+      ($dict-length d)))
+
+   (set
+    (lambda (. args)
+      (letrec ((loop
+                (lambda (elems acc)
+                  (if ($list-null? elems)
+                      acc
+                      (loop ($list-rest elems) ($set-with acc ($list-first elems)))))))
+        (loop args (set)))))
+
+   (set?
+    (lambda (x)
+      ($set? x)))
+
+   (set=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($set=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'set=?' requires at least 2 arguments")
+              (letrec ((loop
+                        (lambda (lst prev)
+                          (if ($list-null? lst)
+                              #t
+                              (if ($set=? prev ($list-first lst))
+                                  (loop ($list-rest lst) ($list-first lst))
+                                  #f)))))
+                (loop ($list-rest args) ($list-first args)))))))
+
+   (set!=?
+    (lambda (. args)
+      (if ($integer=? ($list-length args) 2)
+          ($set!=? ($list-first args) ($list-last args))
+          (if ($integer<? ($list-length args) 2)
+              (error "Function 'set!=?' requires at least 2 arguments")
+              (letrec ((outer
+                        (lambda (lst)
+                          (if ($list-null? lst)
+                              #t
+                              (letrec ((inner
+                                        (lambda (rest-lst)
+                                          (if ($list-null? rest-lst)
+                                              (outer ($list-rest lst))
+                                              (if ($set!=? ($list-first lst) ($list-first rest-lst))
+                                                  (inner ($list-rest rest-lst))
+                                                  #f)))))
+                                (inner ($list-rest lst)))))))
+                (outer args))))))
+
+   (set-member?
+    (lambda (s x)
+      ($set-member? s x)))
+
+   (set-with
+    (lambda (s x)
+      ($set-with s x)))
+
+   (set-without
+    (lambda (s x)
+      ($set-without s x)))
+
+   (set-length
+    (lambda (s)
+      ($set-length s)))
+
+   (set-union
+    (lambda (s1 s2)
+      ($set-union s1 s2)))
+
+   (set-intersection
+    (lambda (s1 s2)
+      ($set-intersection s1 s2)))
+
+   (set-difference
+    (lambda (s1 s2)
+      ($set-difference s1 s2)))
+
+   (set-subset?
+    (lambda (s sub)
+      ($set-subset? s sub)))
+
+   (set->list
+    (lambda (s)
+      ($set->list s)))
+
+   (struct?
+    (lambda (x)
+      ($struct? x)))
+
+   (struct-is-instance?
+    (lambda (s t)
+      ($struct-is-instance? s t)))
+
+   (struct-get
+    (lambda (s field)
+      ($struct-get s field)))
+
+   (struct-with
+    (lambda (s field val)
+      ($struct-with s field val)))
+
+   (struct=?
+    (lambda (a b)
+      ($struct=? a b)))
+
+   (struct!=?
+    (lambda (a b)
+      ($struct!=? a b)))
+
+   (struct-type
+    (lambda (s)
+      ($struct-type s)))
+
+   (structtype?
+    (lambda (x)
+      ($structtype? x)))
+
+   (structtype=?
+    (lambda (a b)
+      ($structtype=? a b)))
+
+   (structtype!=?
+    (lambda (a b)
+      ($structtype!=? a b)))
+
+   (structtype-name
+    (lambda (t)
+      ($structtype-name t)))
+
+   (structtype-fields
+    (lambda (t)
+      ($structtype-fields t)))
+
+   (map-list
+    (lambda (f lst)
+      (letrec ((helper
+                (lambda (f lst acc)
+                  (if ($list-null? lst)
+                      ($list-reverse acc)
+                      (helper f ($list-rest lst) ($list-prepend acc (f ($list-first lst))))))))
+        (helper f lst (list)))))
+
+   (filter-list
+    (lambda (pred lst)
+      (letrec ((helper
+                (lambda (pred lst acc)
+                  (if ($list-null? lst)
+                      ($list-reverse acc)
+                      (if (pred ($list-first lst))
+                          (helper pred ($list-rest lst) ($list-prepend acc ($list-first lst)))
+                          (helper pred ($list-rest lst) acc))))))
+        (helper pred lst (list)))))
+
+   (fold-list
+    (lambda (f init lst)
+      (letrec ((helper
+                (lambda (f acc lst)
+                  (if ($list-null? lst)
+                      acc
+                      (helper f (f acc ($list-first lst)) ($list-rest lst))))))
+        (helper f init lst))))
+
+   (find-list
+    (lambda (pred lst)
+      (letrec ((helper
+                (lambda (pred lst)
+                  (if ($list-null? lst)
+                      #none
+                      (if (pred ($list-first lst))
+                          ($list-first lst)
+                          (helper pred ($list-rest lst)))))))
+        (helper pred lst))))
+
+   (any-list?
+    (lambda (pred lst)
+      (letrec ((helper
+                (lambda (pred lst)
+                  (if ($list-null? lst)
+                      #f
+                      (if (pred ($list-first lst))
+                          #t
+                          (helper pred ($list-rest lst)))))))
+        (helper pred lst))))
+
+   (all-list?
+    (lambda (pred lst)
+      (letrec ((helper
+                (lambda (pred lst)
+                  (if ($list-null? lst)
+                      #t
+                      (if (pred ($list-first lst))
+                          (helper pred ($list-rest lst))
+                          #f)))))
+        (helper pred lst))))
+
+   (list-zip
+    (lambda (lst1 lst2)
+      (letrec ((helper
+                (lambda (l1 l2 acc)
+                  (if (or ($list-null? l1)
+                          ($list-null? l2))
+                      ($list-reverse acc)
+                      (helper
+                        ($list-rest l1)
+                        ($list-rest l2)
+                        ($list-prepend acc (list ($list-first l1) ($list-first l2))))))))
+        (helper lst1 lst2 (list)))))
+
+   (sort-list
+    (lambda (cmp lst)
+      (letrec
+        ((merge
+          (lambda (cmp a b acc)
+            (if ($list-null? a)
+                ($list-concat ($list-reverse acc) b)
+                (if ($list-null? b)
+                    ($list-concat ($list-reverse acc) a)
+                    (if (cmp ($list-first b) ($list-first a))
+                        (merge cmp a ($list-rest b) ($list-prepend acc ($list-first b)))
+                        (merge cmp ($list-rest a) b ($list-prepend acc ($list-first a))))))))
+
+         (sort
+          (lambda (cmp lst)
+            (let ((n ($list-length lst)))
+              (if ($integer<=? n 1)
+                  lst
+                  (let* ((mid ($integer/ n 2))
+                         (left (sort cmp ($list-slice lst 0 mid)))
+                         (right (sort cmp ($list-slice lst mid n))))
+                    (merge cmp left right (list))))))))
+        (sort cmp lst))))
+
+   (map-dict
+    (lambda (f al)
+      (letrec ((loop
+                (lambda (keys acc)
+                  (if ($list-null? keys)
+                      acc
+                      (let* ((k ($list-first keys))
+                             (v ($dict-get al k #none)))
+                        (loop ($list-rest keys) ($dict-with acc k (f k v))))))))
+        (loop ($dict-keys al) (dict)))))
+
+   (filter-dict
+    (lambda (pred al)
+      (letrec ((loop
+                (lambda (keys acc)
+                  (if ($list-null? keys)
+                      acc
+                      (let* ((k ($list-first keys))
+                             (v ($dict-get al k #none)))
+                        (if (pred k v)
+                            (loop ($list-rest keys) ($dict-with acc k v))
+                            (loop ($list-rest keys) acc)))))))
+        (loop ($dict-keys al) (dict)))))
+
+   (map-set
+    (lambda (f s)
+      ($list->set (map-list f ($set->list s)))))
+
+   (filter-set
+    (lambda (pred s)
+      ($list->set (filter-list pred ($set->list s)))))
+
+   (fold-set
+    (lambda (f init s)
+      (fold-list f init ($set->list s))))
+
+   (any-set?
+    (lambda (pred s)
+      (any-list? pred ($set->list s))))
+
+   (all-set?
+    (lambda (pred s)
+      (all-list? pred ($set->list s))))
+
+   (range
+    (lambda (start end . rest)
+      ($range start end (if ($list-null? rest) 1 ($list-first rest)))))
+
+   (vector
+    (lambda (. args)
+      ($list->vector args)))
+
+   (vector?
+    (lambda (x)
+      ($vector? x)))
+
+   (vector=?
+    (lambda (a b)
+      ($vector=? a b)))
+
+   (vector!=?
+    (lambda (a b)
+      ($vector!=? a b)))
+
+   (vector-nth
+    (lambda (v i)
+      ($vector-nth v i)))
+
+   (vector-length
+    (lambda (v)
+      ($vector-length v)))
+
+   (vector-with
+    (lambda (v i val)
+      ($vector-with v i val)))
+
+   (vector-slice
+    (lambda (v start . rest)
+      (if ($list-null? rest)
+          ($vector-slice v start ($vector-length v))
+          ($vector-slice v start ($list-first rest)))))
+
+   (vector-concat
+    (lambda (a b)
+      ($vector-concat a b)))
+
+   (vector-empty?
+    (lambda (v)
+      ($vector-empty? v)))
+
+   (vector-member?
+    (lambda (v x)
+      ($vector-member? v x)))
+
+   (vector-index
+    (lambda (v x)
+      ($vector-index v x)))
+
+   (vector->list
+    (lambda (v)
+      ($vector->list v)))
+
+   (list->vector
+    (lambda (lst)
+      ($list->vector lst)))
+
+   (map-vector
+    (lambda (f v)
+      (letrec ((loop
+                (lambda (i acc)
+                  (if ($integer=? i ($vector-length v))
+                      ($list->vector ($list-reverse acc))
+                      (loop ($integer+ i 1) ($list-prepend acc (f ($vector-nth v i))))))))
+        (loop 0 (list)))))
+
+   (filter-vector
+    (lambda (pred v)
+      (letrec ((loop
+                (lambda (i acc)
+                  (if ($integer<? i 0)
+                      ($list->vector acc)
+                      (let ((elem ($vector-nth v i)))
+                        (loop ($integer- i 1) (if (pred elem) ($list-prepend acc elem) acc)))))))
+        (loop ($integer- ($vector-length v) 1) (list)))))
+
+   (fold-vector
+    (lambda (f init v)
+      (letrec ((loop
+                (lambda (i acc)
+                  (if ($integer=? i ($vector-length v))
+                      acc
+                      (loop ($integer+ i 1) (f acc ($vector-nth v i)))))))
+        (loop 0 init))))
+
+   (find-vector
+    (lambda (pred v)
+      (letrec ((loop
+                (lambda (i)
+                  (if ($integer=? i ($vector-length v))
+                      #none
+                      (let ((elem ($vector-nth v i)))
+                        (if (pred elem)
+                            elem
+                            (loop ($integer+ i 1))))))))
+        (loop 0))))
+
+   (any-vector?
+    (lambda (pred v)
+      (letrec ((loop
+                (lambda (i)
+                  (if ($integer=? i ($vector-length v))
+                      #f
+                      (if (pred ($vector-nth v i))
+                          #t
+                          (loop ($integer+ i 1)))))))
+        (loop 0))))
+
+   (all-vector?
+    (lambda (pred v)
+      (letrec ((loop
+                (lambda (i)
+                  (if ($integer=? i ($vector-length v))
+                      #t
+                      (if (pred ($vector-nth v i))
+                          (loop ($integer+ i 1))
+                          #f)))))
+        (loop 0))))
+
+   (sort-vector
+    (lambda (cmp v)
+      ($list->vector (sort-list cmp ($vector->list v))))))
   (dict "function?" function?
         "function=?" function=?
         "function!=?" function!=?
