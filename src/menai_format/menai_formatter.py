@@ -253,6 +253,26 @@ class Renderer:
 
         return result
 
+    def _append_close(self, lines: list[str]) -> None:
+        """
+        Append the closing paren to the last line.
+
+        A rendered list may end with a comment: a comment that trails the last
+        element of the list is an element in its own right.  A comment runs to
+        the end of its line, so the closing paren cannot share that line without
+        being swallowed into the comment text.  It is placed on its own line,
+        aligned with the last line of code, instead.
+        """
+        if lines and lines[-1].lstrip().startswith(';'):
+            indent = next(
+                (len(line) - len(line.lstrip()) for line in reversed(lines) if line.strip() and not line.lstrip().startswith(';')),
+                0,
+            )
+            lines.append(' ' * indent + ')')
+
+        else:
+            lines[-1] += ')'
+
     def _render_node(self, node: ASTNode, column: int, trailing: int = 0) -> str:
         """Render a single node starting at the given column, with trailing columns reserved after it."""
         if isinstance(node, ASTAtom):
@@ -375,7 +395,7 @@ class Renderer:
             inner_col = column + self.options.indent_size
             lines = [f'({head_str}']
             lines.extend(self._render_tail(body, inner_col, trailing + 1))
-            lines[-1] += ')'
+            self._append_close(lines)
             return '\n'.join(lines)
 
         if len(body) == 1 and not isinstance(body[0], ASTComment):
@@ -394,7 +414,7 @@ class Renderer:
             lines = [f'({head_str} {first_str}']
             lines.extend(self._render_tail(body[1:], first_col, trailing + 1))
 
-        lines[-1] += ')'
+        self._append_close(lines)
         return '\n'.join(lines)
 
     def _render_dict(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
@@ -436,7 +456,7 @@ class Renderer:
         lines = [f'({head_str} {entries[0]}']
         lines.extend(' ' * key_col + entry if entry else '' for entry in entries[1:])
 
-        lines[-1] += ')'
+        self._append_close(lines)
         return '\n'.join(lines)
 
     def _last_pair_end(self, body: list[ASTNode | ASTComment]) -> ASTNode | None:
@@ -546,7 +566,7 @@ class Renderer:
         if tail:
             lines.extend(self._render_tail(tail, inner_col, trailing + 1))
 
-        lines[-1] += ')'
+        self._append_close(lines)
         return '\n'.join(lines)
 
     def _render_bindings(self, bindings: ASTList, column: int, trailing: int = 0) -> list[str]:
@@ -597,7 +617,7 @@ class Renderer:
         for comment in comments:
             lines.append(' ' * binding_col + comment)
 
-        lines[-1] += ')'
+        self._append_close(lines)
         return lines
 
     def _render_binding(self, binding: ASTNode, column: int, trailing: int = 0) -> str:
@@ -660,7 +680,7 @@ class Renderer:
             lines = [f'(lambda {params_str}']
             lines.extend(self._render_tail(body[1:], inner_col, trailing + 1))
 
-        lines[-1] += ')'
+        self._append_close(lines)
         return '\n'.join(lines)
 
     def _render_match(self, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
@@ -680,7 +700,7 @@ class Renderer:
             lines = [f'(match {scrutinee_str}']
             lines.extend(self._render_tail(body[1:], inner_col, trailing + 1, self._render_arm))
 
-        lines[-1] += ')'
+        self._append_close(lines)
         return '\n'.join(lines)
 
     def _render_arm(self, arm: ASTNode, column: int, trailing: int = 0) -> str:

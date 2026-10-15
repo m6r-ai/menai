@@ -336,6 +336,47 @@ class TestComments:
         result = format_code('; header\n(foo a b)')
         assert result.startswith('; header\n(foo a b)')
 
+    def test_trailing_comment_closes_the_list(self):
+        """A comment trailing the last argument does not swallow the closing paren."""
+        result = format_code('(foo aaaa bbbb cccc ; note\n)', max_width=10)
+        assert result == '(foo aaaa\n     bbbb\n     cccc\n     ; note\n     )\n'
+
+    def test_trailing_comment_keeps_token_stream(self):
+        """The closing paren after a trailing comment is still a token."""
+        source = '(list (foo 1) ; year\n (bar 2) ; month\n (baz 3) ; day\n)'
+        result = format_code(source)
+        assert token_texts(source) == token_texts(result)
+
+    def test_trailing_comment_in_binding(self):
+        """A comment trailing the last binding does not swallow the closing paren."""
+        source = '(letrec ((a 1) ; note\n) a)'
+        result = format_code(source, max_width=10)
+        assert token_texts(source) == token_texts(result)
+
+    def test_trailing_comment_in_lambda(self):
+        """A comment trailing a lambda body does not swallow the closing paren."""
+        source = '(lambda (x) (foo x) ; note\n)'
+        result = format_code(source, max_width=10)
+        assert token_texts(source) == token_texts(result)
+
+    def test_trailing_comment_in_match(self):
+        """A comment trailing the last match arm does not swallow the closing paren."""
+        source = '(match x (1 "one") (_ "other") ; note\n)'
+        result = format_code(source)
+        assert token_texts(source) == token_texts(result)
+
+    def test_trailing_comment_in_dict(self):
+        """A comment trailing the last dict pair does not swallow the closing paren."""
+        source = '(dict "a" 1 "b" 2 ; note\n)'
+        result = format_code(source, max_width=10)
+        assert token_texts(source) == token_texts(result)
+
+    def test_trailing_comment_is_idempotent(self):
+        """Formatting a list with a trailing comment twice equals formatting once."""
+        source = '(foo aaaa bbbb cccc ; note\n)'
+        once = format_code(source, max_width=10)
+        assert format_code(once, max_width=10) == once
+
 
 class TestBlankLines:
     """Blank lines between elements are preserved, up to two."""
