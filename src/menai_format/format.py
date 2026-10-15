@@ -55,8 +55,8 @@ Examples:
     parser.add_argument(
         '--max-width',
         type=int,
-        default=100,
-        help='Maximum column for compact formatting (default: 100)'
+        default=120,
+        help='Maximum column for compact formatting (default: 120)'
     )
     parser.add_argument(
         '--comment-spacing',

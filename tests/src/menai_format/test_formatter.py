@@ -60,14 +60,14 @@ class TestCompact:
 
     def test_compact_at_width(self):
         """A list whose rendering ends exactly at the width is compact."""
-        code = '(foo ' + 'a' * 92 + ' b)'
-        assert len(code) == 100
+        code = '(foo ' + 'a' * 112 + ' b)'
+        assert len(code) == 120
         assert format_code(code) == code + '\n'
 
     def test_multiline_over_width(self):
         """A list whose rendering ends past the width is multi-line."""
-        code = '(foo ' + 'a' * 93 + ' b)'
-        assert len(code) == 101
+        code = '(foo ' + 'a' * 113 + ' b)'
+        assert len(code) == 121
         result = format_code(code)
         assert result.count('\n') > 1
 
@@ -77,10 +77,10 @@ class TestCompact:
 
 
 class TestGeneralList:
-    """A multi-line general list aligns arguments under the first argument."""
+    """A multi-line general list of atoms aligns arguments under the first argument."""
 
     def test_arguments_align_under_first(self):
-        """Each argument after the first goes on its own line under the first."""
+        """With no nested argument, each argument after the first goes under the first."""
         result = format_code('(foo aaaa bbbb cccc)', max_width=10)
         assert result == '(foo aaaa\n     bbbb\n     cccc)\n'
 
@@ -105,20 +105,25 @@ class TestGeneralList:
 
 
 class TestPeers:
-    """A general list whose arguments are all nested forms breaks after the head."""
+    """A general list with a nested argument breaks after the head."""
 
-    def test_all_nested_arguments_break_after_head(self):
-        """A list of nested peers puts each on its own line indented by two."""
+    def test_nested_arguments_break_after_head(self):
+        """A list of nested arguments puts each on its own line indented by two."""
         result = format_code('(list (foo aaaa bbbb) (bar cccc dddd))', max_width=20)
         assert result == '(list\n  (foo aaaa bbbb)\n  (bar cccc dddd))\n'
 
-    def test_atom_argument_keeps_the_alignment_rule(self):
-        """A list with an atom argument aligns under the first argument."""
+    def test_one_nested_argument_breaks_after_head(self):
+        """A single nested argument breaks after the head; the atom arguments follow it."""
         result = format_code('(list acc (foo aaaa bbbb cccc))', max_width=27)
-        assert result == '(list acc\n      (foo aaaa bbbb cccc))\n'
+        assert result == '(list\n  acc\n  (foo aaaa bbbb cccc))\n'
+
+    def test_all_atom_arguments_align_under_first(self):
+        """A list of atoms aligns under the first argument."""
+        result = format_code('(list aaaa bbbb cccc)', max_width=10)
+        assert result == '(list aaaa\n      bbbb\n      cccc)\n'
 
     def test_if_is_exempt(self):
-        """if keeps its condition on the head line even when all parts are nested."""
+        """if keeps its condition on the head line even when a part is nested."""
         result = format_code('(if (foo aaaa) (bar bbbb) (baz cccc))', max_width=20)
         assert result == '(if (foo aaaa)\n    (bar bbbb)\n    (baz cccc))\n'
 
@@ -148,10 +153,10 @@ class TestCompoundForms:
         """A binding named loop is an ordinary call, compact when it fits."""
         assert format_code('(loop (integer+ i 1) acc)') == '(loop (integer+ i 1) acc)\n'
 
-    def test_loop_follows_the_general_list_rule(self):
-        """A binding named loop aligns its arguments under the first when it does not fit."""
+    def test_loop_breaks_after_head_when_it_does_not_fit(self):
+        """A binding named loop breaks after the head when it has a nested argument."""
         result = format_code('(loop (integer+ i 1) aaaaaaaaaaaaaaaaaaaa)', max_width=20)
-        assert result == '(loop (integer+ i 1)\n      aaaaaaaaaaaaaaaaaaaa)\n'
+        assert result == '(loop\n  (integer+ i 1)\n  aaaaaaaaaaaaaaaaaaaa)\n'
 
     def test_lambda_with_nested_body_is_multiline(self):
         """A lambda with a nested body expands, body indented by two."""
@@ -281,6 +286,22 @@ class TestBindings:
         code = '(let ((name-that-is-quite-long (foo a b c d e f g h))) x)'
         result = format_code(code, max_width=30)
         assert '(name-that-is-quite-long\n' in result
+
+    def test_if_value_with_nested_body_is_multiline(self):
+        """A binding whose value is an if with a nested body expands, even when it fits."""
+        code = '(let ((a (if (foo x) (bar y) (baz z)))) a)'
+        result = format_code(code)
+        assert result == (
+            '(let ((a\n'
+            '       (if (foo x)\n'
+            '           (bar y)\n'
+            '           (baz z))))\n'
+            '  a)\n'
+        )
+
+    def test_if_value_of_atoms_is_compact(self):
+        """A binding whose value is an if of atoms stays compact."""
+        assert format_code('(let ((a (if p q r))) a)') == '(let ((a (if p q r))) a)\n'
 
 
 class TestBindingList:

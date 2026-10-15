@@ -18,7 +18,7 @@ from menai.ast.menai_token import MenaiToken, MenaiTokenType
 class FormatOptions:
     """Options for controlling formatter behavior."""
     indent_size: int = 2
-    max_width: int = 100
+    max_width: int = 120
     comment_spacing: int = 2
 
 
@@ -306,6 +306,9 @@ class Renderer:
             if any(elem.blank_before for elem in node.elements[1:]):
                 return None
 
+            if self._is_compound(node):
+                return None
+
             head = node.elements[0] if node.elements else None
             if isinstance(head, ASTAtom):
                 if head.value == 'match':
@@ -337,8 +340,17 @@ class Renderer:
 
         return any(isinstance(elem, (ASTList, ASTQuote)) for elem in body)
 
-    def _all_peers(self, head: ASTNode, body: list[ASTNode | ASTComment]) -> bool:
-        """Return whether a general list is a list of peers, each on its own line."""
+    def _is_compound(self, node: ASTNode) -> bool:
+        """Return whether a node is a compound form with a nested body, so it must be multi-line."""
+        if not isinstance(node, ASTList) or not node.elements:
+            return False
+
+        head = node.elements[0]
+        head_name = head.value if isinstance(head, ASTAtom) else None
+        return head_name in COMPOUND_FORMS and self._has_nested_body(head_name, node.elements[1:])
+
+    def _break_after_head(self, head: ASTNode, body: list[ASTNode | ASTComment]) -> bool:
+        """Return whether a general list breaks after the head, each argument on its own line."""
         head_name = head.value if isinstance(head, ASTAtom) else None
         if head_name in ALIGN_ONLY_FORMS:
             return False
@@ -346,7 +358,7 @@ class Renderer:
         if len(body) < 2:
             return False
 
-        return all(isinstance(elem, (ASTList, ASTQuote)) for elem in body)
+        return any(isinstance(elem, (ASTList, ASTQuote)) for elem in body)
 
     def _render_list(self, lst: ASTList, column: int, trailing: int = 0) -> str:
         """Render a list, choosing compact or multi-line layout, with trailing columns reserved after it."""
@@ -364,7 +376,7 @@ class Renderer:
             return self._render_match(body, column, trailing)
 
         compact = self._try_compact(lst)
-        compound = head_name in COMPOUND_FORMS and self._has_nested_body(head_name, body)
+        compound = self._is_compound(lst)
 
         if (
             compact is not None
@@ -385,13 +397,13 @@ class Renderer:
         return self._render_general(head, body, column, trailing)
 
     def _render_general(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
-        """Render a general list: head and first argument, then one per line, or head alone when there is one argument."""
+        """Render a general list: break after the head when an argument nests, else align under the first argument."""
         head_str = self._render_node(head, column + 1)
 
         if not body:
             return f'({head_str})'
 
-        if self._all_peers(head, body):
+        if self._break_after_head(head, body):
             inner_col = column + self.options.indent_size
             lines = [f'({head_str}']
             lines.extend(self._render_tail(body, inner_col, trailing + 1))
@@ -648,6 +660,7 @@ class Renderer:
         if (
             compact is not None
             and not lambda_value
+            and not self._is_compound(value)
             and inline_col + len(compact) + 1 + trailing <= self.options.max_width
         ):
             return f'({name.value} {compact})'

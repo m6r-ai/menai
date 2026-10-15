@@ -38,7 +38,7 @@ menai-format --check src/menai/prelude.menai src/menai/stdlib/*.menai
 | `-o, --output` | stdout | Output file |
 | `-i, --in-place` | false | Format the input file in place |
 | `--indent` | 2 | Spaces per indentation level |
-| `--max-width` | 100 | Column at which a form is laid out multi-line |
+| `--max-width` | 120 | Column at which a form is laid out multi-line |
 | `--comment-spacing` | 2 | Spaces before an end-of-line comment |
 | `--check` | false | Exit non-zero if the file needs formatting |
 
