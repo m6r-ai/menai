@@ -6,6 +6,26 @@ from menai.menai_error import MenaiTokenError
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
 
 
+# Characters that may appear inside a symbol: ASCII letters, ASCII digits, and
+# the operator characters.  Keeping them in one frozenset lets a symbol be
+# scanned with a single O(1) membership test per character, with no method call
+# on the hot path.  Non-ASCII letters are handled by the caller's fallback.
+_SYMBOL_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789"
+    "-+*/%<>=!&|^~?_.$:"
+)
+
+# Whitespace characters other than newline, which is tracked separately for
+# line numbering.
+_WHITESPACE_CHARS = frozenset('\t\v\f\r ')
+
+# Non-whitespace characters that terminate a token.  Whitespace is checked
+# separately by str.isspace so that non-ASCII whitespace is also a delimiter.
+_DELIMITER_CHARS = frozenset("()'\";,")
+
+
 class MenaiLexer:
     """Lexes Menai expressions into tokens with detailed error messages."""
 
@@ -80,17 +100,20 @@ class MenaiLexer:
         self._column = 1
         self._preserve_comments = preserve_comments
 
-        while self._position < len(self._expression):
-            char = self._expression[self._position]
+        # Hoist the expression length into a local: the loop condition and every
+        # handler would otherwise re-read the attribute on each iteration.
+        length = len(expression)
+
+        while self._position < length:
+            char_code = ord(expression[self._position])
 
             # Use jump table for ASCII, fallback to slow path for non-ASCII
-            char_code = ord(char)
             if char_code < 128:
                 self._jump_table[char_code]()
                 continue
 
             # Non-ASCII characters - use slow path
-            if char.isalpha():
+            if expression[self._position].isalpha():
                 self._handle_symbol()
                 continue
 
@@ -156,9 +179,19 @@ class MenaiLexer:
         self._position += 1
 
     def _handle_whitespace(self) -> None:
-        """Handle whitespace character (not newline)."""
-        self._column += 1
-        self._position += 1
+        """Handle a run of whitespace characters (not newline)."""
+        expression = self._expression
+        length = len(expression)
+        pos = self._position
+
+        # Whitespace carries no tokens, so consume the whole run in one pass
+        # rather than dispatching once per character.  Newline is excluded: it
+        # is tracked separately for line numbering.
+        while pos < length and expression[pos] in _WHITESPACE_CHARS:
+            pos += 1
+
+        self._column += pos - self._position
+        self._position = pos
 
     def _handle_comment(self) -> None:
         """Handle comment - skip or preserve based on mode."""
@@ -394,19 +427,25 @@ class MenaiLexer:
         start_line = self._line
         start_col = self._column
 
-        i = self._position
+        expression = self._expression
+        length = len(expression)
+        start = self._position
+        i = start
 
-        while i < len(self._expression):
-            char = self._expression[i]
+        while i < length:
+            char = expression[i]
 
-            # Symbol characters: letters, digits, hyphens, and operator chars
-            if not char.isalnum() and char not in '-+*/%<>=!&|^~?_.$:':
-                break
+            # Symbol characters: letters, digits, hyphens, and operator chars.
+            # The frozenset covers every ASCII case in one O(1) test; the
+            # isalnum fallback is only reached for non-ASCII letters.
+            if char in _SYMBOL_CHARS or char.isalnum():
+                i += 1
+                continue
 
-            i += 1
+            break
 
-        if i < len(self._expression):
-            char = self._expression[i]
+        if i < length:
+            char = expression[i]
             if not self._is_delimiter(char):
                 char_code = ord(char)
                 if char_code < 32:
@@ -427,16 +466,15 @@ class MenaiLexer:
                     message=f"Invalid character in symbol: {char}",
                     line=self._line,
                     column=i,
-                    received=f"Expression: {self._expression[self._position:i+1]}",
+                    received=f"Expression: {expression[start:i+1]}",
                     expected="Valid symbol characters: letters, digits, and specific symbols",
                     suggestion=f"Remove or replace invalid character '{char}' in symbol"
                 )
 
-        symbol = self._expression[self._position:i]
-        length = i - self._position
-        self._tokens.append(MenaiToken(MenaiTokenType.SYMBOL, symbol, length, start_line, start_col))
-        self._column += length
-        self._position += length
+        symbol_length = i - start
+        self._tokens.append(MenaiToken(MenaiTokenType.SYMBOL, expression[start:i], symbol_length, start_line, start_col))
+        self._column += symbol_length
+        self._position = i
 
     def _handle_invalid_char(self) -> None:
         """Handle invalid character with helpful error message."""
@@ -795,7 +833,7 @@ class MenaiLexer:
 
     def _is_delimiter(self, char: str) -> bool:
         """Check if character is a token delimiter."""
-        return char.isspace() or char in "()'\";,"
+        return char in _DELIMITER_CHARS or char.isspace()
 
     def _parse_complex_literal(self, token: str, start_line: int, start_col: int) -> complex:
         """

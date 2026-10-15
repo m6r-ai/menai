@@ -13,7 +13,7 @@ from menai.ast.menai_ast import (
 )
 
 
-@dataclass
+@dataclass(slots=True)
 class ParenStackFrame:
     """Represents an unclosed opening parenthesis with context."""
     line: int
@@ -150,7 +150,8 @@ class MenaiASTBuilder:
 
     def _parse_expression(self) -> MenaiASTNode:
         """Parse a single expression with detailed error reporting."""
-        token = cast(MenaiToken, self.current_token)
+        token = self.current_token
+        assert token is not None, "Should not be called at EOF"
 
         # Our if table is quicker than using a jump table.  As we've got to do this sequentially we
         # try to order the checks by expected frequency.
@@ -191,13 +192,13 @@ class MenaiASTBuilder:
         # Enhanced error for unexpected tokens
         assert token.type == MenaiTokenType.RPAREN, f"Unexpected token type ({token.type}) encountered"
         token_value = token.value
-        token_type = token.type.name
+        token_type_name = token.type.name
 
         raise MenaiASTBuildError(
             message=f"Unexpected token: {token_value}",
             line=token.line,
             column=token.column,
-            received=f"Token: {token_value} (type: {token_type})",
+            received=f"Token: {token_value} (type: {token_type_name})",
             expected="Number, string, boolean, symbol, '(', or '",
             example="Valid starts: 42, \"hello\", #t, symbol, (, '",
             suggestion="List expressions must start with '(' and quoted expressions with '",
@@ -911,7 +912,8 @@ class MenaiASTBuilder:
     def _parse_list(self) -> MenaiASTList:
         """Parse (element1 element2 ...) with enhanced error tracking."""
         # Push opening paren onto tracking stack
-        current_token = cast(MenaiToken, self.current_token)
+        current_token = self.current_token
+        assert current_token is not None, "Should not be called at EOF"
         start_line = current_token.line
         start_col = current_token.column
         frame = self._push_paren_frame(start_line, start_col)
@@ -921,18 +923,29 @@ class MenaiASTBuilder:
         elements: list[MenaiASTNode] = []
 
         # Check if this is a 'let' form to enable special tracking
-        if (
-            self.current_token and
-            self.current_token.type == MenaiTokenType.SYMBOL and
-            self.current_token.value in ('let', 'let*', 'letrec')
-        ):
+        head = self.current_token
+        if head is not None and head.type == MenaiTokenType.SYMBOL and head.value in ('let', 'let*', 'letrec'):
             return self._parse_let_with_tracking(start_line, start_col, frame, elements)
 
         # Regular list parsing
-        while self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
-            self._mark_element_start()
+        # The frame bookkeeping that _mark_element_start and
+        # _update_frame_after_element perform is inlined here: it runs once per
+        # element, and the frame is known to be the one just pushed.
+        # The loop reads the current token once per iteration rather than twice
+        # (once for the None check, once for the type check).
+        while True:
+            token = self.current_token
+            if token is None or token.type == MenaiTokenType.RPAREN:
+                break
+
+            frame.incomplete_element_line = token.line
+            frame.incomplete_element_column = token.column
             elements.append(self._parse_expression())
-            self._update_frame_after_element()
+            frame.elements_parsed += 1
+            frame.last_complete_line = self.last_token_end_line
+            frame.last_complete_column = self.last_token_end_column
+            frame.incomplete_element_line = None
+            frame.incomplete_element_column = None
 
         if self.current_token is None:
             # Use enhanced error with stack trace
@@ -1453,16 +1466,18 @@ class MenaiASTBuilder:
     def _advance(self) -> None:
         """Move to the next token."""
         # Track where the current token ends before advancing
-        assert self.current_token is not None, "Cannot advance when current token is None"
+        token = self.current_token
+        assert token is not None, "Cannot advance when current token is None"
         # For simplicity, just track the end as the token's line/column + length
         # (This is approximate but good enough for error messages)
-        self.last_token_end_line = self.current_token.line
-        self.last_token_end_column = self.current_token.column + self.current_token.length
+        self.last_token_end_line = token.line
+        self.last_token_end_column = token.column + token.length
 
-        self.pos += 1
-        tokens = cast(list[MenaiToken], self.tokens)
-        if self.pos < len(tokens):
-            self.current_token = tokens[self.pos]
+        pos = self.pos + 1
+        self.pos = pos
+        tokens = self.tokens
+        if tokens is not None and pos < len(tokens):
+            self.current_token = tokens[pos]
 
         else:
             self.current_token = None

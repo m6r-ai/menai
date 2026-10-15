@@ -20,7 +20,7 @@ class MenaiTokenType(Enum):
     NONE = "NONE"
 
 
-@dataclass
+@dataclass(slots=True)
 class MenaiToken:
     """Represents a single token in an Menai expression."""
     type: MenaiTokenType
