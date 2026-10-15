@@ -41,30 +41,34 @@
                      raw
                      (if (integer=? method 8)
                          (decompress raw)
-                         (error (string-concat
-                                  "Unsupported ZIP: compression method "
-                                  (integer->string method)
-                                  " is not supported (only stored and deflate)"))))))
+                         (error
+                           (string-concat
+                             "Unsupported ZIP: compression method "
+                             (integer->string method)
+                             " is not supported (only stored and deflate)"))))))
             (let ((expected (dict-get entry "crc32"))
                   (actual (bytes-crc32 content)))
               (if (integer=? expected actual)
                   content
-                  (error (string-concat
-                           "ZIP entry \""
-                           (dict-get entry "name")
-                           "\" checksum mismatch: expected "
-                           (integer->string expected)
-                           " but computed "
-                           (integer->string actual))))))))))
+                  (error
+                    (string-concat
+                      "ZIP entry \""
+                      (dict-get entry "name")
+                      "\" checksum mismatch: expected "
+                      (integer->string expected)
+                      " but computed "
+                      (integer->string actual))))))))))
 
    ; Fill in one entry's "content" field from the archive.  Directory entries
    ; carry no data, so their content is #none.
    (with-content
     (lambda (b entry decompress)
-      (dict-with entry "content"
-                (if (dict-get entry "is-directory")
-                    #none
-                    (entry-content b entry decompress)))))
+      (dict-with
+        entry
+        "content"
+        (if (dict-get entry "is-directory")
+            #none
+            (entry-content b entry decompress)))))
 
    ; Read the archive's entries and decompress every one of them.
    (read-entries
@@ -72,8 +76,10 @@
       (if (bytes? b)
           (let ((listed ((:: entries-lib entries) b)))
             (let ((decompress (:: deflate-lib decompress)))
-              (map-list (lambda (e) (with-content b e decompress))
-                        (dict-get listed "entries"))))
+              (map-list
+                (lambda (e)
+                  (with-content b e decompress))
+                (dict-get listed "entries"))))
           (error "zip-extract: extract expects a bytes value"))))
 
    ; Extract the whole archive.  Returns a dict with "entries" (a list of entry
@@ -84,19 +90,21 @@
       (if (bytes? b)
           (let ((listed ((:: entries-lib entries) b)))
             (let ((decompress (:: deflate-lib decompress)))
-              (dict
-                "entries" (map-list
-                            (lambda (e) (with-content b e decompress))
-                            (dict-get listed "entries"))
-                "meta" (dict-get listed "meta"))))
+              (dict "entries" (map-list
+                                (lambda (e)
+                                  (with-content b e decompress))
+                                (dict-get listed "entries"))
+                    "meta" (dict-get listed "meta"))))
           (error "zip-extract: extract expects a bytes value"))))
 
    ; The entries whose name equals `name`, with contents filled in, in
    ; central-directory order.
    (matching-entries
     (lambda (b name)
-      (filter-list (lambda (e) (string=? (dict-get e "name") name))
-                   (read-entries b))))
+      (filter-list
+        (lambda (e)
+          (string=? (dict-get e "name") name))
+        (read-entries b))))
 
    ; Extract every entry whose name equals `name`.  Returns a list of matching
    ; entry dicts, in central-directory order, each with its "content" filled in.
@@ -116,18 +124,16 @@
       (if (string? name)
           (let ((matches (matching-entries b name)))
             (if (list-null? matches)
-                (error (string-concat
-                         "zip-extract: no entry named \""
-                         name
-                         "\""))
+                (error (string-concat "zip-extract: no entry named \"" name "\""))
                 (if (list-null? (list-rest matches))
                     (list-first matches)
-                    (error (string-concat
-                             "zip-extract: entry name \""
-                             name
-                             "\" is ambiguous: "
-                             (integer->string (list-length matches))
-                             " entries match")))))
+                    (error
+                      (string-concat
+                        "zip-extract: entry name \""
+                        name
+                        "\" is ambiguous: "
+                        (integer->string (list-length matches))
+                        " entries match")))))
           (error "zip-extract: extract-entry expects a string entry name")))))
 
   (export extract extract-entry extract-matching))

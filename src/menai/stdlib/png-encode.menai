@@ -21,10 +21,11 @@
           2
           (if (integer=? channels 4)
               6
-              (error (string-concat
-                       "png-encode: unsupported channel count "
-                       (integer->string channels)
-                       " (only 3 (RGB) or 4 (RGBA) are supported)"))))))
+              (error
+                (string-concat
+                  "png-encode: unsupported channel count "
+                  (integer->string channels)
+                  " (only 3 (RGB) or 4 (RGBA) are supported)"))))))
 
    ; Build one chunk: length, type, data, and a CRC-32 of type and data.
    (build-chunk
@@ -53,16 +54,13 @@
     (lambda (pixel channels)
       (if (vector? pixel)
           (if (integer=? (vector-length pixel) channels)
-              (letrec ((loop (lambda (c acc)
-                               (if (integer>=? c channels)
-                                   acc
-                                   (loop (integer+ c 1)
-                                         (list-prepend acc (vector-nth pixel c)))))))
+              (letrec ((loop
+                        (lambda (c acc)
+                          (if (integer>=? c channels)
+                              acc
+                              (loop (integer+ c 1) (list-prepend acc (vector-nth pixel c)))))))
                 (list-reverse (loop 0 (list))))
-              (error (string-concat
-                       "png-encode: each pixel must have "
-                       (integer->string channels)
-                       " channels")))
+              (error (string-concat "png-encode: each pixel must have " (integer->string channels) " channels")))
           (error "png-encode: each pixel must be a vector of channels"))))
 
    ; Build the filtered scanline data: each row is a filter byte (0) followed
@@ -78,14 +76,13 @@
             ((row-bytes
               (lambda (row)
                 (list->bytes
-                  (letrec ((loop (lambda (x acc)
-                                   (if (integer>=? x width)
-                                       acc
-                                       (loop (integer+ x 1)
-                                             (list-concat acc
-                                                          (encode-pixel (vector-nth row x)
-                                                                        channels)))))))
+                  (letrec ((loop
+                            (lambda (x acc)
+                              (if (integer>=? x width)
+                                  acc
+                                  (loop (integer+ x 1) (list-concat acc (encode-pixel (vector-nth row x) channels)))))))
                     (loop 0 (list 0))))))
+
              (loop
               (lambda (y acc)
                 (if (integer>=? y height)
@@ -93,8 +90,7 @@
                     (let ((row (vector-nth pixels y)))
                       (if (vector? row)
                           (if (integer=? (vector-length row) width)
-                              (loop (integer+ y 1)
-                                    (list-prepend acc (row-bytes row)))
+                              (loop (integer+ y 1) (list-prepend acc (row-bytes row)))
                               (error "png-encode: each row must have \"width\" pixels"))
                           (error "png-encode: each row must be a vector of pixels")))))))
             (loop 0 (list)))
@@ -126,7 +122,10 @@
             (if (dict? header)
                 (let ((width (dict-get header "width"))
                       (height (dict-get header "height")))
-                  (let ((channels (if (dict? meta) (dict-get meta "channels") 3)))
+                  (let ((channels
+                         (if (dict? meta)
+                             (dict-get meta "channels")
+                             3)))
                     (let ((colour-type (colour-type-for channels)))
                       (let ((scanlines (build-scanlines pixels width height channels)))
                         (let ((compressed ((:: zlib-lib compress) scanlines)))

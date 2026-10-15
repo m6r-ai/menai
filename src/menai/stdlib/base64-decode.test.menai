@@ -15,10 +15,11 @@
    ; Build a bytes value containing every byte value from 0 to 255.
    (all-bytes
     (lambda ()
-      (letrec ((mk (lambda (i acc)
-                     (if (integer>=? i 256)
-                         (list->bytes (list-reverse acc))
-                         (mk (integer+ i 1) (list-prepend acc i))))))
+      (letrec ((mk
+                (lambda (i acc)
+                  (if (integer>=? i 256)
+                      (list->bytes (list-reverse acc))
+                      (mk (integer+ i 1) (list-prepend acc i))))))
         (mk 0 (list)))))
 
    ; The empty input decodes to the empty bytes value.
@@ -79,14 +80,12 @@
    ; The standard variant decodes + and /.
    (test-variant-standard-alphabet
     (lambda ()
-      (assert-equal (decode "+//+" (dv 'standard))
-                    (list->bytes (list 251 255 254)))))
+      (assert-equal (decode "+//+" (dv 'standard)) (list->bytes (list 251 255 254)))))
 
    ; The url variant decodes - and _.
    (test-variant-url-alphabet
     (lambda ()
-      (assert-equal (decode "-__-" (dv 'url))
-                    (list->bytes (list 251 255 254)))))
+      (assert-equal (decode "-__-" (dv 'url)) (list->bytes (list 251 255 254)))))
 
    ; The standard-unpadded variant decodes input without padding.
    (test-variant-standard-unpadded
@@ -106,8 +105,7 @@
    ; Text round-trips through encode then decode unchanged.
    (test-round-trip-text
     (lambda ()
-      (assert-equal (decode (encode (string->bytes "hello world")))
-                    (string->bytes "hello world"))))
+      (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
 
    ; Every byte value round-trips through the standard variant.
    (test-round-trip-all-bytes-standard
@@ -188,7 +186,8 @@
 
    (tests
     (list
-      (list "rfc-4648-vectors"
+      (list
+        "rfc-4648-vectors"
         (list
           (expect-pass "empty input" test-empty-input)
           (expect-pass "Zg==" test-vector-zg)
@@ -198,13 +197,15 @@
           (expect-pass "Zm9vYmE=" test-vector-zm9vyme)
           (expect-pass "Zm9vYmFy" test-vector-zm9vymfy)))
 
-      (list "padding"
+      (list
+        "padding"
         (list
           (expect-pass "one padding character yields two bytes" test-padding-one)
           (expect-pass "two padding characters yields one byte" test-padding-two)
           (expect-pass "no padding yields three bytes" test-padding-none)))
 
-      (list "variants"
+      (list
+        "variants"
         (list
           (expect-pass "standard is the default" test-variant-standard-default)
           (expect-pass "standard decodes + and /" test-variant-standard-alphabet)
@@ -213,26 +214,38 @@
           (expect-pass "url-unpadded decodes without padding" test-variant-url-unpadded)
           (expect-pass "unpadded accepts a length that is a multiple of four" test-variant-unpadded-multiple-of-four)))
 
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "text" test-round-trip-text)
           (expect-pass "every byte value, standard" test-round-trip-all-bytes-standard)
           (expect-pass "every byte value, url-unpadded" test-round-trip-all-bytes-url-unpadded)))
 
-      (list "errors"
+      (list
+        "errors"
         (list
           (expect-fail "length not a multiple of four" test-rejects-bad-length "not a multiple of four")
           (expect-fail "invalid character" test-rejects-invalid-character "invalid character")
-          (expect-fail "url-safe alphabet is rejected by the standard variant" test-rejects-url-alphabet-in-standard "invalid character")
-          (expect-fail "standard alphabet is rejected by the url variant" test-rejects-standard-alphabet-in-url "invalid character")
+          (expect-fail "url-safe alphabet is rejected by the standard variant"
+                       test-rejects-url-alphabet-in-standard
+                       "invalid character")
+          (expect-fail "standard alphabet is rejected by the url variant"
+                       test-rejects-standard-alphabet-in-url
+                       "invalid character")
           (expect-fail "whitespace is rejected" test-rejects-whitespace "invalid character")
-          (expect-fail "padding in a non-final group" test-rejects-padding-not-final "padding may appear only at the end")
+          (expect-fail "padding in a non-final group"
+                       test-rejects-padding-not-final
+                       "padding may appear only at the end")
           (expect-fail "padding as the third character" test-rejects-padding-third-character "invalid padding")
-          (expect-fail "padding as the second character" test-rejects-padding-second-character "padding may appear only at the end")
+          (expect-fail "padding as the second character"
+                       test-rejects-padding-second-character
+                       "padding may appear only at the end")
           (expect-fail "all padding" test-rejects-all-padding "padding may appear only at the end")
           (expect-fail "unpadded variant rejects padding" test-rejects-padding-in-unpadded "invalid character")
           (expect-fail "padded variant rejects unpadded input" test-rejects-unpadded-in-padded "not a multiple of four")
-          (expect-fail "unpadded variant rejects a length of one mod four" test-rejects-unpadded-length-one "invalid for unpadded Base64")
+          (expect-fail "unpadded variant rejects a length of one mod four"
+                       test-rejects-unpadded-length-one
+                       "invalid for unpadded Base64")
           (expect-fail "rejects a non-string argument" test-rejects-non-string "expects a string"))))))
 
   (export tests))

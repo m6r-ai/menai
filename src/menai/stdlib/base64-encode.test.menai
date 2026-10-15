@@ -15,19 +15,21 @@
    ; Build a bytes value containing every byte value from 0 to 255.
    (all-bytes
     (lambda ()
-      (letrec ((mk (lambda (i acc)
-                     (if (integer>=? i 256)
-                         (list->bytes (list-reverse acc))
-                         (mk (integer+ i 1) (list-prepend acc i))))))
+      (letrec ((mk
+                (lambda (i acc)
+                  (if (integer>=? i 256)
+                      (list->bytes (list-reverse acc))
+                      (mk (integer+ i 1) (list-prepend acc i))))))
         (mk 0 (list)))))
 
    ; Build a bytes value of the given length cycling through byte values.
    (cycling-bytes
     (lambda (n)
-      (letrec ((mk (lambda (i acc)
-                     (if (integer>=? i n)
-                         (list->bytes (list-reverse acc))
-                         (mk (integer+ i 1) (list-prepend acc (integer% i 256)))))))
+      (letrec ((mk
+                (lambda (i acc)
+                  (if (integer>=? i n)
+                      (list->bytes (list-reverse acc))
+                      (mk (integer+ i 1) (list-prepend acc (integer% i 256)))))))
         (mk 0 (list)))))
 
    ; The empty input encodes to the empty string.
@@ -88,8 +90,7 @@
    ; The standard variant is the default.
    (test-variant-standard-default
     (lambda ()
-      (assert-equal (encode (string->bytes "foob") (ev 'standard))
-                    (encode (string->bytes "foob")))))
+      (assert-equal (encode (string->bytes "foob") (ev 'standard)) (encode (string->bytes "foob")))))
 
    ; The standard variant pads.
    (test-variant-standard-pads
@@ -114,8 +115,7 @@
    ; The standard and url variants agree when no special character occurs.
    (test-variant-standard-url-agree
     (lambda ()
-      (assert-equal (encode (string->bytes "foobar") (ev 'standard))
-                    (encode (string->bytes "foobar") (ev 'url)))))
+      (assert-equal (encode (string->bytes "foobar") (ev 'standard)) (encode (string->bytes "foobar") (ev 'url)))))
 
    ; The standard variant uses + and /.
    (test-variant-standard-special
@@ -135,8 +135,7 @@
    ; Text round-trips through encode then decode unchanged.
    (test-round-trip-text
     (lambda ()
-      (assert-equal (decode (encode (string->bytes "hello world")))
-                    (string->bytes "hello world"))))
+      (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
 
    ; Every byte value round-trips through the standard variant.
    (test-round-trip-all-bytes-standard
@@ -180,7 +179,8 @@
 
    (tests
     (list
-      (list "rfc-4648-vectors"
+      (list
+        "rfc-4648-vectors"
         (list
           (expect-pass "empty input" test-vector-empty)
           (expect-pass "f" test-vector-f)
@@ -190,14 +190,16 @@
           (expect-pass "fooba" test-vector-fooba)
           (expect-pass "foobar" test-vector-foobar)))
 
-      (list "padding"
+      (list
+        "padding"
         (list
           (expect-pass "length 3 has no padding" test-padding-length-3)
           (expect-pass "length 4 has one padding character" test-padding-length-4)
           (expect-pass "length 5 has two padding characters" test-padding-length-5)
           (expect-pass "output length is always a multiple of four" test-padding-output-multiple-of-four)))
 
-      (list "variants"
+      (list
+        "variants"
         (list
           (expect-pass "standard is the default" test-variant-standard-default)
           (expect-pass "standard pads" test-variant-standard-pads)
@@ -208,7 +210,8 @@
           (expect-pass "standard uses + and /" test-variant-standard-special)
           (expect-pass "url uses - and _" test-variant-url-special)))
 
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "empty" test-round-trip-empty)
           (expect-pass "text" test-round-trip-text)
@@ -218,7 +221,8 @@
           (expect-pass "every byte value, url-unpadded" test-round-trip-all-bytes-url-unpadded)
           (expect-pass "long payload spanning many groups" test-round-trip-long-payload)))
 
-      (list "errors"
+      (list
+        "errors"
         (list
           (expect-fail "rejects a string argument" test-rejects-string "expects a bytes value")
           (expect-fail "rejects an integer argument" test-rejects-integer "expects a bytes value"))))))

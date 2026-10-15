@@ -18,10 +18,9 @@
 
    (document-xml
     (string->bytes
-      (string-concat
-        "<w:document xmlns:w=\""
-        main-ns
-        "\"><w:body><w:p><w:r><w:t>Hi</w:t></w:r></w:p></w:body></w:document>")))
+      (string-concat "<w:document xmlns:w=\""
+                     main-ns
+                     "\"><w:body><w:p><w:r><w:t>Hi</w:t></w:r></w:p></w:body></w:document>")))
 
    (styles-xml (string->bytes (string-concat "<w:styles xmlns:w=\"" main-ns "\"/>")))
    (numbering-xml (string->bytes (string-concat "<w:numbering xmlns:w=\"" main-ns "\"/>")))
@@ -29,23 +28,24 @@
 
    (rels-xml
     (string->bytes
-      (string-concat
-        "<Relationships xmlns=\""
-        rels-ns
-        "\"><Relationship Id=\"rId5\" Type=\""
-        image-rel
-        "\" Target=\"media/dot.png\"/>"
-        "<Relationship Id=\"rId6\" Type=\""
-        image-rel
-        "\" Target=\"https://example.com/\" TargetMode=\"External\"/></Relationships>")))
+      (string-concat "<Relationships xmlns=\""
+                     rels-ns
+                     "\"><Relationship Id=\"rId5\" Type=\""
+                     image-rel
+                     "\" Target=\"media/dot.png\"/>"
+                     "<Relationship Id=\"rId6\" Type=\""
+                     image-rel
+                     "\" Target=\"https://example.com/\" TargetMode=\"External\"/></Relationships>")))
 
    ; Build a package from a list of (part-name content) pairs, with no metadata.
    (package-of
     (lambda (parts)
-      (create (dict "entries"
-                    (map-list (lambda (p) (dict "name" (list-first p) "content" (list-nth p 1)))
-                              parts)
-                    "meta" (dict)))))
+      (create
+        (dict "entries" (map-list
+                          (lambda (p)
+                            (dict "name" (list-first p) "content" (list-nth p 1)))
+                          parts)
+              "meta" (dict)))))
 
    (minimal (package-of (list (list "word/document.xml" document-xml))))
 
@@ -61,14 +61,24 @@
    ; The document part is decoded as the xml-decode element tree of word/document.xml.
    (test-document-part
     (lambda ()
-      (assert-equal (dict-get (decode minimal) "document")
-                    (dict "tag" "w:document"
-                          "attrs" (dict "xmlns:w" main-ns)
-                          "children" (list (dict "tag" "w:body" "attrs" (dict)
-                                                 "children" (list (dict "tag" "w:p" "attrs" (dict)
-                                                                        "children" (list (dict "tag" "w:r" "attrs" (dict)
-                                                                                               "children" (list (dict "tag" "w:t" "attrs" (dict)
-                                                                                                                      "children" (list "Hi")))))))))))))
+      (assert-equal
+        (dict-get (decode minimal) "document")
+        (dict "tag" "w:document"
+              "attrs" (dict "xmlns:w" main-ns)
+              "children" (list
+                           (dict "tag" "w:body"
+                                 "attrs" (dict)
+                                 "children" (list
+                                              (dict "tag" "w:p"
+                                                    "attrs" (dict)
+                                                    "children" (list
+                                                                 (dict "tag" "w:r"
+                                                                       "attrs" (dict)
+                                                                       "children" (list
+                                                                                    (dict "tag" "w:t"
+                                                                                          "attrs" (dict)
+                                                                                          "children" (list
+                                                                                                       "Hi")))))))))))))
 
    ; styles is #none when the package has no styles part.
    (test-styles-absent
@@ -93,38 +103,36 @@
    ; styles is decoded as an element tree when present.
    (test-styles-decoded
     (lambda ()
-      (assert-equal (dict-get (dict-get (decode full) "styles") "tag")
-                    "w:styles")))
+      (assert-equal (dict-get (dict-get (decode full) "styles") "tag") "w:styles")))
 
    ; numbering is decoded as an element tree when present.
    (test-numbering-decoded
     (lambda ()
-      (assert-equal (dict-get (dict-get (decode full) "numbering") "tag")
-                    "w:numbering")))
+      (assert-equal (dict-get (dict-get (decode full) "numbering") "tag") "w:numbering")))
 
    ; media is decoded to a dict mapping each media part name to its bytes.
    (test-media-decoded
     (lambda ()
-      (assert-equal (dict-get (dict-get (decode full) "media") "word/media/dot.png")
-                    media-bytes)))
+      (assert-equal (dict-get (dict-get (decode full) "media") "word/media/dot.png") media-bytes)))
 
    ; Each relationship id maps to a dict carrying its type, target, and mode.
    (test-relationship-maps-to-dict
     (lambda ()
-      (assert-equal (dict-get (dict-get (decode full) "relationships") "rId5")
-                    (dict "type" image-rel "target" "media/dot.png" "mode" #none))))
+      (assert-equal
+        (dict-get (dict-get (decode full) "relationships") "rId5")
+        (dict "type" image-rel "target" "media/dot.png" "mode" #none))))
 
    ; A relationship's target mode is preserved when present.
    (test-relationship-mode-preserved
     (lambda ()
-      (assert-equal (dict-get (dict-get (dict-get (decode full) "relationships") "rId6") "mode")
-                    "External")))
+      (assert-equal (dict-get (dict-get (dict-get (decode full) "relationships") "rId6") "mode") "External")))
 
    ; A relationship's target is preserved verbatim, including an external URL.
    (test-relationship-target-verbatim
     (lambda ()
-      (assert-equal (dict-get (dict-get (dict-get (decode full) "relationships") "rId6") "target")
-                    "https://example.com/")))
+      (assert-equal
+        (dict-get (dict-get (dict-get (decode full) "relationships") "rId6") "target")
+        "https://example.com/")))
 
    ; A minimal package round-trips through decode then encode then decode unchanged.
    (test-round-trip-minimal
@@ -144,18 +152,17 @@
    ; A package with no document part is rejected.
    (test-rejects-no-document
     (lambda ()
-      (decode (package-of (list (list "[Content_Types].xml"
-                                      (string->bytes "<Types/>")))))))
+      (decode (package-of (list (list "[Content_Types].xml" (string->bytes "<Types/>")))))))
 
    ; A document part that is not valid XML is rejected.
    (test-rejects-non-xml-document
     (lambda ()
-      (decode (package-of (list (list "word/document.xml"
-                                      (string->bytes "not xml")))))))
+      (decode (package-of (list (list "word/document.xml" (string->bytes "not xml")))))))
 
    (tests
     (list
-      (list "package"
+      (list
+        "package"
         (list
           (expect-pass "document part is decoded" test-document-part)
           (expect-pass "styles is #none when absent" test-styles-absent)
@@ -163,27 +170,33 @@
           (expect-pass "media is #none when absent" test-media-absent)
           (expect-pass "relationships is empty when absent" test-relationships-absent)))
 
-      (list "optional-parts"
+      (list
+        "optional-parts"
         (list
           (expect-pass "styles is decoded when present" test-styles-decoded)
           (expect-pass "numbering is decoded when present" test-numbering-decoded)
           (expect-pass "media is decoded to a dict of bytes" test-media-decoded)))
 
-      (list "relationships"
+      (list
+        "relationships"
         (list
           (expect-pass "relationship id maps to a relationship dict" test-relationship-maps-to-dict)
           (expect-pass "relationship target mode is preserved" test-relationship-mode-preserved)
           (expect-pass "relationship target is preserved verbatim" test-relationship-target-verbatim)))
 
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "minimal package" test-round-trip-minimal)
           (expect-pass "package with all parts" test-round-trip-full)))
 
-      (list "errors"
+      (list
+        "errors"
         (list
           (expect-fail "rejects a non-bytes argument" test-rejects-non-bytes "expects a bytes value")
-          (expect-fail "rejects a package with no document part" test-rejects-no-document "package has no word/document.xml")
+          (expect-fail "rejects a package with no document part"
+                       test-rejects-no-document
+                       "package has no word/document.xml")
           (expect-fail "rejects a package whose document is not XML" test-rejects-non-xml-document "xml-decode"))))))
 
   (export tests))

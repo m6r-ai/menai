@@ -43,10 +43,11 @@
           (if (integer!=? (bytes-nth b 1) #x8b)
               (error "Not a gzip stream: bad magic number")
               (if (integer!=? (bytes-nth b 2) 8)
-                  (error (string-concat
-                           "Unsupported gzip stream: compression method "
-                           (integer->string (bytes-nth b 2))
-                           " is not DEFLATE (8)"))
+                  (error
+                    (string-concat
+                      "Unsupported gzip stream: compression method "
+                      (integer->string (bytes-nth b 2))
+                      " is not DEFLATE (8)"))
                   (bytes-nth b 3))))))
 
    ; The offset of the first byte after a NUL-terminated string starting at
@@ -64,35 +65,40 @@
    ; against the header bytes that precede it.
    (skip-optional-fields
     (lambda (b flg)
-      (let* ((after-extra
-              (if (integer=? (integer-bit-and flg #x04) 0)
-                  header-size
-                  (if (integer>? (integer+ header-size 2) (bytes-length b))
-                      (error "Malformed gzip stream: truncated FEXTRA length")
-                      (let ((len (bytes-read-u16-le b header-size)))
-                        (if (integer>? (integer+ header-size 2 len) (bytes-length b))
-                            (error "Malformed gzip stream: truncated FEXTRA data")
-                            (integer+ header-size 2 len))))))
-             (after-name
-              (if (integer=? (integer-bit-and flg #x08) 0)
-                  after-extra
-                  (skip-cstring b after-extra)))
-             (after-comment
-              (if (integer=? (integer-bit-and flg #x10) 0)
-                  after-name
-                  (skip-cstring b after-name))))
+      (let*
+        ((after-extra
+          (if (integer=? (integer-bit-and flg #x04) 0)
+              header-size
+              (if (integer>? (integer+ header-size 2) (bytes-length b))
+                  (error "Malformed gzip stream: truncated FEXTRA length")
+                  (let ((len (bytes-read-u16-le b header-size)))
+                    (if (integer>? (integer+ header-size 2 len) (bytes-length b))
+                        (error "Malformed gzip stream: truncated FEXTRA data")
+                        (integer+ header-size 2 len))))))
+
+         (after-name
+          (if (integer=? (integer-bit-and flg #x08) 0)
+              after-extra
+              (skip-cstring b after-extra)))
+
+         (after-comment
+          (if (integer=? (integer-bit-and flg #x10) 0)
+              after-name
+              (skip-cstring b after-name))))
         (if (integer=? (integer-bit-and flg #x02) 0)
             after-comment
             (if (integer>? (integer+ after-comment 2) (bytes-length b))
                 (error "Malformed gzip stream: truncated FHCRC")
                 (let ((stored (bytes-read-u16-le b after-comment))
+
                       (computed (integer-bit-and (bytes-crc32 (bytes-slice b 0 after-comment)) #xffff)))
                   (if (integer!=? stored computed)
-                      (error (string-concat
-                               "gzip stream header checksum mismatch: expected "
-                               (integer->string stored)
-                               " but computed "
-                               (integer->string computed)))
+                      (error
+                        (string-concat
+                          "gzip stream header checksum mismatch: expected "
+                          (integer->string stored)
+                          " but computed "
+                          (integer->string computed)))
                       (integer+ after-comment 2))))))))
 
    ; Decompress a bytes value containing a gzip stream and return the
@@ -111,17 +117,19 @@
                             (expected-size (bytes-read-u32-le b (integer- (bytes-length b) 4)))
                             (actual-size (integer-bit-and (bytes-length data) #xffffffff)))
                         (if (integer!=? expected-crc actual-crc)
-                            (error (string-concat
-                                     "gzip stream checksum mismatch: expected "
-                                     (integer->string expected-crc)
-                                     " but computed "
-                                     (integer->string actual-crc)))
+                            (error
+                              (string-concat
+                                "gzip stream checksum mismatch: expected "
+                                (integer->string expected-crc)
+                                " but computed "
+                                (integer->string actual-crc)))
                             (if (integer!=? expected-size actual-size)
-                                (error (string-concat
-                                         "gzip stream size mismatch: expected "
-                                         (integer->string expected-size)
-                                         " but computed "
-                                         (integer->string actual-size)))
+                                (error
+                                  (string-concat
+                                    "gzip stream size mismatch: expected "
+                                    (integer->string expected-size)
+                                    " but computed "
+                                    (integer->string actual-size)))
                                 data))))))))
           (error "gzip-decompress: decompress expects a bytes value")))))
 

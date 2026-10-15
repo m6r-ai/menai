@@ -14,85 +14,76 @@
    ; The empty input round-trips through compress then decompress unchanged.
    (test-round-trip-empty
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "")))
-                    (string->bytes ""))))
+      (assert-equal (decompress (compress (string->bytes ""))) (string->bytes ""))))
 
    ; A short text round-trips through compress then decompress unchanged.
    (test-round-trip-short-text
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "hello world")))
-                    (string->bytes "hello world"))))
+      (assert-equal (decompress (compress (string->bytes "hello world"))) (string->bytes "hello world"))))
 
    ; Repetitive text round-trips through compress then decompress unchanged.
    (test-round-trip-repetitive
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
-                    (string->bytes "abcabcabcabcabcabcabcabc"))))
+      (assert-equal
+        (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
+        (string->bytes "abcabcabcabcabcabcabcabc"))))
 
    ; A single byte round-trips through compress then decompress unchanged.
    (test-round-trip-single-byte
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "x")))
-                    (string->bytes "x"))))
+      (assert-equal (decompress (compress (string->bytes "x"))) (string->bytes "x"))))
 
    ; The stream starts with the fixed 10-byte gzip header.
    (test-fixed-header
     (lambda ()
       (let ((stream (compress (string->bytes "payload"))))
-        (assert-equal (bytes-slice stream 0 10)
-                      (string-hex->bytes "1f8b08000000000000ff")))))
+        (assert-equal (bytes-slice stream 0 10) (string-hex->bytes "1f8b08000000000000ff")))))
 
    ; The trailer's CRC-32 of the empty input is 0.
    (test-crc32-empty
     (lambda ()
       (let ((stream (compress (string->bytes ""))))
-        (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 8))
-                      0))))
+        (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 8)) 0))))
 
    ; The trailer's CRC-32 of a known payload is correct.
    (test-crc32-known-payload
     (lambda ()
       (let ((stream (compress (string->bytes "hello world hello world hello world"))))
-        (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 8))
-                      #x0f42febb))))
+        (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 8)) #x0f42febb))))
 
    ; The trailer's ISIZE of a known payload is correct.
    (test-isize-known-payload
     (lambda ()
       (let ((stream (compress (string->bytes "hello world hello world hello world"))))
-        (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 4))
-                      35))))
+        (assert-equal (bytes-read-u32-le stream (integer- (bytes-length stream) 4)) 35))))
 
    ; A stream produced by another gzip implementation decompresses correctly.
    (test-interoperability
     (lambda ()
-      (assert-equal (bytes->string
-                      (decompress (string-hex->bytes "1f8b08000000000002ffcb48cdc9c95728cf2fca4951c8c0ce0600bbfe420f23000000")))
-                    "hello world hello world hello world")))
+      (assert-equal
+        (bytes->string
+          (decompress (string-hex->bytes "1f8b08000000000002ffcb48cdc9c95728cf2fca4951c8c0ce0600bbfe420f23000000")))
+        "hello world hello world hello world")))
 
    ; Stored mode round-trips.
    (test-mode-stored
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'stored)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'stored))) (string->bytes "abcdefgh"))))
 
    ; Fixed mode round-trips.
    (test-mode-fixed
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'fixed)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'fixed))) (string->bytes "abcdefgh"))))
 
    ; Dynamic mode round-trips.
    (test-mode-dynamic
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'dynamic)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'dynamic))) (string->bytes "abcdefgh"))))
 
    ; Auto mode round-trips.
    (test-mode-auto
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'auto)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'auto))) (string->bytes "abcdefgh"))))
 
    ; A non-bytes argument is rejected.
    (test-rejects-non-bytes
@@ -101,36 +92,35 @@
 
    (tests
     (list
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "empty input" test-round-trip-empty)
           (expect-pass "short text" test-round-trip-short-text)
           (expect-pass "repetitive text" test-round-trip-repetitive)
           (expect-pass "single byte" test-round-trip-single-byte)))
 
-      (list "header"
-        (list
-          (expect-pass "starts with the fixed 10-byte header" test-fixed-header)))
+      (list "header" (list (expect-pass "starts with the fixed 10-byte header" test-fixed-header)))
 
-      (list "trailer"
+      (list
+        "trailer"
         (list
           (expect-pass "crc-32 of empty input is 0" test-crc32-empty)
           (expect-pass "crc-32 of a known payload" test-crc32-known-payload)
           (expect-pass "isize of a known payload" test-isize-known-payload)))
 
-      (list "interoperability"
-        (list
-          (expect-pass "decompresses a stream produced elsewhere" test-interoperability)))
+      (list "interoperability" (list (expect-pass "decompresses a stream produced elsewhere" test-interoperability)))
 
-      (list "modes"
+      (list
+        "modes"
         (list
           (expect-pass "stored mode round-trips" test-mode-stored)
           (expect-pass "fixed mode round-trips" test-mode-fixed)
           (expect-pass "dynamic mode round-trips" test-mode-dynamic)
           (expect-pass "auto mode round-trips" test-mode-auto)))
 
-      (list "errors"
-        (list
-          (expect-fail "rejects a non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
+      (list
+        "errors"
+        (list (expect-fail "rejects a non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
 
   (export tests))

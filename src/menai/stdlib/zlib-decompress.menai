@@ -16,15 +16,18 @@
 
 (letrec
   ((deflate-lib (import "deflate-decompress"))
+
    (adler32
     (lambda (b)
       (let ((modulus 65521))
-        (letrec ((loop (lambda (i a bb)
-                         (if (integer>=? i (bytes-length b))
-                             (integer-bit-or (integer-bit-shift-left bb 16) a)
-                             (loop (integer+ i 1)
-                                   (integer% (integer+ a (bytes-nth b i)) modulus)
-                                   (integer% (integer+ bb a (bytes-nth b i)) modulus))))))
+        (letrec ((loop
+                  (lambda (i a bb)
+                    (if (integer>=? i (bytes-length b))
+                        (integer-bit-or (integer-bit-shift-left bb 16) a)
+                        (loop
+                          (integer+ i 1)
+                          (integer% (integer+ a (bytes-nth b i)) modulus)
+                          (integer% (integer+ bb a (bytes-nth b i)) modulus))))))
           (loop 0 1 0)))))
 
    (check-header
@@ -32,10 +35,11 @@
       (let ((cmf (bytes-nth b 0))
             (flg (bytes-nth b 1)))
         (if (integer!=? (integer-bit-and cmf #x0f) 8)
-            (error (string-concat
-                     "Unsupported zlib stream: compression method "
-                     (integer->string (integer-bit-and cmf #x0f))
-                     " is not DEFLATE (8)"))
+            (error
+              (string-concat
+                "Unsupported zlib stream: compression method "
+                (integer->string (integer-bit-and cmf #x0f))
+                " is not DEFLATE (8)"))
             (if (integer!=? (integer% (integer+ (integer* cmf 256) flg) 31) 0)
                 (error "Malformed zlib stream: header check failed")
                 (if (integer=? (integer-bit-and flg #x20) #x20)
@@ -56,11 +60,12 @@
                             (actual (adler32 data)))
                         (if (integer=? expected actual)
                             data
-                            (error (string-concat
-                                     "zlib stream checksum mismatch: expected "
-                                     (integer->string expected)
-                                     " but computed "
-                                     (integer->string actual)))))))
+                            (error
+                              (string-concat
+                                "zlib stream checksum mismatch: expected "
+                                (integer->string expected)
+                                " but computed "
+                                (integer->string actual)))))))
                   (error "Malformed zlib stream: header check failed")))
           (error "zlib-decompress: decompress expects a bytes value")))))
 

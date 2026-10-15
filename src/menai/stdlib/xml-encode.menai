@@ -31,11 +31,11 @@
 (letrec
   ((escape-text
     (lambda (s)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer>=? i (string-length s))
-                           (list->string (list-reverse acc))
-                           (loop (integer+ i 1)
-                                 (list-prepend acc (escape-text-char (string-nth s i))))))))
+      (letrec ((loop
+                (lambda (i acc)
+                  (if (integer>=? i (string-length s))
+                      (list->string (list-reverse acc))
+                      (loop (integer+ i 1) (list-prepend acc (escape-text-char (string-nth s i))))))))
         (loop 0 (list)))))
 
    (escape-text-char
@@ -57,11 +57,11 @@
 
    (escape-attribute
     (lambda (s)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer>=? i (string-length s))
-                           (list->string (list-reverse acc))
-                           (loop (integer+ i 1)
-                                 (list-prepend acc (escape-attribute-char (string-nth s i))))))))
+      (letrec ((loop
+                (lambda (i acc)
+                  (if (integer>=? i (string-length s))
+                      (list->string (list-reverse acc))
+                      (loop (integer+ i 1) (list-prepend acc (escape-attribute-char (string-nth s i))))))))
         (loop 0 (list)))))
 
    ; One attribute as " name=\"value\"".
@@ -77,8 +77,10 @@
     (lambda (attrs)
       (if (dict? attrs)
           (list->string
-            (map-list (lambda (name) (encode-attribute name (dict-get attrs name)))
-                      (dict-keys attrs)))
+            (map-list
+              (lambda (name)
+                (encode-attribute name (dict-get attrs name)))
+              (dict-keys attrs)))
           (error "xml-encode: \"attrs\" must be a dict"))))
 
    ; One child node: text is escaped, an element dict is serialised.
@@ -104,11 +106,10 @@
             (children (dict-get element "children")))
         (if (string? tag)
             (let ((attr-text (encode-attributes attrs)))
-              (if (and (list? children) (list-null? children))
+              (if (and (list? children)
+                       (list-null? children))
                   (string-concat "<" tag attr-text "/>")
-                  (string-concat "<" tag attr-text ">"
-                                 (encode-children children)
-                                 "</" tag ">")))
+                  (string-concat "<" tag attr-text ">" (encode-children children) "</" tag ">")))
             (error "xml-encode: element \"tag\" must be a string")))))
 
    (encode

@@ -33,20 +33,22 @@
    (read-numeric
     (lambda (b start width)
       (if (integer=? (integer-bit-and (bytes-nth b start) #x80) #x80)
-          (letrec ((loop (lambda (i acc)
-                           (if (integer>=? i (integer+ start width))
-                               acc
-                               (loop (integer+ i 1)
-                                     (integer+ (integer* acc 256) (bytes-nth b i)))))))
+          (letrec ((loop
+                    (lambda (i acc)
+                      (if (integer>=? i (integer+ start width))
+                          acc
+                          (loop (integer+ i 1) (integer+ (integer* acc 256) (bytes-nth b i)))))))
             (let ((unsigned (loop start 0)))
               (integer- unsigned (integer* 256 (integer-expn 256 (integer- width 1))))))
-          (letrec ((trim (lambda (end)
-                           (if (integer<=? end start)
-                               start
-                               (let ((ch (bytes-nth b (integer- end 1))))
-                                 (if (or (integer=? ch 0) (integer=? ch 32))
-                                     (trim (integer- end 1))
-                                     end))))))
+          (letrec ((trim
+                    (lambda (end)
+                      (if (integer<=? end start)
+                          start
+                          (let ((ch (bytes-nth b (integer- end 1))))
+                            (if (or (integer=? ch 0)
+                                    (integer=? ch 32))
+                                (trim (integer- end 1))
+                                end))))))
             (let ((end (trim (integer+ start width))))
               (if (integer=? end start)
                   0
@@ -55,37 +57,43 @@
    ; The string value of a NUL-terminated header field of `width` bytes.
    (read-string
     (lambda (b start width)
-      (letrec ((find (lambda (i)
-                       (if (integer>=? i (integer+ start width))
-                           (integer+ start width)
-                           (if (integer=? (bytes-nth b i) 0)
-                               i
-                               (find (integer+ i 1)))))))
+      (letrec ((find
+                (lambda (i)
+                  (if (integer>=? i (integer+ start width))
+                      (integer+ start width)
+                      (if (integer=? (bytes-nth b i) 0)
+                          i
+                          (find (integer+ i 1)))))))
         (bytes->string (bytes-slice b start (find start))))))
 
    ; The header checksum: the sum of all 512 header bytes, with the checksum
    ; field (offset 148, length 8) taken as eight spaces (0x20).
    (header-checksum
     (lambda (header)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer=? i 512)
-                           acc
-                           (loop (integer+ i 1)
-                                 (integer+ acc
-                                          (if (and (integer>=? i 148) (integer<? i 156))
-                                              32
-                                              (bytes-nth header i))))))))
+      (letrec ((loop
+                (lambda (i acc)
+                  (if (integer=? i 512)
+                      acc
+                      (loop
+                        (integer+ i 1)
+                        (integer+
+                          acc
+                          (if (and (integer>=? i 148)
+                                   (integer<? i 156))
+                              32
+                              (bytes-nth header i))))))))
         (loop 0 0))))
 
    ; #t when the 512 bytes at `pos` are all zero (the end-of-archive marker).
    (is-zero-block
     (lambda (b pos)
-      (letrec ((loop (lambda (i)
-                       (if (integer=? i block-size)
-                           #t
-                           (if (integer=? (bytes-nth b (integer+ pos i)) 0)
-                               (loop (integer+ i 1))
-                               #f)))))
+      (letrec ((loop
+                (lambda (i)
+                  (if (integer=? i block-size)
+                      #t
+                      (if (integer=? (bytes-nth b (integer+ pos i)) 0)
+                          (loop (integer+ i 1))
+                          #f)))))
         (loop 0))))
 
    ; #t when the header magic identifies a supported tar format.  Both the
@@ -96,7 +104,8 @@
       (let ((magic (bytes-slice header 257 262))
             (terminator (bytes-nth header 262)))
         (and (bytes=? magic (string->bytes "ustar"))
-             (or (integer=? terminator 0) (integer=? terminator 32))))))
+             (or (integer=? terminator 0)
+                 (integer=? terminator 32))))))
 
    ; The number of 512-byte blocks needed to hold `size` bytes.
    (blocks-for
@@ -110,24 +119,29 @@
    ; whole record including the newline.
    (pax-value
     (lambda (data key)
-      (letrec
-        ((parse (lambda (pos)
+      (letrec ((parse
+                (lambda (pos)
                   (if (integer>=? pos (bytes-length data))
                       #none
-                      (let ((line-end (letrec ((find (lambda (i)
-                                                       (if (integer>=? i (bytes-length data))
-                                                           i
-                                                           (if (integer=? (bytes-nth data i) 10)
-                                                               i
-                                                               (find (integer+ i 1)))))))
-                                        (find pos))))
+                      (let ((line-end
+                             (letrec ((find
+                                       (lambda (i)
+                                         (if (integer>=? i (bytes-length data))
+                                             i
+                                             (if (integer=? (bytes-nth data i) 10)
+                                                 i
+                                                 (find (integer+ i 1)))))))
+                               (find pos))))
                         (let ((line (bytes->string (bytes-slice data pos line-end))))
                           (let ((eq (string-index line "=")))
                             (if (none? eq)
                                 (parse (integer+ line-end 1))
                                 (let ((field (string-slice line 0 eq)))
                                   (let ((space (string-index field " ")))
-                                    (let ((name (if (none? space) field (string-slice field (integer+ space 1)))))
+                                    (let ((name
+                                           (if (none? space)
+                                               field
+                                               (string-slice field (integer+ space 1)))))
                                       (if (string=? name key)
                                           (string-slice line (integer+ eq 1))
                                           (parse (integer+ line-end 1))))))))))))))
@@ -138,8 +152,13 @@
     (lambda (pending data)
       (let ((path (pax-value data "path"))
             (linkpath (pax-value data "linkpath")))
-        (let ((p1 (if (none? path) pending (dict-with pending "name" path))))
-          (if (none? linkpath) p1 (dict-with p1 "linkname" linkpath))))))
+        (let ((p1
+               (if (none? path)
+                   pending
+                   (dict-with pending "name" path))))
+          (if (none? linkpath)
+              p1
+              (dict-with p1 "linkname" linkpath))))))
 
    ; Parse one header block at `pos` into a dict of the entry's fields.
    (read-header
@@ -148,32 +167,33 @@
         (let ((stored (read-numeric header 148 8))
               (computed (header-checksum header)))
           (if (integer!=? stored computed)
-              (error (string-concat
-                       "Malformed tar: header checksum mismatch at offset "
-                       (integer->string pos)
-                       ": expected "
-                       (integer->string stored)
-                       " but computed "
-                       (integer->string computed)))
+              (error
+                (string-concat
+                  "Malformed tar: header checksum mismatch at offset "
+                  (integer->string pos)
+                  ": expected "
+                  (integer->string stored)
+                  " but computed "
+                  (integer->string computed)))
               (if (boolean-not (supported-magic? header))
                   (error "Unsupported tar: not a ustar or GNU tar archive")
                   (let ((typeflag (bytes->string (bytes-slice header 156 157))))
                     (let ((name (read-string header 0 100))
                           (prefix (read-string header 345 155)))
-                      (let ((full-name (if (string=? prefix "")
-                                           name
-                                           (string-concat prefix "/" name))))
-                        (dict
-                          "name" full-name
-                          "mode" (read-numeric header 100 8)
-                          "uid" (read-numeric header 108 8)
-                          "gid" (read-numeric header 116 8)
-                          "size" (read-numeric header 124 12)
-                          "mtime" (read-numeric header 136 12)
-                          "typeflag" typeflag
-                          "linkname" (read-string header 157 100)
-                          "uname" (read-string header 265 32)
-                          "gname" (read-string header 297 32)))))))))))
+                      (let ((full-name
+                             (if (string=? prefix "")
+                                 name
+                                 (string-concat prefix "/" name))))
+                        (dict "name" full-name
+                              "mode" (read-numeric header 100 8)
+                              "uid" (read-numeric header 108 8)
+                              "gid" (read-numeric header 116 8)
+                              "size" (read-numeric header 124 12)
+                              "mtime" (read-numeric header 136 12)
+                              "typeflag" typeflag
+                              "linkname" (read-string header 157 100)
+                              "uname" (read-string header 265 32)
+                              "gname" (read-string header 297 32)))))))))))
 
    ; The reported typeflag of a real entry: "0" and the NUL byte and "7" are
    ; reported as "0" (regular file); "5" and "2" are reported as themselves.
@@ -184,11 +204,13 @@
               (string=? typeflag (integer-codepoint->string 0))
               (string=? typeflag "7"))
           "0"
-          (if (or (string=? typeflag "5") (string=? typeflag "2"))
+          (if (or (string=? typeflag "5")
+                  (string=? typeflag "2"))
               typeflag
-              (error (string-concat
-                       "Unsupported tar: typeflag \"" typeflag
-                       "\" is not supported (only files, directories, and symlinks)"))))))
+              (error
+                (string-concat "Unsupported tar: typeflag \""
+                               typeflag
+                               "\" is not supported (only files, directories, and symlinks)"))))))
 
    ; Walk the archive from `pos`, collecting entries.  `pending` carries name
    ; and link-name overrides from a preceding GNU or PAX metadata entry.  Stops
@@ -203,8 +225,7 @@
               (let* ((entry (read-header b pos))
                      (typeflag (dict-get entry "typeflag"))
                      (size (dict-get entry "size"))
-                     (data (bytes-slice b (integer+ pos block-size)
-                                        (integer+ pos block-size size)))
+                     (data (bytes-slice b (integer+ pos block-size) (integer+ pos block-size size)))
                      (next (integer+ pos block-size (integer* (blocks-for size) block-size))))
                 (if (string=? typeflag "L")
                     (read-entries b next (dict-with pending "name" (read-string data 0 size)))
@@ -215,27 +236,25 @@
                             (if (string=? typeflag "g")
                                 (read-entries b next (apply-pax pending data))
                                 (let ((name (dict-get pending "name" (dict-get entry "name")))
+
                                       (linkname (dict-get pending "linkname" (dict-get entry "linkname"))))
                                   (list-prepend
                                     (read-entries b next (dict))
                                     (dict-with
                                       (dict-with
                                         (dict-with
-                                          (dict-with
-                                            (dict-with entry "name" name)
-                                            "linkname" linkname)
-                                          "typeflag" (normalise-typeflag typeflag))
-                                        "is-directory" (string=? typeflag "5"))
-                                      "data-offset" (integer+ pos block-size)))))))))))))
+                                          (dict-with (dict-with entry "name" name) "linkname" linkname)
+                                          "typeflag"
+                                          (normalise-typeflag typeflag))
+                                        "is-directory"
+                                        (string=? typeflag "5"))
+                                      "data-offset"
+                                      (integer+ pos block-size)))))))))))))
 
    ; Build the top-level result dict.
    (build-result
     (lambda (entries)
-      (dict
-        "entries" entries
-        "meta" (dict
-                 "format" "tar"
-                 "entry-count" (list-length entries)))))
+      (dict "entries" entries "meta" (dict "format" "tar" "entry-count" (list-length entries)))))
 
    ; Read a bytes value containing a tar archive and return a dict describing
    ; its entries without returning their contents.
@@ -266,8 +285,10 @@
     (lambda (b)
       (if (bytes? b)
           (build-result
-            (map-list (lambda (e) (dict-with e "content" #none))
-                      (read-entries b 0 (dict))))
+            (map-list
+              (lambda (e)
+                (dict-with e "content" #none))
+              (read-entries b 0 (dict))))
           (error "tar-entries: entries expects a bytes value")))))
 
   (export entries))

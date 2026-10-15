@@ -1,1 +1,2 @@
-(lambda (lst) (sort-list integer<? lst))
+(lambda (lst)
+  (sort-list integer<? lst))

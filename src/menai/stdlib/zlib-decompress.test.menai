@@ -58,13 +58,15 @@
 
    (tests
     (list
-      (list "decompress"
+      (list
+        "decompress"
         (list
           (expect-pass "decompresses a deflate stream" test-deflate-stream)
           (expect-pass "decompresses an empty stream" test-empty-stream)
           (expect-pass "decompresses a stored stream" test-stored-stream)))
 
-      (list "errors"
+      (list
+        "errors"
         (list
           (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
           (expect-fail "rejects too-short input" test-rejects-too-short "too short")

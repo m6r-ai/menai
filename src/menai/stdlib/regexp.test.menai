@@ -297,8 +297,7 @@
    ; search-all returns every non-overlapping match, left to right.
    (test-search-all-matches
     (lambda ()
-      (assert-equal (search-all (compile "[0-9]+") "a1 b22 c333")
-                    (list (list 1 2) (list 4 6) (list 8 11)))))
+      (assert-equal (search-all (compile "[0-9]+") "a1 b22 c333") (list (list 1 2) (list 4 6) (list 8 11)))))
 
    ; search-all returns an empty list when there is no match.
    (test-search-all-empty
@@ -313,8 +312,7 @@
    ; search-all reports adjacent matches.
    (test-search-all-adjacent
     (lambda ()
-      (assert-equal (search-all (compile "[0-9]") "a1b2c3")
-                    (list (list 1 2) (list 3 4) (list 5 6)))))
+      (assert-equal (search-all (compile "[0-9]") "a1b2c3") (list (list 1 2) (list 3 4) (list 5 6)))))
 
    ; search-all requires a string.
    (test-search-all-non-string
@@ -324,14 +322,12 @@
    ; split on a class of separators keeps empty fields.
    (test-split-keeps-empty-fields
     (lambda ()
-      (assert-equal (split (compile "[,;]") "a,,b,")
-                    (list "a" "" "b" ""))))
+      (assert-equal (split (compile "[,;]") "a,,b,") (list "a" "" "b" ""))))
 
    ; split treats a run of whitespace as one separator.
    (test-split-whitespace-run
     (lambda ()
-      (assert-equal (split (compile "\\s+") " fee fi  fo")
-                    (list "" "fee" "fi" "fo"))))
+      (assert-equal (split (compile "\\s+") " fee fi  fo") (list "" "fee" "fi" "fo"))))
 
    ; split with no match returns the input as one element.
    (test-split-no-match
@@ -351,8 +347,7 @@
    ; replace replaces every match, including runs.
    (test-replace-runs
     (lambda ()
-      (assert-equal (replace (compile "\\s+") "one two three" "_")
-                    "one_two_three")))
+      (assert-equal (replace (compile "\\s+") "one two three" "_") "one_two_three")))
 
    ; replace replaces a run of digits as one match.
    (test-replace-digit-run
@@ -378,26 +373,23 @@
    (test-match-result-indexes-text
     (lambda ()
       (let ((m (search (compile "[0-9]+") "abc123def")))
-        (assert-equal (string-slice "abc123def" (list-nth m 0) (list-nth m 1))
-                      "123"))))
+        (assert-equal (string-slice "abc123def" (list-nth m 0) (list-nth m 1)) "123"))))
 
    ; A compiled regexp is reusable across inputs.
    (test-compiled-reusable
     (lambda ()
       (let ((rx (compile "[0-9]+")))
-        (assert-equal (list (search rx "a1") (search rx "b22") (search rx "ccc"))
-                      (list (list 1 2) (list 1 3) #none)))))
+        (assert-equal (list (search rx "a1") (search rx "b22") (search rx "ccc")) (list (list 1 2) (list 1 3) #none)))))
 
    ; An ISO date is extracted from surrounding text.
    (test-iso-date-extraction
     (lambda ()
-      (assert-equal (search (compile "[0-9]{4}-[0-9]{2}-[0-9]{2}")
-                            "logged on 2026-10-06 ok")
-                    (list 10 20))))
+      (assert-equal (search (compile "[0-9]{4}-[0-9]{2}-[0-9]{2}") "logged on 2026-10-06 ok") (list 10 20))))
 
    (tests
     (list
-      (list "construction"
+      (list
+        "construction"
         (list
           (expect-pass "compiled regexp is a regexp" test-compiled-is-regexp)
           (expect-pass "regexp? rejects an integer" test-regexp-predicate-integer)
@@ -410,7 +402,8 @@
           (expect-fail "repetition count over the limit raises" test-compile-repetition-over-limit "exceeds the limit")
           (expect-fail "inverted repetition range raises" test-compile-inverted-range "is inverted")))
 
-      (list "literal"
+      (list
+        "literal"
         (list
           (expect-pass "match at start" test-literal-at-start)
           (expect-pass "match in middle" test-literal-in-middle)
@@ -420,7 +413,8 @@
           (expect-pass "literal equal to whole input" test-literal-whole-input)
           (expect-pass "leftmost match wins" test-literal-leftmost)))
 
-      (list "anchors"
+      (list
+        "anchors"
         (list
           (expect-pass "start anchor matches at position 0" test-anchor-start-match)
           (expect-pass "start anchor does not match later" test-anchor-start-no-match)
@@ -429,7 +423,8 @@
           (expect-pass "both anchors match the whole input" test-anchor-both-match)
           (expect-pass "both anchors reject a partial input" test-anchor-both-no-match)))
 
-      (list "character-classes"
+      (list
+        "character-classes"
         (list
           (expect-pass "digit class matches a run of digits" test-class-digit-run)
           (expect-pass "ranged class matches only its range" test-class-range)
@@ -440,7 +435,8 @@
           (expect-pass "negated shorthand digit class" test-class-shorthand-non-digit)
           (expect-pass "any character matches one character" test-class-any-character)))
 
-      (list "quantifiers"
+      (list
+        "quantifiers"
         (list
           (expect-pass "star matches zero occurrences" test-quantifier-star-zero)
           (expect-pass "star matches many occurrences" test-quantifier-star-many)
@@ -461,20 +457,23 @@
           (expect-pass "zero-or-more repeat matches zero" test-quantifier-zero-or-more-zero)
           (expect-pass "a brace that is not a quantifier is literal" test-quantifier-literal-brace)))
 
-      (list "grouping"
+      (list
+        "grouping"
         (list
           (expect-pass "a quantifier applies to the whole group" test-group-quantifier)
           (expect-pass "alternation matches the second branch" test-alternation-second-branch)
           (expect-pass "alternation matches the first branch" test-alternation-first-branch)
           (expect-pass "alternation backtracks into the second branch" test-alternation-backtrack)))
 
-      (list "search-predicate"
+      (list
+        "search-predicate"
         (list
           (expect-pass "match returns true" test-search-predicate-match)
           (expect-pass "no match returns false" test-search-predicate-no-match)
           (expect-fail "requires a string" test-search-predicate-non-string "must be a string")))
 
-      (list "search-all"
+      (list
+        "search-all"
         (list
           (expect-pass "every non-overlapping match, left to right" test-search-all-matches)
           (expect-pass "no matches returns an empty list" test-search-all-empty)
@@ -482,7 +481,8 @@
           (expect-pass "adjacent matches are all reported" test-search-all-adjacent)
           (expect-fail "requires a string" test-search-all-non-string "must be a string")))
 
-      (list "split"
+      (list
+        "split"
         (list
           (expect-pass "splits on a class of separators, keeping empty fields" test-split-keeps-empty-fields)
           (expect-pass "a run of whitespace is one separator" test-split-whitespace-run)
@@ -490,7 +490,8 @@
           (expect-pass "empty input returns one empty field" test-split-empty-input)
           (expect-fail "requires a string" test-split-non-string "must be a string")))
 
-      (list "replace"
+      (list
+        "replace"
         (list
           (expect-pass "replaces every match, including runs" test-replace-runs)
           (expect-pass "replaces a run of digits as one match" test-replace-digit-run)
@@ -498,7 +499,8 @@
           (expect-pass "matches at the start and end are both replaced" test-replace-ends)
           (expect-fail "requires a string" test-replace-non-string "must be a string")))
 
-      (list "composition"
+      (list
+        "composition"
         (list
           (expect-pass "a match result indexes the matched text" test-match-result-indexes-text)
           (expect-pass "a compiled regexp is reusable" test-compiled-reusable)

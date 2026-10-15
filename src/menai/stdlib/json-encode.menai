@@ -21,9 +21,7 @@
    ; Emit a control character (0-31) as a four-digit \u escape.
    (escape-control
     (lambda (code)
-      (string-concat "\\u00"
-                     (string-nth hex-digits (integer/ code 16))
-                     (string-nth hex-digits (integer% code 16)))))
+      (string-concat "\\u00" (string-nth hex-digits (integer/ code 16)) (string-nth hex-digits (integer% code 16)))))
 
    ; Escape one character of a string body, returning its JSON source text.
    (escape-char
@@ -36,20 +34,21 @@
         ("\n" "\\n")
         ("\r" "\\r")
         ("\t" "\\t")
-        (_ (let ((code (string->integer-codepoint ch)))
-             (if (integer<? code 32)
-                 (escape-control code)
-                 ch))))))
+        (_
+         (let ((code (string->integer-codepoint ch)))
+           (if (integer<? code 32)
+               (escape-control code)
+               ch))))))
 
    ; Escape a whole string, returning its JSON source text including quotes.
    ; Builds a chunk list and joins once.
    (encode-string
     (lambda (s)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer>=? i (string-length s))
-                           (list-prepend acc "\"")
-                           (loop (integer+ i 1)
-                                 (list-prepend acc (escape-char (string-nth s i))))))))
+      (letrec ((loop
+                (lambda (i acc)
+                  (if (integer>=? i (string-length s))
+                      (list-prepend acc "\"")
+                      (loop (integer+ i 1) (list-prepend acc (escape-char (string-nth s i))))))))
         (list->string (list-reverse (loop 0 (list "\"")))))))
 
    ; Normalise a float's textual form for JSON: drop a "+" immediately after
@@ -62,51 +61,60 @@
               text
               (if (and (integer<? (integer+ e-pos 1) (string-length text))
                        (string=? (string-nth text (integer+ e-pos 1)) "+"))
-                  (string-concat (string-slice text 0 (integer+ e-pos 1))
-                                 (string-slice text (integer+ e-pos 2) (string-length text)))
+                  (string-concat
+                    (string-slice text 0 (integer+ e-pos 1))
+                    (string-slice text (integer+ e-pos 2) (string-length text)))
                   text))))))
 
    ; Return the index of the exponent marker in a float's textual form, or #none.
    (find-exponent
     (lambda (text)
-      (letrec ((loop (lambda (i)
-                       (if (integer>=? i (string-length text))
-                           #none
-                           (let ((ch (string-nth text i)))
-                             (if (or (string=? ch "e") (string=? ch "E"))
-                                 i
-                                 (loop (integer+ i 1))))))))
+      (letrec ((loop
+                (lambda (i)
+                  (if (integer>=? i (string-length text))
+                      #none
+                      (let ((ch (string-nth text i)))
+                        (if (or (string=? ch "e")
+                                (string=? ch "E"))
+                            i
+                            (loop (integer+ i 1))))))))
         (loop 0))))
 
    ; Encode a list as a JSON array, joining elements with commas.
    (encode-list
     (lambda (lst)
-      (letrec ((loop (lambda (rest acc first)
-                       (if (list-null? rest)
-                           (list->string (list-reverse (list-prepend acc "]")))
-                           (loop (list-rest rest)
-                                 (list-prepend
-                                   (if first acc (list-prepend acc ","))
-                                   (encode (list-first rest)))
-                                 #f)))))
+      (letrec ((loop
+                (lambda (rest acc first)
+                  (if (list-null? rest)
+                      (list->string (list-reverse (list-prepend acc "]")))
+                      (loop
+                        (list-rest rest)
+                        (list-prepend
+                          (if first
+                              acc
+                              (list-prepend acc ","))
+                          (encode (list-first rest)))
+                        #f)))))
         (loop lst (list "[") #t))))
 
    ; Encode a dict as a JSON object.  Keys must be strings; a non-string key
    ; raises.  The dict's insertion order is preserved.
    (encode-object
     (lambda (d)
-      (letrec ((loop (lambda (keys acc first)
-                       (if (list-null? keys)
-                           (list->string (list-reverse (list-prepend acc "}")))
-                           (let ((k (list-first keys)))
-                             (if (string? k)
-                                 (let ((acc2 (if first acc (list-prepend acc ","))))
-                                   (let ((acc3 (list-prepend acc2 (encode-string k))))
-                                     (let ((acc4 (list-prepend acc3 ":")))
-                                       (loop (list-rest keys)
-                                             (list-prepend acc4 (encode (dict-get d k)))
-                                             #f))))
-                                 (error "json-encode: dict keys must be strings")))))))
+      (letrec ((loop
+                (lambda (keys acc first)
+                  (if (list-null? keys)
+                      (list->string (list-reverse (list-prepend acc "}")))
+                      (let ((k (list-first keys)))
+                        (if (string? k)
+                            (let ((acc2
+                                   (if first
+                                       acc
+                                       (list-prepend acc ","))))
+                              (let ((acc3 (list-prepend acc2 (encode-string k))))
+                                (let ((acc4 (list-prepend acc3 ":")))
+                                  (loop (list-rest keys) (list-prepend acc4 (encode (dict-get d k))) #f))))
+                            (error "json-encode: dict keys must be strings")))))))
         (loop (dict-keys d) (list "{") #t))))
 
    ; Encode a Menai value as a string containing the equivalent JSON.  It is

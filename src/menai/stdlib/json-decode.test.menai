@@ -20,8 +20,7 @@
    ; A nested object decodes to a nested dict.
    (test-nested-object
     (lambda ()
-      (assert-equal (decode "{\"a\": {\"b\": 2}}")
-                    (dict "a" (dict "b" 2)))))
+      (assert-equal (decode "{\"a\": {\"b\": 2}}") (dict "a" (dict "b" 2)))))
 
    ; An empty array decodes to an empty list.
    (test-empty-array
@@ -36,8 +35,7 @@
    ; A nested array decodes to a nested list.
    (test-nested-array
     (lambda ()
-      (assert-equal (decode "[[1, 2], [3, 4]]")
-                    (list (list 1 2) (list 3 4)))))
+      (assert-equal (decode "[[1, 2], [3, 4]]") (list (list 1 2) (list 3 4)))))
 
    ; An empty string decodes to the empty string.
    (test-empty-string
@@ -96,38 +94,41 @@
 
    (tests
     (list
-      (list "objects"
+      (list
+        "objects"
         (list
           (expect-pass "empty object" test-empty-object)
           (expect-pass "single key" test-single-key)
           (expect-pass "nested object" test-nested-object)))
 
-      (list "arrays"
+      (list
+        "arrays"
         (list
           (expect-pass "empty array" test-empty-array)
           (expect-pass "integer array" test-integer-array)
           (expect-pass "nested array" test-nested-array)))
 
-      (list "strings"
+      (list
+        "strings"
         (list
           (expect-pass "empty string" test-empty-string)
           (expect-pass "simple string" test-simple-string)
-          (list "escapes"
+          (list
+            "escapes"
             (list
               (expect-pass "newline" test-escape-newline)
               (expect-pass "tab" test-escape-tab)
               (expect-pass "unicode" test-escape-unicode)))))
 
-      (list "numbers"
+      (list
+        "numbers"
         (list
           (expect-pass "integer" test-integer)
           (expect-pass "negative integer" test-negative-integer)
           (expect-pass "float" test-float)))
 
-      (list "literals"
-        (list
-          (expect-pass "true" test-true)
-          (expect-pass "false" test-false)
-          (expect-pass "null" test-null))))))
+      (list
+        "literals"
+        (list (expect-pass "true" test-true) (expect-pass "false" test-false) (expect-pass "null" test-null))))))
 
   (export tests))

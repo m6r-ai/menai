@@ -18,16 +18,17 @@
 (letrec
   ((needs-quoting?
     (lambda (field delim)
-      (letrec ((loop (lambda (i)
-                       (if (integer>=? i (string-length field))
-                           #f
-                           (let ((ch (string-nth field i)))
-                             (if (or (string=? ch delim)
-                                     (string=? ch "\"")
-                                     (string=? ch "\r")
-                                     (string=? ch "\n"))
-                                 #t
-                                 (loop (integer+ i 1))))))))
+      (letrec ((loop
+                (lambda (i)
+                  (if (integer>=? i (string-length field))
+                      #f
+                      (let ((ch (string-nth field i)))
+                        (if (or (string=? ch delim)
+                                (string=? ch "\"")
+                                (string=? ch "\r")
+                                (string=? ch "\n"))
+                            #t
+                            (loop (integer+ i 1))))))))
         (loop 0))))
 
    ; Encode one field, quoting it only if it contains a character that requires
@@ -35,47 +36,66 @@
    (encode-field
     (lambda (field delim)
       (if (needs-quoting? field delim)
-          (letrec ((loop (lambda (i acc)
-                           (if (integer>=? i (string-length field))
-                               (list-prepend acc "\"")
-                               (let ((ch (string-nth field i)))
-                                 (loop (integer+ i 1)
-                                       (list-prepend acc
-                                         (if (string=? ch "\"") "\"\"" ch))))))))
+          (letrec ((loop
+                    (lambda (i acc)
+                      (if (integer>=? i (string-length field))
+                          (list-prepend acc "\"")
+                          (let ((ch (string-nth field i)))
+                            (loop
+                              (integer+ i 1)
+                              (list-prepend
+                                acc
+                                (if (string=? ch "\"")
+                                    "\"\""
+                                    ch))))))))
             (list->string (list-reverse (loop 0 (list "\"")))))
           field)))
 
    ; Encode one row as its fields joined by the delimiter.
    (encode-row
     (lambda (row delim)
-      (letrec ((loop (lambda (i acc first)
-                       (if (integer>=? i (vector-length row))
-                           (list->string (list-reverse acc))
-                           (let ((field (vector-nth row i)))
-                             (if (string? field)
-                                 (loop (integer+ i 1)
-                                       (list-prepend (if first acc (list-prepend acc delim))
-                                                     (encode-field field delim))
-                                       #f)
-                                 (error "CSV field must be a string")))))))
+      (letrec ((loop
+                (lambda (i acc first)
+                  (if (integer>=? i (vector-length row))
+                      (list->string (list-reverse acc))
+                      (let ((field (vector-nth row i)))
+                        (if (string? field)
+                            (loop
+                              (integer+ i 1)
+                              (list-prepend
+                                (if first
+                                    acc
+                                    (list-prepend acc delim))
+                                (encode-field field delim))
+                              #f)
+                            (error "CSV field must be a string")))))))
         (loop 0 (list) #t))))
 
    ; Encode a vector of rows as CSV text, joining rows with CRLF.
    (encode
     (lambda (rows . rest)
       (if (vector? rows)
-          (let ((delim (if (list-null? rest) "," (list-first rest))))
-            (if (and (string? delim) (integer=? (string-length delim) 1))
-                (letrec ((loop (lambda (i acc first)
-                                 (if (integer>=? i (vector-length rows))
-                                     (list->string (list-reverse acc))
-                                     (let ((row (vector-nth rows i)))
-                                       (if (vector? row)
-                                           (loop (integer+ i 1)
-                                                 (list-prepend (if first acc (list-prepend acc "\r\n"))
-                                                               (encode-row row delim))
-                                                 #f)
-                                           (error "CSV row must be a vector of strings")))))))
+          (let ((delim
+                 (if (list-null? rest)
+                     ","
+                     (list-first rest))))
+            (if (and (string? delim)
+                     (integer=? (string-length delim) 1))
+                (letrec ((loop
+                          (lambda (i acc first)
+                            (if (integer>=? i (vector-length rows))
+                                (list->string (list-reverse acc))
+                                (let ((row (vector-nth rows i)))
+                                  (if (vector? row)
+                                      (loop
+                                        (integer+ i 1)
+                                        (list-prepend
+                                          (if first
+                                              acc
+                                              (list-prepend acc "\r\n"))
+                                          (encode-row row delim))
+                                        #f)
+                                      (error "CSV row must be a vector of strings")))))))
                   (loop 0 (list) #t))
                 (error "CSV delimiter must be a single-character string")))
           (error "CSV input must be a vector of rows")))))

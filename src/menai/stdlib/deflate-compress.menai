@@ -43,18 +43,21 @@
           w
           (match w
             ((: writer bytes bit acc)
-             (let ((combined (integer-bit-or acc
-                                             (integer-bit-shift-left
-                                               (integer-bit-and value
-                                                                (integer- (integer-bit-shift-left 1 count) 1))
-                                               bit)))
-                   (total (integer+ bit count)))
-               (letrec ((emit (lambda (bs n remaining)
-                                (if (integer<? n 8)
-                                    (writer bs n remaining)
-                                    (emit (bytes-append-u8 bs (integer-bit-and remaining #xff))
-                                          (integer- n 8)
-                                          (integer-bit-shift-right remaining 8))))))
+             (let
+               ((combined
+                 (integer-bit-or
+                   acc
+                   (integer-bit-shift-left (integer-bit-and value (integer- (integer-bit-shift-left 1 count) 1)) bit)))
+
+                (total (integer+ bit count)))
+               (letrec ((emit
+                         (lambda (bs n remaining)
+                           (if (integer<? n 8)
+                               (writer bs n remaining)
+                               (emit
+                                 (bytes-append-u8 bs (integer-bit-and remaining #xff))
+                                 (integer- n 8)
+                                 (integer-bit-shift-right remaining 8))))))
                  (emit bytes total combined))))))))
 
    ; Pad the writer to the next byte boundary, returning the new writer.
@@ -69,12 +72,15 @@
    ; bit first, so a canonical code is reversed into write order.
    (reverse-bits
     (lambda (value length)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer>=? i length)
-                           acc
-                           (loop (integer+ i 1)
-                                 (integer-bit-or (integer-bit-shift-left acc 1)
-                                                 (integer-bit-and (integer-bit-shift-right value i) 1)))))))
+      (letrec ((loop
+                (lambda (i acc)
+                  (if (integer>=? i length)
+                      acc
+                      (loop
+                        (integer+ i 1)
+                        (integer-bit-or
+                          (integer-bit-shift-left acc 1)
+                          (integer-bit-and (integer-bit-shift-right value i) 1)))))))
         (loop 0 0))))
 
    (writer->bytes
@@ -106,30 +112,27 @@
    ; `value` is always at least `bases[0]`, so the search always has an answer.
    (find-base-index
     (lambda (bases value)
-      (letrec ((search (lambda (lo hi)
-                         (if (integer>=? lo hi)
-                             lo
-                             (let ((mid (integer/ (integer+ lo hi 1) 2)))
-                               (if (integer<=? (vector-nth bases mid) value)
-                                   (search mid hi)
-                                   (search lo (integer- mid 1))))))))
+      (letrec ((search
+                (lambda (lo hi)
+                  (if (integer>=? lo hi)
+                      lo
+                      (let ((mid (integer/ (integer+ lo hi 1) 2)))
+                        (if (integer<=? (vector-nth bases mid) value)
+                            (search mid hi)
+                            (search lo (integer- mid 1))))))))
         (search 0 (integer- (vector-length bases) 1)))))
 
    ; Encode a match length (3-258) as (list <symbol> <extra-bits> <extra-count>).
    (encode-length
     (lambda (length)
       (let ((idx (find-base-index length-base length)))
-        (list (integer+ 257 idx)
-              (integer- length (vector-nth length-base idx))
-              (vector-nth length-extra idx)))))
+        (list (integer+ 257 idx) (integer- length (vector-nth length-base idx)) (vector-nth length-extra idx)))))
 
    ; Encode a match distance (1-32768) as (list <symbol> <extra-bits> <extra-count>).
    (encode-distance
     (lambda (distance)
       (let ((idx (find-base-index distance-base distance)))
-        (list idx
-              (integer- distance (vector-nth distance-base idx))
-              (vector-nth distance-extra idx)))))
+        (list idx (integer- distance (vector-nth distance-base idx)) (vector-nth distance-extra idx)))))
 
    ; Compute canonical Huffman codes from a list of code lengths.
    ; Returns a list of (list <code> <length>) indexed by symbol, following the
@@ -140,39 +143,42 @@
    ; code is reversed once here rather than on every write.
    (canonical-codes
     (lambda (lengths)
-      (let ((maxlen (fold-list (lambda (acc len) (integer-max acc len)) 0 lengths)))
+      (let ((maxlen
+             (fold-list
+               (lambda (acc len)
+                 (integer-max acc len))
+               0
+               lengths)))
         (letrec
           ((bl-count
             (lambda (lst acc)
               (if (list-null? lst)
                   acc
                   (let ((lst-head (list-first lst)))
-                    (bl-count (list-rest lst)
-                              (dict-with acc lst-head
-                                        (integer+ (dict-get acc lst-head 0) 1)))))))
+                    (bl-count (list-rest lst) (dict-with acc lst-head (integer+ (dict-get acc lst-head 0) 1)))))))
+
            (next-codes
             (lambda (bl maxlen)
-              (letrec ((loop (lambda (len code acc)
-                               (if (integer>? len maxlen)
-                                   acc
-                                   (let ((next (integer-bit-shift-left
-                                                 (integer+ code (dict-get bl len 0))
-                                                 1)))
-                                     (loop (integer+ len 1) next
-                                           (dict-with acc len code)))))))
+              (letrec ((loop
+                        (lambda (len code acc)
+                          (if (integer>? len maxlen)
+                              acc
+                              (let ((next (integer-bit-shift-left (integer+ code (dict-get bl len 0)) 1)))
+                                (loop (integer+ len 1) next (dict-with acc len code)))))))
                 (loop 1 0 (dict))))))
           (let ((nexts (next-codes (bl-count lengths (dict)) maxlen)))
-            (letrec ((assign (lambda (lst codes acc)
-                               (if (list-null? lst)
-                                   (list-reverse acc)
-                                   (let ((len (list-first lst)))
-                                     (if (integer=? len 0)
-                                         (assign (list-rest lst) codes
-                                                 (list-prepend acc (list 0 0)))
-                                         (let ((code (dict-get codes len)))
-                                           (assign (list-rest lst)
-                                                   (dict-with codes len (integer+ code 1))
-                                                   (list-prepend acc (list (reverse-bits code len) len))))))))))
+            (letrec ((assign
+                      (lambda (lst codes acc)
+                        (if (list-null? lst)
+                            (list-reverse acc)
+                            (let ((len (list-first lst)))
+                              (if (integer=? len 0)
+                                  (assign (list-rest lst) codes (list-prepend acc (list 0 0)))
+                                  (let ((code (dict-get codes len)))
+                                    (assign
+                                      (list-rest lst)
+                                      (dict-with codes len (integer+ code 1))
+                                      (list-prepend acc (list (reverse-bits code len) len))))))))))
               (assign lengths nexts (list))))))))
 
    ; Emit one symbol's Huffman code using a symbol-code list.
@@ -182,7 +188,6 @@
         (write-bits w (list-first entry) (list-nth entry 1)))))
 
    ; --- LZ77 matching -------------------------------------------------------
-
    ; The candidate table maps a 3-byte prefix to a most-recent-first list of the
    ; positions at which it occurs.  A dict update copies the whole dict, so the
    ; table is sharded into `shard-count` sub-dicts, each holding the keys that
@@ -199,8 +204,7 @@
    (table-put
     (lambda (table key positions)
       (let ((shard (integer% key shard-count)))
-        (dict-with table shard
-                  (dict-with (dict-get table shard (dict)) key positions)))))
+        (dict-with table shard (dict-with (dict-get table shard (dict)) key positions)))))
 
    ; Compute a 3-byte key at position `i` of `b`, or #none if fewer than three
    ; bytes remain.  The key is a single integer so it can index a dict.
@@ -218,17 +222,16 @@
    ; within `b`.  `c` must be less than `i`.
    (common-prefix
     (lambda (b c i limit)
-      (if (bytes=? (bytes-slice b c (integer+ c limit))
-                   (bytes-slice b i (integer+ i limit)))
+      (if (bytes=? (bytes-slice b c (integer+ c limit)) (bytes-slice b i (integer+ i limit)))
           limit
-          (letrec ((search (lambda (lo hi)
-                             (if (integer<=? (integer- hi lo) 1)
-                                 lo
-                                 (let ((mid (integer+ lo (integer/ (integer- hi lo) 2))))
-                                   (if (bytes=? (bytes-slice b c (integer+ c mid))
-                                                (bytes-slice b i (integer+ i mid)))
-                                       (search mid hi)
-                                       (search lo mid)))))))
+          (letrec ((search
+                    (lambda (lo hi)
+                      (if (integer<=? (integer- hi lo) 1)
+                          lo
+                          (let ((mid (integer+ lo (integer/ (integer- hi lo) 2))))
+                            (if (bytes=? (bytes-slice b c (integer+ c mid)) (bytes-slice b i (integer+ i mid)))
+                                (search mid hi)
+                                (search lo mid)))))))
             (search 0 limit)))))
 
    ; Find the longest match for the window starting at `i`, searching the
@@ -250,26 +253,24 @@
             (list 0 0)
             (let ((candidates (table-get table key)))
               (let ((limit (integer-min max-match (integer- (bytes-length b) i))))
-                (letrec
-                  ((loop (lambda (cands best-len best-dist chain)
-                           (if (or (list-null? cands)
-                                   (integer>=? best-len limit)
-                                   (integer>=? best-len nice-match)
-                                   (integer>=? chain max-chain))
-                               (list best-len best-dist)
-                               (let ((c (list-first cands)))
-                                 (if (integer>? (integer- i c) window-size)
-                                     (list best-len best-dist)
-                                     (if (integer=? (bytes-nth b (integer+ c best-len))
-                                                    (bytes-nth b (integer+ i best-len)))
-                                         (let ((len (common-prefix b c i limit)))
-                                           (if (integer>? len best-len)
-                                               (loop (list-rest cands) len (integer- i c)
-                                                     (integer+ chain 1))
-                                               (loop (list-rest cands) best-len best-dist
-                                                     (integer+ chain 1))))
-                                         (loop (list-rest cands) best-len best-dist
-                                               (integer+ chain 1)))))))))
+                (letrec ((loop
+                          (lambda (cands best-len best-dist chain)
+                            (if (or (list-null? cands)
+                                    (integer>=? best-len limit)
+                                    (integer>=? best-len nice-match)
+                                    (integer>=? chain max-chain))
+                                (list best-len best-dist)
+                                (let ((c (list-first cands)))
+                                  (if (integer>? (integer- i c) window-size)
+                                      (list best-len best-dist)
+                                      (if (integer=?
+                                            (bytes-nth b (integer+ c best-len))
+                                            (bytes-nth b (integer+ i best-len)))
+                                          (let ((len (common-prefix b c i limit)))
+                                            (if (integer>? len best-len)
+                                                (loop (list-rest cands) len (integer- i c) (integer+ chain 1))
+                                                (loop (list-rest cands) best-len best-dist (integer+ chain 1))))
+                                          (loop (list-rest cands) best-len best-dist (integer+ chain 1)))))))))
                   (loop candidates 0 0 0))))))))
 
    ; Build the LZ77 token list for `b`.  Each token is either
@@ -293,50 +294,59 @@
             (let ((key (prefix-key b i)))
               (if (none? key)
                   table
-                  (table-put table key
-                             (list-prepend (table-get table key) i))))))
+                  (table-put table key (list-prepend (table-get table key) i))))))
+
          (add-candidates
           (lambda (b i len dist table)
             (let ((last-full (integer- len 3)))
               (letrec
-                ((prepend-group (lambda (k acc)
-                                  (if (integer>? k last-full)
-                                      acc
-                                      (prepend-group (integer+ k dist)
-                                                     (list-prepend acc (integer+ i k))))))
-                 (add-group (lambda (p acc)
-                              (let ((key (prefix-key b (integer+ i p))))
-                                (table-put acc key
-                                           (prepend-group p (table-get acc key))))))
-                 (add-groups (lambda (p count acc)
-                               (if (integer>=? p count)
-                                   acc
-                                   (add-groups (integer+ p 1) count (add-group p acc)))))
-                 (add-tail (lambda (k acc)
-                             (if (integer>=? k len)
-                                 acc
-                                 (add-tail (integer+ k 1) (add-candidate b (integer+ i k) acc))))))
+                ((prepend-group
+                  (lambda (k acc)
+                    (if (integer>? k last-full)
+                        acc
+                        (prepend-group (integer+ k dist) (list-prepend acc (integer+ i k))))))
+
+                 (add-group
+                  (lambda (p acc)
+                    (let ((key (prefix-key b (integer+ i p))))
+                      (table-put acc key (prepend-group p (table-get acc key))))))
+
+                 (add-groups
+                  (lambda (p count acc)
+                    (if (integer>=? p count)
+                        acc
+                        (add-groups (integer+ p 1) count (add-group p acc)))))
+
+                 (add-tail
+                  (lambda (k acc)
+                    (if (integer>=? k len)
+                        acc
+                        (add-tail (integer+ k 1) (add-candidate b (integer+ i k) acc))))))
                 (if (integer<? dist (integer- len 2))
-                    (add-tail (integer-max 0 (integer- len 2))
-                              (add-groups 0 (integer-min dist (integer+ last-full 1)) table))
+                    (add-tail
+                      (integer-max 0 (integer- len 2))
+                      (add-groups 0 (integer-min dist (integer+ last-full 1)) table))
                     (add-tail 0 table))))))
-         (loop (lambda (i table acc)
-                 (if (integer>=? i (bytes-length b))
-                     (list-reverse acc)
-                     (let ((match (find-match b i table)))
-                       (let ((len (list-first match))
-                             (dist (list-nth match 1)))
-                         (if (integer>=? len min-match)
-                             (loop (integer+ i len)
-                                   (add-candidates b i len dist table)
-                                   (list-prepend acc (list "match" len dist)))
-                             (loop (integer+ i 1)
-                                   (add-candidate b i table)
-                                   (list-prepend acc (list "lit" (bytes-nth b i)))))))))))
+
+         (loop
+          (lambda (i table acc)
+            (if (integer>=? i (bytes-length b))
+                (list-reverse acc)
+                (let ((match (find-match b i table)))
+                  (let ((len (list-first match))
+                        (dist (list-nth match 1)))
+                    (if (integer>=? len min-match)
+                        (loop
+                          (integer+ i len)
+                          (add-candidates b i len dist table)
+                          (list-prepend acc (list "match" len dist)))
+                        (loop
+                          (integer+ i 1)
+                          (add-candidate b i table)
+                          (list-prepend acc (list "lit" (bytes-nth b i)))))))))))
         (loop 0 (dict) (list)))))
 
    ; --- Huffman code-length construction ------------------------------------
-
    ; Build optimal code lengths (bounded to 15 bits) for a frequency list.
    ; Uses Huffman's algorithm via repeated merging of the two least-frequent
    ; nodes.  Symbols with zero frequency get length 0.  The result is a list of
@@ -358,18 +368,25 @@
             (if (list-null? lst)
                 (list-reverse acc)
                 (if (integer>? (list-first lst) 0)
-                    (active-symbols (integer+ i 1) (list-rest lst)
-                                    (list-prepend acc (list i (list-first lst))))
+                    (active-symbols (integer+ i 1) (list-rest lst) (list-prepend acc (list i (list-first lst))))
                     (active-symbols (integer+ i 1) (list-rest lst) acc)))))
+
          (depths
           (lambda (nodes depths-acc)
-            (letrec ((walk (lambda (payload depth acc)
-                             (if (integer? payload)
-                                 (dict-with acc payload depth)
-                                 (walk (list-first payload) (integer+ depth 1)
-                                       (walk (list-nth payload 1) (integer+ depth 1) acc))))))
-              (fold-list (lambda (acc node) (walk (list-first node) 0 acc))
-                         depths-acc nodes))))
+            (letrec ((walk
+                      (lambda (payload depth acc)
+                        (if (integer? payload)
+                            (dict-with acc payload depth)
+                            (walk
+                              (list-first payload)
+                              (integer+ depth 1)
+                              (walk (list-nth payload 1) (integer+ depth 1) acc))))))
+              (fold-list
+                (lambda (acc node)
+                  (walk (list-first node) 0 acc))
+                depths-acc
+                nodes))))
+
          ; Pop the lightest node from the two weight-ordered queues and return
          ; (list <node> <leaves'> <internals'>).  A node is (list <payload>
          ; <weight>), so its weight is at index 1.
@@ -379,14 +396,16 @@
                 (list (list-first internals) leaves (list-rest internals))
                 (if (list-null? internals)
                     (list (list-first leaves) (list-rest leaves) internals)
-                    (if (integer<=? (list-nth (list-first leaves) 1)
-                                    (list-nth (list-first internals) 1))
+                    (if (integer<=? (list-nth (list-first leaves) 1) (list-nth (list-first internals) 1))
                         (list (list-first leaves) (list-rest leaves) internals)
                         (list (list-first internals) leaves (list-rest internals)))))))
+
          (merge
           (lambda (leaves internals remaining)
             (if (integer<=? remaining 1)
-                (if (list-null? leaves) (list-first internals) (list-first leaves))
+                (if (list-null? leaves)
+                    (list-first internals)
+                    (list-first leaves))
                 (let ((p1 (pop-min leaves internals)))
                   (let ((n1 (list-first p1))
                         (leaves1 (list-nth p1 1))
@@ -395,44 +414,60 @@
                       (let ((n2 (list-first p2))
                             (leaves2 (list-nth p2 1))
                             (internals2 (list-nth p2 2)))
-                        (let ((merged (list (list (list-nth n1 0) (list-nth n2 0))
-                                            (integer+ (list-nth n1 1) (list-nth n2 1)))))
-                          (merge leaves2 (list-append internals2 merged)
-                                 (integer- remaining 1)))))))))))
+                        (let ((merged
+                               (list
+                                 (list (list-nth n1 0) (list-nth n2 0))
+                                 (integer+ (list-nth n1 1) (list-nth n2 1)))))
+                          (merge leaves2 (list-append internals2 merged) (integer- remaining 1)))))))))))
         (let ((active (active-symbols 0 freqs (list))))
           (if (list-null? active)
               (map-list (lambda (f) 0) freqs)
-              (let ((sorted-leaves (sort-list (lambda (a b) (integer<? (list-nth a 1) (list-nth b 1))) active)))
-                (let ((depth-map (depths (list (merge sorted-leaves (list)
-                                                      (list-length sorted-leaves)))
-                                         (dict))))
-                  (letrec ((build (lambda (i lst acc)
-                                    (if (list-null? lst)
-                                        (list-reverse acc)
-                                        (build (integer+ i 1) (list-rest lst)
-                                               (list-prepend acc (dict-get depth-map i 0)))))))
+              (let ((sorted-leaves
+                     (sort-list
+                       (lambda (a b)
+                         (integer<? (list-nth a 1) (list-nth b 1)))
+                       active)))
+                (let ((depth-map (depths (list (merge sorted-leaves (list) (list-length sorted-leaves))) (dict))))
+                  (letrec ((build
+                            (lambda (i lst acc)
+                              (if (list-null? lst)
+                                  (list-reverse acc)
+                                  (build (integer+ i 1) (list-rest lst) (list-prepend acc (dict-get depth-map i 0)))))))
                     (let ((lengths (build 0 freqs (list))))
                       ; A single active symbol is assigned depth 0 by the merge,
                       ; but a code length of 0 means "unused" in DEFLATE.  When
                       ; the longest code is zero bits, give every active symbol
                       ; length 1 so the alphabet has a usable code.
-                      (if (integer=? (fold-list (lambda (acc len) (integer-max acc len)) 0 lengths) 0)
-                          (letrec ((fix (lambda (fs acc)
-                                          (if (list-null? fs)
-                                              (list-reverse acc)
-                                              (fix (list-rest fs)
-                                                   (list-prepend acc
-                                                                 (if (integer>? (list-first fs) 0) 1 0)))))))
+                      (if (integer=?
+                            (fold-list
+                              (lambda (acc len)
+                                (integer-max acc len))
+                              0
+                              lengths)
+                            0)
+                          (letrec ((fix
+                                    (lambda (fs acc)
+                                      (if (list-null? fs)
+                                          (list-reverse acc)
+                                          (fix
+                                            (list-rest fs)
+                                            (list-prepend
+                                              acc
+                                              (if (integer>? (list-first fs) 0)
+                                                  1
+                                                  0)))))))
                             (fix freqs (list)))
                           lengths))))))))))
 
    ; Clamp code lengths to the DEFLATE maximum of 15 bits.
    (clamp-lengths
     (lambda (lengths)
-      (map-list (lambda (len) (integer-min len 15)) lengths)))
+      (map-list
+        (lambda (len)
+          (integer-min len 15))
+        lengths)))
 
    ; --- Block encoders ------------------------------------------------------
-
    ; Write the three-bit block header (BFINAL, BTYPE).
    (write-block-header
     (lambda (w final btype)
@@ -448,43 +483,38 @@
             (let ((w3 (write-bits w2 len 16)))
               (let ((w4 (write-bits w3 (integer-bit-and (integer-bit-not len) #xffff) 16)))
                 (let ((w5 (align-writer w4)))
-                  (writer (bytes-concat (struct-get w5 'bytes)
-                                        (bytes-slice b start end))
-                          0
-                          0)))))))))
+                  (writer (bytes-concat (struct-get w5 'bytes) (bytes-slice b start end)) 0 0)))))))))
 
    ; Emit the token stream using the given literal/length and distance code
    ; lists, ending with the end-of-block symbol (256).
    (write-tokens
     (lambda (w tokens lit-codes dist-codes)
-      (letrec ((loop (lambda (toks st)
-                       (if (list-null? toks)
-                           (write-symbol st lit-codes 256)
-                           (let ((tok (list-first toks)))
-                             (if (string=? (list-first tok) "lit")
-                                 (loop (list-rest toks)
-                                       (write-symbol st lit-codes (list-nth tok 1)))
-                                 (let ((len (list-nth tok 1))
-                                       (dist (list-nth tok 2)))
-                                   (let ((le (encode-length len)))
-                                     (let ((st2 (write-symbol st lit-codes (list-first le))))
-                                       (let ((st3 (write-bits st2 (list-nth le 1) (list-nth le 2))))
-                                         (let ((de (encode-distance dist)))
-                                           (let ((st4 (write-symbol st3 dist-codes (list-first de))))
-                                             (loop (list-rest toks)
-                                                   (write-bits st4 (list-nth de 1) (list-nth de 2)))))))))))))))
+      (letrec ((loop
+                (lambda (toks st)
+                  (if (list-null? toks)
+                      (write-symbol st lit-codes 256)
+                      (let ((tok (list-first toks)))
+                        (if (string=? (list-first tok) "lit")
+                            (loop (list-rest toks) (write-symbol st lit-codes (list-nth tok 1)))
+                            (let ((len (list-nth tok 1))
+                                  (dist (list-nth tok 2)))
+                              (let ((le (encode-length len)))
+                                (let ((st2 (write-symbol st lit-codes (list-first le))))
+                                  (let ((st3 (write-bits st2 (list-nth le 1) (list-nth le 2))))
+                                    (let ((de (encode-distance dist)))
+                                      (let ((st4 (write-symbol st3 dist-codes (list-first de))))
+                                        (loop
+                                          (list-rest toks)
+                                          (write-bits st4 (list-nth de 1) (list-nth de 2)))))))))))))))
         (loop tokens w))))
 
    ; Encode a fixed Huffman block (BTYPE = 01).
    (write-fixed-block
     (lambda (w tokens final)
       (let ((w1 (write-block-header w final 1)))
-        (write-tokens w1 tokens
-                      (canonical-codes fixed-lit-lengths)
-                      (canonical-codes fixed-dist-lengths)))))
+        (write-tokens w1 tokens (canonical-codes fixed-lit-lengths) (canonical-codes fixed-dist-lengths)))))
 
    ; --- Dynamic Huffman block -----------------------------------------------
-
    ; Count the frequencies of literal/length and distance symbols in a token
    ; list.  Returns (list <lit-freqs> <dist-freqs>) as lists indexed by symbol.
    ; The literal/length list has 286 entries (0-285) and always counts the
@@ -495,36 +525,45 @@
         ((bump
           (lambda (freqs sym)
             (dict-with freqs sym (integer+ (dict-get freqs sym 0) 1))))
-         (loop (lambda (toks lit-freqs dist-freqs)
-                 (if (list-null? toks)
-                     (list lit-freqs dist-freqs)
-                     (let ((tok (list-first toks)))
-                       (if (string=? (list-first tok) "lit")
-                           (loop (list-rest toks)
-                                 (bump lit-freqs (list-nth tok 1))
-                                 dist-freqs)
-                           (let ((le (encode-length (list-nth tok 1)))
-                                 (de (encode-distance (list-nth tok 2))))
-                             (loop (list-rest toks)
-                                   (bump lit-freqs (list-first le))
-                                   (bump dist-freqs (list-first de))))))))))
+
+         (loop
+          (lambda (toks lit-freqs dist-freqs)
+            (if (list-null? toks)
+                (list lit-freqs dist-freqs)
+                (let ((tok (list-first toks)))
+                  (if (string=? (list-first tok) "lit")
+                      (loop (list-rest toks) (bump lit-freqs (list-nth tok 1)) dist-freqs)
+                      (let ((le (encode-length (list-nth tok 1)))
+                            (de (encode-distance (list-nth tok 2))))
+                        (loop
+                          (list-rest toks)
+                          (bump lit-freqs (list-first le))
+                          (bump dist-freqs (list-first de))))))))))
         (let ((result (loop tokens (dict-with (dict) 256 1) (dict))))
           (let ((lit-map (list-first result))
                 (dist-map (list-nth result 1)))
-            (list (map-list (lambda (i) (dict-get lit-map i 0)) (range 0 286))
-                  (map-list (lambda (i) (dict-get dist-map i 0)) (range 0 30))))))))
+            (list
+              (map-list
+                (lambda (i)
+                  (dict-get lit-map i 0))
+                (range 0 286))
+              (map-list
+                (lambda (i)
+                  (dict-get dist-map i 0))
+                (range 0 30))))))))
 
    ; Trim trailing zero-length entries down to a minimum count, returning the
    ; number of entries to keep.  DEFLATE requires at least 257 literal/length
    ; codes and at least 1 distance code.
    (trimmed-count
     (lambda (lengths minimum)
-      (letrec ((loop (lambda (n)
-                       (if (integer<=? n minimum)
-                           minimum
-                           (if (integer=? (list-nth lengths (integer- n 1)) 0)
-                               (loop (integer- n 1))
-                               n)))))
+      (letrec ((loop
+                (lambda (n)
+                  (if (integer<=? n minimum)
+                      minimum
+                      (if (integer=? (list-nth lengths (integer- n 1)) 0)
+                          (loop (integer- n 1))
+                          n)))))
         (loop (list-length lengths)))))
 
    ; Run-length encode a list of code lengths into a list of items, where each
@@ -543,6 +582,7 @@
                 (if (integer=? (list-first lst) value)
                     (integer+ 1 (run-length (list-rest lst) value))
                     0))))
+
          ; Emit a run of `n` copies of a non-zero `value`.
          (emit-nonzero
           (lambda (value n acc)
@@ -553,89 +593,105 @@
                     ; n >= 2: emit the value once, then use code 16 for the
                     ; remaining n-1 copies in chunks of 3-6.
                     (let ((rest (integer- n 1)))
-                      (emit-nonzero-repeats rest
-                                            value
-                                            (list-prepend acc (list value 0 0))))))))
+                      (emit-nonzero-repeats rest value (list-prepend acc (list value 0 0))))))))
+
          (emit-nonzero-repeats
           (lambda (n value acc)
             (if (integer=? n 0)
                 acc
                 (if (integer<=? n 2)
                     ; Too few for code 16 (needs >= 3); emit the value literally.
-                    (letrec ((loop (lambda (k a)
-                                     (if (integer=? k 0) a
-                                         (loop (integer- k 1)
-                                               (list-prepend a (list value 0 0)))))))
+                    (letrec ((loop
+                              (lambda (k a)
+                                (if (integer=? k 0)
+                                    a
+                                    (loop (integer- k 1) (list-prepend a (list value 0 0)))))))
                       (loop n acc))
                     (let ((chunk (integer-min 6 n)))
-                      (emit-nonzero-repeats (integer- n chunk)
-                                            value
-                                            (list-prepend acc (list 16 (integer- chunk 3) 2))))))))
+                      (emit-nonzero-repeats
+                        (integer- n chunk)
+                        value
+                        (list-prepend acc (list 16 (integer- chunk 3) 2))))))))
+
          ; Emit a run of `n` zeros using codes 17 (3-10) and 18 (11-138).
          (emit-zeros
           (lambda (n acc)
             (if (integer=? n 0)
                 acc
                 (if (integer<=? n 2)
-                    (letrec ((loop (lambda (k a)
-                                     (if (integer=? k 0) a
-                                         (loop (integer- k 1)
-                                               (list-prepend a (list 0 0 0)))))))
+                    (letrec ((loop
+                              (lambda (k a)
+                                (if (integer=? k 0)
+                                    a
+                                    (loop (integer- k 1) (list-prepend a (list 0 0 0)))))))
                       (loop n acc))
                     (if (integer<=? n 10)
-                        (emit-zeros (integer- n (integer-min 10 n))
-                                    (list-prepend acc (list 17 (integer- (integer-min 10 n) 3) 3)))
+                        (emit-zeros
+                          (integer- n (integer-min 10 n))
+                          (list-prepend acc (list 17 (integer- (integer-min 10 n) 3) 3)))
                         (let ((chunk (integer-min 138 n)))
-                          (emit-zeros (integer- n chunk)
-                                      (list-prepend acc (list 18 (integer- chunk 11) 7)))))))))
-         (loop (lambda (lst acc)
-                 (if (list-null? lst)
-                     (list-reverse acc)
-                     (let ((value (list-first lst))
-                           (n (run-length lst (list-first lst))))
-                       (if (integer=? value 0)
-                           (loop (list-slice lst n) (emit-zeros n acc))
-                           (loop (list-slice lst n) (emit-nonzero value n acc))))))))
+                          (emit-zeros (integer- n chunk) (list-prepend acc (list 18 (integer- chunk 11) 7)))))))))
+
+         (loop
+          (lambda (lst acc)
+            (if (list-null? lst)
+                (list-reverse acc)
+                (let ((value (list-first lst))
+                      (n (run-length lst (list-first lst))))
+                  (if (integer=? value 0)
+                      (loop (list-slice lst n) (emit-zeros n acc))
+                      (loop (list-slice lst n) (emit-nonzero value n acc))))))))
         (loop lengths (list)))))
 
    ; Build the code-length code lengths from the run-length encoded items,
    ; then return (list <cl-lengths> <cl-codes> <items>).
    (build-code-length-code
     (lambda (items)
-      (letrec ((count (lambda (lst acc)
-                        (if (list-null? lst)
-                            acc
-                            (count (list-rest lst)
-                                   (dict-with acc (list-first (list-first lst))
-                                             (integer+ (dict-get acc (list-first (list-first lst)) 0) 1)))))))
+      (letrec ((count
+                (lambda (lst acc)
+                  (if (list-null? lst)
+                      acc
+                      (count
+                        (list-rest lst)
+                        (dict-with
+                          acc
+                          (list-first (list-first lst))
+                          (integer+ (dict-get acc (list-first (list-first lst)) 0) 1)))))))
         (let ((freq-map (count items (dict))))
-          (let ((cl-freqs (map-list (lambda (i) (dict-get freq-map i 0)) (range 0 19))))
+          (let ((cl-freqs
+                 (map-list
+                   (lambda (i)
+                     (dict-get freq-map i 0))
+                   (range 0 19))))
             (let ((cl-lengths (clamp-lengths (build-code-lengths cl-freqs))))
-                (list cl-lengths (canonical-codes cl-lengths) items)))))))
+              (list cl-lengths (canonical-codes cl-lengths) items)))))))
 
    ; Write the code-length code lengths in the special order, up to HCLEN + 4
    ; entries.  Returns the new writer.
    (write-code-length-lengths
     (lambda (w cl-lengths count)
-      (letrec ((loop (lambda (i st)
-                       (if (integer>=? i count)
-                           st
-                           (loop (integer+ i 1)
-                                 (write-bits st (list-nth cl-lengths (vector-nth code-length-order i)) 3))))))
+      (letrec ((loop
+                (lambda (i st)
+                  (if (integer>=? i count)
+                      st
+                      (loop (integer+ i 1) (write-bits st (list-nth cl-lengths (vector-nth code-length-order i)) 3))))))
         (loop 0 w))))
 
    ; Write the run-length encoded code lengths using the code-length code.
    ; Each item is (list <symbol> <extra-bits> <extra-count>).
    (write-code-lengths
     (lambda (w items cl-codes)
-      (letrec ((loop (lambda (lst st)
-                       (if (list-null? lst)
-                           st
-                           (let ((item (list-first lst)))
-                             (loop (list-rest lst)
-                                   (write-bits (write-symbol st cl-codes (list-first item))
-                                               (list-nth item 1)
-                                               (list-nth item 2))))))))
+      (letrec ((loop
+                (lambda (lst st)
+                  (if (list-null? lst)
+                      st
+                      (let ((item (list-first lst)))
+                        (loop
+                          (list-rest lst)
+                          (write-bits
+                            (write-symbol st cl-codes (list-first item))
+                            (list-nth item 1)
+                            (list-nth item 2))))))))
         (loop items w))))
 
    ; Determine the number of code-length code lengths to transmit (HCLEN + 4):
@@ -643,12 +699,13 @@
    ; to a minimum of 4.
    (code-length-count
     (lambda (cl-lengths)
-      (letrec ((loop (lambda (n)
-                       (if (integer<=? n 4)
-                           4
-                           (if (integer=? (list-nth cl-lengths (vector-nth code-length-order (integer- n 1))) 0)
-                               (loop (integer- n 1))
-                               n)))))
+      (letrec ((loop
+                (lambda (n)
+                  (if (integer<=? n 4)
+                      4
+                      (if (integer=? (list-nth cl-lengths (vector-nth code-length-order (integer- n 1))) 0)
+                          (loop (integer- n 1))
+                          n)))))
         (loop 19))))
 
    ; Encode a dynamic Huffman block (BTYPE = 10).  Builds optimal code lengths
@@ -663,26 +720,27 @@
                 (dist-lengths (clamp-lengths (build-code-lengths dist-freqs))))
             (let ((num-lit (trimmed-count lit-lengths 257))
                   (num-dist (trimmed-count dist-lengths 1)))
-              (let ((items (rle-code-lengths
-                             (list-concat (list-slice lit-lengths 0 num-lit)
-                                          (list-slice dist-lengths 0 num-dist)))))
-              (let ((cl (build-code-length-code items)))
-                (let ((cl-lengths (list-first cl))
-                      (cl-codes (list-nth cl 1))
-                      (cl-items (list-nth cl 2)))
-                  (let ((hclen-count (code-length-count cl-lengths)))
-                    (let ((w1 (write-block-header w final 2)))
-                      (let ((w2 (write-bits w1 (integer- num-lit 257) 5)))
-                        (let ((w3 (write-bits w2 (integer- num-dist 1) 5)))
-                          (let ((w4 (write-bits w3 (integer- hclen-count 4) 4)))
-                            (let ((w5 (write-code-length-lengths w4 cl-lengths hclen-count)))
-                              (let ((w6 (write-code-lengths w5 cl-items cl-codes)))
-                                (write-tokens w6 tokens
-                                              (canonical-codes lit-lengths)
-                                              (canonical-codes dist-lengths))))))))))))))))))
+              (let ((items
+                     (rle-code-lengths
+                       (list-concat (list-slice lit-lengths 0 num-lit) (list-slice dist-lengths 0 num-dist)))))
+                (let ((cl (build-code-length-code items)))
+                  (let ((cl-lengths (list-first cl))
+                        (cl-codes (list-nth cl 1))
+                        (cl-items (list-nth cl 2)))
+                    (let ((hclen-count (code-length-count cl-lengths)))
+                      (let ((w1 (write-block-header w final 2)))
+                        (let ((w2 (write-bits w1 (integer- num-lit 257) 5)))
+                          (let ((w3 (write-bits w2 (integer- num-dist 1) 5)))
+                            (let ((w4 (write-bits w3 (integer- hclen-count 4) 4)))
+                              (let ((w5 (write-code-length-lengths w4 cl-lengths hclen-count)))
+                                (let ((w6 (write-code-lengths w5 cl-items cl-codes)))
+                                  (write-tokens
+                                    w6
+                                    tokens
+                                    (canonical-codes lit-lengths)
+                                    (canonical-codes dist-lengths))))))))))))))))))
 
    ; --- Top-level entry point -----------------------------------------------
-
    ; Encode the whole input as a single stored (BTYPE = 00) block.
    (encode-stored
     (lambda (b)
@@ -716,8 +774,11 @@
         (let ((stored (encode-stored b))
               (fixed (encode-fixed tokens))
               (dynamic (encode-dynamic tokens)))
-          (letrec ((shortest (lambda (a c)
-                               (if (integer<? (bytes-length a) (bytes-length c)) a c))))
+          (letrec ((shortest
+                    (lambda (a c)
+                      (if (integer<? (bytes-length a) (bytes-length c))
+                          a
+                          c))))
             (shortest (shortest stored fixed) dynamic))))))
 
    ; Compress a bytes value into a raw DEFLATE stream that decompresses back to
@@ -730,7 +791,10 @@
    (compress
     (lambda (b . rest)
       (if (bytes? b)
-          (let ((block-mode (if (list-null? rest) (mode 'auto) (list-first rest))))
+          (let ((block-mode
+                 (if (list-null? rest)
+                     (mode 'auto)
+                     (list-first rest))))
             (encode-block b block-mode))
           (error "deflate-compress: compress expects a bytes value")))))
 

@@ -14,26 +14,24 @@
    ; The empty input round-trips through compress then decompress unchanged.
    (test-round-trip-empty
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "")))
-                    (string->bytes ""))))
+      (assert-equal (decompress (compress (string->bytes ""))) (string->bytes ""))))
 
    ; A short text round-trips through compress then decompress unchanged.
    (test-round-trip-short-text
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "hello world")))
-                    (string->bytes "hello world"))))
+      (assert-equal (decompress (compress (string->bytes "hello world"))) (string->bytes "hello world"))))
 
    ; Repetitive text round-trips through compress then decompress unchanged.
    (test-round-trip-repetitive
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
-                    (string->bytes "abcabcabcabcabcabcabcabc"))))
+      (assert-equal
+        (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
+        (string->bytes "abcabcabcabcabcabcabcabc"))))
 
    ; A single byte round-trips through compress then decompress unchanged.
    (test-round-trip-single-byte
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "x")))
-                    (string->bytes "x"))))
+      (assert-equal (decompress (compress (string->bytes "x"))) (string->bytes "x"))))
 
    ; The empty bytes value round-trips through compress then decompress unchanged.
    (test-round-trip-all-byte-values
@@ -45,8 +43,7 @@
    (test-header-bytes
     (lambda ()
       (let ((stream (compress (string->bytes "payload"))))
-        (assert-equal (bytes-slice stream 0 2)
-                      (string-hex->bytes "789c")))))
+        (assert-equal (bytes-slice stream 0 2) (string-hex->bytes "789c")))))
 
    ; The header check is a multiple of 31.
    (test-header-check
@@ -60,46 +57,40 @@
    (test-adler32-empty
     (lambda ()
       (let ((stream (compress (string->bytes ""))))
-        (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4))
-                      1))))
+        (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4)) 1))))
 
    ; The trailer's Adler-32 of a known payload is correct.
    (test-adler32-known-payload
     (lambda ()
       (let ((stream (compress (string->bytes "hello world hello world hello world"))))
-        (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4))
-                      #xef930d55))))
+        (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4)) #xef930d55))))
 
    ; A stream produced by another zlib implementation decompresses correctly.
    (test-interoperability
     (lambda ()
-      (assert-equal (bytes->string
-                      (decompress (string-hex->bytes "78dacb48cdc9c95728cf2fca4951c8c0ce0600ef930d55")))
-                    "hello world hello world hello world")))
+      (assert-equal
+        (bytes->string (decompress (string-hex->bytes "78dacb48cdc9c95728cf2fca4951c8c0ce0600ef930d55")))
+        "hello world hello world hello world")))
 
    ; Stored mode round-trips.
    (test-mode-stored
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'stored)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'stored))) (string->bytes "abcdefgh"))))
 
    ; Fixed mode round-trips.
    (test-mode-fixed
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'fixed)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'fixed))) (string->bytes "abcdefgh"))))
 
    ; Dynamic mode round-trips.
    (test-mode-dynamic
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'dynamic)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'dynamic))) (string->bytes "abcdefgh"))))
 
    ; Auto mode round-trips.
    (test-mode-auto
     (lambda ()
-      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'auto)))
-                    (string->bytes "abcdefgh"))))
+      (assert-equal (decompress (compress (string->bytes "abcdefgh") (mode 'auto))) (string->bytes "abcdefgh"))))
 
    ; A non-bytes argument is rejected.
    (test-rejects-non-bytes
@@ -108,7 +99,8 @@
 
    (tests
     (list
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "empty input" test-round-trip-empty)
           (expect-pass "short text" test-round-trip-short-text)
@@ -116,29 +108,30 @@
           (expect-pass "single byte" test-round-trip-single-byte)
           (expect-pass "all byte values" test-round-trip-all-byte-values)))
 
-      (list "header"
+      (list
+        "header"
         (list
           (expect-pass "starts with the 0x789c header" test-header-bytes)
           (expect-pass "header check is a multiple of 31" test-header-check)))
 
-      (list "checksum"
+      (list
+        "checksum"
         (list
           (expect-pass "adler-32 of empty input is 1" test-adler32-empty)
           (expect-pass "adler-32 of a known payload" test-adler32-known-payload)))
 
-      (list "interoperability"
-        (list
-          (expect-pass "decompresses a stream produced elsewhere" test-interoperability)))
+      (list "interoperability" (list (expect-pass "decompresses a stream produced elsewhere" test-interoperability)))
 
-      (list "modes"
+      (list
+        "modes"
         (list
           (expect-pass "stored mode round-trips" test-mode-stored)
           (expect-pass "fixed mode round-trips" test-mode-fixed)
           (expect-pass "dynamic mode round-trips" test-mode-dynamic)
           (expect-pass "auto mode round-trips" test-mode-auto)))
 
-      (list "errors"
-        (list
-          (expect-fail "rejects a non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
+      (list
+        "errors"
+        (list (expect-fail "rejects a non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
 
   (export tests))

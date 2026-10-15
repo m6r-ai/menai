@@ -863,18 +863,25 @@ See [ADR-0045](docs/adr/0045-desugared-match-size-is-bounded.md).
 
 ### Menai source formatting is defined by a fixed style
 
-`menai-format` implements one style, recorded in ADR-0051. The width is 100
+`menai-format` implements one style, recorded in ADR-0051. The width is 120
 columns, measured as the column a form's compact rendering would end at; a form is
-compact when it ends at or before column 100 and multi-line otherwise. Every form
+compact when it ends at or before column 120 and multi-line otherwise. Every form
 follows the general-list rule — `head` and the first argument on the first line,
-each remaining argument on its own line aligned under the first argument — except
-the five special forms (`lambda`, `let`, `let*`, `letrec`, `match`), which indent
-their trailing elements by two, and bindings, which put the value on the next line
+each remaining argument on its own line aligned under the first argument — except a
+list with two or more arguments of which any is a nested form, which instead breaks
+after the head and indents every argument by two (so a single nested argument does
+not leave the rest aligned under a wide head), and except the five special forms
+(`lambda`, `let`, `let*`, `letrec`, `match`), which indent their trailing elements
+by two, and bindings, which put the value on the next line
 at the name's column. A multi-line binding is separated from the next binding by a
 blank line (before any comment that precedes it) and from the previous binding by
 one too; single-line bindings are not separated.
 A multi-line `dict` is the general-list rule with arguments grouped in pairs:
 each key/value pair goes on its own line, aligned under the first key.
+
+A compound form (`if`, `let`, `let*`, `letrec`) with a nested body is multi-line
+wherever it appears, including as a binding's value, so the same form never renders
+compact in one position and expanded in another.
 
 `and` and `or` are variadic and are written flat (`(or a b c d)`), never as a
 right-nested cascade. The nesting carries no meaning and drives the formatter's

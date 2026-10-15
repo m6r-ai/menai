@@ -76,9 +76,14 @@
    ; A skewed alphabet round-trips under dynamic and auto coding.
    (test-skewed-alphabet
     (lambda ()
-      (let ((text (list->string
-                    (map-list (lambda (i) (if (integer=? (integer% i 10) 0) "b" "a"))
-                              (range 0 300)))))
+      (let ((text
+             (list->string
+               (map-list
+                 (lambda (i)
+                   (if (integer=? (integer% i 10) 0)
+                       "b"
+                       "a"))
+                 (range 0 300)))))
         (and (assert-equal (round-trip text (mode 'dynamic)) text)
              (assert-equal (round-trip text (mode 'auto)) text)))))
 
@@ -97,8 +102,9 @@
       (and (assert-equal (round-trip "x" (mode 'auto)) "x")
            (and (assert-equal (round-trip "xyz" (mode 'auto)) "xyz")
                 (and (assert-equal (round-trip "abcdefghijklmnop" (mode 'auto)) "abcdefghijklmnop")
-                     (assert-equal (round-trip "the quick brown fox jumps over the lazy dog" (mode 'auto))
-                                   "the quick brown fox jumps over the lazy dog"))))))
+                     (assert-equal
+                       (round-trip "the quick brown fox jumps over the lazy dog" (mode 'auto))
+                       "the quick brown fox jumps over the lazy dog"))))))
 
    ; Stored mode emits a stored block.
    (test-stored-block-type
@@ -156,7 +162,8 @@
 
    (tests
     (list
-      (list "round-trip through decompress"
+      (list
+        "round-trip through decompress"
         (list
           (expect-pass "empty input, all modes" test-empty-all-modes)
           (expect-pass "single byte, all modes" test-single-byte-all-modes)
@@ -168,7 +175,8 @@
           (expect-pass "all byte values round-trip" test-all-byte-values)
           (expect-pass "auto round-trips a range of lengths" test-auto-range-of-lengths)))
 
-      (list "block type selection"
+      (list
+        "block type selection"
         (list
           (expect-pass "stored mode emits a stored block" test-stored-block-type)
           (expect-pass "fixed mode emits a fixed Huffman block" test-fixed-block-type)
@@ -176,13 +184,14 @@
           (expect-pass "every mode sets the final-block bit" test-final-block-bit)
           (expect-pass "auto never exceeds the smallest single-mode output" test-auto-smallest-output)))
 
-      (list "compression"
+      (list
+        "compression"
         (list
           (expect-pass "repetitive input compresses below its original size" test-repetitive-compresses)
           (expect-pass "stored output carries the original bytes verbatim" test-stored-verbatim)))
 
-      (list "errors"
-        (list
-          (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
+      (list
+        "errors"
+        (list (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
 
   (export tests))

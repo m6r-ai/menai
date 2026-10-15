@@ -1,28 +1,28 @@
 (let ((json-decoder (import "json-decode")))
   (let ((run
          (lambda (inputs)
-           (letrec
-             ((value->string
-               (lambda (v)
-                 (match v
-                   ((? string? s) (string-concat "\"" s "\""))
-                   ((? integer? n) (integer->string n))
-                   ((? float? f) (float->string f))
-                   ((? boolean? b) (if (boolean=? b #t) "true" "false"))
-                   ((? none? _) "null")
-                   ((? list? lst)
-                    (let ((items (map-list value->string lst)))
-                      (string-concat "[" (list->string items ", ") "]")))
-                   ((? dict? d)
-                    (let ((pair-strings
-                           (map-list
-                             (lambda (k)
-                               (string-concat
-                                 "\"" k "\": "
-                                 (value->string (dict-get d k))))
-                             (dict-keys d))))
-                      (string-concat "{" (list->string pair-strings ", ") "}")))
-                   (_ "?unknown?")))))
+           (letrec ((value->string
+                     (lambda (v)
+                       (match v
+                         ((? string? s) (string-concat "\"" s "\""))
+                         ((? integer? n) (integer->string n))
+                         ((? float? f) (float->string f))
+                         ((? boolean? b)
+                          (if (boolean=? b #t)
+                              "true"
+                              "false"))
+                         ((? none? _) "null")
+                         ((? list? lst)
+                          (let ((items (map-list value->string lst)))
+                            (string-concat "[" (list->string items ", ") "]")))
+                         ((? dict? d)
+                          (let ((pair-strings
+                                 (map-list
+                                   (lambda (k)
+                                     (string-concat "\"" k "\": " (value->string (dict-get d k))))
+                                   (dict-keys d))))
+                            (string-concat "{" (list->string pair-strings ", ") "}")))
+                         (_ "?unknown?")))))
              (let* ((content (dict-get inputs "content"))
                     (parsed ((:: json-decoder decode) content))
                     (result (value->string parsed)))

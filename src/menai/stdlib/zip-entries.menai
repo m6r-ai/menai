@@ -20,13 +20,13 @@
    (find-eocd
     (lambda (b)
       (let ((len (bytes-length b)))
-        (letrec ((loop (lambda (pos)
-                         (if (integer<? pos 0)
-                             (error "Not a ZIP file: no end-of-central-directory record found")
-                             (if (bytes-prefix? (bytes-slice b pos (integer-min len (integer+ pos 4)))
-                                                signature-eocd)
-                                 pos
-                                 (loop (integer- pos 1)))))))
+        (letrec ((loop
+                  (lambda (pos)
+                    (if (integer<? pos 0)
+                        (error "Not a ZIP file: no end-of-central-directory record found")
+                        (if (bytes-prefix? (bytes-slice b pos (integer-min len (integer+ pos 4))) signature-eocd)
+                            pos
+                            (loop (integer- pos 1)))))))
           (loop (integer- len 22))))))
 
    ; Read the End Of Central Directory record at `eocd`.  Returns a dict with
@@ -41,14 +41,13 @@
                 (integer=? cd-size #xffffffff)
                 (integer=? total #xffff))
             (error "Unsupported ZIP: Zip64 archives are not supported")
-            (dict
-              "entry-count" total
-              "central-offset" cd-offset
-              "central-size" cd-size
-              "comment" (if (integer=? comment-length 0)
-                            #none
-                            (bytes->string (bytes-slice b (integer+ eocd 22)
-                                                        (integer+ eocd 22 comment-length)))))))))
+            (dict "entry-count" total
+                  "central-offset" cd-offset
+                  "central-size" cd-size
+                  "comment" (if (integer=? comment-length 0)
+                                #none
+                                (bytes->string
+                                  (bytes-slice b (integer+ eocd 22) (integer+ eocd 22 comment-length)))))))))
 
    ; Parse one central directory entry at `pos`.  Returns a dict with the entry
    ; fields and the offset immediately after the entry.
@@ -71,27 +70,25 @@
                       (name-end (integer+ pos 46 name-length)))
                   (let ((name (bytes->string (bytes-slice b name-start name-end))))
                     (list
-                      (dict
-                        "name" name
-                        "compression" method
-                        "crc32" crc
-                        "compressed-size" compressed-size
-                        "uncompressed-size" uncompressed-size
-                        "local-offset" local-offset
-                        "is-directory" (string-suffix? name "/"))
+                      (dict "name" name
+                            "compression" method
+                            "crc32" crc
+                            "compressed-size" compressed-size
+                            "uncompressed-size" uncompressed-size
+                            "local-offset" local-offset
+                            "is-directory" (string-suffix? name "/"))
                       (integer+ name-end extra-length comment-length)))))))))
 
    ; Walk the central directory, collecting entries.  Returns a list of entry
    ; dicts in central-directory order.
    (read-central-directory
     (lambda (b offset count)
-      (letrec ((loop (lambda (pos remaining acc)
-                       (if (integer=? remaining 0)
-                           (list-reverse acc)
-                           (let ((result (read-central-entry b pos)))
-                             (loop (list-nth result 1)
-                                   (integer- remaining 1)
-                                   (list-prepend acc (list-first result))))))))
+      (letrec ((loop
+                (lambda (pos remaining acc)
+                  (if (integer=? remaining 0)
+                      (list-reverse acc)
+                      (let ((result (read-central-entry b pos)))
+                        (loop (list-nth result 1) (integer- remaining 1) (list-prepend acc (list-first result))))))))
         (loop offset count (list)))))
 
    ; Compute the absolute offset of an entry's data from its local file header.
@@ -108,18 +105,12 @@
    ; Add a "data-offset" field to an entry dict.
    (with-data-offset
     (lambda (b entry)
-      (dict-with entry "data-offset"
-                (data-offset-of b (dict-get entry "local-offset")))))
+      (dict-with entry "data-offset" (data-offset-of b (dict-get entry "local-offset")))))
 
    ; Build the top-level result dict from a list of entries.
    (build-result
     (lambda (entries comment)
-      (dict
-        "entries" entries
-        "meta" (dict
-                 "format" "zip"
-                 "entry-count" (list-length entries)
-                 "comment" comment))))
+      (dict "entries" entries "meta" (dict "format" "zip" "entry-count" (list-length entries) "comment" comment))))
 
    ; Read a bytes value containing a ZIP file and return a dict describing its
    ; entries without decompressing them.
@@ -147,13 +138,16 @@
       (if (bytes? b)
           (let ((eocd (find-eocd b)))
             (let ((header (read-eocd b eocd)))
-              (let ((found (map-list (lambda (e) (with-data-offset b e))
-                                     (read-central-directory
-                                       b
-                                       (dict-get header "central-offset")
-                                       (dict-get header "entry-count")))))
+              (let ((found
+                     (map-list
+                       (lambda (e)
+                         (with-data-offset b e))
+                       (read-central-directory b (dict-get header "central-offset") (dict-get header "entry-count")))))
                 (build-result
-                  (map-list (lambda (e) (dict-with e "content" #none)) found)
+                  (map-list
+                    (lambda (e)
+                      (dict-with e "content" #none))
+                    found)
                   (dict-get header "comment")))))
           (error "zip-entries: entries expects a bytes value")))))
 

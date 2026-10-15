@@ -80,10 +80,11 @@
    ; The package's parts as a dict from part name to bytes.
    (parts-of
     (lambda (b)
-      (fold-list (lambda (acc entry)
-                   (dict-with acc (dict-get entry "name") (dict-get entry "content")))
-                 (dict)
-                 (dict-get ((:: zip-extract extract) b) "entries"))))
+      (fold-list
+        (lambda (acc entry)
+          (dict-with acc (dict-get entry "name") (dict-get entry "content")))
+        (dict)
+        (dict-get ((:: zip-extract extract) b) "entries"))))
 
    ; The decoded element for a part, or #none when the part is absent.
    (decode-part
@@ -159,8 +160,10 @@
    ; The decoded elements of the parts under a prefix, in part-name order.
    (decode-parts-under
     (lambda (parts prefix)
-      (map-list (lambda (name) (decode-part parts name))
-                (parts-under parts prefix))))
+      (map-list
+        (lambda (name)
+          (decode-part parts name))
+        (parts-under parts prefix))))
 
    ; The <p:sldId> children of the presentation's <p:sldIdLst>, in order.  The
    ; presentation part's children are the <p:sldIdLst> element; its children are
@@ -168,10 +171,12 @@
    ; slide list.
    (sld-ids
     (lambda (presentation)
-      (let ((lists (filter-list (lambda (child)
-                                  (and (dict? child)
-                                       (string=? (dict-get child "tag") "p:sldIdLst")))
-                                (dict-get presentation "children"))))
+      (let ((lists
+             (filter-list
+               (lambda (child)
+                 (and (dict? child)
+                      (string=? (dict-get child "tag") "p:sldIdLst")))
+               (dict-get presentation "children"))))
         (if (list-null? lists)
             (list)
             (dict-get (list-first lists) "children")))))
@@ -200,33 +205,34 @@
    (slide-entry
     (lambda (parts rels child)
       (let ((part (slide-part-of rels child)))
-        (dict
-          "part" part
-          "element" (decode-required-part parts part)
-          "relationships" (relationships-of-part
-                            parts
-                            (string-concat "ppt/slides/_rels/"
-                                           (last-path-segment part)
-                                           ".rels"))))))
+        (dict "part" part
+              "element" (decode-required-part parts part)
+              "relationships" (relationships-of-part
+                                parts
+                                (string-concat "ppt/slides/_rels/" (last-path-segment part) ".rels"))))))
 
    ; The final "/"-separated segment of a part name.
    (last-path-segment
     (lambda (name)
-      (letrec ((loop (lambda (i found)
-                       (if (integer>=? i (string-length name))
-                           found
-                           (loop (integer+ i 1)
-                                 (if (string=? (string-nth name i) "/")
-                                     (integer+ i 1)
-                                     found))))))
+      (letrec ((loop
+                (lambda (i found)
+                  (if (integer>=? i (string-length name))
+                      found
+                      (loop
+                        (integer+ i 1)
+                        (if (string=? (string-nth name i) "/")
+                            (integer+ i 1)
+                            found))))))
         (string-slice name (loop 0 0)))))
 
    ; The presentation's slides, in presentation order.
    (slides-of
     (lambda (parts presentation)
       (let ((rels (relationships-of parts)))
-        (map-list (lambda (child) (slide-entry parts rels child))
-                  (sld-ids presentation)))))
+        (map-list
+          (lambda (child)
+            (slide-entry parts rels child))
+          (sld-ids presentation)))))
 
    ; The media parts as a dict from part name to bytes, or #none when there are
    ; none.
@@ -235,10 +241,11 @@
       (let ((names (parts-under parts media-prefix)))
         (if (list-null? names)
             #none
-            (fold-list (lambda (acc name)
-                         (dict-with acc name (dict-get parts name)))
-                       (dict)
-                       names)))))
+            (fold-list
+              (lambda (acc name)
+                (dict-with acc name (dict-get parts name)))
+              (dict)
+              names)))))
 
    ; Decode a bytes value containing a PPTX package into a value tree.  It is
    ; the inverse of pptx-encode's encode.
@@ -247,14 +254,13 @@
       (if (bytes? b)
           (let ((parts (parts-of b)))
             (let ((presentation (decode-required-part parts presentation-part)))
-              (dict
-                "presentation" presentation
-                "slides" (slides-of parts presentation)
-                "slide-masters" (decode-parts-under parts slide-masters-prefix)
-                "slide-layouts" (decode-parts-under parts slide-layouts-prefix)
-                "theme" (decode-part parts theme-part)
-                "relationships" (relationships-of parts)
-                "media" (media-of parts))))
+              (dict "presentation" presentation
+                    "slides" (slides-of parts presentation)
+                    "slide-masters" (decode-parts-under parts slide-masters-prefix)
+                    "slide-layouts" (decode-parts-under parts slide-layouts-prefix)
+                    "theme" (decode-part parts theme-part)
+                    "relationships" (relationships-of parts)
+                    "media" (media-of parts))))
           (error "pptx-decode: decode expects a bytes value")))))
 
   (export decode))

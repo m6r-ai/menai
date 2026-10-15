@@ -30,7 +30,8 @@
 
    (is-line-terminator?
     (lambda (ch)
-      (or (string=? ch "\n") (string=? ch "\r"))))
+      (or (string=? ch "\n")
+          (string=? ch "\r"))))
 
    ; The number of characters consumed by the line terminator at `i`: 2 for a
    ; CRLF pair, 1 for a bare CR or LF.  `i` must be at a line terminator.
@@ -46,13 +47,15 @@
    ; terminator, or end of input.  Returns (list <field-string> <next-pos>).
    (scan-unquoted
     (lambda (s i delim)
-      (letrec ((loop (lambda (j)
-                       (if (integer>=? j (string-length s))
-                           j
-                           (let ((ch (string-nth s j)))
-                             (if (or (string=? ch delim) (is-line-terminator? ch))
-                                 j
-                                 (loop (integer+ j 1))))))))
+      (letrec ((loop
+                (lambda (j)
+                  (if (integer>=? j (string-length s))
+                      j
+                      (let ((ch (string-nth s j)))
+                        (if (or (string=? ch delim)
+                                (is-line-terminator? ch))
+                            j
+                            (loop (integer+ j 1))))))))
         (let ((end (loop i)))
           (list (string-slice s i end) end)))))
 
@@ -63,22 +66,24 @@
    ; after the closing quote.
    (scan-quoted
     (lambda (s i)
-      (letrec ((loop (lambda (j acc)
-                       (if (integer>=? j (string-length s))
-                           (error "Unterminated quoted field in CSV input")
-                           (let ((ch (string-nth s j)))
-                             (if (string=? ch "\"")
-                                 (if (and (integer<? (integer+ j 1) (string-length s))
-                                          (string=? (string-nth s (integer+ j 1)) "\""))
-                                     (loop (integer+ j 2) (list-prepend acc "\""))
-                                     (list (list->string (list-reverse acc)) (integer+ j 1)))
-                                 (loop (integer+ j 1) (list-prepend acc ch))))))))
+      (letrec ((loop
+                (lambda (j acc)
+                  (if (integer>=? j (string-length s))
+                      (error "Unterminated quoted field in CSV input")
+                      (let ((ch (string-nth s j)))
+                        (if (string=? ch "\"")
+                            (if (and (integer<? (integer+ j 1) (string-length s))
+                                     (string=? (string-nth s (integer+ j 1)) "\""))
+                                (loop (integer+ j 2) (list-prepend acc "\""))
+                                (list (list->string (list-reverse acc)) (integer+ j 1)))
+                            (loop (integer+ j 1) (list-prepend acc ch))))))))
         (loop (integer+ i 1) (list)))))
 
    ; Parse one field at `i`.  Returns (list <field-string> <next-pos>).
    (parse-field
     (lambda (s i delim)
-      (if (and (integer<? i (string-length s)) (string=? (string-nth s i) "\""))
+      (if (and (integer<? i (string-length s))
+               (string=? (string-nth s i) "\""))
           (scan-quoted s i)
           (scan-unquoted s i delim))))
 
@@ -105,14 +110,17 @@
    (decode
     (lambda (csv-string . rest)
       (if (string? csv-string)
-          (let ((delim (if (list-null? rest) "," (list-first rest))))
-            (if (and (string? delim) (integer=? (string-length delim) 1))
+          (let ((delim
+                 (if (list-null? rest)
+                     ","
+                     (list-first rest))))
+            (if (and (string? delim)
+                     (integer=? (string-length delim) 1))
                 (letrec
                   ((finish
                     (lambda (rows-acc row)
-                      (list->vector
-                        (map-list list->vector
-                                  (list-reverse (list-prepend rows-acc (list-reverse row)))))))
+                      (list->vector (map-list list->vector (list-reverse (list-prepend rows-acc (list-reverse row)))))))
+
                    (loop
                     (lambda (i row-acc rows-acc)
                       (let ((field-result (parse-field csv-string i delim)))
@@ -123,16 +131,14 @@
                             (let ((tag (list-first dispatch))
                                   (next (list-nth dispatch 1)))
                               (match tag
-                                ((: after-field-tag 'field)
-                                 (loop next row rows-acc))
+                                ((: after-field-tag 'field) (loop next row rows-acc))
                                 ((: after-field-tag 'row)
                                  (if (integer>=? next (string-length csv-string))
                                      ; A single trailing terminator ends the
                                      ; last row without starting a new one.
                                      (finish rows-acc row)
                                      (loop next (list) (list-prepend rows-acc (list-reverse row)))))
-                                ((: after-field-tag 'end)
-                                 (finish rows-acc row))))))))))
+                                ((: after-field-tag 'end) (finish rows-acc row))))))))))
                   (loop 0 (list) (list)))
                 (error "CSV delimiter must be a single-character string")))
           (error "CSV input must be a string")))))

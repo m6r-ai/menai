@@ -29,13 +29,17 @@
    (entry-content
     (lambda (entry)
       (let ((content (dict-get entry "content")))
-        (if (bytes? content) content (bytes-concat)))))
+        (if (bytes? content)
+            content
+            (bytes-concat)))))
 
    ; The compression method of an entry, defaulting to stored (0).
    (entry-method
     (lambda (entry)
       (let ((method (dict-get entry "compression")))
-        (if (integer? method) method 0))))
+        (if (integer? method)
+            method
+            0))))
 
    ; Compress an entry's content with the requested method.
    (encode-content
@@ -44,10 +48,11 @@
           content
           (if (integer=? method 8)
               ((:: deflate-lib compress) content)
-              (error (string-concat
-                       "zip-create: unsupported compression method "
-                       (integer->string method)
-                       " (only stored (0) and deflate (8) are supported)"))))))
+              (error
+                (string-concat
+                  "zip-create: unsupported compression method "
+                  (integer->string method)
+                  " (only stored (0) and deflate (8) are supported)"))))))
 
    ; Build one entry's local file header followed by its data.  Returns
    ; (list <bytes> <crc32> <compressed-size> <uncompressed-size> <method>).
@@ -101,10 +106,11 @@
           (bytes-append-u16-le (bytes-concat) 0)
           (bytes-append-u16-le (bytes-concat) 0)
           (bytes-append-u16-le (bytes-concat) 0)
-          (bytes-append-u32-le (bytes-concat)
-                               (if (string-suffix? (dict-get entry "name") "/")
-                                   directory-attributes
-                                   0))
+          (bytes-append-u32-le
+            (bytes-concat)
+            (if (string-suffix? (dict-get entry "name") "/")
+                directory-attributes
+                0))
           (bytes-append-u32-le (bytes-concat) local-offset)
           name-bytes))))
 
@@ -113,31 +119,34 @@
    ; (list <local-bytes> <central-bytes> <entry-count>).
    (build-entries
     (lambda (entries)
-      (letrec
-        ((loop (lambda (rest offset local-acc central-acc count)
-                 (if (list-null? rest)
-                     (list local-acc central-acc count)
-                     (let ((entry (list-first rest)))
-                       (let ((built (build-local-entry entry)))
-                         (let ((local-bytes (list-first built))
-                               (crc (list-nth built 1))
-                               (compressed-size (list-nth built 2))
-                               (uncompressed-size (list-nth built 3))
-                               (method (list-nth built 4)))
-                           (loop (list-rest rest)
-                                 (integer+ offset (bytes-length local-bytes))
-                                 (bytes-concat local-acc local-bytes)
-                                 (bytes-concat central-acc
-                                               (build-central-entry
-                                                 entry offset crc
-                                                 compressed-size uncompressed-size method))
-                                 (integer+ count 1)))))))))
+      (letrec ((loop
+                (lambda (rest offset local-acc central-acc count)
+                  (if (list-null? rest)
+                      (list local-acc central-acc count)
+                      (let ((entry (list-first rest)))
+                        (let ((built (build-local-entry entry)))
+                          (let ((local-bytes (list-first built))
+                                (crc (list-nth built 1))
+                                (compressed-size (list-nth built 2))
+                                (uncompressed-size (list-nth built 3))
+                                (method (list-nth built 4)))
+                            (loop
+                              (list-rest rest)
+                              (integer+ offset (bytes-length local-bytes))
+                              (bytes-concat local-acc local-bytes)
+                              (bytes-concat
+                                central-acc
+                                (build-central-entry entry offset crc compressed-size uncompressed-size method))
+                              (integer+ count 1)))))))))
         (loop entries 0 (bytes-concat) (bytes-concat) 0))))
 
    ; Build the end-of-central-directory record.
    (build-eocd
     (lambda (count central-size central-offset comment)
-      (let ((comment-bytes (if (string? comment) (string->bytes comment) (bytes-concat))))
+      (let ((comment-bytes
+             (if (string? comment)
+                 (string->bytes comment)
+                 (bytes-concat))))
         (bytes-concat
           signature-eocd
           (bytes-append-u16-le (bytes-concat) 0)
@@ -190,10 +199,13 @@
                     (bytes-concat
                       local-bytes
                       central-bytes
-                      (build-eocd count
-                                  (bytes-length central-bytes)
-                                  (bytes-length local-bytes)
-                                  (if (dict? meta) (dict-get meta "comment") #none)))))
+                      (build-eocd
+                        count
+                        (bytes-length central-bytes)
+                        (bytes-length local-bytes)
+                        (if (dict? meta)
+                            (dict-get meta "comment")
+                            #none)))))
                 (error "zip-create: \"entries\" must be a list")))
           (error "zip-create: create expects a dict")))))
 

@@ -22,20 +22,15 @@
    ; A single file's content round-trips through extract-entry.
    (test-single-file
     (lambda ()
-      (let ((archive (create (dict "entries"
-                                   (list (dict "name" "hello.txt"
-                                               "content" (string->bytes "hello world")))))))
-        (assert-equal (bytes->string (dict-get (extract-entry archive "hello.txt") "content"))
-                      "hello world"))))
+      (let ((archive
+             (create (dict "entries" (list (dict "name" "hello.txt" "content" (string->bytes "hello world")))))))
+        (assert-equal (bytes->string (dict-get (extract-entry archive "hello.txt") "content")) "hello world"))))
 
    ; A nested path's content round-trips through extract-entry.
    (test-nested-path
     (lambda ()
-      (let ((archive (create (dict "entries"
-                                   (list (dict "name" "a/b/c.txt"
-                                               "content" (string->bytes "deep")))))))
-        (assert-equal (bytes->string (dict-get (extract-entry archive "a/b/c.txt") "content"))
-                      "deep"))))
+      (let ((archive (create (dict "entries" (list (dict "name" "a/b/c.txt" "content" (string->bytes "deep")))))))
+        (assert-equal (bytes->string (dict-get (extract-entry archive "a/b/c.txt") "content")) "deep"))))
 
    ; A directory entry is preserved as a directory.
    (test-directory-entry
@@ -46,47 +41,46 @@
    ; A symlink entry preserves its link name and has no content.
    (test-symlink-entry
     (lambda ()
-      (let ((archive (create (dict "entries"
-                                   (list (dict "name" "link"
-                                               "typeflag" "2"
-                                               "linkname" "target.txt"))))))
+      (let ((archive (create (dict "entries" (list (dict "name" "link" "typeflag" "2" "linkname" "target.txt"))))))
         (let ((entry (extract-entry archive "link")))
-          (assert-equal (list (dict-get entry "linkname") (dict-get entry "content"))
-                        (list "target.txt" #none))))))
+          (assert-equal (list (dict-get entry "linkname") (dict-get entry "content")) (list "target.txt" #none))))))
 
    ; Multiple entries keep their order.
    (test-multiple-entries-order
     (lambda ()
-      (let ((archive (create (dict "entries"
-                                   (list (dict "name" "one" "content" (string->bytes "1"))
-                                         (dict "name" "two" "content" (string->bytes "2"))
-                                         (dict "name" "three" "content" (string->bytes "3")))))))
-        (assert-equal (map-list (lambda (e) (dict-get e "name"))
-                                (dict-get (entries archive) "entries"))
-                      (list "one" "two" "three")))))
+      (let ((archive
+             (create
+               (dict "entries" (list
+                                 (dict "name" "one" "content" (string->bytes "1"))
+                                 (dict "name" "two" "content" (string->bytes "2"))
+                                 (dict "name" "three" "content" (string->bytes "3")))))))
+        (assert-equal
+          (map-list
+            (lambda (e)
+              (dict-get e "name"))
+            (dict-get (entries archive) "entries"))
+          (list "one" "two" "three")))))
 
    ; The archive length is a multiple of 512 bytes.
    (test-length-multiple-of-512
     (lambda ()
-      (let ((archive (create (dict "entries"
-                                   (list (dict "name" "x" "content" (string->bytes "hello")))))))
+      (let ((archive (create (dict "entries" (list (dict "name" "x" "content" (string->bytes "hello")))))))
         (assert-equal (integer% (bytes-length archive) 512) 0))))
 
    ; The archive ends with two zero blocks.
    (test-ends-with-zero-blocks
     (lambda ()
-      (let ((archive (create (dict "entries"
-                                   (list (dict "name" "x" "content" (string->bytes "hello")))))))
+      (let ((archive (create (dict "entries" (list (dict "name" "x" "content" (string->bytes "hello")))))))
         (let ((len (bytes-length archive)))
-          (assert-equal (bytes-slice archive (integer- len 1024) len)
-                        (list->bytes (map-list (lambda (i) 0) (range 0 1024))))))))
+          (assert-equal
+            (bytes-slice archive (integer- len 1024) len)
+            (list->bytes (map-list (lambda (i) 0) (range 0 1024))))))))
 
    ; The header carries the ustar magic.
    (test-ustar-magic
     (lambda ()
       (let ((archive (create (dict "entries" (list (dict "name" "x"))))))
-        (assert-equal (bytes-slice archive 257 265)
-                      (string-hex->bytes "7573746172003030")))))
+        (assert-equal (bytes-slice archive 257 265) (string-hex->bytes "7573746172003030")))))
 
    ; A non-dict argument is rejected.
    (test-rejects-non-dict
@@ -101,20 +95,21 @@
    ; An unsupported typeflag is rejected.
    (test-rejects-unsupported-typeflag
     (lambda ()
-      (create (dict "entries"
-                    (list (dict "name" "x" "typeflag" "1"))))))
+      (create (dict "entries" (list (dict "name" "x" "typeflag" "1"))))))
 
    ; A path too long for ustar is rejected.
    (test-rejects-long-path
     (lambda ()
-      (create (dict "entries"
-                    (list (dict "name" (string-concat
+      (create
+        (dict "entries" (list
+                          (dict "name" (string-concat
                                          (list->string (map-list (lambda (i) "a") (range 0 300)))
                                          "/file")))))))
 
    (tests
     (list
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "empty archive" test-empty-archive)
           (expect-pass "single file" test-single-file)
@@ -123,13 +118,15 @@
           (expect-pass "symlink entry" test-symlink-entry)
           (expect-pass "multiple entries keep order" test-multiple-entries-order)))
 
-      (list "layout"
+      (list
+        "layout"
         (list
           (expect-pass "archive length is a multiple of 512" test-length-multiple-of-512)
           (expect-pass "archive ends with two zero blocks" test-ends-with-zero-blocks)
           (expect-pass "header carries the ustar magic" test-ustar-magic)))
 
-      (list "errors"
+      (list
+        "errors"
         (list
           (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
           (expect-fail "rejects a non-list entries field" test-rejects-non-list-entries "must be a list")

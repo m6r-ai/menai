@@ -113,8 +113,7 @@
    ; A nested list encodes to a nested JSON array.
    (test-collection-nested-array
     (lambda ()
-      (assert-equal (encode (list (list 1 2) (list 3 4)))
-                    "[[1,2],[3,4]]")))
+      (assert-equal (encode (list (list 1 2) (list 3 4))) "[[1,2],[3,4]]")))
 
    ; An empty dict encodes to an empty JSON object.
    (test-collection-empty-object
@@ -129,14 +128,12 @@
    ; A multi-key dict preserves insertion order.
    (test-collection-multi-key
     (lambda ()
-      (assert-equal (encode (dict "a" 1 "b" 2))
-                    "{\"a\":1,\"b\":2}")))
+      (assert-equal (encode (dict "a" 1 "b" 2)) "{\"a\":1,\"b\":2}")))
 
    ; A nested dict encodes to a nested JSON object.
    (test-collection-nested-object
     (lambda ()
-      (assert-equal (encode (dict "a" (dict "b" 2)))
-                    "{\"a\":{\"b\":2}}")))
+      (assert-equal (encode (dict "a" (dict "b" 2))) "{\"a\":{\"b\":2}}")))
 
    ; #none round-trips through encode then decode unchanged.
    (test-round-trip-null
@@ -146,8 +143,7 @@
    ; Booleans round-trip through encode then decode unchanged.
    (test-round-trip-booleans
     (lambda ()
-      (assert-equal (list (decode (encode #t)) (decode (encode #f)))
-                    (list #t #f))))
+      (assert-equal (list (decode (encode #t)) (decode (encode #f))) (list #t #f))))
 
    ; An integer round-trips through encode then decode unchanged.
    (test-round-trip-integer
@@ -197,30 +193,29 @@
    ; A nested array round-trips through encode then decode unchanged.
    (test-round-trip-nested-array
     (lambda ()
-      (assert-equal (decode (encode (list (list 1 2) (list 3 4))))
-                    (list (list 1 2) (list 3 4)))))
+      (assert-equal (decode (encode (list (list 1 2) (list 3 4)))) (list (list 1 2) (list 3 4)))))
 
    ; An object round-trips through encode then decode unchanged.
    (test-round-trip-object
     (lambda ()
-      (assert-equal (decode (encode (dict "a" 1 "b" "two")))
-                    (dict "a" 1 "b" "two"))))
+      (assert-equal (decode (encode (dict "a" 1 "b" "two"))) (dict "a" 1 "b" "two"))))
 
    ; A nested object round-trips through encode then decode unchanged.
    (test-round-trip-nested-object
     (lambda ()
-      (assert-equal (decode (encode (dict "a" (dict "b" (list 1 2)))))
-                    (dict "a" (dict "b" (list 1 2))))))
+      (assert-equal (decode (encode (dict "a" (dict "b" (list 1 2))))) (dict "a" (dict "b" (list 1 2))))))
 
    ; A mixed structure round-trips through encode then decode unchanged.
    (test-round-trip-mixed
     (lambda ()
       (assert-equal
-        (decode (encode (dict "name" "Alice"
-                              "age" 30
-                              "active" #t
-                              "tags" (list "admin" "user")
-                              "address" (dict "city" "Wonderland" "zip" #none))))
+        (decode
+          (encode
+            (dict "name" "Alice"
+                  "age" 30
+                  "active" #t
+                  "tags" (list "admin" "user")
+                  "address" (dict "city" "Wonderland" "zip" #none))))
         (dict "name" "Alice"
               "age" 30
               "active" #t
@@ -259,7 +254,8 @@
 
    (tests
     (list
-      (list "scalars"
+      (list
+        "scalars"
         (list
           (expect-pass "null" test-scalar-null)
           (expect-pass "true" test-scalar-true)
@@ -270,11 +266,13 @@
           (expect-pass "float with positive exponent drops the plus sign" test-scalar-float-positive-exponent)
           (expect-pass "float with negative exponent" test-scalar-float-negative-exponent)))
 
-      (list "strings"
+      (list
+        "strings"
         (list
           (expect-pass "empty string" test-string-empty)
           (expect-pass "simple string" test-string-simple)
-          (list "escapes"
+          (list
+            "escapes"
             (list
               (expect-pass "double quote" test-escape-double-quote)
               (expect-pass "backslash" test-escape-backslash)
@@ -285,7 +283,8 @@
               (expect-pass "backspace" test-escape-backspace)
               (expect-pass "other control character" test-escape-other-control)))))
 
-      (list "collections"
+      (list
+        "collections"
         (list
           (expect-pass "empty array" test-collection-empty-array)
           (expect-pass "integer array" test-collection-integer-array)
@@ -295,7 +294,8 @@
           (expect-pass "multi-key object preserves insertion order" test-collection-multi-key)
           (expect-pass "nested object" test-collection-nested-object)))
 
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "null" test-round-trip-null)
           (expect-pass "booleans" test-round-trip-booleans)
@@ -313,7 +313,8 @@
           (expect-pass "nested object" test-round-trip-nested-object)
           (expect-pass "mixed structure" test-round-trip-mixed)))
 
-      (list "errors"
+      (list
+        "errors"
         (list
           (expect-fail "bytes has no JSON representation" test-rejects-bytes "no JSON representation")
           (expect-fail "symbol has no JSON representation" test-rejects-symbol "no JSON representation")

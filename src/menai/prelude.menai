@@ -79,9 +79,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($boolean!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($boolean!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -124,9 +122,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($integer!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($integer!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -339,7 +335,11 @@
 
    (integer->complex
     (lambda (real . rest)
-      ($integer->complex real (if ($list-null? rest) 0 ($list-first rest)))))
+      ($integer->complex
+        real
+        (if ($list-null? rest)
+            0
+            ($list-first rest)))))
 
    (integer->string
     (lambda (n . rest)
@@ -388,9 +388,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($float!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($float!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -579,7 +577,11 @@
 
    (float->complex
     (lambda (real . rest)
-      ($float->complex real (if ($list-null? rest) 0 ($list-first rest)))))
+      ($float->complex
+        real
+        (if ($list-null? rest)
+            0
+            ($list-first rest)))))
 
    (float->string
     (lambda (n)
@@ -712,9 +714,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($complex!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($complex!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -880,9 +880,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($string!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($string!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -1037,7 +1035,11 @@
 
    (string->list
     (lambda (str . rest)
-      ($string->list str (if ($list-null? rest) "" ($list-first rest)))))
+      ($string->list
+        str
+        (if ($list-null? rest)
+            ""
+            ($list-first rest)))))
 
    (string->integer-codepoint
     (lambda (s)
@@ -1076,9 +1078,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($bytes!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($bytes!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -1519,7 +1519,11 @@
                   (if ($integer=? i ($bytes-length b))
                       acc
                       (let ((byte ($bytes-nth b i)))
-                        (loop ($integer+ i 1) (if (f byte) ($bytes-append-u8 acc byte) acc)))))))
+                        (loop
+                          ($integer+ i 1)
+                          (if (f byte)
+                              ($bytes-append-u8 acc byte)
+                              acc)))))))
         (loop 0 ($string-hex->bytes "")))))
 
    (fold-bytes
@@ -1543,10 +1547,7 @@
    (bytes-suffix?
     (lambda (b suffix)
       (and ($integer<=? ($bytes-length suffix) ($bytes-length b))
-           ($bytes=? ($bytes-slice b
-                                   ($integer- ($bytes-length b) ($bytes-length suffix))
-                                   ($bytes-length b))
-                     suffix))))
+           ($bytes=? ($bytes-slice b ($integer- ($bytes-length b) ($bytes-length suffix)) ($bytes-length b)) suffix))))
 
    (bytes-split
     (lambda (b delimiter)
@@ -1556,9 +1557,7 @@
             (letrec ((loop
                       (lambda (start acc)
                         (match ($bytes-index ($bytes-slice b start ($bytes-length b)) delimiter)
-                          (#none
-                           ($list-reverse
-                             ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
+                          (#none ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
                           (pos
                            (loop
                              ($integer+ ($integer+ start pos) dlen)
@@ -1570,8 +1569,7 @@
       (letrec ((loop
                 (lambda (start acc)
                   (match ($bytes-index-int ($bytes-slice b start ($bytes-length b)) byte)
-                    (#none
-                     ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
+                    (#none ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
                     (pos
                      (loop
                        ($integer+ ($integer+ start pos) 1)
@@ -1614,9 +1612,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($list!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($list!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -1691,7 +1687,11 @@
 
    (list->string
     (lambda (lst . rest)
-      ($list->string lst (if ($list-null? rest) "" ($list-first rest)))))
+      ($list->string
+        lst
+        (if ($list-null? rest)
+            ""
+            ($list-first rest)))))
 
    (list->set
     (lambda (lst)
@@ -1743,9 +1743,7 @@
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
-                                              (if ($dict!=?
-                                                    ($list-first lst)
-                                                    ($list-first rest-lst))
+                                              (if ($dict!=? ($list-first lst) ($list-first rest-lst))
                                                   (inner ($list-rest rest-lst))
                                                   #f)))))
                                 (inner ($list-rest lst)))))))
@@ -1753,7 +1751,12 @@
 
    (dict-get
     (lambda (d key . rest)
-      ($dict-get d key (if ($list-null? rest) #none ($list-first rest)))))
+      ($dict-get
+        d
+        key
+        (if ($list-null? rest)
+            #none
+            ($list-first rest)))))
 
    (dict-with
     (lambda (d key value)
@@ -2060,7 +2063,12 @@
 
    (range
     (lambda (start end . rest)
-      ($range start end (if ($list-null? rest) 1 ($list-first rest)))))
+      ($range
+        start
+        end
+        (if ($list-null? rest)
+            1
+            ($list-first rest)))))
 
    (vector
     (lambda (. args)
@@ -2136,7 +2144,11 @@
                   (if ($integer<? i 0)
                       ($list->vector acc)
                       (let ((elem ($vector-nth v i)))
-                        (loop ($integer- i 1) (if (pred elem) ($list-prepend acc elem) acc)))))))
+                        (loop
+                          ($integer- i 1)
+                          (if (pred elem)
+                              ($list-prepend acc elem)
+                              acc)))))))
         (loop ($integer- ($vector-length v) 1) (list)))))
 
    (fold-vector

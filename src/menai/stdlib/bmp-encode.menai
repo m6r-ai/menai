@@ -38,34 +38,34 @@
                     (bytes-append-u24-le
                       b
                       (integer-bit-or
-                        (integer-bit-or (list-nth channels 2)
-                                        (integer-bit-shift-left (list-nth channels 1) 8))
+                        (integer-bit-or (list-nth channels 2) (integer-bit-shift-left (list-nth channels 1) 8))
                         (integer-bit-shift-left (list-first channels) 16)))
                     (error "bmp-encode: a 24-bit pixel must have 3 channels"))
                 (if (integer=? (list-length channels) 4)
                     (bytes-append-u32-le
                       b
                       (integer-bit-or
-                        (integer-bit-or (list-nth channels 2)
-                                        (integer-bit-shift-left (list-nth channels 1) 8))
-                        (integer-bit-or (integer-bit-shift-left (list-first channels) 16)
-                                        (integer-bit-shift-left (list-nth channels 3) 24))))
+                        (integer-bit-or (list-nth channels 2) (integer-bit-shift-left (list-nth channels 1) 8))
+                        (integer-bit-or
+                          (integer-bit-shift-left (list-first channels) 16)
+                          (integer-bit-shift-left (list-nth channels 3) 24))))
                     (error "bmp-encode: a 32-bit pixel must have 4 channels")))))))
 
    ; Write one row's pixels followed by its padding bytes.
    (encode-row
     (lambda (b row width bpp)
       (if (vector? row)
-          (letrec ((loop (lambda (x acc)
-                           (if (integer>=? x width)
-                               acc
-                               (loop (integer+ x 1)
-                                     (encode-pixel acc (vector-nth row x) bpp))))))
+          (letrec ((loop
+                    (lambda (x acc)
+                      (if (integer>=? x width)
+                          acc
+                          (loop (integer+ x 1) (encode-pixel acc (vector-nth row x) bpp))))))
             (let ((padded (loop 0 b)))
-              (letrec ((pad (lambda (n acc)
-                              (if (integer>=? n (row-padding width bpp))
-                                  acc
-                                  (pad (integer+ n 1) (bytes-append-u8 acc 0))))))
+              (letrec ((pad
+                        (lambda (n acc)
+                          (if (integer>=? n (row-padding width bpp))
+                              acc
+                              (pad (integer+ n 1) (bytes-append-u8 acc 0))))))
                 (pad 0 padded))))
           (error "bmp-encode: each row must be a vector of pixels"))))
 
@@ -75,12 +75,15 @@
    (encode-rows
     (lambda (b pixels width height bpp bottom-up)
       (if (vector? pixels)
-          (let ((ordered (if bottom-up (list->vector (list-reverse (vector->list pixels))) pixels)))
-            (letrec ((loop (lambda (y acc)
-                             (if (integer>=? y height)
-                                 acc
-                                 (loop (integer+ y 1)
-                                       (encode-row acc (vector-nth ordered y) width bpp))))))
+          (let ((ordered
+                 (if bottom-up
+                     (list->vector (list-reverse (vector->list pixels)))
+                     pixels)))
+            (letrec ((loop
+                      (lambda (y acc)
+                        (if (integer>=? y height)
+                            acc
+                            (loop (integer+ y 1) (encode-row acc (vector-nth ordered y) width bpp))))))
               (loop 0 b)))
           (error "bmp-encode: \"pixels\" must be a vector of rows"))))
 
@@ -144,22 +147,27 @@
             (if (dict? header)
                 (let ((width (dict-get header "width"))
                       (bpp (dict-get header "bpp")))
-                  (if (or (integer=? bpp 24) (integer=? bpp 32))
-                      (let ((bottom-up (if (dict? meta) (dict-get meta "bottom-up") #t))
-                            (abs-height (integer-abs (dict-get header "height"))))
-                        (let ((file-height (if bottom-up
-                                               abs-height
-                                               (integer-neg abs-height))))
+                  (if (or (integer=? bpp 24)
+                          (integer=? bpp 32))
+                      (let
+                        ((bottom-up
+                          (if (dict? meta)
+                              (dict-get meta "bottom-up")
+                              #t))
+
+                         (abs-height (integer-abs (dict-get header "height"))))
+                        (let ((file-height
+                               (if bottom-up
+                                   abs-height
+                                   (integer-neg abs-height))))
                           (let ((image-size (integer* (row-stride width bpp) abs-height)))
-                            (let ((data (encode-rows (bytes-concat) pixels width abs-height
-                                                     bpp bottom-up)))
-                              (bytes-concat
-                                (encode-header header width file-height bpp image-size)
-                                data)))))
-                      (error (string-concat
-                               "bmp-encode: unsupported bit depth "
-                               (integer->string bpp)
-                               " (only 24 or 32 are supported)"))))
+                            (let ((data (encode-rows (bytes-concat) pixels width abs-height bpp bottom-up)))
+                              (bytes-concat (encode-header header width file-height bpp image-size) data)))))
+                      (error
+                        (string-concat
+                          "bmp-encode: unsupported bit depth "
+                          (integer->string bpp)
+                          " (only 24 or 32 are supported)"))))
                 (error "bmp-encode: \"header\" must be a dict")))
           (error "bmp-encode: encode expects a dict")))))
 

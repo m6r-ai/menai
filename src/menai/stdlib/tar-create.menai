@@ -33,10 +33,7 @@
    ; Left-pad `text` with "0" to exactly `width` characters.
    (zero-pad
     (lambda (text width)
-      (string-concat
-        (list->string (map-list (lambda (i) "0")
-                                (range 0 (integer- width (string-length text)))))
-        text)))
+      (string-concat (list->string (map-list (lambda (i) "0") (range 0 (integer- width (string-length text))))) text)))
 
    ; A bytes value of `text` followed by NUL bytes, to exactly `width` bytes.
    (pad-field
@@ -53,8 +50,7 @@
    ; Format the 8-byte checksum field: six octal digits, NUL, space.
    (checksum-field
     (lambda (value)
-      (bytes-concat (string->bytes (zero-pad (integer->string value 8) 6))
-                    (list->bytes (list 0 32)))))
+      (bytes-concat (string->bytes (zero-pad (integer->string value 8) 6)) (list->bytes (list 0 32)))))
 
    ; Split a path into the 100-byte name field and the 155-byte prefix field.
    ; When the path fits in 100 bytes the prefix is empty.  Otherwise the path is
@@ -66,20 +62,20 @@
       (let ((path-bytes (string->bytes path)))
         (if (integer<=? (bytes-length path-bytes) 100)
             (list path "")
-            (letrec ((search (lambda (i)
-                               (if (integer<? i 0)
-                                   (error (string-concat
-                                            "tar-create: path too long for ustar: \"" path "\""))
-                                   (if (integer=? (bytes-nth path-bytes i) 47)
-                                       (let ((prefix (bytes-slice path-bytes 0 i))
-                                             (name (bytes-slice path-bytes (integer+ i 1)
-                                                                (bytes-length path-bytes))))
-                                         (if (and (integer<=? (bytes-length prefix) 155)
-                                                  (integer<=? (bytes-length name) 100)
-                                                  (integer>? (bytes-length name) 0))
-                                             (list (bytes->string name) (bytes->string prefix))
-                                             (search (integer- i 1))))
-                                       (search (integer- i 1)))))))
+            (letrec ((search
+                      (lambda (i)
+                        (if (integer<? i 0)
+                            (error (string-concat "tar-create: path too long for ustar: \"" path "\""))
+                            (if (integer=? (bytes-nth path-bytes i) 47)
+                                (let ((prefix (bytes-slice path-bytes 0 i))
+
+                                      (name (bytes-slice path-bytes (integer+ i 1) (bytes-length path-bytes))))
+                                  (if (and (integer<=? (bytes-length prefix) 155)
+                                           (integer<=? (bytes-length name) 100)
+                                           (integer>? (bytes-length name) 0))
+                                      (list (bytes->string name) (bytes->string prefix))
+                                      (search (integer- i 1))))
+                                (search (integer- i 1)))))))
               (search (integer- (bytes-length path-bytes) 1)))))))
 
    ; Pad `data` with NUL bytes to the next multiple of 512.
@@ -95,7 +91,9 @@
    (entry-content
     (lambda (entry)
       (let ((content (dict-get entry "content")))
-        (if (bytes? content) content (bytes-concat)))))
+        (if (bytes? content)
+            content
+            (bytes-concat)))))
 
    ; The typeflag of an entry: "0" (regular), "5" (directory), or "2" (symlink).
    ; Defaults to "5" when the name ends with "/", otherwise "0".
@@ -104,20 +102,26 @@
       (let ((typeflag (dict-get entry "typeflag")))
         (if (string? typeflag)
             typeflag
-            (if (string-suffix? (dict-get entry "name") "/") "5" "0")))))
+            (if (string-suffix? (dict-get entry "name") "/")
+                "5"
+                "0")))))
 
    ; The numeric value of an entry field, or `default` when absent or not an
    ; integer.
    (entry-number
     (lambda (entry key default)
       (let ((value (dict-get entry key)))
-        (if (integer? value) value default))))
+        (if (integer? value)
+            value
+            default))))
 
    ; The string value of an entry field, or "" when absent or not a string.
    (entry-string
     (lambda (entry key)
       (let ((value (dict-get entry key)))
-        (if (string? value) value ""))))
+        (if (string? value)
+            value
+            ""))))
 
    ; The permission bits of an entry: the "mode" field when present, otherwise
    ; #o755 for a directory and #o644 for anything else.
@@ -126,35 +130,46 @@
       (let ((mode (dict-get entry "mode")))
         (if (integer? mode)
             mode
-            (if (string=? (entry-type entry) "5") #o755 #o644)))))
+            (if (string=? (entry-type entry) "5")
+                #o755
+                #o644)))))
 
    ; The header checksum: the sum of all 512 header bytes, with the checksum
    ; field (offset 148, length 8) taken as eight spaces (0x20).
    (header-checksum
     (lambda (header)
-      (letrec ((loop (lambda (i acc)
-                       (if (integer=? i 512)
-                           acc
-                           (loop (integer+ i 1)
-                                 (integer+ acc
-                                          (if (and (integer>=? i 148) (integer<? i 156))
-                                              32
-                                              (bytes-nth header i))))))))
+      (letrec ((loop
+                (lambda (i acc)
+                  (if (integer=? i 512)
+                      acc
+                      (loop
+                        (integer+ i 1)
+                        (integer+
+                          acc
+                          (if (and (integer>=? i 148)
+                                   (integer<? i 156))
+                              32
+                              (bytes-nth header i))))))))
         (loop 0 0))))
 
    ; Build one entry's 512-byte header block.
    (build-header
     (lambda (entry)
       (let ((typeflag (entry-type entry)))
-        (if (boolean-not (or (string=? typeflag "0")
-                             (string=? typeflag "5")
-                             (string=? typeflag "2")))
-            (error (string-concat
-                     "tar-create: unsupported typeflag \"" typeflag
-                     "\" (only \"0\" (file), \"5\" (directory), and \"2\" (symlink) are supported)"))
+        (if (boolean-not
+              (or (string=? typeflag "0")
+                  (string=? typeflag "5")
+                  (string=? typeflag "2")))
+            (error
+              (string-concat "tar-create: unsupported typeflag \""
+                             typeflag
+                             "\" (only \"0\" (file), \"5\" (directory), and \"2\" (symlink) are supported)"))
             (let ((split (split-path (dict-get entry "name"))))
               (let ((content (entry-content entry)))
-                (let ((size (if (string=? typeflag "0") (bytes-length content) 0)))
+                (let ((size
+                       (if (string=? typeflag "0")
+                           (bytes-length content)
+                           0)))
                   (let ((header
                          (bytes-concat
                            (pad-field (list-first split) 100)
@@ -183,18 +198,18 @@
    (build-entry
     (lambda (entry)
       (let ((typeflag (entry-type entry)))
-        (bytes-concat (build-header entry)
-                      (if (string=? typeflag "0")
-                          (pad-data (entry-content entry))
-                          (bytes-concat))))))
+        (bytes-concat
+          (build-header entry)
+          (if (string=? typeflag "0")
+              (pad-data (entry-content entry))
+              (bytes-concat))))))
 
    ; Build the whole archive body from a list of entries.
    (build-entries
     (lambda (entries)
       (if (list-null? entries)
           (bytes-concat)
-          (bytes-concat (build-entry (list-first entries))
-                        (build-entries (list-rest entries))))))
+          (bytes-concat (build-entry (list-first entries)) (build-entries (list-rest entries))))))
 
    ; Build a tar archive from a dict describing it, in the shape documented at
    ; the top of this module, and return a bytes value containing the archive.

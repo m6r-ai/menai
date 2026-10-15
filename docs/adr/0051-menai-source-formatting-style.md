@@ -28,9 +28,9 @@ stated rather than inferred.
 
 ### Width
 
-The layout width is **100 columns**, measured as the column at which a form's
+The layout width is **120 columns**, measured as the column at which a form's
 compact rendering would end. A form is laid out compactly when its compact
-rendering ends at or before column 100, and multi-line otherwise. The width is a
+rendering ends at or before column 120, and multi-line otherwise. The width is a
 property of the form's rendered position, not of its content alone, so an
 identical form may be compact at a shallow indentation and multi-line at a deep
 one.
@@ -49,7 +49,7 @@ itself and does not push any structure off the page.
 ### Compact or multi-line
 
 A list is rendered compactly on a single line if and only if it contains no
-comments and its compact rendering ends at or before column 100. Otherwise it is
+comments and its compact rendering ends at or before column 120. Otherwise it is
 rendered multi-line.
 
 ### Compound forms with a nested body are always multi-line
@@ -62,6 +62,23 @@ atom, while `(let ((x 5)) (foo x))` is multi-line because its body is a call.
 
 This set is the reserved forms only. A binding named `loop` is an ordinary call
 and follows the general-list rule, like any other call.
+
+The rule applies wherever the compound form appears, not only at the head of a
+list. A compound form that is a binding's value expands even when the whole
+binding would fit on one line, so `(let ((a (if (foo x) (bar y) (baz z)))) a)` is
+laid out as
+
+```menai
+(let ((a
+       (if (foo x)
+           (bar y)
+           (baz z))))
+  a)
+```
+
+and never as a single compact line. Otherwise the same `if` would be multi-line in
+one position and compact in another, which is the inconsistency the rule exists to
+prevent.
 
 This is the same principle already applied to `and`/`or` (always multi-line with
 two or more operands) and `match` (always multi-line): where a form's readability
@@ -103,10 +120,10 @@ marches to the right until it runs off the page, and the formatter has no column
 left to lay out the innermost form. Breaking after the head resets the column to a
 shallow indent at every level, which is what the hand-written corpus does.
 
-#### A list of peers
+#### A list with a nested argument
 
-A general list with two or more arguments that are **all** nested forms breaks
-after the head, putting each argument on its own line indented by two:
+A general list with two or more arguments, **at least one** of which is a nested
+form, breaks after the head, putting each argument on its own line indented by two:
 
 ```menai
 (list
@@ -116,9 +133,29 @@ after the head, putting each argument on its own line indented by two:
 
 The arguments are peers: each is a form of equal standing, and the list is read by
 scanning them. Keeping the first on the head line and aligning the rest under it
-indents the siblings by the width of the first argument, which for a list of lists
-is large and compounds with each level of nesting. Breaking after the head gives
-every peer the same shallow indent.
+indents the siblings by the width of the head, which for a long head is large and
+compounds with each level of nesting. A single nested argument among atoms is
+enough to make this happen, so the rule is triggered by any nested argument rather
+than by all of them: a lone atom before a nested form does not buy back the wide
+alignment. Breaking after the head gives every peer the same shallow indent.
+
+Only a list whose arguments are **all** atoms aligns under the first argument:
+
+```menai
+(list aaaa
+      bbbb
+      cccc)
+```
+
+The moment any argument nests, the form breaks after the head instead, so a form
+like `(integer-bit-or acc (integer-bit-shift-left ... bit))` is not aligned under
+`acc` but broken:
+
+```menai
+(integer-bit-or
+  acc
+  (integer-bit-shift-left ... bit))
+```
 
 `if`, `and`, and `or` are exempt. Their first argument is the condition, which is
 read as part of the head — `(if condition` is a unit — so it stays on the head line
@@ -194,13 +231,13 @@ single-operand `and`/`or` is compact.
 
 ## Alternatives considered
 
-### A width other than 100
+### A width other than 120
 
-Widths of 60 and 80 were rejected because the corpus contains many compact forms
-that exceed them; adopting a narrower width would reflow a large fraction of the
-standard library for no readability gain. 120 was rejected because it is wide
-enough that a form which fits is already hard to scan. 100 is the narrowest width
-that leaves the bulk of the corpus unchanged.
+Widths of 60, 80, and 100 were rejected because the corpus contains many compact
+forms that exceed them; adopting a narrower width would reflow a large fraction of
+the standard library for no readability gain. 132 was rejected because it is wide
+enough that a form which fits is already hard to scan. 120 sits between the two:
+wide enough to leave most of the corpus unchanged, narrow enough to stay scannable.
 
 ### A content-length width
 
@@ -253,5 +290,5 @@ trades a larger diff for a layout that is a function of the form's shape.
 - Forcing compound forms multi-line expands many forms that would have fit,
   increasing the line count of the corpus. This is accepted deliberately:
   consistency is preferred over the smallest number of source lines.
-- The width is a free parameter. 100 was chosen to minimise churn, not because it
+- The width is a free parameter. 120 was chosen to minimise churn, not because it
   is uniquely correct.

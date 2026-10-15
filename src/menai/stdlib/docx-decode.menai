@@ -60,10 +60,11 @@
    ; The package's parts as a dict from part name to bytes.
    (parts-of
     (lambda (b)
-      (fold-list (lambda (acc entry)
-                   (dict-with acc (dict-get entry "name") (dict-get entry "content")))
-                 (dict)
-                 (dict-get ((:: zip-extract extract) b) "entries"))))
+      (fold-list
+        (lambda (acc entry)
+          (dict-with acc (dict-get entry "name") (dict-get entry "content")))
+        (dict)
+        (dict-get ((:: zip-extract extract) b) "entries"))))
 
    ; The decoded element for a part, or #none when the part is absent.
    (decode-part
@@ -115,17 +116,19 @@
    ; under word/media/ is not mistaken for a media part.
    (media-of
     (lambda (parts)
-      (let ((names (filter-list
-                     (lambda (name)
-                       (and (string-prefix? name media-prefix)
-                            (bytes? (dict-get parts name))))
-                     (dict-keys parts))))
+      (let ((names
+             (filter-list
+               (lambda (name)
+                 (and (string-prefix? name media-prefix)
+                      (bytes? (dict-get parts name))))
+               (dict-keys parts))))
         (if (list-null? names)
             #none
-            (fold-list (lambda (acc name)
-                         (dict-with acc name (dict-get parts name)))
-                       (dict)
-                       names)))))
+            (fold-list
+              (lambda (acc name)
+                (dict-with acc name (dict-get parts name)))
+              (dict)
+              names)))))
 
    ; Decode a bytes value containing a DOCX package into a value tree.  It is
    ; the inverse of docx-encode's encode.
@@ -133,12 +136,11 @@
     (lambda (b)
       (if (bytes? b)
           (let ((parts (parts-of b)))
-            (dict
-              "document" (decode-required-part parts document-part)
-              "styles" (decode-part parts styles-part)
-              "numbering" (decode-part parts numbering-part)
-              "relationships" (relationships-of parts)
-              "media" (media-of parts)))
+            (dict "document" (decode-required-part parts document-part)
+                  "styles" (decode-part parts styles-part)
+                  "numbering" (decode-part parts numbering-part)
+                  "relationships" (relationships-of parts)
+                  "media" (media-of parts)))
           (error "docx-decode: decode expects a bytes value")))))
 
   (export decode))

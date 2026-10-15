@@ -9,13 +9,12 @@
            (letrec
              ((pixel->string
                (lambda (p)
-                 (string-concat
-                   "("
-                   (list->string (map-list integer->string (vector->list p)) ",")
-                   ")")))
+                 (string-concat "(" (list->string (map-list integer->string (vector->list p)) ",") ")")))
+
               (row->string
                (lambda (row)
                  (list->string (map-list pixel->string (vector->list row)) " ")))
+
               (grid->string
                (lambda (pixels)
                  (list->string (map-list row->string (vector->list pixels)) "\n"))))
@@ -23,13 +22,20 @@
                     (parsed ((:: bmp-decoder decode) content))
                     (header (dict-get parsed "header"))
                     (meta (dict-get parsed "meta")))
-               (dict
-                 "result"
-                 (string-concat
-                   "BMP " (integer->string (dict-get header "width"))
-                   "x" (integer->string (dict-get header "height"))
-                   " " (integer->string (dict-get header "bpp")) "-bit"
-                   " (padding " (integer->string (dict-get meta "row-padding"))
-                   ", bottom-up " (if (dict-get meta "bottom-up") "#t" "#f") ")\n"
-                   (grid->string (dict-get parsed "pixels")))))))))
+               (dict "result" (string-concat
+                                "BMP "
+                                (integer->string (dict-get header "width"))
+                                "x"
+                                (integer->string (dict-get header "height"))
+                                " "
+                                (integer->string (dict-get header "bpp"))
+                                "-bit"
+                                " (padding "
+                                (integer->string (dict-get meta "row-padding"))
+                                ", bottom-up "
+                                (if (dict-get meta "bottom-up")
+                                    "#t"
+                                    "#f")
+                                ")\n"
+                                (grid->string (dict-get parsed "pixels")))))))))
     (export run)))

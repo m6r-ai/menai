@@ -88,10 +88,11 @@
    ; The package's parts as a dict from part name to bytes.
    (parts-of
     (lambda (b)
-      (fold-list (lambda (acc entry)
-                   (dict-with acc (dict-get entry "name") (dict-get entry "content")))
-                 (dict)
-                 (dict-get ((:: zip-extract extract) b) "entries"))))
+      (fold-list
+        (lambda (acc entry)
+          (dict-with acc (dict-get entry "name") (dict-get entry "content")))
+        (dict)
+        (dict-get ((:: zip-extract extract) b) "entries"))))
 
    ; The decoded element for a part, or #none when the part is absent.
    (decode-part
@@ -167,13 +168,15 @@
    ; The final "/"-separated segment of a part name.
    (last-path-segment
     (lambda (name)
-      (letrec ((loop (lambda (i found)
-                       (if (integer>=? i (string-length name))
-                           found
-                           (loop (integer+ i 1)
-                                 (if (string=? (string-nth name i) "/")
-                                     (integer+ i 1)
-                                     found))))))
+      (letrec ((loop
+                (lambda (i found)
+                  (if (integer>=? i (string-length name))
+                      found
+                      (loop
+                        (integer+ i 1)
+                        (if (string=? (string-nth name i) "/")
+                            (integer+ i 1)
+                            found))))))
         (string-slice name (loop 0 0)))))
 
    ; The <sheet> children of the workbook's <sheets>, in order.  The workbook
@@ -181,10 +184,12 @@
    ; elements.  Returns an empty list when the workbook has no sheets list.
    (sheet-elements
     (lambda (workbook)
-      (let ((lists (filter-list (lambda (child)
-                                  (and (dict? child)
-                                       (string=? (dict-get child "tag") "sheets")))
-                                (dict-get workbook "children"))))
+      (let ((lists
+             (filter-list
+               (lambda (child)
+                 (and (dict? child)
+                      (string=? (dict-get child "tag") "sheets")))
+               (dict-get workbook "children"))))
         (if (list-null? lists)
             (list)
             (dict-get (list-first lists) "children")))))
@@ -220,22 +225,21 @@
    (sheet-entry
     (lambda (parts rels child)
       (let ((part (sheet-part-of rels child)))
-        (dict
-          "name" (sheet-name child)
-          "part" part
-          "element" (decode-required-part parts part)
-          "relationships" (relationships-of-part
-                            parts
-                            (string-concat "xl/worksheets/_rels/"
-                                           (last-path-segment part)
-                                           ".rels"))))))
+        (dict "name" (sheet-name child)
+              "part" part
+              "element" (decode-required-part parts part)
+              "relationships" (relationships-of-part
+                                parts
+                                (string-concat "xl/worksheets/_rels/" (last-path-segment part) ".rels"))))))
 
    ; The workbook's sheets, in workbook order.
    (sheets-of
     (lambda (parts workbook)
       (let ((rels (relationships-of parts)))
-        (map-list (lambda (child) (sheet-entry parts rels child))
-                  (sheet-elements workbook)))))
+        (map-list
+          (lambda (child)
+            (sheet-entry parts rels child))
+          (sheet-elements workbook)))))
 
    ; The decoded <si> elements of the shared string table, or #none when the
    ; part is absent.
@@ -243,10 +247,11 @@
     (lambda (parts)
       (let ((root (decode-part parts shared-strings-part)))
         (if (dict? root)
-            (filter-list (lambda (child)
-                           (and (dict? child)
-                                (string=? (dict-get child "tag") "si")))
-                         (dict-get root "children"))
+            (filter-list
+              (lambda (child)
+                (and (dict? child)
+                     (string=? (dict-get child "tag") "si")))
+              (dict-get root "children"))
             #none))))
 
    ; The media parts as a dict from part name to bytes, or #none when there are
@@ -256,10 +261,11 @@
       (let ((names (parts-under parts media-prefix)))
         (if (list-null? names)
             #none
-            (fold-list (lambda (acc name)
-                         (dict-with acc name (dict-get parts name)))
-                       (dict)
-                       names)))))
+            (fold-list
+              (lambda (acc name)
+                (dict-with acc name (dict-get parts name)))
+              (dict)
+              names)))))
 
    ; Decode a bytes value containing an XLSX package into a value tree.  It is
    ; the inverse of xlsx-encode's encode.
@@ -268,14 +274,13 @@
       (if (bytes? b)
           (let ((parts (parts-of b)))
             (let ((workbook (decode-required-part parts workbook-part)))
-              (dict
-                "workbook" workbook
-                "relationships" (relationships-of parts)
-                "shared-strings" (shared-strings-of parts)
-                "styles" (decode-part parts styles-part)
-                "theme" (decode-part parts theme-part)
-                "sheets" (sheets-of parts workbook)
-                "media" (media-of parts))))
+              (dict "workbook" workbook
+                    "relationships" (relationships-of parts)
+                    "shared-strings" (shared-strings-of parts)
+                    "styles" (decode-part parts styles-part)
+                    "theme" (decode-part parts theme-part)
+                    "sheets" (sheets-of parts workbook)
+                    "media" (media-of parts))))
           (error "xlsx-decode: decode expects a bytes value")))))
 
   (export decode))

@@ -23,28 +23,22 @@
    ; Two rows are joined by CRLF.
    (test-two-rows-crlf
     (lambda ()
-      (assert-equal (encode (vector (vector "a" "b") (vector "c" "d")))
-                    "a,b\r\nc,d")))
+      (assert-equal (encode (vector (vector "a" "b") (vector "c" "d"))) "a,b\r\nc,d")))
 
    ; Three rows are joined by CRLF.
    (test-three-rows
     (lambda ()
-      (assert-equal (encode (vector (vector "a") (vector "b") (vector "c")))
-                    "a\r\nb\r\nc")))
+      (assert-equal (encode (vector (vector "a") (vector "b") (vector "c"))) "a\r\nb\r\nc")))
 
    ; The output has no trailing terminator.
    (test-no-trailing-terminator
     (lambda ()
-      (assert-equal (encode (vector (vector "a" "b")))
-                    "a,b")))
+      (assert-equal (encode (vector (vector "a" "b"))) "a,b")))
 
    ; Rows of differing widths are preserved.
    (test-ragged-rows
     (lambda ()
-      (assert-equal (encode (vector (vector "a" "b")
-                                     (vector "c")
-                                     (vector "d" "e" "f")))
-                    "a,b\r\nc\r\nd,e,f")))
+      (assert-equal (encode (vector (vector "a" "b") (vector "c") (vector "d" "e" "f"))) "a,b\r\nc\r\nd,e,f")))
 
    ; No rows encodes to the empty string.
    (test-no-rows
@@ -109,8 +103,7 @@
    ; Only the fields that need quoting are quoted.
    (test-only-necessary-quoting
     (lambda ()
-      (assert-equal (encode (vector (vector "a" "b,c" "d")))
-                    "a,\"b,c\",d")))
+      (assert-equal (encode (vector (vector "a" "b,c" "d"))) "a,\"b,c\",d")))
 
    ; A quote at the start and end of a field is doubled.
    (test-quote-at-ends
@@ -130,20 +123,17 @@
    ; A tab delimiter joins fields.
    (test-tab-delimiter
     (lambda ()
-      (assert-equal (encode (vector (vector "a" "b" "c")) "\t")
-                    "a\tb\tc")))
+      (assert-equal (encode (vector (vector "a" "b" "c")) "\t") "a\tb\tc")))
 
    ; A field containing the custom delimiter is quoted.
    (test-custom-delimiter-quoted
     (lambda ()
-      (assert-equal (encode (vector (vector "a;b" "c")) ";")
-                    "\"a;b\";c")))
+      (assert-equal (encode (vector (vector "a;b" "c")) ";") "\"a;b\";c")))
 
    ; A comma is literal when the delimiter is a semicolon.
    (test-comma-literal-with-semicolon
     (lambda ()
-      (assert-equal (encode (vector (vector "a,b" "c")) ";")
-                    "a,b;c")))
+      (assert-equal (encode (vector (vector "a,b" "c")) ";") "a,b;c")))
 
    ; A simple table round-trips through encode then decode unchanged.
    (test-round-trip-simple
@@ -156,10 +146,8 @@
    (test-round-trip-special-fields
     (lambda ()
       (assert-equal
-        (decode (encode (vector (vector "a" "b,c" "d\"e")
-                                (vector "x\ny" ""))))
-        (vector (vector "a" "b,c" "d\"e")
-                (vector "x\ny" "")))))
+        (decode (encode (vector (vector "a" "b,c" "d\"e") (vector "x\ny" ""))))
+        (vector (vector "a" "b,c" "d\"e") (vector "x\ny" "")))))
 
    ; A table with a custom delimiter round-trips through encode then decode unchanged.
    (test-round-trip-custom-delimiter
@@ -171,9 +159,7 @@
    ; A table with an empty field round-trips through encode then decode unchanged.
    (test-round-trip-empty-field
     (lambda ()
-      (assert-equal
-        (decode (encode (vector (vector ""))))
-        (vector (vector "")))))
+      (assert-equal (decode (encode (vector (vector "")))) (vector (vector "")))))
 
    ; A list of lists is rejected.
    (test-rejects-non-vector-input
@@ -207,7 +193,8 @@
 
    (tests
     (list
-      (list "records"
+      (list
+        "records"
         (list
           (expect-pass "single field" test-single-field)
           (expect-pass "single row" test-single-row)
@@ -216,7 +203,8 @@
           (expect-pass "no trailing terminator" test-no-trailing-terminator)
           (expect-pass "ragged rows" test-ragged-rows)))
 
-      (list "empty"
+      (list
+        "empty"
         (list
           (expect-pass "no rows is the empty string" test-no-rows)
           (expect-pass "one empty row is the empty string" test-one-empty-row)
@@ -225,7 +213,8 @@
           (expect-pass "leading empty field" test-leading-empty-field)
           (expect-pass "trailing empty field" test-trailing-empty-field)))
 
-      (list "quoting"
+      (list
+        "quoting"
         (list
           (expect-pass "plain field is not quoted" test-plain-not-quoted)
           (expect-pass "field with delimiter is quoted" test-delimiter-quoted)
@@ -237,21 +226,24 @@
           (expect-pass "quote is doubled at the start and end" test-quote-at-ends)
           (expect-pass "field of only quotes" test-field-of-only-quotes)))
 
-      (list "delimiter"
+      (list
+        "delimiter"
         (list
           (expect-pass "semicolon delimiter" test-semicolon-delimiter)
           (expect-pass "tab delimiter" test-tab-delimiter)
           (expect-pass "field with custom delimiter is quoted" test-custom-delimiter-quoted)
           (expect-pass "comma is literal when delimiter is semicolon" test-comma-literal-with-semicolon)))
 
-      (list "round-trips"
+      (list
+        "round-trips"
         (list
           (expect-pass "simple table" test-round-trip-simple)
           (expect-pass "fields with delimiters, quotes, and newlines" test-round-trip-special-fields)
           (expect-pass "custom delimiter" test-round-trip-custom-delimiter)
           (expect-pass "empty field" test-round-trip-empty-field)))
 
-      (list "errors"
+      (list
+        "errors"
         (list
           (expect-fail "non-vector input" test-rejects-non-vector-input "must be a vector of rows")
           (expect-fail "non-vector row" test-rejects-non-vector-row "must be a vector of strings")
