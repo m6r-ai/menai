@@ -31,6 +31,23 @@ from menai.ast.menai_ast import MenaiASTStruct, MenaiASTEnum
 from menai.ast.menai_paren_diagnostic import ParenDiagnosis, early_close_error
 
 
+# Names that are syntax rather than names.  A form headed by one of these is
+# interpreted as that form, whatever any enclosing binding says, so a binding of
+# the same name can never be referenced: the form head wins and the binding is
+# silently unreachable.  Rejecting the binding outright turns a confusing
+# misbehaviour into a compile-time error.
+#
+# ':' is the type-pattern head and '.' introduces a lambda rest parameter; both
+# are syntax in a position where a name would otherwise go, so neither can be a
+# binding either.  '.' is already rejected by the lambda parameter check, and is
+# listed here so the set is complete.
+RESERVED_NAMES = frozenset({
+    '::', 'if', 'let', 'let*', 'letrec', 'lambda', 'quote', 'match',
+    'and', 'or', 'import', 'struct', 'enum', 'export', 'apply',
+    ':', '.',
+})
+
+
 def _is_quoted_symbol(expr: MenaiASTNode) -> bool:
     """
     Return True if expr is a quoted symbol, written 'name.
@@ -97,6 +114,41 @@ class MenaiASTSemanticAnalyzer:
     def _is_namespace(self, name: str) -> bool:
         """Return True if name is bound to a module namespace in scope."""
         return any(name in frame for frame in self._namespace_stack)
+
+    def _reject_reserved_binding_name(self, name: str, node: MenaiASTNode) -> None:
+        """
+        Raise when name is a reserved word and so cannot be a binding name.
+
+        A reserved word is syntax, not a name: a form headed by one is
+        interpreted as that form regardless of any enclosing binding, so a
+        binding of the same name is unreachable and the program does not mean
+        what it appears to mean.  Rejecting it here, before desugaring, is the
+        only point at which every binding site can be covered with one message.
+
+        Args:
+            name: The proposed binding name.
+            node: The node naming it, used for the error position.
+
+        Raises:
+            MenaiEvalError: If name is a reserved word.
+        """
+        if name not in RESERVED_NAMES:
+            return
+
+        raise MenaiEvalError(
+            message=f"Binding name '{name}' is a reserved word",
+            received=f"'{name}' used as a binding name",
+            expected="A name that is not a reserved word",
+            example="Correct: (let ((value 5)) value)\nIncorrect: (let ((let 5)) let)",
+            suggestion=(
+                f"'{name}' is syntax, not a name: a form headed by it is always "
+                f"interpreted as that form, so a binding of the same name could never "
+                f"be referenced. Choose a different binding name."
+            ),
+            line=node.line,
+            column=node.column,
+            source=self.source,
+        )
 
     def analyze(
         self,
@@ -339,6 +391,9 @@ class MenaiASTSemanticAnalyzer:
 
             name_expr, value_expr = binding.elements
 
+            if isinstance(name_expr, MenaiASTSymbol):
+                self._reject_reserved_binding_name(name_expr.name, name_expr)
+
             # Check if this binding's value is a struct definition
             if (isinstance(name_expr, MenaiASTSymbol) and
                     isinstance(value_expr, MenaiASTList) and
@@ -506,6 +561,9 @@ class MenaiASTSemanticAnalyzer:
                 )
 
             name_expr, value_expr = binding.elements
+
+            if isinstance(name_expr, MenaiASTSymbol):
+                self._reject_reserved_binding_name(name_expr.name, name_expr)
 
             # Check if this binding's value is a struct definition
             if (isinstance(name_expr, MenaiASTSymbol) and
@@ -688,6 +746,9 @@ class MenaiASTSemanticAnalyzer:
 
             name_expr, value_expr = binding.elements
 
+            if isinstance(name_expr, MenaiASTSymbol):
+                self._reject_reserved_binding_name(name_expr.name, name_expr)
+
             # Struct definitions are permitted in letrec: they have no recursive
             # semantics and the desugarer hoists them to let automatically.
             if (isinstance(name_expr, MenaiASTSymbol) and
@@ -853,6 +914,7 @@ class MenaiASTSemanticAnalyzer:
                 dot_index = i
 
             else:
+                self._reject_reserved_binding_name(param.name, param)
                 param_names.append(param.name)
 
         if dot_index is not None:
@@ -982,7 +1044,11 @@ class MenaiASTSemanticAnalyzer:
     def _collect_pattern_names(self, pattern: MenaiASTNode) -> set[str]:
         """Return the set of variable names a match pattern binds."""
         if isinstance(pattern, MenaiASTSymbol):
-            return set() if pattern.name == '_' else {pattern.name}
+            if pattern.name == '_':
+                return set()
+
+            self._reject_reserved_binding_name(pattern.name, pattern)
+            return {pattern.name}
 
         if not isinstance(pattern, MenaiASTList) or pattern.is_empty():
             return set()
@@ -993,6 +1059,7 @@ class MenaiASTSemanticAnalyzer:
                 and len(pattern.elements) == 3):
             var_pattern = pattern.elements[2]
             if isinstance(var_pattern, MenaiASTSymbol) and var_pattern.name != '_':
+                self._reject_reserved_binding_name(var_pattern.name, var_pattern)
                 return {var_pattern.name}
 
             return set()
@@ -1016,6 +1083,13 @@ class MenaiASTSemanticAnalyzer:
         names: set[str] = set()
         for elem in pattern.elements:
             if isinstance(elem, MenaiASTSymbol) and elem.name == '.':
+                continue
+
+            # A quoted symbol is written 'name, which the reader produces as the
+            # two-element form (quote name).  It binds nothing, so it must not be
+            # walked as a list pattern: doing so would read the literal head
+            # 'quote' as a binding name.
+            if _is_quoted_symbol(elem):
                 continue
 
             names |= self._collect_pattern_names(elem)

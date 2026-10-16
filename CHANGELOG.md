@@ -19,6 +19,7 @@ Bug fixes:
 
 - Fixed a `regexp` stack overflow.  A repetition recursed once per character, so a
   run of a few hundred characters raised "maximum call depth exceeded".
+- Reserved words are now protected correctly.
 
 ## v0.8.0 (2026-10-10)
 

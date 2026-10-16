@@ -28,12 +28,15 @@ because they cannot be ordinary lexical bindings:
 
 - A ``$``-prefixed name is an opcode-backed primitive, resolved before name
   resolution is involved, so it is never a lexical binding.
+- A reserved word is syntax, not a name: a form headed by it is always
+  interpreted as that form, so the binding could never be referenced.
 - A prelude name would shadow the prelude binding and break every prelude call
   in the program.
 """
 
 from menai.ast.menai_ast import MenaiASTConstant, MenaiASTList, MenaiASTNode, MenaiASTSymbol
 from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
+from menai.ast.menai_ast_semantic_analyzer import RESERVED_NAMES
 from menai.menai_error import MenaiCodegenError
 from menai.menai_value import MenaiValue
 
@@ -57,8 +60,8 @@ class MenaiASTBindingInjector:
             The program wrapped in a single ``let`` binding.
 
         Raises:
-            MenaiCodegenError: If the name is a ``$``-prefixed primitive name or
-                a prelude name.
+            MenaiCodegenError: If the name is a ``$``-prefixed primitive name, a
+                reserved word, or a prelude name.
         """
         cls._validate_name(name)
 
@@ -71,14 +74,24 @@ class MenaiASTBindingInjector:
         Reject names that cannot be ordinary lexical bindings.
 
         Raises:
-            MenaiCodegenError: If the name is a ``$``-prefixed primitive name or
-                a prelude name.
+            MenaiCodegenError: If the name is a ``$``-prefixed primitive name, a
+                reserved word, or a prelude name.
         """
         if name.startswith('$'):
             raise MenaiCodegenError(
                 message=f"Binding name '{name}' uses a reserved prefix",
                 context="The '$' prefix is reserved for opcode-backed primitives",
                 suggestion="Choose a binding name that does not begin with '$'",
+            )
+
+        if name in RESERVED_NAMES:
+            raise MenaiCodegenError(
+                message=f"Binding name '{name}' is a reserved word",
+                context=(
+                    "A reserved word is syntax, not a name: a form headed by it is always "
+                    "interpreted as that form, so the binding could never be referenced"
+                ),
+                suggestion="Choose a binding name that is not a reserved word",
             )
 
         if name in MenaiASTPreludeInjector.prelude_names():
