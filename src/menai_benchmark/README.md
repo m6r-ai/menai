@@ -228,13 +228,15 @@ alone.  Note that at these sizes most of the time is spent in the DEFLATE
 compressor, which the encoder uses for the IDAT chunk.
 
 ### Regexp
-Exercises the `regexp` standard library module.  Nine cases span compiling a
+Exercises the `regexp` standard library module.  Twelve cases span compiling a
 complex pattern per line, a literal-prefix search over a log, a character-class
 search over numbers, an alternation search over prose, every-match scans
-(`search-all`) for a class and a literal prefix, splitting on runs of
-whitespace, replacing runs of whitespace, and a chained per-line workload that
-splits a log into lines and searches each.  Inputs are generated fixtures
-(see [Fixtures](#fixtures)).
+(`search-all`) for a class and a literal prefix, capturing-group extraction
+(`search-groups` and `search-all-groups`) from a log and from numbers, splitting
+on runs of whitespace, replacing runs of whitespace, replacing a date with its
+captured groups reordered, and a chained per-line workload that splits a log into
+lines and searches each.  Inputs are generated fixtures (see
+[Fixtures](#fixtures)).
 
 ### Rubik's Cube (list)
 Solves scrambled Rubik's cubes using IDA* with a misplaced-stickers heuristic.

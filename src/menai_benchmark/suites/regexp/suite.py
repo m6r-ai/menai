@@ -101,6 +101,18 @@ _CASES: list[tuple[str, str, str]] = [
         '  (search-all (compile "ERROR") s))',
     ),
     (
+        "search-groups-log",
+        "log-1000",
+        '(let ((compile (:: re compile)) (search-groups (:: re search-groups)))'
+        '  (search-groups (compile "([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}) (ERROR|WARN|INFO)") s))',
+    ),
+    (
+        "search-all-groups-numbers",
+        "numbers-1000",
+        '(let ((compile (:: re compile)) (search-all-groups (:: re search-all-groups)))'
+        '  (search-all-groups (compile "([a-z]+) ([0-9]+)") s))',
+    ),
+    (
         "split-whitespace",
         "spaced-4000",
         '(let ((compile (:: re compile)) (split (:: re split)))'
@@ -111,6 +123,12 @@ _CASES: list[tuple[str, str, str]] = [
         "prose-64k",
         '(let ((compile (:: re compile)) (replace (:: re replace)))'
         '  (replace (compile "\\\\s+") s "_"))',
+    ),
+    (
+        "replace-groups-dates",
+        "log-1000",
+        '(let ((compile (:: re compile)) (replace (:: re replace)))'
+        '  (replace (compile "([0-9]{4})-([0-9]{2})-([0-9]{2})") s "$3/$2/$1"))',
     ),
     (
         "chained-per-line",

@@ -1,20 +1,23 @@
 ; regexp — regular-expression matching over strings.
 ;
-; A compiled regexp is a struct holding the source pattern, the parsed node
-; tree, and a precomputed literal prefix used by the fast path.  compile builds
-; one from a pattern string; the search, split, and replace operations take a
-; compiled regexp and a string.  A match is reported as a half-open (start end)
-; index pair, so (string-slice s start end) is the matched text.
+; A compiled regexp is a struct holding the source pattern, the numbered node
+; tree, a precomputed literal prefix used by the fast path, and the number of
+; capturing groups.  compile builds one from a pattern string; the search, split,
+; and replace operations take a compiled regexp and a string.  A match is reported
+; as a half-open (start end) index pair, so (string-slice s start end) is the
+; matched text; search-groups and search-all-groups report each capturing group's
+; extent as well, or #none for a group that did not participate.
 ;
-; The pattern dialect is small and documented in ADR-0042.  A malformed pattern,
-; a repetition count above the limit, or a non-string where a string is required
-; raises an error.
+; The pattern dialect is small and documented in ADR-0052.  A malformed pattern,
+; a repetition count above the limit, a non-string where a string is required, or
+; a replacement that refers to a group the pattern lacks raises an error.
 
 (letrec
   (; regexp-op names the variants of a parsed node.  A node is a list whose first
    ; element is one of these variants and whose remaining elements are the node's
-   ; operands.
-   (regexp-op (enum (empty char any class bol eol seq alt opt star)))
+   ; operands.  A group node wraps a sub-node and carries its 1-based group number,
+   ; which the parser assigns when it reads the group's opening parenthesis.
+   (regexp-op (enum (empty char any class bol eol seq alt opt star group)))
 
    ; The largest repetition count a brace quantifier may specify.  A larger count
    ; would expand to an impractically large node tree, so it is rejected rather
@@ -67,6 +70,12 @@
     (lambda ()
       (list (regexp-op 'empty))))
 
+   ; regexp-n-group builds a capturing-group node around a sub-node, carrying the
+   ; group's 1-based number.
+   (regexp-n-group
+    (lambda (n node)
+      (list (regexp-op 'group) n node)))
+
    ; regexp-empty? returns #t when a node is the empty node, which matches the
    ; empty string.  The sequence and alternation parsers use it to avoid wrapping
    ; an empty node around the first operand they see.
@@ -98,33 +107,35 @@
         (loop i (list)))))
 
    ; regexp-parse-escape parses an escape sequence: the backslash at p[i] and the
-   ; character after it.  Returns (list <node> <next-index>).  The shorthand classes
-   ; \d \D \w \W \s \S map to character-class nodes; any other escaped character is
-   ; a literal.
+   ; character after it.  Returns (list <node> <next-index> <next-group>).  The
+   ; shorthand classes \d \D \w \W \s \S map to character-class nodes; any other
+   ; escaped character is a literal.
    (regexp-parse-escape
-    (lambda (p i)
+    (lambda (p i g)
       (let ((esc (string-nth p (integer+ i 1))))
         (match esc
-          ("d" (list (regexp-n-class (list (list 48 57)) #f) (integer+ i 2)))
-          ("D" (list (regexp-n-class (list (list 48 57)) #t) (integer+ i 2)))
-          ("w" (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #f) (integer+ i 2)))
-          ("W" (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #t) (integer+ i 2)))
-          ("s" (list (regexp-n-class (list (list 9 13) (list 32 32)) #f) (integer+ i 2)))
-          ("S" (list (regexp-n-class (list (list 9 13) (list 32 32)) #t) (integer+ i 2)))
-          (_ (list (regexp-n-char esc) (integer+ i 2)))))))
+          ("d" (list (regexp-n-class (list (list 48 57)) #f) (integer+ i 2) g))
+          ("D" (list (regexp-n-class (list (list 48 57)) #t) (integer+ i 2) g))
+          ("w" (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #f) (integer+ i 2) g))
+          ("W" (list (regexp-n-class (list (list 48 57) (list 65 90) (list 97 122) (list 95 95)) #t) (integer+ i 2) g))
+          ("s" (list (regexp-n-class (list (list 9 13) (list 32 32)) #f) (integer+ i 2) g))
+          ("S" (list (regexp-n-class (list (list 9 13) (list 32 32)) #t) (integer+ i 2) g))
+          (_ (list (regexp-n-char esc) (integer+ i 2) g))))))
 
    ; regexp-parse-atom parses a single atom starting at p[i]: a group, a character
    ; class, an escape sequence, an anchor, or a literal character.  Returns
-   ; (list <node> <next-index>).
+   ; (list <node> <next-index> <next-group>).  A group is numbered when its opening
+   ; parenthesis is read, so a group carries its number before any quantifier
+   ; expands the node that contains it.
    (regexp-parse-atom
-    (lambda (p i)
+    (lambda (p i g)
       (let ((ch (string-nth p i)))
         (match ch
           ("("
-           (let ((inner (regexp-parse-alt p (integer+ i 1))))
+           (let ((inner (regexp-parse-alt p (integer+ i 1) (integer+ g 1))))
              (if (and (integer<? (list-nth inner 1) (string-length p))
                       (string=? (string-nth p (list-nth inner 1)) ")"))
-                 (list (list-first inner) (integer+ (list-nth inner 1) 1))
+                 (list (regexp-n-group g (list-first inner)) (integer+ (list-nth inner 1) 1) (list-nth inner 2))
                  (error "Unterminated group in pattern"))))
           ("["
            (let*
@@ -138,33 +149,34 @@
                    (integer+ i 1)))
 
               (cls (regexp-parse-class p start)))
-             (list (regexp-n-class (list-first cls) neg) (list-nth cls 1))))
-          ("\\" (regexp-parse-escape p i))
-          ("." (list (regexp-n-any) (integer+ i 1)))
-          ("^" (list (regexp-n-bol) (integer+ i 1)))
-          ("$" (list (regexp-n-eol) (integer+ i 1)))
-          (_ (list (regexp-n-char ch) (integer+ i 1)))))))
+             (list (regexp-n-class (list-first cls) neg) (list-nth cls 1) g)))
+          ("\\" (regexp-parse-escape p i g))
+          ("." (list (regexp-n-any) (integer+ i 1) g))
+          ("^" (list (regexp-n-bol) (integer+ i 1) g))
+          ("$" (list (regexp-n-eol) (integer+ i 1) g))
+          (_ (list (regexp-n-char ch) (integer+ i 1) g))))))
 
    ; regexp-parse-quant parses an atom followed by an optional quantifier.  Returns
-   ; (list <node> <next-index>).
+   ; (list <node> <next-index> <next-group>).
    (regexp-parse-quant
-    (lambda (p i)
-      (let* ((atom-result (regexp-parse-atom p i))
+    (lambda (p i g)
+      (let* ((atom-result (regexp-parse-atom p i g))
              (node (list-first atom-result))
-             (after (list-nth atom-result 1)))
+             (after (list-nth atom-result 1))
+             (next (list-nth atom-result 2)))
         (if (integer>=? after (string-length p))
-            (list node after)
+            (list node after next)
             (let ((q (string-nth p after)))
               (match q
-                ("*" (list (regexp-n-star node) (integer+ after 1)))
-                ("+" (list (regexp-n-seq node (regexp-n-star node)) (integer+ after 1)))
-                ("?" (list (regexp-n-opt node) (integer+ after 1)))
+                ("*" (list (regexp-n-star node) (integer+ after 1) next))
+                ("+" (list (regexp-n-seq node (regexp-n-star node)) (integer+ after 1) next))
+                ("?" (list (regexp-n-opt node) (integer+ after 1) next))
                 ("{"
                  (let ((br (regexp-parse-brace p after)))
                    (if (none? br)
-                       (list node after)
-                       (list (regexp-expand-repeat node (list-nth br 0) (list-nth br 1)) (list-nth br 2)))))
-                (_ (list node after))))))))
+                       (list node after next)
+                       (list (regexp-expand-repeat node (list-nth br 0) (list-nth br 1)) (list-nth br 2) next))))
+                (_ (list node after next))))))))
 
    ; regexp-parse-brace parses a brace quantifier starting at the "{" at p[i].
    ; Returns (list <min> <max> <next-index>) where max is #none for an open-ended
@@ -214,9 +226,11 @@
                                   #none)))))))))))
 
    ; regexp-expand-repeat builds a node matching its child between lo and hi times.
-   ; hi is #none for an open-ended repeat.  The expansion is by construction:
-   ; lo mandatory copies followed by (hi - lo) optional copies, or a star for an
-   ; open-ended repeat.
+   ; hi is #none for an open-ended repeat.  The expansion is by construction: lo
+   ; mandatory copies followed by (hi - lo) optional copies, or a star for an
+   ; open-ended repeat.  A group inside the child is copied by the expansion, but
+   ; it already carries its number, so the copies share it rather than being
+   ; numbered separately.
    (regexp-expand-repeat
     (lambda (node lo hi)
       (letrec ((copies
@@ -234,43 +248,47 @@
               (regexp-n-seq (copies lo) (optionals (integer- hi lo))))))))
 
    (regexp-parse-seq
-    (lambda (p i)
+    (lambda (p i g)
       (letrec ((loop
-                (lambda (j node)
+                (lambda (j node gn)
                   (if (integer>=? j (string-length p))
-                      (list node j)
+                      (list node j gn)
                       (let ((ch (string-nth p j)))
                         (if (or (string=? ch "|")
                                 (string=? ch ")"))
-                            (list node j)
-                            (let ((q (regexp-parse-quant p j)))
+                            (list node j gn)
+                            (let ((q (regexp-parse-quant p j gn)))
                               (loop
                                 (list-nth q 1)
                                 (if (regexp-empty? node)
                                     (list-first q)
-                                    (regexp-n-seq node (list-first q)))))))))))
-        (loop i (regexp-n-empty)))))
+                                    (regexp-n-seq node (list-first q)))
+                                (list-nth q 2)))))))))
+        (loop i (regexp-n-empty) g))))
 
    (regexp-parse-alt
-    (lambda (p i)
+    (lambda (p i g)
       (letrec ((loop
-                (lambda (j node)
-                  (let* ((seq (regexp-parse-seq p j))
+                (lambda (j node gn)
+                  (let* ((seq (regexp-parse-seq p j gn))
                          (snode (list-first seq))
-                         (after (list-nth seq 1)))
+                         (after (list-nth seq 1))
+                         (next (list-nth seq 2)))
                     (if (and (integer<? after (string-length p))
                              (string=? (string-nth p after) "|"))
                         (loop
                           (integer+ after 1)
                           (if (regexp-empty? node)
                               snode
-                              (regexp-n-alt node snode)))
+                              (regexp-n-alt node snode))
+                          next)
                         (list
                           (if (regexp-empty? node)
                               snode
                               (regexp-n-alt node snode))
-                          after))))))
-        (loop i (regexp-n-empty)))))
+                          after
+                          next))))))
+        (loop i (regexp-n-empty) g))))
 
    (regexp-class-match?
     (lambda (ranges negated ch)
@@ -286,73 +304,113 @@
                               (loop (list-rest rs))))))))
           (loop ranges)))))
 
-   (regexp-identity
-    (lambda (p) p))
+   ; regexp-caps-set returns a copy of the capture vector `caps` with group
+   ; number `n` set to `value`.  Group n occupies element n-1.
+   (regexp-caps-set
+    (lambda (caps n value)
+      (letrec ((loop
+                (lambda (i rest acc)
+                  (if (list-null? rest)
+                      (list-reverse acc)
+                      (loop
+                        (integer+ i 1)
+                        (list-rest rest)
+                        (list-prepend
+                          acc
+                          (if (integer=? i n)
+                              value
+                              (list-first rest))))))))
+        (loop 1 caps (list)))))
 
+   ; regexp-identity is the continuation that accepts a match and returns it
+   ; unchanged.  A continuation receives (list <position> <captures>).
+   (regexp-identity
+    (lambda (r) r))
+
+   ; regexp-m matches a node at `pos` in `s`, continuing with `k` on success.
+   ; `k` receives (list <position> <captures>), where captures is the capture
+   ; vector after the match.  Returns the continuation's result, or #none when
+   ; the node does not match at `pos`.  The matcher is backtracking: an
+   ; alternative or a repetition retries with a different extent by re-invoking
+   ; the continuation.
    (regexp-m
-    (lambda (node pos s k)
+    (lambda (node pos s caps k)
       (match (list-first node)
-        ((: regexp-op 'empty) (k pos))
+        ((: regexp-op 'empty) (k (list pos caps)))
         ((: regexp-op 'char)
          (if (and (integer<? pos (string-length s))
                   (string=? (string-nth s pos) (list-nth node 1)))
-             (k (integer+ pos 1))
+             (k (list (integer+ pos 1) caps))
              #none))
         ((: regexp-op 'any)
          (if (integer<? pos (string-length s))
-             (k (integer+ pos 1))
+             (k (list (integer+ pos 1) caps))
              #none))
         ((: regexp-op 'class)
          (if (and (integer<? pos (string-length s))
                   (regexp-class-match? (list-nth node 1) (list-nth node 2) (string-nth s pos)))
-             (k (integer+ pos 1))
+             (k (list (integer+ pos 1) caps))
              #none))
         ((: regexp-op 'bol)
          (if (integer=? pos 0)
-             (k pos)
+             (k (list pos caps))
              #none))
         ((: regexp-op 'eol)
          (if (integer=? pos (string-length s))
-             (k pos)
+             (k (list pos caps))
              #none))
+        ((: regexp-op 'group)
+         (let ((n (list-nth node 1)))
+           (regexp-m
+             (list-nth node 2)
+             pos
+             s
+             caps
+             (lambda (r)
+               (k (list (list-nth r 0) (regexp-caps-set (list-nth r 1) n (list pos (list-nth r 0)))))))))
         ((: regexp-op 'seq)
          (regexp-m
            (list-nth node 1)
            pos
            s
-           (lambda (p2)
-             (regexp-m (list-nth node 2) p2 s k))))
+           caps
+           (lambda (r)
+             (regexp-m (list-nth node 2) (list-nth r 0) s (list-nth r 1) k))))
         ((: regexp-op 'alt)
-         (let ((r (regexp-m (list-nth node 1) pos s k)))
+         (let ((r (regexp-m (list-nth node 1) pos s caps k)))
            (if (none? r)
-               (regexp-m (list-nth node 2) pos s k)
+               (regexp-m (list-nth node 2) pos s caps k)
                r)))
         ((: regexp-op 'opt)
-         (let ((r (regexp-m (list-nth node 1) pos s k)))
+         (let ((r (regexp-m (list-nth node 1) pos s caps k)))
            (if (none? r)
-               (k pos)
+               (k (list pos caps))
                r)))
         ((: regexp-op 'star)
          (letrec ((loop
-                   (lambda (p)
+                   (lambda (p c)
                      (let ((r
                             (regexp-m
                               (list-nth node 1)
                               p
                               s
-                              (lambda (np)
-                                (if (integer=? np p)
+                              c
+                              (lambda (r2)
+                                (if (integer=? (list-nth r2 0) p)
                                     #none
-                                    (loop np))))))
+                                    (loop (list-nth r2 0) (list-nth r2 1)))))))
                        (if (none? r)
-                           (k p)
+                           (k (list p c))
                            r)))))
-           (loop pos)))
+           (loop pos caps)))
         (_ (error "Unknown instruction")))))
 
+   ; regexp-match-from returns (list <end> <captures>) for a match of `node`
+   ; anchored at `start`, or #none.  The capture vector is initialised to one
+   ; #none entry per group, so a group that does not participate stays #none.
    (regexp-match-from
-    (lambda (node s start)
-      (regexp-m node start s regexp-identity)))
+    (lambda (node s start caps)
+      (regexp-m node start s caps regexp-identity)))
 
    ; regexp-literal-prefix returns the longest run of literal characters that any match
    ; must begin with, as a string; the empty string when the pattern's first node
@@ -368,6 +426,7 @@
     (lambda (node)
       (match (list-first node)
         ((: regexp-op 'char) (list-nth node 1))
+        ((: regexp-op 'group) (regexp-literal-prefix (list-nth node 2)))
         ((: regexp-op 'seq)
          (let ((a (list-nth node 1)))
            (let ((pa (regexp-literal-prefix a)))
@@ -382,6 +441,7 @@
     (lambda (node)
       (match (list-first node)
         ((: regexp-op 'char) 1)
+        ((: regexp-op 'group) (regexp-literal-length (list-nth node 2)))
         ((: regexp-op 'seq)
          (let ((n (regexp-literal-length (list-nth node 1))))
            (if (integer=? n -1)
@@ -400,36 +460,54 @@
             (string=? (string-slice s start (integer+ start n)) prefix)))))
 
    ; regexp-match-from-start finds the first match at or after `start`, returning
-   ; (start end) or #none.  The literal prefix of the pattern is checked at each
-   ; start position so that positions which cannot begin a match are rejected
-   ; with one string comparison instead of a full match attempt.
+   ; (start end captures) or #none, where captures is the capture vector after
+   ; the match.  The literal prefix of the pattern is checked at each start
+   ; position so that positions which cannot begin a match are rejected with one
+   ; string comparison instead of a full match attempt.  `caps` is the initial
+   ; capture vector, which is all #none.
    (regexp-match-from-start
-    (lambda (node prefix s start)
+    (lambda (node prefix s start caps)
       (letrec ((loop
                 (lambda (pos)
                   (if (integer>? pos (string-length s))
                       #none
                       (if (or (string=? prefix "")
                               (regexp-prefix-matches? s pos prefix))
-                          (let ((end (regexp-match-from node s pos)))
-                            (if (none? end)
+                          (let ((r (regexp-match-from node s pos caps)))
+                            (if (none? r)
                                 (loop (integer+ pos 1))
-                                (list pos end)))
+                                (list pos (list-nth r 0) (list-nth r 1))))
                           (loop (integer+ pos 1)))))))
         (loop start))))
 
-   ; regexp — the compiled-regexp struct type.  Fields: the source pattern, the
-   ; parsed node tree, and the literal prefix used by the fast path.
-   (regexp (struct (source node prefix)))
+   ; regexp-caps-new returns a capture vector of `n` #none entries, one per
+   ; capturing group, in group-number order.
+   (regexp-caps-new
+    (lambda (n)
+      (letrec ((loop
+                (lambda (i acc)
+                  (if (integer>=? i n)
+                      (list-reverse acc)
+                      (loop (integer+ i 1) (list-prepend acc #none))))))
+        (loop 0 (list)))))
+
+   ; regexp \u2014 the compiled-regexp struct type.  Fields: the source pattern, the
+   ; numbered node tree, the literal prefix used by the fast path, and the number
+   ; of capturing groups the pattern declares.
+   (regexp (struct (source node prefix groups)))
 
    ; compile — compiles a pattern string into a compiled regexp value.  Raises
-   ; when the pattern is not a string or is malformed.
+   ; when the pattern is not a string or is malformed.  The parse returns the node
+   ; tree, the index it stopped at, and the next group number to assign, so the
+   ; group count is one less than that.
    (compile
     (lambda (p)
       (if (string? p)
-          (let ((parsed (regexp-parse-alt p 0)))
+          (let* ((parsed (regexp-parse-alt p 0 1))
+                 (node (list-first parsed))
+                 (groups (integer- (list-nth parsed 2) 1)))
             (if (integer=? (list-nth parsed 1) (string-length p))
-                (regexp p (list-first parsed) (regexp-literal-prefix (list-first parsed)))
+                (regexp p node (regexp-literal-prefix node) groups)
                 (error "regexp: invalid pattern")))
           (error "regexp: pattern must be a string"))))
 
@@ -450,10 +528,42 @@
 
    ; search — returns the first match in a string as a (start end) pair, or
    ; #none.  Raises when the input is not a string.
+   (regexp-groups
+    (lambda (rx)
+      (struct-get rx 'groups)))
+
+   ; regexp-caps-init returns the all-#none capture vector for a compiled regexp.
+   (regexp-caps-init
+    (lambda (rx)
+      (regexp-caps-new (regexp-groups rx))))
+
+   ; regexp-match-at returns (start end captures) for the first match at or after
+   ; `start`, or #none.
+   (regexp-match-at
+    (lambda (rx s start)
+      (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s start (regexp-caps-init rx))))
+
    (search
     (lambda (rx s)
       (if (string? s)
-          (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s 0)
+          (let ((m (regexp-match-at rx s 0)))
+            (if (none? m)
+                #none
+                (list (list-nth m 0) (list-nth m 1))))
+          (error "regexp: input must be a string"))))
+
+   ; search-groups returns the first match in a string as (start end g1 g2 ...),
+   ; where each gi is that capturing group's (start end) pair or #none when the
+   ; group did not participate in the match.  Returns #none when there is no
+   ; match.  A pattern with no capturing groups yields a two-element (start end)
+   ; list, the same shape as search.  Raises when the input is not a string.
+   (search-groups
+    (lambda (rx s)
+      (if (string? s)
+          (let ((m (regexp-match-at rx s 0)))
+            (if (none? m)
+                #none
+                (list-concat (list (list-nth m 0) (list-nth m 1)) (list-nth m 2))))
           (error "regexp: input must be a string"))))
 
    ; search? — returns #t when a string contains a match, #f otherwise.
@@ -471,14 +581,33 @@
       (if (string? s)
           (letrec ((loop
                     (lambda (pos acc)
-                      (let ((m (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s pos)))
+                      (let ((m (regexp-match-at rx s pos)))
                         (if (none? m)
                             (list-reverse acc)
                             (let ((start (list-nth m 0))
                                   (end (list-nth m 1)))
                               (if (integer=? start end)
                                   (list-reverse acc)
-                                  (loop end (list-prepend acc m)))))))))
+                                  (loop end (list-prepend acc (list start end))))))))))
+            (loop 0 (list)))
+          (error "regexp: input must be a string"))))
+
+   ; search-all-groups returns every non-overlapping match in a string, left to
+   ; right, as a list of (start end g1 g2 ...) lists, each group entry being that
+   ; group's (start end) pair or #none.  Raises when the input is not a string.
+   (search-all-groups
+    (lambda (rx s)
+      (if (string? s)
+          (letrec ((loop
+                    (lambda (pos acc)
+                      (let ((m (regexp-match-at rx s pos)))
+                        (if (none? m)
+                            (list-reverse acc)
+                            (let ((start (list-nth m 0))
+                                  (end (list-nth m 1)))
+                              (if (integer=? start end)
+                                  (list-reverse acc)
+                                  (loop end (list-prepend acc (list-concat (list start end) (list-nth m 2)))))))))))
             (loop 0 (list)))
           (error "regexp: input must be a string"))))
 
@@ -489,7 +618,7 @@
       (if (string? s)
           (letrec ((loop
                     (lambda (pos last acc)
-                      (let ((m (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s pos)))
+                      (let ((m (regexp-match-at rx s pos)))
                         (if (none? m)
                             (list-reverse (list-prepend acc (string-slice s last (string-length s))))
                             (let ((start (list-nth m 0))
@@ -500,14 +629,72 @@
             (loop 0 0 (list)))
           (error "regexp: input must be a string"))))
 
-   ; replace — replaces every match in a string with a replacement string.
-   ; Raises when the input is not a string.
+   ; regexp-expand-replacement expands the group references in a replacement
+   ; string for one match.  `$0` is the whole match and `$1`..`$n` are the
+   ; capturing groups, each substituted with the text it captured in `s`; `$$`
+   ; is a literal dollar.  A `$` followed by anything else, or a group number
+   ; with no corresponding group, raises.  A group that did not participate
+   ; substitutes the empty string.
+   (regexp-expand-replacement
+    (lambda (replacement s start end caps)
+      (letrec
+        ((digit?
+          (lambda (ch)
+            (let ((cp (string->integer-codepoint ch)))
+              (and (integer>=? cp 48)
+                   (integer<=? cp 57)))))
+
+         (digits
+          (lambda (i)
+            (if (and (integer<? i (string-length replacement))
+                     (digit? (string-nth replacement i)))
+                (digits (integer+ i 1))
+                i)))
+
+         (expansion
+          (lambda (n)
+            (if (integer=? n 0)
+                (string-slice s start end)
+                (if (integer>? n (list-length caps))
+                    (error "regexp: replacement refers to a group the pattern does not have")
+                    (let ((g (list-nth caps (integer- n 1))))
+                      (if (none? g)
+                          ""
+                          (string-slice s (list-nth g 0) (list-nth g 1))))))))
+
+         (loop
+          (lambda (i acc)
+            (if (integer>=? i (string-length replacement))
+                acc
+                (let ((ch (string-nth replacement i)))
+                  (if (string=? ch "$")
+                      (if (integer>=? (integer+ i 1) (string-length replacement))
+                          (error "regexp: replacement ends with a lone $")
+                          (let ((next (string-nth replacement (integer+ i 1))))
+                            (if (string=? next "$")
+                                (loop (integer+ i 2) (string-concat acc "$"))
+                                (if (digit? next)
+                                    (let ((j (digits (integer+ i 1))))
+                                      (loop
+                                        j
+                                        (string-concat
+                                          acc
+                                          (expansion (string->integer (string-slice replacement (integer+ i 1) j))))))
+                                    (error "regexp: $ in replacement must be followed by a digit or $")))))
+                      (loop (integer+ i 1) (string-concat acc ch))))))))
+        (loop 0 ""))))
+
+   ; replace replaces every match in a string with a replacement string.  The
+   ; replacement may refer to the match and its capturing groups with `$0` and
+   ; `$1`..`$n`, and a literal `$` is written `$$`; see regexp-expand-replacement.
+   ; Raises when the input is not a string, or when the replacement refers to a
+   ; group the pattern does not have.
    (replace
     (lambda (rx s replacement)
       (if (string? s)
           (letrec ((loop
                     (lambda (pos acc)
-                      (let ((m (regexp-match-from-start (regexp-node rx) (regexp-prefix rx) s pos)))
+                      (let ((m (regexp-match-at rx s pos)))
                         (if (none? m)
                             (string-concat acc (string-slice s pos (string-length s)))
                             (let ((start (list-nth m 0))
@@ -516,8 +703,11 @@
                                   (string-concat acc (string-slice s pos (string-length s)))
                                   (loop
                                     end
-                                    (string-concat (string-concat acc (string-slice s pos start)) replacement)))))))))
+                                    (string-concat
+                                      acc
+                                      (string-slice s pos start)
+                                      (regexp-expand-replacement replacement s start end (list-nth m 2)))))))))))
             (loop 0 ""))
           (error "regexp: input must be a string")))))
 
-  (export regexp compile regexp? search search? search-all split replace))
+  (export regexp compile regexp? search search-groups search? search-all search-all-groups split replace))

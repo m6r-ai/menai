@@ -719,13 +719,14 @@ It is a capability module rather than an operation module: it is a pattern
 compiler, a matcher, and a family of search, split, and replace operations that
 share a compiled-regexp type and a pattern dialect, and none of the parts is
 independently useful. It exports the type `regexp` and the operations `compile`,
-`search`, `search?`, `search-all`, `split`, and `replace` under their bare names,
-with no `regexp-` prefix — the module name supplies the capability.
+`search`, `search-groups`, `search?`, `search-all`, `search-all-groups`, `split`,
+and `replace` under their bare names, with no `regexp-` prefix — the module name
+supplies the capability.
 
 The compiled regexp is the first argument and the string is the second, following
 the `domain-operation` shape used throughout. See
 [ADR-0041](docs/adr/0041-standard-library-module-taxonomy.md) and
-[ADR-0042](docs/adr/0042-regular-expression-matching.md).
+[ADR-0052](docs/adr/0052-regular-expression-captures.md).
 
 ### The DOCX codec is the OOXML capture layer, not a document model
 

@@ -10,7 +10,10 @@ New features:
 - Added a common subexpression elimination (CSE) optimization.
 - Added `xlsx-decode` and `xlsx-encode` modules to the standard library.
 - Renamed `menai-pretty-print` to `menai-format` as it more accurately reflects its
-  role as a canonical formatter.
+  role as a canonical formatter.  `menai-format` now has a new canonical format.
+- Added capturing groups to the `regexp` module.  `search-groups` and
+  `search-all-groups` report each group's extent, and `replace` expands `$1`..`$n`
+  in its replacement.
 
 ## v0.8.0 (2026-10-10)
 

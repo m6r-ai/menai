@@ -1,7 +1,7 @@
 # ADR-0042: Regular-expression matching — the `regexp` capability module
 
 Date: 2026-10-06  
-Status: Accepted
+Status: Superseded by ADR-0052
 
 ## Context
 

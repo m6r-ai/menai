@@ -321,10 +321,14 @@ menai`. Currently it includes:
   round-trip rather than a byte round-trip (`encode`)
 - `regexp.menai` — compiles a regular-expression pattern and searches, splits,
   or replaces within strings.  Exports the compiled-regexp type `regexp` and the
-  operations `compile`, `search`, `search?`, `search-all`, `split`, and
-  `replace`.  A match is reported as a half-open `(start end)` index pair, so
-  `(string-slice s start end)` is the matched text.  The pattern dialect is
-  documented in [ADR-0042](adr/0042-regular-expression-matching.md)
+  operations `compile`, `search`, `search-groups`, `search?`, `search-all`,
+  `search-all-groups`, `split`, and `replace`.  A match is reported as a
+  half-open `(start end)` index pair, so `(string-slice s start end)` is the
+  matched text; `search-groups` and `search-all-groups` report each capturing
+  group's extent as well, or `#none` for a group that did not participate, and
+  `replace` expands `$0`..`$n` in its replacement.  The pattern dialect is
+  documented in [ADR-0052](adr/0052-regular-expression-captures.md), which
+  supersedes [ADR-0042](adr/0042-regular-expression-matching.md)
 - `tar-entries.menai` — reads a tar archive (as bytes) and returns a dict with an
   `"entries"` list of entry dicts and a `"meta"` dict, without returning entry
   contents.  Both POSIX ustar and GNU tar are accepted, including GNU long names

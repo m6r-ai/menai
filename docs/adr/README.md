@@ -110,7 +110,7 @@ What costs, risks, or constraints does this decision impose?
 | [0039](0039-standard-library-module-naming.md) | Standard library module naming | Superseded by ADR-0041 |
 | [0040](0040-module-search-path-and-application-libraries.md) | Module search path and application libraries | Accepted |
 | [0041](0041-standard-library-module-taxonomy.md) | Standard library module taxonomy | Accepted |
-| [0042](0042-regular-expression-matching.md) | Regular-expression matching — the `regexp` capability module | Accepted |
+| [0042](0042-regular-expression-matching.md) | Regular-expression matching — the `regexp` capability module | Superseded by ADR-0052 |
 | [0043](0043-enum-type.md) | Enum type | Accepted |
 | [0044](0044-type-pattern-heads-are-syntactically-distinct.md) | Type pattern heads are syntactically distinct | Accepted |
 | [0045](0045-desugared-match-size-is-bounded.md) | A match's desugared form is bounded | Accepted |
@@ -120,3 +120,4 @@ What costs, risks, or constraints does this decision impose?
 | [0049](0049-hoisting-must-not-introduce-a-raise.md) | Hoisting must not introduce a raise on a path that did not have one | Accepted |
 | [0050](0050-xlsx-codec-ooxml-capture-layer.md) | XLSX codec — the OOXML capture layer | Accepted |
 | [0051](0051-menai-source-formatting-style.md) | Menai source formatting style | Accepted |
+| [0052](0052-regular-expression-captures.md) | Regular-expression captures | Accepted |
