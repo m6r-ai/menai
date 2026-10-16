@@ -261,6 +261,33 @@
     (lambda ()
       (assert-equal (search (compile "a{b}") "xa{b}y") (list 1 5))))
 
+   ; A star gives back characters so the rest of the pattern can match.
+   (test-quantifier-star-backtracks
+    (lambda ()
+      (assert-equal (search (compile "a*ab") "aaab") (list 0 4))))
+
+   ; A star that must give back several characters still backtracks.
+   (test-quantifier-star-backtracks-many
+    (lambda ()
+      (assert-equal (search (compile "a*aaab") "aaaaaab") (list 0 7))))
+
+   ; A bounded repeat gives back characters to its lower bound.
+   (test-quantifier-bounded-backtracks
+    (lambda ()
+      (assert-equal (search (compile "a{2,4}ab") "aaaaab") (list 0 6))))
+
+   ; A repetition over a long run does not exhaust the call stack.
+   (test-quantifier-long-run
+    (lambda ()
+      (let ((s (list->string (map-list (lambda (i) "x") (range 0 5000)))))
+        (assert-equal (search (compile "x+") s) (list 0 5000)))))
+
+   ; A star over a long run matches the whole run.
+   (test-quantifier-long-run-star
+    (lambda ()
+      (let ((s (list->string (map-list (lambda (i) "x") (range 0 5000)))))
+        (assert-equal (search (compile "x*") s) (list 0 5000)))))
+
    ; A quantifier applies to the whole group.
    (test-group-quantifier
     (lambda ()
@@ -555,7 +582,12 @@
           (expect-pass "zero repeat matches nothing" test-quantifier-zero)
           (expect-pass "zero-or-more repeat is a star" test-quantifier-zero-or-more)
           (expect-pass "zero-or-more repeat matches zero" test-quantifier-zero-or-more-zero)
-          (expect-pass "a brace that is not a quantifier is literal" test-quantifier-literal-brace)))
+          (expect-pass "a brace that is not a quantifier is literal" test-quantifier-literal-brace)
+          (expect-pass "a star gives back characters" test-quantifier-star-backtracks)
+          (expect-pass "a star gives back many characters" test-quantifier-star-backtracks-many)
+          (expect-pass "a bounded repeat gives back characters" test-quantifier-bounded-backtracks)
+          (expect-pass "a repetition over a long run" test-quantifier-long-run)
+          (expect-pass "a star over a long run" test-quantifier-long-run-star)))
 
       (list
         "grouping"

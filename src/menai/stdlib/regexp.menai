@@ -203,27 +203,27 @@
                       n))))))
         (if (integer>=? (integer+ i 1) (string-length p))
             #none
-            (let ((start (integer+ i 1)))
-              (let ((j (digits start)))
-                (if (integer=? j start)
-                    #none
-                    (let ((lo (value start j)))
-                      (if (integer>=? j (string-length p))
-                          #none
-                          (if (string=? (string-nth p j) "}")
-                              (list lo lo (integer+ j 1))
-                              (if (string=? (string-nth p j) ",")
-                                  (let ((k (digits (integer+ j 1))))
-                                    (if (and (integer<? k (string-length p))
-                                             (string=? (string-nth p k) "}"))
-                                        (if (integer=? k (integer+ j 1))
-                                            (list lo #none (integer+ k 1))
-                                            (let ((hi (value (integer+ j 1) k)))
-                                              (if (integer<? hi lo)
-                                                  (error "Repetition range in pattern is inverted")
-                                                  (list lo hi (integer+ k 1)))))
-                                        #none))
-                                  #none)))))))))))
+            (let* ((start (integer+ i 1))
+                   (j (digits start)))
+              (if (integer=? j start)
+                  #none
+                  (let ((lo (value start j)))
+                    (if (integer>=? j (string-length p))
+                        #none
+                        (if (string=? (string-nth p j) "}")
+                            (list lo lo (integer+ j 1))
+                            (if (string=? (string-nth p j) ",")
+                                (let ((k (digits (integer+ j 1))))
+                                  (if (and (integer<? k (string-length p))
+                                           (string=? (string-nth p k) "}"))
+                                      (if (integer=? k (integer+ j 1))
+                                          (list lo #none (integer+ k 1))
+                                          (let ((hi (value (integer+ j 1) k)))
+                                            (if (integer<? hi lo)
+                                                (error "Repetition range in pattern is inverted")
+                                                (list lo hi (integer+ k 1)))))
+                                      #none))
+                                #none))))))))))
 
    ; regexp-expand-repeat builds a node matching its child between lo and hi times.
    ; hi is #none for an open-ended repeat.  The expansion is by construction: lo
@@ -333,6 +333,13 @@
    ; the node does not match at `pos`.  The matcher is backtracking: an
    ; alternative or a repetition retries with a different extent by re-invoking
    ; the continuation.
+   ;
+   ; A repetition is matched in two iterative phases rather than by recursing
+   ; once per character.  It first consumes the child greedily, collecting every
+   ; (position, captures) state it reaches, then tries the continuation at those
+   ; states longest first.  Both phases are tail-recursive, so a repetition does
+   ; not consume a stack frame per character and a long run cannot overflow the
+   ; call stack.
    (regexp-m
     (lambda (node pos s caps k)
       (match (list-first node)
@@ -387,22 +394,32 @@
                (k (list pos caps))
                r)))
         ((: regexp-op 'star)
-         (letrec ((loop
-                   (lambda (p c)
-                     (let ((r
-                            (regexp-m
-                              (list-nth node 1)
-                              p
-                              s
-                              c
-                              (lambda (r2)
-                                (if (integer=? (list-nth r2 0) p)
-                                    #none
-                                    (loop (list-nth r2 0) (list-nth r2 1)))))))
-                       (if (none? r)
-                           (k (list p c))
-                           r)))))
-           (loop pos caps)))
+         (letrec
+           ((consume
+             (lambda (p c acc)
+               (let ((r
+                      (regexp-m
+                        (list-nth node 1)
+                        p
+                        s
+                        c
+                        (lambda (r2)
+                          (list (list-nth r2 0) (list-nth r2 1))))))
+                 (if (or (none? r)
+                         (integer=? (list-nth r 0) p))
+                     (list-reverse acc)
+                     (consume (list-nth r 0) (list-nth r 1) (list-prepend acc (list (list-nth r 0) (list-nth r 1))))))))
+
+            (try
+             (lambda (states)
+               (if (list-null? states)
+                   #none
+                   (let* ((st (list-first states))
+                          (r (k (list (list-nth st 0) (list-nth st 1)))))
+                     (if (none? r)
+                         (try (list-rest states))
+                         r))))))
+           (try (list-reverse (consume pos caps (list (list pos caps)))))))
         (_ (error "Unknown instruction")))))
 
    ; regexp-match-from returns (list <end> <captures>) for a match of `node`
@@ -428,11 +445,11 @@
         ((: regexp-op 'char) (list-nth node 1))
         ((: regexp-op 'group) (regexp-literal-prefix (list-nth node 2)))
         ((: regexp-op 'seq)
-         (let ((a (list-nth node 1)))
-           (let ((pa (regexp-literal-prefix a)))
-             (if (integer=? (string-length pa) (regexp-literal-length a))
-                 (string-concat pa (regexp-literal-prefix (list-nth node 2)))
-                 pa))))
+         (let* ((a (list-nth node 1))
+                (pa (regexp-literal-prefix a)))
+           (if (integer=? (string-length pa) (regexp-literal-length a))
+               (string-concat pa (regexp-literal-prefix (list-nth node 2)))
+               pa)))
         (_ ""))))
 
    ; regexp-literal-length returns the number of characters a node matches when it is

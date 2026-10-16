@@ -82,6 +82,26 @@ index, returning `(list <node> <next-index> <next-group>)`. The alternative —
 making `+` and `{n,m}` node kinds so the tree never contains a copy — was
 implemented and rejected; see below.
 
+### A repetition is matched iteratively
+
+The repetition case of the matcher recursed once per character: the loop matched
+the child, and the child's continuation called the loop again. That is not a tail
+call, so a run of about 600 characters exhausted the VM's call depth and raised
+"maximum call depth exceeded". The limitation was pre-existing — it affected `*`
+before this change — but it is a defect, and a capture vector threaded through the
+same recursion would have made it no better.
+
+A repetition is now matched in two iterative phases. It first consumes the child
+greedily, collecting every `(position, captures)` state it reaches; both this loop
+and the check that stops it when the child makes no progress are tail-recursive.
+It then tries the continuation at those states longest first, which is also a
+tail-recursive loop, and stops at the first state the continuation accepts. That
+preserves greediness with backtracking — `a*ab` still matches all of `aaab` — while
+removing the per-character stack frame.
+
+The states carry captures, not just positions, because a group inside a repetition
+must be reported as it was at the extent the continuation finally accepts.
+
 ## Alternatives considered
 
 ### Extending `search` to return captures when the pattern has groups
@@ -129,9 +149,12 @@ correctness.
 - `replace` can reorder captured text, so reformatting a date or a name is one call.
 - The two-element result of a group-less pattern is the same shape as `search`, so
   a caller that does not use groups is unaffected by their existence.
-   - A quantified group is numbered once, so `([a-z])+` declares one group and not
-     two. The tree still contains the copies the quantifier expands to, but they
-     share a number, so the group count matches what the pattern wrote.
+- A quantified group is numbered once, so `([a-z])+` declares one group and not
+  two. The tree still contains the copies the quantifier expands to, but they
+  share a number, so the group count matches what the pattern wrote.
+- A repetition no longer recurses once per character, so a long run matches
+  instead of exhausting the call stack. This fixes a defect that predated
+  captures.
 - No VM changes: the matcher is still Menai-level code, so every binding inherits
   it, and the prelude still does not grow.
 
@@ -141,10 +164,10 @@ correctness.
   contains a `$` must escape it as `$$`, and a replacement that previously passed a
   literal `$1` through now raises. This is a behaviour change to an existing
   operation.
-   - The capture vector is threaded through every continuation, so the matcher carries
-     a little more state per call even for patterns with no groups. Measured cost is
-     a few percent on `+`-heavy every-match scans; the alternative of making
-     quantifiers node kinds was several times larger and was rejected.
+- The capture vector is threaded through every continuation, so the matcher carries
+  a little more state per call even for patterns with no groups. Measured cost is
+  a few percent on `+`-heavy every-match scans; the alternative of making
+  quantifiers node kinds was several times larger and was rejected.
 - Backreferences remain excluded. The engine now has capture state, so the
   ADR-0042 reason for excluding them no longer applies verbatim; they are excluded
   because they are not needed for the common extraction tasks, not because the

@@ -15,6 +15,11 @@ New features:
   `search-all-groups` report each group's extent, and `replace` expands `$1`..`$n`
   in its replacement.
 
+Bug fixes:
+
+- Fixed a `regexp` stack overflow.  A repetition recursed once per character, so a
+  run of a few hundred characters raised "maximum call depth exceeded".
+
 ## v0.8.0 (2026-10-10)
 
 New features:
