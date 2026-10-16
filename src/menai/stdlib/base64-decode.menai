@@ -217,14 +217,14 @@
    (decode
     (lambda (s . rest)
       (if (string? s)
-          (let ((v
-                 (if (list-null? rest)
-                     (variant 'standard)
-                     (list-first rest))))
-            (let ((alphabet (alphabet-for v)))
-              (if (padded? v)
-                  (decode-padded s alphabet)
-                  (decode-unpadded s alphabet))))
+          (let* ((v
+                  (if (list-null? rest)
+                      (variant 'standard)
+                      (list-first rest)))
+                 (alphabet (alphabet-for v)))
+            (if (padded? v)
+                (decode-padded s alphabet)
+                (decode-unpadded s alphabet)))
           (error "base64-decode: decode expects a string")))))
 
   (export decode variant))

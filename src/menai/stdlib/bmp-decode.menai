@@ -117,15 +117,15 @@
    (decode
     (lambda (b)
       (if (bytes? b)
-          (let ((header (read-header b)))
-            (let ((width (dict-get header "width"))
-                  (height (dict-get header "height"))
-                  (bpp (dict-get header "bpp")))
-              (let ((row-bits (integer* width bpp)))
-                (let ((row-padding (integer- (integer* (integer/ (integer+ row-bits 31) 32) 4) (integer/ row-bits 8))))
-                  (dict "header" header
-                        "pixels" (decode-rows b (dict-get header "data-offset") width height bpp)
-                        "meta" (dict "format" "bmp" "row-padding" row-padding "bottom-up" (integer>? height 0)))))))
+          (let* ((header (read-header b))
+                 (width (dict-get header "width"))
+                 (height (dict-get header "height"))
+                 (bpp (dict-get header "bpp"))
+                 (row-bits (integer* width bpp))
+                 (row-padding (integer- (integer* (integer/ (integer+ row-bits 31) 32) 4) (integer/ row-bits 8))))
+            (dict "header" header
+                  "pixels" (decode-rows b (dict-get header "data-offset") width height bpp)
+                  "meta" (dict "format" "bmp" "row-padding" row-padding "bottom-up" (integer>? height 0))))
           (error "bmp-decode: decode expects a bytes value")))))
 
   (export decode))

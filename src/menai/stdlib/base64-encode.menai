@@ -89,42 +89,44 @@
    (encode
     (lambda (b . rest)
       (if (bytes? b)
-          (let ((v
-                 (if (list-null? rest)
-                     (variant 'standard)
-                     (list-first rest))))
-            (let ((alphabet (alphabet-for v))
-                  (pad (padded? v))
-                  (n (bytes-length b)))
-              (letrec ((loop
-                        (lambda (i acc)
-                          (if (integer>=? i n)
-                              (list->string (list-reverse acc))
-                              (let ((remaining (integer- n i)))
-                                (if (integer>=? remaining 3)
-                                    (loop
-                                      (integer+ i 3)
-                                      (list-prepend
-                                        acc
-                                        (encode-group
-                                          alphabet
-                                          (bytes-nth b i)
-                                          (bytes-nth b (integer+ i 1))
-                                          (bytes-nth b (integer+ i 2)))))
-                                    (if (integer=? remaining 2)
-                                        (list->string
-                                          (list-reverse
-                                            (list-prepend
-                                              acc
-                                              (encode-final-two
-                                                alphabet
-                                                pad
-                                                (bytes-nth b i)
-                                                (bytes-nth b (integer+ i 1))))))
-                                        (list->string
-                                          (list-reverse
-                                            (list-prepend acc (encode-final-one alphabet pad (bytes-nth b i))))))))))))
-                (loop 0 (list)))))
+          (let*
+            ((v
+              (if (list-null? rest)
+                  (variant 'standard)
+                  (list-first rest)))
+
+             (alphabet (alphabet-for v))
+             (pad (padded? v))
+             (n (bytes-length b)))
+            (letrec ((loop
+                      (lambda (i acc)
+                        (if (integer>=? i n)
+                            (list->string (list-reverse acc))
+                            (let ((remaining (integer- n i)))
+                              (if (integer>=? remaining 3)
+                                  (loop
+                                    (integer+ i 3)
+                                    (list-prepend
+                                      acc
+                                      (encode-group
+                                        alphabet
+                                        (bytes-nth b i)
+                                        (bytes-nth b (integer+ i 1))
+                                        (bytes-nth b (integer+ i 2)))))
+                                  (if (integer=? remaining 2)
+                                      (list->string
+                                        (list-reverse
+                                          (list-prepend
+                                            acc
+                                            (encode-final-two
+                                              alphabet
+                                              pad
+                                              (bytes-nth b i)
+                                              (bytes-nth b (integer+ i 1))))))
+                                      (list->string
+                                        (list-reverse
+                                          (list-prepend acc (encode-final-one alphabet pad (bytes-nth b i))))))))))))
+              (loop 0 (list))))
           (error "base64-encode: encode expects a bytes value")))))
 
   (export encode variant))

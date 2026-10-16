@@ -149,20 +149,22 @@
                       (bpp (dict-get header "bpp")))
                   (if (or (integer=? bpp 24)
                           (integer=? bpp 32))
-                      (let
+                      (let*
                         ((bottom-up
                           (if (dict? meta)
                               (dict-get meta "bottom-up")
                               #t))
 
-                         (abs-height (integer-abs (dict-get header "height"))))
-                        (let ((file-height
-                               (if bottom-up
-                                   abs-height
-                                   (integer-neg abs-height))))
-                          (let ((image-size (integer* (row-stride width bpp) abs-height)))
-                            (let ((data (encode-rows (bytes-concat) pixels width abs-height bpp bottom-up)))
-                              (bytes-concat (encode-header header width file-height bpp image-size) data)))))
+                         (abs-height (integer-abs (dict-get header "height")))
+
+                         (file-height
+                          (if bottom-up
+                              abs-height
+                              (integer-neg abs-height)))
+
+                         (image-size (integer* (row-stride width bpp) abs-height))
+                         (data (encode-rows (bytes-concat) pixels width abs-height bpp bottom-up)))
+                        (bytes-concat (encode-header header width file-height bpp image-size) data))
                       (error
                         (string-concat
                           "bmp-encode: unsupported bit depth "

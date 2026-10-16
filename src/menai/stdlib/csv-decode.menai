@@ -123,22 +123,22 @@
 
                    (loop
                     (lambda (i row-acc rows-acc)
-                      (let ((field-result (parse-field csv-string i delim)))
-                        (let* ((field (list-first field-result))
-                               (pos (list-nth field-result 1))
-                               (row (list-prepend row-acc field)))
-                          (let ((dispatch (after-field csv-string pos delim)))
-                            (let ((tag (list-first dispatch))
-                                  (next (list-nth dispatch 1)))
-                              (match tag
-                                ((: after-field-tag 'field) (loop next row rows-acc))
-                                ((: after-field-tag 'row)
-                                 (if (integer>=? next (string-length csv-string))
-                                     ; A single trailing terminator ends the
-                                     ; last row without starting a new one.
-                                     (finish rows-acc row)
-                                     (loop next (list) (list-prepend rows-acc (list-reverse row)))))
-                                ((: after-field-tag 'end) (finish rows-acc row))))))))))
+                      (let* ((field-result (parse-field csv-string i delim))
+                             (field (list-first field-result))
+                             (pos (list-nth field-result 1))
+                             (row (list-prepend row-acc field))
+                             (dispatch (after-field csv-string pos delim))
+                             (tag (list-first dispatch))
+                             (next (list-nth dispatch 1)))
+                        (match tag
+                          ((: after-field-tag 'field) (loop next row rows-acc))
+                          ((: after-field-tag 'row)
+                           (if (integer>=? next (string-length csv-string))
+                               ; A single trailing terminator ends the
+                               ; last row without starting a new one.
+                               (finish rows-acc row)
+                               (loop next (list) (list-prepend rows-acc (list-reverse row)))))
+                          ((: after-field-tag 'end) (finish rows-acc row)))))))
                   (loop 0 (list) (list)))
                 (error "CSV delimiter must be a single-character string")))
           (error "CSV input must be a string")))))

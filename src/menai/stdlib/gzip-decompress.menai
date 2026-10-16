@@ -108,29 +108,29 @@
       (if (bytes? b)
           (if (integer<? (bytes-length b) 18)
               (error "Not a gzip stream: too short")
-              (let ((flg (check-fixed-header b)))
-                (let ((data-start (skip-optional-fields b flg)))
-                  (let ((decompress (:: deflate-lib decompress)))
-                    (let ((data (decompress (bytes-slice b data-start (integer- (bytes-length b) 8)))))
-                      (let ((expected-crc (bytes-read-u32-le b (integer- (bytes-length b) 8)))
-                            (actual-crc (bytes-crc32 data))
-                            (expected-size (bytes-read-u32-le b (integer- (bytes-length b) 4)))
-                            (actual-size (integer-bit-and (bytes-length data) #xffffffff)))
-                        (if (integer!=? expected-crc actual-crc)
-                            (error
-                              (string-concat
-                                "gzip stream checksum mismatch: expected "
-                                (integer->string expected-crc)
-                                " but computed "
-                                (integer->string actual-crc)))
-                            (if (integer!=? expected-size actual-size)
-                                (error
-                                  (string-concat
-                                    "gzip stream size mismatch: expected "
-                                    (integer->string expected-size)
-                                    " but computed "
-                                    (integer->string actual-size)))
-                                data))))))))
+              (let* ((flg (check-fixed-header b))
+                     (data-start (skip-optional-fields b flg))
+                     (decompress (:: deflate-lib decompress))
+                     (data (decompress (bytes-slice b data-start (integer- (bytes-length b) 8))))
+                     (expected-crc (bytes-read-u32-le b (integer- (bytes-length b) 8)))
+                     (actual-crc (bytes-crc32 data))
+                     (expected-size (bytes-read-u32-le b (integer- (bytes-length b) 4)))
+                     (actual-size (integer-bit-and (bytes-length data) #xffffffff)))
+                (if (integer!=? expected-crc actual-crc)
+                    (error
+                      (string-concat
+                        "gzip stream checksum mismatch: expected "
+                        (integer->string expected-crc)
+                        " but computed "
+                        (integer->string actual-crc)))
+                    (if (integer!=? expected-size actual-size)
+                        (error
+                          (string-concat
+                            "gzip stream size mismatch: expected "
+                            (integer->string expected-size)
+                            " but computed "
+                            (integer->string actual-size)))
+                        data))))
           (error "gzip-decompress: decompress expects a bytes value")))))
 
   (export decompress))

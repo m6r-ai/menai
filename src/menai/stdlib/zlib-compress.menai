@@ -63,15 +63,17 @@
    (compress
     (lambda (b . rest)
       (if (bytes? b)
-          (let ((block-mode
-                 (if (list-null? rest)
-                     (mode 'auto)
-                     (list-first rest))))
-            (let ((deflate (:: deflate-lib compress)))
-              (bytes-concat
-                header
-                (deflate b (deflate-mode block-mode))
-                (bytes-append-u32-be (bytes-concat) (adler32 b)))))
+          (let*
+            ((block-mode
+              (if (list-null? rest)
+                  (mode 'auto)
+                  (list-first rest)))
+
+             (deflate (:: deflate-lib compress)))
+            (bytes-concat
+              header
+              (deflate b (deflate-mode block-mode))
+              (bytes-append-u32-be (bytes-concat) (adler32 b))))
           (error "zlib-compress: compress expects a bytes value")))))
 
   (export compress mode))

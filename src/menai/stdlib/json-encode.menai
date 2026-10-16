@@ -55,16 +55,16 @@
    ; the exponent marker, which JSON does not allow.
    (encode-float
     (lambda (f)
-      (let ((text (float->string f)))
-        (let ((e-pos (find-exponent text)))
-          (if (none? e-pos)
-              text
-              (if (and (integer<? (integer+ e-pos 1) (string-length text))
-                       (string=? (string-nth text (integer+ e-pos 1)) "+"))
-                  (string-concat
-                    (string-slice text 0 (integer+ e-pos 1))
-                    (string-slice text (integer+ e-pos 2) (string-length text)))
-                  text))))))
+      (let* ((text (float->string f))
+             (e-pos (find-exponent text)))
+        (if (none? e-pos)
+            text
+            (if (and (integer<? (integer+ e-pos 1) (string-length text))
+                     (string=? (string-nth text (integer+ e-pos 1)) "+"))
+                (string-concat
+                  (string-slice text 0 (integer+ e-pos 1))
+                  (string-slice text (integer+ e-pos 2) (string-length text)))
+                text)))))
 
    ; Return the index of the exponent marker in a float's textual form, or #none.
    (find-exponent
@@ -107,13 +107,15 @@
                       (list->string (list-reverse (list-prepend acc "}")))
                       (let ((k (list-first keys)))
                         (if (string? k)
-                            (let ((acc2
-                                   (if first
-                                       acc
-                                       (list-prepend acc ","))))
-                              (let ((acc3 (list-prepend acc2 (encode-string k))))
-                                (let ((acc4 (list-prepend acc3 ":")))
-                                  (loop (list-rest keys) (list-prepend acc4 (encode (dict-get d k))) #f))))
+                            (let*
+                              ((acc2
+                                (if first
+                                    acc
+                                    (list-prepend acc ",")))
+
+                               (acc3 (list-prepend acc2 (encode-string k)))
+                               (acc4 (list-prepend acc3 ":")))
+                              (loop (list-rest keys) (list-prepend acc4 (encode (dict-get d k))) #f))
                             (error "json-encode: dict keys must be strings")))))))
         (loop (dict-keys d) (list "{") #t))))
 
