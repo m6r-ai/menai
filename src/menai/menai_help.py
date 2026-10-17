@@ -470,6 +470,13 @@ Syntax: (operator arg1 arg2 ...)
 - All binding forms (let, let*, letrec) and lambda accept exactly one body expression; there is no begin or sequencing form — nest let* for multi-step computations
 - Menai has no define special form; all variable bindings use let, let*, or letrec; use letrec for self-recursive or mutually recursive functions
 
+## Reserved words
+
+- These names are syntax, not names, and cannot be used as binding names: :: if let let* letrec lambda quote match and or import struct enum export apply : .
+- A reserved word is rejected wherever a binding name may appear: let/let*/letrec bindings, lambda parameters (including the rest parameter), match pattern variables, struct and enum type names
+- A form headed by a reserved word is always interpreted as that form, so a binding of the same name could never be referenced
+- Use a different name; e.g. bind a value to `value` rather than to `let`
+
 ## Recursive bindings
 
 - (letrec ((var1 val1) (var2 val2) ...) body) → recursive binding

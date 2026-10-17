@@ -120,6 +120,29 @@ without evaluating it:
 
 See [Core forms — quote](core_forms.md#quote) for details.
 
+## Reserved words
+
+Some names are syntax rather than names. A form headed by one of these is always
+interpreted as that form, whatever any enclosing binding says:
+
+```text
+::  if  let  let*  letrec  lambda  quote  match  and  or
+import  struct  enum  export  apply  :  .
+```
+
+Because such a name can never denote a binding, it is rejected wherever a binding
+name may appear — in `let`/`let*`/`letrec` bindings, `lambda` parameters
+(including the rest parameter), `match` pattern variables, and `struct`/`enum`
+type names:
+
+```menai
+(let ((match 5)) match)   ; ERROR: binding name 'match' is a reserved word
+(lambda (if) if)          ; ERROR: binding name 'if' is a reserved word
+```
+
+Choose a name that is not a reserved word. A name that merely *resembles* one,
+such as `loop`, is an ordinary binding and is perfectly valid.
+
 ## Whitespace
 
 Whitespace (spaces, tabs, newlines) separates tokens but has no semantic meaning.

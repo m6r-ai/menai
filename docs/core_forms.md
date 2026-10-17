@@ -34,6 +34,9 @@ Use `let*` for sequential bindings where later bindings can reference earlier on
 
 The body is a single expression. Use `let` for independent bindings.
 
+Binding names may not be reserved words — see
+[Syntax — Reserved words](syntax.md#reserved-words).
+
 ## let\* — sequential bindings
 
 `let*` creates local bindings where each binding expression is evaluated in the scope
