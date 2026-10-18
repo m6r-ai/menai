@@ -35,6 +35,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGInstr,
     MenaiCFGTerminator,
 )
+from menai.menai_error import MenaiEvalError
 from menai.ir.menai_ir import (
     MenaiIRCall,
     MenaiIRConstant,
@@ -447,6 +448,106 @@ class MenaiCFGBuilder:
 
         return self._build_expr(ir.body_plan, block, body_scope, state, tail=tail)
 
+    def _names_read(self, ir: MenaiIRExpr) -> set[str]:
+        """
+        Return the set of variable names `ir` reads outside any lambda body.
+
+        Used by letrec Phase 2b to detect a non-lambda binding whose value
+        depends on another computed binding in the same group.  Such a value
+        has nothing to read: those names are only bound to placeholders until
+        Phase 2b computes them.
+
+        Lambda bodies are not descended into.  A read inside a lambda happens
+        when the lambda is called, by which time every binding has a real
+        value, so it is legitimate.  This mirrors the shadowing rules in
+        MenaiASTDependencyAnalyzer._scan_refs.
+        """
+        if isinstance(ir, MenaiIRVariable):
+            return {ir.name}
+
+        if isinstance(ir, MenaiIRLambda):
+            return set()
+
+        if isinstance(ir, (MenaiIRConstant, MenaiIREmptyList, MenaiIRQuote)):
+            return set()
+
+        if isinstance(ir, MenaiIRCall):
+            names = self._names_read(ir.func_plan)
+            for a in ir.arg_plans:
+                names |= self._names_read(a)
+
+            return names
+
+        if isinstance(ir, MenaiIRIf):
+            return (
+                self._names_read(ir.condition_plan)
+                | self._names_read(ir.then_plan)
+                | self._names_read(ir.else_plan)
+            )
+
+        if isinstance(ir, MenaiIRReturn):
+            return self._names_read(ir.value_plan)
+
+        if isinstance(ir, MenaiIRError):
+            return self._names_read(ir.message)
+
+        if isinstance(ir, (MenaiIRBuildList, MenaiIRBuildVector, MenaiIRBuildSet)):
+            names: set[str] = set()
+            for p in ir.element_plans:
+                names |= self._names_read(p)
+
+            return names
+
+        if isinstance(ir, MenaiIRBuildDict):
+            names = set()
+            for k, v in ir.pair_plans:
+                names |= self._names_read(k) | self._names_read(v)
+
+            return names
+
+        if isinstance(ir, MenaiIRBuildStruct):
+            names = set()
+            for p in ir.field_plans:
+                names |= self._names_read(p)
+
+            return names
+
+        if isinstance(ir, MenaiIRBuildEnum):
+            return set()
+
+        if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+            # Binding values are evaluated in the enclosing scope, so a read of
+            # an outer name there is still a read.  The body is in a child
+            # scope, but an outer name is only shadowed if rebound, and a
+            # rebinding would be a different variable.
+            names = set()
+            for _, v in ir.bindings:
+                names |= self._names_read(v)
+
+            return names | self._names_read(ir.body_plan)
+
+        if isinstance(ir, MenaiIRLoop):
+            # Init plans run before the loop; the body runs inside it.  A read
+            # in an init plan is evaluated immediately, so it counts.  The body
+            # is reached only after the binding has a value, so it does not.
+            names = set()
+            for p in ir.init_plans:
+                names |= self._names_read(p)
+
+            return names
+
+        if isinstance(ir, MenaiIRRecur):
+            names = set()
+            for p in ir.arg_plans:
+                names |= self._names_read(p)
+
+            return names
+
+        raise TypeError(
+            f"MenaiCFGBuilder._names_read: unhandled IR node "
+            f"{type(ir).__name__}; add it to this dispatch"
+        )
+
     def _build_letrec(
         self, ir: MenaiIRLetrec, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
     ) -> tuple[MenaiCFGValue, _DraftBlock]:
@@ -529,9 +630,71 @@ class MenaiCFGBuilder:
         prev_deferred_patches = self._letrec_deferred_patches
         self._letrec_sibling_names = sibling_names
         self._letrec_deferred_patches = []
+
+        # Names bound to computed (non-lambda) values in this group.  A read of
+        # one of these from another non-lambda binding is a cycle with no base
+        # case, because neither value exists until Phase 2b computes it.
+        non_lambda_names = {
+            n for n, plan in ir.bindings if not isinstance(plan, MenaiIRLambda)
+        }
+
         for name, value_plan in ir.bindings:
             if isinstance(value_plan, MenaiIRLambda):
                 continue
+
+            # A non-lambda binding whose value reads another non-lambda binding
+            # in the same group has no well-defined initial value.  Phase 1
+            # allocated a placeholder SSA value for each such binding, and only
+            # Phase 2b replaces it; a read during Phase 2b therefore resolves to
+            # a register no instruction defines.  This covers both a direct
+            # self-reference and a cycle between two non-lambda bindings.
+            #
+            # Reading a *lambda* sibling is fine: the closure already exists
+            # after Phase 1, so the reference resolves to a real value.  A read
+            # shielded by a lambda is also fine, because the lambda body runs
+            # later; _references_name does not descend into lambda bodies.
+            for read_name in self._names_read(value_plan):
+                if read_name == name:
+                    raise MenaiEvalError(
+                        message=f"Binding '{name}' cannot refer to itself in a letrec",
+                        context=(
+                            "A letrec binding's value is computed from the other "
+                            "bindings in its group.  Referring to the binding being "
+                            "defined has no value to read."
+                        ),
+                        expected="A value that does not depend on its own binding",
+                        received=f"A value that refers to '{name}'",
+                        suggestion=(
+                            "If you need recursion, wrap the self-reference in a "
+                            "lambda so it is only evaluated when called"
+                        ),
+                        example=(
+                            f"(letrec (({name} (lambda (x) ... {name} ...))) ...)"
+                        ),
+                    )
+
+                if read_name in non_lambda_names:
+                    raise MenaiEvalError(
+                        message=(
+                            f"Binding '{name}' cannot refer to '{read_name}' in a "
+                            f"letrec"
+                        ),
+                        context=(
+                            "Both bindings are computed values in the same letrec "
+                            "group, so neither has a value when the other is "
+                            "evaluated.  This is a cycle with no base case."
+                        ),
+                        expected="A value that does not depend on a sibling computed value",
+                        received=f"A value that refers to '{read_name}'",
+                        suggestion=(
+                            "Wrap the reference in a lambda so it is only evaluated "
+                            "when called, or move the dependency outside the letrec"
+                        ),
+                        example=(
+                            f"(letrec (({read_name} ...) "
+                            f"({name} (lambda (x) ... {read_name} ...))) ...)"
+                        ),
+                    )
 
             real_val, block = self._build_expr(value_plan, block, letrec_scope, state, tail=False)
             letrec_scope.bind(name, real_val)

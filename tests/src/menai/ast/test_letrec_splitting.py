@@ -19,6 +19,8 @@ Test organisation:
 
 import pytest
 
+from menai import MenaiEvalError
+
 
 class TestLetrecSplittingSemantics:
     """
@@ -488,3 +490,75 @@ class TestLetrecSplittingEdgeCases:
           (f a))
         '''
         helpers.assert_evaluates_to(menai, src, '3')
+
+
+
+class TestLetrecSelfReferentialNonLambda:
+    """
+    A non-lambda letrec binding whose RHS references itself.
+
+    The desugarer keeps such a binding in letrec (the dependency analyzer
+    correctly sees a self-cycle), so it reaches the CFG builder as a
+    non-lambda binding.  The CFG builder allocates a placeholder SSA value
+    for every non-lambda binding in Phase 1 and defines the real value in
+    Phase 2b.  When the RHS references its own name, that reference resolves
+    to the Phase 1 placeholder, which is never defined by any instruction.
+
+    These programs are erroneous: the value of a binding cannot depend on
+    itself without an intervening lambda.  The compiler must reject them with
+    a located, explanatory MenaiEvalError rather than crashing in the slot
+    allocator with a bare AssertionError.
+    """
+
+    def test_self_referential_non_lambda_is_compile_error(self, menai):
+        """The canonical case: (letrec ((x (integer+ x 1))) x)."""
+        with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
+            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+
+    def test_self_referential_non_lambda_error_has_location(self, menai):
+        """The error must carry a source location, not be a bare assert."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+
+        err = exc_info.value
+        assert err.suggestion is not None
+        assert err.expected is not None
+        assert err.context is not None
+
+    def test_self_referential_non_lambda_is_not_assertion_error(self, menai):
+        """
+        Regression guard: the slot allocator's AssertionError must never
+        escape to the user.
+        """
+        with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
+            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+
+        # The specific internal failure mode that used to leak.
+        try:
+            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+        except MenaiEvalError as e:
+            assert 'has no assigned slot' not in str(e)
+
+    def test_direct_self_reference_in_call(self, menai):
+        """A self-reference buried in a nested call is also rejected."""
+        with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
+            menai.evaluate('(letrec ((x (integer* 2 (integer+ x 1)))) x)')
+
+    def test_self_reference_in_list_literal(self, menai):
+        """A self-reference inside a list literal is rejected."""
+        with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
+            menai.evaluate('(letrec ((x (list x))) x)')
+
+    def test_legitimate_self_reference_through_lambda_still_works(self, menai, helpers):
+        """
+        A self-reference that passes through a lambda is legitimate: the
+        lambda body is not evaluated during binding initialisation.  This must
+        continue to work.
+        """
+        src = '(letrec ((x (list (lambda () x)))) (function? (list-first x)))'
+        helpers.assert_evaluates_to(menai, src, '#t')
+
+    def test_mutual_non_lambda_cycle_is_rejected(self, menai):
+        """A cycle between two non-lambda bindings is also rejected."""
+        with pytest.raises(MenaiEvalError, match="cannot refer to '"):
+            menai.evaluate('(letrec ((a (integer+ b 1)) (b (integer+ a 1))) a)')
