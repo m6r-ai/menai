@@ -113,9 +113,9 @@ class ParenDiagnosis:
     closed an enclosing form.
 
     ``open_scopes`` lists the forms still open when the token stream ran out,
-    innermost first.  It is the nesting the reader intended to write, which is
-    what localises a missing ``)``: the innermost scope is the form whose close
-    is absent, and the scopes enclosing it are the context it sits in.
+    outermost first.  It is the nesting the reader intended to write, read in
+    source order: the innermost scope is the form whose close is absent, and the
+    scopes before it are the context it sits in.
     """
 
     insertion_line: int | None
@@ -299,7 +299,7 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
             is_bindings_list=form.is_bindings_list,
             enclosing_form=form.enclosing_form,
         )
-        for form in reversed(open_forms)
+        for form in open_forms
     ]
 
     return ParenDiagnosis(
@@ -412,14 +412,15 @@ def describe_open_scope(scope: OpenScope) -> str:
 
 def format_open_scopes(diagnosis: ParenDiagnosis) -> str:
     """
-    Render the forms still open at end of input, innermost first.
+    Render the forms still open at end of input, outermost first.
 
-    This is the nesting the reader intended to write.  The innermost scope is
-    the form whose closing ``)`` is absent, and each scope below it is the
-    context it sits in, so the list localises the missing ``)`` to a form rather
-    than to a line.  The element count is what distinguishes a form that simply
-    ran out of input from one that swallowed its own body: a bindings list that
-    holds more elements than it has bindings has read the body as a binding.
+    This is the nesting the reader intended to write, listed in source order so
+    the line numbers increase down the list.  The innermost scope is the form
+    whose closing ``)`` is absent, and each scope before it is the context it
+    sits in, so the list localises the missing ``)`` to a form rather than to a
+    line.  The element count is what distinguishes a form that simply ran out of
+    input from one that swallowed its own body: a bindings list that holds more
+    elements than it has bindings has read the body as a binding.
 
     Args:
         diagnosis: The diagnosis to render.

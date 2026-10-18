@@ -487,7 +487,7 @@ class MenaiASTBuilder:
         The open forms are taken from the token stream rather than from the
         parser's in-progress stack, because the parser's stack diverges from the
         token stream once it starts recovering from the error.  The token stream
-        gives the nesting the reader intended to write, innermost first, which
+        gives the nesting the reader intended to write, outermost first, which
         names the form whose closing ')' is absent.
 
         Args:
@@ -546,7 +546,7 @@ class MenaiASTBuilder:
             )
 
         scopes = format_open_scopes(diagnosis)
-        scope_block = f"Forms still open (innermost first):\n{scopes}" if scopes else ""
+        scope_block = f"Forms still open (outermost first):\n{scopes}" if scopes else ""
 
         depth_table = self._depth_table_around(error_line)
         table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
@@ -1932,7 +1932,7 @@ class MenaiASTBuilder:
             )
 
         scopes = format_open_scopes(diagnosis)
-        scope_block = f"Forms still open (innermost first):\n{scopes}" if scopes else ""
+        scope_block = f"Forms still open (outermost first):\n{scopes}" if scopes else ""
 
         context_msg = (
             f"Reached end of input while parsing {keyword} bindings.\n\n"

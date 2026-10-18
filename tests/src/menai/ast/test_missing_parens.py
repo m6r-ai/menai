@@ -105,15 +105,16 @@ class TestMissingParens:
         assert "missing 3 closing" in error.lower()
 
     def test_error_shows_open_forms(self, menai):
-        """Test that the error lists the forms still open, innermost first."""
+        """The error lists the forms still open, outermost first."""
         with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("(let ((x 5)) (+ x 2")
 
         error = str(exc_info.value)
-        # The innermost open form is the call, and the let encloses it.
         assert "forms still open" in error.lower()
-        assert "'+'" in error
-        assert "'let'" in error
+        # Outermost first, so the let is listed before the call it encloses.
+        let_index = error.index("'let'")
+        call_index = error.index("'+'")
+        assert let_index < call_index
 
     def test_error_suggests_closing_parens(self, menai):
         """Test that error suggests the closing parens to add."""
