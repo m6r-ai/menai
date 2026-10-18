@@ -7,7 +7,7 @@ It chains together all compilation passes in the correct order.
 
 
 from collections.abc import Sequence
-from typing import Protocol, TypeVar
+from typing import Callable, Protocol, TypeVar
 
 from menai.ast.menai_ast import MenaiASTNode
 from menai.ast.menai_ast_builder import MenaiASTBuilder
@@ -46,10 +46,12 @@ from menai.ir.menai_ir_letrec_to_loop import MenaiIRLetrecToLoop
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 from menai.ir.menai_ir_optimizer import MenaiIROptimizer
 from menai.menai_value import MenaiValue
+from menai.menai_error import MenaiError, MenaiInternalError
 from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 
 
 _Tree = TypeVar("_Tree")
+_Stage = TypeVar("_Stage")
 
 
 class _OptimizationPass(Protocol[_Tree]):
@@ -146,6 +148,15 @@ class MenaiCompiler:
         Returns:
             Fully resolved AST (all imports replaced with module ASTs)
         """
+        return self._run_stage(
+            "lexing, parsing, semantic analysis, and module resolution", source,
+            lambda: self._compile_to_resolved_ast(source, source_file, is_program),
+        )
+
+    def _compile_to_resolved_ast(
+        self, source: str, source_file: str, is_program: bool
+    ) -> MenaiASTNode:
+        """Run the front-end stages without the internal-error boundary."""
         tokens = self._lexer.lex(source)
         ast = self._ast_builder.build(tokens, source, source_file)
         diagnosis = diagnose_parens(tokens, source)
@@ -180,12 +191,69 @@ class MenaiCompiler:
         Returns:
             Compiled bytecode ready for execution
         """
-        resolved_ast = self.compile_to_resolved_ast(source, name)
-        cfg = self._compile_to_cfg(resolved_ast, inject)
+        resolved_ast = self._run_stage(
+            "lexing, parsing, semantic analysis, and module resolution", source,
+            lambda: self._compile_to_resolved_ast(source, name, True),
+        )
+        cfg = self._run_stage(
+            "desugaring, IR construction, and CFG optimisation", source,
+            lambda: self._compile_to_cfg(resolved_ast, inject),
+        )
 
-        vcode = self._vcode_builder.build(cfg)
-        bytecode = self._bytecode_builder.build(vcode, name)
+        vcode = self._run_stage(
+            "vcode lowering", source, lambda: self._vcode_builder.build(cfg)
+        )
+        bytecode = self._run_stage(
+            "bytecode emission", source,
+            lambda: self._bytecode_builder.build(vcode, name),
+        )
         return bytecode
+
+    def _run_stage(self, phase: str, source: str, stage: Callable[[], _Stage]) -> _Stage:
+        """
+        Run one backend compilation stage, converting internal faults to MenaiInternalError.
+
+        A backend pass that violates its own contract raises AssertionError (a
+        failed invariant) or, if a pass produces a shape the next pass cannot
+        consume, TypeError or AttributeError.  None of these are the program's
+        fault, so they must not escape as raw Python exceptions: the caller
+        would see an opaque AssertionError with no indication that the compiler,
+        not the program, is at fault.
+
+        Only these three exception types are converted.  Anything else —
+        RecursionError, MemoryError, KeyboardInterrupt — propagates unchanged,
+        because those are environmental rather than compiler faults and
+        relabelling them as "compiler bug" would be misleading.
+
+        Args:
+            phase: Human-readable pipeline stage name, for the error report.
+            source: The source being compiled, included in the error report.
+            stage: Zero-argument callable running the stage.
+
+        Returns:
+            Whatever the stage returns.
+
+        Raises:
+            MenaiInternalError: If the stage raises AssertionError, TypeError,
+                or AttributeError.
+        """
+        try:
+            return stage()
+
+        except MenaiError:
+            # A deliberate, user-facing diagnostic from the pass.  Let it through.
+            raise
+
+        except (AssertionError, TypeError, AttributeError) as exc:
+            raise MenaiInternalError(
+                message=f"{type(exc).__name__}: {exc}",
+                phase=phase,
+                expression=source,
+                context=(
+                    "A compiler pass failed an internal consistency check.  "
+                    "The source above may be perfectly valid."
+                ),
+            ) from exc
 
     def compile_to_cfg(
         self,
@@ -207,7 +275,10 @@ class MenaiCompiler:
             The optimised CFG for the program
         """
         resolved_ast = self.compile_to_resolved_ast(source)
-        return self._compile_to_cfg(resolved_ast, inject)
+        return self._run_stage(
+            "desugaring, IR construction, and CFG optimisation", source,
+            lambda: self._compile_to_cfg(resolved_ast, inject),
+        )
 
     def _compile_to_cfg(
         self,

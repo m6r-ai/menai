@@ -59,6 +59,7 @@ register ids without needing an explicit mapping.
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 
+from menai.menai_error import MenaiInternalError
 from menai.vcode.menai_vcode import (
     MenaiVCodeApply,
     MenaiVCodeBuiltin,
@@ -103,9 +104,23 @@ class SlotMap:
 
     def slot_of(self, reg: MenaiVCodeReg) -> int:
         """Return the slot assigned to reg.  Asserts it exists."""
-        assert reg.id in self.slots, (
-            f"SlotMap: register {reg} has no assigned slot"
-        )
+        # This is the last line of defence before the VM reads a register that
+        # no instruction defines.  It raises explicitly rather than asserting:
+        # `assert` is stripped under `python -O`, which would let an undefined
+        # register reach the VM and corrupt execution silently.
+        if reg.id not in self.slots:
+            raise MenaiInternalError(
+                message=f"register {reg} has no assigned slot",
+                phase="vcode slot allocation",
+                context=(
+                    "A register is read but no instruction defines it.  This "
+                    "usually means a pass emitted a use of a value it never "
+                    "produced."
+                ),
+                received=f"register {reg} (id {reg.id})",
+                expected="a register with an assigned slot",
+            )
+
         return self.slots[reg.id]
 
 

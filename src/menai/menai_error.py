@@ -242,6 +242,92 @@ class MenaiCodegenError(MenaiError):
     """Code generation errors — raised when an expression cannot be represented in the instruction encoding."""
 
 
+class MenaiInternalError(MenaiError):
+    """
+    A compiler invariant was violated.  This is a bug in Menai, not in the program.
+
+    Raised when an internal consistency check fails: a pass produced output that
+    a later pass could not consume, a register reached the slot allocator with no
+    definition, a CFG block lost its terminator, and so on.  The program being
+    compiled may be perfectly valid; the fault lies in the compiler.
+
+    This is deliberately distinct from MenaiCodegenError.  A MenaiCodegenError
+    means the program cannot be encoded — a legitimate, user-facing condition
+    with a real fix (rewrite the expression).  A MenaiInternalError means the
+    compiler failed to honour its own contract, and the only correct response
+    is to report it.
+
+    The message leads with a banner so it can never be mistaken for a user
+    error, and carries the pipeline phase and the source expression so the
+    report is actionable without further questions.
+    """
+
+    BANNER = (
+        "INTERNAL COMPILER ERROR — this is a bug in Menai, not in your program."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        phase: str | None = None,
+        expression: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Initialize an internal compiler error.
+
+        Args:
+            message: The failed invariant, in the compiler's own terms.
+            phase: The pipeline stage that failed, e.g. "vcode slot allocation".
+            expression: The source expression being compiled, for the report.
+            **kwargs: Additional error context passed to MenaiError.
+        """
+        self.phase = phase
+        self.expression = expression
+
+        if not kwargs.get("suggestion"):
+            kwargs["suggestion"] = (
+                "This is not caused by your program.  Please report it, "
+                "including the expression above and the Menai version."
+            )
+
+        super().__init__(message=message, **kwargs)
+
+    def _format_detailed_message(self) -> str:
+        """Format with the internal-error banner, phase, and source expression."""
+        parts = [self.BANNER, f"Error: {self.message}"]
+
+        if self.phase:
+            parts.append(f"Phase: {self.phase}")
+
+        if self.line is not None and self.column is not None:
+            if self.source_file:
+                parts.append(
+                    f"Location: {self.source_file}, Line {self.line}, "
+                    f"Column {self.column}"
+                )
+
+            else:
+                parts.append(f"Location: Line {self.line}, Column {self.column}")
+
+        if self.expression is not None:
+            parts.append(f"\nExpression being compiled:\n{self.expression}\n")
+
+        if self.received:
+            parts.append(f"Received: {self.received}")
+
+        if self.expected:
+            parts.append(f"Expected: {self.expected}")
+
+        if self.context:
+            parts.append(f"Context: {self.context}")
+
+        if self.suggestion:
+            parts.append(f"Suggestion: {self.suggestion}")
+
+        return "\n".join(parts)
+
+
 class MenaiEvalError(MenaiError):
     """Evaluation errors with detailed context."""
 

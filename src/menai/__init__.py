@@ -7,7 +7,7 @@ from menai.menai import Menai
 from menai.vm.menai_vm_errors import VMErrorCode
 from menai.menai_error import (
     MenaiError, MenaiTokenError, MenaiASTBuildError, MenaiCodegenError, MenaiEvalError,
-    MenaiCancelledException
+    MenaiCancelledException, MenaiInternalError
 )
 
 # AST types
@@ -39,7 +39,7 @@ __all__ = [
     "VMErrorCode",
 
     # Exceptions (enhanced with detailed context)
-    "MenaiError", "MenaiTokenError", "MenaiASTBuildError", "MenaiCodegenError", "MenaiEvalError", "MenaiCancelledException",
+    "MenaiError", "MenaiTokenError", "MenaiASTBuildError", "MenaiCodegenError", "MenaiEvalError", "MenaiCancelledException", "MenaiInternalError",
 
     # AST node types
     "MenaiASTNode", "MenaiASTInteger", "MenaiASTFloat", "MenaiASTComplex",
