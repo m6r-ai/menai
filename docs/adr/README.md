@@ -121,3 +121,4 @@ What costs, risks, or constraints does this decision impose?
 | [0050](0050-xlsx-codec-ooxml-capture-layer.md) | XLSX codec — the OOXML capture layer | Accepted |
 | [0051](0051-menai-source-formatting-style.md) | Menai source formatting style | Accepted |
 | [0052](0052-regular-expression-captures.md) | Regular-expression captures | Accepted |
+| [0053](0053-paren-diagnostics-locate-the-line-to-change.md) | Paren diagnostics locate the line to change, not the symptom | Accepted |

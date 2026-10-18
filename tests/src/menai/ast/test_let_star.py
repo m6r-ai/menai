@@ -2,7 +2,7 @@
 
 import pytest
 
-from menai import MenaiEvalError
+from menai import MenaiASTBuildError, MenaiEvalError
 
 
 class TestLetStarSemantics:
@@ -123,7 +123,7 @@ class TestLetStarSemantics:
             menai.evaluate("(let* x 42)")
 
         # Binding not a list
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* must be a list"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* must be a \\(name value\\) form"):
             menai.evaluate("(let* (x) 42)")
 
     def test_let_star_with_complex_expressions(self, menai, helpers):

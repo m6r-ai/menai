@@ -112,12 +112,12 @@ class TestReservedNamesInStructAndEnumBindings:
     def test_struct_type_name_rejects_reserved_word(self, menai):
         """(let ((match (struct (x)))) ...) is a compile-time error."""
         with pytest.raises(MenaiEvalError, match="Binding name 'match' is a reserved word"):
-            menai.evaluate("(let ((match (struct (x)))) (match 1))")
+            menai.evaluate("(let ((match (struct (x)))) match)")
 
     def test_enum_type_name_rejects_reserved_word(self, menai):
         """(let ((if (enum (a)))) ...) is a compile-time error."""
         with pytest.raises(MenaiEvalError, match="Binding name 'if' is a reserved word"):
-            menai.evaluate("(let ((if (enum (a)))) (if 'a))")
+            menai.evaluate("(let ((if (enum (a)))) if)")
 
     def test_ordinary_struct_type_name_is_accepted(self, menai):
         """A non-reserved struct type name is accepted."""

@@ -7,7 +7,7 @@ list structure patterns, nested patterns, and error cases.
 
 import pytest
 
-from menai import MenaiEvalError
+from menai import MenaiASTBuildError, MenaiEvalError
 
 
 class TestPatternMatching:
@@ -433,20 +433,20 @@ class TestPatternMatching:
     def test_match_requires_minimum_arguments(self, menai):
         """Test that match requires at least a value and one pattern."""
         # No arguments
-        with pytest.raises(MenaiEvalError, match="Match expression has wrong number of arguments"):
+        with pytest.raises(MenaiASTBuildError, match="'match' has the wrong number of elements"):
             menai.evaluate('(match)')
 
         # Only value, no patterns
-        with pytest.raises(MenaiEvalError, match="Match expression has wrong number of arguments"):
+        with pytest.raises(MenaiASTBuildError, match="'match' has the wrong number of elements"):
             menai.evaluate('(match 42)')
 
     def test_match_requires_pattern_value_pairs(self, menai):
         """Test that match requires pattern-value pairs."""
         # Odd number of pattern arguments (missing result for last pattern)
-        with pytest.raises(MenaiEvalError, match="Match clause 2 has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="Match clause must be a"):
             menai.evaluate('(match 42 (42 "found") (43))')
 
-        with pytest.raises(MenaiEvalError, match="Match clause 1 has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="Match clause must be a"):
             menai.evaluate('(match 42 (x))')
 
     def test_no_matching_pattern_error(self, menai):
@@ -460,24 +460,24 @@ class TestPatternMatching:
     def test_invalid_pattern_syntax_errors(self, menai):
         """Test errors for invalid pattern syntax."""
         # Invalid predicate pattern (wrong number of arguments — 4 elements instead of 3)
-        with pytest.raises(MenaiEvalError, match="Invalid predicate pattern"):
+        with pytest.raises(MenaiASTBuildError, match="Predicate pattern must be"):
             menai.evaluate('(match 42 ((? integer? x y) "invalid") (_ "other"))')
 
         # Invalid cons pattern (more than one dot)
-        with pytest.raises(MenaiEvalError, match="Invalid pattern"):
+        with pytest.raises(MenaiASTBuildError, match="more than one dot"):
             menai.evaluate('(match (list 1 2 3) ((a . b . c) "invalid") (_ "other"))')
 
         # Invalid cons pattern (dot at beginning)
-        with pytest.raises(MenaiEvalError, match="Invalid pattern"):
+        with pytest.raises(MenaiASTBuildError, match="dot at the beginning"):
             menai.evaluate('(match (list 1 2 3) ((. a b) "invalid") (_ "other"))')
 
         # Invalid predicate pattern (only 2 elements — missing variable)
-        with pytest.raises(MenaiEvalError, match="Invalid predicate pattern"):
+        with pytest.raises(MenaiASTBuildError, match="Predicate pattern must be"):
             menai.evaluate('(match 42 ((? integer?) "invalid") (_ "other"))')
     def test_invalid_variable_patterns(self, menai):
         """Test errors for invalid variable patterns."""
         # String as variable pattern in type pattern - this should fail validation
-        with pytest.raises(MenaiEvalError, match="Pattern variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="Predicate pattern variable must be a symbol"):
             menai.evaluate('(match 42 ((? integer? "x") "invalid") (_ "other"))')
 
     def test_list_pattern_length_mismatch(self, menai):
@@ -684,52 +684,45 @@ class TestPatternMatching:
     # ========== CORRECTED DOT PATTERN VALIDATION TESTS ==========
 
     def test_dot_pattern_validation_comprehensive_fixed(self, menai):
-        """Comprehensive tests for dot pattern validation edge cases - updated for refactored code."""
-
-        # These tests target the validation logic that now happens entirely upfront
-        # in _validate_list_pattern_syntax (after refactoring)
-
-        # Test cases that should be caught by early validation
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        """Dot pattern validation edge cases are rejected when the pattern is parsed."""
+        # Dot at the beginning
+        with pytest.raises(MenaiASTBuildError, match="dot at the beginning"):
             menai.evaluate('(match (list 1 2 3) ((. a b) "invalid"))')
 
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        # More than one dot
+        with pytest.raises(MenaiASTBuildError, match="more than one dot"):
             menai.evaluate('(match (list 1 2 3) ((a . b . c) "invalid"))')
 
-        # Test cases that are now also caught by early validation (after refactoring)
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        # Dot at the end
+        with pytest.raises(MenaiASTBuildError, match="dot at the end"):
             menai.evaluate('(match (list 1 2) ((a .) "invalid"))')
 
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        # More than one element after the dot
+        with pytest.raises(MenaiASTBuildError, match="more than one element after the dot"):
             menai.evaluate('(match (list 1 2 3) ((a . b c) "invalid"))')
 
     def test_dot_pattern_error_specificity_fixed(self, menai):
-        """Test that dot pattern errors provide specific and helpful messages."""
-
-        # Test specific error message content for dot at end
-        with pytest.raises(MenaiEvalError) as exc_info:
+        """Dot pattern errors name the specific problem."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate('(match (list 1 2) ((head .) "test"))')
 
         error = str(exc_info.value)
-        assert "Invalid pattern in clause 1" in error
-        assert "dot at end" in error
+        assert "dot at the end" in error
 
-        # Test specific error message content for multiple elements after dot
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate('(match (list 1 2 3) ((head . tail extra) "test"))')
 
         error = str(exc_info.value)
-        assert "Invalid pattern in clause 1" in error
-        assert "multiple elements after dot" in error
+        assert "more than one element after the dot" in error
 
     def test_dot_pattern_validation_vs_matching_separation_fixed(self, menai):
         """Test that validation errors are clearly separated from matching failures."""
 
         # These should be validation errors (syntax problems)
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        with pytest.raises(MenaiASTBuildError, match="dot at the end"):
             menai.evaluate('(match (list 1 2) ((a .) "invalid"))')
 
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        with pytest.raises(MenaiASTBuildError, match="more than one element after the dot"):
             menai.evaluate('(match (list 1 2 3) ((a . b c) "invalid"))')
 
         # This should be a matching failure (semantic problem - not enough elements)
@@ -741,27 +734,24 @@ class TestPatternMatching:
             menai.evaluate('(match (list 1) ((a b . rest) "matched"))')
 
     def test_all_dot_validation_paths_covered_fixed(self, menai):
-        """Ensure all validation paths in dot pattern handling are tested."""
-
-        # All paths now go through early validation (after refactoring)
-
-        # Path 1: Early validation catches multiple dots
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        """Each dot-pattern validation path reports its own specific error."""
+        # Multiple dots
+        with pytest.raises(MenaiASTBuildError, match="more than one dot"):
             menai.evaluate('(match (list 1 2 3) ((a . b . c) "invalid"))')
 
-        # Path 2: Early validation catches dot at beginning
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        # Dot at the beginning
+        with pytest.raises(MenaiASTBuildError, match="dot at the beginning"):
             menai.evaluate('(match (list 1 2) ((. a) "invalid"))')
 
-        # Path 3: Early validation now catches dot at end (refactored!)
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        # Dot at the end
+        with pytest.raises(MenaiASTBuildError, match="dot at the end"):
             menai.evaluate('(match (list 1) ((a .) "invalid"))')
 
-        # Path 4: Early validation now catches multiple elements after dot (refactored!)
-        with pytest.raises(MenaiEvalError, match="Invalid pattern in clause 1"):
+        # More than one element after the dot
+        with pytest.raises(MenaiASTBuildError, match="more than one element after the dot"):
             menai.evaluate('(match (list 1 2 3) ((a . b c) "invalid"))')
 
-        # Path 5: Valid dot patterns should work
+        # Valid dot patterns work
         result = menai.evaluate_and_format('(match (list 1 2 3) ((head . tail) head))')
         assert result == '1'
 

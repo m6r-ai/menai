@@ -8,7 +8,7 @@ tree-walking interpreter had.
 
 import pytest
 from menai import VMErrorCode
-from menai.menai_error import MenaiEvalError
+from menai.menai_error import MenaiASTBuildError, MenaiEvalError
 
 
 class TestEvaluatorMissingCoverage:
@@ -18,17 +18,17 @@ class TestEvaluatorMissingCoverage:
 
     def test_quote_no_arguments(self, menai):
         """Test quote expression with no arguments."""
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("(quote)")
-        assert "wrong number of arguments" in str(exc_info.value)
-        assert "Got 0 arguments" in str(exc_info.value)
+        assert "'quote' has the wrong number of elements" in str(exc_info.value)
+        assert "Got 1 elements" in str(exc_info.value)
 
     def test_quote_multiple_arguments(self, menai):
         """Test quote expression with multiple arguments."""
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("(quote a b c)")
-        assert "wrong number of arguments" in str(exc_info.value)
-        assert "Got 3 arguments" in str(exc_info.value)
+        assert "'quote' has the wrong number of elements" in str(exc_info.value)
+        assert "More than 1 elements" in str(exc_info.value)
 
     # ========== Lambda Form Edge Cases ==========
 
@@ -54,9 +54,9 @@ class TestEvaluatorMissingCoverage:
 
     def test_let_non_list_individual_binding(self, menai):
         """Test let with non-list individual binding."""
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("(let (x (y 2)) (integer+ x y))")
-        assert "binding 1 must be a list" in str(exc_info.value)
+        assert "let binding 1 must be a (name value) form" in str(exc_info.value)
 
     # ========== Range Function Edge Cases ==========
 

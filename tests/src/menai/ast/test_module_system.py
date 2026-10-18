@@ -18,6 +18,7 @@ from menai import Menai
 from menai.menai_error import (
     MenaiModuleNotFoundError,
     MenaiCircularImportError,
+    MenaiASTBuildError,
     MenaiEvalError,
     MenaiModuleError,
 )
@@ -258,14 +259,14 @@ class TestModuleErrors:
         menai = Menai()
 
         # No arguments
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate('(let ((m (import))) (:: m x))')
-        assert "wrong number of arguments" in str(exc_info.value).lower()
+        assert "'import' has the wrong number of elements" in str(exc_info.value)
 
         # Too many arguments
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate('(let ((m (import "mod1" "mod2"))) (:: m x))')
-        assert "wrong number of arguments" in str(exc_info.value).lower()
+        assert "'import' has the wrong number of elements" in str(exc_info.value)
 
     def test_import_requires_string_literal(self):
         """Test that import requires a string literal, not a variable."""
@@ -447,9 +448,9 @@ class TestSecondClassNamespaces:
         (tmp_path / "mod.menai").write_text('(let ((x 1)) (export x))')
         menai = Menai(module_path=[str(tmp_path)])
 
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate('(let ((m (import "mod"))) (:: m))')
-        assert "wrong number of arguments" in str(exc_info.value).lower()
+        assert "'::' has the wrong number of elements" in str(exc_info.value)
 
     def test_member_must_be_a_symbol(self, tmp_path):
         """The member name of :: must be an unquoted symbol."""

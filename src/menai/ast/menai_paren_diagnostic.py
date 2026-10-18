@@ -24,6 +24,12 @@ diagnosis therefore also reports the insertion point for missing closes (the
 position the ``)`` should occupy) and, for extra closes, the first ``)`` that
 cannot be matched together with any earlier close that completed a form which
 cannot be complete.
+
+It also reports the forms still open when the token stream ran out.  That is the
+nesting the reader intended to write, and it localises a missing ``)`` to a form
+rather than to a line: the innermost open form is the one whose close is absent.
+The parser's own in-progress stack is not used for this, because it diverges from
+the token stream once the parser starts recovering from the error.
 """
 
 from dataclasses import dataclass
@@ -67,6 +73,30 @@ class LineDepth:
 
 
 @dataclass(frozen=True)
+class OpenScope:
+    """
+    A form still open when the token stream ran out.
+
+    ``form_type`` is the form's head symbol (``'let'``, ``'if'``, ...), or
+    ``'('`` for a parenthesised group with no head.  A binding form's bindings
+    list has no head of its own, so it is named by ``is_bindings_list`` and
+    ``enclosing_form`` instead: it is the ``'let'``/``'let*'``/``'letrec'`` whose
+    bindings it holds.
+
+    ``element_count`` is how many complete elements the form holds.  For a
+    bindings list that has swallowed its own body, this counts the bindings
+    parsed, which is what tells the reader the body was read as a binding.
+    """
+
+    line: int
+    column: int
+    form_type: str
+    element_count: int
+    is_bindings_list: bool
+    enclosing_form: str | None
+
+
+@dataclass(frozen=True)
 class ParenDiagnosis:
     """
     The result of analysing parenthesis balance over a token stream.
@@ -81,6 +111,11 @@ class ParenDiagnosis:
     opened.  A caller comparing them with the form it is reporting can tell
     whether the early close is that form's own error or a misplaced ``)`` that
     closed an enclosing form.
+
+    ``open_scopes`` lists the forms still open when the token stream ran out,
+    innermost first.  It is the nesting the reader intended to write, which is
+    what localises a missing ``)``: the innermost scope is the form whose close
+    is absent, and the scopes enclosing it are the context it sits in.
     """
 
     insertion_line: int | None
@@ -90,6 +125,7 @@ class ParenDiagnosis:
     extra_line: int | None
     extra_column: int | None
     lines: list[LineDepth]
+    open_scopes: list[OpenScope]
     suspected_line: int | None
     suspected_column: int | None
     suspected_form: str | None
@@ -106,6 +142,7 @@ class _OpenForm:
     form_type: str
     depth_when_opened: int
     is_bindings_list: bool = False
+    enclosing_form: str | None = None
     element_count: int = 0
     last_element_line: int = 0
     last_element_column: int = 0
@@ -177,6 +214,7 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
 
         if token.type == MenaiTokenType.LPAREN:
             is_bindings_list = False
+            enclosing_form: str | None = None
             if open_forms:
                 parent = open_forms[-1]
                 parent.element_count += 1
@@ -188,6 +226,7 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
                     parent.form_type in ('let', 'let*', 'letrec')
                     and parent.element_count == 2
                 )
+                enclosing_form = parent.form_type if is_bindings_list else None
 
                 # A reserved form can never be a binding, so if a bindings list
                 # absorbs one, that form is the body and the bindings list is
@@ -207,6 +246,7 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
                 form_type=_form_type_at(tokens, index),
                 depth_when_opened=depth,
                 is_bindings_list=is_bindings_list,
+                enclosing_form=enclosing_form,
             )
             open_forms.append(form)
             depth += 1
@@ -250,6 +290,18 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
             insertion_line = last_token.line
             insertion_column = last_token.column + last_token.length
 
+    open_scopes = [
+        OpenScope(
+            line=form.line,
+            column=form.column,
+            form_type=form.form_type,
+            element_count=form.element_count,
+            is_bindings_list=form.is_bindings_list,
+            enclosing_form=form.enclosing_form,
+        )
+        for form in reversed(open_forms)
+    ]
+
     return ParenDiagnosis(
         insertion_line=insertion_line,
         insertion_column=insertion_column,
@@ -258,6 +310,7 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
         extra_line=extra_line,
         extra_column=extra_column,
         lines=lines,
+        open_scopes=open_scopes,
         suspected_line=suspected_line,
         suspected_column=suspected_column,
         suspected_form=suspected_form,
@@ -337,6 +390,52 @@ def format_depth_table(
     for entry in diagnosis.lines[first - 1:last]:
         depth = f"{entry.start_depth}->{entry.end_depth}"
         rows.append(f"  {entry.line:>{width}} | {depth:^11} | {entry.content}")
+
+    return "\n".join(rows)
+
+
+def describe_open_scope(scope: OpenScope) -> str:
+    """
+    Name an open scope for display in an error message.
+
+    A bindings list is named by the binding form that holds it, because its own
+    head is another ``(`` and carries no name of its own.
+    """
+    if scope.is_bindings_list:
+        return f"bindings list of '{scope.enclosing_form}'"
+
+    if scope.form_type == '(':
+        return "parenthesised group"
+
+    return f"'{scope.form_type}'"
+
+
+def format_open_scopes(diagnosis: ParenDiagnosis) -> str:
+    """
+    Render the forms still open at end of input, innermost first.
+
+    This is the nesting the reader intended to write.  The innermost scope is
+    the form whose closing ``)`` is absent, and each scope below it is the
+    context it sits in, so the list localises the missing ``)`` to a form rather
+    than to a line.  The element count is what distinguishes a form that simply
+    ran out of input from one that swallowed its own body: a bindings list that
+    holds more elements than it has bindings has read the body as a binding.
+
+    Args:
+        diagnosis: The diagnosis to render.
+
+    Returns:
+        The formatted list, one scope per line, or an empty string when no form
+        is open.
+    """
+    if not diagnosis.open_scopes:
+        return ""
+
+    rows = []
+    for index, scope in enumerate(diagnosis.open_scopes, 1):
+        name = describe_open_scope(scope)
+        elements = f"{scope.element_count} element{'s' if scope.element_count != 1 else ''}"
+        rows.append(f"  {index}. {name} at line {scope.line}, column {scope.column} ({elements})")
 
     return "\n".join(rows)
 
@@ -421,7 +520,6 @@ def early_close_error(
         column=column,
         received=f"The ')' at line {line}, column {column} closed the '{closed_form}' before its body",
         expected=f"A body expression before the ')' that closes the '{closed_form}'",
-        example=f"Correct: ({closed_form} ((x 5)) (integer+ x 1))\nIncorrect: ({closed_form} ((x 5))) (integer+ x 1)",
         suggestion=f"Move the ')' at line {line}, column {column} to after the body of the '{closed_form}'",
         context=context,
         source=source,

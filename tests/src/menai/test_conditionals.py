@@ -2,7 +2,7 @@
 
 import pytest
 
-from menai import Menai, MenaiEvalError, VMErrorCode
+from menai import Menai, MenaiASTBuildError, MenaiEvalError, VMErrorCode
 
 
 class TestConditionals:
@@ -74,13 +74,13 @@ class TestConditionals:
 
     def test_if_requires_exactly_three_arguments(self, menai):
         """Test that if expressions require exactly 3 arguments."""
-        with pytest.raises(MenaiEvalError, match=r"wrong number of arguments[\s\S]*Exactly 3 arguments"):
+        with pytest.raises(MenaiASTBuildError, match="'if' has the wrong number of elements"):
             menai.evaluate('(if #t "yes")')  # Missing else branch
 
-        with pytest.raises(MenaiEvalError, match=r"wrong number of arguments[\s\S]*Exactly 3 arguments"):
+        with pytest.raises(MenaiASTBuildError, match="'if' has the wrong number of elements"):
             menai.evaluate('(if #t)')  # Missing both branches
 
-        with pytest.raises(MenaiEvalError, match=r"wrong number of arguments[\s\S]*Exactly 3 arguments"):
+        with pytest.raises(MenaiASTBuildError, match="'if' has the wrong number of elements"):
             menai.evaluate('(if #t "yes" "no" "extra")')  # Too many arguments
 
     @pytest.mark.parametrize("expression,expected", [

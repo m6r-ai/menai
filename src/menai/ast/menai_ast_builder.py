@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from menai.menai_error import MenaiASTBuildError
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
 from menai.ast.menai_paren_diagnostic import (
-    ParenDiagnosis, diagnose_parens, format_depth_table, early_close_error,
+    ParenDiagnosis, diagnose_parens, format_depth_table, format_open_scopes,
+    early_close_error,
 )
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex, MenaiASTString,
@@ -13,34 +14,76 @@ from menai.ast.menai_ast import (
 )
 
 
+# Each special form's elements, by role, in order.  The head symbol is not
+# listed, so the number of roles is the form's arity and the table drives both
+# the parse and the arity check.
+#
+# A role says how the element is parsed:
+#
+#   'expr'      an expression, parsed by _parse_expression
+#   'data'      one data element: an atom or a data list, parsed by
+#               _parse_data_element
+#   'data-list' a list whose contents are data, parsed by _parse_data_list
+#   'symbol'    a bare symbol
+#   'string'    a string literal
+#
+# A form's arity is a property of its shape, so it is checked here rather than
+# in the semantic analyzer: the analyzer never runs when the parse fails, and a
+# wrong element count is a common cause of a parse that otherwise succeeds.
+#
+# The names are reserved (see RESERVED_NAMES in the semantic analyzer), so a
+# form headed by one is always that form and never a call to a user binding.
+# 'match' is not here: its clauses are variadic and each clause is
+# (pattern result), where the pattern is data and the result an expression, so
+# it has its own path.
+_SPECIAL_FORM_ELEMENTS = {
+    'if': ('expr', 'expr', 'expr'),
+    'lambda': ('data-list', 'expr'),
+    'quote': ('data',),
+    '::': ('symbol', 'symbol'),
+    'import': ('string',),
+    'apply': ('expr', 'expr'),
+    'struct': ('data-list',),
+    'enum': ('data-list',),
+}
+
+
+# The shape of each special form, named by its head symbol.  Used in an arity
+# error to show what the form takes, in place of a worked example.
+_SPECIAL_FORM_SHAPE = {
+    'if': "(if condition then else)",
+    'lambda': "(lambda (params...) body)",
+    'quote': "(quote expression)",
+    'match': "(match value (pattern result) ...)",
+    '::': "(:: namespace member)",
+    'import': '(import "module-name")',
+    'apply': "(apply function arguments)",
+    'struct': "(struct (field ...))",
+    'enum': "(enum (variant ...))",
+}
+
+
+def _is_quoted_symbol(node: MenaiASTNode) -> bool:
+    """
+    Report whether *node* is a quoted symbol, written 'name.
+
+    The reader produces a quoted symbol as the two-element form (quote name).
+    The check is purely structural and does not verify that the name is bound.
+    """
+    if not isinstance(node, MenaiASTList) or len(node.elements) != 2:
+        return False
+
+    head, name_node = node.elements
+    return (isinstance(head, MenaiASTSymbol) and head.name == 'quote'
+            and isinstance(name_node, MenaiASTSymbol))
+
+
 @dataclass(slots=True)
 class ParenStackFrame:
-    """Represents an unclosed opening parenthesis with context."""
+    """An open parenthesis being tracked while parsing."""
     line: int
     column: int
-    ast_builder: 'MenaiASTBuilder'  # Reference to AST builder for lazy evaluation
-    _expression_type: str | None = None  # Cached lazily
-    elements_parsed: int = 0
-    last_complete_line: int | None = None
-    last_complete_column: int | None = None
     related_symbol: str | None = None  # For bindings: the variable name
-    incomplete_element_line: int | None = None
-    incomplete_element_column: int | None = None
-
-    def get_expression_type(self) -> str:
-        """Lazily compute expression type only when needed."""
-        if self._expression_type is None:
-            self._expression_type = self.ast_builder.detect_expression_type(self.line, self.column)
-
-        return self._expression_type
-
-    def set_expression_type(self, value: str) -> None:
-        """Allow overriding expression type for more specific error messages."""
-        self._expression_type = value
-
-    def get_context_snippet(self) -> str:
-        """Lazily compute context snippet only when needed."""
-        return self.ast_builder.get_context_snippet(self.line, self.column, length=30)
 
 
 class MenaiASTBuilder:
@@ -139,7 +182,6 @@ class MenaiASTBuilder:
                 column=current_col,
                 received=f"Found: {current_value}",
                 expected="End of expression",
-                example="Correct: (+ 1 2)\nIncorrect: (+ 1 2) extra",
                 suggestion="Remove extra tokens or combine into single expression",
                 context="Each evaluation can only handle one complete expression",
                 source=self.expression,
@@ -221,7 +263,6 @@ class MenaiASTBuilder:
         frame = ParenStackFrame(
             line=line,
             column=column,
-            ast_builder=self  # Pass AST builder reference for lazy evaluation
         )
 
         self.paren_stack.append(frame)
@@ -239,61 +280,6 @@ class MenaiASTBuilder:
         else:
             self.last_close_line = self.last_token_end_line
             self.last_close_column = self.last_token_end_column
-
-    def _mark_element_start(self) -> None:
-        """Mark that we're starting to parse a new element."""
-        assert self.paren_stack, "Should only be called while parsing a list"
-        assert self.current_token is not None, "Should not be called at EOF"
-        frame = self.paren_stack[-1]
-        frame.incomplete_element_line = self.current_token.line
-        frame.incomplete_element_column = self.current_token.column
-
-    def _update_frame_after_element(self) -> None:
-        """Update the current frame after successfully parsing an element."""
-        # This method is only called after _push_paren_frame, so stack is never empty
-        assert self.paren_stack, "Frame stack should not be empty when updating after element"
-
-        frame = self.paren_stack[-1]
-        frame.elements_parsed += 1
-
-        # Record line/column where the last element ended
-        frame.last_complete_line = self.last_token_end_line
-        frame.last_complete_column = self.last_token_end_column
-
-        # Clear the incomplete element start since we just completed an element
-        frame.incomplete_element_line = None
-        frame.incomplete_element_column = None
-
-    def _line_col_to_char(self, source: str, line: int, column: int) -> int:
-        """
-        Convert (line, column) to character position.
-
-        Args:
-            source: The source code string
-            line: Line number (1-indexed)
-            column: Column number (1-indexed)
-
-        Returns:
-            Character offset (0-indexed), or len(source) if line/column are out of range
-        """
-        assert line >= 1 and column >= 1, "Line and column numbers should be 1-indexed and positive"
-        lines = source.split('\n')
-
-        # Line may exceed the source if self.expression is stale (e.g. error reporting
-        # for a module whose source was replaced by a shorter calling expression).
-        # Clamp gracefully to the end of source rather than crashing.
-        if line > len(lines):
-            return len(source)
-
-        # Calculate position: sum of all previous lines + newlines + column offset
-        pos = 0
-        for i in range(line - 1):
-            pos += len(lines[i]) + 1  # +1 for the newline character
-
-        # Add column offset (column is 1-indexed, so subtract 1)
-        pos += min(column - 1, len(lines[line - 1]) if line <= len(lines) else 0)
-
-        return pos
 
     def _diagnose_parens(self) -> ParenDiagnosis:
         """
@@ -494,143 +480,26 @@ class MenaiASTBuilder:
 
         return head_is_symbol and elements == 2
 
-    def detect_expression_type(self, line: int, column: int) -> str:
-        """
-        Detect what type of expression starts at this position.
-
-        Looks at the first symbol after the opening paren to classify
-        the expression type (let, lambda, if, etc.)
-
-        Args:
-            line: Line number (1-indexed)
-            column: Column number (1-indexed)
-
-        Returns:
-            Human-readable expression type string
-        """
-        # Convert line/column to character position
-        position = self._line_col_to_char(self.expression, line, column)
-
-        # Skip past the opening paren and whitespace
-        i = position + 1
-        while i < len(self.expression) and self.expression[i].isspace():
-            i += 1
-
-        if i >= len(self.expression):
-            return "list"
-
-        # Read the first symbol
-        symbol_start = i
-        while i < len(self.expression) and (self.expression[i].isalnum() or self.expression[i] in '-+*/?_'):
-            i += 1
-
-        first_symbol = self.expression[symbol_start:i]
-
-        # Classify based on first symbol
-        special_forms = {
-            'let': 'let binding',
-            'let*': 'let* binding',
-            'letrec': 'letrec binding',
-            'lambda': 'lambda function',
-            'if': 'if expression',
-            'match': 'match expression',
-            'quote': 'quote expression',
-            'and': 'and expression',
-            'or': 'or expression'
-        }
-
-        return special_forms.get(first_symbol, 'list/function call')
-
-    def get_context_snippet(self, line: int, column: int, length: int = 30) -> str:
-        """
-        Get a snippet of code starting at position for error display.
-
-        Args:
-            line: Line number (1-indexed)
-            column: Column number (1-indexed)
-            length: Maximum length of snippet
-
-        Returns:
-            Formatted context snippet with ellipsis if truncated
-        """
-        # Convert line/column to character position
-        position = self._line_col_to_char(self.expression, line, column)
-
-        end = min(position + length, len(self.expression))
-        snippet = self.expression[position:end]
-
-        # Clean up whitespace for display (collapse multiple spaces)
-        snippet = ' '.join(snippet.split())
-
-        # Add ellipsis if truncated
-        if end < len(self.expression):
-            snippet += "..."
-
-        return snippet
-
     def _create_enhanced_unterminated_error(self, start_line: int, start_col: int) -> MenaiASTBuildError:
         """
-        Create enhanced error message with paren stack information.
+        Create an error for input that ran out with forms still open.
+
+        The open forms are taken from the token stream rather than from the
+        parser's in-progress stack, because the parser's stack diverges from the
+        token stream once it starts recovering from the error.  The token stream
+        gives the nesting the reader intended to write, innermost first, which
+        names the form whose closing ')' is absent.
 
         Args:
             start_line: Line where the unterminated list started
             start_col: Column where the unterminated list started
 
         Returns:
-            MenaiASTBuildError with detailed stack trace
+            MenaiASTBuildError naming the open forms and the insertion point
         """
         depth = len(self.paren_stack)
 
-        # Build stack trace showing all unclosed expressions
-        stack_lines = []
-        for i, frame in enumerate(reversed(self.paren_stack), 1):
-            line = f"  {i}. {frame.get_expression_type()} at line {frame.line}, column {frame.column}"
-
-            # Add related symbol if available (e.g., binding variable name)
-            if frame.related_symbol:
-                line += f" ('{frame.related_symbol}')"
-
-            line += f": {frame.get_context_snippet()}"
-
-            # Show how many elements were parsed
-            if frame.elements_parsed > 0:
-                line += f"\n     Parsed {frame.elements_parsed} complete element{'s' if frame.elements_parsed != 1 else ''}"
-
-            # Check if we're in the middle of parsing an incomplete element
-            if frame.incomplete_element_line is not None and frame.incomplete_element_column is not None:
-                # This frame was parsing an element that's incomplete
-                incomplete_snippet = self.get_context_snippet(
-                    frame.incomplete_element_line, frame.incomplete_element_column, length=20
-                )
-                line += f"\n     Started parsing element {frame.elements_parsed + 1} at "
-                line += f"line {frame.incomplete_element_line}, column {frame.incomplete_element_column}: {incomplete_snippet}"
-                line += "\n     → This element is incomplete (see below)"
-
-            else:
-                # This is the innermost frame - show where to add closing paren
-                if frame.last_complete_line is not None:
-                    line += f"\n     → Needs ')' after line {frame.last_complete_line}, column {frame.last_complete_column}"
-
-                else:
-                    line += "\n     → Needs ')' to close this expression"
-
-            stack_lines.append(line)
-
-        stack_trace = "\n".join(stack_lines) if stack_lines else "  (no unclosed expressions)"
-
         closing_parens = ")" * depth
-
-        # Look for the innermost binding frame with a related_symbol — this is
-        # the most likely culprit when EOF is reached inside a binding's value.
-        binding_hint = ""
-        for frame in reversed(self.paren_stack):
-            if frame.related_symbol:
-                binding_hint = (
-                    f"\n\nLikely culprit: binding '{frame.related_symbol}' at "
-                    f"line {frame.line}, column {frame.column} — the missing ')' "
-                    f"is inside this binding's value expression."
-                )
-                break
 
         # The missing ')' belongs where the structure first went wrong.  When a
         # binding form's body was read at the bindings list's own depth, the
@@ -662,6 +531,23 @@ class MenaiASTBuilder:
             error_column = start_col
             where = f"Insert {closing_parens} to close the unclosed expressions."
 
+        # A form that closed before its body is why the input ran out with a form
+        # still open: the ')' that ended it early is the mistake, and the open
+        # form above it is the symptom.  Naming the early close is what turns
+        # "something is unclosed" into "this ')' ended this form too soon".
+        early_close_block = ""
+        if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
+            early_form = diagnosis.suspected_form or "form"
+            early_close_block = (
+                f"\n\nThe '{early_form}' at line {diagnosis.suspected_open_line}, "
+                f"column {diagnosis.suspected_open_column} was closed by the ')' at "
+                f"line {diagnosis.suspected_line}, column {diagnosis.suspected_column} "
+                f"before its body, which is what left the input unbalanced."
+            )
+
+        scopes = format_open_scopes(diagnosis)
+        scope_block = f"Forms still open (innermost first):\n{scopes}" if scopes else ""
+
         depth_table = self._depth_table_around(error_line)
         table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
 
@@ -669,8 +555,8 @@ class MenaiASTBuilder:
         context_msg = (
             f"Reached end of input at depth {depth}.\n\n"
             f"{where}\n\n"
-            f"Unclosed expressions (innermost to outermost):\n{stack_trace}"
-            f"{binding_hint}"
+            f"{scope_block}"
+            f"{early_close_block}"
             f"{table_block}"
         )
 
@@ -682,7 +568,6 @@ class MenaiASTBuilder:
             line=error_line,
             column=error_column,
             expected=f'Additional parentheses, "{closing_parens}", to close all expressions',
-            example="Correct: (+ 1 2)\nIncorrect: (+ 1 2",
             suggestion=where,
             context=context_msg,
             source=self.expression,
@@ -750,7 +635,6 @@ class MenaiASTBuilder:
             column=extra_column,
             received=f"Unmatched ')' at line {extra_line}, column {extra_column}",
             expected="A matching '(' before this ')'",
-            example="Correct: (+ 1 2)\nIncorrect: (+ 1 2))",
             suggestion=f"Remove the ')' at line {extra_line}, column {extra_column}",
             context=context,
             source=self.expression,
@@ -803,7 +687,6 @@ class MenaiASTBuilder:
             column=early_column,
             received=f"'{form}' has no body before the ')' at line {early_line}, column {early_column}",
             expected=f"A body expression before the ')' that closes the '{form}'",
-            example=f"Correct: ({form} ((x 5)) (integer+ x 1))\nIncorrect: ({form} ((x 5))) (integer+ x 1)",
             suggestion=f"Move the ')' at line {early_line}, column {early_column} to after the body",
             context=context,
             source=self.expression,
@@ -844,7 +727,6 @@ class MenaiASTBuilder:
                 "Nest the extra expressions in a single body, for example "
                 f"({keyword} (...) (let* () expr1 expr2))"
             ),
-            example=f"Correct: ({keyword} ((x 5)) (integer+ x 1))\nIncorrect: ({keyword} ((x 5)) (integer+ x 1) (integer+ x 2))",
             source=self.expression,
             source_file=self.source_file,
         )
@@ -899,7 +781,6 @@ class MenaiASTBuilder:
             column=close_column,
             received=f"Bindings list closed at line {close_line}, column {close_column}, with further forms inside the {keyword}",
             expected="The bindings list to stay open until its last binding, before the single body",
-            example=f"Correct: ({keyword} ((x 5)) (integer+ x 1))\nIncorrect: ({keyword} ((x 5)) (integer+ x 1)",
             suggestion=(
                 f"Move the ')' at line {close_line}, column {close_column} to after the "
                 f"last binding, so the forms that follow are inside the bindings list"
@@ -916,53 +797,633 @@ class MenaiASTBuilder:
         assert current_token is not None, "Should not be called at EOF"
         start_line = current_token.line
         start_col = current_token.column
-        frame = self._push_paren_frame(start_line, start_col)
+        self._push_paren_frame(start_line, start_col)
 
         self._advance()  # consume '('
 
         elements: list[MenaiASTNode] = []
 
-        # Check if this is a 'let' form to enable special tracking
+        # The head symbol decides the form.  A special form is parsed by a path
+        # that knows each element's role, because a reserved word can also head a
+        # list that is data rather than a form: in (lambda (if) if) the (if) is a
+        # parameter list, not an if form, and only the lambda path knows that.
         head = self.current_token
         if head is not None and head.type == MenaiTokenType.SYMBOL and head.value in ('let', 'let*', 'letrec'):
-            return self._parse_let_with_tracking(start_line, start_col, frame, elements)
+            return self._parse_let_with_tracking(start_line, start_col, elements)
 
-        # Regular list parsing
-        # The frame bookkeeping that _mark_element_start and
-        # _update_frame_after_element perform is inlined here: it runs once per
-        # element, and the frame is known to be the one just pushed.
-        # The loop reads the current token once per iteration rather than twice
-        # (once for the None check, once for the type check).
+        if head is not None and head.type == MenaiTokenType.SYMBOL and head.value == 'match':
+            return self._parse_match(start_line, start_col, elements)
+
+        if head is not None and head.type == MenaiTokenType.SYMBOL and head.value in _SPECIAL_FORM_ELEMENTS:
+            return self._parse_special_form(head.value, start_line, start_col, elements)
+
+        return self._parse_generic_list(start_line, start_col, elements, _parse_data_list=False)
+
+    def _parse_generic_list(
+        self,
+        start_line: int,
+        start_col: int,
+        elements: list[MenaiASTNode],
+        _parse_data_list: bool,
+    ) -> MenaiASTList:
+        """
+        Parse a list's elements until its closing ')'.
+
+        The same loop serves an expression list and a data list.  They differ
+        only in how a nested list is parsed: an expression list parses a nested
+        list as an expression (so a special form is recognised), while a data
+        list parses it as data (so a reserved word inside it is not a form).
+
+        Args:
+            start_line: Line where the list opened.
+            start_col: Column where the list opened.
+            elements: List to accumulate the parsed elements.
+            _parse_data_list: True when this list's contents are data.
+
+        Returns:
+            The parsed list.
+
+        Raises:
+            MenaiASTBuildError: When the input runs out before the list closes.
+        """
         while True:
             token = self.current_token
             if token is None or token.type == MenaiTokenType.RPAREN:
                 break
 
-            frame.incomplete_element_line = token.line
-            frame.incomplete_element_column = token.column
-            elements.append(self._parse_expression())
-            frame.elements_parsed += 1
-            frame.last_complete_line = self.last_token_end_line
-            frame.last_complete_column = self.last_token_end_column
-            frame.incomplete_element_line = None
-            frame.incomplete_element_column = None
+            if _parse_data_list:
+                elements.append(self._parse_data_element())
+
+            else:
+                elements.append(self._parse_expression())
 
         if self.current_token is None:
-            # Use enhanced error with stack trace
             raise self._create_enhanced_unterminated_error(start_line, start_col)
 
-        # Pop from stack when successfully closed
         self._pop_paren_frame()
-
         self._advance()  # consume ')'
 
         return MenaiASTList(tuple(elements), line=start_line, column=start_col, source_file=self.source_file)
+
+    def _parse_data_list(self) -> MenaiASTList:
+        """
+        Parse a list whose contents are data, not expressions.
+
+        A parameter list, a struct's field list, an enum's variant list, and a
+        match pattern are data: a reserved word inside one is a name, not a form.
+
+        Returns:
+            The parsed list.
+        """
+        current_token = self.current_token
+        assert current_token is not None, "Should not be called at EOF"
+        start_line = current_token.line
+        start_col = current_token.column
+        self._push_paren_frame(start_line, start_col)
+        self._advance()  # consume '('
+
+        return self._parse_generic_list(start_line, start_col, [], _parse_data_list=True)
+
+    def _parse_data_element(self) -> MenaiASTNode:
+        """
+        Parse one element of a data list.
+
+        A nested list is parsed as data; anything else is an atom and is parsed
+        as an expression (atoms carry no form interpretation).
+        """
+        token = self.current_token
+        assert token is not None, "Should not be called at EOF"
+
+        if token.type == MenaiTokenType.LPAREN:
+            return self._parse_data_list()
+
+        return self._parse_expression()
+
+    def _parse_pattern(self) -> MenaiASTNode:
+        """
+        Parse one match pattern and validate its shape.
+
+        A pattern is data, so it is parsed without form interpretation, then
+        checked against the pattern grammar.  The shape is a property of the
+        pattern itself, so it is checked here rather than by the semantic
+        analyzer, which never runs when the parse fails.
+
+        Returns:
+            The parsed pattern.
+
+        Raises:
+            MenaiASTBuildError: When the pattern's shape is invalid.
+        """
+        pattern = self._parse_data_element()
+        self._validate_pattern(pattern)
+        return pattern
+
+    def _validate_pattern(self, pattern: MenaiASTNode) -> None:
+        """
+        Validate the shape of a parsed match pattern, recursing into sub-patterns.
+
+        A pattern is one of: an atom (a variable, wildcard, or literal), the
+        empty list, a predicate pattern ``(? pred var)``, a type pattern
+        ``(: TypeName ...)``, a dotted pattern ``(head . tail)``, or a list
+        destructuring pattern ``(p1 p2 ...)``.
+
+        Args:
+            pattern: The parsed pattern to validate.
+
+        Raises:
+            MenaiASTBuildError: When the pattern's shape is invalid.
+        """
+        if not isinstance(pattern, MenaiASTList) or pattern.is_empty():
+            return
+
+        elements = pattern.elements
+        head = elements[0]
+
+        if isinstance(head, MenaiASTSymbol) and head.name == '?':
+            self._validate_predicate_pattern(pattern)
+            return
+
+        if isinstance(head, MenaiASTSymbol) and head.name == ':':
+            self._validate_type_pattern(pattern)
+            return
+
+        self._validate_list_pattern(pattern)
+
+    def _validate_predicate_pattern(self, pattern: MenaiASTList) -> None:
+        """Validate a predicate pattern: exactly (? predicate variable)."""
+        elements = pattern.elements
+
+        if len(elements) != 3:
+            raise self._create_pattern_error(
+                pattern,
+                "Predicate pattern must be (? predicate variable)",
+                f"Got {len(elements)} elements",
+                "Exactly 3 elements: (? predicate variable)",
+                "Use (? predicate variable) for a predicate test pattern",
+            )
+
+        variable = elements[2]
+        if not isinstance(variable, MenaiASTSymbol):
+            raise self._create_pattern_error(
+                variable,
+                "Predicate pattern variable must be a symbol",
+                f"Variable: {variable.type_name()}",
+                "An unquoted symbol (variable name)",
+                "Use an unquoted variable name as the third element",
+            )
+
+        # The predicate is an expression and is analysed normally.
+        self._validate_pattern(elements[1])
+
+    def _validate_type_pattern(self, pattern: MenaiASTList) -> None:
+        """Validate a type pattern: (: TypeName sub-pattern ...)."""
+        elements = pattern.elements
+
+        if len(elements) < 2:
+            raise self._create_pattern_error(
+                pattern,
+                "Type pattern must name a type",
+                f"Got {len(elements)} elements",
+                "At least 2 elements: (: TypeName ...)",
+                "Name a struct or enum type after the : head symbol",
+            )
+
+        type_name = elements[1]
+        if not isinstance(type_name, MenaiASTSymbol):
+            raise self._create_pattern_error(
+                type_name,
+                "Type pattern name must be a symbol",
+                f"Type name: {type_name.type_name()}",
+                "An unquoted symbol (type name)",
+                "Use an unquoted type name after the : head symbol",
+            )
+
+        # A quoted symbol (an enum variant) binds nothing and is not a
+        # sub-pattern; every other trailing element is a sub-pattern.
+        for element in elements[2:]:
+            if _is_quoted_symbol(element):
+                continue
+
+            self._validate_pattern(element)
+
+    def _validate_list_pattern(self, pattern: MenaiASTList) -> None:
+        """Validate a list destructuring or dotted pattern."""
+        elements = pattern.elements
+        dot_positions = [
+            index for index, element in enumerate(elements)
+            if isinstance(element, MenaiASTSymbol) and element.name == '.'
+        ]
+
+        if len(dot_positions) > 1:
+            raise self._create_pattern_error(
+                pattern,
+                "Pattern has more than one dot",
+                f"Pattern: {pattern.describe()}",
+                "At most one dot, separating head from tail",
+                "Use only one dot to separate the head from the tail",
+            )
+
+        if not dot_positions:
+            for element in elements:
+                self._validate_pattern(element)
+
+            return
+
+        dot_position = dot_positions[0]
+
+        if dot_position == 0:
+            raise self._create_pattern_error(
+                pattern,
+                "Pattern has a dot at the beginning",
+                f"Pattern: {pattern.describe()}",
+                "At least one element before the dot",
+                "Put at least one pattern before the dot",
+            )
+
+        if dot_position == len(elements) - 1:
+            raise self._create_pattern_error(
+                pattern,
+                "Pattern has a dot at the end",
+                f"Pattern: {pattern.describe()}",
+                "A tail pattern after the dot",
+                "Add a tail pattern after the dot",
+            )
+
+        if dot_position != len(elements) - 2:
+            raise self._create_pattern_error(
+                pattern,
+                "Pattern has more than one element after the dot",
+                f"Pattern: {pattern.describe()}",
+                "Exactly one tail pattern after the dot",
+                "Use only one pattern after the dot for the tail",
+            )
+
+        for element in elements[:dot_position]:
+            self._validate_pattern(element)
+
+        self._validate_pattern(elements[dot_position + 1])
+
+    def _create_pattern_error(
+        self,
+        node: MenaiASTNode,
+        message: str,
+        received: str,
+        expected: str,
+        suggestion: str,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a match pattern with an invalid shape.
+
+        Args:
+            node: The node to report the error at.
+            message: A one-line description of the problem.
+            received: What was found.
+            expected: What the pattern grammar requires.
+            suggestion: How to fix it.
+
+        Returns:
+            MenaiASTBuildError describing the invalid pattern.
+        """
+        return MenaiASTBuildError(
+            message=message,
+            line=node.line,
+            column=node.column,
+            received=received,
+            expected=expected,
+            suggestion=suggestion,
+            context=(
+                "A match pattern is an atom, the empty list, a predicate "
+                "pattern (? predicate variable), a type pattern (: TypeName ...), "
+                "a dotted pattern (head . tail), or a list destructuring pattern."
+            ),
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
+    def _parse_special_form(
+        self,
+        form: str,
+        start_line: int,
+        start_col: int,
+        elements: list[MenaiASTNode],
+    ) -> MenaiASTList:
+        """
+        Parse a special form whose elements are fixed in number and role.
+
+        Each element is parsed by its role (see _SPECIAL_FORM_ELEMENTS), so a
+        data element is not mistaken for a form.  The element count is checked
+        against the role list, which is the form's arity.
+
+        Args:
+            form: The form's head symbol.
+            start_line: Line where the form opened.
+            start_col: Column where the form opened.
+            elements: List to accumulate the parsed elements.
+
+        Returns:
+            The parsed form.
+
+        Raises:
+            MenaiASTBuildError: When the form has too few or too many elements.
+        """
+        roles = _SPECIAL_FORM_ELEMENTS[form]
+
+        elements.append(self._parse_expression())  # the head symbol
+
+        for index, role in enumerate(roles):
+            if self.current_token is None:
+                raise self._create_enhanced_unterminated_error(start_line, start_col)
+
+            if self.current_token.type == MenaiTokenType.RPAREN:
+                # Too few elements: there is no element to point at, so the
+                # error names the form itself.
+                raise self._create_arity_error(
+                    form, index + 1, len(roles) + 1, start_line, start_col, None
+                )
+
+            elements.append(self._parse_role(role))
+
+        if self.current_token is None:
+            raise self._create_enhanced_unterminated_error(start_line, start_col)
+
+        if self.current_token.type != MenaiTokenType.RPAREN:
+            # Too many elements.  An enclosing form that closed before its body
+            # is the likelier cause: the elements that follow are then read as
+            # further elements of this form.  Report the misplaced ')' rather
+            # than the count it produced.
+            self._raise_too_many_elements(form, len(roles) + 1, start_line, start_col)
+
+        self._pop_paren_frame()
+        self._advance()  # consume ')'
+
+        return MenaiASTList(tuple(elements), line=start_line, column=start_col, source_file=self.source_file)
+
+    def _parse_role(self, role: str) -> MenaiASTNode:
+        """Parse one element of a special form according to its role."""
+        token = self.current_token
+        assert token is not None, "Should not be called at EOF"
+
+        if role == 'data-list':
+            if token.type == MenaiTokenType.LPAREN:
+                return self._parse_data_list()
+
+            # Not a list.  Parse it as an ordinary expression so the semantic
+            # analyzer reports the shape it expected (e.g. lambda parameters
+            # must be a list) rather than the parser failing to make sense of it.
+            return self._parse_expression()
+
+        if role == 'data':
+            return self._parse_data_element()
+
+        return self._parse_expression()
+
+    def _raise_too_many_elements(
+        self,
+        form: str,
+        required: int,
+        start_line: int,
+        start_col: int,
+    ) -> None:
+        """
+        Raise the error for a special form with more elements than it takes.
+
+        A form with the wrong number of elements is often the symptom of a ')'
+        that closed an enclosing form before its body, so the elements that
+        follow are read as further elements of this form.  The parenthesis
+        diagnosis identifies that ')', and it is the line the reader has to
+        change, so it is reported in preference to the count.
+
+        Args:
+            form: The form's head symbol.
+            required: The number of elements the form requires, head included.
+            start_line: Line where the form opened.
+            start_col: Column where the form opened.
+
+        Returns:
+            Never returns: it always raises.
+        """
+        diagnosis = self._diagnose_parens()
+        error = early_close_error(
+            diagnosis, MenaiASTBuildError, self.expression, self.source_file,
+            form, start_line, start_col,
+        )
+        if error is not None:
+            raise error
+
+        token = cast(MenaiToken, self.current_token)
+        raise self._create_arity_error(form, required + 1, required, start_line, start_col, token)
+
+    def _parse_match(
+        self,
+        start_line: int,
+        start_col: int,
+        elements: list[MenaiASTNode],
+    ) -> MenaiASTList:
+        """
+        Parse a match form: (match value (pattern result) ...).
+
+        The value and each clause's result are expressions; each clause's pattern
+        is data, so a reserved word inside a pattern is a name, not a form.  The
+        clauses are variadic, so at least one is required.
+
+        Args:
+            start_line: Line where the match opened.
+            start_col: Column where the match opened.
+            elements: List to accumulate the parsed elements.
+
+        Returns:
+            The parsed match form.
+
+        Raises:
+            MenaiASTBuildError: When the value or a clause is missing, or a
+                clause is not a two-element (pattern result) form.
+        """
+        elements.append(self._parse_expression())  # the head symbol
+
+        if self.current_token is None:
+            raise self._create_enhanced_unterminated_error(start_line, start_col)
+
+        if self.current_token.type == MenaiTokenType.RPAREN:
+            raise self._create_arity_error('match', 1, 3, start_line, start_col, None)
+
+        elements.append(self._parse_expression())  # the value
+
+        if self.current_token is None:
+            raise self._create_enhanced_unterminated_error(start_line, start_col)
+
+        if self.current_token.type == MenaiTokenType.RPAREN:
+            raise self._create_arity_error('match', 2, 3, start_line, start_col, None)
+
+        while self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
+            elements.append(self._parse_match_clause())
+
+        if self.current_token is None:
+            raise self._create_enhanced_unterminated_error(start_line, start_col)
+
+        self._pop_paren_frame()
+        self._advance()  # consume ')'
+
+        return MenaiASTList(tuple(elements), line=start_line, column=start_col, source_file=self.source_file)
+
+    def _parse_match_clause(self) -> MenaiASTList:
+        """
+        Parse one match clause: (pattern result).
+
+        The pattern is data and the result an expression.
+
+        Returns:
+            The parsed clause.
+
+        Raises:
+            MenaiASTBuildError: When the clause is not a two-element form.
+        """
+        token = self.current_token
+        assert token is not None, "Should not be called at EOF"
+
+        if token.type != MenaiTokenType.LPAREN:
+            raise self._create_clause_shape_error(token)
+
+        clause_line = token.line
+        clause_col = token.column
+        self._push_paren_frame(clause_line, clause_col)
+        self._advance()  # consume '('
+
+        clause: list[MenaiASTNode] = []
+
+        if self.current_token is None:
+            raise self._create_enhanced_unterminated_error(clause_line, clause_col)
+
+        if self.current_token.type == MenaiTokenType.RPAREN:
+            raise self._create_clause_shape_error(self.current_token)
+
+        clause.append(self._parse_pattern())  # the pattern
+
+        if self.current_token is None:
+            raise self._create_enhanced_unterminated_error(clause_line, clause_col)
+
+        if self.current_token.type == MenaiTokenType.RPAREN:
+            raise self._create_clause_shape_error(self.current_token)
+
+        clause.append(self._parse_expression())  # the result
+
+        if self.current_token is None:
+            raise self._create_enhanced_unterminated_error(clause_line, clause_col)
+
+        if self.current_token.type != MenaiTokenType.RPAREN:
+            raise self._create_clause_shape_error(self.current_token)
+
+        self._pop_paren_frame()
+        self._advance()  # consume ')'
+
+        return MenaiASTList(tuple(clause), line=clause_line, column=clause_col, source_file=self.source_file)
+
+    def _create_clause_shape_error(self, token: MenaiToken) -> MenaiASTBuildError:
+        """Create an error for a match clause that is not (pattern result)."""
+        return MenaiASTBuildError(
+            message="Match clause must be a (pattern result) form",
+            line=token.line,
+            column=token.column,
+            received=f"Found: {token.value}",
+            expected="Each clause: (pattern result-expression)",
+            suggestion="Give each clause exactly a pattern and a result expression",
+            context=(
+                "A match clause is a two-element form: a pattern and the result "
+                "expression to use when the pattern matches."
+            ),
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
+    def _create_arity_error(
+        self,
+        form: str,
+        count: int,
+        required: int,
+        start_line: int,
+        start_col: int,
+        offending: MenaiToken | None,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a special form with the wrong number of elements.
+
+        Args:
+            form: The form's head symbol.
+            count: The number of elements the form has, the head included.
+            required: The number of elements the form requires, the head included.
+            start_line: Line where the form opened.
+            start_col: Column where the form opened.
+            offending: The token of the first element past the bound, or None
+                when the form has too few elements and there is nothing to point
+                at.
+
+        Returns:
+            MenaiASTBuildError describing the wrong element count.
+        """
+        # 'match' takes at least this many elements (its clauses are variadic);
+        # every other form takes exactly this many.
+        if form == 'match':
+            count_phrase = f"at least {required} elements"
+
+        else:
+            count_phrase = f"exactly {required} elements"
+
+        expected = f"{count_phrase.capitalize()}: {self._form_shape(form)}"
+
+        if offending is not None:
+            # The extras have not been parsed, so their number is not known:
+            # report the count as a lower bound rather than an exact figure.
+            received = f"More than {required - 1} elements"
+
+        else:
+            received = f"Got {count} elements"
+
+        if offending is not None:
+            error_line = offending.line
+            error_column = offending.column
+            where = (
+                f"The '{form}' at line {start_line}, column {start_col} takes "
+                f"{count_phrase}, but the element at line {error_line}, column "
+                f"{error_column} is one too many."
+            )
+            suggestion = (
+                f"Remove the element at line {error_line}, column {error_column}, or "
+                f"nest it in the '{form}' body"
+            )
+
+        else:
+            error_line = start_line
+            error_column = start_col
+            where = (
+                f"The '{form}' at line {start_line}, column {start_col} takes "
+                f"{count_phrase}, but has {count}."
+            )
+            suggestion = f"Give '{form}' the elements it requires: {self._form_shape(form)}"
+
+        return MenaiASTBuildError(
+            message=f"'{form}' has the wrong number of elements",
+            line=error_line,
+            column=error_column,
+            received=received,
+            expected=expected,
+            suggestion=suggestion,
+            context=where,
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
+    def _form_shape(self, form: str) -> str:
+        """
+        Render the shape of a special form.
+
+        The shape names each element's role, so the reader sees what the form
+        takes without a worked example unrelated to their code.
+        """
+        return _SPECIAL_FORM_SHAPE[form]
 
     def _parse_let_with_tracking(
         self,
         start_line: int,
         start_col: int,
-        _frame: ParenStackFrame,
         elements: list[MenaiASTNode]
     ) -> MenaiASTList:
         """
@@ -971,16 +1432,13 @@ class MenaiASTBuilder:
         Args:
             start_line: Line where the let started
             start_col: Column where the let started
-            _frame: The paren stack frame for this let (unused but kept for consistency)
             elements: List to accumulate parsed elements
 
         Returns:
             Parsed let expression as MenaiASTList
         """
         # Parse 'let' keyword
-        self._mark_element_start()
         elements.append(self._parse_expression())
-        self._update_frame_after_element()
 
         keyword = elements[0].name if isinstance(elements[0], MenaiASTSymbol) else "let"
 
@@ -996,25 +1454,20 @@ class MenaiASTBuilder:
             return MenaiASTList(tuple(elements), line=start_line, column=start_col, source_file=self.source_file)
 
         # Parse bindings with special tracking
-        self._mark_element_start()
         if self.current_token.type == MenaiTokenType.LPAREN:
             bindings = self._parse_let_bindings(keyword)
             elements.append(bindings)
-            self._update_frame_after_element()
 
         else:
             # Not our job to validate structure - just parse what's there
             elements.append(self._parse_expression())
-            self._update_frame_after_element()
 
         # Parse body
         if self.current_token is None:
             raise self._create_enhanced_unterminated_error(start_line, start_col)
 
         if self.current_token.type != MenaiTokenType.RPAREN:
-            self._mark_element_start()
             elements.append(self._parse_expression())
-            self._update_frame_after_element()
 
         # A binding form accepts exactly one body expression.  Anything other
         # than the closing paren here is a second body expression, which the
@@ -1061,8 +1514,7 @@ class MenaiASTBuilder:
         bindings_start_col = self.current_token.column
 
         # Push frame for bindings list
-        bindings_frame = self._push_paren_frame(bindings_start_line, bindings_start_col)
-        bindings_frame.set_expression_type("bindings list")
+        self._push_paren_frame(bindings_start_line, bindings_start_col)
 
         self._advance()  # consume '('
 
@@ -1081,22 +1533,23 @@ class MenaiASTBuilder:
             binding_index += 1
 
             # Each binding should start with '('
-            self._mark_element_start()
             if self.current_token.type == MenaiTokenType.LPAREN:
                 binding = self._parse_single_binding(
-                    binding_index, prev_binding_name, prev_binding_end_line, prev_binding_end_column
+                    keyword, binding_index, prev_binding_name,
+                    prev_binding_end_line, prev_binding_end_column,
                 )
                 bindings.append(binding)
-                self._update_frame_after_element()
 
                 prev_binding_name = self._binding_name(binding)
                 prev_binding_end_line = self.last_close_line
                 prev_binding_end_column = self.last_close_column
 
             else:
-                # Not a binding structure - just parse it and let evaluator complain
-                bindings.append(self._parse_expression())
-                self._update_frame_after_element()
+                # A binding is a two-element (name value) form, so it must start
+                # with '('.  Anything else here is not a binding.
+                raise self._create_binding_shape_error(
+                    keyword, binding_index, self.current_token
+                )
 
         if self.current_token is None:
             # EOF while parsing bindings - create enhanced error
@@ -1118,8 +1571,80 @@ class MenaiASTBuilder:
 
         return None
 
+    def _create_binding_shape_error(
+        self,
+        keyword: str,
+        binding_index: int,
+        token: MenaiToken | None,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a binding that is not a two-element (name value) form.
+
+        A binding is a list of exactly two elements.  This covers both a binding
+        that is not a list at all and one whose value is absent.
+
+        Args:
+            keyword: The binding form keyword ('let', 'let*', or 'letrec').
+            binding_index: The binding's position in the bindings list (1-based).
+            token: The token where the binding starts, or None at end of input.
+
+        Returns:
+            MenaiASTBuildError describing the malformed binding.
+        """
+        line = token.line if token is not None else 1
+        column = token.column if token is not None else 1
+
+        return MenaiASTBuildError(
+            message=f"{keyword} binding {binding_index} must be a (name value) form",
+            line=line,
+            column=column,
+            received="A binding that is not a two-element list",
+            expected="Each binding: (variable value-expression)",
+            suggestion="Write each binding as (name value), with a name and a value",
+            context=(
+                f"Binding {binding_index} of the {keyword} at line {line}, column "
+                f"{column} is not a (name value) form. A binding is a list of "
+                f"exactly two elements: the variable name and its value."
+            ),
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
+    def _create_binding_name_error(
+        self,
+        keyword: str,
+        binding_index: int,
+        name_node: MenaiASTNode,
+    ) -> MenaiASTBuildError:
+        """
+        Create an error for a binding whose name is not a symbol.
+
+        Args:
+            keyword: The binding form keyword ('let', 'let*', or 'letrec').
+            binding_index: The binding's position in the bindings list (1-based).
+            name_node: The node parsed where the name should have been.
+
+        Returns:
+            MenaiASTBuildError describing the malformed binding name.
+        """
+        return MenaiASTBuildError(
+            message=f"{keyword} binding {binding_index} variable must be a symbol",
+            line=name_node.line,
+            column=name_node.column,
+            received=f"Variable: {name_node.type_name()}",
+            expected="Unquoted symbol (variable name)",
+            suggestion="Use an unquoted variable name in each binding",
+            context=(
+                f"Binding {binding_index} of the {keyword} names its variable with "
+                f"a {name_node.type_name()}. A binding name is an unquoted symbol."
+            ),
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
     def _parse_single_binding(
         self,
+        keyword: str,
         binding_index: int,
         prev_binding_name: str | None,
         prev_binding_end_line: int | None,
@@ -1129,6 +1654,7 @@ class MenaiASTBuilder:
         Parse a single let, let*, or letrec binding with tracking.
 
         Args:
+            keyword: The binding form keyword ('let', 'let*', or 'letrec').
             binding_index: The index of this binding (1-based)
             prev_binding_name: Name of the preceding binding, if any
             prev_binding_end_line: Line of the preceding binding's closing ')', if any
@@ -1143,7 +1669,6 @@ class MenaiASTBuilder:
 
         # Push frame for this binding
         binding_frame = self._push_paren_frame(binding_start_line, binding_start_col)
-        binding_frame.set_expression_type(f"binding #{binding_index}")
 
         self._advance()  # consume '('
 
@@ -1153,22 +1678,26 @@ class MenaiASTBuilder:
         if self.current_token is not None and self.current_token.type == MenaiTokenType.SYMBOL:
             var_name = self.current_token.value
             binding_frame.related_symbol = var_name
-            binding_frame.set_expression_type(f"binding #{binding_index} ('{var_name}')")
-            self._mark_element_start()
             elements.append(self._parse_expression())
-            self._update_frame_after_element()
 
         elif self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
-            # Not a symbol, but parse it anyway (for error recovery)
-            self._mark_element_start()
+            # The binding's name must be a symbol.  Parse the element so the
+            # remaining structure is still consumed, then report it.
             elements.append(self._parse_expression())
-            self._update_frame_after_element()
+            raise self._create_binding_name_error(keyword, binding_index, elements[0])
 
         # Parse value (if present)
         if self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
-            self._mark_element_start()
             elements.append(self._parse_expression())
-            self._update_frame_after_element()
+
+        if self.current_token is None:
+            # End of input inside the binding: the binding never closed, which
+            # is an unterminated list rather than a malformed binding.
+            raise self._create_enhanced_unterminated_error(binding_start_line, binding_start_col)
+
+        if len(elements) < 2:
+            # The binding closed with one element, so its value is absent.
+            raise self._create_binding_shape_error(keyword, binding_index, self.current_token)
 
         # A binding (name value) has exactly 2 elements.  If a third element
         # appears here, the value's close paren was stolen by the binding —
@@ -1204,10 +1733,6 @@ class MenaiASTBuilder:
                 prev_binding_end_line=prev_binding_end_line,
                 prev_binding_end_column=prev_binding_end_column,
             )
-
-        if self.current_token is None:
-            # EOF while parsing binding
-            raise self._create_enhanced_unterminated_error(binding_start_line, binding_start_col)
 
         # Pop binding frame
         self._pop_paren_frame()
@@ -1258,19 +1783,27 @@ class MenaiASTBuilder:
         if prev_binding_name is None:
             # No preceding binding — the bindings list has nothing before this
             # binding, so the value's close paren must be the one that is missing.
+            # The parser has already parsed the value, so the end of the last
+            # token consumed is exactly where that ')' belongs — which is the
+            # line the reader has to change, not the line the third element
+            # appears on.
+            insertion_line = self.last_token_end_line
+            insertion_column = self.last_token_end_column
             return MenaiASTBuildError(
                 message=(
-                    f"Missing closing parenthesis — insert ')' at the end of "
+                    f"Missing closing parenthesis — insert ')' at line "
+                    f"{insertion_line}, column {insertion_column}, at the end of "
                     f"binding '{var_name}''s value. Without it, '{form_name}' at "
                     f"line {token.line}, column {token.column} is read as a third "
                     f"element of binding '{var_name}'"
                 ),
-                line=token.line,
-                column=token.column,
+                line=insertion_line,
+                column=insertion_column,
                 expected="')' to close the binding",
                 suggestion=(
-                    f"The value expression of binding '{var_name}' (opened at line "
-                    f"{binding_start_line}, column {binding_start_col}) is missing a "
+                    f"Insert ')' at line {insertion_line}, column {insertion_column}: "
+                    f"the value expression of binding '{var_name}' (opened at line "
+                    f"{binding_start_line}, column {binding_start_col}) is missing its "
                     f"closing parenthesis"
                 ),
                 context=(
@@ -1278,8 +1811,10 @@ class MenaiASTBuilder:
                     f"but '{form_name}' at line {token.line}, "
                     f"column {token.column} appears as a third element. "
                     f"This means the value expression is missing a ')' — its close paren "
-                    f"was consumed by the binding instead."
-                    f"{self._depth_table_block(token.line)}"
+                    f"was consumed by the binding instead. The missing ')' belongs at "
+                    f"line {insertion_line}, column {insertion_column}, immediately after "
+                    f"the value."
+                    f"{self._depth_table_block(insertion_line)}"
                 ),
                 source=self.expression,
                 source_file=self.source_file,
@@ -1356,32 +1891,8 @@ class MenaiASTBuilder:
 
         summary_text = "\n".join(binding_summary) if binding_summary else "  (no complete bindings)"
 
-        # Build the enhanced error using the paren stack
         depth = len(self.paren_stack)
         assert depth >= 2, "Bindings error should have at least 2 frames on stack"
-
-        # Get details from stack
-        stack_lines = []
-        for i, frame in enumerate(reversed(self.paren_stack), 1):
-            line = f"  {i}. {frame.get_expression_type()} at line {frame.line}, column {frame.column}"
-
-            if frame.elements_parsed > 0:
-                line += f" - parsed {frame.elements_parsed} element{'s' if frame.elements_parsed != 1 else ''}"
-
-            if frame.incomplete_element_line is not None and frame.incomplete_element_column is not None:
-                incomplete_snippet = self.get_context_snippet(
-                    frame.incomplete_element_line, frame.incomplete_element_column, length=20
-                )
-                line += f"\n     Started parsing element at line {frame.incomplete_element_line}, "
-                line += f"column {frame.incomplete_element_column}: {incomplete_snippet}"
-                line += "\n     → This element is incomplete"
-
-            elif frame.last_complete_line:
-                line += f"\n     → Needs ')' after line {frame.last_complete_line}, column {frame.last_complete_column}"
-
-            stack_lines.append(line)
-
-        stack_trace = "\n".join(stack_lines)
 
         # Build closing parens (always multiple since depth >= 2)
         closing_parens = ")" * depth
@@ -1407,11 +1918,28 @@ class MenaiASTBuilder:
         depth_table = self._depth_table_around(error_line)
         table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
 
+        # A form that closed before its body is why the input ran out with a form
+        # still open: the ')' that ended it early is the mistake, and the open
+        # form above it is the symptom.
+        early_close_block = ""
+        if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
+            early_form = diagnosis.suspected_form or "form"
+            early_close_block = (
+                f"\n\nThe '{early_form}' at line {diagnosis.suspected_open_line}, "
+                f"column {diagnosis.suspected_open_column} was closed by the ')' at "
+                f"line {diagnosis.suspected_line}, column {diagnosis.suspected_column} "
+                f"before its body, which is what left the input unbalanced."
+            )
+
+        scopes = format_open_scopes(diagnosis)
+        scope_block = f"Forms still open (innermost first):\n{scopes}" if scopes else ""
+
         context_msg = (
             f"Reached end of input while parsing {keyword} bindings.\n\n"
             f"{where}\n\n"
             f"Bindings parsed:\n{summary_text}\n\n"
-            f"Unclosed expressions:\n{stack_trace}"
+            f"{scope_block}"
+            f"{early_close_block}"
             f"{table_block}"
         )
 
@@ -1422,7 +1950,6 @@ class MenaiASTBuilder:
             expected=f'Add "{closing_parens}" to close all expressions',
             suggestion=where,
             context=context_msg,
-            example=f"({keyword} (\n  (x 5)\n  (y (integer+ x 2))\n) body)",
             source=self.expression,
             source_file=self.source_file,
         )
@@ -1449,7 +1976,6 @@ class MenaiASTBuilder:
                 column=quote_col,
                 received="Quote symbol ' with nothing to quote",
                 expected="Expression after quote symbol",
-                example="Correct: '(a b c) or 'symbol\nIncorrect: ' (nothing after)",
                 suggestion="Add an expression after the ' symbol",
                 context="Quote symbol must be followed by something to quote",
                 source=self.expression,

@@ -270,7 +270,6 @@ class MenaiLexer:
                     column=self._column,
                     received=f"String starting with: {self._expression[start_pos:start_pos+10]}...",
                     expected="Closing quote \" at end of string",
-                    example='Correct: "hello world"\nIncorrect: "hello world',
                     suggestion="Add closing quote \" at the end of the string",
                     context="String literals must be enclosed in double quotes"
                 ) from e
@@ -370,7 +369,6 @@ class MenaiLexer:
                 column=self._column,
                 received=f"Boolean literal: {invalid_literal}",
                 expected="Valid boolean: #t or #f",
-                example="Correct: #t, #f\nIncorrect: #true, #false, #T, #F",
                 suggestion="Use #t for true or #f for false",
                 context="Menai uses #t and #f for boolean values"
             )
@@ -401,7 +399,6 @@ class MenaiLexer:
             column=self._column,
             received=f"Found: #{invalid_char}",
             expected="Valid # literal: #t, #f, #none, #xFF, #b1010, #o755, #d42",
-            example="Correct: #t, #f, #none, #xFF, #b1010, #o755, #d42\nIncorrect: #true, #1, 0xFF",
             suggestion=suggestion,
             context="# must be followed by: 't'/'f' (boolean), 'none', 'x'/'X' (hex), 'b'/'B' (binary), "
                 "'o'/'O' (octal), or 'd'/'D' (decimal)"

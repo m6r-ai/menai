@@ -896,6 +896,32 @@ reformatting normalises them. Do not "fix" the formatter to match an individual
 file; change the ADR if the style itself is wrong.
 See [ADR-0051](docs/adr/0051-menai-source-formatting-style.md).
 
+### Paren diagnostics locate the line to change, not the symptom
+
+A parenthesis error's symptom is many lines from the mistake, so a diagnostic
+must name the line the reader has to edit, derived from the token stream. There
+are two ways a file can be unbalanced and they are duals: a missing `)` leaves a
+form open, and an extra `)` has already closed one. The evidence differs in kind,
+so **three techniques are required and must not be merged**:
+
+- The **open-form stack** locates a missing `)`. It is computed from the token
+  stream, not the parser's in-progress stack, which diverges once the parser
+  recovers.
+- The **parser's cursor** locates an unclosed binding value: the end of the last
+  token consumed is where the `)` belongs.
+- **Shape reconstruction** locates a bindings list closed one binding too early.
+  This is the one case not recoverable from the token stream: whether a `)`
+  closes a binding or the bindings list is invisible at the token, and only
+  becomes decidable when the parser sees the forms that follow.
+
+A named form that closed before its body is located by element count, which
+cannot see a bindings list (a bare `(` has no minimum element count) — which is
+why shape reconstruction exists separately. A unified depth-based rule was
+investigated and found impossible: at an early close's symptom the depth profile
+is identical to a correct program's.
+
+See [ADR-0053](docs/adr/0053-paren-diagnostics-locate-the-line-to-change.md).
+
 ## VM implementation
 
 The C VM (`menai_vm_c`) is the execution engine, compiled from C source and

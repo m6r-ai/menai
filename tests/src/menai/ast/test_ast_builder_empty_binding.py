@@ -1,43 +1,25 @@
-"""Test to cover the empty binding case in parser."""
+"""An empty binding () is rejected when it is parsed."""
 
-from menai import MenaiLexer, MenaiASTBuilder
+import pytest
+
+from menai import MenaiLexer, MenaiASTBuilder, MenaiASTBuildError
 
 
 def test_empty_binding_in_let():
-    """
-    Test that empty binding () is parsed correctly.
-
-    This covers the case where the elif condition on line 455 is False,
-    because current_token.type == RPAREN (empty binding).
-    """
+    """An empty binding () is not a (name value) form, so it is rejected."""
     lexer = MenaiLexer()
     tokens = lexer.lex("(let (() 5))")
     ast_builder = MenaiASTBuilder()
 
-    # Should parse successfully (evaluator will complain about invalid binding)
-    result = ast_builder.build(tokens, "(let (() 5))")
-
-    # Verify structure: (let (() 5))
-    assert result.length() == 2
-    assert result.get(0).name == "let"
-
-    # The bindings list should contain one empty binding
-    bindings = result.get(1)
-    assert bindings.length() == 2
-    assert bindings.get(0).length() == 0  # Empty binding
+    with pytest.raises(MenaiASTBuildError, match="let binding 1 must be a"):
+        ast_builder.build(tokens, "(let (() 5))")
 
 
 def test_multiple_bindings_with_empty():
-    """Test multiple bindings including an empty one."""
+    """An empty binding among valid ones is still rejected."""
     lexer = MenaiLexer()
     tokens = lexer.lex("(let ((x 5) () (y 10)) 42)")
     ast_builder = MenaiASTBuilder()
 
-    result = ast_builder.build(tokens, "(let ((x 5) () (y 10)) 42)")
-
-    # Verify structure
-    bindings = result.get(1)
-    assert bindings.length() == 3
-    assert bindings.get(0).length() == 2  # (x 5)
-    assert bindings.get(1).length() == 0  # ()
-    assert bindings.get(2).length() == 2  # (y 10)
+    with pytest.raises(MenaiASTBuildError, match="let binding 2 must be a"):
+        ast_builder.build(tokens, "(let ((x 5) () (y 10)) 42)")

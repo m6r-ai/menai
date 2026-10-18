@@ -13,7 +13,7 @@ from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTSymbol, MenaiASTList, MenaiASTInteger, MenaiASTString, MenaiASTBoolean
 )
-from menai.menai_error import MenaiEvalError
+from menai.menai_error import MenaiASTBuildError, MenaiEvalError
 
 
 def parse_and_analyze_expression(expr_str: str) -> MenaiASTNode:
@@ -434,58 +434,47 @@ class TestDesugarerMatchErrors:
     """Test error handling in semantic analyzer (errors caught before desugaring)."""
 
     def test_match_no_clauses(self):
-        """Test error when match has no clauses."""
-        # Errors should be caught by semantic analyzer, not desugarer
-        analyzer = MenaiASTSemanticAnalyzer()
+        """A match with no clauses is rejected when it is parsed."""
         lexer = MenaiLexer()
         ast_builder = MenaiASTBuilder()
-        expr = ast_builder.build(lexer.lex('(match x)'), '(match x)')
 
-        with pytest.raises(MenaiEvalError, match="wrong number of arguments"):
-            analyzer.analyze(expr)
+        with pytest.raises(MenaiASTBuildError, match="'match' has the wrong number of elements"):
+            ast_builder.build(lexer.lex('(match x)'), '(match x)')
 
     def test_match_invalid_clause(self):
-        """Test error when match clause is invalid."""
-        analyzer = MenaiASTSemanticAnalyzer()
+        """A match clause that is not (pattern result) is rejected when it is parsed."""
         lexer = MenaiLexer()
         ast_builder = MenaiASTBuilder()
-        expr = ast_builder.build(lexer.lex('(match x (42))'), '(match x (42))')
 
-        with pytest.raises(MenaiEvalError, match="wrong number of elements"):
-            analyzer.analyze(expr)
+        with pytest.raises(MenaiASTBuildError, match="Match clause must be a"):
+            ast_builder.build(lexer.lex('(match x (42))'), '(match x (42))')
 
     def test_cons_pattern_dot_at_start(self):
-        """Test error when cons pattern has dot at start."""
-        analyzer = MenaiASTSemanticAnalyzer()
+        """A cons pattern with a dot at the start is rejected when it is parsed."""
         lexer = MenaiLexer()
         code = '(match x ((. tail) "bad") (_ "other"))'
         ast_builder = MenaiASTBuilder()
-        expr = ast_builder.build(lexer.lex(code), code)
 
-        with pytest.raises(MenaiEvalError, match="dot at beginning"):
-            analyzer.analyze(expr)
+        with pytest.raises(MenaiASTBuildError, match="dot at the beginning"):
+            ast_builder.build(lexer.lex(code), code)
 
     def test_cons_pattern_dot_at_end(self):
-        """Test error when cons pattern has dot at end."""
-        analyzer = MenaiASTSemanticAnalyzer()
+        """A cons pattern with a dot at the end is rejected when it is parsed."""
         lexer = MenaiLexer()
         code = '(match x ((head .) "bad") (_ "other"))'
         ast_builder = MenaiASTBuilder()
-        expr = ast_builder.build(lexer.lex(code), code)
 
-        with pytest.raises(MenaiEvalError, match="dot at end"):
-            analyzer.analyze(expr)
+        with pytest.raises(MenaiASTBuildError, match="dot at the end"):
+            ast_builder.build(lexer.lex(code), code)
 
     def test_cons_pattern_multiple_after_dot(self):
-        """Test error when cons pattern has multiple elements after dot."""
-        analyzer = MenaiASTSemanticAnalyzer()
+        """A cons pattern with more than one element after the dot is rejected."""
         lexer = MenaiLexer()
         code = '(match x ((head . a b) "bad") (_ "other"))'
         ast_builder = MenaiASTBuilder()
-        expr = ast_builder.build(lexer.lex(code), code)
 
-        with pytest.raises(MenaiEvalError, match="multiple elements after dot"):
-            analyzer.analyze(expr)
+        with pytest.raises(MenaiASTBuildError, match="more than one element after the dot"):
+            ast_builder.build(lexer.lex(code), code)
 
 
 class TestDesugarerTempVariables:

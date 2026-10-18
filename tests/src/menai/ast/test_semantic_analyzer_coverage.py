@@ -52,22 +52,22 @@ class TestLetStarBindingWrongCount:
 
     def test_let_star_binding_missing_value(self, menai):
         """(let* ((x)) body) — binding has only 1 element."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* must be a \\(name value\\) form"):
             menai.evaluate("(let* ((x)) x)")
 
     def test_let_star_binding_too_many_values(self, menai):
         """(let* ((x 1 2)) body) — parser catches the third element as a missing close paren."""
-        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis — insert '\\)' at the end of binding 'x''s value"):
+        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis — insert '\\)' at line 1, column 12, at the end of binding 'x''s value"):
             menai.evaluate("(let* ((x 1 2)) x)")
 
     def test_let_star_empty_binding(self, menai):
         """(let* (()) body) — binding has 0 elements."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* must be a \\(name value\\) form"):
             menai.evaluate("(let* (()) 42)")
 
     def test_let_star_second_binding_wrong_count(self, menai):
         """Error reported for the second binding when first is fine."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* must be a \\(name value\\) form"):
             menai.evaluate("(let* ((x 1) (y)) (+ x y))")
 
 
@@ -76,22 +76,22 @@ class TestLetStarBindingVarNotSymbol:
 
     def test_let_star_binding_integer_variable(self, menai):
         """(let* ((1 5)) 1) — integer as binding variable."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* variable must be a symbol"):
             menai.evaluate("(let* ((1 5)) 1)")
 
     def test_let_star_binding_string_variable(self, menai):
         """(let* (("x" 5)) x) — string as binding variable."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* variable must be a symbol"):
             menai.evaluate('(let* (("x" 5)) "x")')
 
     def test_let_star_binding_boolean_variable(self, menai):
         """(let* ((#t 5)) #t) — boolean as binding variable."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* variable must be a symbol"):
             menai.evaluate("(let* ((#t 5)) #t)")
 
     def test_let_star_second_binding_non_symbol_variable(self, menai):
         """Error on the second binding's variable."""
-        with pytest.raises(MenaiEvalError, match="Let\\* binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="let\\* binding .* variable must be a symbol"):
             menai.evaluate('(let* ((x 1) ("y" 2)) x)')
 
 
@@ -133,22 +133,22 @@ class TestLetrecIndividualBindingNotList:
 
     def test_letrec_bare_symbol_as_binding(self, menai):
         """(letrec (x 5) body) — 'x' is a symbol, not a (var val) list."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* must be a list"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* must be a \\(name value\\) form"):
             menai.evaluate("(letrec (x 5) x)")
 
     def test_letrec_bare_integer_as_binding(self, menai):
         """(letrec (42) body) — integer as a binding slot."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* must be a list"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* must be a \\(name value\\) form"):
             menai.evaluate("(letrec (42) 42)")
 
     def test_letrec_bare_string_as_binding(self, menai):
         """(letrec ("x") body) — string as a binding slot."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* must be a list"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* must be a \\(name value\\) form"):
             menai.evaluate('(letrec ("x") "x")')
 
     def test_letrec_second_binding_not_list(self, menai):
         """Error reported for the second binding slot."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* must be a list"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* must be a \\(name value\\) form"):
             menai.evaluate("(letrec ((x 1) y) x)")
 
 
@@ -157,22 +157,22 @@ class TestLetrecBindingWrongCount:
 
     def test_letrec_binding_missing_value(self, menai):
         """(letrec ((x)) body) — binding has only 1 element."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* must be a \\(name value\\) form"):
             menai.evaluate("(letrec ((x)) x)")
 
     def test_letrec_binding_too_many_values(self, menai):
         """(letrec ((x 1 2)) body) — parser catches the third element as a missing close paren."""
-        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis — insert '\\)' at the end of binding 'x''s value"):
+        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis — insert '\\)' at line 1, column 14, at the end of binding 'x''s value"):
             menai.evaluate("(letrec ((x 1 2)) x)")
 
     def test_letrec_empty_binding(self, menai):
         """(letrec (()) body) — binding has 0 elements."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* must be a \\(name value\\) form"):
             menai.evaluate("(letrec (()) 42)")
 
     def test_letrec_second_binding_wrong_count(self, menai):
         """Error reported for the second binding."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* must be a \\(name value\\) form"):
             menai.evaluate("(letrec ((x 1) (y)) x)")
 
 
@@ -181,22 +181,22 @@ class TestLetrecBindingVarNotSymbol:
 
     def test_letrec_binding_integer_variable(self, menai):
         """(letrec ((1 5)) 1) — integer as binding variable."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* variable must be a symbol"):
             menai.evaluate("(letrec ((1 5)) 1)")
 
     def test_letrec_binding_string_variable(self, menai):
         """(letrec (("x" 5)) "x") — string as binding variable."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* variable must be a symbol"):
             menai.evaluate('(letrec (("x" 5)) "x")')
 
     def test_letrec_binding_boolean_variable(self, menai):
         """(letrec ((#t 5)) #t) — boolean as binding variable."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* variable must be a symbol"):
             menai.evaluate("(letrec ((#t 5)) #t)")
 
     def test_letrec_second_binding_non_symbol_variable(self, menai):
         """Error on the second binding's variable."""
-        with pytest.raises(MenaiEvalError, match="Letrec binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="letrec binding .* variable must be a symbol"):
             menai.evaluate('(letrec ((x 1) (2 3)) x)')
 
 

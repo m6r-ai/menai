@@ -19,7 +19,8 @@ class TestUnterminatedLetExpressions:
         error = exc_info.value
         assert "Unterminated list" in error.message
         assert "missing 1 closing parenthesis" in error.message
-        assert "let binding" in error.context
+        assert "Forms still open" in error.context
+        assert "'let'" in error.context
 
     def test_unterminated_let_with_variable_name(self):
         """Test unterminated let binding with variable name (triggers related_symbol)."""
@@ -69,7 +70,7 @@ class TestInvalidBindingStructures:
     """Test invalid binding structures in let expressions."""
 
     def test_binding_not_a_list(self):
-        """Test when a binding is not a list structure."""
+        """A binding that is a bare symbol is rejected."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(let (x")
         ast_builder = MenaiASTBuilder()
@@ -78,12 +79,10 @@ class TestInvalidBindingStructures:
             ast_builder.build(tokens, "(let (x")
 
         error = exc_info.value
-        # Should show that 'x' is not a proper binding
-        assert "Incomplete let bindings" in error.message
-        assert "<not a list>" in error.context
+        assert "let binding 1 must be a (name value) form" in error.message
 
     def test_binding_is_number(self):
-        """Test when a binding is a number instead of a list."""
+        """A binding that is a bare number is rejected."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(let (42")
         ast_builder = MenaiASTBuilder()
@@ -92,11 +91,10 @@ class TestInvalidBindingStructures:
             ast_builder.build(tokens, "(let (42")
 
         error = exc_info.value
-        assert "Incomplete let bindings" in error.message
-        assert "<not a list>" in error.context
+        assert "let binding 1 must be a (name value) form" in error.message
 
     def test_binding_invalid_structure(self):
-        """Test binding with invalid structure (boolean-not starting with symbol)."""
+        """A binding whose name is not a symbol is rejected."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(let ((42 5)")
         ast_builder = MenaiASTBuilder()
@@ -105,11 +103,10 @@ class TestInvalidBindingStructures:
             ast_builder.build(tokens, "(let ((42 5)")
 
         error = exc_info.value
-        # The binding (42 5) is parsed but should show as invalid
-        assert "Incomplete let bindings" in error.message
+        assert "let binding 1 variable must be a symbol" in error.message
 
     def test_binding_with_non_symbol_first_element(self):
-        """Test binding where first element is not a symbol."""
+        """A binding whose name is a string is rejected."""
         lexer = MenaiLexer()
         tokens = lexer.lex('(let (("string" 5)')
         ast_builder = MenaiASTBuilder()
@@ -118,9 +115,7 @@ class TestInvalidBindingStructures:
             ast_builder.build(tokens, '(let (("string" 5)')
 
         error = exc_info.value
-        assert "Incomplete let bindings" in error.message
-        # Should show as invalid binding since first element is not a symbol
-        assert "<invalid binding>" in error.context
+        assert "let binding 1 variable must be a symbol" in error.message
 
 
 class TestRelatedSymbolDisplay:
@@ -184,8 +179,9 @@ class TestComplexNestedStructures:
             ast_builder.build(tokens, code)
 
         error = exc_info.value
-        # Should show nested structure in error
-        assert "let binding" in error.context
+        # The open-scope list shows the nested structure.
+        assert "Forms still open" in error.context
+        assert "'let'" in error.context
 
     def test_let_with_empty_binding_list(self):
         """Test let with empty binding followed by EOF."""
@@ -201,9 +197,8 @@ class TestComplexNestedStructures:
         assert "(no complete bindings)" in error.context
 
     def test_multiple_invalid_bindings(self):
-        """Test multiple invalid bindings to cover all error formatting."""
+        """A bare symbol in bindings position is rejected."""
         lexer = MenaiLexer()
-        # Complete the bindings but EOF before body
         tokens = lexer.lex("(let (x 42")
         ast_builder = MenaiASTBuilder()
 
@@ -211,9 +206,7 @@ class TestComplexNestedStructures:
             ast_builder.build(tokens, "(let (x 42")
 
         error = exc_info.value
-        # Should show invalid bindings
-        assert "Incomplete let bindings" in error.message
-        assert "<not a list>" in error.context
+        assert "let binding 1 must be a (name value) form" in error.message
 
 
 class TestEdgeCases:
@@ -255,14 +248,15 @@ class TestEdgeCases:
 
         error = exc_info.value
         assert "Unterminated list" in error.message
-        assert "let binding" in error.context
+        assert "Forms still open" in error.context
+        assert "'let'" in error.context
 
 
 class TestBindingSummaryFormatting:
     """Test the binding summary formatting in error messages."""
 
     def test_binding_summary_with_valid_and_invalid(self):
-        """Test binding summary shows both valid and invalid bindings."""
+        """A bare symbol after valid bindings is rejected."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(let ((x 5) (y 10) z")
         ast_builder = MenaiASTBuilder()
@@ -271,10 +265,7 @@ class TestBindingSummaryFormatting:
             ast_builder.build(tokens, "(let ((x 5) (y 10) z")
 
         error = exc_info.value
-        # Should show x and y as valid (✓), z as invalid
-        assert "Incomplete let bindings" in error.message
-        # The summary should list the bindings
-        assert "Bindings parsed:" in error.context
+        assert "let binding 3 must be a (name value) form" in error.message
 
     def test_binding_summary_with_wrong_element_count(self):
         """A binding with more than 2 elements is a missing close paren inside the binding."""
@@ -286,15 +277,56 @@ class TestBindingSummaryFormatting:
             ast_builder.build(tokens, "(let ((x 5 6 7)")
 
         error = exc_info.value
-        # The parser catches the third element as a missing close paren
-        assert "Missing closing parenthesis — insert ')' at the end of binding 'x''s value" in error.message
+        # The parser catches the third element as a missing close paren and
+        # points at the end of the value, which is where the ')' belongs.
+        assert "Missing closing parenthesis — insert ')' at line 1, column 11" in error.message
+        assert "at the end of binding 'x''s value" in error.message
+
+
+class TestUnclosedValueSwallowsNextBinding:
+    """
+    A binding whose value is unclosed is reported at the end of that value.
+
+    When a binding's value is missing its closing ')', the binding pair absorbs
+    the next binding, so the parser reports a spurious third element at that
+    next binding.  The line to change is the end of the value, not the line the
+    third element appears on.
+    """
+
+    def test_reports_end_of_value_not_third_element(self):
+        """The error location is the end of the unclosed value."""
+        source = "(letrec ((digit? (lambda (ch)\n               (integer+ ch 1))\n         (digits (lambda (i) i)))\n  (digit? 0))"
+        lexer = MenaiLexer()
+        tokens = lexer.lex(source)
+        ast_builder = MenaiASTBuilder()
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            ast_builder.build(tokens, source)
+
+        error = exc_info.value
+        # The 'digit?' value (the lambda) ends on line 2; its ')' belongs there.
+        assert error.line == 2
+        assert "at the end of binding 'digit?''s value" in error.message
+
+    def test_names_the_next_binding_as_the_symptom(self):
+        """The message names the binding that was read as a third element."""
+        source = "(letrec ((digit? (lambda (ch)\n               (integer+ ch 1))\n         (digits (lambda (i) i)))\n  (digit? 0))"
+        lexer = MenaiLexer()
+        tokens = lexer.lex(source)
+        ast_builder = MenaiASTBuilder()
+
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            ast_builder.build(tokens, source)
+
+        error = exc_info.value
+        assert "'digits' at line 3" in error.message
 
 
 class TestKeywordSpecificErrorMessages:
     """Test that error messages use the correct keyword for each binding form."""
 
     def test_let_star_keyword_in_incomplete_bindings_error(self):
-        """let* bindings error uses 'let*' not 'let' in the message."""
+        """A let* binding error names 'let*', not 'let'."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(let* (x")
         ast_builder = MenaiASTBuilder()
@@ -303,11 +335,10 @@ class TestKeywordSpecificErrorMessages:
             ast_builder.build(tokens, "(let* (x")
 
         error = exc_info.value
-        assert "Incomplete let* bindings" in error.message
-        assert "parsing let* bindings" in error.context
+        assert "let* binding 1 must be a (name value) form" in error.message
 
     def test_letrec_keyword_in_incomplete_bindings_error(self):
-        """letrec bindings error uses 'letrec' not 'let' in the message."""
+        """A letrec binding error names 'letrec', not 'let'."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(letrec (x")
         ast_builder = MenaiASTBuilder()
@@ -316,11 +347,10 @@ class TestKeywordSpecificErrorMessages:
             ast_builder.build(tokens, "(letrec (x")
 
         error = exc_info.value
-        assert "Incomplete letrec bindings" in error.message
-        assert "parsing letrec bindings" in error.context
+        assert "letrec binding 1 must be a (name value) form" in error.message
 
     def test_let_keyword_in_incomplete_bindings_error(self):
-        """let bindings error uses 'let' in the message."""
+        """A let binding error names 'let'."""
         lexer = MenaiLexer()
         tokens = lexer.lex("(let (x")
         ast_builder = MenaiASTBuilder()
@@ -329,15 +359,14 @@ class TestKeywordSpecificErrorMessages:
             ast_builder.build(tokens, "(let (x")
 
         error = exc_info.value
-        assert "Incomplete let bindings" in error.message
-        assert "parsing let bindings" in error.context
+        assert "let binding 1 must be a (name value) form" in error.message
 
 
 class TestBindingCulpritHint:
-    """Test that unterminated errors highlight binding frames as the likely culprit."""
+    """Test that unterminated errors name the open binding in the scope list."""
 
-    def test_binding_culprit_hint_on_eof_inside_value(self):
-        """EOF inside a binding's value shows a 'Likely culprit' hint for that binding."""
+    def test_open_binding_named_on_eof_inside_value(self):
+        """EOF inside a binding's value names that binding in the open-scope list."""
         lexer = MenaiLexer()
         source = "(let ((x 5) (y (lambda (n) (if (integer=? n 0)"
         tokens = lexer.lex(source)
@@ -348,10 +377,11 @@ class TestBindingCulpritHint:
 
         error = exc_info.value
         assert "Unterminated list" in error.message
-        assert "Likely culprit: binding 'y'" in error.context
+        assert "Forms still open" in error.context
+        assert "'y'" in error.context
 
-    def test_no_binding_culprit_hint_when_no_binding_frames(self):
-        """EOF inside a non-binding form does not show a 'Likely culprit' hint."""
+    def test_no_binding_named_when_no_binding_frames(self):
+        """EOF inside a non-binding form names no binding in the open-scope list."""
         lexer = MenaiLexer()
         source = "(if (integer=? n 0) (lambda (x) x)"
         tokens = lexer.lex(source)
@@ -362,4 +392,5 @@ class TestBindingCulpritHint:
 
         error = exc_info.value
         assert "Unterminated list" in error.message
-        assert "Likely culprit" not in error.context
+        assert "Forms still open" in error.context
+        assert "'if'" in error.context

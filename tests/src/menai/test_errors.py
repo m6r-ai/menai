@@ -112,13 +112,13 @@ class TestErrors:
 
     def test_invalid_lambda_syntax_parse_error(self, menai):
         """Test that invalid lambda syntax causes evaluation errors (pure list approach)."""
-        with pytest.raises(MenaiEvalError, match="Lambda expression structure is incorrect"):
+        with pytest.raises(MenaiASTBuildError, match="'lambda' has the wrong number of elements"):
             menai.evaluate("(lambda)")
 
-        with pytest.raises(MenaiEvalError, match="Lambda expression structure is incorrect"):
+        with pytest.raises(MenaiASTBuildError, match="'lambda' has the wrong number of elements"):
             menai.evaluate("(lambda (x))")  # Missing body
 
-        with pytest.raises(MenaiEvalError, match="Lambda expression structure is incorrect"):
+        with pytest.raises(MenaiASTBuildError, match="'lambda' has the wrong number of elements"):
             menai.evaluate("(lambda (x) (integer+ x 1) extra)")  # Too many elements
 
     def test_invalid_lambda_parameters_parse_error(self, menai):
@@ -147,18 +147,18 @@ class TestErrors:
 
     def test_invalid_let_binding_syntax_parse_error(self, menai):
         """Test that invalid let binding syntax causes evaluation errors (pure list approach)."""
-        with pytest.raises(MenaiEvalError, match="Let binding .* has wrong number of elements"):
+        with pytest.raises(MenaiASTBuildError, match="let binding .* must be a \\(name value\\) form"):
             menai.evaluate("(let ((x)) x)")  # Binding without value
 
-        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis — insert '\\)' at the end of binding 'x''s value"):
+        with pytest.raises(MenaiASTBuildError, match="Missing closing parenthesis — insert '\\)' at line 1, column 11, at the end of binding 'x''s value"):
             menai.evaluate("(let ((x 1 2)) x)")  # Binding with too many elements — caught by parser
 
     def test_invalid_let_binding_variable_parse_error(self, menai):
         """Test that invalid let binding variables cause evaluation errors (pure list approach)."""
-        with pytest.raises(MenaiEvalError, match="Let binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="let binding .* variable must be a symbol"):
             menai.evaluate("(let ((1 5)) 1)")  # Number as variable
 
-        with pytest.raises(MenaiEvalError, match="Let binding .* variable must be a symbol"):
+        with pytest.raises(MenaiASTBuildError, match="let binding .* variable must be a symbol"):
             menai.evaluate('(let (("x" 5)) x)')  # String as variable
 
     def test_duplicate_let_binding_variables_parse_error(self, menai):

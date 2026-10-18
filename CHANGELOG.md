@@ -14,6 +14,11 @@ New features:
 - Added capturing groups to the `regexp` module.  `search-groups` and
   `search-all-groups` report each group's extent, and `replace` expands `$1`..`$n`
   in its replacement.
+- Unbalanced-parenthesis errors now list the forms still open at end of input,
+  innermost first, and name the `)` that closed a form before its body.
+- Removed the `Correct:`/`Incorrect:` toy examples from syntax errors.  They
+  restated the rule with generic code unrelated to the source being compiled.
+  Examples that show the shape of a form the reader may not know are kept.
 
 Bug fixes:
 

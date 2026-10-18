@@ -24,7 +24,7 @@ class TestMissingParens:
 
         error = str(exc_info.value)
         assert "missing 2 closing" in error.lower()
-        assert "unclosed expressions" in error.lower()
+        assert "forms still open" in error.lower()
 
     def test_let_with_missing_paren_simple(self, menai):
         """Test error for simple let with missing closing paren."""
@@ -104,14 +104,16 @@ class TestMissingParens:
         error = str(exc_info.value)
         assert "missing 3 closing" in error.lower()
 
-    def test_error_shows_unclosed_expression_list(self, menai):
-        """Test that error lists all unclosed expressions."""
+    def test_error_shows_open_forms(self, menai):
+        """Test that the error lists the forms still open, innermost first."""
         with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("(let ((x 5)) (+ x 2")
 
         error = str(exc_info.value)
-        # Should show both the let and the function call as unclosed
-        assert "unclosed expressions" in error.lower()
+        # The innermost open form is the call, and the let encloses it.
+        assert "forms still open" in error.lower()
+        assert "'+'" in error
+        assert "'let'" in error
 
     def test_error_suggests_closing_parens(self, menai):
         """Test that error suggests the closing parens to add."""
@@ -183,14 +185,12 @@ class TestMissingParens:
         with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("""(let (
   (outer 1)
-  (middle (let ((inner 2)) inner)
-)
-  outer
-)""")
+  (middle (let ((inner 2))
+          inner""")
 
         error = str(exc_info.value)
-        # Should show nested structure
-        assert "unclosed" in error.lower()
+        # The open-scope list shows the nested structure.
+        assert "forms still open" in error.lower()
         assert "let" in error.lower()
 
 
@@ -425,7 +425,7 @@ class TestEnclosingFormClosedEarly:
             "    (integer+ x 1)\n"
             "    (integer+ x 2))\n"
         )
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate(source)
 
         error = exc_info.value
@@ -440,7 +440,7 @@ class TestEnclosingFormClosedEarly:
             "    (integer+ x 1)\n"
             "    (integer+ x 2))\n"
         )
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate(source)
 
         error = str(exc_info.value)
@@ -448,12 +448,12 @@ class TestEnclosingFormClosedEarly:
 
     def test_genuine_if_arity_error_is_not_an_early_close(self, menai):
         """
-        A genuine 'if' arity error keeps the original message.
+        A genuine 'if' arity error is reported as an arity error.
 
         ``(if 1 2 3 4)`` has four arguments but no enclosing form closed early,
         so it must not be reported as an early close.
         """
-        with pytest.raises(MenaiEvalError, match="If expression has wrong number of arguments"):
+        with pytest.raises(MenaiASTBuildError, match="'if' has the wrong number of elements"):
             menai.evaluate("(if 1 2 3 4)")
 
     def test_genuine_letrec_too_few_elements_is_not_an_early_close(self, menai):
@@ -503,7 +503,7 @@ class TestEnclosingFormClosedEarly:
             "      (integer+ y 1)\n"
             "      (integer+ x 2)))\n"
         )
-        with pytest.raises(MenaiEvalError) as exc_info:
+        with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate(source)
 
         error = exc_info.value
