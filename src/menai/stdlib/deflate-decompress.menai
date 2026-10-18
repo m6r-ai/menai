@@ -76,7 +76,7 @@
    ; has been committed or not.
    (output-append-bytes
     (lambda (out bs)
-      (let* ((fragments (list-prepend (struct-get out 'fragments) bs))
+      (letrec ((fragments (list-prepend (struct-get out 'fragments) bs))
              (pending (list-prepend (struct-get out 'pending) bs))
              (total (integer+ (struct-get out 'total) (bytes-length bs))))
         (if (integer>=? (list-length fragments) fragment-max)
@@ -135,7 +135,7 @@
    ; the range rather than one at a time, so the cost is independent of `n`.
    (read-bits
     (lambda (b p n)
-      (let* ((start-byte (integer/ p 8))
+      (letrec ((start-byte (integer/ p 8))
              (start-bit (integer% p 8))
              (nbytes (integer/ (integer+ (integer+ start-bit n) 7) 8)))
         (if (integer>? (integer+ start-byte nbytes) (bytes-length b))
@@ -243,8 +243,7 @@
                       (let ((byte (integer/ pos 8)))
                         (if (integer>=? byte (bytes-length b))
                             (error "deflate-decompress: unexpected end of input while reading bits")
-                            (let*
-                              ((bit (integer-bit-and (integer-bit-shift-right (bytes-nth b byte) (integer% pos 8)) 1))
+                            (letrec                               ((bit (integer-bit-and (integer-bit-shift-right (bytes-nth b byte) (integer% pos 8)) 1))
                                (new-code (integer-bit-or (integer-bit-shift-left code 1) bit))
                                (next-length (integer+ length 1))
                                (next-pos (integer+ pos 1))
@@ -266,7 +265,7 @@
    ; Returns (list <length> <new-bit-position>).
    (decode-length
     (lambda (b p sym)
-      (let* ((idx (integer- sym 257))
+      (letrec ((idx (integer- sym 257))
              (base (vector-nth length-base idx))
              (extra (vector-nth length-extra idx))
              (extra-result (read-extra b p extra)))
@@ -276,7 +275,7 @@
    ; Returns (list <distance> <new-bit-position>).
    (decode-distance
     (lambda (b p sym)
-      (let* ((base (vector-nth distance-base sym))
+      (letrec ((base (vector-nth distance-base sym))
              (extra (vector-nth distance-extra sym))
              (extra-result (read-extra b p extra)))
         (list (integer+ base (list-first extra-result)) (list-nth extra-result 1)))))
@@ -298,12 +297,12 @@
     (lambda (out distance length)
       (if (integer>? distance (struct-get out 'total))
           (error "deflate-decompress: back-reference distance exceeds output produced so far")
-          (let* ((out (output-refresh-window out))
-                 (win (struct-get out 'window))
-                 (wlen (bytes-length (struct-get out 'window)))
+          (letrec ((refreshed (output-refresh-window out))
+                 (win (struct-get refreshed 'window))
+                 (wlen (bytes-length (struct-get refreshed 'window)))
                  (block-len (integer-min distance length))
                  (block (bytes-slice win (integer- wlen distance) (integer+ (integer- wlen distance) block-len))))
-            (output-append-bytes out (repeat-to-length block block-len length))))))
+            (output-append-bytes refreshed (repeat-to-length block block-len length))))))
 
    ; Return a bytes value of exactly `length` bytes formed by repeating `block`
    ; (which has `block-len` bytes) until it is long enough, then truncating.
@@ -335,14 +334,14 @@
 
          (loop
           (lambda (pos acc pending)
-            (let* ((sym-result (decode-symbol b pos lit-table))
+            (letrec ((sym-result (decode-symbol b pos lit-table))
                    (sym (list-first sym-result))
                    (pos2 (list-nth sym-result 1)))
               (if (integer=? sym 256)
                   (list (flush-literals acc pending) pos2)
                   (if (integer<? sym 256)
                       (loop pos2 acc (list-prepend pending sym))
-                      (let* ((length-result (decode-length b pos2 sym))
+                      (letrec ((length-result (decode-length b pos2 sym))
                              (length (list-first length-result))
                              (pos3 (list-nth length-result 1))
                              (dist-sym-result (decode-symbol b pos3 dist-table))
@@ -360,7 +359,7 @@
    ; (list <bytes> <new-bit-position>).
    (decode-stored-block
     (lambda (b p)
-      (let* ((aligned (align-to-byte p))
+      (letrec ((aligned (align-to-byte p))
              (len-result (read-raw-bytes b aligned 2))
              (len-bytes (list-first len-result))
              (pos2 (list-nth len-result 1))
@@ -452,7 +451,7 @@
    ; body.  Returns (list <output-state> <new-bit-position>).
    (decode-dynamic-block
     (lambda (b p out)
-      (let* ((hlit-result (read-bits b p 5))
+      (letrec ((hlit-result (read-bits b p 5))
              (hlit (list-first hlit-result))
              (pos1 (list-nth hlit-result 1))
              (hdist-result (read-bits b pos1 5))
@@ -478,8 +477,7 @@
    ; (list <output-state> <new-bit-position>).
    (decode-blocks
     (lambda (b p out)
-      (let*
-        ((bfinal-result (read-bit b p))
+      (letrec         ((bfinal-result (read-bit b p))
          (bfinal (list-first bfinal-result))
          (pos1 (list-nth bfinal-result 1))
          (btype-result (read-bits b pos1 2))

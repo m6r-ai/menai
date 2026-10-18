@@ -138,8 +138,7 @@
                  (list (regexp-n-group g (list-first inner)) (integer+ (list-nth inner 1) 1) (list-nth inner 2))
                  (error "Unterminated group in pattern"))))
           ("["
-           (let*
-             ((neg
+           (letrec              ((neg
                (and (integer<? (integer+ i 1) (string-length p))
                     (string=? (string-nth p (integer+ i 1)) "^")))
 
@@ -160,7 +159,7 @@
    ; (list <node> <next-index> <next-group>).
    (regexp-parse-quant
     (lambda (p i g)
-      (let* ((atom-result (regexp-parse-atom p i g))
+      (letrec ((atom-result (regexp-parse-atom p i g))
              (node (list-first atom-result))
              (after (list-nth atom-result 1))
              (next (list-nth atom-result 2)))
@@ -203,7 +202,7 @@
                       n))))))
         (if (integer>=? (integer+ i 1) (string-length p))
             #none
-            (let* ((start (integer+ i 1))
+            (letrec ((start (integer+ i 1))
                    (j (digits start)))
               (if (integer=? j start)
                   #none
@@ -270,7 +269,7 @@
     (lambda (p i g)
       (letrec ((loop
                 (lambda (j node gn)
-                  (let* ((seq (regexp-parse-seq p j gn))
+                  (letrec ((seq (regexp-parse-seq p j gn))
                          (snode (list-first seq))
                          (after (list-nth seq 1))
                          (next (list-nth seq 2)))
@@ -414,7 +413,7 @@
              (lambda (states)
                (if (list-null? states)
                    #none
-                   (let* ((st (list-first states))
+                   (letrec ((st (list-first states))
                           (r (k (list (list-nth st 0) (list-nth st 1)))))
                      (if (none? r)
                          (try (list-rest states))
@@ -445,7 +444,7 @@
         ((: regexp-op 'char) (list-nth node 1))
         ((: regexp-op 'group) (regexp-literal-prefix (list-nth node 2)))
         ((: regexp-op 'seq)
-         (let* ((a (list-nth node 1))
+         (letrec ((a (list-nth node 1))
                 (pa (regexp-literal-prefix a)))
            (if (integer=? (string-length pa) (regexp-literal-length a))
                (string-concat pa (regexp-literal-prefix (list-nth node 2)))
@@ -520,7 +519,7 @@
    (compile
     (lambda (p)
       (if (string? p)
-          (let* ((parsed (regexp-parse-alt p 0 1))
+          (letrec ((parsed (regexp-parse-alt p 0 1))
                  (node (list-first parsed))
                  (groups (integer- (list-nth parsed 2) 1)))
             (if (integer=? (list-nth parsed 1) (string-length p))

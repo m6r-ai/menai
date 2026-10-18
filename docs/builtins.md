@@ -841,7 +841,7 @@ Vectors are NOT pattern-matchable and NOT hashable (cannot be set members or dic
 ## Structtype operations
 
 Structtype values are produced by `(struct (field1 field2 ...))` as the RHS of a
-`let`, `let*`, or `letrec` binding. The binding name becomes the type name.
+`let` or `letrec` binding. The binding name becomes the type name.
 
 ```menai
 (let ((point (struct (x y))))
@@ -967,7 +967,7 @@ See [Pattern matching — struct destructuring](pattern_matching.md#struct-destr
 ## Enumtype operations
 
 Enumtype values are produced by `(enum (variant1 variant2 ...))` as the RHS of a
-`let`, `let*`, or `letrec` binding. The binding name becomes the type name.
+`let` or `letrec` binding. The binding name becomes the type name.
 
 ```menai
 (let ((state (enum (idle running stopped))))

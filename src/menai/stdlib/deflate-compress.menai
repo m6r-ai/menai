@@ -251,7 +251,7 @@
       (let ((key (prefix-key b i)))
         (if (none? key)
             (list 0 0)
-            (let* ((candidates (table-get table key))
+            (letrec ((candidates (table-get table key))
                    (limit (integer-min max-match (integer- (bytes-length b) i))))
               (letrec ((loop
                         (lambda (cands best-len best-dist chain)
@@ -332,7 +332,7 @@
           (lambda (i table acc)
             (if (integer>=? i (bytes-length b))
                 (list-reverse acc)
-                (let* ((matched-item (find-match b i table))
+                (letrec ((matched-item (find-match b i table))
                        (len (list-first matched-item))
                        (dist (list-nth matched-item 1)))
                   (if (integer>=? len min-match)
@@ -406,7 +406,7 @@
                 (if (list-null? leaves)
                     (list-first internals)
                     (list-first leaves))
-                (let* ((p1 (pop-min leaves internals))
+                (letrec ((p1 (pop-min leaves internals))
                        (n1 (list-first p1))
                        (leaves1 (list-nth p1 1))
                        (internals1 (list-nth p1 2))
@@ -478,7 +478,7 @@
    (write-stored-block
     (lambda (w b start end final)
       (let ((w1 (write-block-header w final 0)))
-        (let* ((w2 (align-writer w1))
+        (letrec ((w2 (align-writer w1))
                (len (integer- end start))
                (w3 (write-bits w2 len 16))
                (w4 (write-bits w3 (integer-bit-and (integer-bit-not len) #xffff) 16))
@@ -496,7 +496,7 @@
                       (let ((tok (list-first toks)))
                         (if (string=? (list-first tok) "lit")
                             (loop (list-rest toks) (write-symbol st lit-codes (list-nth tok 1)))
-                            (let* ((len (list-nth tok 1))
+                            (letrec ((len (list-nth tok 1))
                                    (dist (list-nth tok 2))
                                    (le (encode-length len))
                                    (st2 (write-symbol st lit-codes (list-first le)))
@@ -537,7 +537,7 @@
                           (list-rest toks)
                           (bump lit-freqs (list-first le))
                           (bump dist-freqs (list-first de))))))))))
-        (let* ((result (loop tokens (dict-with (dict) 256 1) (dict)))
+        (letrec ((result (loop tokens (dict-with (dict) 256 1) (dict)))
                (lit-map (list-first result))
                (dist-map (list-nth result 1)))
           (list
@@ -656,8 +656,7 @@
                           (list-first (list-first lst))
                           (integer+ (dict-get acc (list-first (list-first lst)) 0) 1)))))))
         (let ((freq-map (count items (dict))))
-          (let*
-            ((cl-freqs
+          (letrec             ((cl-freqs
               (map-list
                 (lambda (i)
                   (dict-get freq-map i 0))
@@ -714,8 +713,7 @@
    (write-dynamic-block
     (lambda (w tokens final)
       (let ((freqs (count-frequencies tokens)))
-        (let*
-          ((lit-freqs (list-first freqs))
+        (letrec           ((lit-freqs (list-first freqs))
            (dist-freqs (list-nth freqs 1))
            (lit-lengths (clamp-lengths (build-code-lengths lit-freqs)))
            (dist-lengths (clamp-lengths (build-code-lengths dist-freqs)))

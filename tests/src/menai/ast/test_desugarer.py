@@ -611,9 +611,9 @@ class TestDesugarerShadowing:
         assert result == 999
 
     def test_shadowing_let_star_binding_is_not_rewritten(self, menai):
-        """A let* binding shadows a builtin for subsequent bindings and the body."""
+        """A letrec binding shadows a builtin for sibling bindings and the body."""
         result = menai.evaluate(
-            '(let* ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
+            '(letrec ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
         )
         assert result == 999
 

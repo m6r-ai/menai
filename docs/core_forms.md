@@ -24,7 +24,7 @@ means `y` cannot reference `x`:
 (let ((x 5) (y (integer* x 2))) ...)   ; ERROR: x is not in scope yet
 ```
 
-Use `let*` for sequential bindings where later bindings can reference earlier ones.
+Use `letrec` for sequential bindings where later bindings can reference earlier ones.
 
 ### Syntax
 
@@ -37,37 +37,11 @@ The body is a single expression. Use `let` for independent bindings.
 Binding names may not be reserved words — see
 [Syntax — Reserved words](syntax.md#reserved-words).
 
-## let\* — sequential bindings
-
-`let*` creates local bindings where each binding expression is evaluated in the scope
-of all previous bindings. Later bindings can reference earlier ones.
-
-```menai
-(let* ((x 5) (y (integer* x 2)))
-  (integer+ x y))
-→ 15
-```
-
-Shadowing works — a later binding can reuse a name from an earlier one:
-
-```menai
-(let* ((x 1) (x (integer+ x 10)))
-  x)
-→ 11
-```
-
-### Syntax
-
-```menai
-(let* ((name1 expr1) (name2 expr2) ...) body)
-```
-
-Use `let*` when a binding depends on a previous binding.
-
 ## letrec — recursive bindings
 
 `letrec` creates bindings where all names are in scope for all binding expressions.
-This enables self-recursion and mutual recursion.
+This enables self-recursion, mutual recursion, and sequential bindings where a
+binding depends on an earlier one.
 
 ```menai
 (letrec ((fact (lambda (n)
@@ -86,6 +60,21 @@ Mutual recursion:
   (even? 10))
 → #t
 ```
+
+### Sequential bindings
+
+Because every name is in scope for every binding expression, a later binding can
+reference an earlier one. This covers the case other Lisps spell `let*`:
+
+```menai
+(letrec ((x 5) (y (integer* x 2)))
+  (integer+ x y))
+→ 15
+```
+
+The dependency analyser orders the bindings, and any binding that does not
+actually participate in a cycle is hoisted to a `let` internally, so writing a
+sequential chain as `letrec` costs nothing at runtime.
 
 ### Struct definitions in letrec
 
@@ -126,14 +115,42 @@ functions:
 (letrec ((name1 expr1) (name2 expr2) ...) body)
 ```
 
-Use `letrec` when you need functions that reference themselves or each other.
+Use `letrec` when a binding depends on another binding in the same form, or when
+you need functions that reference themselves or each other.
+
+Binding names must be unique within one `letrec`. A repeated name is ambiguous
+rather than a shadow, because a recursive group defines each name once:
+
+```menai
+(letrec ((x 1) (x (integer+ x 10))) x)   ; ERROR: duplicate binding name
+```
+
+A `letrec` binding may shadow a name bound by an enclosing `let`, but a nested
+`letrec` cannot shadow a `letrec` binding of the same name — the inner group's own
+binding wins, so the reference becomes a self-reference. To pass an outer value
+down, bind it under a different name:
+
+```menai
+(letrec ((outer 1))
+  (letrec ((inner (integer+ outer 10)))
+    inner))
+→ 11
+```
+
+A non-lambda binding may not refer to itself, since its value would have nothing
+to read. Wrap the reference in a lambda to defer it:
+
+```menai
+(letrec ((x (integer+ x 1))) x)   ; ERROR: cannot refer to itself
+(letrec ((x (list (lambda () x)))) x)   ; OK: reference is deferred
+```
 
 ## No sequencing form
 
-Menai has no `begin` or sequencing form. All binding forms (`let`, `let*`,
-`letrec`) and `lambda` accept exactly one body expression. Because Menai is
+Menai has no `begin` or sequencing form. Both binding forms (`let`, `letrec`)
+and `lambda` accept exactly one body expression. Because Menai is
 pure, there are no side effects to sequence — if an intermediate result is
-unused, it is dead code and should be removed. Use `let*` for multi-step
+unused, it is dead code and should be removed. Use `letrec` for multi-step
 computations where each step depends on the previous one.
 
 ## lambda — anonymous functions
@@ -346,7 +363,7 @@ The message can be a computed string:
 ## import — load a module
 
 `import` loads a module as a namespace. It is a compile-time operation — the module
-is compiled once and cached. It is only valid as the value of a `let`/`let*`/`letrec`
+is compiled once and cached. It is only valid as the value of a `let`/`letrec`
 binding; access an export with member access. See [Modules](modules.md) for full
 details.
 

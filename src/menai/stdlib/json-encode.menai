@@ -55,7 +55,7 @@
    ; the exponent marker, which JSON does not allow.
    (encode-float
     (lambda (f)
-      (let* ((text (float->string f))
+      (letrec ((text (float->string f))
              (e-pos (find-exponent text)))
         (if (none? e-pos)
             text
@@ -107,8 +107,7 @@
                       (list->string (list-reverse (list-prepend acc "}")))
                       (let ((k (list-first keys)))
                         (if (string? k)
-                            (let*
-                              ((acc2
+                            (letrec                               ((acc2
                                 (if first
                                     acc
                                     (list-prepend acc ",")))

@@ -48,8 +48,7 @@
                               (if (string=? ch "\\")
                                   (if (integer>=? (integer+ i 1) len)
                                       (error "Unterminated escape sequence")
-                                      (let*
-                                        ((esc (string-nth s (integer+ i 1)))
+                                      (letrec                                         ((esc (string-nth s (integer+ i 1)))
 
                                          (chunks2
                                           (if (integer<? run-start i)
@@ -71,7 +70,7 @@
                                             (if (string=? esc "u")
                                                 (if (integer>? (integer+ i 6) len)
                                                     (error "Unterminated \\u escape sequence")
-                                                    (let* ((hex (string-slice s (integer+ i 2) (integer+ i 6)))
+                                                    (letrec ((hex (string-slice s (integer+ i 2) (integer+ i 6)))
                                                            (codepoint (string->integer hex 16)))
                                                       (if (none? codepoint)
                                                           (error "Invalid hex digits in \\u escape sequence")
@@ -105,7 +104,7 @@
 
    (parse-number
     (lambda (s pos)
-      (let* ((end (scan-number-end s pos (string-length s)))
+      (letrec ((end (scan-number-end s pos (string-length s)))
              (num-str (string-slice s pos end))
              (n (string->number num-str)))
         (if (none? n)
@@ -131,7 +130,7 @@
                 (rest-stack (list-rest stack)))
             (if (string=? (list-first frame) "array")
                 ; Resume array: frame = ("array" s acc) — acc is in reverse order
-                (let* ((s (list-nth frame 1))
+                (letrec ((s (list-nth frame 1))
                        (acc (list-nth frame 2))
                        (pos2 (skip-ws s pos)))
                   (if (integer>=? pos2 (string-length s))
@@ -146,7 +145,7 @@
                                   (list-prepend rest-stack (list "array" s (list-prepend acc val))))
                                 (error "Expected , or ] in array"))))))
                 ; Resume object: frame = ("object" s d key)
-                (let* ((s (list-nth frame 1))
+                (letrec ((s (list-nth frame 1))
                        (d (list-nth frame 2))
                        (key (list-nth frame 3))
                        (pos2 (skip-ws s pos)))
@@ -165,7 +164,7 @@
       (if (integer>=? pos (string-length s))
           (error "Unterminated object")
           (if (string=? (string-nth s pos) "\"")
-              (let* ((key-result (parse-string-chars s (integer+ pos 1) (list)))
+              (letrec ((key-result (parse-string-chars s (integer+ pos 1) (list)))
                      (key (list-first key-result))
                      (pos2 (skip-ws s (list-nth key-result 1))))
                 (if (integer>=? pos2 (string-length s))

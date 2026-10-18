@@ -334,7 +334,7 @@ class MenaiASTBuilder:
         """
         Detect a binding form whose bindings list closed before its last binding.
 
-        A binding form is ``(let* <bindings-list> <body>)``: exactly two forms
+        A binding form is ``(let <bindings-list> <body>)``: exactly two forms
         sit directly inside it, the bindings list and the body.  When a ``)``
         that should have closed a binding's value instead closes the bindings
         list, the forms that follow are read as further body expressions, and
@@ -704,7 +704,7 @@ class MenaiASTBuilder:
         The error points at the first unexpected expression.
 
         Args:
-            keyword: The binding form keyword ('let', 'let*', or 'letrec')
+            keyword: The binding form keyword ('let' or 'letrec').
             start_line: Line where the binding form started
             start_col: Column where the binding form started
 
@@ -725,7 +725,7 @@ class MenaiASTBuilder:
             ),
             suggestion=(
                 "Nest the extra expressions in a single body, for example "
-                f"({keyword} (...) (let* () expr1 expr2))"
+                f"({keyword} (...) (let () expr1 expr2))"
             ),
             source=self.expression,
             source_file=self.source_file,
@@ -749,7 +749,7 @@ class MenaiASTBuilder:
         not the form the parser happened to flag.
 
         Args:
-            keyword: The binding form keyword ('let', 'let*', or 'letrec').
+            keyword: The binding form keyword ('let' or 'letrec').
             start_line: Line where the binding form started.
             start_col: Column where the binding form started.
             close_line: Line of the ``)`` that closed the bindings list early.
@@ -808,7 +808,7 @@ class MenaiASTBuilder:
         # list that is data rather than a form: in (lambda (if) if) the (if) is a
         # parameter list, not an if form, and only the lambda path knows that.
         head = self.current_token
-        if head is not None and head.type == MenaiTokenType.SYMBOL and head.value in ('let', 'let*', 'letrec'):
+        if head is not None and head.type == MenaiTokenType.SYMBOL and head.value in ('let', 'letrec'):
             return self._parse_let_with_tracking(start_line, start_col, elements)
 
         if head is not None and head.type == MenaiTokenType.SYMBOL and head.value == 'match':
@@ -1502,10 +1502,10 @@ class MenaiASTBuilder:
 
     def _parse_let_bindings(self, keyword: str) -> MenaiASTList:
         """
-        Parse the bindings list of a let, let*, or letrec form with per-binding tracking.
+        Parse the bindings list of a let or letrec form with per-binding tracking.
 
         Args:
-            keyword: The binding form keyword ('let', 'let*', or 'letrec')
+            keyword: The binding form keyword ('let' or 'letrec').
         Returns:
             MenaiASTList of bindings
         """
@@ -1584,7 +1584,7 @@ class MenaiASTBuilder:
         that is not a list at all and one whose value is absent.
 
         Args:
-            keyword: The binding form keyword ('let', 'let*', or 'letrec').
+            keyword: The binding form keyword ('let' or 'letrec').
             binding_index: The binding's position in the bindings list (1-based).
             token: The token where the binding starts, or None at end of input.
 
@@ -1620,7 +1620,7 @@ class MenaiASTBuilder:
         Create an error for a binding whose name is not a symbol.
 
         Args:
-            keyword: The binding form keyword ('let', 'let*', or 'letrec').
+            keyword: The binding form keyword ('let' or 'letrec').
             binding_index: The binding's position in the bindings list (1-based).
             name_node: The node parsed where the name should have been.
 
@@ -1651,10 +1651,10 @@ class MenaiASTBuilder:
         prev_binding_end_column: int | None,
     ) -> MenaiASTList:
         """
-        Parse a single let, let*, or letrec binding with tracking.
+        Parse a single let or letrec binding with tracking.
 
         Args:
-            keyword: The binding form keyword ('let', 'let*', or 'letrec').
+            keyword: The binding form keyword ('let' or 'letrec').
             binding_index: The index of this binding (1-based)
             prev_binding_name: Name of the preceding binding, if any
             prev_binding_end_line: Line of the preceding binding's closing ')', if any
@@ -1862,13 +1862,13 @@ class MenaiASTBuilder:
         keyword: str
     ) -> MenaiASTBuildError:
         """
-        Create enhanced error when EOF is reached while parsing let/let*/letrec bindings.
+        Create enhanced error when EOF is reached while parsing let/letrec bindings.
 
         Args:
             parsed_bindings: List of successfully parsed bindings
             bindings_start_line: Line where bindings list started
             bindings_start_col: Column where bindings list started
-            keyword: The binding form keyword ('let', 'let*', or 'letrec')
+            keyword: The binding form keyword ('let' or 'letrec').
 
         Returns:
             MenaiASTBuildError with detailed context

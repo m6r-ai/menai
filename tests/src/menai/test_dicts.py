@@ -172,7 +172,7 @@ class TestDictSet:
     def test_dict_with_immutable(self, tool):
         """Test that dict-with doesn't modify original."""
         result = tool.evaluate('''
-            (let* ((original (dict "name" "Alice" "age" 30))
+            (letrec ((original (dict "name" "Alice" "age" 30))
                   (updated (dict-with original "age" 31)))
               (list (dict-get original "age") (dict-get updated "age")))
         ''')
@@ -322,7 +322,7 @@ class TestDictRemove:
     def test_dict_without_immutable(self, tool):
         """Test that dict-without doesn't modify original."""
         result = tool.evaluate('''
-            (let* ((original (dict "name" "Alice" "age" 30))
+            (letrec ((original (dict "name" "Alice" "age" 30))
                    (removed (dict-without original "age")))
               (list (dict-has? original "age") (dict-has? removed "age")))
         ''')
@@ -464,7 +464,7 @@ class TestDictWithFunctionalOperations:
     def test_filter_dict_values(self, tool):
         """Test filtering dict values."""
         result = tool.evaluate('''
-            (let* ((data (dict "a" 1 "b" 2 "c" 3 "d" 4)))
+            (letrec ((data (dict "a" 1 "b" 2 "c" 3 "d" 4)))
               (filter-list (lambda (v) (integer>? v 2)) (dict-values data)))
         ''')
         assert result == [3, 4]
@@ -480,7 +480,7 @@ class TestDictWithFunctionalOperations:
     def test_process_list_of_dicts(self, tool):
         """Test processing a list of dicts."""
         result = tool.evaluate('''
-            (let* ((people (list
+            (letrec ((people (list
                            (dict "name" "Alice" "age" 30)
                            (dict "name" "Bob" "age" 25)
                            (dict "name" "Carol" "age" 35))))
@@ -544,7 +544,7 @@ class TestDictComplexScenarios:
         """Test transforming dict through multiple operations."""
         result = tool.evaluate('''
             (let ((data (dict "a" 1 "b" 2 "c" 3)))
-              (let* ((with-d (dict-with data "d" 4))
+              (letrec ((with-d (dict-with data "d" 4))
                      (without-b (dict-without with-d "b"))
                      (updated-c (dict-with without-b "c" 30)))
                 updated-c))
@@ -554,7 +554,7 @@ class TestDictComplexScenarios:
     def test_merge_multiple_dicts(self, tool):
         """Test merging multiple dicts."""
         result = tool.evaluate('''
-            (let* ((defaults (dict "port" 8080 "host" "localhost"))
+            (letrec ((defaults (dict "port" 8080 "host" "localhost"))
                   (config (dict "port" 3000))
                   (overrides (dict "debug" #t)))
               (dict-merge (dict-merge defaults config) overrides))
@@ -564,7 +564,7 @@ class TestDictComplexScenarios:
     def test_convert_list_to_dict(self, tool):
         """Test building dict from list data."""
         result = tool.evaluate('''
-            (let* ((pairs (list (list "name" "Alice") (list "age" 30) (list "city" "NYC"))))
+            (letrec ((pairs (list (list "name" "Alice") (list "age" 30) (list "city" "NYC"))))
               (fold-list (lambda (acc pair)
                       (dict-with acc (list-first pair) (list-first (list-rest pair))))
                     (dict)
@@ -766,7 +766,7 @@ class TestDictFirstClass:
     def test_dict_in_list_of_constructors(self, tool):
         """dict can be stored alongside other functions in a list."""
         result = tool.evaluate(
-            '(let* ((constructors (list dict list))'
+            '(letrec ((constructors (list dict list))'
             '       (make-dict (list-first constructors))'
             '       (make-list (list-first (list-rest constructors))))'
             '  (list (dict? (make-dict "k" 1))'

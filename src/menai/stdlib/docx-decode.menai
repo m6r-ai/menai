@@ -89,7 +89,7 @@
    (add-relationship
     (lambda (rels child)
       (if (dict? child)
-          (let* ((attrs (dict-get child "attrs"))
+          (letrec ((attrs (dict-get child "attrs"))
                  (id (dict-get attrs "Id"))
                  (type (dict-get attrs "Type"))
                  (target (dict-get attrs "Target"))

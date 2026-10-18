@@ -169,22 +169,6 @@ class MenaiASTDependencyAnalyzer:
 
             return
 
-        if name == 'let*':
-            if len(expr.elements) == 3:
-                binding_list, body = expr.elements[1], expr.elements[2]
-                new_shadowed = shadowed
-                if isinstance(binding_list, MenaiASTList):
-                    for binding in binding_list.elements:
-                        if isinstance(binding, MenaiASTList) and len(binding.elements) == 2:
-                            self._scan_refs(binding.elements[1], targets, new_shadowed, refs)
-                            var = binding.elements[0]
-                            if isinstance(var, MenaiASTSymbol):
-                                new_shadowed = new_shadowed | frozenset({var.name})
-
-                self._scan_refs(body, targets, new_shadowed, refs)
-
-            return
-
         for elem in expr.elements:
             self._scan_refs(elem, targets, shadowed, refs)
 

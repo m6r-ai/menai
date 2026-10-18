@@ -72,16 +72,16 @@ class TestFunctional:
         assert menai.evaluate_and_format(expression) == expected
 
     def test_let_sequential_binding(self, menai, helpers):
-        """Test that let* bindings are sequential (later can reference earlier)."""
+        """Test that letrec bindings are sequential (later can reference earlier)."""
         helpers.assert_evaluates_to(
             menai,
-            '(let* ((x 5) (y (integer* x 2))) (integer+ x y))',
+            '(letrec ((x 5) (y (integer* x 2))) (integer+ x y))',
             '15'  # x=5, y=10, sum=15
         )
 
         helpers.assert_evaluates_to(
             menai,
-            '(let* ((a 3) (b (integer+ a 2)) (c (integer* b 2))) c)',
+            '(letrec ((a 3) (b (integer+ a 2)) (c (integer* b 2))) c)',
             '10'  # a=3, b=5, c=10
         )
 
@@ -478,7 +478,7 @@ class TestFunctional:
         """Test functions that take and return functions."""
         # Function composition
         compose_expr = '''
-        (let* ((compose (lambda (f g) (lambda (x) (f (g x)))))
+        (letrec ((compose (lambda (f g) (lambda (x) (f (g x)))))
                (double (lambda (x) (integer* x 2)))
                (square (lambda (x) (integer* x x)))
                (double-then-square (compose square double)))
@@ -488,7 +488,7 @@ class TestFunctional:
 
         # Curried functions
         curry_expr = '''
-        (let* ((add (lambda (x) (lambda (y) (integer+ x y))))
+        (letrec ((add (lambda (x) (lambda (y) (integer+ x y))))
                (add5 (add 5)))
           (add5 10))
         '''
@@ -606,7 +606,7 @@ class TestFunctional:
 
         # Pass functions as arguments
         apply_twice = '''
-        (let* ((apply-twice (lambda (f x) (f (f x))))
+        (letrec ((apply-twice (lambda (f x) (f (f x))))
                (increment (lambda (x) (integer+ x 1))))
           (apply-twice increment 5))
         '''
@@ -614,7 +614,7 @@ class TestFunctional:
 
         # Return functions from functions
         make_multiplier = '''
-        (let* ((make-multiplier (lambda (n) (lambda (x) (integer* x n))))
+        (letrec ((make-multiplier (lambda (n) (lambda (x) (integer* x n))))
                (times3 (make-multiplier 3)))
           (times3 7))
         '''
@@ -667,7 +667,7 @@ class TestFunctional:
         # More complex case: conditional nested lambdas in map
         helpers.assert_evaluates_to(
             menai,
-            '''(let* ((process-list (lambda (lst)
+            '''(letrec ((process-list (lambda (lst)
                                      (map-list (lambda (x) 
                                             (if (integer>? x 0)
                                                 ((lambda (y) (integer* y y)) x)

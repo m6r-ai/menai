@@ -123,7 +123,7 @@
 
                    (loop
                     (lambda (i row-acc rows-acc)
-                      (let* ((field-result (parse-field csv-string i delim))
+                      (letrec ((field-result (parse-field csv-string i delim))
                              (field (list-first field-result))
                              (pos (list-nth field-result 1))
                              (row (list-prepend row-acc field))

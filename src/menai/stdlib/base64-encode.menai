@@ -89,8 +89,7 @@
    (encode
     (lambda (b . rest)
       (if (bytes? b)
-          (let*
-            ((v
+          (letrec             ((v
               (if (list-null? rest)
                   (variant 'standard)
                   (list-first rest)))

@@ -217,7 +217,7 @@
    (decode
     (lambda (s . rest)
       (if (string? s)
-          (let* ((v
+          (letrec ((v
                   (if (list-null? rest)
                       (variant 'standard)
                       (list-first rest)))

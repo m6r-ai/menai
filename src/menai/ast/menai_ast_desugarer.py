@@ -243,7 +243,7 @@ class MenaiASTDesugarer:
         self.temp_counter = 0  # For generating unique temp variable names
 
         # Lexical scope for ordinary variable bindings, innermost frame last.
-        # Each frame is the set of names bound by one binder (let/let*/letrec/
+        # Each frame is the set of names bound by one binder (let/letrec/
         # lambda/match).  A name-based builtin rewrite must not fire when the
         # name is bound by any enclosing frame, because the binding shadows the
         # builtin/prelude function the rewrite assumes.
@@ -520,7 +520,7 @@ class MenaiASTDesugarer:
         # Lists need inspection - anything else does not
         if not isinstance(expr, MenaiASTList):
             # MenaiASTStruct nodes are already fully resolved — pass through as-is.
-            # A struct node only ever appears as a let/let*/letrec binding value,
+            # A struct node only ever appears as a let/letrec binding value,
             # and the binder registers its type name in the scope it introduces.
             return expr
 
@@ -550,10 +550,6 @@ class MenaiASTDesugarer:
 
             if name == 'letrec':
                 return self._desugar_letrec(expr)
-
-            if name == 'let*':
-                # Let* desugars to nested lets
-                return self._desugar_let_star(expr)
 
             if name == 'lambda':
                 return self._desugar_lambda(expr)
@@ -950,84 +946,6 @@ class MenaiASTDesugarer:
 
         return result
 
-    def _desugar_let_star(self, expr: MenaiASTList) -> MenaiASTNode:
-        """
-        Desugar let* expression to nested let expressions.
-
-        (let* ((x 1) (y (+ x 1)) (z (* y 2))) body)
-        =>
-        (let ((x 1))
-          (let ((y (+ x 1)))
-            (let ((z (* y 2)))
-              body)))
-        """
-        # Validation already done by semantic analyzer
-        assert len(expr.elements) == 3, "Let* expression should have exactly 3 elements (validated by semantic analyzer)"
-
-        _, bindings_list, body = expr.elements
-        assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list (validated by semantic analyzer)"
-
-        # let* has sequential semantics: binding i's value sees bindings 0..i-1,
-        # and the body sees all of them.  Desugar in forward order, pushing each
-        # binding's name before the next value.
-        desugared_bindings: list[tuple[MenaiASTNode, MenaiASTNode, MenaiASTList]] = []
-        namespace_count = 0
-        namespace_modules: list[tuple[tuple[str, MenaiASTNode], ...]] = []
-        for binding in bindings_list.elements:
-            assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2, \
-                "Binding should be a list with 2 elements (validated by semantic analyzer)"
-
-            var_name, value_expr = binding.elements
-            assert isinstance(var_name, MenaiASTSymbol)
-
-            # A namespace binding is compile-time only: it introduces a
-            # namespace scope frame but no runtime binding of its own.  The
-            # module's renamed bindings are emitted around the body below.
-            if isinstance(value_expr, MenaiASTNamespace):
-                self._push_namespace_scope({var_name.name: _namespace_binding(value_expr)})
-                namespace_modules.append(value_expr.bindings)
-                namespace_count += 1
-                continue
-
-            desugared_value = self.desugar(value_expr)
-            desugared_bindings.append((var_name, desugared_value, binding))
-
-            struct_node = self._struct_from_value(value_expr)
-            structs = {var_name.name: struct_node} if struct_node is not None else {}
-            self._push_scope({var_name.name}, structs)
-            enum_node = self._enum_from_value(value_expr)
-            enums = {var_name.name: enum_node} if enum_node is not None else {}
-            self._set_scope_enums(enums)
-
-        try:
-            result = self.desugar(body)
-
-        finally:
-            for _ in range(namespace_count):
-                self._pop_namespace_scope()
-
-            for _ in desugared_bindings:
-                self._pop_scope()
-
-        # Wrap in nested lets, processing bindings in reverse order so the
-        # outermost let is the first binding.
-        for var_name, desugared_value, binding in reversed(desugared_bindings):
-            result = self._make_list((
-                self._make_symbol('let', expr),
-                self._make_list((self._make_list((var_name, desugared_value), binding),), binding),
-                result
-            ), expr)
-
-        # The imported modules' renamed bindings wrap the whole let* chain, not
-        # just the body.  A let* binding value may reference a module member
-        # (its namespace is in scope by the time the value is desugared), so the
-        # module bindings must be visible to every binding value as well as the
-        # body.  Wrapping only the body would leave those references outside the
-        # scope that defines them.
-        result = self._wrap_namespace_modules(namespace_modules, result, expr)
-
-        return result
-
     def _desugar_lambda(self, expr: MenaiASTList) -> MenaiASTNode:
         """Desugar lambda expression by desugaring its body."""
         # Validation already done by semantic analyzer
@@ -1346,10 +1264,10 @@ class MenaiASTDesugarer:
         # Chain with 'and' for ordered comparisons
         body: MenaiASTNode = self._make_and(pairs, expr)
 
-        # Wrap in let* bindings from innermost outward
+        # Wrap in letrec bindings from innermost outward
         for temp, desugared_arg in reversed(list(zip(temps, desugared_args))):
             body = self._make_list((
-                self._make_symbol('let*', expr),
+                self._make_symbol('letrec', expr),
                 self._make_list((
                     self._make_list((self._make_symbol(temp, expr), desugared_arg), expr),
                 ), expr),
@@ -1370,7 +1288,7 @@ class MenaiASTDesugarer:
         prelude lambda and with _desugar_comparison_chain.
 
         For example, (integer=? a b c) becomes:
-            (let* ((t0 a) (t1 b) (t2 c))
+            (letrec ((t0 a) (t1 b) (t2 c))
               (and (integer=? t0 t1)
                    (integer=? t1 t2)))
 
@@ -1408,10 +1326,10 @@ class MenaiASTDesugarer:
             body: MenaiASTNode = (self._make_and(pairs, expr) if check_eq
                                   else self._make_or(pairs, expr))
 
-            # Wrap arg values in let* bindings (innermost first)
+            # Wrap arg values in letrec bindings (innermost first)
             for temp, desugared_arg in reversed(list(zip(temps, desugared_args))):
                 body = self._make_list((
-                    self._make_symbol('let*', expr),
+                    self._make_symbol('letrec', expr),
                     self._make_list((
                         self._make_list((self._make_symbol(temp, expr), desugared_arg), expr),
                     ), expr),
@@ -1464,7 +1382,7 @@ class MenaiASTDesugarer:
         match_logic = self._build_match_clauses(temp_var, clauses)
         self._check_match_size(match_logic, expr)
         result = MenaiASTList((
-            MenaiASTSymbol('let*'),
+            MenaiASTSymbol('letrec'),
             MenaiASTList((
                 MenaiASTList((MenaiASTSymbol(temp_var), desugared_value)),
             )),
@@ -1858,7 +1776,7 @@ class MenaiASTDesugarer:
         if isinstance(test_expr, MenaiASTBoolean) and test_expr.value:
             if bindings:
                 return MenaiASTList((
-                    MenaiASTSymbol('let*'),
+                    MenaiASTSymbol('letrec'),
                     MenaiASTList(tuple(MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in bindings)),
                     result_expr
                 ))
@@ -1869,7 +1787,7 @@ class MenaiASTDesugarer:
             binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in bindings]
 
             then_expr: MenaiASTNode = MenaiASTList((
-                MenaiASTSymbol('let*'),
+                MenaiASTSymbol('letrec'),
                 MenaiASTList(tuple(binding_list)),
                 result_expr
             ))
@@ -2276,7 +2194,7 @@ class MenaiASTDesugarer:
             if pattern_bindings:
                 binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in pattern_bindings]
                 pattern_let: MenaiASTNode = MenaiASTList((
-                    MenaiASTSymbol('let*'),
+                    MenaiASTSymbol('letrec'),
                     MenaiASTList(tuple(binding_list)),
                     result_expr
                 ))
@@ -2297,7 +2215,7 @@ class MenaiASTDesugarer:
             if pattern_bindings:
                 binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in pattern_bindings]
                 inner_if = MenaiASTList((
-                    MenaiASTSymbol('let*'),
+                    MenaiASTSymbol('letrec'),
                     MenaiASTList(tuple(binding_list)),
                     result_expr
                 ))
@@ -2308,7 +2226,7 @@ class MenaiASTDesugarer:
         # Wrap in element extraction let
         extraction_binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in extraction_bindings]
         extraction_let = MenaiASTList((
-            MenaiASTSymbol('let*'),
+            MenaiASTSymbol('letrec'),
             MenaiASTList(tuple(extraction_binding_list)),
             inner_if
         ))

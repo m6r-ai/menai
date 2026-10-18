@@ -23,7 +23,7 @@
                                    (dict-keys d))))
                             (string-concat "{" (list->string pair-strings ", ") "}")))
                          (_ "?unknown?")))))
-             (let* ((content (dict-get inputs "content"))
+             (letrec ((content (dict-get inputs "content"))
                     (parsed ((:: json-decoder decode) content))
                     (result (value->string parsed)))
                (dict "result" result))))))

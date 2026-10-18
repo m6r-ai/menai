@@ -51,7 +51,7 @@
 
    (move-U
     (lambda (cube)
-      (let* ((u (struct-get cube 'U))
+      (letrec ((u (struct-get cube 'U))
              (f (struct-get cube 'F))
              (r (struct-get cube 'R))
              (b (struct-get cube 'B))
@@ -102,7 +102,7 @@
 
    (move-D
     (lambda (cube)
-      (let* ((d (struct-get cube 'D))
+      (letrec ((d (struct-get cube 'D))
              (f (struct-get cube 'F))
              (r (struct-get cube 'R))
              (b (struct-get cube 'B))
@@ -153,7 +153,7 @@
 
    (move-F
     (lambda (cube)
-      (let* ((f (struct-get cube 'F))
+      (letrec ((f (struct-get cube 'F))
              (u (struct-get cube 'U))
              (r (struct-get cube 'R))
              (d (struct-get cube 'D))
@@ -204,7 +204,7 @@
 
    (move-B
     (lambda (cube)
-      (let* ((b (struct-get cube 'B))
+      (letrec ((b (struct-get cube 'B))
              (u (struct-get cube 'U))
              (l (struct-get cube 'L))
              (d (struct-get cube 'D))
@@ -255,7 +255,7 @@
 
    (move-L
     (lambda (cube)
-      (let* ((l (struct-get cube 'L))
+      (letrec ((l (struct-get cube 'L))
              (u (struct-get cube 'U))
              (f (struct-get cube 'F))
              (d (struct-get cube 'D))
@@ -306,7 +306,7 @@
 
    (move-R
     (lambda (cube)
-      (let* ((r (struct-get cube 'R))
+      (letrec ((r (struct-get cube 'R))
              (u (struct-get cube 'U))
              (b (struct-get cube 'B))
              (d (struct-get cube 'D))
@@ -499,7 +499,7 @@
             (if (boolean? best-threshold)
                 (integer+ bound 1)
                 best-threshold))
-          (let* ((move (list-first moves))
+          (letrec ((move (list-first moves))
                  (new-cube (apply-move cube move))
                  (new-path (list-concat path (list move)))
                  (result (ida-search new-cube bound (integer+ g 1) move new-path)))

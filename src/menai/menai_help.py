@@ -285,7 +285,7 @@ Syntax: (operator arg1 arg2 ...)
 ## Structs:
 
 - Nominal typed record values — two struct types with the same fields are distinct types
-- Declaration: (struct (field1 field2 ...)) — valid as the RHS of a let, let*, or letrec binding
+- Declaration: (struct (field1 field2 ...)) — valid as the RHS of a let or letrec binding
 - A struct definition produces a structtype value (a type descriptor), not a struct instance
 - (let ((point (struct (x y)))) ...) → binds point to a structtype value; the binding name becomes the type name
 - Construction: call the structtype value directly with positional field values: (point 1 2) → a point instance
@@ -311,7 +311,7 @@ Syntax: (operator arg1 arg2 ...)
 ## Enums:
 
 - Nominal, closed sets of named variants, compared for identity only — two enum types with the same variant names are distinct types
-- Declaration: (enum (variant1 variant2 ...)) — valid as the RHS of a let, let*, or letrec binding; at least one variant is required and variant names must be unique
+- Declaration: (enum (variant1 variant2 ...)) — valid as the RHS of a let or letrec binding; at least one variant is required and variant names must be unique
 - An enum definition produces an enumtype value (a type descriptor), not an enum instance
 - (let ((state (enum (idle running stopped)))) ...) → binds state to an enumtype value; the binding name becomes the type name
 - Construction: call the enumtype value with a quoted variant name: (state 'idle) → a state value at variant idle
@@ -462,18 +462,18 @@ Syntax: (operator arg1 arg2 ...)
 
 - (let ((var1 val1) (var2 val2) ...) body) → parallel binding (bindings independent)
 - (let ((x 5) (y 10)) (integer+ x y)) → 15 (x and y don't reference each other)
-- Bindings in let cannot reference each other; use let* for sequential bindings
-- (let* ((var1 val1) (var2 val2) ...) body) → sequential binding
-- (let* ((x 5) (y (integer* x 2))) (integer+ x y)) → 15 (y can reference x)
-- (let* ((x 1) (x (integer+ x 10))) x) → 11 (shadowing works in let*)
-- Use let for independent bindings, let* for sequential dependencies
-- All binding forms (let, let*, letrec) and lambda accept exactly one body expression; there is no begin or sequencing form — nest let* for multi-step computations
-- Menai has no define special form; all variable bindings use let, let*, or letrec; use letrec for self-recursive or mutually recursive functions
+- Bindings in let cannot reference each other
+- (letrec ((var1 val1) (var2 val2) ...) body) → recursive binding; every binding name is in scope for every binding value and for the body
+- (letrec ((x 5) (y (integer* x 2))) (integer+ x y)) → 15 (y can reference x)
+- letrec binding names must be unique; nest letrec forms to shadow a name
+- Use let for independent bindings, letrec for sequential dependencies or recursion
+- All binding forms (let, letrec) and lambda accept exactly one body expression; there is no begin or sequencing form — nest letrec for multi-step computations
+- Menai has no define special form; all variable bindings use let or letrec; use letrec for self-recursive or mutually recursive functions
 
 ## Reserved words
 
-- These names are syntax, not names, and cannot be used as binding names: :: if let let* letrec lambda quote match and or import struct enum export apply : .
-- A reserved word is rejected wherever a binding name may appear: let/let*/letrec bindings, lambda parameters (including the rest parameter), match pattern variables, struct and enum type names
+- These names are syntax, not names, and cannot be used as binding names: :: if let letrec lambda quote match and or import struct enum export apply : .
+- A reserved word is rejected wherever a binding name may appear: let/letrec bindings, lambda parameters (including the rest parameter), match pattern variables, struct and enum type names
 - A form headed by a reserved word is always interpreted as that form, so a binding of the same name could never be referenced
 - Use a different name; e.g. bind a value to `value` rather than to `let`
 
@@ -512,7 +512,7 @@ Syntax: (operator arg1 arg2 ...)
 
 - (import "module-name") → load a module as a namespace (compile-time operation)
 - A module is a .menai file whose body ends with (export name1 name2 ...), naming the bindings it exports
-- import is only valid as the value of a let/let*/letrec binding; bind it to a name and access its members
+- import is only valid as the value of a let/letrec binding; bind it to a name and access its members
 - Member access: (:: namespace member) → the value of that export, resolved at compile time
 - Namespaces are second-class: a namespace name may only be bound and then used as the first argument of ::; it cannot be passed, stored, returned, or called as a function
 - Example module (math_utils.menai):

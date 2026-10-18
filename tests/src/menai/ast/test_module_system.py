@@ -337,11 +337,11 @@ class TestImportBindingPosition:
         assert "binding" in str(exc_info.value).lower()
 
 
-class TestModuleMemberInLetStarBindingValue:
-    """Test that a module member may be referenced from a let* binding value."""
+class TestModuleMemberInLetrecBindingValue:
+    """Test that a module member may be referenced from a letrec binding value."""
 
-    def test_member_used_in_let_star_binding_value(self, tmp_path):
-        """A let* binding value may reference a member of an imported module."""
+    def test_member_used_in_letrec_binding_value(self, tmp_path):
+        """A letrec binding value may reference a member of an imported module."""
         (tmp_path / "math_utils.menai").write_text("""
 (let ((square (lambda (x) (integer* x x))))
   (export square))
@@ -349,7 +349,7 @@ class TestModuleMemberInLetStarBindingValue:
         menai = Menai(module_path=[str(tmp_path)])
 
         result = menai.evaluate('''
-(let* ((math (import "math_utils"))
+(letrec ((math (import "math_utils"))
        (square (:: math square))
        (n (square 5)))
   n)
@@ -964,11 +964,11 @@ class TestDirectModuleCompilation:
         assert set(direct.keys()) == {"square"}
         assert imported == 25
 
-    def test_module_with_let_star_evaluates_to_dict(self, tmp_path):
-        """A directly-compiled let*-based module evaluates to a dict of exports."""
-        module_file = tmp_path / "let_star.menai"
+    def test_module_with_letrec_evaluates_to_dict(self, tmp_path):
+        """A directly-compiled letrec-based module evaluates to a dict of exports."""
+        module_file = tmp_path / "letrec_module.menai"
         module_file.write_text("""
-(let* ((x 10)
+(letrec ((x 10)
        (y (integer+ x 5)))
   (export x y))
 """)

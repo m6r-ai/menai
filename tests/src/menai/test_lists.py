@@ -651,7 +651,7 @@ class TestLongListFree:
         # list-rest shares the tail of the original list; freeing both must
         # correctly account for the shared cells.
         result = menai.evaluate(
-            "(let* ((xs (map-list (lambda (i) i) (range 0 100000)))"
+            "(letrec ((xs (map-list (lambda (i) i) (range 0 100000)))"
             "       (ys (list-rest xs)))"
             "  (list (list-length xs) (list-length ys)))"
         )

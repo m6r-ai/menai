@@ -77,7 +77,7 @@ words, sorted by frequency:
 
    (top-words
     (lambda (text n)
-      (let* ((words (string->list (string-downcase text) " "))
+      (letrec ((words (string->list (string-downcase text) " "))
              (counts (count-words words))
              (pairs (sort-list
                        (lambda (a b) (integer>? (list-get a 1) (list-get b 1)))

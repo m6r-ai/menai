@@ -63,8 +63,7 @@
    (compress
     (lambda (b . rest)
       (if (bytes? b)
-          (let*
-            ((block-mode
+          (letrec             ((block-mode
               (if (list-null? rest)
                   (mode 'auto)
                   (list-first rest)))

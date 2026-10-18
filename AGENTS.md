@@ -404,7 +404,7 @@ The desugarer lowers a call by name: `(integer+ a b)` becomes `($integer+ a b)`,
 `(list-length x)` becomes `($list-length x)`, and so on. The semantic analyser
 likewise validates call arity against the builtin registry by name. Both
 must first check whether the name is bound by an enclosing lexical binder
-(`let`/`let*`/`letrec`/`lambda`/`match`); if it is, the call refers to the user's
+(`let`/`letrec`/`lambda`/`match`); if it is, the call refers to the user's
 binding and neither the rewrite nor the arity check may fire. Both passes track
 this with a scope stack.
 
@@ -446,7 +446,7 @@ dict mapping each export name to its value. Both paths go through the resolver, 
 desugarer only ever sees a genuinely stray `export` (one that is not a module body) and
 rejects it.
 
-A namespace is second-class: it may only be bound directly by a `let`/`let*`/`letrec`
+A namespace is second-class: it may only be bound directly by a `let`/`letrec`
 binding and used as the first argument of `::`. It cannot be passed, stored, returned,
 or called as a function. This restriction is what guarantees every member access is
 statically resolvable.
@@ -777,7 +777,7 @@ See [ADR-0050](docs/adr/0050-xlsx-codec-ooxml-capture-layer.md).
 ### Enums are bare-tag, and the bare-tag form must not foreclose payloads
 
 An `enum` is a nominal, closed set of named variants, compared for identity only.
-It is declared with `(enum (variant ...))` as the RHS of a `let`/`let*`/`letrec`
+It is declared with `(enum (variant ...))` as the RHS of a `let`/`letrec`
 binding, producing an **enumtype** value that mirrors structtype; the enumtype is
 callable, and `(state 'idle)` constructs a value. A `match` names the enumtype as the
 pattern head and the variant as a quoted symbol: `((: state 'idle) ...)`. Variants are
@@ -872,7 +872,7 @@ each remaining argument on its own line aligned under the first argument — exc
 list with two or more arguments of which any is a nested form, which instead breaks
 after the head and indents every argument by two (so a single nested argument does
 not leave the rest aligned under a wide head), and except the five special forms
-(`lambda`, `let`, `let*`, `letrec`, `match`), which indent their trailing elements
+(`lambda`, `let`, `letrec`, `match`), which indent their trailing elements
 by two, and bindings, which put the value on the next line
 at the name's column. A multi-line binding is separated from the next binding by a
 blank line (before any comment that precedes it) and from the previous binding by
@@ -880,7 +880,7 @@ one too; single-line bindings are not separated.
 A multi-line `dict` is the general-list rule with arguments grouped in pairs:
 each key/value pair goes on its own line, aligned under the first key.
 
-A compound form (`if`, `let`, `let*`, `letrec`) with a nested body is multi-line
+A compound form (`if`, `let`, `letrec`) with a nested body is multi-line
 wherever it appears, including as a binding's value, so the same form never renders
 compact in one position and expanded in another.
 

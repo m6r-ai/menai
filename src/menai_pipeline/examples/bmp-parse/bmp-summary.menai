@@ -18,7 +18,7 @@
               (grid->string
                (lambda (pixels)
                  (list->string (map-list row->string (vector->list pixels)) "\n"))))
-             (let* ((content (dict-get inputs "content"))
+             (letrec ((content (dict-get inputs "content"))
                     (parsed ((:: bmp-decoder decode) content))
                     (header (dict-get parsed "header"))
                     (meta (dict-get parsed "meta")))

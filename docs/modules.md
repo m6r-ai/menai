@@ -17,7 +17,7 @@ form, which must be the final form of the module body:
 (export name1 name2 ...)
 ```
 
-Each name must be a binding the module defines (by an enclosing `let`, `let*`, or
+Each name must be a binding the module defines (by an enclosing `let` or
 `letrec`). A binding not named in the `export` form is private to the module.
 
 ### Example module: `math_utils.menai`
@@ -47,7 +47,7 @@ An `export` form that is not the body of a module is a compile-time error.
 ## Importing a module
 
 `(import "module-name")` loads a module as a **namespace**. Import is a
-compile-time operation, and it is only valid as the value of a `let`, `let*`, or
+compile-time operation, and it is only valid as the value of a `let` or
 `letrec` binding:
 
 ```menai
@@ -65,7 +65,7 @@ compiler keeps full static knowledge of it.
 A namespace is a compile-time construct, not an ordinary value. A namespace name
 may only be:
 
-- bound directly by a `let`/`let*`/`letrec` binding whose value is an `import`, and
+- bound directly by a `let`/`letrec` binding whose value is an `import`, and
 - used as the first argument of a member access, `(:: namespace member)`.
 
 Using a namespace name anywhere else — passing it to a function, storing it in a

@@ -2011,7 +2011,7 @@
             (let ((n ($list-length lst)))
               (if ($integer<=? n 1)
                   lst
-                  (let* ((mid ($integer/ n 2))
+                  (letrec ((mid ($integer/ n 2))
                          (left (sort cmp ($list-slice lst 0 mid)))
                          (right (sort cmp ($list-slice lst mid n))))
                     (merge cmp left right (list))))))))
@@ -2023,7 +2023,7 @@
                 (lambda (keys acc)
                   (if ($list-null? keys)
                       acc
-                      (let* ((k ($list-first keys))
+                      (letrec ((k ($list-first keys))
                              (v ($dict-get al k #none)))
                         (loop ($list-rest keys) ($dict-with acc k (f k v))))))))
         (loop ($dict-keys al) (dict)))))
@@ -2034,7 +2034,7 @@
                 (lambda (keys acc)
                   (if ($list-null? keys)
                       acc
-                      (let* ((k ($list-first keys))
+                      (letrec ((k ($list-first keys))
                              (v ($dict-get al k #none)))
                         (if (pred k v)
                             (loop ($list-rest keys) ($dict-with acc k v))

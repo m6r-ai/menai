@@ -12,7 +12,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test simple dependency analysis in let bindings."""
         # Simple sequential dependency
         result = menai.evaluate("""
-        (let* ((x 5)
+        (letrec ((x 5)
                (y (integer+ x 3)))
           (integer+ x y))
         """)
@@ -20,7 +20,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Multiple dependencies
         result = menai.evaluate("""
-        (let* ((a 2)
+        (letrec ((a 2)
                (b (integer* a 3))
                (c (integer+ a b)))
           c)
@@ -31,7 +31,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test complex dependency chains."""
         # Long dependency chain
         result = menai.evaluate("""
-        (let* ((a 1)
+        (letrec ((a 1)
                (b (integer+ a 1))
                (c (integer+ b 1))
                (d (integer+ c 1))
@@ -42,7 +42,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Branching dependencies
         result = menai.evaluate("""
-        (let* ((base 10)
+        (letrec ((base 10)
                (left (integer* base 2))
                (right (integer* base 3))
                (sum (integer+ left right)))
@@ -54,7 +54,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with function calls."""
         # Dependencies involving function calls
         result = menai.evaluate("""
-        (let* ((x 4.0)
+        (letrec ((x 4.0)
                (y (float->integer (float-sqrt x)))
                (z (integer* y y)))
           z)
@@ -63,7 +63,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Complex function dependencies
         result = menai.evaluate("""
-        (let* ((angle (float* pi 0.5))
+        (letrec ((angle (float* pi 0.5))
                (sin-val (float-sin angle))
                (cos-val (float-cos angle))
                (sum (float+ sin-val cos-val)))
@@ -75,7 +75,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with conditional expressions."""
         # Dependencies in conditional branches
         result = menai.evaluate("""
-        (let* ((flag #t)
+        (letrec ((flag #t)
                (x 10)
                (result (if flag (integer+ x 5) (integer- x 5))))
           result)
@@ -84,7 +84,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Complex conditional dependencies
         result = menai.evaluate("""
-        (let* ((a 5)
+        (letrec ((a 5)
                (b 3)
                (condition (integer>? a b))
                (result (if condition (integer* a b) (integer+ a b))))
@@ -96,7 +96,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with lambda functions."""
         # Lambda capturing variables from let bindings
         result = menai.evaluate("""
-        (let* ((multiplier 3)
+        (letrec ((multiplier 3)
                (f (lambda (x) (integer* x multiplier)))
                (result (f 4)))
           result)
@@ -105,7 +105,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Complex lambda dependencies
         result = menai.evaluate("""
-        (let* ((base 10)
+        (letrec ((base 10)
                (adder (lambda (x) (integer+ x base)))
                (doubler (lambda (x) (integer* x 2)))
                (composer (lambda (x) (doubler (adder x))))
@@ -118,7 +118,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with list operations."""
         # List dependencies
         result = menai.evaluate("""
-        (let* ((base-list (list 1 2 3))
+        (letrec ((base-list (list 1 2 3))
               (extended (list-concat base-list (list 4 5)))
               (length-val (list-length extended)))
           length-val)
@@ -127,7 +127,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Complex list processing
         result = menai.evaluate("""
-        (let* ((numbers (list 1 2 3 4 5))
+        (letrec ((numbers (list 1 2 3 4 5))
                (doubled (map-list (lambda (x) (integer* x 2)) numbers))
                (sum (fold-list integer+ 0 doubled)))
           sum)
@@ -138,7 +138,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with string operations."""
         # String processing dependencies
         result = menai.evaluate("""
-        (let* ((first-name "John")
+        (letrec ((first-name "John")
                (last-name "Doe")
                (full-name (string-concat first-name " " last-name))
                (length-val (string-length full-name)))
@@ -148,7 +148,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Complex string transformations
         result = menai.evaluate("""
-        (let* ((text "hello world")
+        (letrec ((text "hello world")
                (upper-text (string-upcase text))
                (words (string->list upper-text " "))
                (count (list-length words)))
@@ -161,7 +161,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         # Undefined variable in dependency
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (let* ((x undefined-var)
+            (letrec ((x undefined-var)
                    (y (integer+ x 1)))
               y)
             """)
@@ -171,7 +171,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         try:
             # This might be allowed or might cause an error
             result = menai.evaluate("""
-            (let* ((x (integer+ y 1))
+            (letrec ((x (integer+ y 1))
                    (y (integer+ x 1)))
               x)
             """)
@@ -185,7 +185,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         # Nested let with dependencies
         result = menai.evaluate("""
         (let ((outer 10))
-          (let* ((inner (integer+ outer 5))
+          (letrec ((inner (integer+ outer 5))
                  (combined (integer+ outer inner)))
             combined))
         """)
@@ -206,7 +206,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with higher-order functions."""
         # Map with dependencies
         result = menai.evaluate("""
-        (let* ((base 5)
+        (letrec ((base 5)
                (numbers (list 1 2 3))
                (add-base (lambda (x) (integer+ x base)))
                (results (map-list add-base numbers)))
@@ -216,7 +216,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Filter with dependencies
         result = menai.evaluate("""
-        (let* ((threshold 2)
+        (letrec ((threshold 2)
                (numbers (list 1 2 3 4 5))
                (filtered (filter-list (lambda (x) (integer>? x threshold)) numbers))
                (count (list-length filtered)))
@@ -228,7 +228,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis performance with complex cases."""
         # Many variables with dependencies
         many_deps = """
-        (let* (""" + "\n".join(
+        (letrec (""" + "\n".join(
             f"(var{i} {i})" if i == 0 else f"(var{i} (integer+ var{i-1} 1))"
             for i in range(20)
         ) + """)
@@ -241,7 +241,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         # a=1, b=2, c=3, d=5, e=6, f=11, g=6, h=5.5, sum=11.5
         # f/2 is float division since result is 5.5
         complex_deps = """
-        (let* ((a 1)
+        (letrec ((a 1)
                (b (integer+ a 1))
                (c (integer+ a 2))
                (d (integer+ b c))
@@ -260,7 +260,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         try:
             # Recursive function definition
             result = menai.evaluate("""
-            (let* ((factorial (lambda (n)
+            (letrec ((factorial (lambda (n)
                                (if (integer<=? n 1)
                                    1
                                    (integer* n (factorial (integer- n 1))))))
@@ -277,7 +277,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         try:
             # Pattern matching with dependencies
             result = menai.evaluate("""
-            (let* ((value 42)
+            (letrec ((value 42)
                    (result (match value
                              ((? number? n) (integer+ n 10))
                              (_ 0))))
@@ -292,7 +292,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with closures."""
         # Closure capturing multiple variables
         result = menai.evaluate("""
-        (let* ((x 10)
+        (letrec ((x 10)
                (y 20)
                (f (lambda (z) (integer+ x y z)))
                (result (f 5)))
@@ -302,7 +302,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Nested closures with dependencies
         result = menai.evaluate("""
-        (let* ((base 5)
+        (letrec ((base 5)
               (multiplier 3)
               (make-func (lambda (offset)
                           (lambda (x)
@@ -317,7 +317,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test that dependency analysis works with side-effect-free operations."""
         # Mathematical operations
         result = menai.evaluate("""
-        (let* ((x 2)
+        (letrec ((x 2)
                (squared (integer* x x))
                (cubed (integer* squared x))
                (sum (integer+ x squared cubed)))
@@ -327,7 +327,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # String operations
         result = menai.evaluate("""
-        (let* ((base "hello")
+        (letrec ((base "hello")
                (upper (string-upcase base))
                (length-val (string-length upper))
                (doubled (integer* length-val 2)))
@@ -339,7 +339,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with type conversions."""
         # Number/string conversions
         result = menai.evaluate("""
-        (let* ((num 42)
+        (letrec ((num 42)
                (str (integer->string num))
                (back-to-num (string->number str))
                (doubled (integer* back-to-num 2)))
@@ -349,7 +349,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Complex type conversion chain
         result = menai.evaluate("""
-        (let* ((numbers (list 1 2 3))
+        (letrec ((numbers (list 1 2 3))
                (strings (map-list integer->string numbers))
                (joined (list->string strings ","))
                (length-val (string-length joined)))
@@ -361,7 +361,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with boolean operations."""
         # Boolean logic dependencies
         result = menai.evaluate("""
-        (let* ((a #t)
+        (letrec ((a #t)
                (b #f)
                (and-result (and a b))
                (or-result (or a b))
@@ -372,7 +372,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
 
         # Complex boolean expressions
         result = menai.evaluate("""
-        (let* ((x 5)
+        (letrec ((x 5)
                (y 3)
                (greater (integer>? x y))
                (equal (integer=? x y))
@@ -385,7 +385,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with arithmetic sequences."""
         # Arithmetic progression
         result = menai.evaluate("""
-        (let* ((start 2)
+        (letrec ((start 2)
                (diff 3)
                (term1 start)
                (term2 (integer+ term1 diff))
@@ -401,7 +401,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with list comprehension style operations."""
         # List processing pipeline
         result = menai.evaluate("""
-        (let* ((numbers (range 1 6))
+        (letrec ((numbers (range 1 6))
                (evens (filter-list (lambda (x) (integer=? (integer% x 2) 0)) numbers))
                (squares (map-list (lambda (x) (integer* x x)) evens))
                (sum (fold-list integer+ 0 squares)))
@@ -435,7 +435,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         # Error in dependency chain
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (let* ((a 5)
+            (letrec ((a 5)
                    (b (integer/ a 0))
                    (c (integer+ b 1)))
               c)
@@ -448,7 +448,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         # by the IR optimizer.  The division-by-zero in `bad` therefore never
         # executes, and the expression correctly returns 42.
         result = menai.evaluate("""
-        (let* ((good 42)
+        (letrec ((good 42)
                (bad (integer/ 1 0))
                (dependent (integer+ bad 1)))
           good)
@@ -459,7 +459,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis memory efficiency."""
         # Large dependency graph
         large_graph = """
-        (let* (""" + "\n".join([
+        (letrec (""" + "\n".join([
             f"(base{i} {i})" for i in range(10)
         ] + [
             f"(derived{i} (integer+ base{i} base{(i+1)%10}))" for i in range(10)
@@ -476,7 +476,7 @@ class TestMenaiDependencyAnalyzerEdgeCases:
         """Test dependency analysis with functional composition."""
         # Function composition chain
         result = menai.evaluate("""
-        (let* ((add1 (lambda (x) (integer+ x 1)))
+        (letrec ((add1 (lambda (x) (integer+ x 1)))
                (mul2 (lambda (x) (integer* x 2)))
                (sub3 (lambda (x) (integer- x 3)))
                (compose (lambda (f g) (lambda (x) (f (g x)))))

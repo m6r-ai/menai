@@ -488,7 +488,7 @@ class TestInliningIntegration:
 
         m = Menai()
         result = m.evaluate("""
-            (let* ((add1 (lambda (x) (integer+ x 1)))
+            (letrec ((add1 (lambda (x) (integer+ x 1)))
                    (mul2 (lambda (x) (integer* x 2)))
                    (compose (lambda (f g) (lambda (x) (f (g x)))))
                    (func1 (compose mul2 add1)))

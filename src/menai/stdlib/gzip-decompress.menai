@@ -65,8 +65,7 @@
    ; against the header bytes that precede it.
    (skip-optional-fields
     (lambda (b flg)
-      (let*
-        ((after-extra
+      (letrec         ((after-extra
           (if (integer=? (integer-bit-and flg #x04) 0)
               header-size
               (if (integer>? (integer+ header-size 2) (bytes-length b))
@@ -108,7 +107,7 @@
       (if (bytes? b)
           (if (integer<? (bytes-length b) 18)
               (error "Not a gzip stream: too short")
-              (let* ((flg (check-fixed-header b))
+              (letrec ((flg (check-fixed-header b))
                      (data-start (skip-optional-fields b flg))
                      (decompress (:: deflate-lib decompress))
                      (data (decompress (bytes-slice b data-start (integer- (bytes-length b) 8))))

@@ -44,8 +44,7 @@
    ; Uses Zeller's congruence algorithm
    (day-of-week
     (lambda (date-str)
-      (let*
-        ((date (parse-date date-str))
+      (letrec         ((date (parse-date date-str))
          (year (list-nth date 0))
          (month (list-nth date 1))
          (day (list-nth date 2))
@@ -105,7 +104,7 @@
    ; Check if a specific date is a working day
    (is-working-day?
     (lambda (date-str cal)
-      (let* ((dow (day-of-week date-str))
+      (letrec ((dow (day-of-week date-str))
              (dow-name (day-name dow)))
         (and (is-working-day-of-week? dow-name cal)
              (boolean-not (is-holiday? date-str cal))))))
@@ -144,7 +143,7 @@
    ; Add one calendar day to a date
    (add-one-day
     (lambda (date-str)
-      (let* ((date (parse-date date-str))
+      (letrec ((date (parse-date date-str))
              (year (list-nth date 0))
              (month (list-nth date 1))
              (day (list-nth date 2))
@@ -161,7 +160,7 @@
    ; Subtract one calendar day from a date
    (subtract-one-day
     (lambda (date-str)
-      (let* ((date (parse-date date-str))
+      (letrec ((date (parse-date date-str))
              (year (list-nth date 0))
              (month (list-nth date 1))
              (day (list-nth date 2)))
@@ -259,7 +258,7 @@
    ; Compare two dates: returns -1 if date1 < date2, 0 if equal, 1 if date1 > date2
    (compare-dates
     (lambda (date1 date2)
-      (let* ((d1 (parse-date date1))
+      (letrec ((d1 (parse-date date1))
              (d2 (parse-date date2))
              (y1 (list-nth d1 0))
              (m1 (list-nth d1 1))

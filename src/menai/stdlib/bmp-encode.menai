@@ -149,8 +149,7 @@
                       (bpp (dict-get header "bpp")))
                   (if (or (integer=? bpp 24)
                           (integer=? bpp 32))
-                      (let*
-                        ((bottom-up
+                      (letrec                         ((bottom-up
                           (if (dict? meta)
                               (dict-get meta "bottom-up")
                               #t))

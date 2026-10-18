@@ -67,7 +67,7 @@ class TestMenaiCallStackEdgeCases:
 
         # Let with sequential dependencies
         result = menai.evaluate("""
-        (let* ((x 5)
+        (letrec ((x 5)
                (y (integer* x 2)))
           (integer+ x y))
         """)

@@ -15,19 +15,13 @@ from menai.ast.menai_ast_semantic_analyzer import RESERVED_NAMES
 
 
 class TestReservedNamesInBindingForms:
-    """let, let* and letrec reject a reserved word as a binding name."""
+    """let and letrec reject a reserved word as a binding name."""
 
     @pytest.mark.parametrize("name", sorted(RESERVED_NAMES))
     def test_let_rejects_reserved_binding_name(self, menai, name):
         """(let ((<reserved> 5)) ...) is a compile-time error."""
         with pytest.raises(MenaiEvalError, match=re.escape(f"Binding name '{name}' is a reserved word")):
             menai.evaluate(f"(let (({name} 5)) {name})")
-
-    @pytest.mark.parametrize("name", sorted(RESERVED_NAMES))
-    def test_let_star_rejects_reserved_binding_name(self, menai, name):
-        """(let* ((<reserved> 5)) ...) is a compile-time error."""
-        with pytest.raises(MenaiEvalError, match=re.escape(f"Binding name '{name}' is a reserved word")):
-            menai.evaluate(f"(let* (({name} 5)) {name})")
 
     @pytest.mark.parametrize("name", sorted(RESERVED_NAMES))
     def test_letrec_rejects_reserved_binding_name(self, menai, name):
@@ -146,7 +140,7 @@ class TestReservedNameSet:
     """The reserved-name set covers every form head the compiler dispatches on."""
 
     @pytest.mark.parametrize("name", [
-        "::", "if", "let", "let*", "letrec", "lambda", "quote", "match",
+        "::", "if", "let", "letrec", "lambda", "quote", "match",
         "and", "or", "import", "struct", "enum", "export", "apply", ":",
     ])
     def test_reserved_name_is_in_the_set(self, name):

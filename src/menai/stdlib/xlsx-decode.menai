@@ -117,7 +117,7 @@
    (add-relationship
     (lambda (rels child)
       (if (dict? child)
-          (let* ((attrs (dict-get child "attrs"))
+          (letrec ((attrs (dict-get child "attrs"))
                  (id (dict-get attrs "Id"))
                  (type (dict-get attrs "Type"))
                  (target (dict-get attrs "Target"))
@@ -272,7 +272,7 @@
    (decode
     (lambda (b)
       (if (bytes? b)
-          (let* ((parts (parts-of b))
+          (letrec ((parts (parts-of b))
                  (workbook (decode-required-part parts workbook-part)))
             (dict "workbook" workbook
                   "relationships" (relationships-of parts)

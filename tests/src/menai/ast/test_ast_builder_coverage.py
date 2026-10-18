@@ -325,18 +325,6 @@ class TestUnclosedValueSwallowsNextBinding:
 class TestKeywordSpecificErrorMessages:
     """Test that error messages use the correct keyword for each binding form."""
 
-    def test_let_star_keyword_in_incomplete_bindings_error(self):
-        """A let* binding error names 'let*', not 'let'."""
-        lexer = MenaiLexer()
-        tokens = lexer.lex("(let* (x")
-        ast_builder = MenaiASTBuilder()
-
-        with pytest.raises(MenaiASTBuildError) as exc_info:
-            ast_builder.build(tokens, "(let* (x")
-
-        error = exc_info.value
-        assert "let* binding 1 must be a (name value) form" in error.message
-
     def test_letrec_keyword_in_incomplete_bindings_error(self):
         """A letrec binding error names 'letrec', not 'let'."""
         lexer = MenaiLexer()

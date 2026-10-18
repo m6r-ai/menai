@@ -222,7 +222,7 @@
           (list)
           (if (is-zero-block b pos)
               (list)
-              (let* ((entry (read-header b pos))
+              (letrec ((entry (read-header b pos))
                      (typeflag (dict-get entry "typeflag"))
                      (size (dict-get entry "size"))
                      (data (bytes-slice b (integer+ pos block-size) (integer+ pos block-size size)))

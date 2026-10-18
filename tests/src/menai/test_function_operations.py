@@ -74,9 +74,9 @@ class TestApplyBasic:
 class TestApplyTailCall:
     def test_apply_in_tail_position(self, menai):
         # The apply is the tail expression of the outer lambda
-        # Use let* so g can close over f
+        # Use letrec so g can close over f
         assert menai.evaluate(
-            "(let* ((f (lambda (x y) (integer+ x y)))"
+            "(letrec ((f (lambda (x y) (integer+ x y)))"
             "       (g (lambda (args) (apply f args))))"
             "  (g (list 10 20)))"
         ) == 30
@@ -102,7 +102,7 @@ class TestApplyTailCall:
         # f captures `offset` from its enclosing scope; apply must copy captured_values
         # into the callee frame via the TAIL_APPLY captured_values branch.
         assert menai.evaluate(
-            "(let* ((offset 100) (f (lambda (x) (integer+ x offset))))"
+            "(letrec ((offset 100) (f (lambda (x) (integer+ x offset))))"
             "  (apply f (list 5)))"
         ) == 105
 
@@ -231,7 +231,7 @@ class TestApplyNonTail:
         # f captures `offset` from its enclosing scope; apply must copy captured_values
         # into the callee frame via the APPLY captured_values branch.
         assert menai.evaluate(
-            "(let* ((offset 100) (f (lambda (x) (integer+ x offset))))"
+            "(letrec ((offset 100) (f (lambda (x) (integer+ x offset))))"
             "  (integer-abs (apply f (list 5))))"
         ) == 105
 

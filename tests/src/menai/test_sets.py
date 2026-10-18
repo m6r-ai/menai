@@ -280,7 +280,7 @@ class TestSetAdd:
     def test_add_preserves_immutability(self, tool):
         """Test that set-with returns a new set, leaving original unchanged."""
         result = tool.evaluate_and_format(
-            "(let* ((s (set 1 2)) (_ (set-with s 3))) s)"
+            "(letrec ((s (set 1 2)) (_ (set-with s 3))) s)"
         )
         assert result == "#{1 2}"
 

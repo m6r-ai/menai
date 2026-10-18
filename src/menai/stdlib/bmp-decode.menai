@@ -117,7 +117,7 @@
    (decode
     (lambda (b)
       (if (bytes? b)
-          (let* ((header (read-header b))
+          (letrec ((header (read-header b))
                  (width (dict-get header "width"))
                  (height (dict-get header "height"))
                  (bpp (dict-get header "bpp"))
