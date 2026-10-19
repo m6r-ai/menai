@@ -35,7 +35,7 @@ from menai.ast.menai_lexer import MenaiLexer
 
 _SOURCES = {
     "const-fold": "(integer+ 1 2)",
-    "let-star": "(letrec ((x 1) (y (integer+ x 1))) (integer+ x y))",
+    "let-star": "(let ((x 1) (y (integer+ x 1))) (integer+ x y))",
     "match": "(lambda (n) (match n (0 100) (1 200) (_ 0)))",
     "and-or": "(lambda (a b) (and a (or b #t)))",
     "list-literal": "(list 1 2 3)",

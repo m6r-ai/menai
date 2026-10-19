@@ -458,7 +458,7 @@ class TestReachabilityIntegration:
         """
         menai = Menai()
         code = menai.compile("""
-            (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+            (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                      (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
               42)
         """)
@@ -470,7 +470,7 @@ class TestReachabilityIntegration:
             f"{[Opcode(o).name for o in opcodes]}"
         )
         assert menai.evaluate("""
-            (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+            (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                      (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
               42)
         """) == 42
@@ -478,7 +478,7 @@ class TestReachabilityIntegration:
     def test_used_mutually_recursive_functions_still_work(self):
         """A reachable mutually-recursive group is preserved and correct."""
         result = Menai().evaluate("""
-            (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+            (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                      (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
               (list (even? 10) (odd? 7)))
         """)
@@ -488,7 +488,7 @@ class TestReachabilityIntegration:
         """A single unused self-recursive function is pruned."""
         menai = Menai()
         code = menai.compile("""
-            (letrec ((count-down (lambda (n) (if (integer=? n 0) 0 (count-down (integer- n 1))))))
+            (let ((count-down (lambda (n) (if (integer=? n 0) 0 (count-down (integer- n 1))))))
               7)
         """)
         from menai.bytecode.menai_bytecode import Opcode, unpack_instruction

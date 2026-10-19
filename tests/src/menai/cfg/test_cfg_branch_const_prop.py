@@ -713,7 +713,7 @@ class TestEndToEnd:
     SKIP_WS = r"""
     (let ((skip-ws
            (lambda (s pos)
-             (letrec ((loop (lambda (i)
+             (let ((loop (lambda (i)
                               (if (integer>=? i (string-length s))
                                   i
                                   (let ((ch (string-nth s i)))
@@ -794,9 +794,9 @@ class TestEndToEnd:
         menai = Menai()
 
         result = menai.evaluate(r"""
-        (letrec ((skip-ws
+        (let ((skip-ws
                   (lambda (s pos)
-                    (letrec ((loop (lambda (i)
+                    (let ((loop (lambda (i)
                                      (if (integer>=? i (string-length s))
                                          i
                                          (let ((ch (string-nth s i)))
@@ -842,7 +842,7 @@ class TestEndToEnd:
         source = r"""
         (let ((scan
                (lambda (s pos)
-                 (letrec ((loop (lambda (i)
+                 (let ((loop (lambda (i)
                                   (if (integer>=? i (string-length s))
                                       i
                                       (let ((ch (string-nth s i)))
@@ -905,9 +905,9 @@ class TestEndToEnd:
         menai = Menai()
 
         result = menai.evaluate(r"""
-        (letrec ((scan
+        (let ((scan
                   (lambda (s pos)
-                    (letrec ((loop (lambda (i)
+                    (let ((loop (lambda (i)
                                      (if (integer>=? i (string-length s))
                                          i
                                          (let ((ch (string-nth s i)))
@@ -991,7 +991,7 @@ class TestEndToEnd:
         menai = Menai()
 
         result = menai.evaluate(r"""
-        (letrec ((is-digit? (lambda (ch)
+        (let ((is-digit? (lambda (ch)
                               (and (string>=? ch "0") (string<=? ch "9")))))
           (list (is-digit? "0") (is-digit? "5") (is-digit? "9")
                 (is-digit? "/") (is-digit? ":")))
@@ -1462,7 +1462,7 @@ class TestPredicateBranchEndToEnd:
         return result
 
     MATCH_NONE = r"""
-    (letrec ((parse-esc
+    (let ((parse-esc
               (lambda (s)
                 (let ((unescaped
                        (match s
@@ -1511,7 +1511,7 @@ class TestPredicateBranchEndToEnd:
         menai = Menai()
 
         result = menai.evaluate(r"""
-        (letrec ((parse-esc
+        (let ((parse-esc
                   (lambda (s)
                     (let ((unescaped
                            (match s

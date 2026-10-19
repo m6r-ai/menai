@@ -1,6 +1,6 @@
 ; Tests for zlib-compress.menai
 
-(letrec
+(let
   ((zlib-compress (import "zlib-compress"))
    (zlib-decompress (import "zlib-decompress"))
    (t (import "menai-test"))

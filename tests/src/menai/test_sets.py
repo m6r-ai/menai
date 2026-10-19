@@ -61,7 +61,7 @@ class TestSetConstruction:
     def test_runtime_set_deduplicates(self, tool):
         """Duplicate elements are dropped when the set is built at runtime."""
         expr = """
-        (letrec ((f (lambda (x n)
+        (let ((f (lambda (x n)
                       (if (integer<=? n 0)
                           (set x 2 x)
                           (f x (integer- n 1))))))
@@ -72,7 +72,7 @@ class TestSetConstruction:
     def test_runtime_set_length_reflects_deduplication(self, tool):
         """A runtime set's length counts unique elements only."""
         expr = """
-        (letrec ((f (lambda (x n)
+        (let ((f (lambda (x n)
                       (if (integer<=? n 0)
                           (set x 2 x)
                           (f x (integer- n 1))))))
@@ -280,7 +280,7 @@ class TestSetAdd:
     def test_add_preserves_immutability(self, tool):
         """Test that set-with returns a new set, leaving original unchanged."""
         result = tool.evaluate_and_format(
-            "(letrec ((s (set 1 2)) (_ (set-with s 3))) s)"
+            "(let ((s (set 1 2)) (_ (set-with s 3))) s)"
         )
         assert result == "#{1 2}"
 

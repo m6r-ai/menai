@@ -49,7 +49,7 @@ class AnalysisContext:
     parent_ctx: 'AnalysisContext | None' = None
     current_binding_name: str | None = None  # Name of the binding currently being analysed.
     current_letrec_names: set[str] = field(default_factory=set)  # Names in the immediately enclosing
-                                                                   # letrec group only.
+                                                                   # $letrec group only.
     free_vars: list[str] = field(default_factory=list)   # Free variables discovered during analysis,
                                                           # in order of first encounter.
     free_vars_seen: set[str] = field(default_factory=set) # Companion set for O(1) duplicate checks.
@@ -212,10 +212,10 @@ class MenaiIRBuilder:
             if name == 'if':
                 return self._analyze_if(expr, ctx, in_tail_position)
 
-            if name == 'let':
+            if name == '$let':
                 return self._analyze_let(expr, ctx, in_tail_position)
 
-            if name == 'letrec':
+            if name == '$letrec':
                 return self._analyze_letrec(expr, ctx, in_tail_position)
 
             if name == 'lambda':
@@ -314,10 +314,13 @@ class MenaiIRBuilder:
 
     def _analyze_let(self, expr: MenaiASTList, ctx: AnalysisContext, in_tail_position: bool) -> MenaiIRLet:
         """
-        Analyze a let expression with parallel binding semantics.
+        Analyze an internal $let expression.
 
-        We only add names to the scope so that resolve_variable() can classify
-        them as 'local' for the body.
+        $let is the desugarer's parallel node: it is emitted only for binding
+        groups whose values do not reference each other.  Each name is added to
+        the scope as it is analysed, so a value that does reference an earlier
+        sibling still resolves; the desugarer's classification guarantees no
+        value reads a *later* sibling, so the group stays acyclic.
         """
         assert len(expr.elements) == 3, "Let expression should have exactly 3 elements"
 
@@ -326,7 +329,8 @@ class MenaiIRBuilder:
 
         ctx.push_scope()
 
-        # Analyze all binding values in the outer scope (parallel let semantics).
+        # Analyse each value, adding its name to scope before the next value so
+        # that sequential references resolve.
         analyzed_bindings: list[tuple[str, MenaiIRExpr]] = []
         for binding in bindings_list.elements:
             assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
@@ -340,9 +344,6 @@ class MenaiIRBuilder:
             ctx.current_binding_name = old_binding_name
 
             analyzed_bindings.append((name, value_plan))
-
-        # Add all binding names to scope for the body.
-        for name, _ in analyzed_bindings:
             ctx.add_name_to_scope(name)
 
         body_plan = self._analyze_expression(body, ctx, in_tail_position=in_tail_position)
@@ -357,12 +358,12 @@ class MenaiIRBuilder:
 
     def _analyze_letrec(self, expr: MenaiASTList, ctx: AnalysisContext, in_tail_position: bool) -> MenaiIRLetrec:
         """
-        Analyze a letrec expression.
+        Analyze a $letrec expression.
 
         All binding names are added to scope before analyzing binding values
         (mutual recursion).  Slot indices are not allocated here.
         """
-        assert len(expr.elements) == 3, "Letrec expression should have exactly 3 elements"
+        assert len(expr.elements) == 3, "$letrec expression should have exactly 3 elements"
 
         _, bindings_list, body = expr.elements
         assert isinstance(bindings_list, MenaiASTList)
@@ -379,11 +380,11 @@ class MenaiIRBuilder:
             ctx.add_name_to_scope(name)
             binding_pairs.append((name, value_expr))
 
-        # Register all binding names as letrec-bound.
+        # Register all binding names as $letrec-bound.
         all_names = [name for name, _ in binding_pairs]
         ctx.current_letrec_names = set(all_names)
 
-        # Second pass: analyze each binding value with full letrec context.
+        # Second pass: analyze each binding value with full $letrec context.
         binding_plans: list[tuple[str, MenaiIRExpr]] = []
         for name, value_expr in binding_pairs:
             old_binding_name = ctx.current_binding_name

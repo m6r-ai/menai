@@ -1,6 +1,6 @@
 ; Tests for regexp.menai
 
-(letrec
+(let
   ((r (import "regexp"))
    (t (import "menai-test"))
    (compile (:: r compile))

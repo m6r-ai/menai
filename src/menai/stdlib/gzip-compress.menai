@@ -18,7 +18,7 @@
 ; clock, so MTIME cannot carry a real modification time; it is written as 0,
 ; which is the deterministic choice made by reproducible-build gzip writers.
 
-(letrec
+(let
   ((deflate-lib (import "deflate-compress"))
    (deflate-lib-mode (:: deflate-lib mode))
 
@@ -51,7 +51,7 @@
    (compress
     (lambda (b . rest)
       (if (bytes? b)
-          (letrec             ((block-mode
+          (let             ((block-mode
               (if (list-null? rest)
                   (mode 'auto)
                   (list-first rest)))

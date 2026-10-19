@@ -682,14 +682,14 @@ class TestStructScoping:
     def test_struct_in_let_star_usable_in_body(self, menai):
         """A struct type defined in letrec is usable in the body."""
         result = menai.evaluate_and_format(
-            '(letrec ((Point (struct (x y)))) (Point 1 2))'
+            '(let ((Point (struct (x y)))) (Point 1 2))'
         )
         assert result == '(Point 1 2)'
 
     def test_struct_in_let_star_usable_in_subsequent_binding(self, menai):
         """A struct type defined in letrec is usable in a later binding."""
         result = menai.evaluate_and_format('''
-        (letrec ((Point (struct (x y)))
+        (let ((Point (struct (x y)))
                (origin (Point 0 0)))
           (struct-get origin 'x))
         ''')
@@ -698,7 +698,7 @@ class TestStructScoping:
     def test_multiple_structs_in_let_star(self, menai):
         """Multiple struct types defined in the same letrec are all usable."""
         result = menai.evaluate_and_format('''
-        (letrec ((Point (struct (x y)))
+        (let ((Point (struct (x y)))
                (Color (struct (r g b)))
                (p (Point 1 2))
                (c (Color 255 0 128)))
@@ -800,7 +800,7 @@ class TestStructModuleExport:
     def test_struct_defined_in_letrec_module(self, tmp_path):
         """A struct defined in a letrec module body is exported and usable."""
         (tmp_path / "shapes.menai").write_text("""
-(letrec ((Point (struct (x y)))
+(let ((Point (struct (x y)))
          (make-point (lambda (a b) (Point a b)))
          (point-x (lambda (p) (match p ((: Point x _) x))))
          (point-y (lambda (p) (match p ((: Point _ y) y)))))
@@ -820,7 +820,7 @@ class TestStructModuleExport:
     def test_struct_constructor_from_letrec_module(self, tmp_path):
         """The exported struct type itself can be used as a constructor by the importer."""
         (tmp_path / "shapes.menai").write_text("""
-(letrec ((Point (struct (x y))))
+(let ((Point (struct (x y))))
   (export Point))
 """)
         m = Menai(module_path=[str(tmp_path)])
@@ -834,7 +834,7 @@ class TestStructModuleExport:
     def test_field_access_on_struct_from_letrec_module(self, tmp_path):
         """Fields of a struct instance from a letrec module are read via the accessors."""
         (tmp_path / "shapes.menai").write_text("""
-(letrec ((Point (struct (x y))))
+(let ((Point (struct (x y))))
   (export Point))
 """)
         m = Menai(module_path=[str(tmp_path)])
@@ -866,13 +866,13 @@ class TestStructErrors:
 
     def test_struct_in_letrec_works(self, menai):
         """Struct definitions are permitted in letrec and are hoisted to let."""
-        result = menai.evaluate('(letrec ((Point (struct (x y)))) (Point 1 2))')
+        result = menai.evaluate('(let ((Point (struct (x y)))) (Point 1 2))')
         assert str(result) != ''
 
     def test_struct_in_letrec_with_sibling_lambdas(self, menai):
         """Struct defined in letrec is visible to sibling lambda bindings and the body."""
         result = menai.evaluate(
-            '(letrec ((Point (struct (x y)))'
+            '(let ((Point (struct (x y)))'
             '         (make (lambda (a b) (Point a b)))'
             '         (get-x (lambda (p) (match p ((: Point x _) x)))))'
             '  (get-x (make 42 99)))'
@@ -1037,7 +1037,7 @@ class TestStructFirstClass:
     def test_struct_eq_as_first_class(self, menai):
         """struct=? used as a first-class equality function."""
         result = menai.evaluate_and_format('''
-        (letrec ((Point (struct (x y)))
+        (let ((Point (struct (x y)))
                (p1 (Point 1 2))
                (p2 (Point 1 2))
                (eq struct=?))
@@ -1048,7 +1048,7 @@ class TestStructFirstClass:
     def test_struct_neq_as_first_class(self, menai):
         """struct!=? used as a first-class inequality function."""
         result = menai.evaluate_and_format('''
-        (letrec ((Point (struct (x y)))
+        (let ((Point (struct (x y)))
                (p1 (Point 1 2))
                (p2 (Point 3 4))
                (neq struct!=?))
@@ -1088,7 +1088,7 @@ class TestStructFirstClass:
     def test_struct_operations_passed_to_higher_order_function(self, menai):
         """Struct operations can be passed as arguments to user-defined higher-order functions."""
         result = menai.evaluate_and_format('''
-        (letrec ((Point (struct (x y)))
+        (let ((Point (struct (x y)))
                (apply-to (lambda (f a b) (f a b))))
           (apply-to struct=? (Point 1 2) (Point 1 2)))
         ''')
@@ -1111,7 +1111,7 @@ class TestStructDynamicConstruction:
     def test_constructor_retrieved_from_dict(self, menai):
         """A struct type stored in a dict and retrieved at runtime can construct instances."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (d     (dict "point" point))
                (ctor  (dict-get d "point")))
           (ctor 3 4))
@@ -1121,7 +1121,7 @@ class TestStructDynamicConstruction:
     def test_constructor_retrieved_from_list(self, menai):
         """A struct type stored in a list and retrieved at runtime can construct instances."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (lst   (list point))
                (ctor  (list-first lst)))
           (ctor 5 6))
@@ -1131,7 +1131,7 @@ class TestStructDynamicConstruction:
     def test_constructor_returned_from_lambda(self, menai):
         """A struct type returned from a lambda call can construct instances."""
         result = menai.evaluate_and_format('''
-        (letrec ((point    (struct (x y)))
+        (let ((point    (struct (x y)))
                (get-ctor (lambda () point))
                (ctor     (get-ctor)))
           (ctor 7 8))
@@ -1141,7 +1141,7 @@ class TestStructDynamicConstruction:
     def test_field_access_on_dynamically_constructed_instance(self, menai):
         """struct-get works on an instance built via a dynamically-called constructor."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (d     (dict "point" point))
                (ctor  (dict-get d "point"))
                (p     (ctor 10 20)))
@@ -1152,7 +1152,7 @@ class TestStructDynamicConstruction:
     def test_type_predicate_on_dynamically_constructed_instance(self, menai):
         """struct-is-instance? works correctly on an instance built via a dynamically-called constructor."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (d     (dict "point" point))
                (ctor  (dict-get d "point"))
                (p     (ctor 1 2)))
@@ -1163,7 +1163,7 @@ class TestStructDynamicConstruction:
     def test_constructor_in_tail_position(self, menai):
         """A dynamically-retrieved struct constructor called in tail position works correctly."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (d     (dict "point" point))
                (make  (lambda (a b)
                         (let ((ctor (dict-get d "point")))
@@ -1175,7 +1175,7 @@ class TestStructDynamicConstruction:
     def test_constructor_used_with_map_list(self, menai):
         """A dynamically-retrieved struct constructor can be passed to map-list."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (d     (dict "point" point))
                (ctor  (dict-get d "point"))
                (pairs (list (list 1 2) (list 3 4) (list 5 6))))
@@ -1187,7 +1187,7 @@ class TestStructDynamicConstruction:
         """Calling a dynamically-retrieved struct constructor with too few args raises an error."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('''
-            (letrec ((point (struct (x y)))
+            (let ((point (struct (x y)))
                    (d     (dict "point" point))
                    (ctor  (dict-get d "point")))
               (ctor 1))
@@ -1198,7 +1198,7 @@ class TestStructDynamicConstruction:
         """Calling a dynamically-retrieved struct constructor with too many args raises an error."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('''
-            (letrec ((point (struct (x y)))
+            (let ((point (struct (x y)))
                    (d     (dict "point" point))
                    (ctor  (dict-get d "point")))
               (ctor 1 2 3))
@@ -1220,7 +1220,7 @@ class TestStructDynamicApply:
     def test_apply_with_struct_type_from_dict(self, menai):
         """apply works when the callable is a struct type retrieved from a dict."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (d     (dict "point" point))
                (ctor  (dict-get d "point")))
           (apply ctor (list 3 4)))
@@ -1238,7 +1238,7 @@ class TestStructDynamicApply:
     def test_apply_struct_type_in_tail_position(self, menai):
         """apply with a dynamically-retrieved struct type in tail position works correctly."""
         result = menai.evaluate_and_format('''
-        (letrec ((point (struct (x y)))
+        (let ((point (struct (x y)))
                (d     (dict "point" point))
                (make  (lambda (args)
                         (let ((ctor (dict-get d "point")))
@@ -1251,7 +1251,7 @@ class TestStructDynamicApply:
         """apply with a struct type and too few args raises an error."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('''
-            (letrec ((point (struct (x y)))
+            (let ((point (struct (x y)))
                    (d     (dict "point" point))
                    (ctor  (dict-get d "point")))
               (apply ctor (list 1)))
@@ -1262,7 +1262,7 @@ class TestStructDynamicApply:
         """apply with a struct type and too many args raises an error."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate('''
-            (letrec ((point (struct (x y)))
+            (let ((point (struct (x y)))
                    (d     (dict "point" point))
                    (ctor  (dict-get d "point")))
               (apply ctor (list 1 2 3)))
@@ -1287,7 +1287,7 @@ class TestStructInNestedLetrec:
         """Struct in letrec nested inside a let body is correctly compiled."""
         result = menai.evaluate_and_format('''
         (let ((x 1))
-          (letrec ((point (struct (a b))))
+          (let ((point (struct (a b))))
             (point x 2)))
         ''')
         assert result == '(point 1 2)'
@@ -1295,8 +1295,8 @@ class TestStructInNestedLetrec:
     def test_struct_in_letrec_body_of_let_star(self, menai):
         """Struct in letrec nested inside a letrec body is correctly compiled."""
         result = menai.evaluate_and_format('''
-        (letrec ((x 1) (y 2))
-          (letrec ((point (struct (a b))))
+        (let ((x 1) (y 2))
+          (let ((point (struct (a b))))
             (point x y)))
         ''')
         assert result == '(point 1 2)'
@@ -1304,8 +1304,8 @@ class TestStructInNestedLetrec:
     def test_struct_in_letrec_body_of_letrec(self, menai):
         """Struct in letrec nested inside another letrec body is correctly compiled."""
         result = menai.evaluate_and_format('''
-        (letrec ((f (lambda (n) (integer+ n 1))))
-          (letrec ((point (struct (a b))))
+        (let ((f (lambda (n) (integer+ n 1))))
+          (let ((point (struct (a b))))
             (point (f 0) (f 1))))
         ''')
         assert result == '(point 1 2)'
@@ -1314,7 +1314,7 @@ class TestStructInNestedLetrec:
         """struct-get works on instances built in a nested letrec."""
         result = menai.evaluate_and_format('''
         (let ((offset 10))
-          (letrec ((point (struct (x y)))
+          (let ((point (struct (x y)))
                    (get-x (lambda (p) (struct-get p 'x))))
             (get-x (point offset 20))))
         ''')
@@ -1324,7 +1324,7 @@ class TestStructInNestedLetrec:
         """Struct with hyphenated field names in a nested letrec compiles correctly."""
         result = menai.evaluate_and_format('''
         (let ((x 1))
-          (letrec ((dep (struct (from-task to-task dep-type lag-days))))
+          (let ((dep (struct (from-task to-task dep-type lag-days))))
             (structtype-fields dep)))
         ''')
         assert result == '(from-task to-task dep-type lag-days)'
@@ -1332,8 +1332,8 @@ class TestStructInNestedLetrec:
     def test_struct_constructor_callable_in_nested_letrec(self, menai):
         """Struct constructor is callable when struct is defined in a nested letrec."""
         result = menai.evaluate_and_format('''
-        (letrec ((from "T1") (to "T2"))
-          (letrec ((dep (struct (from-task to-task type lag-days))))
+        (let ((from "T1") (to "T2"))
+          (let ((dep (struct (from-task to-task type lag-days))))
             (dep from to "finish-to-start" 0)))
         ''')
         assert result == '(dep "T1" "T2" "finish-to-start" 0)'

@@ -4,6 +4,8 @@
 
 New features:
 
+- Replaced `let`, `letrec`, and `let*` with a single new `let` form that handles
+  letrec-like semantics.  This dramatically simplifies the langauge surface.
 - Added `pptx-decode` and `pptx-encode` modules to the standard library.
 - Significantly improved performance of `deflate-decompress`.
 - Significantly improved performance of `deflate-compress`.

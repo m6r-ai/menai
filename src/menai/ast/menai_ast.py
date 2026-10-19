@@ -389,7 +389,7 @@ class MenaiASTStruct(MenaiASTNode):
     Represents a (struct (field ...)) special form in the AST.
 
     Produced by the semantic analyser when it encounters (struct (x y)) as the
-    RHS of a let or letrec binding.  The binding name and tag are resolved at that
+    RHS of a let binding.  The binding name and tag are resolved at that
     point and stored here so that all downstream passes have direct access without
     needing to re-examine the enclosing let.
 
@@ -426,7 +426,7 @@ class MenaiASTEnum(MenaiASTNode):
     Represents an (enum (variant ...)) special form in the AST.
 
     Produced by the semantic analyser when it encounters (enum (a b c)) as the
-    RHS of a let or letrec binding.  The binding name and tag are resolved
+    RHS of a let binding.  The binding name and tag are resolved
     at that point and stored here so that all downstream passes have direct access
     without needing to re-examine the enclosing let.
 
@@ -477,8 +477,8 @@ class MenaiASTNamespace(MenaiASTNode):
     keeps its identity, and result types flow across the boundary.
 
     A namespace is second-class: it may only be bound directly by a
-    let/letrec binding and accessed through member access on that bound
-    name.  The desugarer emits the module's renamed bindings once as a letrec
+    let binding and accessed through member access on that bound
+    name.  The desugarer emits the module's renamed bindings once as a $letrec
     and resolves each member access to the corresponding renamed name.  A
     namespace node therefore never reaches the IR builder.
     """

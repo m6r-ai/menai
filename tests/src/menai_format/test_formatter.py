@@ -249,7 +249,7 @@ class TestBindings:
 
     def test_lambda_value_on_next_line(self):
         """A binding whose value is a lambda puts the lambda on the next line."""
-        result = format_code('(letrec ((f (lambda () 1)) (g 2)) (f))')
+        result = format_code('(let ((f (lambda () 1)) (g 2)) (f))')
         assert '(f\n    (lambda () 1))' in result
 
     def test_value_on_next_line(self):
@@ -309,9 +309,9 @@ class TestBindingList:
 
     def test_single_binding_inline(self):
         """A single binding keeps the binding list on the form line."""
-        code = '(letrec ((loop (lambda (i) (foo aaaa bbbb cccc dddd)))) (loop 0))'
+        code = '(let ((loop (lambda (i) (foo aaaa bbbb cccc dddd)))) (loop 0))'
         result = format_code(code, max_width=20)
-        assert result.startswith('(letrec ((loop\n')
+        assert result.startswith('(let ((loop\n')
 
     def test_all_short_bindings_inline(self):
         """A binding list of short bindings stays inline."""
@@ -321,9 +321,9 @@ class TestBindingList:
 
     def test_long_bindings_on_next_line(self):
         """A binding list with a multi-line binding goes on the next line."""
-        code = '(letrec ((f (lambda (x) (foo aaaa bbbb cccc dddd))) (g (lambda (y) y))) (f 1))'
+        code = '(let ((f (lambda (x) (foo aaaa bbbb cccc dddd))) (g (lambda (y) y))) (f 1))'
         result = format_code(code, max_width=20)
-        assert result.startswith('(letrec\n  ((f\n')
+        assert result.startswith('(let\n  ((f\n')
 
     def test_body_indent(self):
         """The body is indented by two from the form."""
@@ -343,9 +343,9 @@ class TestComments:
 
     def test_comment_before_binding(self):
         """A comment before a binding is placed on its own line."""
-        code = '(letrec\n  (; note\n   (a 1))\n  a)'
+        code = '(let\n  (; note\n   (a 1))\n  a)'
         result = format_code(code)
-        assert result == '(letrec\n  (; note\n   (a 1))\n  a)\n'
+        assert result == '(let\n  (; note\n   (a 1))\n  a)\n'
 
     def test_comment_preserved_in_compact(self):
         """A comment prevents compact rendering."""
@@ -370,7 +370,7 @@ class TestComments:
 
     def test_trailing_comment_in_binding(self):
         """A comment trailing the last binding does not swallow the closing paren."""
-        source = '(letrec ((a 1) ; note\n) a)'
+        source = '(let ((a 1) ; note\n) a)'
         result = format_code(source, max_width=10)
         assert token_texts(source) == token_texts(result)
 
@@ -404,7 +404,7 @@ class TestBlankLines:
 
     def test_blank_line_between_bindings(self):
         """A blank line between bindings is preserved."""
-        code = '(letrec\n  ((a 1)\n\n   (b 2))\n  (+ a b))'
+        code = '(let\n  ((a 1)\n\n   (b 2))\n  (+ a b))'
         result = format_code(code)
         assert '(a 1)\n\n' in result
 
@@ -420,20 +420,20 @@ class TestBlankLines:
 
     def test_blank_line_after_multiline_binding(self):
         """A multi-line binding is followed by a blank line before the next."""
-        code = '(letrec ((a (lambda (x) (foo aaaa bbbb cccc dddd))) (b 2)) (+ a b))'
+        code = '(let ((a (lambda (x) (foo aaaa bbbb cccc dddd))) (b 2)) (+ a b))'
         result = format_code(code, max_width=20)
         assert 'dddd)))\n\n   (b 2)' in result
 
     def test_blank_line_before_multiline_binding(self):
         """A multi-line binding is preceded by a blank line after the previous."""
-        code = '(letrec ((a 1) (b (lambda (x) (foo aaaa bbbb cccc dddd))) (c 3)) (+ a b c))'
+        code = '(let ((a 1) (b (lambda (x) (foo aaaa bbbb cccc dddd))) (c 3)) (+ a b c))'
         result = format_code(code, max_width=20)
         assert '(a 1)\n\n   (b\n' in result
         assert 'dddd)))\n\n   (c 3)' in result
 
     def test_blank_line_before_comment_after_multiline_binding(self):
         """The blank line goes before a comment that precedes the next binding."""
-        code = '(letrec ((a (lambda (x) (foo aaaa bbbb cccc dddd)))\n; note\n(b 2)) (+ a b))'
+        code = '(let ((a (lambda (x) (foo aaaa bbbb cccc dddd)))\n; note\n(b 2)) (+ a b))'
         result = format_code(code, max_width=20)
         assert 'dddd)))\n\n   ; note\n   (b 2)' in result
 
@@ -510,9 +510,9 @@ class TestIdempotency:
         '(let ((x 5) (y 10)) (+ x y))',
         '(and a b c)',
         '(match x (1 "one") (_ "other"))',
-        '(letrec ((f (lambda (n) (if (integer<=? n 1) 1 (integer* n (f (integer- n 1))))))) (f 5))',
+        '(let ((f (lambda (n) (if (integer<=? n 1) 1 (integer* n (f (integer- n 1))))))) (f 5))',
         '(foo a ; c\n b)',
-        '(letrec\n  ((a 1)\n\n   (b 2))\n  (+ a b))',
+        '(let\n  ((a 1)\n\n   (b 2))\n  (+ a b))',
     ])
     def test_idempotent(self, code):
         """Formatting the formatted output changes nothing."""

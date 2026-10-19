@@ -9,7 +9,7 @@
 ; encrypted entries, and any other compression method raise a runtime error.
 ; Filenames are decoded as UTF-8.
 
-(letrec
+(let
   ((signature-eocd (string-hex->bytes "504b0506"))
    (signature-central (string-hex->bytes "504b0102"))
    (signature-local (string-hex->bytes "504b0304"))
@@ -20,7 +20,7 @@
    (find-eocd
     (lambda (b)
       (let ((len (bytes-length b)))
-        (letrec ((loop
+        (let ((loop
                   (lambda (pos)
                     (if (integer<? pos 0)
                         (error "Not a ZIP file: no end-of-central-directory record found")
@@ -83,7 +83,7 @@
    ; dicts in central-directory order.
    (read-central-directory
     (lambda (b offset count)
-      (letrec ((loop
+      (let ((loop
                 (lambda (pos remaining acc)
                   (if (integer=? remaining 0)
                       (list-reverse acc)

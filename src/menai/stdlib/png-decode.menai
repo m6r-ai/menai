@@ -10,14 +10,14 @@
 ; Only bit depth 8 and non-interlaced files are supported.  tRNS transparency is
 ; supported for palette images only.  Anything else raises a runtime error.
 
-(letrec
+(let
   ((zlib-lib (import "zlib-decompress"))
    (signature (string-hex->bytes "89504e470d0a1a0a"))
 
    ; Read one chunk at `pos`.  Returns (list <type-string> <data-bytes> <next-pos>).
    (read-chunk
     (lambda (b pos)
-      (letrec ((length (bytes-read-u32-be b pos))
+      (let ((length (bytes-read-u32-be b pos))
              (typ (bytes->string (bytes-slice b (integer+ pos 4) (integer+ pos 8))))
              (data-start (integer+ pos 8))
              (data-end (integer+ pos 8 length))
@@ -39,9 +39,9 @@
    ; assumed beyond IHDR coming first.
    (read-chunks
     (lambda (b)
-      (letrec ((loop
+      (let ((loop
                 (lambda (pos header idat-chunks palette transparency)
-                  (letrec ((result (read-chunk b pos))
+                  (let ((result (read-chunk b pos))
                          (typ (list-first result))
                          (data (list-nth result 1))
                          (next (list-nth result 2)))
@@ -86,7 +86,7 @@
    ; b (above), c (upper-left) is closest to p = a + b - c.
    (paeth
     (lambda (a b c)
-      (letrec ((p (integer- (integer+ a b) c))
+      (let ((p (integer- (integer+ a b) c))
              (pa (integer-abs (integer- p a)))
              (pb (integer-abs (integer- p b)))
              (pc (integer-abs (integer- p c))))
@@ -103,11 +103,11 @@
    ; complete pixel.  Returns the un-filtered row as a bytes value.
    (unfilter-row
     (lambda (filter-type filtered prev bpp)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i (bytes-length filtered))
                       acc
-                      (letrec                         ((x (bytes-nth filtered i))
+                      (let                         ((x (bytes-nth filtered i))
 
                          (a
                           (if (integer>=? i bpp)
@@ -146,11 +146,11 @@
     (lambda (raw width height channels)
       (let ((bpp channels)
             (row-bytes (integer* width channels)))
-        (letrec ((loop
+        (let ((loop
                   (lambda (y pos prev rows)
                     (if (integer>=? y height)
                         (list-reverse rows)
-                        (letrec ((filter-type (bytes-nth raw pos))
+                        (let ((filter-type (bytes-nth raw pos))
                                (row-start (integer+ pos 1))
                                (filtered (bytes-slice raw row-start (integer+ row-start row-bytes)))
                                (row (unfilter-row filter-type filtered prev bpp)))
@@ -189,7 +189,7 @@
            (vector g g g)))
         (2 (vector (list-nth pixel-bytes 0) (list-nth pixel-bytes 1) (list-nth pixel-bytes 2)))
         (3
-         (letrec ((index (list-nth pixel-bytes 0))
+         (let ((index (list-nth pixel-bytes 0))
                 (rgb (palette-entry palette index))
                 (alpha (palette-alpha transparency index)))
            (if (integer=? alpha 255)
@@ -208,7 +208,7 @@
    ; Group a row's channel values into normalised pixels.
    (to-pixels
     (lambda (row channels colour-type palette transparency)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i (bytes-length row))
                       (list->vector (list-reverse acc))
@@ -259,7 +259,7 @@
               (error "Not a PNG file: too short")
               (if (bytes!=? (bytes-slice b 0 8) signature)
                   (error "Not a PNG file: missing PNG signature")
-                  (letrec ((chunks (read-chunks b))
+                  (let ((chunks (read-chunks b))
                          (header (dict-get chunks "header"))
                          (width (dict-get header "width"))
                          (height (dict-get header "height"))
@@ -282,7 +282,7 @@
                                 (if (and (integer=? colour-type 3)
                                          (none? palette))
                                     (error "Malformed PNG: palette image is missing its PLTE chunk")
-                                    (letrec ((channels (channels-for colour-type))
+                                    (let ((channels (channels-for colour-type))
                                            (inflate (:: zlib-lib decompress))
                                            (raw (inflate (dict-get chunks "idat")))
                                            (rows (unfilter-all raw width height channels)))

@@ -15,7 +15,7 @@
 ; tab.  Every other control character below U+0020 is emitted as a \u escape.
 ; All other characters are emitted literally.
 
-(letrec
+(let
   ((hex-digits "0123456789abcdef")
 
    ; Emit a control character (0-31) as a four-digit \u escape.
@@ -44,7 +44,7 @@
    ; Builds a chunk list and joins once.
    (encode-string
     (lambda (s)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i (string-length s))
                       (list-prepend acc "\"")
@@ -55,7 +55,7 @@
    ; the exponent marker, which JSON does not allow.
    (encode-float
     (lambda (f)
-      (letrec ((text (float->string f))
+      (let ((text (float->string f))
              (e-pos (find-exponent text)))
         (if (none? e-pos)
             text
@@ -69,7 +69,7 @@
    ; Return the index of the exponent marker in a float's textual form, or #none.
    (find-exponent
     (lambda (text)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if (integer>=? i (string-length text))
                       #none
@@ -83,7 +83,7 @@
    ; Encode a list as a JSON array, joining elements with commas.
    (encode-list
     (lambda (lst)
-      (letrec ((loop
+      (let ((loop
                 (lambda (rest acc first)
                   (if (list-null? rest)
                       (list->string (list-reverse (list-prepend acc "]")))
@@ -101,13 +101,13 @@
    ; raises.  The dict's insertion order is preserved.
    (encode-object
     (lambda (d)
-      (letrec ((loop
+      (let ((loop
                 (lambda (keys acc first)
                   (if (list-null? keys)
                       (list->string (list-reverse (list-prepend acc "}")))
                       (let ((k (list-first keys)))
                         (if (string? k)
-                            (letrec                               ((acc2
+                            (let                               ((acc2
                                 (if first
                                     acc
                                     (list-prepend acc ",")))

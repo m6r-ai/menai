@@ -26,7 +26,7 @@ def _build_cfg(source: str):
 
 
 CHAIN_SRC = """
-(letrec ((State (enum (idle running stopped paused)))
+(let ((State (enum (idle running stopped paused)))
          (classify (lambda (s)
            (match s
              ((: State 'idle) 'a)
@@ -38,7 +38,7 @@ CHAIN_SRC = """
 """
 
 SINGLE_SRC = """
-(letrec ((State (enum (idle running)))
+(let ((State (enum (idle running)))
          (classify (lambda (s)
            (match s
              ((: State 'idle) 'a)
@@ -47,7 +47,7 @@ SINGLE_SRC = """
 """
 
 TWO_TYPES_SRC = """
-(letrec ((State (enum (idle running)))
+(let ((State (enum (idle running)))
          (Mode (enum (fast slow)))
          (classify (lambda (s)
            (match s
@@ -142,7 +142,7 @@ class TestEndToEnd:
         """Every arm value, plus the default, produces the right result."""
         m = Menai()
         src = """
-        (letrec ((State (enum (idle running stopped paused)))
+        (let ((State (enum (idle running stopped paused)))
                  (classify (lambda (s)
                    (match s
                      ((: State 'idle) 'a)
@@ -161,7 +161,7 @@ class TestEndToEnd:
         """An enum pattern is total: a non-enum scrutinee takes the default."""
         m = Menai()
         src = """
-        (letrec ((State (enum (idle running)))
+        (let ((State (enum (idle running)))
                  (classify (lambda (s)
                    (match s
                      ((: State 'idle) 'a)
@@ -177,7 +177,7 @@ class TestEndToEnd:
         """A match covering every variant needs no default arm."""
         m = Menai()
         src = """
-        (letrec ((State (enum (idle running)))
+        (let ((State (enum (idle running)))
                  (classify (lambda (s)
                    (match s
                      ((: State 'idle) 'a)

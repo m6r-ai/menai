@@ -60,11 +60,11 @@ class MenaiIRLet:
 @dataclass
 class MenaiIRLetrec:
     """
-    Plan for compiling a letrec expression.
+    Plan for compiling a $letrec expression.
 
-    After letrec splitting in the desugarer, every letrec reaching this point
+    After splitting in the desugarer, every $letrec reaching this point
     is guaranteed to be a single fully-mutually-recursive group of lambdas.
-    All non-recursive and non-lambda bindings have been hoisted to let forms.
+    All non-recursive and non-lambda bindings have been hoisted to $let forms.
     """
     bindings: tuple[tuple[str, 'MenaiIRExpr'], ...]  # (name, value_plan)
     body_plan: 'MenaiIRExpr'
@@ -79,13 +79,13 @@ class MenaiIRLambda:
     """
     params: tuple[str, ...]
     body_plan: 'MenaiIRExpr'
-    sibling_free_vars: tuple[str, ...]       # Names captured from the immediately enclosing letrec group
+    sibling_free_vars: tuple[str, ...]       # Names captured from the immediately enclosing $letrec group
     sibling_free_var_plans: tuple['MenaiIRExpr', ...]  # Plans for loading sibling captures
-    outer_free_vars: tuple[str, ...]         # Names captured from outside the enclosing letrec group
+    outer_free_vars: tuple[str, ...]         # Names captured from outside the enclosing $letrec group
     outer_free_var_plans: tuple['MenaiIRExpr', ...]    # Plans for loading outer captures
     param_count: int
     is_variadic: bool  # True if last param is a rest parameter
-    binding_name: str | None = None  # Name if bound in let/letrec (for recursion detection)
+    binding_name: str | None = None  # Name if bound in a binding form (for recursion detection)
     source_line: int = 0  # Line number in source where this lambda is defined
     source_file: str = ""  # Source file name where this lambda is defined
 
@@ -203,7 +203,7 @@ class MenaiIRLoop:
     Plan for compiling a tail-recursive loop.
 
     Produced by the letrec-to-loop conversion pass from a single-binding
-    letrec whose lambda is self-referencing and whose body is a single tail
+    $letrec whose lambda is self-referencing and whose body is a single tail
     call to that lambda.  The loop-carried variables (params) are bound to
     the initial argument expressions; the body is the lambda's body with
     self-referencing tail calls replaced by MenaiIRRecur nodes.

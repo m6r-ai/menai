@@ -53,7 +53,7 @@ def _make_loop() -> MenaiIRLoop:
     """
     Build the loop that the canonical convertible letrec lowers to:
 
-    (letrec ((loop (lambda (n) (if (integer>? n 0) (loop (integer- n 1)) 0))))
+    (let ((loop (lambda (n) (if (integer>? n 0) (loop (integer- n 1)) 0))))
       (loop 5))
     """
     recur = MenaiIRRecur(

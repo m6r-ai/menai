@@ -33,7 +33,7 @@ class TestTailCallOptimizationWithLet:
         """
         # Simple countdown - direct tail call
         direct_recursion = '''
-        (letrec ((countdown (lambda (n)
+        (let ((countdown (lambda (n)
                              (if (integer<=? n 0) 
                                  "done" 
                                  (countdown (integer- n 1))))))
@@ -49,7 +49,7 @@ class TestTailCallOptimizationWithLet:
         inside a let body, and TCO should be applied.
         """
         let_then_recursion = '''
-        (letrec ((countdown (lambda (n)
+        (let ((countdown (lambda (n)
                              (if (integer<=? n 0) 
                                  "done" 
                                  (let ((next-n (integer- n 1)))
@@ -66,7 +66,7 @@ class TestTailCallOptimizationWithLet:
         before making the tail call.
         """
         accumulator_with_let = '''
-        (letrec ((sum-to-n (lambda (n acc)
+        (let ((sum-to-n (lambda (n acc)
                             (if (integer<=? n 0) 
                                 acc 
                                 (let ((next-acc (integer+ acc n)))
@@ -84,7 +84,7 @@ class TestTailCallOptimizationWithLet:
         values before making the tail call.
         """
         multiple_bindings = '''
-        (letrec ((compute (lambda (n result)
+        (let ((compute (lambda (n result)
                            (if (integer<=? n 0) 
                                result 
                                (let ((next-n (integer- n 1))
@@ -108,7 +108,7 @@ class TestTailCallOptimizationWithLet:
         This pattern is essential for CSV parsing, JSON parsing, etc.
         """
         char_counter = '''
-        (letrec ((count-chars (lambda (chars acc)
+        (let ((count-chars (lambda (chars acc)
                                (if (list-null? chars) 
                                    acc 
                                    (let ((c (list-first chars))
@@ -126,7 +126,7 @@ class TestTailCallOptimizationWithLet:
         then recursively process tail.
         """
         list_sum = '''
-        (letrec ((sum-list (lambda (lst acc)
+        (let ((sum-list (lambda (lst acc)
                             (if (list-null? lst) 
                                 acc 
                                 (let ((head (list-first lst))
@@ -146,7 +146,7 @@ class TestTailCallOptimizationWithLet:
         check if we're in quotes, and make a tail call.
         """
         simple_csv_parser = '''
-        (letrec ((parse-chars (lambda (chars in-quotes current-field fields)
+        (let ((parse-chars (lambda (chars in-quotes current-field fields)
                                (if (list-null? chars)
                                    (list-reverse (list-prepend fields current-field))
                                    (let ((c (list-first chars))
@@ -170,7 +170,7 @@ class TestTailCallOptimizationWithLet:
         Tests that TCO works even with multiple levels of let nesting.
         """
         nested_let = '''
-        (letrec ((process (lambda (n acc)
+        (let ((process (lambda (n acc)
                            (if (integer<=? n 0) 
                                acc 
                                (let ((temp1 (integer- n 1)))
@@ -188,7 +188,7 @@ class TestTailCallOptimizationWithLet:
         that's inside a let.
         """
         conditional_in_let = '''
-        (letrec ((collatz (lambda (n steps)
+        (let ((collatz (lambda (n steps)
                            (if (integer=? n 1) 
                                steps 
                                (let ((next-n (if (integer=? (integer% n 2) 0) (integer/ n 2) (integer+ (integer* n 3) 1))))
@@ -206,14 +206,14 @@ class TestTailCallOptimizationWithLet:
         """
         # Direct tail call - works
         direct = '''
-        (letrec ((f (lambda (n) (if (integer<=? n 0) "done" (f (integer- n 1))))))
+        (let ((f (lambda (n) (if (integer<=? n 0) "done" (f (integer- n 1))))))
           (f 500))
         '''
         assert menai.evaluate_and_format(direct) == '"done"'
 
         # Let-based tail call - now also works!
         with_let = '''
-        (letrec ((f (lambda (n) (if (integer<=? n 0) "done" (let ((x (integer- n 1))) (f x))))))
+        (let ((f (lambda (n) (if (integer<=? n 0) "done" (let ((x (integer- n 1))) (f x))))))
           (f 500))
         '''
         assert menai.evaluate_and_format(with_let) == '"done"'
@@ -227,7 +227,7 @@ class TestTailCallOptimizationWithLet:
         """
         # This now works with proper TCO
         test_depth = '''
-        (letrec ((f (lambda (n) (if (integer<=? n 0) n (let ((x (integer- n 1))) (f x))))))
+        (let ((f (lambda (n) (if (integer<=? n 0) n (let ((x (integer- n 1))) (f x))))))
           (f 500))
         '''
 
@@ -241,7 +241,7 @@ class TestTailCallOptimizationWithLet:
         This is a real-world use case that requires TCO with let bindings.
         """
         string_reverse = '''
-        (letrec ((reverse-chars (lambda (chars acc)
+        (let ((reverse-chars (lambda (chars acc)
                                  (if (list-null? chars) 
                                      acc 
                                      (let ((head (list-first chars))
@@ -258,7 +258,7 @@ class TestTailCallOptimizationWithLet:
         Shows that we can implement our own filter function with proper TCO.
         """
         custom_filter = '''
-        (letrec ((my-filter (lambda (pred lst acc)
+        (let ((my-filter (lambda (pred lst acc)
                              (if (list-null? lst) 
                                  (list-reverse acc) 
                                  (let ((head (list-first lst))
@@ -280,7 +280,7 @@ class TestTailCallOptimizationLetEdgeCases:
         Edge case: Empty let before tail call works.
         """
         empty_let = '''
-        (letrec ((f (lambda (n) (if (integer<=? n 0) "done" (let () (f (integer- n 1)))))))
+        (let ((f (lambda (n) (if (integer<=? n 0) "done" (let () (f (integer- n 1)))))))
           (f 100))
         '''
         helpers.assert_evaluates_to(menai, empty_let, '"done"')
@@ -290,7 +290,7 @@ class TestTailCallOptimizationLetEdgeCases:
         Edge case: Let binding that's not used in the tail call still allows TCO.
         """
         unused_binding = '''
-        (letrec ((f (lambda (n) 
+        (let ((f (lambda (n) 
                      (if (integer<=? n 0) 
                          "done" 
                          (let ((unused 42))
@@ -308,7 +308,7 @@ class TestTailCallOptimizationLetEdgeCases:
         with let bindings still has some limitations.
         """
         mutual_with_let = '''
-        (letrec ((is-even (lambda (n) 
+        (let ((is-even (lambda (n) 
                            (if (integer=? n 0) 
                                #t 
                                (let ((next (integer- n 1)))
@@ -334,7 +334,7 @@ class TestTailCallOptimizationVerification:
     def test_direct_tail_calls_still_work(self, menai, helpers):
         """Verify that direct tail calls continue to work after the fix."""
         direct = '''
-        (letrec ((f (lambda (n acc) 
+        (let ((f (lambda (n acc) 
                      (if (integer<=? n 0) acc (f (integer- n 1) (integer+ acc 1))))))
           (f 500 0))
         '''
@@ -343,7 +343,7 @@ class TestTailCallOptimizationVerification:
     def test_if_branch_tail_calls_still_work(self, menai, helpers):
         """Verify that tail calls in if branches continue to work."""
         if_branches = '''
-        (letrec ((f (lambda (n) 
+        (let ((f (lambda (n) 
                      (if (integer<=? n 0) 
                          "zero" 
                          (if (integer=? n 1) 
@@ -358,7 +358,7 @@ class TestTailCallOptimizationVerification:
         Verify that combining if and let in tail position works.
         """
         combined = '''
-        (letrec ((f (lambda (n acc)
+        (let ((f (lambda (n acc)
                      (if (integer<=? n 0)
                          acc
                          (if (integer=? (integer% n 2) 0)
@@ -380,7 +380,7 @@ class TestTailCallOptimizationVerification:
         Comprehensive test that all tail positions are properly optimized.
         """
         comprehensive = '''
-        (letrec ((process (lambda (n mode acc)
+        (let ((process (lambda (n mode acc)
                            (if (integer<=? n 0)
                                acc
                                (if (integer=? mode 0)
@@ -409,7 +409,7 @@ class TestTailCallOptimizationPerformance:
         Test that very deep recursion (1000+ iterations) works with let-based TCO.
         """
         deep = '''
-        (letrec ((countdown (lambda (n)
+        (let ((countdown (lambda (n)
                              (if (integer<=? n 0)
                                  "done"
                                  (let ((next (integer- n 1)))
@@ -424,7 +424,7 @@ class TestTailCallOptimizationPerformance:
         Test factorial computation using let-based tail recursion.
         """
         factorial = '''
-        (letrec ((fact (lambda (n acc)
+        (let ((fact (lambda (n acc)
                         (if (integer<=? n 1)
                             acc
                             (let ((next-n (integer- n 1))
@@ -439,7 +439,7 @@ class TestTailCallOptimizationPerformance:
         Test Fibonacci computation using let-based tail recursion with two accumulators.
         """
         fibonacci = '''
-        (letrec ((fib (lambda (n a b)
+        (let ((fib (lambda (n a b)
                        (if (integer<=? n 0)
                            a
                            (let ((next-n (integer- n 1))
@@ -478,7 +478,7 @@ class TestParallelMoveCorrectness:
         giving 3-3 = 0 instead.
         """
         code = '''
-        (letrec ((f (lambda (a b n)
+        (let ((f (lambda (a b n)
                       (if (integer=? n 0)
                           (integer- a b)
                           (f b a (integer- n 1))))))
@@ -493,7 +493,7 @@ class TestParallelMoveCorrectness:
         f(a, b, 2) swaps twice, returning to a=10, b=3, so result is 10-3=7.
         """
         code = '''
-        (letrec ((f (lambda (a b n)
+        (let ((f (lambda (a b n)
                       (if (integer=? n 0)
                           (integer- a b)
                           (f b a (integer- n 1))))))
@@ -506,7 +506,7 @@ class TestParallelMoveCorrectness:
         Swapping many times (odd count) gives the same result as one swap.
         """
         code = '''
-        (letrec ((f (lambda (a b n)
+        (let ((f (lambda (a b n)
                       (if (integer=? n 0)
                           (integer- a b)
                           (f b a (integer- n 1))))))

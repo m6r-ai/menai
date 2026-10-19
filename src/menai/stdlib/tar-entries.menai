@@ -23,7 +23,7 @@
 ; symbolic links ("2").  Contiguous files ("7") are reported as regular files.
 ; Any other type raises.
 
-(letrec
+(let
   ((block-size 512)
 
    ; Convert a numeric header field (a slice of `width` bytes) to an integer.
@@ -33,14 +33,14 @@
    (read-numeric
     (lambda (b start width)
       (if (integer=? (integer-bit-and (bytes-nth b start) #x80) #x80)
-          (letrec ((loop
+          (let ((loop
                     (lambda (i acc)
                       (if (integer>=? i (integer+ start width))
                           acc
                           (loop (integer+ i 1) (integer+ (integer* acc 256) (bytes-nth b i)))))))
             (let ((unsigned (loop start 0)))
               (integer- unsigned (integer* 256 (integer-expn 256 (integer- width 1))))))
-          (letrec ((trim
+          (let ((trim
                     (lambda (end)
                       (if (integer<=? end start)
                           start
@@ -57,7 +57,7 @@
    ; The string value of a NUL-terminated header field of `width` bytes.
    (read-string
     (lambda (b start width)
-      (letrec ((find
+      (let ((find
                 (lambda (i)
                   (if (integer>=? i (integer+ start width))
                       (integer+ start width)
@@ -70,7 +70,7 @@
    ; field (offset 148, length 8) taken as eight spaces (0x20).
    (header-checksum
     (lambda (header)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer=? i 512)
                       acc
@@ -87,7 +87,7 @@
    ; #t when the 512 bytes at `pos` are all zero (the end-of-archive marker).
    (is-zero-block
     (lambda (b pos)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if (integer=? i block-size)
                       #t
@@ -119,12 +119,12 @@
    ; whole record including the newline.
    (pax-value
     (lambda (data key)
-      (letrec ((parse
+      (let ((parse
                 (lambda (pos)
                   (if (integer>=? pos (bytes-length data))
                       #none
                       (let ((line-end
-                             (letrec ((find
+                             (let ((find
                                        (lambda (i)
                                          (if (integer>=? i (bytes-length data))
                                              i
@@ -222,7 +222,7 @@
           (list)
           (if (is-zero-block b pos)
               (list)
-              (letrec ((entry (read-header b pos))
+              (let ((entry (read-header b pos))
                      (typeflag (dict-get entry "typeflag"))
                      (size (dict-get entry "size"))
                      (data (bytes-slice b (integer+ pos block-size) (integer+ pos block-size size)))

@@ -127,7 +127,7 @@ class TestEvaluatorMissingCoverage:
     def test_recursive_lambda_call_chain_cleanup(self, menai):
         """Test that recursive lambda call chain is properly cleaned up."""
         recursive_code = """
-        (letrec ((factorial (lambda (n)
+        (let ((factorial (lambda (n)
                               (if (integer<=? n 1)
                                   1
                                   (integer* n (factorial (integer- n 1)))))))
@@ -139,7 +139,7 @@ class TestEvaluatorMissingCoverage:
     def test_mutual_recursion_call_chain_cleanup(self, menai):
         """Test call chain cleanup with mutual recursion."""
         mutual_recursion_code = """
-        (letrec ((is-even (lambda (n)
+        (let ((is-even (lambda (n)
                             (if (integer=? n 0)
                                 #t
                                 (is-odd (integer- n 1)))))
@@ -249,7 +249,7 @@ class TestEvaluatorMissingCoverage:
         """Test deeply nested expressions that use tail call optimization."""
         # Create a tail-recursive countdown function
         countdown_code = """
-        (letrec ((countdown (lambda (n acc)
+        (let ((countdown (lambda (n acc)
                              (if (integer=? n 0)
                                  acc
                                  (countdown (integer- n 1) (integer+ acc n))))))
@@ -263,7 +263,7 @@ class TestEvaluatorMissingCoverage:
         """Test error propagation through tail call optimization."""
         # Create recursive function that will eventually error
         error_code = """
-        (letrec ((error-func (lambda (n)
+        (let ((error-func (lambda (n)
                               (if (integer=? n 0)
                                   (integer/ 1 0)
                                   (error-func (integer- n 1))))))

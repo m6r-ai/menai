@@ -73,7 +73,7 @@
 ; It is the inverse of xlsx-encode's encode: for every value tree v that encode
 ; accepts, (decode (encode v)) reproduces v.
 
-(letrec
+(let
   ((zip-extract (import "zip-extract"))
    (xml-decode (import "xml-decode"))
 
@@ -117,7 +117,7 @@
    (add-relationship
     (lambda (rels child)
       (if (dict? child)
-          (letrec ((attrs (dict-get child "attrs"))
+          (let ((attrs (dict-get child "attrs"))
                  (id (dict-get attrs "Id"))
                  (type (dict-get attrs "Type"))
                  (target (dict-get attrs "Target"))
@@ -168,7 +168,7 @@
    ; The final "/"-separated segment of a part name.
    (last-path-segment
     (lambda (name)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i found)
                   (if (integer>=? i (string-length name))
                       found
@@ -272,7 +272,7 @@
    (decode
     (lambda (b)
       (if (bytes? b)
-          (letrec ((parts (parts-of b))
+          (let ((parts (parts-of b))
                  (workbook (decode-required-part parts workbook-part)))
             (dict "workbook" workbook
                   "relationships" (relationships-of parts)

@@ -24,7 +24,7 @@
 ; Supported: stored (method 0) and deflate (method 8) entries.  Any other
 ; compression method raises a runtime error.
 
-(letrec
+(let
   ((entries-lib (import "zip-entries"))
    (deflate-lib (import "deflate-decompress"))
 

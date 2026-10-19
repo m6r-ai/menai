@@ -11,10 +11,10 @@ This section contains complete Menai programs with explanation.
 
 ## Factorial
 
-A recursive factorial function using `letrec`:
+A recursive factorial function using `let`:
 
 ```menai
-(letrec ((factorial (lambda (n)
+(let ((factorial (lambda (n)
                       (if (integer<=? n 1)
                           1
                           (integer* n (factorial (integer- n 1)))))))
@@ -26,7 +26,7 @@ For large inputs, use tail recursion to avoid consuming stack space (though Mena
 optimises tail calls, this keeps the pattern clear):
 
 ```menai
-(letrec ((fact-iter (lambda (n acc)
+(let ((fact-iter (lambda (n acc)
                       (if (integer<=? n 1)
                           acc
                           (fact-iter (integer- n 1) (integer* acc n))))))
@@ -37,7 +37,7 @@ optimises tail calls, this keeps the pattern clear):
 ## Fibonacci
 
 ```menai
-(letrec ((fib (lambda (n)
+(let ((fib (lambda (n)
                 (if (integer<=? n 1)
                     n
                     (integer+ (fib (integer- n 1)) (fib (integer- n 2)))))))
@@ -105,7 +105,7 @@ A function that classifies a value:
 ## Structs: a simple bank account
 
 ```menai
-(letrec ((account (struct (balance))))
+(let ((account (struct (balance))))
   (let ((make-account (lambda (initial) (account initial)))
         (deposit (lambda (acc amount)
                    (struct-with acc 'balance
@@ -151,7 +151,7 @@ The decoder uses an explicit work stack to avoid call-stack overflow on deeply n
 JSON. Each stack frame describes what to do when a sub-value is returned. This is a
 good example of how to handle iterative parsing in a pure functional language.
 
-The decoder is also a good example of module structure: it uses `letrec` to define
+The decoder is also a good example of module structure: it uses `let` to define
 mutually recursive helper functions, exports a single `decode` function with an
 `export` form, and keeps all helpers private.
 

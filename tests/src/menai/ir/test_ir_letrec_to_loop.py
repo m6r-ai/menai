@@ -88,7 +88,7 @@ def _convertible_letrec(name: str = "loop", params: list[str] | None = None):
     """
     Build the canonical convertible letrec.
 
-    (letrec ((loop (lambda (n) (if (integer>? n 0) (loop (integer- n 1)) 0))))
+    (let ((loop (lambda (n) (if (integer>? n 0) (loop (integer- n 1)) 0))))
       (loop 5))
 
     Returns (letrec, lambda, init_args).

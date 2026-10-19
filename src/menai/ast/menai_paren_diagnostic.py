@@ -44,7 +44,6 @@ from menai.menai_error import MenaiError
 # stray ')' that ended the form early.
 _MINIMUM_ELEMENTS = {
     'let': 3,
-    'letrec': 3,
     'lambda': 3,
     'if': 4,
     'quote': 2,
@@ -79,7 +78,7 @@ class OpenScope:
     ``form_type`` is the form's head symbol (``'let'``, ``'if'``, ...), or
     ``'('`` for a parenthesised group with no head.  A binding form's bindings
     list has no head of its own, so it is named by ``is_bindings_list`` and
-    ``enclosing_form`` instead: it is the ``'let'``/``'letrec'`` whose
+    ``enclosing_form`` instead: it is the ``'let'`` whose
     bindings it holds.
 
     ``element_count`` is how many complete elements the form holds.  For a
@@ -222,7 +221,7 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
                 # keyword).  Its head is another '(', so it is identified by
                 # position rather than by the symbol after the paren.
                 is_bindings_list = (
-                    parent.form_type in ('let', 'letrec')
+                    parent.form_type == 'let'
                     and parent.element_count == 2
                 )
                 enclosing_form = parent.form_type if is_bindings_list else None

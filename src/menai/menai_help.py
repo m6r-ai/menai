@@ -285,7 +285,7 @@ Syntax: (operator arg1 arg2 ...)
 ## Structs:
 
 - Nominal typed record values — two struct types with the same fields are distinct types
-- Declaration: (struct (field1 field2 ...)) — valid as the RHS of a let or letrec binding
+- Declaration: (struct (field1 field2 ...)) — valid as the RHS of a let binding
 - A struct definition produces a structtype value (a type descriptor), not a struct instance
 - (let ((point (struct (x y)))) ...) → binds point to a structtype value; the binding name becomes the type name
 - Construction: call the structtype value directly with positional field values: (point 1 2) → a point instance
@@ -311,7 +311,7 @@ Syntax: (operator arg1 arg2 ...)
 ## Enums:
 
 - Nominal, closed sets of named variants, compared for identity only — two enum types with the same variant names are distinct types
-- Declaration: (enum (variant1 variant2 ...)) — valid as the RHS of a let or letrec binding; at least one variant is required and variant names must be unique
+- Declaration: (enum (variant1 variant2 ...)) — valid as the RHS of a let binding; at least one variant is required and variant names must be unique
 - An enum definition produces an enumtype value (a type descriptor), not an enum instance
 - (let ((state (enum (idle running stopped)))) ...) → binds state to an enumtype value; the binding name becomes the type name
 - Construction: call the enumtype value with a quoted variant name: (state 'idle) → a state value at variant idle
@@ -458,32 +458,26 @@ Syntax: (operator arg1 arg2 ...)
 - Tail recursion automatically optimized
 - Variadic functions accept any number of args beyond their fixed params; rest param is always a list (possibly empty)
 
-## Local bindings
+## let — local bindings
 
-- (let ((var1 val1) (var2 val2) ...) body) → parallel binding (bindings independent)
-- (let ((x 5) (y 10)) (integer+ x y)) → 15 (x and y don't reference each other)
-- Bindings in let cannot reference each other
-- (letrec ((var1 val1) (var2 val2) ...) body) → recursive binding; every binding name is in scope for every binding value and for the body
-- (letrec ((x 5) (y (integer* x 2))) (integer+ x y)) → 15 (y can reference x)
-- letrec binding names must be unique; nest letrec forms to shadow a name
-- Use let for independent bindings, letrec for sequential dependencies or recursion
-- All binding forms (let, letrec) and lambda accept exactly one body expression; there is no begin or sequencing form — nest letrec for multi-step computations
-- Menai has no define special form; all variable bindings use let or letrec; use letrec for self-recursive or mutually recursive functions
+- (let ((var1 val1) (var2 val2) ...) body) → local bindings; every binding name is in scope for every binding value and for the body
+- (let ((x 5) (y (integer* x 2))) (integer+ x y)) → 15 (y can reference x)
+- (let ((x 5) (y 10)) (integer+ x y)) → 15 (independent bindings need no special form)
+- (let ((fact (lambda (n) (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1))))))) (fact 5)) → 120 (self-recursion)
+- (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 10)) → #t (mutual recursion)
+- let is the only binding form; there is no let* or letrec
+- Binding names must be unique within one let; nest let forms to shadow a name
+- A non-lambda binding cannot refer to itself — wrap the reference in a lambda to defer it
+- Struct and enum definitions are permitted as let binding values — use this when defining a module that exports a type alongside its associated functions
+- let and lambda accept exactly one body expression; there is no begin or sequencing form — nest let for multi-step computations
+- Menai has no define special form; all variable bindings use let
 
 ## Reserved words
 
-- These names are syntax, not names, and cannot be used as binding names: :: if let letrec lambda quote match and or import struct enum export apply : .
-- A reserved word is rejected wherever a binding name may appear: let/letrec bindings, lambda parameters (including the rest parameter), match pattern variables, struct and enum type names
+- These names are syntax, not names, and cannot be used as binding names: :: if let lambda quote match and or import struct enum export apply : .
+- A reserved word is rejected wherever a binding name may appear: let bindings, lambda parameters (including the rest parameter), match pattern variables, struct and enum type names
 - A form headed by a reserved word is always interpreted as that form, so a binding of the same name could never be referenced
 - Use a different name; e.g. bind a value to `value` rather than to `let`
-
-## Recursive bindings
-
-- (letrec ((var1 val1) (var2 val2) ...) body) → recursive binding
-- (letrec ((fact (lambda (n) (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1))))))) (fact 5)) → 120
-- Supports self-recursion and mutual recursion
-- Struct definitions are also permitted in letrec and are hoisted to let automatically — use this when defining a module that exports a struct type alongside its associated functions
-- Use only when you need functions that reference themselves or when defining a module API
 
 ## Quote - data literals and code as data
 
@@ -512,7 +506,7 @@ Syntax: (operator arg1 arg2 ...)
 
 - (import "module-name") → load a module as a namespace (compile-time operation)
 - A module is a .menai file whose body ends with (export name1 name2 ...), naming the bindings it exports
-- import is only valid as the value of a let/letrec binding; bind it to a name and access its members
+- import is only valid as the value of a let binding; bind it to a name and access its members
 - Member access: (:: namespace member) → the value of that export, resolved at compile time
 - Namespaces are second-class: a namespace name may only be bound and then used as the first argument of ::; it cannot be passed, stored, returned, or called as a function
 - Example module (math_utils.menai):

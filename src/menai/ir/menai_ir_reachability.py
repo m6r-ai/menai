@@ -1,7 +1,7 @@
 """
 Menai IR Reachability - pure analysis pass over the IR tree.
 
-Walks a MenaiIRExpr tree and determines which let/letrec bindings are reachable
+Walks a MenaiIRExpr tree and determines which binding-form nodes are reachable
 from the evaluation roots, producing an IRReachability annotation that
 downstream passes (MenaiIROptimizer) can consume.
 
@@ -76,7 +76,7 @@ class IRReachability:
 
 class MenaiIRReachability:
     """
-    Pure analysis pass: determine which let/letrec bindings are reachable.
+    Pure analysis pass: determine which binding-form nodes are reachable.
 
     No transformation is performed; the IR is not modified.
 
@@ -317,7 +317,7 @@ class MenaiIRReachability:
         work: list[tuple[MenaiIRExpr, list[dict[str, tuple[int, int]]], int]],
     ) -> None:
         """
-        Trace a reachable letrec.
+        Trace a reachable $letrec.
 
         All binding names are in scope for both binding values and the body
         (mutual recursion).  Binding values are scheduled only once their

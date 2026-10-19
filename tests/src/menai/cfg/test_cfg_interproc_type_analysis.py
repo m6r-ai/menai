@@ -119,7 +119,7 @@ def _symbol_const_count(cfg) -> int:
 
 
 MONOMORPHIC_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (get-x (lambda (p) (struct-get p 'x))))
   (get-x (point 1 2)))
 """
@@ -141,7 +141,7 @@ class TestMonormorphicStructFieldAccess:
 
 
 POLYMORPHIC_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (vec (struct (x y)))
          (get-x (lambda (p n)
                   (if (integer<=? n 0)
@@ -161,7 +161,7 @@ class TestPolymorphicStructFieldAccess:
 
 
 NON_STRUCT_SRC = """
-(letrec ((get-x (lambda (d) (struct-get d 'x))))
+(let ((get-x (lambda (d) (struct-get d 'x))))
   (get-x (dict "x" 1)))
 """
 
@@ -176,7 +176,7 @@ class TestNonStructReceiver:
 
 
 STRUCT_SET_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (with-x (lambda (p) (struct-with p 'x 10))))
   (with-x (point 1 2)))
 """
@@ -215,7 +215,7 @@ class TestOrphanedSymbolConstantsRemoved:
 
 
 RETURN_CHAIN_SRC = """
-(letrec ((cube (struct (x y z)))
+(let ((cube (struct (x y z)))
          (make-cube (lambda (a b c) (cube a b c)))
          (move (lambda (c n)
                  (if (integer<=? n 0)
@@ -246,7 +246,7 @@ class TestStructTypeThroughReturnValues:
 
 
 RETURN_ONLY_SRC = """
-(letrec ((cube (struct (x y z)))
+(let ((cube (struct (x y z)))
          (make (lambda (n)
                  (if (integer<=? n 0) (cube 1 2 3) (make (integer- n 1)))))
          (pass (lambda (c n)
@@ -278,7 +278,7 @@ class TestStructTypeOnlyThroughReturns:
 
 
 SIBLING_SRC = """
-(letrec ((cube (struct (x y)))
+(let ((cube (struct (x y)))
          (make (lambda (n)
                  (if (integer<=? n 0) (cube 1 2) (make (integer- n 1)))))
          (build (lambda (n)
@@ -312,10 +312,10 @@ class TestStructTypeThroughSiblingCall:
 
 
 CAPTURED_RECEIVER_SRC = """
-(letrec ((cube (struct (x y)))
+(let ((cube (struct (x y)))
          (read-x (lambda (c) (struct-get c 'x)))
          (outer (lambda (c)
-                  (letrec ((loop (lambda () (read-x c))))
+                  (let ((loop (lambda () (read-x c))))
                     (loop)))))
   (outer (cube 1 2)))
 """
@@ -341,10 +341,10 @@ class TestStructTypeThroughCapturedVariable:
 
 
 CAPTURED_SIBLING_RECEIVER_SRC = """
-(letrec ((cube (struct (x y)))
+(let ((cube (struct (x y)))
          (read-x (lambda (c) (struct-get c 'x)))
          (outer (lambda (c)
-                  (letrec ((helper (lambda () (read-x c)))
+                  (let ((helper (lambda () (read-x c)))
                            (loop (lambda () (helper))))
                     (loop)))))
   (outer (cube 1 2)))
@@ -442,7 +442,7 @@ class TestStructSetThroughRefinement:
 FREE_VAR_STRUCT_TYPE_SRC = """
 (let ((point (struct (x y)))
       (box (struct (item tag))))
-  (letrec ((pick (lambda (inner) (if (struct-is-instance? inner point)
+  (let ((pick (lambda (inner) (if (struct-is-instance? inner point)
                                      (struct-get inner 'x)
                                      0))))
     (pick (struct-get (box (point 1 2) 9) 'item))))
@@ -533,7 +533,7 @@ SHADOWED_DICT_SRC = """
       (q (struct (y x)))
       (f (lambda (n) (p 10 20)))
       (g (lambda (n) (q 30 40))))
-  (letrec ((build (lambda (suffix n)
+  (let ((build (lambda (suffix n)
                     (if (integer<=? n 0)
                         (let ((d (dict (string-concat "k" suffix) f "k" g)))
                           (struct-get ((dict-get d "k") 0) 'x))
@@ -568,7 +568,7 @@ def _guard_count(cfg) -> int:
 
 
 PROVABLE_PARAM_SRC = """
-(letrec ((add (lambda (a b n)
+(let ((add (lambda (a b n)
                 (if (integer<=? n 0)
                     (integer+ a b)
                     (add a b (integer- n 1))))))
@@ -577,7 +577,7 @@ PROVABLE_PARAM_SRC = """
 
 
 UNPROVABLE_PARAM_SRC = """
-(letrec ((add (lambda (a b n)
+(let ((add (lambda (a b n)
                 (if (integer<=? n 0)
                     (integer+ a b)
                     (add a b (integer- n 1)))))
@@ -611,7 +611,7 @@ class TestGuardElimination:
 
 
 SELF_RECURSIVE_NO_CALLER_SRC = """
-(letrec ((walk (lambda (lst)
+(let ((walk (lambda (lst)
                  (if (list-null? lst)
                      (list)
                      (walk (list-rest lst))))))
@@ -620,7 +620,7 @@ SELF_RECURSIVE_NO_CALLER_SRC = """
 
 
 MUTUAL_RECURSIVE_NO_CALLER_SRC = """
-(letrec ((ping (lambda (lst)
+(let ((ping (lambda (lst)
                  (if (list-null? lst) (list) (pong (list-rest lst)))))
          (pong (lambda (lst)
                  (if (list-null? lst) (list) (ping (list-rest lst))))))
@@ -629,7 +629,7 @@ MUTUAL_RECURSIVE_NO_CALLER_SRC = """
 
 
 SELF_RECURSIVE_CONSTANT_BACK_EDGE_SRC = """
-(letrec ((f (lambda (x)
+(let ((f (lambda (x)
               (if (list-null? x) x (f (list 1))))))
   (list f))
 """
@@ -667,7 +667,7 @@ class TestRecursiveParameterNotProvenFromCycle:
 
 
 GROUNDED_RECURSIVE_SRC = """
-(letrec ((walk (lambda (lst)
+(let ((walk (lambda (lst)
                  (if (list-null? lst)
                      (list)
                      (walk (list-rest lst))))))
@@ -676,7 +676,7 @@ GROUNDED_RECURSIVE_SRC = """
 
 
 DEGRADED_RECURSIVE_SRC = """
-(letrec ((result-type (struct (value)))
+(let ((result-type (struct (value)))
          (make-result (lambda (v) (result-type v)))
          (search-loop
           (lambda (bound)
@@ -709,7 +709,7 @@ class TestRecursiveParameterGrounding:
 
 
 AMBIGUOUS_INNER_PARAM_SRC = """
-(letrec
+(let
   ((Point (struct (x y)))
    (Other (struct (y x)))
    (a
@@ -769,8 +769,8 @@ def _non_entry_guard_count(cfg) -> int:
 
 
 LOOP_CARRIED_FACT_SRC = """
-(letrec ((outer (lambda (limit)
-                  (letrec ((search (lambda (lo hi)
+(let ((outer (lambda (limit)
+                  (let ((search (lambda (lo hi)
                                      (if (integer<=? (integer- hi lo) 1)
                                          lo
                                          (let ((mid (integer+ lo (integer/ (integer- hi lo) 2))))
@@ -809,7 +809,7 @@ class TestLoopCarriedValueFact:
 
 
 ESCAPE_VIA_CONTAINER_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (get-x (lambda (p)
                   (let ((a (struct-get p 'x))
                         (b (struct-get p 'x))
@@ -820,7 +820,7 @@ ESCAPE_VIA_CONTAINER_SRC = """
                         (g (struct-get p 'x))
                         (h (struct-get p 'x)))
                     (integer+ a b c d e f g h)))))
-  (letrec ((direct (get-x (point 1 2)))
+  (let ((direct (get-x (point 1 2)))
          (boxed (list get-x))
          (fetched ((list-first boxed) "hello")))
     (list direct fetched)))
@@ -828,7 +828,7 @@ ESCAPE_VIA_CONTAINER_SRC = """
 
 
 ESCAPE_VIA_CAPTURE_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (get-x (lambda (p)
                   (let ((a (struct-get p 'x))
                         (b (struct-get p 'x))
@@ -848,7 +848,7 @@ ESCAPE_VIA_CAPTURE_SRC = """
 # vector-nth.  Every builtin that moves a value into or out of a container must
 # be covered, not only the list ones.
 ESCAPE_VIA_VECTOR_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (get-x (lambda (p)
                   (let ((a (struct-get p 'x))
                         (b (struct-get p 'x))
@@ -859,7 +859,7 @@ ESCAPE_VIA_VECTOR_SRC = """
                         (g (struct-get p 'x))
                         (h (struct-get p 'x)))
                     (integer+ a b c d e f g h)))))
-  (letrec ((direct (get-x (point 1 2)))
+  (let ((direct (get-x (point 1 2)))
          (boxed (vector-with (vector #f) 0 get-x))
          (fetched ((vector-nth boxed 0) "hello")))
     (list direct fetched)))
@@ -870,7 +870,7 @@ ESCAPE_VIA_VECTOR_SRC = """
 # call site passes a Point.  The direct call's result feeds the returned value
 # so the call site survives dead-binding elimination.
 ESCAPE_VIA_RETURN_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (get-x (lambda (p)
                   (let ((a (struct-get p 'x))
                         (b (struct-get p 'x))
@@ -945,7 +945,7 @@ def _none_predicate_count(cfg) -> int:
 
 
 RETURN_THROUGH_FUNCTION_PARAM_SRC = """
-(letrec
+(let
   ((walk
     (lambda (i k)
       (if (integer>? i 3)

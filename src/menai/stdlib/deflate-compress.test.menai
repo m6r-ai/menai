@@ -1,6 +1,6 @@
 ; Tests for deflate-compress.menai
 
-(letrec
+(let
   ((deflate-mod (import "deflate-compress"))
    (decompress-mod (import "deflate-decompress"))
    (t (import "menai-test"))

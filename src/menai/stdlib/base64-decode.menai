@@ -28,7 +28,7 @@
 ; guarantee meaningful and keeps a decode failure from silently producing wrong
 ; bytes.
 
-(letrec
+(let
   ((standard-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
    (url-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
@@ -98,7 +98,7 @@
    ; padding is reported as such rather than as an invalid data character.
    (validate-padding-position
     (lambda (s n)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if (integer>=? i n)
                       #t
@@ -217,7 +217,7 @@
    (decode
     (lambda (s . rest)
       (if (string? s)
-          (letrec ((v
+          (let ((v
                   (if (list-null? rest)
                       (variant 'standard)
                       (list-first rest)))

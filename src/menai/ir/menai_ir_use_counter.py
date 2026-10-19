@@ -97,7 +97,7 @@ class MenaiIRUseCounter:
 
         # scope_stack: list of dicts mapping name → frame_id.
         # Each dict corresponds to one scope level; multiple levels can share
-        # the same frame_id (let/letrec within a lambda do not create a new frame).
+        # the same frame_id (a binding form within a lambda does not create a new frame).
         scope_stack: list[dict[str, tuple[int, int]]] = [{}]
         self._walk(ir, result, scope_stack, module_frame_id)
         return result
@@ -277,10 +277,10 @@ class MenaiIRUseCounter:
         current_frame_id: int,
     ) -> None:
         """
-        Walk a letrec node.
+        Walk a $letrec node.
 
         All binding names are in scope for both binding values and the body
-        (mutual recursion).  Like let, letrec does not create a new frame.
+        (mutual recursion).  Like $let, $letrec does not create a new frame.
         """
         letrec_scope: dict[str, tuple[int, int]] = {
             name: (current_frame_id, id(binding))

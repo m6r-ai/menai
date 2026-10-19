@@ -155,7 +155,7 @@ The result looks like this:
 ; Module-wide framing: what it is, the shape of the values it works with, and
 ; any constraints.
 
-(letrec
+(let
   ((helper ...)
 
    ; What this export does, its arguments, and what it raises.
@@ -239,28 +239,28 @@ unrelated pass.
 
 ### The IR inliner does not inline recursive or mutually-recursive calls
 
-The IR inliner refuses to inline a call to a `letrec`-bound function made from within
-that `letrec` group. This is the recursion guard: a `letrec` group is a single
+The IR inliner refuses to inline a call to a `$letrec`-bound function made from within
+that `$letrec` group. This is the recursion guard: a `$letrec` group is a single
 strongly-connected component (ADR-0008), so a same-group call may be recursive, and
 inlining a self-recursive body would not terminate the pass's fixed-point loop.
 
 The guard is scoped to the enclosing group. The group's binding names are reset when
-descending into a nested `let` body, so a `letrec`-bound function is inlinable at call
+descending into a nested `$let` body, so a `$letrec`-bound function is inlinable at call
 sites outside its own group. A direct lambda application (`((lambda ...) arg)`) is
 exempt.
 
 See [ADR-0031](docs/adr/0031-inliner-does-not-inline-recursive-calls.md).
 
-### Single-binding tail-recursive letrecs are converted to loops before inlining
+### Single-binding tail-recursive groups are converted to loops before inlining
 
-`MenaiIRLetrecToLoop` converts a `letrec` with a single self-referencing binding whose
+`MenaiIRLetrecToLoop` converts a `$letrec` with a single self-referencing binding whose
 body is a single tail call to that binding into a `MenaiIRLoop`, replacing the
 self-calls with `MenaiIRRecur` back-edges. It runs before the inliner so the inliner
 can see and inline calls inside the loop body.
 
-Only single-binding letrecs are converted. A self-recursive function that shares a
-`letrec` group with other bindings is not converted; moving it into its own
-single-binding `letrec` makes it eligible.
+Only single-binding groups are converted. A self-recursive function that shares a
+`$letrec` group with other bindings is not converted; moving it into its own
+single-binding group makes it eligible.
 
 See [ADR-0032](docs/adr/0032-single-binding-tail-recursive-letrecs-become-loops.md).
 
@@ -366,22 +366,22 @@ dominate every back-edge block of the loop.
 
 See [ADR-0049](docs/adr/0049-hoisting-must-not-introduce-a-raise.md).
 
-### `letrec` reaching the IR builder is always a genuine mutually-recursive group
+### `$letrec` reaching the IR builder is always a genuine mutually-recursive group
 
-The desugarer guarantees that by the time `letrec` reaches the IR builder, every
-`letrec` is a single strongly-connected component of mutually-recursive bindings.
+The desugarer guarantees that by the time `$letrec` reaches the IR builder, every
+`$letrec` is a single strongly-connected component of mutually-recursive bindings.
 Non-recursive bindings are hoisted to `let` forms.
 
-However, not every binding in a `letrec` group is necessarily a lambda. A
-non-lambda binding (e.g. `(letrec ((x (list (lambda () x)))) x)`) can appear in a
-`letrec` group when its RHS contains a nested lambda that closes over the binding
-name — the dependency analyzer sees a cycle and correctly keeps it in `letrec`.
+However, not every binding in a `$letrec` group is necessarily a lambda. A
+non-lambda binding (e.g. `(let ((x (list (lambda () x)))) x)`) can appear in a
+`$letrec` group when its RHS contains a nested lambda that closes over the binding
+name — the dependency analyzer sees a cycle and correctly keeps it in `$letrec`.
 The IR builder and both codegens handle this. The CFG builder handles it via a
 dedicated Phase 2b / Phase 3b in `_build_letrec`: non-lambda binding values are
 evaluated after all sibling lambda closures exist (so nested lambdas can capture
 them), and any nested lambdas with sibling captures are patched afterward.
 
-IR passes downstream of the IR builder may not assume all `letrec` bindings are lambdas.
+IR passes downstream of the IR builder may not assume all `$letrec` bindings are lambdas.
 
 See [ADR-0008](docs/adr/0008-letrec-is-genuine-mutual-recursion.md).
 
@@ -404,11 +404,11 @@ The desugarer lowers a call by name: `(integer+ a b)` becomes `($integer+ a b)`,
 `(list-length x)` becomes `($list-length x)`, and so on. The semantic analyser
 likewise validates call arity against the builtin registry by name. Both
 must first check whether the name is bound by an enclosing lexical binder
-(`let`/`letrec`/`lambda`/`match`); if it is, the call refers to the user's
+(`let`/`lambda`/`match`); if it is, the call refers to the user's
 binding and neither the rewrite nor the arity check may fire. Both passes track
 this with a scope stack.
 
-The prelude is desugared as an ordinary program, so its own top-level `letrec`
+The prelude is desugared as an ordinary program, so its own top-level `let`
 bindings shadow the builtins. The prelude must therefore write every call to an
 opcode-backed builtin in explicit `$`-prefixed form; it must not rely on the
 desugarer's name-based rewrites. Prelude-only functions (which have no primitive
@@ -446,7 +446,7 @@ dict mapping each export name to its value. Both paths go through the resolver, 
 desugarer only ever sees a genuinely stray `export` (one that is not a module body) and
 rejects it.
 
-A namespace is second-class: it may only be bound directly by a `let`/`letrec`
+A namespace is second-class: it may only be bound directly by a `let`
 binding and used as the first argument of `::`. It cannot be passed, stored, returned,
 or called as a function. This restriction is what guarantees every member access is
 statically resolvable.
@@ -777,7 +777,7 @@ See [ADR-0050](docs/adr/0050-xlsx-codec-ooxml-capture-layer.md).
 ### Enums are bare-tag, and the bare-tag form must not foreclose payloads
 
 An `enum` is a nominal, closed set of named variants, compared for identity only.
-It is declared with `(enum (variant ...))` as the RHS of a `let`/`letrec`
+It is declared with `(enum (variant ...))` as the RHS of a `let`
 binding, producing an **enumtype** value that mirrors structtype; the enumtype is
 callable, and `(state 'idle)` constructs a value. A `match` names the enumtype as the
 pattern head and the variant as a quoted symbol: `((: state 'idle) ...)`. Variants are
@@ -872,7 +872,7 @@ each remaining argument on its own line aligned under the first argument — exc
 list with two or more arguments of which any is a nested form, which instead breaks
 after the head and indents every argument by two (so a single nested argument does
 not leave the rest aligned under a wide head), and except the five special forms
-(`lambda`, `let`, `letrec`, `match`), which indent their trailing elements
+(`lambda`, `let`, `match`), which indent their trailing elements
 by two, and bindings, which put the value on the next line
 at the name's column. A multi-line binding is separated from the next binding by a
 blank line (before any comment that precedes it) and from the previous binding by
@@ -880,7 +880,7 @@ one too; single-line bindings are not separated.
 A multi-line `dict` is the general-list rule with arguments grouped in pairs:
 each key/value pair goes on its own line, aligned under the first key.
 
-A compound form (`if`, `let`, `letrec`) with a nested body is multi-line
+A compound form (`if`, `let`) with a nested body is multi-line
 wherever it appears, including as a binding's value, so the same form never renders
 compact in one position and expanded in another.
 

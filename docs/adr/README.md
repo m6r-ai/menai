@@ -83,7 +83,7 @@ What costs, risks, or constraints does this decision impose?
 | [0012](0012-distinct-none-type-for-absence.md) | Distinct `#none` type for absence | Accepted |
 | [0013](0013-two-intermediate-representations.md) | Two intermediate representations — IR tree and SSA CFG | Accepted |
 | [0014](0014-pool-allocator-in-c-vm.md) | Pool allocator in the C VM | Accepted |
-| [0015](0015-desugar-to-small-core.md) | Desugar to a small core before IR | Accepted |
+| [0015](0015-desugar-to-small-core.md) | Desugar to a small core before IR | Superseded by ADR-0054 |
 | [0016](0016-reference-counting-with-closure-cycle-collection.md) | Reference counting with closure cycle collection in the C VM | Accepted |
 | [0017](0017-cons-cell-internal-representation.md) | Cons-cell internal representation for lists | Accepted |
 | [0018](0018-vector-type.md) | Vector type | Accepted |
@@ -122,3 +122,4 @@ What costs, risks, or constraints does this decision impose?
 | [0051](0051-menai-source-formatting-style.md) | Menai source formatting style | Accepted |
 | [0052](0052-regular-expression-captures.md) | Regular-expression captures | Accepted |
 | [0053](0053-paren-diagnostics-locate-the-line-to-change.md) | Paren diagnostics locate the line to change, not the symptom | Accepted |
+| [0054](0054-let-is-the-only-binding-form.md) | `let` is the only binding form | Accepted |

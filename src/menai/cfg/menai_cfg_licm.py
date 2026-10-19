@@ -12,7 +12,7 @@ function); all of them are retargeted.
 Multiple loops per function
 ---------------------------
 A function may contain more than one loop.  This happens when the IR inliner
-splices a `letrec`-to-loop body (an inner loop) into a function that is itself
+splices a letrec-to-loop body (an inner loop) into a function that is itself
 a loop, producing a loop nested inside another loop; it also happens for
 sequential loops.  Self-loops are grouped by the header they target, and each
 group is a distinct loop.  Every loop is optimised independently, innermost

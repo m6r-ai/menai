@@ -14,7 +14,7 @@ from menai.menai_error import MenaiCancelledException
 # The VM checks for cancellation every ~131K instructions, so this will be
 # cancelled quickly once cancel() is called.
 _LONG_RUNNING = """
-(letrec ((loop (lambda (n) (loop (integer+ n 1)))))
+(let ((loop (lambda (n) (loop (integer+ n 1)))))
   (loop 0))
 """
 

@@ -335,10 +335,10 @@ class MenaiVCodePatchClosure:
     patch_closure(closure, capture_index, value)
 
     Installs value into capture slot capture_index of closure.
-    Used exclusively during letrec initialisation.
+    Used exclusively during $letrec initialisation.
 
     `value` is an operand: the patched value is frequently a compile-time
-    constant (a literal sibling binding in the letrec group).
+    constant (a literal sibling binding in the $letrec group).
     """
     closure: MenaiVCodeReg
     capture_index: int

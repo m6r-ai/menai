@@ -29,7 +29,7 @@ from menai import Menai
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
 
 _MODULE_SOURCE = """
-(letrec
+(let
   ((signature (string->bytes "BM"))
    (dib-header-size 40)
    (data-offset 54)
@@ -60,13 +60,13 @@ _MODULE_SOURCE = """
    (encode-row
     (lambda (b row width bpp)
       (if (vector? row)
-          (letrec ((loop (lambda (x acc)
+          (let ((loop (lambda (x acc)
                            (if (integer>=? x width)
                                acc
                                (loop (integer+ x 1)
                                      (encode-pixel acc (vector-nth row x) bpp))))))
             (let ((padded (loop 0 b)))
-              (letrec ((pad (lambda (n acc)
+              (let ((pad (lambda (n acc)
                               (if (integer>=? n (row-padding width bpp))
                                   acc
                                   (pad (integer+ n 1) (bytes-append-u8 acc 0))))))
@@ -76,7 +76,7 @@ _MODULE_SOURCE = """
     (lambda (b pixels width height bpp bottom-up)
       (if (vector? pixels)
           (let ((ordered (if bottom-up (list->vector (list-reverse (vector->list pixels))) pixels)))
-            (letrec ((loop (lambda (y acc)
+            (let ((loop (lambda (y acc)
                              (if (integer>=? y height)
                                  acc
                                  (loop (integer+ y 1)

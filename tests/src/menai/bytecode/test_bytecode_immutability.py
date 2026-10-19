@@ -45,10 +45,10 @@ _SOURCES = {
           (lambda (y) (integer+ x y)))
     """,
     "two-loops": """
-        (let ((a (letrec ((f (lambda (n acc)
+        (let ((a (let ((f (lambda (n acc)
                                (if (integer=? n 0) acc (f (integer- n 1) (integer+ acc n))))))
                    (f 10 0)))
-              (b (letrec ((g (lambda (m s)
+              (b (let ((g (lambda (m s)
                                (if (integer=? m 0) s (g (integer- m 1) (integer* s m))))))
                    (g 10 1))))
           (integer+ a b))

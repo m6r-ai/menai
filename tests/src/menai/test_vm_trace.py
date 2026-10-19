@@ -40,7 +40,7 @@ class TestOrdinalAgreement:
     def test_counts_land_on_plausible_instructions(self):
         """Every instruction with a non-zero count has an opcode that could execute."""
         _, code, instr_counts, _ = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 3))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 3))"
         )
         visits = list(walk_code_objects(code))
         for visit in visits:
@@ -62,7 +62,7 @@ class TestCallCounting:
     def test_recursive_function_call_count(self):
         """A function recursing from 5 down to 1 is called 5 times."""
         _, code, _, call_counts = _run_traced(
-            "(letrec ((fact (lambda (n) (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1))))))) (fact 5))"
+            "(let ((fact (lambda (n) (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1))))))) (fact 5))"
         )
         visits = list(walk_code_objects(code))
         by_name = {v.code.name: call_counts[v.code_ordinal] for v in visits}
@@ -95,7 +95,7 @@ class TestCallCounting:
         collapses onto ordinal 0, inflating the module's call count.
         """
         _, code, _, call_counts = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 4))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 4))"
         )
         root = next(iter(walk_code_objects(code)))
         assert call_counts[root.code_ordinal] == 1
@@ -108,7 +108,7 @@ class TestCallCounting:
         call rather than a loop the compiler folds the tail call into.
         """
         _, code, _, call_counts = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (integer+ n (f (integer- n 1))))))) (f 4))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (integer+ n (f (integer- n 1))))))) (f 4))"
         )
         visits = list(walk_code_objects(code))
         root = visits[0]
@@ -118,7 +118,7 @@ class TestCallCounting:
     def test_module_instructions_execute_once_each(self):
         """The module's own instructions each execute exactly once."""
         _, code, instr_counts, _ = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (integer+ n (f (integer- n 1))))))) (f 4))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (integer+ n (f (integer- n 1))))))) (f 4))"
         )
         root = next(iter(walk_code_objects(code)))
         counts = instr_counts[root.instr_base:root.instr_base + root.instruction_count]
@@ -134,7 +134,7 @@ class TestCallCounting:
         `apply` so that it is not inlined and keeps its own code object.
         """
         _, code, _, call_counts = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (apply f (list 4)))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (apply f (list 4)))"
         )
         visits = list(walk_code_objects(code))
         by_name = {v.code.name: call_counts[v.code_ordinal] for v in visits}
@@ -154,7 +154,7 @@ class TestInstructionCounting:
     def test_total_matches_sum(self):
         """The sum of instruction counts is the total instructions executed."""
         _, _, instr_counts, _ = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 4))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 4))"
         )
         assert sum(instr_counts) > 0
 
@@ -187,14 +187,14 @@ class TestResolveTrace:
 
     def test_resolve_produces_one_function_per_code_object(self):
         _, code, instr_counts, call_counts = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 2))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 2))"
         )
         result = resolve_trace(code, instr_counts, call_counts)
         assert len(result.functions) == len(list(walk_code_objects(code)))
 
     def test_resolve_totals_match_raw_counts(self):
         _, code, instr_counts, call_counts = _run_traced(
-            "(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 2))"
+            "(let ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 2))"
         )
         result = resolve_trace(code, instr_counts, call_counts)
         assert result.total_instructions() == sum(instr_counts)

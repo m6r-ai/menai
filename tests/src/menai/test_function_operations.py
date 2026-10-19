@@ -76,7 +76,7 @@ class TestApplyTailCall:
         # The apply is the tail expression of the outer lambda
         # Use letrec so g can close over f
         assert menai.evaluate(
-            "(letrec ((f (lambda (x y) (integer+ x y)))"
+            "(let ((f (lambda (x y) (integer+ x y)))"
             "       (g (lambda (args) (apply f args))))"
             "  (g (list 10 20)))"
         ) == 30
@@ -84,7 +84,7 @@ class TestApplyTailCall:
     def test_apply_tail_recursive_via_apply(self, menai):
         # Deep recursion using apply in tail position — would overflow without TCO
         result = menai.evaluate("""
-            (letrec ((sum (lambda (n acc)
+            (let ((sum (lambda (n acc)
                             (if (integer=? n 0)
                                 acc
                                 (apply sum (list (integer- n 1) (integer+ acc n)))))))
@@ -102,7 +102,7 @@ class TestApplyTailCall:
         # f captures `offset` from its enclosing scope; apply must copy captured_values
         # into the callee frame via the TAIL_APPLY captured_values branch.
         assert menai.evaluate(
-            "(letrec ((offset 100) (f (lambda (x) (integer+ x offset))))"
+            "(let ((offset 100) (f (lambda (x) (integer+ x offset))))"
             "  (apply f (list 5)))"
         ) == 105
 
@@ -231,7 +231,7 @@ class TestApplyNonTail:
         # f captures `offset` from its enclosing scope; apply must copy captured_values
         # into the callee frame via the APPLY captured_values branch.
         assert menai.evaluate(
-            "(letrec ((offset 100) (f (lambda (x) (integer+ x offset))))"
+            "(let ((offset 100) (f (lambda (x) (integer+ x offset))))"
             "  (integer-abs (apply f (list 5))))"
         ) == 105
 
@@ -589,7 +589,7 @@ class TestApplyWithIntrospection:
             (let ((f integer+)
                   (g integer*)
                   (fns (list integer+ integer* integer+ integer-abs integer*)))
-              (letrec ((dedup (lambda (lst seen acc)
+              (let ((dedup (lambda (lst seen acc)
                                 (if (list-null? lst)
                                     (list-reverse acc)
                                     (if (any-list? (lambda (s) (function=? s (list-first lst))) seen)

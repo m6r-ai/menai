@@ -28,14 +28,14 @@ class TestInternalErrorFormatting:
         err = MenaiInternalError(
             message="register r0(x) has no assigned slot",
             phase="vcode slot allocation",
-            expression="(letrec ((x (integer+ x 1))) x)",
+            expression="(let ((x (integer+ x 1))) x)",
         )
         text = str(err)
 
         assert "INTERNAL COMPILER ERROR" in text
         assert "not in your program" in text
         assert "vcode slot allocation" in text
-        assert "(letrec ((x (integer+ x 1))) x)" in text
+        assert "(let ((x (integer+ x 1))) x)" in text
 
     def test_positional_wording_matches_layout(self):
         """

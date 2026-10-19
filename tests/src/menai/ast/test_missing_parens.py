@@ -222,7 +222,7 @@ class TestMissingCloseLocation:
         not at the end of the file, which is where the parse ran out of input.
         """
         source = (
-            "(letrec\n"
+            "(let\n"
             "  ((a 1)\n"
             "   (b (lambda (n) (integer+ n 1)))\n"
             "  (export b))\n"
@@ -329,7 +329,7 @@ class TestEarlyBindingsClose:
     def test_early_close_reports_the_closing_paren(self, menai):
         """The error location is the ')' that closed the bindings list early."""
         source = (
-            "(letrec\n"
+            "(let\n"
             "  ((a (lambda () 1))\n"
             "   (b (lambda () 2)))\n"
             "  (c (lambda () 3))\n"
@@ -347,7 +347,7 @@ class TestEarlyBindingsClose:
     def test_early_close_includes_depth_table(self, menai):
         """The message includes the per-line depth profile."""
         source = (
-            "(letrec\n"
+            "(let\n"
             "  ((a (lambda () 1))\n"
             "   (b (lambda () 2)))\n"
             "  (c (lambda () 3))\n"
@@ -364,7 +364,7 @@ class TestEarlyBindingsClose:
     def test_early_close_suggests_moving_the_paren(self, menai):
         """The suggestion names the ')' to move and where it belongs."""
         source = (
-            "(letrec\n"
+            "(let\n"
             "  ((a (lambda () 1))\n"
             "   (b (lambda () 2)))\n"
             "  (c (lambda () 3))\n"
@@ -457,15 +457,15 @@ class TestEnclosingFormClosedEarly:
         with pytest.raises(MenaiASTBuildError, match="'if' has the wrong number of elements"):
             menai.evaluate("(if 1 2 3 4)")
 
-    def test_genuine_letrec_too_few_elements_is_not_an_early_close(self, menai):
+    def test_genuine_let_too_few_elements_is_not_an_early_close(self, menai):
         """
-        A 'letrec' with too few elements keeps the original message.
+        A 'let' with too few elements keeps the original message.
 
-        ``(letrec ())`` has no body, but the 'letrec' itself is the form that
+        ``(let ())`` has no body, but the 'let' itself is the form that
         closed early, so this is its own structural error, not a misplaced ')'.
         """
-        with pytest.raises(MenaiEvalError, match="Letrec expression structure is incorrect"):
-            menai.evaluate("(letrec ())")
+        with pytest.raises(MenaiEvalError, match="Let expression structure is incorrect"):
+            menai.evaluate("(let ())")
 
     def test_binding_third_element_points_at_enclosing_close(self, menai):
         """

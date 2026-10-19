@@ -65,7 +65,7 @@ def menai():
 
 
 _COLLECT_SRC = """
-(letrec ((collect (lambda (lst acc)
+(let ((collect (lambda (lst acc)
   (if (list-null? lst)
     acc
     (let ((h (list-first lst)))
@@ -112,7 +112,7 @@ class TestJumpThreadingBasic:
     def test_result_correct_all_zeros(self, menai):
         """All zeros — accumulator stays empty."""
         src = """
-(letrec ((collect (lambda (lst acc)
+(let ((collect (lambda (lst acc)
   (if (list-null? lst)
     acc
     (let ((h (list-first lst)))
@@ -126,7 +126,7 @@ class TestJumpThreadingBasic:
     def test_result_correct_no_zeros(self, menai):
         """No zeros — all elements collected."""
         src = """
-(letrec ((collect (lambda (lst acc)
+(let ((collect (lambda (lst acc)
   (if (list-null? lst)
     acc
     (let ((h (list-first lst)))
@@ -147,7 +147,7 @@ class TestJumpThreadingCorrectness:
         jump-to-jump patterns.
         """
         src = """
-(letrec ((loop (lambda (n sum evens odds)
+(let ((loop (lambda (n sum evens odds)
   (if (integer>=? n 10)
     (list sum evens odds)
     (let ((is-even (integer=? (integer% n 2) 0)))
@@ -167,7 +167,7 @@ class TestJumpThreadingCorrectness:
         jump-to-jump convergence points.
         """
         src = """
-(letrec ((classify (lambda (lst pos neg zero)
+(let ((classify (lambda (lst pos neg zero)
   (if (list-null? lst)
     (list pos neg zero)
     (let ((h (list-first lst)))
@@ -191,7 +191,7 @@ class TestJumpThreadingTransitive:
         iteration to a fixed point.
         """
         src = """
-(letrec ((process (lambda (lst a b c)
+(let ((process (lambda (lst a b c)
   (if (list-null? lst)
     (list a b c)
     (let ((h (list-first lst)))

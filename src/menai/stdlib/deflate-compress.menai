@@ -14,7 +14,7 @@
 ; ones; when eight have accumulated the byte is emitted and the accumulator is
 ; reset.  This is the exact inverse of the reader in inflate.
 
-(letrec
+(let
   ((tables (import "deflate-tables"))
    (length-base (:: tables length-base))
    (length-extra (:: tables length-extra))
@@ -50,7 +50,7 @@
                    (integer-bit-shift-left (integer-bit-and value (integer- (integer-bit-shift-left 1 count) 1)) bit)))
 
                 (total (integer+ bit count)))
-               (letrec ((emit
+               (let ((emit
                          (lambda (bs n remaining)
                            (if (integer<? n 8)
                                (writer bs n remaining)
@@ -72,7 +72,7 @@
    ; bit first, so a canonical code is reversed into write order.
    (reverse-bits
     (lambda (value length)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i length)
                       acc
@@ -112,7 +112,7 @@
    ; `value` is always at least `bases[0]`, so the search always has an answer.
    (find-base-index
     (lambda (bases value)
-      (letrec ((search
+      (let ((search
                 (lambda (lo hi)
                   (if (integer>=? lo hi)
                       lo
@@ -149,7 +149,7 @@
                  (integer-max acc len))
                0
                lengths)))
-        (letrec
+        (let
           ((bl-count
             (lambda (lst acc)
               (if (list-null? lst)
@@ -159,7 +159,7 @@
 
            (next-codes
             (lambda (bl maxlen)
-              (letrec ((loop
+              (let ((loop
                         (lambda (len code acc)
                           (if (integer>? len maxlen)
                               acc
@@ -167,7 +167,7 @@
                                 (loop (integer+ len 1) next (dict-with acc len code)))))))
                 (loop 1 0 (dict))))))
           (let ((nexts (next-codes (bl-count lengths (dict)) maxlen)))
-            (letrec ((assign
+            (let ((assign
                       (lambda (lst codes acc)
                         (if (list-null? lst)
                             (list-reverse acc)
@@ -224,7 +224,7 @@
     (lambda (b c i limit)
       (if (bytes=? (bytes-slice b c (integer+ c limit)) (bytes-slice b i (integer+ i limit)))
           limit
-          (letrec ((search
+          (let ((search
                     (lambda (lo hi)
                       (if (integer<=? (integer- hi lo) 1)
                           lo
@@ -251,9 +251,9 @@
       (let ((key (prefix-key b i)))
         (if (none? key)
             (list 0 0)
-            (letrec ((candidates (table-get table key))
+            (let ((candidates (table-get table key))
                    (limit (integer-min max-match (integer- (bytes-length b) i))))
-              (letrec ((loop
+              (let ((loop
                         (lambda (cands best-len best-dist chain)
                           (if (or (list-null? cands)
                                   (integer>=? best-len limit)
@@ -288,7 +288,7 @@
    ; than its distance (there is no repetition to exploit).
    (tokenize
     (lambda (b)
-      (letrec
+      (let
         ((add-candidate
           (lambda (b i table)
             (let ((key (prefix-key b i)))
@@ -299,7 +299,7 @@
          (add-candidates
           (lambda (b i len dist table)
             (let ((last-full (integer- len 3)))
-              (letrec
+              (let
                 ((prepend-group
                   (lambda (k acc)
                     (if (integer>? k last-full)
@@ -332,7 +332,7 @@
           (lambda (i table acc)
             (if (integer>=? i (bytes-length b))
                 (list-reverse acc)
-                (letrec ((matched-item (find-match b i table))
+                (let ((matched-item (find-match b i table))
                        (len (list-first matched-item))
                        (dist (list-nth matched-item 1)))
                   (if (integer>=? len min-match)
@@ -362,7 +362,7 @@
    ; single initial sort) instead of the O(n^2 log n) of re-sorting per merge.
    (build-code-lengths
     (lambda (freqs)
-      (letrec
+      (let
         ((active-symbols
           (lambda (i lst acc)
             (if (list-null? lst)
@@ -373,7 +373,7 @@
 
          (depths
           (lambda (nodes depths-acc)
-            (letrec ((walk
+            (let ((walk
                       (lambda (payload depth acc)
                         (if (integer? payload)
                             (dict-with acc payload depth)
@@ -406,7 +406,7 @@
                 (if (list-null? leaves)
                     (list-first internals)
                     (list-first leaves))
-                (letrec ((p1 (pop-min leaves internals))
+                (let ((p1 (pop-min leaves internals))
                        (n1 (list-first p1))
                        (leaves1 (list-nth p1 1))
                        (internals1 (list-nth p1 2))
@@ -428,7 +428,7 @@
                          (integer<? (list-nth a 1) (list-nth b 1)))
                        active)))
                 (let ((depth-map (depths (list (merge sorted-leaves (list) (list-length sorted-leaves))) (dict))))
-                  (letrec ((build
+                  (let ((build
                             (lambda (i lst acc)
                               (if (list-null? lst)
                                   (list-reverse acc)
@@ -445,7 +445,7 @@
                               0
                               lengths)
                             0)
-                          (letrec ((fix
+                          (let ((fix
                                     (lambda (fs acc)
                                       (if (list-null? fs)
                                           (list-reverse acc)
@@ -478,7 +478,7 @@
    (write-stored-block
     (lambda (w b start end final)
       (let ((w1 (write-block-header w final 0)))
-        (letrec ((w2 (align-writer w1))
+        (let ((w2 (align-writer w1))
                (len (integer- end start))
                (w3 (write-bits w2 len 16))
                (w4 (write-bits w3 (integer-bit-and (integer-bit-not len) #xffff) 16))
@@ -489,14 +489,14 @@
    ; lists, ending with the end-of-block symbol (256).
    (write-tokens
     (lambda (w tokens lit-codes dist-codes)
-      (letrec ((loop
+      (let ((loop
                 (lambda (toks st)
                   (if (list-null? toks)
                       (write-symbol st lit-codes 256)
                       (let ((tok (list-first toks)))
                         (if (string=? (list-first tok) "lit")
                             (loop (list-rest toks) (write-symbol st lit-codes (list-nth tok 1)))
-                            (letrec ((len (list-nth tok 1))
+                            (let ((len (list-nth tok 1))
                                    (dist (list-nth tok 2))
                                    (le (encode-length len))
                                    (st2 (write-symbol st lit-codes (list-first le)))
@@ -519,7 +519,7 @@
    ; end-of-block symbol 256 at least once.  The distance list has 30 entries.
    (count-frequencies
     (lambda (tokens)
-      (letrec
+      (let
         ((bump
           (lambda (freqs sym)
             (dict-with freqs sym (integer+ (dict-get freqs sym 0) 1))))
@@ -537,7 +537,7 @@
                           (list-rest toks)
                           (bump lit-freqs (list-first le))
                           (bump dist-freqs (list-first de))))))))))
-        (letrec ((result (loop tokens (dict-with (dict) 256 1) (dict)))
+        (let ((result (loop tokens (dict-with (dict) 256 1) (dict)))
                (lit-map (list-first result))
                (dist-map (list-nth result 1)))
           (list
@@ -555,7 +555,7 @@
    ; codes and at least 1 distance code.
    (trimmed-count
     (lambda (lengths minimum)
-      (letrec ((loop
+      (let ((loop
                 (lambda (n)
                   (if (integer<=? n minimum)
                       minimum
@@ -571,7 +571,7 @@
    ; (RFC 1951 §3.2.7).
    (rle-code-lengths
     (lambda (lengths)
-      (letrec
+      (let
         ((run-length
           (lambda (lst value)
             ; Count how many leading elements of lst equal value.
@@ -599,7 +599,7 @@
                 acc
                 (if (integer<=? n 2)
                     ; Too few for code 16 (needs >= 3); emit the value literally.
-                    (letrec ((loop
+                    (let ((loop
                               (lambda (k a)
                                 (if (integer=? k 0)
                                     a
@@ -617,7 +617,7 @@
             (if (integer=? n 0)
                 acc
                 (if (integer<=? n 2)
-                    (letrec ((loop
+                    (let ((loop
                               (lambda (k a)
                                 (if (integer=? k 0)
                                     a
@@ -645,7 +645,7 @@
    ; then return (list <cl-lengths> <cl-codes> <items>).
    (build-code-length-code
     (lambda (items)
-      (letrec ((count
+      (let ((count
                 (lambda (lst acc)
                   (if (list-null? lst)
                       acc
@@ -656,7 +656,7 @@
                           (list-first (list-first lst))
                           (integer+ (dict-get acc (list-first (list-first lst)) 0) 1)))))))
         (let ((freq-map (count items (dict))))
-          (letrec             ((cl-freqs
+          (let             ((cl-freqs
               (map-list
                 (lambda (i)
                   (dict-get freq-map i 0))
@@ -669,7 +669,7 @@
    ; entries.  Returns the new writer.
    (write-code-length-lengths
     (lambda (w cl-lengths count)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i st)
                   (if (integer>=? i count)
                       st
@@ -680,7 +680,7 @@
    ; Each item is (list <symbol> <extra-bits> <extra-count>).
    (write-code-lengths
     (lambda (w items cl-codes)
-      (letrec ((loop
+      (let ((loop
                 (lambda (lst st)
                   (if (list-null? lst)
                       st
@@ -698,7 +698,7 @@
    ; to a minimum of 4.
    (code-length-count
     (lambda (cl-lengths)
-      (letrec ((loop
+      (let ((loop
                 (lambda (n)
                   (if (integer<=? n 4)
                       4
@@ -713,7 +713,7 @@
    (write-dynamic-block
     (lambda (w tokens final)
       (let ((freqs (count-frequencies tokens)))
-        (letrec           ((lit-freqs (list-first freqs))
+        (let           ((lit-freqs (list-first freqs))
            (dist-freqs (list-nth freqs 1))
            (lit-lengths (clamp-lengths (build-code-lengths lit-freqs)))
            (dist-lengths (clamp-lengths (build-code-lengths dist-freqs)))
@@ -770,7 +770,7 @@
         (let ((stored (encode-stored b))
               (fixed (encode-fixed tokens))
               (dynamic (encode-dynamic tokens)))
-          (letrec ((shortest
+          (let ((shortest
                     (lambda (a c)
                       (if (integer<? (bytes-length a) (bytes-length c))
                           a

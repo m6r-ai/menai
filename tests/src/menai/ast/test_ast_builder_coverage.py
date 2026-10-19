@@ -295,7 +295,7 @@ class TestUnclosedValueSwallowsNextBinding:
 
     def test_reports_end_of_value_not_third_element(self):
         """The error location is the end of the unclosed value."""
-        source = "(letrec ((digit? (lambda (ch)\n               (integer+ ch 1))\n         (digits (lambda (i) i)))\n  (digit? 0))"
+        source = "(let ((digit? (lambda (ch)\n               (integer+ ch 1))\n         (digits (lambda (i) i)))\n  (digit? 0))"
         lexer = MenaiLexer()
         tokens = lexer.lex(source)
         ast_builder = MenaiASTBuilder()
@@ -310,7 +310,7 @@ class TestUnclosedValueSwallowsNextBinding:
 
     def test_names_the_next_binding_as_the_symptom(self):
         """The message names the binding that was read as a third element."""
-        source = "(letrec ((digit? (lambda (ch)\n               (integer+ ch 1))\n         (digits (lambda (i) i)))\n  (digit? 0))"
+        source = "(let ((digit? (lambda (ch)\n               (integer+ ch 1))\n         (digits (lambda (i) i)))\n  (digit? 0))"
         lexer = MenaiLexer()
         tokens = lexer.lex(source)
         ast_builder = MenaiASTBuilder()
@@ -325,17 +325,17 @@ class TestUnclosedValueSwallowsNextBinding:
 class TestKeywordSpecificErrorMessages:
     """Test that error messages use the correct keyword for each binding form."""
 
-    def test_letrec_keyword_in_incomplete_bindings_error(self):
-        """A letrec binding error names 'letrec', not 'let'."""
+    def test_let_keyword_in_incomplete_bindings_error(self):
+        """A let binding error names 'let'."""
         lexer = MenaiLexer()
-        tokens = lexer.lex("(letrec (x")
+        tokens = lexer.lex("(let (x")
         ast_builder = MenaiASTBuilder()
 
         with pytest.raises(MenaiASTBuildError) as exc_info:
-            ast_builder.build(tokens, "(letrec (x")
+            ast_builder.build(tokens, "(let (x")
 
         error = exc_info.value
-        assert "letrec binding 1 must be a (name value) form" in error.message
+        assert "let binding 1 must be a (name value) form" in error.message
 
     def test_let_keyword_in_incomplete_bindings_error(self):
         """A let binding error names 'let'."""

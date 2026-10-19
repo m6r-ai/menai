@@ -5,10 +5,10 @@
 ;   (list "array"  s acc)      - resume building an array after an element (acc is reversed)
 ;   (list "object" s d key)    - resume building an object after a value
 
-(letrec
+(let
   ((skip-ws
     (lambda (s pos)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if (integer>=? i (string-length s))
                       i
@@ -34,7 +34,7 @@
    (parse-string-chars
     (lambda (s pos acc)
       (let ((len (string-length s)))
-        (letrec ((loop
+        (let ((loop
                   (lambda (i run-start chunks)
                     (if (integer>=? i len)
                         (error "Unterminated string literal")
@@ -48,7 +48,7 @@
                               (if (string=? ch "\\")
                                   (if (integer>=? (integer+ i 1) len)
                                       (error "Unterminated escape sequence")
-                                      (letrec                                         ((esc (string-nth s (integer+ i 1)))
+                                      (let                                         ((esc (string-nth s (integer+ i 1)))
 
                                          (chunks2
                                           (if (integer<? run-start i)
@@ -70,7 +70,7 @@
                                             (if (string=? esc "u")
                                                 (if (integer>? (integer+ i 6) len)
                                                     (error "Unterminated \\u escape sequence")
-                                                    (letrec ((hex (string-slice s (integer+ i 2) (integer+ i 6)))
+                                                    (let ((hex (string-slice s (integer+ i 2) (integer+ i 6)))
                                                            (codepoint (string->integer hex 16)))
                                                       (if (none? codepoint)
                                                           (error "Invalid hex digits in \\u escape sequence")
@@ -87,7 +87,7 @@
 
    (scan-number-end
     (lambda (s i len)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j)
                   (if (integer>=? j len)
                       j
@@ -104,7 +104,7 @@
 
    (parse-number
     (lambda (s pos)
-      (letrec ((end (scan-number-end s pos (string-length s)))
+      (let ((end (scan-number-end s pos (string-length s)))
              (num-str (string-slice s pos end))
              (n (string->number num-str)))
         (if (none? n)
@@ -130,7 +130,7 @@
                 (rest-stack (list-rest stack)))
             (if (string=? (list-first frame) "array")
                 ; Resume array: frame = ("array" s acc) — acc is in reverse order
-                (letrec ((s (list-nth frame 1))
+                (let ((s (list-nth frame 1))
                        (acc (list-nth frame 2))
                        (pos2 (skip-ws s pos)))
                   (if (integer>=? pos2 (string-length s))
@@ -145,7 +145,7 @@
                                   (list-prepend rest-stack (list "array" s (list-prepend acc val))))
                                 (error "Expected , or ] in array"))))))
                 ; Resume object: frame = ("object" s d key)
-                (letrec ((s (list-nth frame 1))
+                (let ((s (list-nth frame 1))
                        (d (list-nth frame 2))
                        (key (list-nth frame 3))
                        (pos2 (skip-ws s pos)))
@@ -164,7 +164,7 @@
       (if (integer>=? pos (string-length s))
           (error "Unterminated object")
           (if (string=? (string-nth s pos) "\"")
-              (letrec ((key-result (parse-string-chars s (integer+ pos 1) (list)))
+              (let ((key-result (parse-string-chars s (integer+ pos 1) (list)))
                      (key (list-first key-result))
                      (pos2 (skip-ws s (list-nth key-result 1))))
                 (if (integer>=? pos2 (string-length s))
@@ -229,5 +229,5 @@
     (lambda (json-string)
       (dispatch json-string 0 (list)))))
 
-  ; letrec body:
+  ; let body:
   (export decode))

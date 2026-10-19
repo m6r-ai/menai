@@ -1047,7 +1047,7 @@ class TestIntegration:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((sum (lambda (n acc)
+        (let ((sum (lambda (n acc)
                         (if (integer=? n 0)
                             acc
                             (sum (integer- n 1) (integer+ acc n))))))
@@ -1065,7 +1065,7 @@ class TestIntegration:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((f (lambda (x)
+        (let ((f (lambda (x)
                       (if (integer=? x 0) 0 (integer+ x 1))))
                  (g (lambda (x)
                       (if (integer=? x 0) 1 (integer* x 2)))))

@@ -2,7 +2,7 @@
 ; Represents the board as a list of 9 rows, each a list of 9 integers.
 ; Empty cells are 0.
 
-(letrec
+(let
   ((all-digits (set 1 2 3 4 5 6 7 8 9))
 
    ; Return the set of digits already placed in the given row.
@@ -29,7 +29,7 @@
    ; Return the set of digits already placed in the 3x3 box containing (row, col).
    (box-set
     (lambda (board row col)
-      (letrec ((box-row (integer- row (integer% row 3)))
+      (let ((box-row (integer- row (integer% row 3)))
              (box-col (integer- col (integer% col 3)))
              (box-rows (list-slice board box-row (integer+ box-row 3))))
         (list->set
@@ -129,7 +129,7 @@
    ; Format one row, appending a horizontal divider after every third row.
    (format-row
     (lambda (row-idx row)
-      (letrec         ((cells
+      (let         ((cells
           (map-list
             (lambda (pair)
               (format-cell (list-first pair) (list-nth pair 1)))

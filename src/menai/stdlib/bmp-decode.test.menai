@@ -1,6 +1,6 @@
 ; Tests for bmp-decode.menai
 
-(letrec
+(let
   ((bmp (import "bmp-decode"))
    (t (import "menai-test"))
    (decode (:: bmp decode))

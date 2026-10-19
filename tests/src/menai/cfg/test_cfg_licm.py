@@ -97,7 +97,7 @@ class TestLoopInvariantComputationHoisting:
 
     def test_loop_invariant_builtin_hoisted(self):
         """
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -112,7 +112,7 @@ class TestLoopInvariantComputationHoisting:
         be hoisted to the preamble.
         """
         src = """
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -136,7 +136,7 @@ class TestLoopInvariantComputationHoisting:
 
     def test_loop_invariant_constant_hoisted(self):
         """
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -149,7 +149,7 @@ class TestLoopInvariantComputationHoisting:
         before the self-loop jump target.
         """
         src = """
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -172,7 +172,7 @@ class TestLoopInvariantComputationHoisting:
 
     def test_loop_variant_computation_kept_in_loop(self):
         """
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -184,7 +184,7 @@ class TestLoopInvariantComputationHoisting:
         the loop body (after the self-loop target).
         """
         src = """
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -208,7 +208,7 @@ class TestLoopInvariantComputationHoisting:
     def test_loop_invariant_builtin_on_outer_value_hoisted(self):
         """
         (lambda (b)
-          (letrec ((loop (lambda (i acc)
+          (let ((loop (lambda (i acc)
                            (if (integer>=? i (bytes-length b))
                                acc
                                (loop (integer+ i 1)
@@ -224,7 +224,7 @@ class TestLoopInvariantComputationHoisting:
         """
         src = """
         (lambda (b)
-          (letrec ((loop (lambda (i acc)
+          (let ((loop (lambda (i acc)
                            (if (integer>=? i (bytes-length b))
                                acc
                                (loop (integer+ i 1)
@@ -253,7 +253,7 @@ class TestLoopInvariantComputationHoisting:
         A function without a self-loop should not be modified by LICM.
         """
         src = """
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 10))
         """
@@ -271,7 +271,7 @@ class TestLoopInvariantComputationHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -290,7 +290,7 @@ class TestLoopInvariantComputationHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -312,7 +312,7 @@ class TestLoopInvariantComputationHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -329,7 +329,7 @@ class TestLoopInvariantComputationHoisting:
         A computation that depends only on an unchanged param (one not
         reassigned by the self-loop) should be hoisted.
 
-        (letrec ((loop
+        (let ((loop
                   (lambda (i limit acc)
                     (if (integer>=? i limit)
                         acc
@@ -345,7 +345,7 @@ class TestLoopInvariantComputationHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (i limit acc)
                     (if (integer>=? i limit)
                         acc
@@ -368,7 +368,7 @@ class TestGuardHoisting:
         and the ASSERT_LIST guard is inserted.
         """
         src = """
-        (letrec ((apply-moves
+        (let ((apply-moves
                   (lambda (cube moves)
                     (if (list-null? moves)
                         cube
@@ -396,7 +396,7 @@ class TestGuardHoisting:
         hoisted — it must be re-executed on every iteration.
         """
         src = """
-        (letrec ((result-type (struct (value)))
+        (let ((result-type (struct (value)))
                  (make-result (lambda (v) (result-type v)))
                  (search-loop
                   (lambda (bound)
@@ -432,7 +432,7 @@ class TestGuardHoisting:
         inserted.
         """
         src = """
-        (letrec ((search-loop
+        (let ((search-loop
                   (lambda (bound max-depth)
                     (if (integer>? bound max-depth)
                         (list 1)
@@ -459,7 +459,7 @@ class TestGuardHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -479,7 +479,7 @@ class TestGuardHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (lst prev)
                     (if (list-null? lst)
                         #t
@@ -499,7 +499,7 @@ class TestGuardHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (lst prev)
                     (if (list-null? lst)
                         #t
@@ -522,7 +522,7 @@ class TestGuardHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i 10)
                         acc
@@ -553,7 +553,7 @@ class TestGuardHoisting:
         before list->vector; it is outside the loop and is not hoisted either.
         """
         src = """
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer<? i 0)
                         (list->vector acc)
@@ -595,7 +595,7 @@ class TestGuardHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((loop
+        (let ((loop
                   (lambda (i acc)
                     (if (integer<? i 0)
                         (list->vector acc)
@@ -628,7 +628,7 @@ class TestRaisingInstructionHoisting:
         """
         src = """
         (let ((d 0))
-          (letrec ((loop (lambda (n)
+          (let ((loop (lambda (n)
                            (if (integer=? n 0)
                                42
                                (if (integer>? n 100)
@@ -663,7 +663,7 @@ class TestRaisingInstructionHoisting:
 
         result = menai.evaluate("""
         (let ((d 0))
-          (letrec ((loop (lambda (n)
+          (let ((loop (lambda (n)
                            (if (integer=? n 0)
                                42
                                (if (integer>? n 100)
@@ -685,7 +685,7 @@ class TestRaisingInstructionHoisting:
         """
         src = """
         (let ((d 1))
-          (letrec ((loop (lambda (n acc)
+          (let ((loop (lambda (n acc)
                            (if (integer=? n 0)
                                acc
                                (loop (integer- n 1) (integer+ acc (integer/ 100 d)))))))
@@ -714,7 +714,7 @@ class TestRaisingInstructionHoisting:
 
         result = menai.evaluate("""
         (let ((d 1))
-          (letrec ((loop (lambda (n acc)
+          (let ((loop (lambda (n acc)
                            (if (integer=? n 0)
                                acc
                                (loop (integer- n 1) (integer+ acc (integer/ 100 d)))))))

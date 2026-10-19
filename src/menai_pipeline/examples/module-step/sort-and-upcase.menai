@@ -1,6 +1,6 @@
 (let ((run
        (lambda (inputs)
-         (letrec            ((lines
+         (let            ((lines
              (filter-list
                (lambda (s)
                  (boolean-not (string=? s "")))

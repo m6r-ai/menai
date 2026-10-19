@@ -27,7 +27,7 @@ from menai_trace.menai_trace_render import (
 )
 
 _SOURCE = """
-(letrec ((fact (lambda (n) (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1)))))))
+(let ((fact (lambda (n) (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1)))))))
   (fact 5))
 """
 
@@ -171,7 +171,7 @@ class TestRenderAnnotated:
 
 _METADATA_SOURCE = """
 (let ((offset 10))
-  (letrec ((f (lambda (n) (match n (0 "zero") (1 "one") (_ "many")))))
+  (let ((f (lambda (n) (match n (0 "zero") (1 "one") (_ "many")))))
     (let ((g (lambda (x) (integer+ x offset))))
       (integer+ (g 5) (list-length (list (f 0) (f 1) (f 2)))))))
 """
@@ -247,7 +247,7 @@ class TestAnnotatedMetadata:
 
 
 _LOOP_SOURCE = """
-(letrec ((sum (lambda (n acc) (if (integer<=? n 0) acc (sum (integer- n 1) (integer+ acc n))))))
+(let ((sum (lambda (n acc) (if (integer<=? n 0) acc (sum (integer- n 1) (integer+ acc n))))))
   (sum 5 0))
 """
 

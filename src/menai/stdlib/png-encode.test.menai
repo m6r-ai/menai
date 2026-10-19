@@ -1,6 +1,6 @@
 ; Tests for png-encode.menai
 
-(letrec
+(let
   ((png-encode (import "png-encode"))
    (png-decode (import "png-decode"))
    (t (import "menai-test"))

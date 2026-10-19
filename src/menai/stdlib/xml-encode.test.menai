@@ -1,6 +1,6 @@
 ; Tests for xml-encode.menai
 
-(letrec
+(let
   ((xml-encode (import "xml-encode"))
    (xml-decode (import "xml-decode"))
    (t (import "menai-test"))

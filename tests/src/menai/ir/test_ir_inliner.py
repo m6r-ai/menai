@@ -223,7 +223,7 @@ class TestLocalLambdaInlining:
     def test_recursive_lambda_not_inlined(self):
         """A recursive lambda in a letrec should not be inlined."""
         ir = _build_ir("""
-            (letrec ((loop (lambda (n) (if (integer=? n 0) 0 (loop (integer- n 1))))))
+            (let ((loop (lambda (n) (if (integer=? n 0) 0 (loop (integer- n 1))))))
               (loop 5))
         """)
         new_ir, changed = _inline(ir)
@@ -241,7 +241,7 @@ class TestLocalLambdaInlining:
         regression in the letrec-scope tracking is caught.
         """
         ir = _build_ir("""
-            (letrec ((loop (lambda (n) (if (integer=? n 0) 0 (loop (integer- n 1))))))
+            (let ((loop (lambda (n) (if (integer=? n 0) 0 (loop (integer- n 1))))))
               (loop 5))
         """)
         seen_letrec_names = []
@@ -439,7 +439,7 @@ class TestBoundNameShadowsOuterLambda:
 
     def test_non_lambda_letrec_binding_not_inlined_as_outer_lambda(self):
         """A letrec binding to a non-lambda value shadows an outer lambda of the same name."""
-        ir = _build_ir("(let ((f (lambda (x) (integer+ x 1)))) (letrec ((f 99)) (f 5)))")
+        ir = _build_ir("(let ((f (lambda (x) (integer+ x 1)))) (let ((f 99)) (f 5)))")
         new_ir, changed = _inline(ir)
 
         assert not changed
@@ -488,7 +488,7 @@ class TestInliningIntegration:
 
         m = Menai()
         result = m.evaluate("""
-            (letrec ((add1 (lambda (x) (integer+ x 1)))
+            (let ((add1 (lambda (x) (integer+ x 1)))
                    (mul2 (lambda (x) (integer* x 2)))
                    (compose (lambda (f g) (lambda (x) (f (g x)))))
                    (func1 (compose mul2 add1)))

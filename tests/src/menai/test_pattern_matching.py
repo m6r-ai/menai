@@ -537,7 +537,7 @@ class TestPatternMatching:
         """Test practical list processing with pattern matching."""
         # Safe list operations
         safe_head = '''
-        (letrec ((safe-first (lambda (lst)
+        (let ((safe-first (lambda (lst)
                               (match lst
                                      (() "empty")
                                      ((head . tail) head)))))
@@ -548,7 +548,7 @@ class TestPatternMatching:
 
         # List length calculation
         list_length = '''
-        (letrec ((my-length (lambda (lst)
+        (let ((my-length (lambda (lst)
                              (match lst
                                     (() 0)
                                     ((head . tail) (integer+ 1 (my-length tail)))))))
@@ -584,7 +584,7 @@ class TestPatternMatching:
         """Test pattern matching with tree-like structures."""
         # Simple binary tree sum (represented as nested lists)
         tree_sum = '''
-        (letrec ((sum-tree (lambda (tree)
+        (let ((sum-tree (lambda (tree)
                             (match tree
                                    ((? integer? n) n)
                                    ((left right) (integer+ (sum-tree left) (sum-tree right)))
@@ -671,7 +671,7 @@ class TestPatternMatching:
 
         # Pattern matching with recursive function
         recursive_pattern = '''
-        (letrec ((process-nested (lambda (data)
+        (let ((process-nested (lambda (data)
                                   (match data
                                          ((? integer? n) n)
                                          ((? string? s) (string-length s))

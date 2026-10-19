@@ -319,7 +319,7 @@ class TestMenaiParserEdgeCases:
         assert result == 8
 
         # Sequential dependency
-        result = menai.evaluate("(letrec ((x 5) (y (integer* x 2))) (integer+ x y))")
+        result = menai.evaluate("(let ((x 5) (y (integer* x 2))) (integer+ x y))")
         assert result == 15
 
         # Complex expressions in bindings

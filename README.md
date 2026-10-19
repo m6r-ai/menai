@@ -66,7 +66,7 @@ Here is a program that counts word occurrences and returns the three most freque
 words, sorted by frequency:
 
 ```menai
-(letrec
+(let
   ((count-words
     (lambda (words)
       (fold-list
@@ -77,7 +77,7 @@ words, sorted by frequency:
 
    (top-words
     (lambda (text n)
-      (letrec ((words (string->list (string-downcase text) " "))
+      (let ((words (string->list (string-downcase text) " "))
              (counts (count-words words))
              (pairs (sort-list
                        (lambda (a b) (integer>? (list-get a 1) (list-get b 1)))

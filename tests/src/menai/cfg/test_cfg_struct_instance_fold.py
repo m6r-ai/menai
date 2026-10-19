@@ -381,7 +381,7 @@ def _instance_op_count(code) -> int:
 
 
 MONO_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (get-x (lambda (p)
                   (match p
                          ((: point a b) (integer+ a b))
@@ -390,7 +390,7 @@ MONO_SRC = """
 """
 
 POLY_SRC = """
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (vec (struct (x y)))
          (get-x (lambda (p)
                   (match p
@@ -401,7 +401,7 @@ POLY_SRC = """
 
 UNKNOWN_RECEIVER_SRC = """
 (let ((point (struct (x y))))
-  (letrec ((get-x (lambda (p)
+  (let ((get-x (lambda (p)
                     (match p
                            ((: point a b) (integer+ a b))
                            (_ 0)))))
@@ -411,7 +411,7 @@ UNKNOWN_RECEIVER_SRC = """
 JOINED_STRUCT_SRC = """
 (let ((point (struct (x y)))
       (vec (struct (x y))))
-  (letrec ((pick (lambda (n) (if (integer<=? n 0) (point 1 2) (vec 3 4))))
+  (let ((pick (lambda (n) (if (integer<=? n 0) (point 1 2) (vec 3 4))))
            (get-x (lambda (p)
                     (match p
                            ((: point a b) (integer+ a b))

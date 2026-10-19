@@ -6,8 +6,8 @@ It chains together all compilation passes in the correct order.
 """
 
 
-from collections.abc import Sequence
-from typing import Callable, Protocol, TypeVar
+from collections.abc import Callable, Sequence
+from typing import Protocol, TypeVar
 
 from menai.ast.menai_ast import MenaiASTNode
 from menai.ast.menai_ast_builder import MenaiASTBuilder
@@ -46,7 +46,7 @@ from menai.ir.menai_ir_letrec_to_loop import MenaiIRLetrecToLoop
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 from menai.ir.menai_ir_optimizer import MenaiIROptimizer
 from menai.menai_value import MenaiValue
-from menai.menai_error import MenaiError, MenaiInternalError
+from menai.menai_error import MenaiInternalError
 from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 
 
@@ -92,7 +92,7 @@ class MenaiCompiler:
         self.ir_passes: list[MenaiIROptimizationPass] = [
             # Dead-binding elimination runs before the inliner and the
             # letrec-to-loop conversion.  The prelude is spliced into every
-            # program as a letrec, but a typical program reaches only a few of
+            # program as a $letrec, but a typical program reaches only a few of
             # its bindings.  Pruning the unreachable ones first means the two
             # expensive passes below walk the reachable program rather than the
             # whole prelude.  Neither pass can make a dead binding live, so the
@@ -240,10 +240,9 @@ class MenaiCompiler:
         try:
             return stage()
 
-        except MenaiError:
-            # A deliberate, user-facing diagnostic from the pass.  Let it through.
-            raise
-
+        # A MenaiError is a deliberate, user-facing diagnostic from the pass, so
+        # it is not caught here and propagates unchanged.  Only the exception
+        # types below indicate a compiler fault.
         except (AssertionError, TypeError, AttributeError) as exc:
             raise MenaiInternalError(
                 message=f"{type(exc).__name__}: {exc}",

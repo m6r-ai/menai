@@ -26,7 +26,7 @@
 ; files ("0"), directories ("5"), and symbolic links ("2").  Any other type
 ; raises a runtime error.
 
-(letrec
+(let
   ((entries-lib (import "tar-entries"))
 
    ; Fill in one entry's "content" field from the archive.  Only regular files

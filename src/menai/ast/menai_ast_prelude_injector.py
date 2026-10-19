@@ -1,11 +1,11 @@
 """
 Menai Prelude Injector Pass - splices the prelude into a program as lexical bindings.
 
-The prelude is a Menai source file whose top-level form is a ``letrec`` whose
+The prelude is a Menai source file whose top-level form is a ``let`` whose
 bindings define every prelude function and whose body is a dict of exports.
-This pass takes that ``letrec``'s bindings and wraps the user program in them::
+This pass takes that ``let``'s bindings and wraps the user program in them::
 
-    (letrec ((map-list ...) (integer+ ...) ...)
+    (let ((map-list ...) (integer+ ...) ...)
       <user program>)
 
 The prelude's own body (the export dict) is discarded — the program needs the
@@ -30,7 +30,7 @@ this pass exists to avoid.
 
 The prelude is desugared once and cached as a list of wrapper forms.  Because
 the prelude is identical for every compilation, re-desugaring it on every
-compile is pure overhead; instead the prelude's desugared ``let``/``letrec``
+compile is pure overhead; instead the prelude's desugared ``$let``/``$letrec``
 wrappers are cached and folded around the already-desugared user program.  The
 desugared wrappers are immutable, so they are safely shared across
 compilations.
@@ -114,14 +114,14 @@ class MenaiASTPreludeInjector:
     @classmethod
     def _load_prelude_wrappers(cls) -> list[tuple[MenaiASTSymbol, MenaiASTList]]:
         """
-        Load the prelude and return its desugared ``let``/``letrec`` wrappers.
+        Load the prelude and return its desugared ``$let``/``$letrec`` wrappers.
 
         The prelude's AST is cached on the class: it is identical for every
         compilation.
 
         Raises:
             MenaiCodegenError: If the prelude's top-level form is not a
-                ``letrec``, or if it contains an import.  Both are invariants
+                ``let``, or if it contains an import.  Both are invariants
                 this pass depends on, so they fail loudly rather than producing
                 a silently broken program.
         """
@@ -131,11 +131,11 @@ class MenaiASTPreludeInjector:
             ast = MenaiASTBuilder().build(tokens, source, "<prelude>")
             analysed = MenaiASTSemanticAnalyzer().analyze(ast, source)
 
-            if not cls._is_letrec(analysed):
+            if not cls._is_let_binding_form(analysed):
                 raise MenaiCodegenError(
-                    message="The prelude's top-level form is not a letrec",
-                    context="The prelude injector splices the prelude's letrec bindings into every program",
-                    suggestion="Ensure prelude.menai is a single top-level letrec form",
+                    message="The prelude's top-level form is not a let",
+                    context="The prelude injector splices the prelude's let bindings into every program",
+                    suggestion="Ensure prelude.menai is a single top-level let form",
                 )
 
             assert isinstance(analysed, MenaiASTList)
@@ -160,12 +160,17 @@ class MenaiASTPreludeInjector:
     @staticmethod
     def _collect_wrappers(desugared: MenaiASTNode) -> list[tuple[MenaiASTSymbol, MenaiASTList]]:
         """
-        Collect the desugared prelude's ``let``/``letrec`` wrappers.
+        Collect the desugared prelude's ``$let``/``$letrec`` wrappers.
 
-        Desugaring the prelude's top-level ``letrec`` produces a chain of
-        ``let``/``letrec`` forms whose innermost body is the (discarded) export
+        Desugaring the prelude's top-level ``let`` produces a chain of
+        ``$let``/``$letrec`` forms whose innermost body is the (discarded) export
         dict.  The wrappers are returned outermost first; each is a
         ``(kind-symbol, bindings-list)`` pair.
+
+        Both kinds must be collected: the desugarer hoists non-recursive
+        binding groups to ``$let`` and keeps recursive groups as ``$letrec``, so
+        a chain interleaves the two.  Stopping at the first ``$letrec`` would
+        drop every binding outside it.
         """
         wrappers: list[tuple[MenaiASTSymbol, MenaiASTList]] = []
         node = desugared
@@ -173,7 +178,7 @@ class MenaiASTPreludeInjector:
             isinstance(node, MenaiASTList)
             and len(node.elements) == 3
             and isinstance(node.elements[0], MenaiASTSymbol)
-            and node.elements[0].name in ('let', 'letrec')
+            and node.elements[0].name in ('$let', '$letrec')
             and isinstance(node.elements[1], MenaiASTList)
         ):
             wrappers.append((node.elements[0], node.elements[1]))
@@ -182,13 +187,13 @@ class MenaiASTPreludeInjector:
         return wrappers
 
     @staticmethod
-    def _is_letrec(expr: MenaiASTNode) -> bool:
-        """Return True if the expression is a ``(letrec (...) body)`` form."""
+    def _is_let_binding_form(expr: MenaiASTNode) -> bool:
+        """Return True if the expression is a ``(let (...) body)`` form."""
         return (
             isinstance(expr, MenaiASTList)
             and len(expr.elements) == 3
             and isinstance(expr.elements[0], MenaiASTSymbol)
-            and expr.elements[0].name == 'letrec'
+            and expr.elements[0].name == 'let'
             and isinstance(expr.elements[1], MenaiASTList)
         )
 

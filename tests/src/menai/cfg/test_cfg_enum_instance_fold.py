@@ -335,7 +335,7 @@ class TestEndToEnd:
         the guard folds out of the bytecode entirely.
         """
         src = """
-        (letrec ((State (enum (idle running)))
+        (let ((State (enum (idle running)))
                  (classify (lambda (s)
                    (match s
                      ((: State 'idle) 'a)
@@ -352,7 +352,7 @@ class TestEndToEnd:
         stops a value of another enum type reaching the switch's arm.
         """
         src = """
-        (letrec ((A (enum (x y z)))
+        (let ((A (enum (x y z)))
                  (B (enum (x y z)))
                  (classify (lambda (v)
                    (match v
@@ -371,7 +371,7 @@ class TestEndToEnd:
 
         m = Menai()
         result = m.evaluate_and_format(
-            "(letrec ((State (enum (idle running stopped)))"
+            "(let ((State (enum (idle running stopped)))"
             "         (classify (lambda (s)"
             "           (match s"
             "             ((: State 'idle) \"i\")"

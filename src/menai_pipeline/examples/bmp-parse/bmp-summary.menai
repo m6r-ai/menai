@@ -6,7 +6,7 @@
 (let ((bmp-decoder (import "bmp-decode")))
   (let ((run
          (lambda (inputs)
-           (letrec
+           (let
              ((pixel->string
                (lambda (p)
                  (string-concat "(" (list->string (map-list integer->string (vector->list p)) ",") ")")))
@@ -18,7 +18,7 @@
               (grid->string
                (lambda (pixels)
                  (list->string (map-list row->string (vector->list pixels)) "\n"))))
-             (letrec ((content (dict-get inputs "content"))
+             (let ((content (dict-get inputs "content"))
                     (parsed ((:: bmp-decoder decode) content))
                     (header (dict-get parsed "header"))
                     (meta (dict-get parsed "meta")))

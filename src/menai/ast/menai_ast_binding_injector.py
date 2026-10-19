@@ -66,7 +66,10 @@ class MenaiASTBindingInjector:
         cls._validate_name(name)
 
         binding = MenaiASTList((MenaiASTSymbol(name), MenaiASTConstant(value)))
-        return MenaiASTList((MenaiASTSymbol('let'), MenaiASTList((binding,)), program))
+        # This runs after desugaring, so the wrapper must use the internal
+        # parallel binding node: the injected value is a host-supplied constant
+        # and the program body is already desugared.
+        return MenaiASTList((MenaiASTSymbol('$let'), MenaiASTList((binding,)), program))
 
     @classmethod
     def _validate_name(cls, name: str) -> None:

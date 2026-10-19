@@ -28,10 +28,10 @@
 ; non-string attribute value, or a child that is neither a string nor an
 ; element dict.
 
-(letrec
+(let
   ((escape-text
     (lambda (s)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i (string-length s))
                       (list->string (list-reverse acc))
@@ -57,7 +57,7 @@
 
    (escape-attribute
     (lambda (s)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i (string-length s))
                       (list->string (list-reverse acc))

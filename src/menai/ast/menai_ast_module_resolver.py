@@ -7,9 +7,9 @@ fresh, collision-free names and an export map pairing each export key with the
 renamed binding that produced it.  Member access therefore resolves to a
 specific binding and the compiler keeps full static knowledge of it.
 
-A module is a let/letrec chain whose body is an (export name ...) form
+A module is a let chain whose body is an (export name ...) form
 naming the bindings it exports.  Each exported name must be bound by an
-enclosing let/letrec in the module, so that the declaration behind each
+enclosing let in the module, so that the declaration behind each
 export can be identified.
 
 When a module is imported, this pass consumes its export form and builds the
@@ -149,7 +149,7 @@ class MenaiASTModuleResolver:
 
         A program is compiled directly rather than imported, so there is no
         importer to consume its export form.  When the program is module-shaped
-        — a let/letrec chain whose body is an (export name ...) form — the
+        — a let chain whose body is an (export name ...) form — the
         export form is replaced with a dict mapping each export name to its
         value, so the module evaluates to a dict of its exports.
 
@@ -223,12 +223,12 @@ class MenaiASTModuleResolver:
 
 
 def _is_binding_form(node: MenaiASTNode) -> bool:
-    """Return True if node is a (let/letrec (bindings) body) form."""
+    """Return True if node is a (let (bindings) body) form."""
     if not (isinstance(node, MenaiASTList) and len(node.elements) == 3):
         return False
 
     head = node.first()
-    return isinstance(head, MenaiASTSymbol) and head.name in ('let', 'letrec')
+    return isinstance(head, MenaiASTSymbol) and head.name in ('let',)
 
 
 def _extract_exports(
@@ -237,7 +237,7 @@ def _extract_exports(
     """
     Extract a module's renamed bindings and its export map.
 
-    A module is a let/letrec chain whose body is an (export name ...) form.
+    A module is a let chain whose body is an (export name ...) form.
     Every module binding is renamed with the given prefix, and every reference
     to a module binding inside a binding value is renamed to match, so a
     declaration that uses a sibling still resolves after the module is lifted
@@ -293,7 +293,7 @@ def _extract_member_map(
         if name_expr.name not in raw_bindings:
             raise MenaiModuleError(
                 message=f"Module '{module_name}' exports unbound name '{name_expr.name}'",
-                context="The exported name is not bound by an enclosing let/letrec in the module",
+                context="The exported name is not bound by an enclosing let in the module",
                 suggestion=f"Bind '{name_expr.name}' in the module before exporting it",
             )
 
@@ -307,7 +307,7 @@ def _lower_module_exports(expr: MenaiASTNode) -> MenaiASTNode:
     Lower a module-shaped program's export form to a dict of exports.
 
     A program compiled directly is not imported, so nothing consumes its export
-    form.  When the program is module-shaped — a let/letrec chain whose
+    form.  When the program is module-shaped — a let chain whose
     body is an (export name ...) form — the export form is replaced with a
     (dict "name" name ...) call, so the module evaluates to a dict mapping each
     export name to its value.  A program that is not module-shaped is returned
@@ -328,7 +328,7 @@ def _lower_module_exports(expr: MenaiASTNode) -> MenaiASTNode:
         if name_expr.name not in bound_names:
             raise MenaiModuleError(
                 message=f"Module exports unbound name '{name_expr.name}'",
-                context="The exported name is not bound by an enclosing let/letrec in the module",
+                context="The exported name is not bound by an enclosing let in the module",
                 suggestion=f"Bind '{name_expr.name}' in the module before exporting it",
             )
 
@@ -355,7 +355,7 @@ def _is_export_form(node: MenaiASTNode) -> bool:
 
 
 def _replace_binding_body(expr: MenaiASTNode, new_body: MenaiASTNode) -> MenaiASTNode:
-    """Replace the innermost body of a let/letrec chain with new_body."""
+    """Replace the innermost body of a let chain with new_body."""
     if not _is_binding_form(expr):
         return new_body
 
@@ -371,7 +371,7 @@ def _collect_bindings(module_ast: MenaiASTNode) -> dict[str, MenaiASTNode]:
     """
     Collect every name bound by the module's top-level binding forms.
 
-    Walks the chain of let/letrec forms at the module's top level and
+    Walks the chain of let forms at the module's top level and
     records the value expression bound to each name.  A later binding of the
     same name shadows an earlier one, matching lexical semantics.
     """
@@ -407,7 +407,7 @@ class _ModuleRenamer:
     Renames references to a module's top-level bindings within a module AST.
 
     Only free references to the module's own top-level binding names are
-    renamed.  Inner binders (lambda parameters, inner let/letrec bindings,
+    renamed.  Inner binders (lambda parameters, inner let bindings,
     match pattern variables) shadow a top-level name and suppress the rename
     within their scope, exactly as lexical semantics require.
     """
@@ -472,8 +472,8 @@ class _ModuleRenamer:
                 line=expr.line, column=expr.column, source_file=expr.source_file,
             )
 
-        if head_name in ('let', 'letrec'):
-            return self._rename_binding_form(expr, head_name, shadowed)
+        if head_name == 'let':
+            return self._rename_binding_form(expr, shadowed)
 
         if head_name == 'lambda':
             return self._rename_lambda(expr, shadowed)
@@ -485,9 +485,9 @@ class _ModuleRenamer:
         return MenaiASTList(elements, line=expr.line, column=expr.column, source_file=expr.source_file)
 
     def _rename_binding_form(
-        self, expr: MenaiASTList, kind: str, shadowed: set[str]
+        self, expr: MenaiASTList, shadowed: set[str]
     ) -> MenaiASTNode:
-        """Rename a let/letrec form, respecting its binding scope."""
+        """Rename a let form, respecting its binding scope."""
         bindings_list = expr.elements[1]
         body = expr.elements[2]
         assert isinstance(bindings_list, MenaiASTList)
@@ -498,8 +498,7 @@ class _ModuleRenamer:
             and isinstance(binding.elements[0], MenaiASTSymbol)
         }
 
-        # let/letrec: every binding name is in scope for every binding value
-        # and for the body.
+        # Every binding name is in scope for every binding value and for the body.
         body_shadowed = shadowed | binding_names
         new_bindings = []
         for binding in bindings_list.elements:

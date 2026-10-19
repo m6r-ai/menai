@@ -17,7 +17,7 @@ Pattern recognised
 
 ::
 
-    (letrec ((name (lambda (p1 ... pN) ...body...)))
+    (let ((name (lambda (p1 ... pN) ...body...)))
       (name arg1 ... argN))
 
 where the body's self-referencing calls are tail calls (the call to ``name``

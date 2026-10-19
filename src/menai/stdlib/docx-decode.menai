@@ -47,7 +47,7 @@
 ; It is the inverse of docx-encode's encode: for every value tree v that encode
 ; accepts, (decode (encode v)) reproduces v.
 
-(letrec
+(let
   ((zip-extract (import "zip-extract"))
    (xml-decode (import "xml-decode"))
 
@@ -89,7 +89,7 @@
    (add-relationship
     (lambda (rels child)
       (if (dict? child)
-          (letrec ((attrs (dict-get child "attrs"))
+          (let ((attrs (dict-get child "attrs"))
                  (id (dict-get attrs "Id"))
                  (type (dict-get attrs "Type"))
                  (target (dict-get attrs "Target"))

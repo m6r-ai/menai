@@ -278,7 +278,7 @@ class TestConstantCoalescingCorrectness:
         iterations must produce correct results after coalescing.
         """
         src = """
-        (letrec ((loop (lambda (n acc)
+        (let ((loop (lambda (n acc)
                          (if (integer<=? n 0)
                              acc
                              (loop (integer- n 1) (integer+ acc 1))))))
@@ -455,7 +455,7 @@ class TestEnumTypeConstantCoalescing:
         by their tag so that all three share one entry.
         """
         src = """
-        (letrec ((State (enum (idle running stopped)))
+        (let ((State (enum (idle running stopped)))
                  (a (lambda () (State 'idle)))
                  (b (lambda () (State 'running)))
                  (c (lambda () (State 'stopped))))
@@ -472,7 +472,7 @@ class TestEnumTypeConstantCoalescing:
         references the same pool index.
         """
         src = """
-        (letrec ((State (enum (idle running stopped)))
+        (let ((State (enum (idle running stopped)))
                  (a (lambda () (State 'idle)))
                  (b (lambda () (State 'running)))
                  (c (lambda () (State 'stopped))))
@@ -518,7 +518,7 @@ class TestEnumTypeConstantCoalescing:
         and must keep separate pool entries.
         """
         src = """
-        (letrec ((A (enum (idle running)))
+        (let ((A (enum (idle running)))
                  (B (enum (idle running)))
                  (f (lambda () (A 'idle)))
                  (g (lambda () (B 'idle))))
@@ -531,7 +531,7 @@ class TestEnumTypeConstantCoalescing:
     def test_repeated_enum_type_correct_result(self, menai):
         """Repeated constructor calls of one enum type produce correct results."""
         src = """
-        (letrec ((State (enum (idle running stopped)))
+        (let ((State (enum (idle running stopped)))
                  (a (lambda () (State 'idle)))
                  (b (lambda () (State 'running)))
                  (c (lambda () (State 'stopped))))
@@ -542,7 +542,7 @@ class TestEnumTypeConstantCoalescing:
     def test_distinct_enum_types_correct_result(self, menai):
         """Distinct enum types with identical variants keep distinct identities."""
         src = """
-        (letrec ((A (enum (idle running)))
+        (let ((A (enum (idle running)))
                  (B (enum (idle running)))
                  (f (lambda () (A 'idle)))
                  (g (lambda () (B 'idle))))

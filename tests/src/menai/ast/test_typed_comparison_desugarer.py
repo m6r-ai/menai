@@ -121,7 +121,7 @@ class TestTwoArgPassThrough:
 # 3-arg: letrec-bound temps + (and (op t0 t1) (op t1 t2))
 # ---------------------------------------------------------------------------
 
-def _unwrap_letrec_bindings(node: MenaiASTNode):
+def _unwrap_binding_nodes(node: MenaiASTNode):
     """
     Peel off a chain of single-binding letrec nodes, collecting bound names.
 
@@ -131,8 +131,8 @@ def _unwrap_letrec_bindings(node: MenaiASTNode):
     and body is the innermost non-letrec expression.
     """
     bindings = []
-    while isinstance(node, MenaiASTList) and sym(node) in ('let', 'letrec'):
-        # (letrec ((name val)) body)
+    while isinstance(node, MenaiASTList) and sym(node) in ('$let', '$letrec'):
+        # (let ((name val)) body)
         binding_list = node.elements[1]
         assert isinstance(binding_list, MenaiASTList)
         # Single-binding letrec (one per temp)
@@ -153,14 +153,14 @@ class TestThreeArgStructure:
     @pytest.mark.parametrize("op", ALL_OPS)
     def test_three_arg_top_level_is_letrec(self, op):
         result = desugar(_three_arg_expr(op))
-        assert sym(result) in ('let', 'letrec'), (
-            f"Expected let/letrec at top level for {op!r}, got {sym(result)!r}"
+        assert sym(result) in ('$let', '$letrec'), (
+            f"Expected $let/$letrec at top level for {op!r}, got {sym(result)!r}"
         )
 
     @pytest.mark.parametrize("op", ALL_OPS)
     def test_three_arg_has_three_temp_bindings(self, op):
         result = desugar(_three_arg_expr(op))
-        bindings, body = _unwrap_letrec_bindings(result)
+        bindings, body = _unwrap_binding_nodes(result)
         # Three args → three temp bindings (one per arg)
         assert len(bindings) == 3, (
             f"Expected 3 temp bindings for {op!r}, got {len(bindings)}: {bindings}"
@@ -174,7 +174,7 @@ class TestThreeArgStructure:
     @pytest.mark.parametrize("op", ALL_OPS)
     def test_three_arg_body_is_if_chain(self, op):
         result = desugar(_three_arg_expr(op))
-        _, body = _unwrap_letrec_bindings(result)
+        _, body = _unwrap_binding_nodes(result)
         # (and A B) lowered to (if A B #f)
         assert sym(body) == 'if', (
             f"Expected 'if' body for {op!r}, got {sym(body)!r}"
@@ -186,7 +186,7 @@ class TestThreeArgStructure:
     @pytest.mark.parametrize("op", ALL_OPS)
     def test_three_arg_pairs_use_correct_operator(self, op):
         result = desugar(_three_arg_expr(op))
-        _, body = _unwrap_letrec_bindings(result)
+        _, body = _unwrap_binding_nodes(result)
         # body = (if pair0 pair1 #f)
         pair0 = body.elements[1]
         pair1 = body.elements[2]
@@ -197,7 +197,7 @@ class TestThreeArgStructure:
     def test_three_arg_pairs_share_middle_temp(self, op):
         """The middle argument (t1) appears as the RHS of pair0 and LHS of pair1."""
         result = desugar(_three_arg_expr(op))
-        bindings, body = _unwrap_letrec_bindings(result)
+        bindings, body = _unwrap_binding_nodes(result)
         t0_name, t1_name, t2_name = [name for name, _ in bindings]
 
         # body = (if pair0 pair1 #f)
@@ -229,7 +229,7 @@ class TestFourArgStructure:
     @pytest.mark.parametrize("op", ALL_OPS)
     def test_four_arg_has_four_temp_bindings(self, op):
         result = desugar(_four_arg_expr(op))
-        bindings, body = _unwrap_letrec_bindings(result)
+        bindings, body = _unwrap_binding_nodes(result)
         assert len(bindings) == 4, (
             f"Expected 4 temp bindings for {op!r}, got {len(bindings)}"
         )
@@ -237,7 +237,7 @@ class TestFourArgStructure:
     @pytest.mark.parametrize("op", ALL_OPS)
     def test_four_arg_body_is_nested_if_chain(self, op):
         result = desugar(_four_arg_expr(op))
-        _, body = _unwrap_letrec_bindings(result)
+        _, body = _unwrap_binding_nodes(result)
         # (if p0 (if p1 p2 #f) #f)
         assert sym(body) == 'if', f"Expected 'if', got {sym(body)!r}"
         assert isinstance(body.elements[3], MenaiASTBoolean) and not body.elements[3].value
@@ -248,7 +248,7 @@ class TestFourArgStructure:
     @pytest.mark.parametrize("op", ALL_OPS)
     def test_four_arg_all_pairs_use_correct_operator(self, op):
         result = desugar(_four_arg_expr(op))
-        _, body = _unwrap_letrec_bindings(result)
+        _, body = _unwrap_binding_nodes(result)
         # body = (if p0 (if p1 p2 #f) #f)
         p0 = body.elements[1]
         inner = body.elements[2]
@@ -261,7 +261,7 @@ class TestFourArgStructure:
     def test_four_arg_adjacent_pairs_share_temps(self, op):
         """Each consecutive pair shares a temp: t0-t1, t1-t2, t2-t3."""
         result = desugar(_four_arg_expr(op))
-        bindings, body = _unwrap_letrec_bindings(result)
+        bindings, body = _unwrap_binding_nodes(result)
         names = [name for name, _ in bindings]
 
         # body = (if p0 (if p1 p2 #f) #f)

@@ -161,7 +161,7 @@ class TestEmittedLayout:
     def test_raise_emitted_after_normal_path(self):
         """RAISE_ERROR is emitted after the normal-path RETURN."""
         code = _compile("""
-        (letrec ((classify (lambda (x)
+        (let ((classify (lambda (x)
           (if (integer=? x 1) 'one
           (if (integer=? x 2) 'two
           (error "unsupported"))))))
@@ -176,7 +176,7 @@ class TestEmittedLayout:
     def test_raise_emitted_last(self):
         """RAISE_ERROR is the last instruction in the code object."""
         code = _compile("""
-        (letrec ((f (lambda (x)
+        (let ((f (lambda (x)
           (if (integer=? x 1) 10
           (error "bad")))))
           (f 1))
@@ -192,7 +192,7 @@ class TestBehaviourUnchanged:
         """The normal path still returns the expected value."""
         m = Menai()
         result = m.evaluate_and_format("""
-        (letrec ((classify (lambda (x)
+        (let ((classify (lambda (x)
           (if (integer=? x 1) 'one
           (if (integer=? x 2) 'two
           (error "unsupported"))))))
@@ -205,7 +205,7 @@ class TestBehaviourUnchanged:
         m = Menai()
         with pytest.raises(MenaiError):
             m.evaluate_raw("""
-            (letrec ((classify (lambda (x)
+            (let ((classify (lambda (x)
               (if (integer=? x 1) 'one
               (if (integer=? x 2) 'two
               (error "unsupported"))))))
@@ -217,7 +217,7 @@ class TestBehaviourUnchanged:
         m = Menai()
         with pytest.raises(MenaiError):
             m.evaluate_raw("""
-            (letrec ((f (lambda (x)
+            (let ((f (lambda (x)
               (match x (1 'a) (2 'b)))))
               (f 9))
             """)
@@ -226,7 +226,7 @@ class TestBehaviourUnchanged:
         """A match with no catch-all still returns on a matched value."""
         m = Menai()
         result = m.evaluate_and_format("""
-        (letrec ((f (lambda (x)
+        (let ((f (lambda (x)
           (match x (1 'a) (2 'b)))))
           (f 2))
         """)

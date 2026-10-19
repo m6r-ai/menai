@@ -23,7 +23,7 @@ def _expr(case_input: tuple[str, int, int, frozenset[str]]) -> str:
     """Build the module-driving expression for a calendar case."""
     start, days, cal_days, holidays = case_input
     calendar_def = (
-        f'(letrec ((calendar (import "calendar"))'
+        f'(let ((calendar (import "calendar"))'
         f' (cal ((:: calendar calendar) "std" "Standard" "5-day" '
         f'(set "mon" "tue" "wed" "thu" "fri") {_format_menai_holidays(holidays)})))'
         ' (dict "add-working-days" (:: calendar add-working-days)'
@@ -31,7 +31,7 @@ def _expr(case_input: tuple[str, int, int, frozenset[str]]) -> str:
         ' "cal" cal))'
     )
     return (
-        f'(letrec ((mod {calendar_def})'
+        f'(let ((mod {calendar_def})'
         ' (add-working-days (dict-get mod "add-working-days"))'
         ' (add-calendar-days (dict-get mod "add-calendar-days"))'
         ' (cal (dict-get mod "cal")))'

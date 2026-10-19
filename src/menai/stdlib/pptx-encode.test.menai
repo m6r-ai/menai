@@ -1,6 +1,6 @@
 ; Tests for pptx-encode.menai
 
-(letrec
+(let
   ((pptx-encode (import "pptx-encode"))
    (pptx-decode (import "pptx-decode"))
    (zip-entries (import "zip-entries"))

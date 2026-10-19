@@ -1,6 +1,6 @@
 ; Tests for json-decode.menai
 
-(letrec
+(let
   ((json (import "json-decode"))
    (t (import "menai-test"))
    (decode (:: json decode))

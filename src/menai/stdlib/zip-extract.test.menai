@@ -1,6 +1,6 @@
 ; Tests for zip-extract.menai
 
-(letrec
+(let
   ((zip-mod (import "zip-extract"))
    (zip-create-mod (import "zip-create"))
    (t (import "menai-test"))

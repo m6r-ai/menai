@@ -49,7 +49,7 @@ from menai.ast.menai_paren_diagnostic import ParenDiagnosis, early_close_error
 # binding either.  '.' is already rejected by the lambda parameter check, and is
 # listed here so the set is complete.
 RESERVED_NAMES = frozenset({
-    '::', 'if', 'let', 'letrec', 'lambda', 'quote', 'match',
+    '::', 'if', 'let', 'lambda', 'quote', 'match',
     'and', 'or', 'import', 'struct', 'enum', 'export', 'apply',
     ':', '.',
 })
@@ -259,9 +259,6 @@ class MenaiASTSemanticAnalyzer:
                 return self._analyze_if(expr)
 
             if name == 'let':
-                return self._analyze_let(expr)
-
-            if name == 'letrec':
                 return self._analyze_letrec(expr)
 
             if name == 'lambda':
@@ -280,7 +277,7 @@ class MenaiASTSemanticAnalyzer:
                 return self._analyze_or(expr)
 
             if name == 'import':
-                # import is only valid as the value of a let/letrec
+                # import is only valid as the value of a let
                 # binding.  The binding forms validate it directly, so
                 # reaching here means it is used in any other position.
                 return self._reject_import_outside_binding(expr)
@@ -440,31 +437,31 @@ class MenaiASTSemanticAnalyzer:
         )
 
     def _analyze_letrec(self, expr: MenaiASTList) -> MenaiASTList:
-        """Validate letrec expression: (letrec ((var val) ...) body)"""
+        """Validate let expression: (let ((var val) ...) body)"""
         if len(expr.elements) < 3:
-            self._raise_if_early_close(expr, "letrec")
+            self._raise_if_early_close(expr, "let")
             raise MenaiEvalError(
-                message="Letrec expression structure is incorrect",
+                message="Let expression structure is incorrect",
                 received=f"Got {len(expr.elements)} elements",
-                expected="Exactly 3 elements: (letrec ((bindings...)) body)",
-                suggestion="Letrec needs binding list and body: (letrec ((var1 val1) (var2 val2) ...) body)",
+                expected="Exactly 3 elements: (let ((bindings...)) body)",
+                suggestion="Let needs binding list and body: (let ((var1 val1) (var2 val2) ...) body)",
                 line=expr.line,
                 column=expr.column,
                 source=self.source
             )
 
-        # _parse_let_with_tracking hard-caps 'letrec' at exactly 3 elements
+        # _parse_let_with_tracking hard-caps 'let' at exactly 3 elements
         # (keyword + bindings + body) before consuming ')' — no loop after body.
         assert len(expr.elements) <= 3, (
-            f"Parser invariant violated: 'letrec' produced {len(expr.elements)} elements "
+            f"Parser invariant violated: 'let' produced {len(expr.elements)} elements "
             f"(expected ≤ 3); _parse_let_with_tracking should cap at 3"
         )
 
         _, bindings_list, body = expr.elements
         if not isinstance(bindings_list, MenaiASTList):
-            self._raise_if_early_close(expr, "letrec")
+            self._raise_if_early_close(expr, "let")
             raise MenaiEvalError(
-                message="Letrec binding list must be a list",
+                message="Let binding list must be a list",
                 received=f"Binding list: {bindings_list.type_name()}",
                 expected="List of bindings: ((var1 val1) (var2 val2) ...)",
                 suggestion="Wrap bindings in parentheses: ((var val) (var val) ...)",
@@ -477,7 +474,7 @@ class MenaiASTSemanticAnalyzer:
         var_names: list[str] = []
         new_bindings: list[MenaiASTNode] = []
 
-        # Every letrec binding is visible to every sibling value and to the body,
+        # Every let binding is visible to every sibling value and to the body,
         # so all names are in scope for the whole form.
         letrec_names = {
             binding.elements[0].name for binding in bindings_list.elements
@@ -504,7 +501,7 @@ class MenaiASTSemanticAnalyzer:
             assert isinstance(name_expr, MenaiASTSymbol)
             self._reject_reserved_binding_name(name_expr.name, name_expr)
 
-            # Struct definitions are permitted in letrec: they have no recursive
+            # Struct definitions are permitted in let: they have no recursive
             # semantics and the desugarer hoists them to let automatically.
             if (isinstance(value_expr, MenaiASTList) and
                     not value_expr.is_empty() and
@@ -518,7 +515,7 @@ class MenaiASTSemanticAnalyzer:
                 var_names.append(name_expr.name)
                 continue
 
-            # Enum definitions are permitted in letrec for the same reason as
+            # Enum definitions are permitted in let for the same reason as
             # struct definitions: they have no recursive semantics and the
             # desugarer hoists them to let automatically.
             if (isinstance(value_expr, MenaiASTList) and
@@ -557,7 +554,7 @@ class MenaiASTSemanticAnalyzer:
             if len(var_names) != len(set(var_names)):
                 duplicates = [name for name in var_names if var_names.count(name) > 1]
                 raise MenaiEvalError(
-                    message="Letrec binding variables must be unique",
+                    message="Let binding variables must be unique",
                     received=f"Duplicate variables: {duplicates}",
                     expected="All variable names should be different",
                     suggestion="Use different names for each variable",
@@ -920,7 +917,7 @@ class MenaiASTSemanticAnalyzer:
         )
 
     def _reject_import_outside_binding(self, expr: MenaiASTList) -> MenaiASTList:
-        """Reject (import ...) used anywhere other than a let/letrec binding value."""
+        """Reject (import ...) used anywhere other than a let binding value."""
         raise MenaiEvalError(
             message="import is only valid as a binding value",
             received=f"import used in: {expr.describe()}",
@@ -1220,7 +1217,7 @@ class MenaiASTSemanticAnalyzer:
         """
         Validate and transform an (enum (variant ...)) form into a MenaiASTEnum node.
 
-        Called only when (enum ...) appears as the RHS of a let or letrec
+        Called only when (enum ...) appears as the RHS of a let
         binding.  Assigns a fresh compile-time tag and extracts the variant names.
 
         Args:
@@ -1300,13 +1297,13 @@ class MenaiASTSemanticAnalyzer:
         )
 
     def _reject_enum_outside_let(self, expr: MenaiASTList) -> MenaiASTList:
-        """Reject (enum ...) used outside a let/letrec binding position."""
+        """Reject (enum ...) used outside a let binding position."""
         raise MenaiEvalError(
-            message="Enum definition must be the value in a let or letrec binding",
+            message="Enum definition must be the value in a let binding",
             received="(enum ...) used outside a binding",
             expected="(let ((TypeName (enum (variant1 variant2 ...)))) ...)",
             example="(let ((State (enum (idle running)))) (State 'idle))",
-            suggestion="Wrap enum definitions in a let or letrec binding",
+            suggestion="Wrap enum definitions in a let binding",
             line=expr.line,
             column=expr.column,
             source=self.source

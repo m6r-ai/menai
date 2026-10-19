@@ -86,7 +86,7 @@ class MenaiFunction(MenaiValue):
 
     This is a first-class value that can be passed around as a value.
 
-    captured_values is a list so that PATCH_CLOSURE can fill in letrec sibling
+    captured_values is a list so that PATCH_CLOSURE can fill in $letrec sibling
     slots after all closures in a mutual-recursion group have been created.
     The dataclass remains frozen; mutation is done via object.__setattr__ in
     the VM (the same pattern used by MenaiDict for its _lookup field).

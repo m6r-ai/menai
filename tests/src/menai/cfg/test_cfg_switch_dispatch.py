@@ -29,7 +29,7 @@ def _build_cfg(source: str):
 
 
 CHAIN_SRC = """
-(letrec ((classify (lambda (x)
+(let ((classify (lambda (x)
   (if (integer=? x 1) 'one
   (if (integer=? x 2) 'two
   (if (integer=? x 3) 'three
@@ -39,7 +39,7 @@ CHAIN_SRC = """
 """
 
 SPARSE_SRC = """
-(letrec ((classify (lambda (x)
+(let ((classify (lambda (x)
   (if (integer=? x 1) 'one
   (if (integer=? x 1000) 'thousand
   'other)))))
@@ -47,7 +47,7 @@ SPARSE_SRC = """
 """
 
 SINGLE_SRC = """
-(letrec ((classify (lambda (x)
+(let ((classify (lambda (x)
   (if (integer=? x 1) 'one 'other))))
   (classify 1))
 """
@@ -111,7 +111,7 @@ class TestEndToEnd:
         """Every arm value, plus the default, produce the right result."""
         m = Menai()
         src = """
-        (letrec ((classify (lambda (x)
+        (let ((classify (lambda (x)
           (if (integer=? x 1) 'one
           (if (integer=? x 2) 'two
           (if (integer=? x 3) 'three
@@ -133,7 +133,7 @@ class TestEndToEnd:
 
         m = Menai()
         src = """
-        (letrec ((classify (lambda (x)
+        (let ((classify (lambda (x)
           (if (integer=? x 1) 'one
           (if (integer=? x 2) 'two
           'other)))))
@@ -146,7 +146,7 @@ class TestEndToEnd:
         """match on integer literals lowers through the same switch path."""
         m = Menai()
         src = """
-        (letrec ((f (lambda (x)
+        (let ((f (lambda (x)
           (match x (1 'a) (2 'b) (3 'c) (4 'd) (_ 'z)))))
           (list (f 1) (f 2) (f 3) (f 4) (f 9)))
         """
@@ -158,7 +158,7 @@ class TestEndToEnd:
         """A chain used as an operand of an outer expression still works."""
         m = Menai()
         src = """
-        (letrec ((classify (lambda (x)
+        (let ((classify (lambda (x)
           (if (integer=? x 1) 10
           (if (integer=? x 2) 20
           (if (integer=? x 3) 30
@@ -172,7 +172,7 @@ class TestEndToEnd:
         """A bignum scrutinee is out of table range and takes the default."""
         m = Menai()
         src = """
-        (letrec ((classify (lambda (x)
+        (let ((classify (lambda (x)
           (if (integer=? x 1) 'one
           (if (integer=? x 2) 'two
           'other)))))
@@ -198,7 +198,7 @@ class TestTypeRefinement:
         from menai.menai_compiler import MenaiCompiler
 
         src = """
-        (letrec ((day-name (lambda (day-num)
+        (let ((day-name (lambda (day-num)
           (if (integer=? day-num 0) (day-name 0)
           (match day-num
             (0 "sun") (1 "mon") (2 "tue") (3 "wed")

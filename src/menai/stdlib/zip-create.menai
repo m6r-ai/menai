@@ -2,7 +2,7 @@
 ;
 ; Supported: stored (0) and deflate (8).  Any other compression method raises.
 
-(letrec
+(let
   ((deflate-lib (import "deflate-compress"))
 
    ; The ZIP signatures, little-endian on disk.
@@ -119,7 +119,7 @@
    ; (list <local-bytes> <central-bytes> <entry-count>).
    (build-entries
     (lambda (entries)
-      (letrec ((loop
+      (let ((loop
                 (lambda (rest offset local-acc central-acc count)
                   (if (list-null? rest)
                       (list local-acc central-acc count)

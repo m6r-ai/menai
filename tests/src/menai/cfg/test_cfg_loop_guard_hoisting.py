@@ -105,7 +105,7 @@ class TestLoopInvariantGuardHoisting:
 
     def test_type_preserving_param_guard_hoisted(self):
         """
-        (letrec ((apply-moves
+        (let ((apply-moves
                   (lambda (cube moves)
                     (if (list-null? moves)
                         cube
@@ -122,7 +122,7 @@ class TestLoopInvariantGuardHoisting:
         parameter's type is not provable and the guard is inserted.
         """
         src = """
-        (letrec ((apply-moves
+        (let ((apply-moves
                   (lambda (cube moves)
                     (if (list-null? moves)
                         cube
@@ -144,7 +144,7 @@ class TestLoopInvariantGuardHoisting:
 
     def test_free_var_guard_hoisted(self):
         """
-        (letrec ((search-loop
+        (let ((search-loop
                   (lambda (bound max-depth)
                     (if (integer>? bound max-depth)
                         (list 1)
@@ -159,7 +159,7 @@ class TestLoopInvariantGuardHoisting:
         their types are not provable and the guards are inserted.
         """
         src = """
-        (letrec ((search-loop
+        (let ((search-loop
                   (lambda (bound max-depth)
                     (if (integer>? bound max-depth)
                         (list 1)
@@ -182,7 +182,7 @@ class TestLoopInvariantGuardHoisting:
 
     def test_non_type_preserving_param_guard_kept_in_loop(self):
         """
-        (letrec ((search-loop
+        (let ((search-loop
                   (lambda (bound)
                     (if (integer>? bound 100)
                         (list 1)
@@ -196,7 +196,7 @@ class TestLoopInvariantGuardHoisting:
         remain in the loop body and be re-executed on every iteration.
         """
         src = """
-        (letrec ((result-type (struct (value)))
+        (let ((result-type (struct (value)))
                  (make-result (lambda (v) (result-type v)))
                  (search-loop
                   (lambda (bound)
@@ -236,7 +236,7 @@ class TestLoopInvariantGuardHoisting:
         is inserted.
         """
         src = """
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))
                  (flip (lambda (n) (if (integer<=? n 0) 0 (flop (integer- n 1)))))
                  (flop (lambda (n) (if (integer<=? n 0) (list 1) (flip (integer- n 1))))))
@@ -256,7 +256,7 @@ class TestLoopInvariantGuardHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -274,7 +274,7 @@ class TestLoopInvariantGuardHoisting:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((count-down
+        (let ((count-down
                   (lambda (n limit)
                     (if (integer<=? n limit)
                         n
@@ -294,7 +294,7 @@ class TestGuardHoistingFromNonEntryBlocks:
         is loop-invariant and should be hoisted to the preamble even though it
         is not in the entry block, because the block dominates the back-edge.
 
-        (letrec ((scan
+        (let ((scan
                   (lambda (i)
                     (if (integer>=? i len)
                         i
@@ -317,7 +317,7 @@ class TestGuardHoistingFromNonEntryBlocks:
         var's type is not provable and the guard is inserted.
         """
         src = """
-        (letrec ((scan
+        (let ((scan
                   (lambda (i)
                     (if (integer>=? i len)
                         i
@@ -354,7 +354,7 @@ class TestGuardHoistingFromNonEntryBlocks:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((count-chars
+        (let ((count-chars
                   (lambda (i)
                     (if (integer>=? i (string-length text))
                         i

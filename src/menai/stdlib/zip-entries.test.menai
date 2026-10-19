@@ -1,6 +1,6 @@
 ; Tests for zip-entries.menai
 
-(letrec
+(let
   ((zip-mod (import "zip-entries"))
    (t (import "menai-test"))
    (entries (:: zip-mod entries))

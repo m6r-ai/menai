@@ -526,11 +526,12 @@ class TestErrors:
         with pytest.raises(MenaiEvalError):
             menai.evaluate("(let ((x (integer/ 1 0))) x)")
 
-        # let bindings are parallel, so y's binding cannot see x from the same let
+        # let bindings are recursive, so y's value sees x from the same let and
+        # the division by zero is the error that surfaces.
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("(let ((x 5) (y (integer/ x 0))) y)")
 
-        assert "Unbound variable" in exc_info.value.message
+        assert "division by zero" in exc_info.value.message
 
     def test_error_in_lambda_closure_context(self, menai):
         """Test error handling in lambda closure contexts."""
@@ -731,7 +732,7 @@ class TestBacktrace:
         """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (letrec ((recurse (lambda (n lst)
+            (let ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-nth lst 100)
                                     (recurse (integer- n 1) lst)))))
@@ -747,7 +748,7 @@ class TestBacktrace:
         """A non-tail recursive error shows multiple frames in the backtrace."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (letrec ((check-all (lambda (lst)
+            (let ((check-all (lambda (lst)
                                   (if (list-null? lst)
                                       0
                                      (integer+ (if (integer<? (list-length lst) 2)
@@ -766,7 +767,7 @@ class TestBacktrace:
         """An anonymous lambda in the backtrace is identified by its source location."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (letrec ((wrapper (lambda (f x)
+            (let ((wrapper (lambda (f x)
                                 (if (integer<=? x 0)
                                     (f (list 1 2 3))
                                     (wrapper f (integer- x 1))))))
@@ -786,7 +787,7 @@ class TestBacktrace:
         """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (letrec ((recurse (lambda (n lst)
+            (let ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-nth lst 100)
                                     (recurse (integer- n 1) lst)))))
@@ -802,7 +803,7 @@ class TestBacktrace:
         """A user-raised error (error ...) captures the call stack."""
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (letrec ((validate (lambda (x)
+            (let ((validate (lambda (x)
                                  (if (integer<? x 0)
                                      (error "negative value not allowed")
                                      x)))
@@ -826,7 +827,7 @@ class TestBacktrace:
         """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (letrec ((recurse (lambda (n lst)
+            (let ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-nth lst 100)
                                     (recurse (integer- n 1) lst)))))
@@ -845,7 +846,7 @@ class TestBacktrace:
         """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
-            (letrec ((recurse (lambda (n lst)
+            (let ((recurse (lambda (n lst)
                                 (if (integer<=? n 0)
                                     (list-nth lst 100)
                                     (recurse (integer- n 1) lst)))))

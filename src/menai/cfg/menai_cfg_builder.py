@@ -138,7 +138,7 @@ class _FunctionState:
     value_counter: int = 0
     block_counter: int = 0
     self_value: 'MenaiCFGValue | None' = None  # SSA value of the function's own self-capture
-                                                # free var, set for letrec-bound lambdas only.
+                                                # free var, set for $letrec-bound lambdas only.
     loop_context: 'tuple[_DraftBlock, list[MenaiCFGValue]] | None' = None
     # When inside a MenaiIRLoop, holds (loop_entry_block, param_ssa_values) so
     # that MenaiIRRecur can emit a SelfLoopTerm with the correct target and
@@ -180,15 +180,15 @@ class MenaiCFGBuilder:
     """
 
     def __init__(self) -> None:
-        # Instance-level letrec sibling context.  Set to the sibling-name set
+        # Instance-level $letrec sibling context.  Set to the sibling-name set
         # during Phase 2b of _build_letrec (evaluating non-lambda binding RHS
         # expressions) so that _build_lambda_expr can detect lambdas that have
         # sibling captures and need PATCH_CLOSURE treatment.  None at all other
-        # times, including during normal lambda-only letrec Phase 1.
+        # times, including during normal lambda-only $letrec Phase 1.
         self._letrec_sibling_names: set | None = None
 
         # Collected during Phase 2b: (closure_val, ir_lambda) pairs for lambdas
-        # embedded in non-lambda letrec binding RHS expressions that have at
+        # embedded in non-lambda $letrec binding RHS expressions that have at
         # least one sibling capture.  Processed (patched) after Phase 2b.
         self._letrec_deferred_patches: list[tuple[MenaiCFGValue, MenaiIRLambda]] | None = None
 
@@ -434,16 +434,20 @@ class MenaiCFGBuilder:
     def _build_let(
         self, ir: MenaiIRLet, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
     ) -> tuple[MenaiCFGValue, _DraftBlock]:
-        """Build a let-binding scope, evaluating bindings then the body in a child scope."""
-        # Binding values are evaluated in the outer scope (parallel let).
+        """
+        Build a $let-binding scope, evaluating bindings then the body in a child scope.
+
+        $let is the desugarer's acyclic node: it is emitted only for groups in
+        which no value reads a later sibling.  A value may still read an earlier
+        one, so each value is built in the child scope and bound there
+        immediately.  The desugarer's classification guarantees no value reads a
+        later sibling, so the group cannot deadlock.
+        """
+        body_scope = scope.child()
         binding_vals: list[tuple[str, MenaiCFGValue]] = []
         for name, value_plan in ir.bindings:
-            val, block = self._build_expr(value_plan, block, scope, state, tail=False)
+            val, block = self._build_expr(value_plan, block, body_scope, state, tail=False)
             binding_vals.append((name, val))
-
-        # Body is evaluated in a child scope that contains all binding names.
-        body_scope = scope.child()
-        for name, val in binding_vals:
             body_scope.bind(name, val)
 
         return self._build_expr(ir.body_plan, block, body_scope, state, tail=tail)
@@ -452,7 +456,7 @@ class MenaiCFGBuilder:
         """
         Return the set of variable names `ir` reads outside any lambda body.
 
-        Used by letrec Phase 2b to detect a non-lambda binding whose value
+        Used by $letrec Phase 2b to detect a non-lambda binding whose value
         depends on another computed binding in the same group.  Such a value
         has nothing to read: those names are only bound to placeholders until
         Phase 2b computes them.
@@ -492,7 +496,7 @@ class MenaiCFGBuilder:
             return self._names_read(ir.message)
 
         if isinstance(ir, (MenaiIRBuildList, MenaiIRBuildVector, MenaiIRBuildSet)):
-            names: set[str] = set()
+            names = set()
             for p in ir.element_plans:
                 names |= self._names_read(p)
 
@@ -552,7 +556,7 @@ class MenaiCFGBuilder:
         self, ir: MenaiIRLetrec, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState, tail: bool
     ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
-        Build a letrec in three phases.
+        Build a $letrec in three phases.
 
         Phase 1: For lambda bindings, build child CFGs and emit
                  MenaiCFGMakeClosureInstr with only OUTER (non-sibling)
@@ -575,7 +579,7 @@ class MenaiCFGBuilder:
                  child function's free_vars list.
         """
         sibling_names = {name for name, _ in ir.bindings}
-        # Build a child scope for letrec-bound names (populated in Phase 2).
+        # Build a child scope for $letrec-bound names (populated in Phase 2).
         letrec_scope = scope.child()
 
         # Phase 1: build each lambda's CFG and emit MAKE_CLOSURE with only
@@ -656,9 +660,9 @@ class MenaiCFGBuilder:
             for read_name in self._names_read(value_plan):
                 if read_name == name:
                     raise MenaiEvalError(
-                        message=f"Binding '{name}' cannot refer to itself in a letrec",
+                        message=f"Binding '{name}' cannot refer to itself in a let",
                         context=(
-                            "A letrec binding's value is computed from the other "
+                            "A let binding's value is computed from the other "
                             "bindings in its group.  Referring to the binding being "
                             "defined has no value to read."
                         ),
@@ -669,18 +673,17 @@ class MenaiCFGBuilder:
                             "lambda so it is only evaluated when called"
                         ),
                         example=(
-                            f"(letrec (({name} (lambda (x) ... {name} ...))) ...)"
+                            f"(let (({name} (lambda (x) ... {name} ...))) ...)"
                         ),
                     )
 
                 if read_name in non_lambda_names:
                     raise MenaiEvalError(
                         message=(
-                            f"Binding '{name}' cannot refer to '{read_name}' in a "
-                            f"letrec"
+                            f"Binding '{name}' cannot refer to '{read_name}' in a let"
                         ),
                         context=(
-                            "Both bindings are computed values in the same letrec "
+                            "Both bindings are computed values in the same let "
                             "group, so neither has a value when the other is "
                             "evaluated.  This is a cycle with no base case."
                         ),
@@ -688,10 +691,10 @@ class MenaiCFGBuilder:
                         received=f"A value that refers to '{read_name}'",
                         suggestion=(
                             "Wrap the reference in a lambda so it is only evaluated "
-                            "when called, or move the dependency outside the letrec"
+                            "when called, or move the dependency outside the let"
                         ),
                         example=(
-                            f"(letrec (({read_name} ...) "
+                            f"(let (({read_name} ...) "
                             f"({name} (lambda (x) ... {read_name} ...))) ...)"
                         ),
                     )
@@ -707,7 +710,7 @@ class MenaiCFGBuilder:
         # capture_index is the position in the child function's full free_vars
         # list (sibling_free_vars + outer_free_vars), which is what the VM uses.
         # Appended to block.instrs (not patch_instrs) so they execute before
-        # the letrec body, which is also built into the same block's instrs.
+        # the $letrec body, which is also built into the same block's instrs.
         for name, value_plan in ir.bindings:
             if not isinstance(value_plan, MenaiIRLambda):
                 continue  # Non-lambda bindings have no closure captures to patch
@@ -745,7 +748,7 @@ class MenaiCFGBuilder:
                         value=patch_val,
                     ))
 
-        # Build the body with all letrec names in scope.
+        # Build the body with all $letrec names in scope.
         return self._build_expr(ir.body_plan, block, letrec_scope, state, tail=tail)
 
     def _build_loop(
@@ -851,7 +854,7 @@ class MenaiCFGBuilder:
         self, ir: MenaiIRLambda, block: _DraftBlock, scope: MenaiCFGScope, state: _FunctionState,
     ) -> tuple[MenaiCFGValue, _DraftBlock]:
         """
-        Build a lambda that appears as a value expression (not inside letrec).
+        Build a lambda that appears as a value expression (not inside $letrec).
 
         Recursively builds the child MenaiCFGFunction, then emits a
         MenaiCFGMakeClosureInstr in the parent block.
@@ -861,16 +864,16 @@ class MenaiCFGBuilder:
         non-variable expressions, not necessarily MenaiIRVariable nodes, so
         we dispatch through _build_expr rather than doing a scope lookup by name.
 
-        Letrec Phase 2b interception: if self._letrec_sibling_names is set (we
-        are inside the evaluation of a non-lambda letrec binding's RHS) and
-        this lambda has sibling captures, we treat it like a letrec lambda:
+        $letrec Phase 2b interception: if self._letrec_sibling_names is set (we
+        are inside the evaluation of a non-lambda $letrec binding's RHS) and
+        this lambda has sibling captures, we treat it like a $letrec lambda:
         emit MAKE_CLOSURE with needs_patching=True and record it in
         self._letrec_deferred_patches so Phase 3b can PATCH_CLOSURE the
         sibling captures after all non-lambda binding values are available.
         """
         child_func = self._build_lambda_function(ir)
 
-        # Check for letrec Phase 2b interception.
+        # Check for $letrec Phase 2b interception.
         sibling_names = self._letrec_sibling_names
         has_sibling_captures = bool(ir.sibling_free_vars) and sibling_names is not None
         if has_sibling_captures:

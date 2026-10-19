@@ -1,6 +1,6 @@
 ; Tests for xlsx-encode.menai
 
-(letrec
+(let
   ((xlsx-encode (import "xlsx-encode"))
    (xlsx-decode (import "xlsx-decode"))
    (zip-entries (import "zip-entries"))

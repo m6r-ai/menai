@@ -15,7 +15,7 @@
 ;   6 7 8
 ; Center (position 4) never moves and identifies the face color
 
-(letrec
+(let
   ((cube-repr (struct (U D F B L R)))
    (search-result (struct (found value)))
 
@@ -48,7 +48,7 @@
 
    (move-U
     (lambda (cube)
-      (letrec ((u (struct-get cube 'U))
+      (let ((u (struct-get cube 'U))
              (f (struct-get cube 'F))
              (r (struct-get cube 'R))
              (b (struct-get cube 'B))
@@ -99,7 +99,7 @@
 
    (move-D
     (lambda (cube)
-      (letrec ((d (struct-get cube 'D))
+      (let ((d (struct-get cube 'D))
              (f (struct-get cube 'F))
              (r (struct-get cube 'R))
              (b (struct-get cube 'B))
@@ -150,7 +150,7 @@
 
    (move-F
     (lambda (cube)
-      (letrec ((f (struct-get cube 'F))
+      (let ((f (struct-get cube 'F))
              (u (struct-get cube 'U))
              (r (struct-get cube 'R))
              (d (struct-get cube 'D))
@@ -201,7 +201,7 @@
 
    (move-B
     (lambda (cube)
-      (letrec ((b (struct-get cube 'B))
+      (let ((b (struct-get cube 'B))
              (u (struct-get cube 'U))
              (l (struct-get cube 'L))
              (d (struct-get cube 'D))
@@ -252,7 +252,7 @@
 
    (move-L
     (lambda (cube)
-      (letrec ((l (struct-get cube 'L))
+      (let ((l (struct-get cube 'L))
              (u (struct-get cube 'U))
              (f (struct-get cube 'F))
              (d (struct-get cube 'D))
@@ -303,7 +303,7 @@
 
    (move-R
     (lambda (cube)
-      (letrec ((r (struct-get cube 'R))
+      (let ((r (struct-get cube 'R))
              (u (struct-get cube 'U))
              (b (struct-get cube 'B))
              (d (struct-get cube 'D))
@@ -480,7 +480,7 @@
             (if (boolean? best-threshold)
                 (integer+ bound 1)
                 best-threshold))
-          (letrec ((move (list-first moves))
+          (let ((move (list-first moves))
                  (new-cube (apply-move cube move))
                  (new-path (list-concat path (list move)))
                  (result (ida-search new-cube bound (integer+ g 1) move new-path)))
@@ -508,7 +508,7 @@
 
    (ida-star
     (lambda (cube max-depth)
-      (letrec ((search-loop
+      (let ((search-loop
                 (lambda (bound)
                   (if (integer>? bound max-depth)
                       (search-result #f "Max depth exceeded")

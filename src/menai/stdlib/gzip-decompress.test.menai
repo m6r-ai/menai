@@ -1,6 +1,6 @@
 ; Tests for gzip-decompress.menai
 
-(letrec
+(let
   ((gzip-mod (import "gzip-decompress"))
    (t (import "menai-test"))
    (decompress (:: gzip-mod decompress))

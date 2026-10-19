@@ -467,10 +467,10 @@ class TestDeadCapturePruningIntegration:
     def test_inlined_helper_produces_correct_result(self):
         """A helper that is inlined should not affect the result."""
         result = Menai().evaluate("""
-            (letrec ((is-digit? (lambda (ch)
+            (let ((is-digit? (lambda (ch)
                                   (and (string>=? ch "0") (string<=? ch "9"))))
                      (scan (lambda (s i len)
-                             (letrec ((loop (lambda (j)
+                             (let ((loop (lambda (j)
                                               (if (integer>=? j len)
                                                   j
                                                   (if (or (string=? (string-nth s j) "-")
@@ -496,7 +496,7 @@ class TestDeadCapturePruningIntegration:
         """Mutually recursive functions with captures must still work."""
         result = Menai().evaluate("""
             (let ((limit 100))
-              (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+              (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                        (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
                 (even? 10)))
         """)
@@ -506,11 +506,11 @@ class TestDeadCapturePruningIntegration:
         """The JSON parser (the motivating example) must still parse correctly."""
         menai = Menai()
         result = menai.evaluate("""
-            (letrec (
+            (let (
               (is-digit? (lambda (ch) (and (string>=? ch "0") (string<=? ch "9"))))
               (scan-number-end
                (lambda (s i len)
-                 (letrec ((loop (lambda (j)
+                 (let ((loop (lambda (j)
                                   (if (integer>=? j len)
                                       j
                                       (let ((ch (string-nth s j)))

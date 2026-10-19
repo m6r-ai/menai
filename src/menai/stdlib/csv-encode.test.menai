@@ -1,6 +1,6 @@
 ; Tests for csv-encode.menai
 
-(letrec
+(let
   ((csv-encode (import "csv-encode"))
    (csv-decode (import "csv-decode"))
    (t (import "menai-test"))

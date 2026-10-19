@@ -1,6 +1,6 @@
 ; bmp-encode — encodes a decoded BMP description as a BMP file.
 
-(letrec
+(let
   ((signature (string->bytes "BM"))
 
    ; The BITMAPFILEHEADER size (14 bytes) and the BITMAPINFOHEADER size (40
@@ -55,13 +55,13 @@
    (encode-row
     (lambda (b row width bpp)
       (if (vector? row)
-          (letrec ((loop
+          (let ((loop
                     (lambda (x acc)
                       (if (integer>=? x width)
                           acc
                           (loop (integer+ x 1) (encode-pixel acc (vector-nth row x) bpp))))))
             (let ((padded (loop 0 b)))
-              (letrec ((pad
+              (let ((pad
                         (lambda (n acc)
                           (if (integer>=? n (row-padding width bpp))
                               acc
@@ -79,7 +79,7 @@
                  (if bottom-up
                      (list->vector (list-reverse (vector->list pixels)))
                      pixels)))
-            (letrec ((loop
+            (let ((loop
                       (lambda (y acc)
                         (if (integer>=? y height)
                             acc
@@ -149,7 +149,7 @@
                       (bpp (dict-get header "bpp")))
                   (if (or (integer=? bpp 24)
                           (integer=? bpp 32))
-                      (letrec                         ((bottom-up
+                      (let                         ((bottom-up
                           (if (dict? meta)
                               (dict-get meta "bottom-up")
                               #t))

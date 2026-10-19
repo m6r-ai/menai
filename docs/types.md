@@ -361,8 +361,8 @@ of struct instance functions.
 
 An enumtype is a type descriptor produced by `(enum (variant1 variant2 ...))`. It is
 not an enum instance — it is the blueprint that describes an enum type. An `enum`
-form is valid as the RHS of a `let` or `letrec` binding, and is hoisted out
-of `letrec` exactly as a struct definition is. An enumtype value is callable: calling
+form is valid as the RHS of a `let` binding, and is hoisted out
+exactly as a struct definition is. An enumtype value is callable: calling
 it with a quoted variant name creates an enum value of that variant.
 
 ```menai

@@ -377,7 +377,7 @@ class TestEndToEnd:
         bytes read is folded away because the read is locally proven integer.
         """
         src = """
-        (letrec
+        (let
           ((prefix-key
             (lambda (b i)
               (if (integer>? (integer+ i 3) (bytes-length b))
@@ -402,7 +402,7 @@ class TestEndToEnd:
         through an unresolvable higher-order call.
         """
         src = """
-        (letrec ((process-nested (lambda (data)
+        (let ((process-nested (lambda (data)
                                    (match data
                                           ((? integer? n) n)
                                           ((? string? s) (string-length s))

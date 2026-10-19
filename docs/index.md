@@ -46,7 +46,7 @@ and its result, like this:
 
 1. [Syntax](syntax.md) — S-expressions, atoms, literals, comments
 2. [Types](types.md) — all Menai types and their literals
-3. [Core forms](core_forms.md) — `let`, `letrec`, `lambda`, `if`, `match`, `quote`, `and`, `or`, `error`, `import`
+3. [Core forms](core_forms.md) — `let`, `lambda`, `if`, `match`, `quote`, `and`, `or`, `error`, `import`
 4. [Pattern matching](pattern_matching.md) — patterns, destructuring, predicates
 5. [Builtins](builtins.md) — all builtin functions, organised by category
 6. [Modules](modules.md) — the module system, `.menai` files, import semantics

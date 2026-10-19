@@ -7,13 +7,13 @@ Menai because the language is pure — there are no side effects to reorder.
 
 The pass resolves two kinds of call target:
 
-- A lambda bound in an enclosing let/letrec whose value is a MenaiIRLambda.
+- A lambda bound in an enclosing binding form whose value is a MenaiIRLambda.
   The scope stack maps binding names to lambda nodes as the tree is walked.
   A lambda parameter is entered into the scope with a None value: it shadows
   any outer binding of the same name but resolves to no target, because a
   parameter is a runtime value rather than a statically-known lambda.
   Prelude functions are ordinary bindings in that scope stack: the prelude is
-  spliced into every program as a letrec, so its functions are resolved the
+  spliced into every program as a $letrec, so its functions are resolved the
   same way as any other local lambda.
 
 - A direct lambda application, where the function position is itself a lambda
@@ -25,7 +25,7 @@ A lambda is only inlined when:
 
 - Its body node count is at or below MAX_INLINE_NODES.
 - It is not recursive (its binding name does not appear in its own body,
-  and for letrec groups, none of the sibling names appear in the body).
+  and for $letrec groups, none of the sibling names appear in the body).
 - Its body does not contain a lambda that captures the inlined function's
   parameters via outer_free_vars.  Captures of sibling names or other
   internal bindings are safe because those bindings travel with the inlined
@@ -234,7 +234,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         scope_stack: list[dict[str, MenaiIRLambda | None]],
     ) -> MenaiIRExpr:
         """
-        Walk a letrec, adding its bindings to the scope for the body.
+        Walk a $letrec, adding its bindings to the scope for the body.
 
         Every binding name is entered into the scope so that it shadows any
         outer binding of the same name.  A binding whose value is a lambda maps
@@ -283,8 +283,8 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         """
         Walk a lambda body in a fresh scope (params shadow outer bindings).
 
-        The enclosing letrec's binding names are carried through the body walk,
-        so a call to a letrec sibling inside the lambda body is recognised as a
+        The enclosing $letrec's binding names are carried through the body walk,
+        so a call to a $letrec sibling inside the lambda body is recognised as a
         recursive call and is not inlined.
 
         Each parameter is entered into the scope as a non-resolvable binding.
@@ -551,7 +551,7 @@ def _has_captures_of_params(ir: MenaiIRExpr, params: set[str]) -> bool:
     still lists the parameter name as a capture, but the variable no longer
     exists in the enclosing scope.
 
-    A lambda that captures only sibling names (from its own letrec group) or
+    A lambda that captures only sibling names (from its own $letrec group) or
     other non-parameter bindings is safe — those bindings travel with the
     inlined body unchanged.
     """
@@ -616,7 +616,7 @@ def _count_param_uses(ir: MenaiIRExpr, param: str, shadowed: set[str]) -> int:
 
     Mirrors the shadowing rules of _substitute exactly, so the count matches
     the number of occurrences that substitution would replace.  A reference is
-    counted only when it is not shadowed by an inner let/letrec/lambda binder.
+    counted only when it is not shadowed by an inner binding-form/lambda binder.
 
     Nested lambda capture plans (sibling_free_var_plans / outer_free_var_plans)
     are evaluated in the enclosing scope but are not substituted into, so they
@@ -759,7 +759,7 @@ def _substitute(
     """
     Substitute parameter references with argument expressions.
 
-    shadowed tracks names that are bound by an inner let/letrec/lambda and
+    shadowed tracks names that are bound by an inner binding form or lambda and
     should not be substituted.
     """
     if isinstance(ir, MenaiIRVariable):
@@ -871,7 +871,7 @@ def _substitute_let(
     shadowed: set[str],
     is_letrec: bool,
 ) -> MenaiIRExpr:
-    """Substitute inside a let/letrec, adding binding names to the shadowed set for the body."""
+    """Substitute inside a binding form, adding binding names to the shadowed set for the body."""
     binding_names = {name for name, _ in ir.bindings}
 
     values_shadowed = shadowed | binding_names if is_letrec else shadowed

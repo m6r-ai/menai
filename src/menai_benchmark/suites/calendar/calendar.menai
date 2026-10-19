@@ -3,7 +3,7 @@
 ;
 ; Returns a dict of calendar functions
 
-(letrec
+(let
   (; Calendar structure
    (calendar (struct (id name type working-days holidays)))
 
@@ -44,7 +44,7 @@
    ; Uses Zeller's congruence algorithm
    (day-of-week
     (lambda (date-str)
-      (letrec         ((date (parse-date date-str))
+      (let         ((date (parse-date date-str))
          (year (list-nth date 0))
          (month (list-nth date 1))
          (day (list-nth date 2))
@@ -104,7 +104,7 @@
    ; Check if a specific date is a working day
    (is-working-day?
     (lambda (date-str cal)
-      (letrec ((dow (day-of-week date-str))
+      (let ((dow (day-of-week date-str))
              (dow-name (day-name dow)))
         (and (is-working-day-of-week? dow-name cal)
              (boolean-not (is-holiday? date-str cal))))))
@@ -143,7 +143,7 @@
    ; Add one calendar day to a date
    (add-one-day
     (lambda (date-str)
-      (letrec ((date (parse-date date-str))
+      (let ((date (parse-date date-str))
              (year (list-nth date 0))
              (month (list-nth date 1))
              (day (list-nth date 2))
@@ -160,7 +160,7 @@
    ; Subtract one calendar day from a date
    (subtract-one-day
     (lambda (date-str)
-      (letrec ((date (parse-date date-str))
+      (let ((date (parse-date date-str))
              (year (list-nth date 0))
              (month (list-nth date 1))
              (day (list-nth date 2)))
@@ -212,7 +212,7 @@
                (if (float>? days 0.0)
                    (float-floor days)
                    (float-ceil days)))))
-        (letrec ((step
+        (let ((step
                   (lambda (date remaining)
                     (if (integer=? remaining 0)
                         date
@@ -227,7 +227,7 @@
    ; Count working days between two dates (inclusive of start, exclusive of end)
    (working-days-between
     (lambda (start-date end-date cal)
-      (letrec ((count-helper
+      (let ((count-helper
                 (lambda (current-date end-date cal count)
                   (if (string=? current-date end-date)
                       count
@@ -245,7 +245,7 @@
    ; Count calendar days between two dates (inclusive of start, exclusive of end)
    (calendar-days-between
     (lambda (start-date end-date)
-      (letrec ((count-helper
+      (let ((count-helper
                 (lambda (current-date end-date count)
                   (if (string=? current-date end-date)
                       count
@@ -258,7 +258,7 @@
    ; Compare two dates: returns -1 if date1 < date2, 0 if equal, 1 if date1 > date2
    (compare-dates
     (lambda (date1 date2)
-      (letrec ((d1 (parse-date date1))
+      (let ((d1 (parse-date date1))
              (d2 (parse-date date2))
              (y1 (list-nth d1 0))
              (m1 (list-nth d1 1))

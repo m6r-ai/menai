@@ -209,7 +209,7 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
     def _opt_letrec(self, ir: MenaiIRLetrec, frame_stack: list[int]) -> MenaiIRExpr:
         """
-        Drop dead letrec bindings (unreachable from the evaluation roots).
+        Drop dead $letrec bindings (unreachable from the evaluation roots).
 
         Reachability removes an entire unreachable mutually-recursive group as
         a unit.  A use count cannot: every member of an unreachable cycle is
@@ -407,7 +407,7 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         Collect all local variable names referenced in *ir* that are not
         in *bound*.
 
-        Tracks shadowing by inner let/letrec bindings and lambda
+        Tracks shadowing by inner binding forms and lambda
         params/captures.  Nested lambda capture plans (free_var_plans)
         are evaluated in the enclosing scope, so their references are
         collected against the current *bound* set.

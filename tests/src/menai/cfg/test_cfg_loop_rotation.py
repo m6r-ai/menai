@@ -104,7 +104,7 @@ class TestLoopRotation:
 
     def test_sum_list_loop_rotated(self):
         """
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -117,7 +117,7 @@ class TestLoopRotation:
         back into the body.
         """
         src = """
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -141,7 +141,7 @@ class TestLoopRotation:
         two of them after rotation: one in the header, one at the bottom.
         """
         src = """
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -161,7 +161,7 @@ class TestLoopRotation:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -180,7 +180,7 @@ class TestLoopRotation:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -199,7 +199,7 @@ class TestLoopRotation:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((sum-list
+        (let ((sum-list
                   (lambda (lst acc)
                     (if (list-null? lst)
                         acc
@@ -211,7 +211,7 @@ class TestLoopRotation:
 
     def test_count_down_loop_rotated(self):
         """
-        (letrec ((count-down
+        (let ((count-down
                   (lambda (n)
                     (if (integer<=? n 0)
                         n
@@ -221,7 +221,7 @@ class TestLoopRotation:
         A numeric self-loop should also be rotated.
         """
         src = """
-        (letrec ((count-down
+        (let ((count-down
                   (lambda (n)
                     (if (integer<=? n 0)
                         n
@@ -238,7 +238,7 @@ class TestLoopRotation:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((count-down
+        (let ((count-down
                   (lambda (n)
                     (if (integer<=? n 0)
                         n
@@ -253,7 +253,7 @@ class TestLoopRotation:
         recursive letrec so the functions survive to the CFG stage.
         """
         src = """
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 10))
         """
@@ -284,7 +284,7 @@ class TestLoopRotation:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((outer
+        (let ((outer
                   (lambda (n acc)
                     (if (integer<=? n 0)
                         acc
@@ -305,7 +305,7 @@ class TestMultiBlockBodyRotation:
 
     def test_nested_branch_body_rotated(self):
         """
-        (letrec ((count-mismatch
+        (let ((count-mismatch
                   (lambda (i acc)
                     (if (integer>=? i 9)
                         acc
@@ -322,7 +322,7 @@ class TestMultiBlockBodyRotation:
         is a conditional branch back into the body.
         """
         src = """
-        (letrec ((count-mismatch
+        (let ((count-mismatch
                   (lambda (i acc)
                     (if (integer>=? i 9)
                         acc
@@ -350,7 +350,7 @@ class TestMultiBlockBodyRotation:
         bottom.
         """
         src = """
-        (letrec ((count-mismatch
+        (let ((count-mismatch
                   (lambda (i acc)
                     (if (integer>=? i 9)
                         acc
@@ -373,7 +373,7 @@ class TestMultiBlockBodyRotation:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((count-mismatch
+        (let ((count-mismatch
                   (lambda (i acc)
                     (if (integer>=? i 9)
                         acc
@@ -395,7 +395,7 @@ class TestMultiBlockBodyRotation:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((count-mismatch
+        (let ((count-mismatch
                   (lambda (i acc)
                     (if (integer>=? i 9)
                         acc
@@ -414,7 +414,7 @@ class TestMultipleBackEdgesRotated:
 
     def test_two_arms_tail_calling_same_loop_rotated(self):
         """
-        (letrec ((scan
+        (let ((scan
                   (lambda (i)
                     (if (integer>=? i 10)
                         i
@@ -428,7 +428,7 @@ class TestMultipleBackEdgesRotated:
         rotated test, so neither back-edge needs an unconditional jump.
         """
         src = """
-        (letrec ((scan
+        (let ((scan
                   (lambda (i)
                     (if (integer>=? i 10)
                         i
@@ -453,7 +453,7 @@ class TestMultipleBackEdgesRotated:
         entry test plus one per back-edge.
         """
         src = """
-        (letrec ((scan
+        (let ((scan
                   (lambda (i)
                     (if (integer>=? i 10)
                         i
@@ -474,7 +474,7 @@ class TestMultipleBackEdgesRotated:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec ((scan
+        (let ((scan
                   (lambda (i)
                     (if (integer>=? i 10)
                         i
@@ -540,11 +540,11 @@ class TestMultipleLoopsInOneFunction:
     """Every loop in a function is rotated, not just the first one found."""
 
     TWO_SEQUENTIAL_LOOPS = """
-        (let ((f (lambda (xs) (letrec ((go (lambda (l a)
+        (let ((f (lambda (xs) (let ((go (lambda (l a)
                                             (if (list-null? l) a
                                                 (go (list-rest l) (integer+ a (list-first l)))))))
                                   (go xs 0))))
-              (g (lambda (xs) (letrec ((go (lambda (l a)
+              (g (lambda (xs) (let ((go (lambda (l a)
                                             (if (list-null? l) a
                                                 (go (list-rest l) (integer+ a 1))))))
                                   (go xs 0)))))
@@ -553,12 +553,12 @@ class TestMultipleLoopsInOneFunction:
 
     NESTED_LOOPS = """
         (let ((h (lambda (m)
-                   (letrec ((inner (lambda (k a)
+                   (let ((inner (lambda (k a)
                                      (if (integer<=? k 0)
                                          a
                                          (inner (integer- k 1) (integer+ a k))))))
                      (inner m 0)))))
-          (letrec ((outer (lambda (n acc)
+          (let ((outer (lambda (n acc)
                             (if (integer<=? n 0)
                                 acc
                                 (outer (integer- n 1) (integer+ acc (h n)))))))

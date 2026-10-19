@@ -87,7 +87,7 @@ optimisations natural that would be awkward, fragile, or fidelity-losing in any
 other layer.
 
 **AST — source fidelity and validation.** The AST preserves the full surface
-language, including constructs like `match`, `and`, `or`, and `letrec` that will
+language, including constructs like `match`, `and`, and `or` that will
 later be desugared. This is where semantic validation happens (arity checks, binding
 structure, pattern validity) because the AST carries source locations and the
 original syntactic structure needed for precise error messages. The AST constant

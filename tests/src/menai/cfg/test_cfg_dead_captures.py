@@ -448,7 +448,7 @@ class TestIntegration:
         call should compile to LOAD_CONST (no MAKE_CLOSURE, no PATCH_CLOSURE).
         """
         src = """
-        (letrec ((sum (lambda (n acc)
+        (let ((sum (lambda (n acc)
                         (if (integer=? n 0)
                             acc
                             (sum (integer- n 1) (integer+ acc n))))))
@@ -469,7 +469,7 @@ class TestIntegration:
         and the loop's free vars would no longer be observable.
         """
         src = """
-        (letrec ((limit 100000)
+        (let ((limit 100000)
                  (loop (lambda (n)
                           (if (integer>=? n limit) n (loop (integer+ n 1))))))
           (apply loop (list 0)))
@@ -486,7 +486,7 @@ class TestIntegration:
 
         menai = Menai()
         result = menai.evaluate("""
-        (letrec ((sum (lambda (n acc)
+        (let ((sum (lambda (n acc)
                         (if (integer=? n 0)
                             acc
                             (sum (integer- n 1) (integer+ acc n))))))
@@ -500,7 +500,7 @@ class TestIntegration:
 
         menai = Menai()
         result = menai.evaluate("""
-        (letrec ((limit 100000)
+        (let ((limit 100000)
                  (loop (lambda (n)
                           (if (integer>=? n limit) n (loop (integer+ n 1))))))
           (loop 0))
@@ -513,9 +513,9 @@ class TestIntegration:
 
         menai = Menai()
         result = menai.evaluate(r"""
-        (letrec ((skip-ws
+        (let ((skip-ws
                   (lambda (s pos)
-                    (letrec ((loop (lambda (i)
+                    (let ((loop (lambda (i)
                                      (if (integer>=? i (string-length s))
                                          i
                                          (let ((ch (string-nth s i)))
@@ -540,7 +540,7 @@ class TestIntegration:
 
         menai = Menai()
         result = menai.evaluate("""
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd?  (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd?  (integer- n 1)))))
                  (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (list (even? 100) (odd? 101)))
         """)
@@ -552,7 +552,7 @@ class TestIntegration:
         should keep the self-capture (it's needed for the non-tail call).
         """
         src = """
-        (letrec ((fact (lambda (n)
+        (let ((fact (lambda (n)
                          (if (integer<=? n 1)
                              1
                              (integer* n (fact (integer- n 1)))))))

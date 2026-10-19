@@ -39,7 +39,8 @@ __all__ = [
     "VMErrorCode",
 
     # Exceptions (enhanced with detailed context)
-    "MenaiError", "MenaiTokenError", "MenaiASTBuildError", "MenaiCodegenError", "MenaiEvalError", "MenaiCancelledException", "MenaiInternalError",
+    "MenaiError", "MenaiTokenError", "MenaiASTBuildError", "MenaiCodegenError",
+    "MenaiEvalError", "MenaiCancelledException", "MenaiInternalError",
 
     # AST node types
     "MenaiASTNode", "MenaiASTInteger", "MenaiASTFloat", "MenaiASTComplex",

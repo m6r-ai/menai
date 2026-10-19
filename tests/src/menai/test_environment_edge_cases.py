@@ -93,7 +93,7 @@ class TestMenaiEnvironmentEdgeCases:
 
         # Sequential let bindings
         result = menai.evaluate("""
-        (letrec ((x 5)
+        (let ((x 5)
                (y (integer+ x 3)))
           y)
         """)

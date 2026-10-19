@@ -28,7 +28,7 @@
 ; A gzip stream may be followed by more data (RFC 1952 permits concatenated
 ; members); only the first member is decompressed.
 
-(letrec
+(let
   ((deflate-lib (import "deflate-decompress"))
 
    ; The offset just past the fixed 10-byte header (magic, CM, FLG, MTIME,
@@ -65,7 +65,7 @@
    ; against the header bytes that precede it.
    (skip-optional-fields
     (lambda (b flg)
-      (letrec         ((after-extra
+      (let         ((after-extra
           (if (integer=? (integer-bit-and flg #x04) 0)
               header-size
               (if (integer>? (integer+ header-size 2) (bytes-length b))
@@ -107,7 +107,7 @@
       (if (bytes? b)
           (if (integer<? (bytes-length b) 18)
               (error "Not a gzip stream: too short")
-              (letrec ((flg (check-fixed-header b))
+              (let ((flg (check-fixed-header b))
                      (data-start (skip-optional-fields b flg))
                      (decompress (:: deflate-lib decompress))
                      (data (decompress (bytes-slice b data-start (integer- (bytes-length b) 8))))

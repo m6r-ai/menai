@@ -1,4 +1,4 @@
-(letrec
+(let
   ((pi 3.141592653589793)
    (e 2.718281828459045)
 
@@ -56,7 +56,7 @@
           ($boolean=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'boolean=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -71,11 +71,11 @@
           ($boolean!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'boolean!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -99,7 +99,7 @@
           ($integer=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -114,11 +114,11 @@
           ($integer!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -134,7 +134,7 @@
           ($integer<? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer<?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -149,7 +149,7 @@
           ($integer>? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer>?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -164,7 +164,7 @@
           ($integer<=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer<=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -179,7 +179,7 @@
           ($integer>=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer>=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -194,7 +194,7 @@
           ($integer+ ($list-first args) ($list-last args))
           (if ($list-null? args)
               0
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -207,7 +207,7 @@
           ($integer- ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer-' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -220,7 +220,7 @@
           ($integer* ($list-first args) ($list-last args))
           (if ($list-null? args)
               1
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -233,7 +233,7 @@
           ($integer/ ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer/' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -262,7 +262,7 @@
           ($integer-bit-or ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer-bit-or' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -275,7 +275,7 @@
           ($integer-bit-and ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer-bit-and' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -288,7 +288,7 @@
           ($integer-bit-xor ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'integer-bit-xor' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -313,7 +313,7 @@
           ($integer-min ($list-first args) ($list-last args))
           (if ($list-null? args)
               (error "Function 'integer-min' requires at least 1 argument")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -326,7 +326,7 @@
           ($integer-max ($list-first args) ($list-last args))
           (if ($list-null? args)
               (error "Function 'integer-max' requires at least 1 argument")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -365,7 +365,7 @@
           ($float=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -380,11 +380,11 @@
           ($float!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -400,7 +400,7 @@
           ($float<? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float<?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -415,7 +415,7 @@
           ($float>? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float>?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -430,7 +430,7 @@
           ($float<=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float<=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -445,7 +445,7 @@
           ($float>=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float>=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -460,7 +460,7 @@
           ($float+ ($list-first args) ($list-last args))
           (if ($list-null? args)
               0.0
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -473,7 +473,7 @@
           ($float- ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float-' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -486,7 +486,7 @@
           ($float* ($list-first args) ($list-last args))
           (if ($list-null? args)
               1.0
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -499,7 +499,7 @@
           ($float/ ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float/' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -528,7 +528,7 @@
           ($float-expn ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'float-expt' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -605,7 +605,7 @@
           ($float-min ($list-first args) ($list-last args))
           (if ($list-null? args)
               (error "Function 'float-min' requires at least 1 argument")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -618,7 +618,7 @@
           ($float-max ($list-first args) ($list-last args))
           (if ($list-null? args)
               (error "Function 'float-max' requires at least 1 argument")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -691,7 +691,7 @@
           ($complex=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'complex=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -706,11 +706,11 @@
           ($complex!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'complex!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -726,7 +726,7 @@
           ($complex+ ($list-first args) ($list-last args))
           (if ($list-null? args)
               ($float->complex 0.0 0.0)
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -739,7 +739,7 @@
           ($complex- ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'complex-' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -752,7 +752,7 @@
           ($complex* ($list-first args) ($list-last args))
           (if ($list-null? args)
               ($float->complex 1.0 0.0)
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -765,7 +765,7 @@
           ($complex/ ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'complex/' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -794,7 +794,7 @@
           ($complex-expn ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'complex-expt' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -857,7 +857,7 @@
           ($string=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'string=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -872,11 +872,11 @@
           ($string!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'string!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -892,7 +892,7 @@
           ($string<? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'string<?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -907,7 +907,7 @@
           ($string>? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'string>?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -922,7 +922,7 @@
           ($string<=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'string<=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -937,7 +937,7 @@
           ($string>=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'string>=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -952,7 +952,7 @@
           ($string-concat ($list-first args) ($list-last args))
           (if ($list-null? args)
               ""
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -1055,7 +1055,7 @@
           ($bytes=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'bytes=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1070,11 +1070,11 @@
           ($bytes!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'bytes!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -1090,7 +1090,7 @@
           ($bytes<? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'bytes<?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1105,7 +1105,7 @@
           ($bytes>? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'bytes>?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1120,7 +1120,7 @@
           ($bytes<=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'bytes<=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1135,7 +1135,7 @@
           ($bytes>=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'bytes>=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1168,7 +1168,7 @@
           ($bytes-concat ($list-first args) ($list-last args))
           (if ($list-null? args)
               ($string-hex->bytes "")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -1505,7 +1505,7 @@
 
    (map-bytes
     (lambda (f b)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if ($integer=? i ($bytes-length b))
                       acc
@@ -1514,7 +1514,7 @@
 
    (filter-bytes
     (lambda (f b)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if ($integer=? i ($bytes-length b))
                       acc
@@ -1528,7 +1528,7 @@
 
    (fold-bytes
     (lambda (f init b)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if ($integer=? i ($bytes-length b))
                       acc
@@ -1554,7 +1554,7 @@
       (let ((dlen ($bytes-length delimiter)))
         (if ($integer=? dlen 0)
             (error "bytes-split: delimiter must be non-empty")
-            (letrec ((loop
+            (let ((loop
                       (lambda (start acc)
                         (match ($bytes-index ($bytes-slice b start ($bytes-length b)) delimiter)
                           (#none ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
@@ -1566,7 +1566,7 @@
 
    (bytes-split-int
     (lambda (b byte)
-      (letrec ((loop
+      (let ((loop
                 (lambda (start acc)
                   (match ($bytes-index-int ($bytes-slice b start ($bytes-length b)) byte)
                     (#none ($list-reverse ($list-prepend acc ($bytes-slice b start ($bytes-length b)))))
@@ -1589,7 +1589,7 @@
           ($list=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'list=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1604,11 +1604,11 @@
           ($list!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'list!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -1632,7 +1632,7 @@
           ($list-concat ($list-first args) ($list-last args))
           (if ($list-null? args)
               (list)
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst acc)
                           (if ($list-null? lst)
                               acc
@@ -1701,7 +1701,7 @@
     (lambda (. args)
       (if ($integer!=? ($integer% ($list-length args) 2) 0)
           (error "dict: requires an even number of arguments")
-          (letrec ((loop
+          (let ((loop
                     (lambda (lst acc)
                       (if ($list-null? lst)
                           acc
@@ -1720,7 +1720,7 @@
           ($dict=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'dict=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1735,11 +1735,11 @@
           ($dict!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'dict!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -1788,7 +1788,7 @@
 
    (set
     (lambda (. args)
-      (letrec ((loop
+      (let ((loop
                 (lambda (elems acc)
                   (if ($list-null? elems)
                       acc
@@ -1805,7 +1805,7 @@
           ($set=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'set=?' requires at least 2 arguments")
-              (letrec ((loop
+              (let ((loop
                         (lambda (lst prev)
                           (if ($list-null? lst)
                               #t
@@ -1820,11 +1820,11 @@
           ($set!=? ($list-first args) ($list-last args))
           (if ($integer<? ($list-length args) 2)
               (error "Function 'set!=?' requires at least 2 arguments")
-              (letrec ((outer
+              (let ((outer
                         (lambda (lst)
                           (if ($list-null? lst)
                               #t
-                              (letrec ((inner
+                              (let ((inner
                                         (lambda (rest-lst)
                                           (if ($list-null? rest-lst)
                                               (outer ($list-rest lst))
@@ -1920,7 +1920,7 @@
 
    (map-list
     (lambda (f lst)
-      (letrec ((helper
+      (let ((helper
                 (lambda (f lst acc)
                   (if ($list-null? lst)
                       ($list-reverse acc)
@@ -1929,7 +1929,7 @@
 
    (filter-list
     (lambda (pred lst)
-      (letrec ((helper
+      (let ((helper
                 (lambda (pred lst acc)
                   (if ($list-null? lst)
                       ($list-reverse acc)
@@ -1940,7 +1940,7 @@
 
    (fold-list
     (lambda (f init lst)
-      (letrec ((helper
+      (let ((helper
                 (lambda (f acc lst)
                   (if ($list-null? lst)
                       acc
@@ -1949,7 +1949,7 @@
 
    (find-list
     (lambda (pred lst)
-      (letrec ((helper
+      (let ((helper
                 (lambda (pred lst)
                   (if ($list-null? lst)
                       #none
@@ -1960,7 +1960,7 @@
 
    (any-list?
     (lambda (pred lst)
-      (letrec ((helper
+      (let ((helper
                 (lambda (pred lst)
                   (if ($list-null? lst)
                       #f
@@ -1971,7 +1971,7 @@
 
    (all-list?
     (lambda (pred lst)
-      (letrec ((helper
+      (let ((helper
                 (lambda (pred lst)
                   (if ($list-null? lst)
                       #t
@@ -1982,7 +1982,7 @@
 
    (list-zip
     (lambda (lst1 lst2)
-      (letrec ((helper
+      (let ((helper
                 (lambda (l1 l2 acc)
                   (if (or ($list-null? l1)
                           ($list-null? l2))
@@ -1995,7 +1995,7 @@
 
    (sort-list
     (lambda (cmp lst)
-      (letrec
+      (let
         ((merge
           (lambda (cmp a b acc)
             (if ($list-null? a)
@@ -2011,7 +2011,7 @@
             (let ((n ($list-length lst)))
               (if ($integer<=? n 1)
                   lst
-                  (letrec ((mid ($integer/ n 2))
+                  (let ((mid ($integer/ n 2))
                          (left (sort cmp ($list-slice lst 0 mid)))
                          (right (sort cmp ($list-slice lst mid n))))
                     (merge cmp left right (list))))))))
@@ -2019,22 +2019,22 @@
 
    (map-dict
     (lambda (f al)
-      (letrec ((loop
+      (let ((loop
                 (lambda (keys acc)
                   (if ($list-null? keys)
                       acc
-                      (letrec ((k ($list-first keys))
+                      (let ((k ($list-first keys))
                              (v ($dict-get al k #none)))
                         (loop ($list-rest keys) ($dict-with acc k (f k v))))))))
         (loop ($dict-keys al) (dict)))))
 
    (filter-dict
     (lambda (pred al)
-      (letrec ((loop
+      (let ((loop
                 (lambda (keys acc)
                   (if ($list-null? keys)
                       acc
-                      (letrec ((k ($list-first keys))
+                      (let ((k ($list-first keys))
                              (v ($dict-get al k #none)))
                         (if (pred k v)
                             (loop ($list-rest keys) ($dict-with acc k v))
@@ -2130,7 +2130,7 @@
 
    (map-vector
     (lambda (f v)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if ($integer=? i ($vector-length v))
                       ($list->vector ($list-reverse acc))
@@ -2139,7 +2139,7 @@
 
    (filter-vector
     (lambda (pred v)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if ($integer<? i 0)
                       ($list->vector acc)
@@ -2153,7 +2153,7 @@
 
    (fold-vector
     (lambda (f init v)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if ($integer=? i ($vector-length v))
                       acc
@@ -2162,7 +2162,7 @@
 
    (find-vector
     (lambda (pred v)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if ($integer=? i ($vector-length v))
                       #none
@@ -2174,7 +2174,7 @@
 
    (any-vector?
     (lambda (pred v)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if ($integer=? i ($vector-length v))
                       #f
@@ -2185,7 +2185,7 @@
 
    (all-vector?
     (lambda (pred v)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if ($integer=? i ($vector-length v))
                       #t

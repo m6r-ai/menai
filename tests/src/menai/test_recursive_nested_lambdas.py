@@ -23,7 +23,7 @@ class TestRecursiveNestedLambdas:
         # Basic factorial
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((factorial (lambda (n)
+            '''(let ((factorial (lambda (n)
                                  (if (integer<=? n 1)
                                      1
                                      (integer* n (factorial (integer- n 1)))))))
@@ -34,7 +34,7 @@ class TestRecursiveNestedLambdas:
         # Two bindings with recursion
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((x 10)
+            '''(let ((x 10)
                   (factorial (lambda (n)
                               (if (integer<=? n 1)
                                   1
@@ -48,7 +48,7 @@ class TestRecursiveNestedLambdas:
         # Lambda factory pattern
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((make-factorial
+            '''(let ((make-factorial
                        (lambda ()
                          (lambda (n)
                            (if (integer<=? n 1)
@@ -63,7 +63,7 @@ class TestRecursiveNestedLambdas:
         # Simple case: recursive call inside map
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((visit (lambda (id path)
+            '''(let ((visit (lambda (id path)
                           (if (list-member? path id)
                               (list)
                               (let ((new-path (list-prepend path id)))
@@ -81,7 +81,7 @@ class TestRecursiveNestedLambdas:
         # Simplified version without map
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((all-ids (list 1 2 3))
+            '''(let ((all-ids (list 1 2 3))
                   (visit (lambda (id path)
                           (if (list-member? path id)
                               (list id)
@@ -98,7 +98,7 @@ class TestRecursiveNestedLambdas:
         # Full DFS structure with map and fold
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((all-task-ids (list "T001" "T002" "T003"))
+            '''(let ((all-task-ids (list "T001" "T002" "T003"))
                   (get-successors (lambda (task-id)
                                    (if (string=? task-id "T001")
                                        (list "T002")
@@ -124,7 +124,7 @@ class TestRecursiveNestedLambdas:
         # Recursive predicate in filter
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((is-valid (lambda (n)
+            '''(let ((is-valid (lambda (n)
                                  (if (integer<=? n 1)
                                      #t
                                      (and (integer>? n 0) (is-valid (integer- n 1)))))))
@@ -137,7 +137,7 @@ class TestRecursiveNestedLambdas:
         # Recursive function used in fold accumulator
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((sum-to (lambda (n)
+            '''(let ((sum-to (lambda (n)
                                (if (integer<=? n 0)
                                    0
                                    (integer+ n (sum-to (integer- n 1)))))))
@@ -151,7 +151,7 @@ class TestRecursiveNestedLambdas:
         # Even/odd mutual recursion used in map
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((is-even (lambda (n) (if (integer=? n 0) #t (is-odd (integer- n 1)))))
+            '''(let ((is-even (lambda (n) (if (integer=? n 0) #t (is-odd (integer- n 1)))))
                   (is-odd (lambda (n) (if (integer=? n 0) #f (is-even (integer- n 1))))))
               (map-list (lambda (x) (is-even x)) (list 0 1 2 3 4)))''',
             '(#t #f #t #f #t)'
@@ -162,7 +162,7 @@ class TestRecursiveNestedLambdas:
         # Three levels: outer recursive function -> map -> inner lambda -> recursive call
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((process (lambda (n)
+            '''(let ((process (lambda (n)
                                (if (integer<=? n 0)
                                    (list)
                                    (fold-list list-concat
@@ -178,7 +178,7 @@ class TestRecursiveNestedLambdas:
         # Recursive predicate in any?
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((has-path (lambda (n)
+            '''(let ((has-path (lambda (n)
                                  (if (integer<=? n 1)
                                      #t
                                      (has-path (integer- n 1))))))
@@ -189,7 +189,7 @@ class TestRecursiveNestedLambdas:
         # Recursive predicate in all?
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((is-positive-chain (lambda (n)
+            '''(let ((is-positive-chain (lambda (n)
                                            (if (integer<=? n 1)
                                                #t
                                                (and (integer>? n 0) (is-positive-chain (integer- n 1)))))))
@@ -202,7 +202,7 @@ class TestRecursiveNestedLambdas:
         # Recursive predicate in find
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((reaches-target (lambda (n target)
+            '''(let ((reaches-target (lambda (n target)
                                         (if (integer=? n target)
                                            #t
                                            (if (integer<? n target)
@@ -217,7 +217,7 @@ class TestRecursiveNestedLambdas:
         # Simulated graph traversal with adjacency list
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((get-neighbors (lambda (node)
+            '''(let ((get-neighbors (lambda (node)
                                        (if (integer=? node 1)
                                            (list 2 3)
                                            (if (integer=? node 2)
@@ -240,7 +240,7 @@ class TestRecursiveNestedLambdas:
         # Recursive call inside let inside map
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((compute (lambda (n)
+            '''(let ((compute (lambda (n)
                                (if (integer<=? n 1)
                                    (list n)
                                    (fold-list list-concat
@@ -258,7 +258,7 @@ class TestRecursiveNestedLambdas:
         # Recursive call in conditional inside map
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((process (lambda (n)
+            '''(let ((process (lambda (n)
                                (if (integer<=? n 0)
                                    0
                                    (fold-list integer+
@@ -277,7 +277,7 @@ class TestRecursiveNestedLambdas:
         # Four levels of nesting
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((outer (lambda (n)
+            '''(let ((outer (lambda (n)
                              (if (integer<=? n 0)
                                  0
                                  (fold-list integer+
@@ -300,7 +300,7 @@ class TestRecursiveNestedLambdas:
         # Multiple recursive calls in the same map
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((fib (lambda (n)
+            '''(let ((fib (lambda (n)
                            (if (integer<=? n 1)
                                n
                                (fold-list integer+
@@ -316,7 +316,7 @@ class TestRecursiveNestedLambdas:
         # Recursive function capturing outer variables
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((base 10)
+            '''(let ((base 10)
                   (compute (lambda (n)
                             (if (integer<=? n 0)
                                 base
@@ -333,7 +333,7 @@ class TestRecursiveNestedLambdas:
         # Moderate recursion depth (should complete quickly)
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((count-down (lambda (n acc)
+            '''(let ((count-down (lambda (n acc)
                                    (if (integer<=? n 0)
                                        acc
                                        (fold-list integer+
@@ -352,7 +352,7 @@ class TestRecursiveNestedLambdasBytecode:
         """Test bytecode compilation of recursive calls in map."""
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((visit (lambda (n)
+            '''(let ((visit (lambda (n)
                              (if (integer<=? n 1)
                                  (list n)
                                  (fold-list list-concat
@@ -367,7 +367,7 @@ class TestRecursiveNestedLambdasBytecode:
         """Test bytecode compilation of nested lambda factory pattern."""
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((make-counter
+            '''(let ((make-counter
                        (lambda (start)
                          (lambda (n)
                            (if (integer<=? n 0)
@@ -381,7 +381,7 @@ class TestRecursiveNestedLambdasBytecode:
         """Test bytecode compilation of mutual recursion in map."""
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((ping (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 (pong (integer- n 1))))))
+            '''(let ((ping (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 (pong (integer- n 1))))))
                   (pong (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 (ping (integer- n 1)))))))
               (map-list (lambda (x) (ping x)) (list 1 2 3)))''',
             '(1 2 3)'
@@ -391,7 +391,7 @@ class TestRecursiveNestedLambdasBytecode:
         """Test that bytecode properly traverses environment chain for recursive bindings."""
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((outer 100)
+            '''(let ((outer 100)
                   (recurse (lambda (n)
                             (if (integer<=? n 0)
                                 outer
@@ -430,7 +430,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda in list that references its binding
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x)))) x)',
+            '(let ((x (list (lambda () x)))) x)',
             '(<x ()>)'  # Returns a list containing the lambda
         )
 
@@ -439,7 +439,7 @@ class TestLetrecLambdasInDataStructures:
         # Extract lambda from list and call it
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x)))) ((list-first x)))',
+            '(let ((x (list (lambda () x)))) ((list-first x)))',
             '(<x ()>)'  # Calling lambda returns x (the list)
         )
 
@@ -448,7 +448,7 @@ class TestLetrecLambdasInDataStructures:
         # Call lambda, get result, extract lambda, call again
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x)))) (list-first ((list-first x))))',
+            '(let ((x (list (lambda () x)))) (list-first ((list-first x))))',
             '<x ()>'  # Returns the lambda itself
         )
 
@@ -457,7 +457,7 @@ class TestLetrecLambdasInDataStructures:
         # Original test case: ((list-first ((list-first ((list-first ((list-first x))))))))
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x)))) ((list-first ((list-first ((list-first ((list-first x)))))))))',
+            '(let ((x (list (lambda () x)))) ((list-first ((list-first ((list-first ((list-first x)))))))))',
             '(<x ()>)'  # Returns x after multiple recursive calls
         )
 
@@ -466,7 +466,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda in cons cell
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list-prepend (list) (lambda () x)))) (list-first x))',
+            '(let ((x (list-prepend (list) (lambda () x)))) (list-first x))',
             '<x ()>'  # Returns the lambda
         )
 
@@ -474,7 +474,7 @@ class TestLetrecLambdasInDataStructures:
         """Test calling lambda from cons cell."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list-prepend (list) (lambda () x)))) ((list-first x)))',
+            '(let ((x (list-prepend (list) (lambda () x)))) ((list-first x)))',
             '(<x ()>)'  # Returns x (the cons cell)
         )
 
@@ -483,7 +483,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda from if expression (true branch)
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (if #t (lambda () x) (lambda () 42)))) (x))',
+            '(let ((x (if #t (lambda () x) (lambda () 42)))) (x))',
             '<x ()>'  # Calling lambda returns itself
         )
 
@@ -492,7 +492,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda from if expression (false branch)
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (if #f (lambda () 42) (lambda () x)))) (x))',
+            '(let ((x (if #f (lambda () 42) (lambda () x)))) (x))',
             '<x ()>'  # Calling lambda returns itself
         )
 
@@ -501,7 +501,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda in nested list
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (list (lambda () x))))) (list-first (list-first x)))',
+            '(let ((x (list (list (lambda () x))))) (list-first (list-first x)))',
             '<x ()>'  # Returns the lambda
         )
 
@@ -509,7 +509,7 @@ class TestLetrecLambdasInDataStructures:
         """Test calling lambda from nested list."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (list (lambda () x))))) ((list-first (list-first x))))',
+            '(let ((x (list (list (lambda () x))))) ((list-first (list-first x))))',
             '((<x ()>))'  # Calling lambda returns x
         )
 
@@ -518,7 +518,7 @@ class TestLetrecLambdasInDataStructures:
         # Multiple lambdas in list, each referencing x
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x) (lambda () x)))) (list-length x))',
+            '(let ((x (list (lambda () x) (lambda () x)))) (list-length x))',
             '2'  # List has two lambdas
         )
 
@@ -527,14 +527,14 @@ class TestLetrecLambdasInDataStructures:
         # Call first lambda
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x) (lambda () x)))) (list-length ((list-first x))))',
+            '(let ((x (list (lambda () x) (lambda () x)))) (list-length ((list-first x))))',
             '2'  # First lambda returns x which has length 2
         )
 
         # Call second lambda
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x) (lambda () x)))) (list-length ((list-first (list-rest x)))))',
+            '(let ((x (list (lambda () x) (lambda () x)))) (list-length ((list-first (list-rest x)))))',
             '2'  # Second lambda also returns x which has length 2
         )
 
@@ -543,13 +543,13 @@ class TestLetrecLambdasInDataStructures:
         # Lambda with params that references its binding
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda (n) (if (integer<=? n 0) x (list n)))))) ((list-first x) 0))',
+            '(let ((x (list (lambda (n) (if (integer<=? n 0) x (list n)))))) ((list-first x) 0))',
             '(<x (n)>)'  # Calling with 0 returns x; param name is now correctly 'n'
         )
 
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda (n) (if (integer<=? n 0) x (list n)))))) ((list-first x) 5))',
+            '(let ((x (list (lambda (n) (if (integer<=? n 0) x (list n)))))) ((list-first x) 5))',
             '(5)'  # Calling with 5 returns (list 5)
         )
 
@@ -558,7 +558,7 @@ class TestLetrecLambdasInDataStructures:
         # Two mutually recursive functions in lists
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((x (list (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 ((list-first y) (integer- n 1)))))))
+            '''(let ((x (list (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 ((list-first y) (integer- n 1)))))))
                         (y (list (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 ((list-first x) (integer- n 1))))))))
                   ((list-first x) 4))''',
             '4'  # Mutual recursion works
@@ -568,7 +568,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda as value in dict
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (dict "func" (lambda () x)))) (dict-get x "func"))',
+            '(let ((x (dict "func" (lambda () x)))) (dict-get x "func"))',
             '<x ()>'  # Returns the lambda
         )
 
@@ -576,7 +576,7 @@ class TestLetrecLambdasInDataStructures:
         """Test calling lambda from dict."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (dict "func" (lambda () x)))) ((dict-get x "func")))',
+            '(let ((x (dict "func" (lambda () x)))) ((dict-get x "func")))',
             '{("func" <x ()>)}'  # Calling lambda returns x (the dict)
         )
 
@@ -585,7 +585,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda that doesn't reference x
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () 42)))) ((list-first x)))',
+            '(let ((x (list (lambda () 42)))) ((list-first x)))',
             '42'  # Simple lambda works
         )
 
@@ -594,7 +594,7 @@ class TestLetrecLambdasInDataStructures:
         # Lambda references y, not x
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () y))) (y 100)) ((list-first x)))',
+            '(let ((x (list (lambda () y))) (y 100)) ((list-first x)))',
             '100'  # Lambda returns y
         )
 
@@ -606,7 +606,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         """Test bytecode compilation of lambda in list."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x)))) x)',
+            '(let ((x (list (lambda () x)))) x)',
             '(<x ()>)'
         )
 
@@ -614,7 +614,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         """Test bytecode execution of calling lambda from list."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x)))) ((list-first x)))',
+            '(let ((x (list (lambda () x)))) ((list-first x)))',
             '(<x ()>)'
         )
 
@@ -622,7 +622,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         """Test bytecode handles deep recursive calls."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x)))) ((list-first ((list-first ((list-first ((list-first x)))))))))',
+            '(let ((x (list (lambda () x)))) ((list-first ((list-first ((list-first ((list-first x)))))))))',
             '(<x ()>)'
         )
 
@@ -630,7 +630,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         """Test bytecode compilation of lambda from if expression."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (if #t (lambda () x) (lambda () 42)))) (x))',
+            '(let ((x (if #t (lambda () x) (lambda () 42)))) (x))',
             '<x ()>'
         )
 
@@ -638,7 +638,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         """Test bytecode handles multiple lambdas in data structure."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (list (lambda () x) (lambda () x)))) (list-length ((list-first x))))',
+            '(let ((x (list (lambda () x) (lambda () x)))) (list-length ((list-first x))))',
             '2'
         )
 
@@ -646,7 +646,7 @@ class TestLetrecLambdasInDataStructuresBytecode:
         """Test bytecode compilation of mutual recursion in lists."""
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((x (list (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 ((list-first y) (integer- n 1)))))))
+            '''(let ((x (list (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 ((list-first y) (integer- n 1)))))))
                         (y (list (lambda (n) (if (integer<=? n 0) 0 (integer+ 1 ((list-first x) (integer- n 1))))))))
                   ((list-first x) 4))''',
             '4'
@@ -656,6 +656,6 @@ class TestLetrecLambdasInDataStructuresBytecode:
         """Test bytecode compilation of lambda in dict."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x (dict "func" (lambda () x)))) ((dict-get x "func")))',
+            '(let ((x (dict "func" (lambda () x)))) ((dict-get x "func")))',
             '{("func" <x ()>)}'
         )

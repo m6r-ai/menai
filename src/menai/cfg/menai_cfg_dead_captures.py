@@ -3,9 +3,9 @@ CFG pass: dead capture elimination.
 
 After all other CFG optimizations have run, some captured free variables may
 no longer be referenced anywhere in the function body.  The most common case
-is a self-recursive ``letrec`` lambda whose only self-reference is a tail call
+is a self-recursive ``$letrec`` lambda whose only self-reference is a tail call
 that the CFG builder has already converted to a ``SelfLoopTerm`` (back-edge
-jump).  The self-capture slot is allocated by the ``letrec`` lowering but never
+jump).  The self-capture slot is allocated by the ``$letrec`` lowering but never
 read, because the self-loop reuses the function's own registers instead of
 loading the closure from the capture.
 

@@ -45,7 +45,7 @@ def _merge_two_menai_steps(first: MenaiStep, second: MenaiStep) -> MenaiStep:
         )
         second_inputs_expr = f"(dict {second_inputs_pairs})"
         combined_expression = (
-            f'(letrec (({intermediate} {first_expr})'
+            f'(let (({intermediate} {first_expr})'
             f' (inputs {second_inputs_expr}))'
             f' {second_expr})'
         )

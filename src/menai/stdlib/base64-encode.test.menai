@@ -1,6 +1,6 @@
 ; Tests for base64-encode.menai
 
-(letrec
+(let
   ((base64-encode (import "base64-encode"))
    (base64-decode (import "base64-decode"))
    (t (import "menai-test"))
@@ -15,7 +15,7 @@
    ; Build a bytes value containing every byte value from 0 to 255.
    (all-bytes
     (lambda ()
-      (letrec ((mk
+      (let ((mk
                 (lambda (i acc)
                   (if (integer>=? i 256)
                       (list->bytes (list-reverse acc))
@@ -25,7 +25,7 @@
    ; Build a bytes value of the given length cycling through byte values.
    (cycling-bytes
     (lambda (n)
-      (letrec ((mk
+      (let ((mk
                 (lambda (i acc)
                   (if (integer>=? i n)
                       (list->bytes (list-reverse acc))

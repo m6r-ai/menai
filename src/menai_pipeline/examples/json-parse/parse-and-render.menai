@@ -1,7 +1,7 @@
 (let ((json-decoder (import "json-decode")))
   (let ((run
          (lambda (inputs)
-           (letrec ((value->string
+           (let ((value->string
                      (lambda (v)
                        (match v
                          ((? string? s) (string-concat "\"" s "\""))
@@ -23,7 +23,7 @@
                                    (dict-keys d))))
                             (string-concat "{" (list->string pair-strings ", ") "}")))
                          (_ "?unknown?")))))
-             (letrec ((content (dict-get inputs "content"))
+             (let ((content (dict-get inputs "content"))
                     (parsed ((:: json-decoder decode) content))
                     (result (value->string parsed)))
                (dict "result" result))))))

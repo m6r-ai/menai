@@ -5,7 +5,7 @@
 ; its own directory to the module path, so this module is available only
 ; under the runner and is not part of the standard library.
 
-(letrec
+(let
   (; Polymorphic equality: dispatches on the type of the first argument.
    ; Two values are equal if they have the same type and the same value.
    ; Lists, vectors, dicts and sets compare structurally (element-wise).
@@ -146,13 +146,13 @@
    ; (expect-fail test).
    (test-find
     (lambda (nodes path)
-      (letrec ((walk
+      (let ((walk
                 (lambda (node-list remaining-path)
                   (if (list-null? remaining-path)
                       (error "test-find: path exhausted before reaching a leaf")
                       (let ((segment (list-first remaining-path))
                             (rest (list-rest remaining-path)))
-                        (letrec ((search
+                        (let ((search
                                   (lambda (lst)
                                     (if (list-null? lst)
                                         (error (string-concat "test-find: no node named \"" segment "\""))

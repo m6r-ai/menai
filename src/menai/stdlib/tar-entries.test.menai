@@ -1,6 +1,6 @@
 ; Tests for tar-entries.menai
 
-(letrec
+(let
   ((tar-entries (import "tar-entries"))
    (t (import "menai-test"))
    (entries (:: tar-entries entries))

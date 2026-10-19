@@ -516,7 +516,7 @@ class TestIROptimizerIntegration:
     def test_recursive_function_preserved(self, menai):
         """A recursive letrec binding is not mistakenly eliminated."""
         result = menai.evaluate("""
-            (letrec ((fact (lambda (n)
+            (let ((fact (lambda (n)
                              (if (integer<=? n 1)
                                  1
                                  (integer* n (fact (integer- n 1)))))))
@@ -527,7 +527,7 @@ class TestIROptimizerIntegration:
     def test_mutual_recursion_preserved(self, menai):
         """Mutually recursive letrec bindings are both preserved."""
         result = menai.evaluate("""
-            (letrec ((even? (lambda (n)
+            (let ((even? (lambda (n)
                               (if (integer=? n 0) #t (odd? (integer- n 1)))))
                      (odd?  (lambda (n)
                               (if (integer=? n 0) #f (even? (integer- n 1))))))
@@ -566,7 +566,7 @@ class TestIROptimizerIntegration:
     def test_tail_call_optimization_still_works(self, menai):
         """TCO still fires correctly after IR optimization (no stack overflow)."""
         result = menai.evaluate("""
-            (letrec ((loop (lambda (n acc)
+            (let ((loop (lambda (n acc)
                              (if (integer=? n 0)
                                  acc
                                  (loop (integer- n 1) (integer+ acc 1))))))
@@ -577,7 +577,7 @@ class TestIROptimizerIntegration:
     def test_complex_program_correct(self, menai):
         """A realistic program with multiple scopes produces the right answer."""
         result = menai.evaluate("""
-            (letrec ((fib (lambda (n)
+            (let ((fib (lambda (n)
                             (if (integer<? n 2)
                                 n
                                 (integer+ (fib (integer- n 1))

@@ -694,7 +694,7 @@ class MenaiASTBuilder:
         )
 
     def _create_multiple_body_error(
-        self, keyword: str, start_line: int, start_col: int
+        self, start_line: int, start_col: int
     ) -> MenaiASTBuildError:
         """
         Create an error for a binding form with more than one body expression.
@@ -704,7 +704,6 @@ class MenaiASTBuilder:
         The error points at the first unexpected expression.
 
         Args:
-            keyword: The binding form keyword ('let' or 'letrec').
             start_line: Line where the binding form started
             start_col: Column where the binding form started
 
@@ -714,18 +713,18 @@ class MenaiASTBuilder:
         token = cast(MenaiToken, self.current_token)
 
         return MenaiASTBuildError(
-            message=f"{keyword} body must be a single expression",
+            message="let body must be a single expression",
             line=token.line,
             column=token.column,
             received=f"Additional expression starting at line {token.line}, column {token.column}",
-            expected=f"Exactly one body expression: ({keyword} ((bindings...)) body)",
+            expected="Exactly one body expression: (let ((bindings...)) body)",
             context=(
-                f"The {keyword} starting at line {start_line}, column {start_col} "
+                f"The let starting at line {start_line}, column {start_col} "
                 f"already has a body expression, and Menai has no sequencing form."
             ),
             suggestion=(
                 "Nest the extra expressions in a single body, for example "
-                f"({keyword} (...) (let () expr1 expr2))"
+                "(let (...) (let () expr))"
             ),
             source=self.expression,
             source_file=self.source_file,
@@ -733,7 +732,6 @@ class MenaiASTBuilder:
 
     def _create_early_bindings_close_error(
         self,
-        keyword: str,
         start_line: int,
         start_col: int,
         close_line: int,
@@ -749,7 +747,6 @@ class MenaiASTBuilder:
         not the form the parser happened to flag.
 
         Args:
-            keyword: The binding form keyword ('let' or 'letrec').
             start_line: Line where the binding form started.
             start_col: Column where the binding form started.
             close_line: Line of the ``)`` that closed the bindings list early.
@@ -762,9 +759,9 @@ class MenaiASTBuilder:
         table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
 
         context = (
-            f"The bindings list of the {keyword} starting at line {start_line}, "
+            f"The bindings list of the let starting at line {start_line}, "
             f"column {start_col} closed at line {close_line}, column {close_column}, "
-            f"but more forms follow at the same depth before the {keyword} closes. "
+            f"but more forms follow at the same depth before the let closes. "
             f"The ')' at line {close_line}, column {close_column} therefore ended the "
             f"bindings list one binding too early, and the forms after it were read as "
             f"body expressions. The parentheses balance, so no ')' is missing or extra "
@@ -774,12 +771,12 @@ class MenaiASTBuilder:
 
         return MenaiASTBuildError(
             message=(
-                f"{keyword} bindings list closed early at line {close_line}, "
+                f"let bindings list closed early at line {close_line}, "
                 f"column {close_column}"
             ),
             line=close_line,
             column=close_column,
-            received=f"Bindings list closed at line {close_line}, column {close_column}, with further forms inside the {keyword}",
+            received=f"Bindings list closed at line {close_line}, column {close_column}, with further forms inside the let",
             expected="The bindings list to stay open until its last binding, before the single body",
             suggestion=(
                 f"Move the ')' at line {close_line}, column {close_column} to after the "
@@ -808,7 +805,7 @@ class MenaiASTBuilder:
         # list that is data rather than a form: in (lambda (if) if) the (if) is a
         # parameter list, not an if form, and only the lambda path knows that.
         head = self.current_token
-        if head is not None and head.type == MenaiTokenType.SYMBOL and head.value in ('let', 'letrec'):
+        if head is not None and head.type == MenaiTokenType.SYMBOL and head.value == 'let':
             return self._parse_let_with_tracking(start_line, start_col, elements)
 
         if head is not None and head.type == MenaiTokenType.SYMBOL and head.value == 'match':
@@ -1440,8 +1437,6 @@ class MenaiASTBuilder:
         # Parse 'let' keyword
         elements.append(self._parse_expression())
 
-        keyword = elements[0].name if isinstance(elements[0], MenaiASTSymbol) else "let"
-
         # Check for bindings list
         if self.current_token is None:
             raise self._create_enhanced_unterminated_error(start_line, start_col)
@@ -1455,7 +1450,7 @@ class MenaiASTBuilder:
 
         # Parse bindings with special tracking
         if self.current_token.type == MenaiTokenType.LPAREN:
-            bindings = self._parse_let_bindings(keyword)
+            bindings = self._parse_let_bindings()
             elements.append(bindings)
 
         else:
@@ -1480,7 +1475,7 @@ class MenaiASTBuilder:
             diagnosis = self._diagnose_parens()
             error = early_close_error(
                 diagnosis, MenaiASTBuildError, self.expression, self.source_file,
-                keyword, start_line, start_col,
+                "let", start_line, start_col,
             )
             if error is not None:
                 raise error
@@ -1488,10 +1483,10 @@ class MenaiASTBuilder:
             early_close = self._detect_early_bindings_close(start_line, start_col)
             if early_close is not None:
                 raise self._create_early_bindings_close_error(
-                    keyword, start_line, start_col, early_close[0], early_close[1]
+                    start_line, start_col, early_close[0], early_close[1]
                 )
 
-            raise self._create_multiple_body_error(keyword, start_line, start_col)
+            raise self._create_multiple_body_error(start_line, start_col)
 
         # Pop from stack when successfully closed
         self._pop_paren_frame()
@@ -1500,12 +1495,10 @@ class MenaiASTBuilder:
 
         return MenaiASTList(tuple(elements), line=start_line, column=start_col, source_file=self.source_file)
 
-    def _parse_let_bindings(self, keyword: str) -> MenaiASTList:
+    def _parse_let_bindings(self) -> MenaiASTList:
         """
-        Parse the bindings list of a let or letrec form with per-binding tracking.
+        Parse the bindings list of a let form with per-binding tracking.
 
-        Args:
-            keyword: The binding form keyword ('let' or 'letrec').
         Returns:
             MenaiASTList of bindings
         """
@@ -1535,7 +1528,7 @@ class MenaiASTBuilder:
             # Each binding should start with '('
             if self.current_token.type == MenaiTokenType.LPAREN:
                 binding = self._parse_single_binding(
-                    keyword, binding_index, prev_binding_name,
+                    binding_index, prev_binding_name,
                     prev_binding_end_line, prev_binding_end_column,
                 )
                 bindings.append(binding)
@@ -1548,12 +1541,12 @@ class MenaiASTBuilder:
                 # A binding is a two-element (name value) form, so it must start
                 # with '('.  Anything else here is not a binding.
                 raise self._create_binding_shape_error(
-                    keyword, binding_index, self.current_token
+                    binding_index, self.current_token
                 )
 
         if self.current_token is None:
             # EOF while parsing bindings - create enhanced error
-            raise self._create_incomplete_bindings_error(bindings, bindings_start_line, bindings_start_col, keyword)
+            raise self._create_incomplete_bindings_error(bindings, bindings_start_line, bindings_start_col)
 
         # Pop bindings frame
         self._pop_paren_frame()
@@ -1573,7 +1566,6 @@ class MenaiASTBuilder:
 
     def _create_binding_shape_error(
         self,
-        keyword: str,
         binding_index: int,
         token: MenaiToken | None,
     ) -> MenaiASTBuildError:
@@ -1584,7 +1576,6 @@ class MenaiASTBuilder:
         that is not a list at all and one whose value is absent.
 
         Args:
-            keyword: The binding form keyword ('let' or 'letrec').
             binding_index: The binding's position in the bindings list (1-based).
             token: The token where the binding starts, or None at end of input.
 
@@ -1595,14 +1586,14 @@ class MenaiASTBuilder:
         column = token.column if token is not None else 1
 
         return MenaiASTBuildError(
-            message=f"{keyword} binding {binding_index} must be a (name value) form",
+            message=f"let binding {binding_index} must be a (name value) form",
             line=line,
             column=column,
             received="A binding that is not a two-element list",
             expected="Each binding: (variable value-expression)",
             suggestion="Write each binding as (name value), with a name and a value",
             context=(
-                f"Binding {binding_index} of the {keyword} at line {line}, column "
+                f"Binding {binding_index} of the let at line {line}, column "
                 f"{column} is not a (name value) form. A binding is a list of "
                 f"exactly two elements: the variable name and its value."
             ),
@@ -1612,7 +1603,6 @@ class MenaiASTBuilder:
 
     def _create_binding_name_error(
         self,
-        keyword: str,
         binding_index: int,
         name_node: MenaiASTNode,
     ) -> MenaiASTBuildError:
@@ -1620,7 +1610,6 @@ class MenaiASTBuilder:
         Create an error for a binding whose name is not a symbol.
 
         Args:
-            keyword: The binding form keyword ('let' or 'letrec').
             binding_index: The binding's position in the bindings list (1-based).
             name_node: The node parsed where the name should have been.
 
@@ -1628,14 +1617,14 @@ class MenaiASTBuilder:
             MenaiASTBuildError describing the malformed binding name.
         """
         return MenaiASTBuildError(
-            message=f"{keyword} binding {binding_index} variable must be a symbol",
+            message=f"let binding {binding_index} variable must be a symbol",
             line=name_node.line,
             column=name_node.column,
             received=f"Variable: {name_node.type_name()}",
             expected="Unquoted symbol (variable name)",
             suggestion="Use an unquoted variable name in each binding",
             context=(
-                f"Binding {binding_index} of the {keyword} names its variable with "
+                f"Binding {binding_index} of the let names its variable with "
                 f"a {name_node.type_name()}. A binding name is an unquoted symbol."
             ),
             source=self.expression,
@@ -1644,17 +1633,15 @@ class MenaiASTBuilder:
 
     def _parse_single_binding(
         self,
-        keyword: str,
         binding_index: int,
         prev_binding_name: str | None,
         prev_binding_end_line: int | None,
         prev_binding_end_column: int | None,
     ) -> MenaiASTList:
         """
-        Parse a single let or letrec binding with tracking.
+        Parse a single let binding with tracking.
 
         Args:
-            keyword: The binding form keyword ('let' or 'letrec').
             binding_index: The index of this binding (1-based)
             prev_binding_name: Name of the preceding binding, if any
             prev_binding_end_line: Line of the preceding binding's closing ')', if any
@@ -1684,7 +1671,7 @@ class MenaiASTBuilder:
             # The binding's name must be a symbol.  Parse the element so the
             # remaining structure is still consumed, then report it.
             elements.append(self._parse_expression())
-            raise self._create_binding_name_error(keyword, binding_index, elements[0])
+            raise self._create_binding_name_error(binding_index, elements[0])
 
         # Parse value (if present)
         if self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
@@ -1697,7 +1684,7 @@ class MenaiASTBuilder:
 
         if len(elements) < 2:
             # The binding closed with one element, so its value is absent.
-            raise self._create_binding_shape_error(keyword, binding_index, self.current_token)
+            raise self._create_binding_shape_error(binding_index, self.current_token)
 
         # A binding (name value) has exactly 2 elements.  If a third element
         # appears here, the value's close paren was stolen by the binding —
@@ -1859,16 +1846,14 @@ class MenaiASTBuilder:
         parsed_bindings: list[MenaiASTNode],
         bindings_start_line: int,
         bindings_start_col: int,
-        keyword: str
     ) -> MenaiASTBuildError:
         """
-        Create enhanced error when EOF is reached while parsing let/letrec bindings.
+        Create enhanced error when EOF is reached while parsing let bindings.
 
         Args:
             parsed_bindings: List of successfully parsed bindings
             bindings_start_line: Line where bindings list started
             bindings_start_col: Column where bindings list started
-            keyword: The binding form keyword ('let' or 'letrec').
 
         Returns:
             MenaiASTBuildError with detailed context
@@ -1935,7 +1920,7 @@ class MenaiASTBuilder:
         scope_block = f"Forms still open (outermost first):\n{scopes}" if scopes else ""
 
         context_msg = (
-            f"Reached end of input while parsing {keyword} bindings.\n\n"
+            f"Reached end of input while parsing let bindings.\n\n"
             f"{where}\n\n"
             f"Bindings parsed:\n{summary_text}\n\n"
             f"{scope_block}"
@@ -1944,7 +1929,7 @@ class MenaiASTBuilder:
         )
 
         return MenaiASTBuildError(
-            message=f"Incomplete {keyword} bindings - missing {depth} closing {paren_word}",
+            message=f"Incomplete let bindings - missing {depth} closing {paren_word}",
             line=error_line,
             column=error_column,
             expected=f'Add "{closing_parens}" to close all expressions',

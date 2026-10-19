@@ -1,6 +1,6 @@
 ; Tests for xlsx-decode.menai
 
-(letrec
+(let
   ((xlsx-decode (import "xlsx-decode"))
    (zip-create (import "zip-create"))
    (t (import "menai-test"))

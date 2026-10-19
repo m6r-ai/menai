@@ -21,7 +21,7 @@
 ; The first argument must be a bytes value and the second, when present, must be
 ; a variant value; anything else raises a runtime error.
 
-(letrec
+(let
   ((standard-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
    (url-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
@@ -89,7 +89,7 @@
    (encode
     (lambda (b . rest)
       (if (bytes? b)
-          (letrec             ((v
+          (let             ((v
               (if (list-null? rest)
                   (variant 'standard)
                   (list-first rest)))
@@ -97,7 +97,7 @@
              (alphabet (alphabet-for v))
              (pad (padded? v))
              (n (bytes-length b)))
-            (letrec ((loop
+            (let ((loop
                       (lambda (i acc)
                         (if (integer>=? i n)
                             (list->string (list-reverse acc))

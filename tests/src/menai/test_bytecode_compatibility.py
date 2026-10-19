@@ -93,7 +93,7 @@ class TestLambda:
     def test_recursive_lambda(self, menai):
         """Test recursive functions (critical test!)"""
         result = menai.evaluate("""
-            (letrec ((factorial (lambda (n)
+            (let ((factorial (lambda (n)
                 (if (integer=? n 0)
                     1
                     (integer* n (factorial (integer- n 1)))))))

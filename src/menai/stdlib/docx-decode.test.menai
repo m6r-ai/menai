@@ -1,6 +1,6 @@
 ; Tests for docx-decode.menai
 
-(letrec
+(let
   ((docx-decode (import "docx-decode"))
    (docx-encode (import "docx-encode"))
    (zip-create (import "zip-create"))

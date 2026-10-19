@@ -68,7 +68,7 @@
 ; that is not a dict or lacks a string "type" or "target", a non-dict "media",
 ; or a non-bytes media part.
 
-(letrec
+(let
   ((zip-create (import "zip-create"))
    (xml-encode (import "xml-encode"))
 
@@ -112,7 +112,7 @@
       (let ((dot (string-index name ".")))
         (if (none? dot)
             (string-downcase name)
-            (letrec ((last-dot
+            (let ((last-dot
                       (lambda (i found)
                         (if (integer>=? i (string-length name))
                             found
@@ -126,7 +126,7 @@
    ; The final "/"-separated segment of a part name.
    (last-path-segment
     (lambda (name)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i found)
                   (if (integer>=? i (string-length name))
                       found
@@ -198,7 +198,7 @@
    ; order.
    (media-extensions
     (lambda (media)
-      (letrec ((loop
+      (let ((loop
                 (lambda (names seen acc)
                   (if (list-null? names)
                       (list-reverse acc)
@@ -253,7 +253,7 @@
    ; The slide master part names, generated in list order.
    (master-part-names
     (lambda (masters)
-      (letrec ((loop
+      (let ((loop
                 (lambda (rest i acc)
                   (if (list-null? rest)
                       (list-reverse acc)
@@ -268,7 +268,7 @@
    ; The slide layout part names, generated in list order.
    (layout-part-names
     (lambda (layouts)
-      (letrec ((loop
+      (let ((loop
                 (lambda (rest i acc)
                   (if (list-null? rest)
                       (list-reverse acc)

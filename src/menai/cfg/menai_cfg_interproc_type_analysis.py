@@ -525,7 +525,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Functions are processed in pre-order (collect_functions returns the
         root first), so a child's creating make_closure instruction has already
         been seen in its parent when the child is processed.  This matters
-        because a function that references a letrec sibling does so through a
+        because a function that references a $letrec sibling does so through a
         free variable, and the free variable's callee is the value captured by
         the make_closure instruction in the parent.
         """
@@ -560,7 +560,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
           - a phi denotes the union of the functions its incoming values denote;
           - a free variable denotes whatever function the corresponding
             capture denotes in the parent function.  This is how a function
-            reaches a letrec sibling: the sibling is captured, not created
+            reaches a $letrec sibling: the sibling is captured, not created
             locally;
           - a container value denotes every function its elements denote, and a
             value fetched from a container denotes every function the container

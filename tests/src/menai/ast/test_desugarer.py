@@ -106,7 +106,7 @@ class TestDesugarerCoreConstructs:
 
         # Result should be a let
         assert isinstance(result, MenaiASTList)
-        assert result.first().name == 'let'
+        assert result.first().name == '$let'
 
         # Binding value should be desugared — match on symbol produces if directly
         bindings = result.elements[1]
@@ -209,7 +209,7 @@ class TestDesugarerMatchVariable:
         result = desugarer.desugar(expr)
 
         assert isinstance(result, MenaiASTList)
-        assert result.first().name == 'let'
+        assert result.first().name == '$let'
         # The binding should bind n directly to x (no temp var)
         binding = result.elements[1].elements[0]
         assert isinstance(binding, MenaiASTList)
@@ -255,7 +255,7 @@ class TestDesugarerMatchType:
         # Then branch should bind n to x
         then_branch = result.elements[2]
         assert isinstance(then_branch, MenaiASTList)
-        assert then_branch.first().name == 'let'
+        assert then_branch.first().name == '$let'
 
     def test_match_type_pattern_with_wildcard(self):
         """Test desugaring of type pattern with wildcard."""
@@ -494,7 +494,7 @@ class TestDesugarerTempVariables:
         def get_temp_var(result):
             # result is (let ((temp val)) body)
             assert isinstance(result, MenaiASTList)
-            assert result.first().name == 'let'
+            assert result.first().name == '$let'
             bindings = result.elements[1]
             binding = bindings.elements[0]
             return binding.elements[0].name
@@ -532,7 +532,7 @@ class TestDesugarerIntegration:
         result = desugarer.desugar(expr)
 
         assert isinstance(result, MenaiASTList)
-        assert result.first().name == 'let'
+        assert result.first().name == '$let'
 
 
 class TestDesugarerShadowing:
@@ -613,14 +613,14 @@ class TestDesugarerShadowing:
     def test_shadowing_let_star_binding_is_not_rewritten(self, menai):
         """A letrec binding shadows a builtin for sibling bindings and the body."""
         result = menai.evaluate(
-            '(letrec ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
+            '(let ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
         )
         assert result == 999
 
     def test_shadowing_letrec_binding_is_not_rewritten(self, menai):
         """A letrec binding shadows a builtin for sibling values and the body."""
         result = menai.evaluate(
-            '(letrec ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
+            '(let ((integer+ (lambda (a b) 999)) (x (integer+ 1 2))) x)'
         )
         assert result == 999
 

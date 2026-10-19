@@ -35,7 +35,7 @@
 ; It is the inverse of xml-encode's encode: for every value tree v that encode
 ; accepts, (decode (encode v)) reproduces v.
 
-(letrec
+(let
   ((is-space?
     (lambda (ch)
       (or (string=? ch " ")
@@ -46,7 +46,7 @@
    ; The index of the first non-whitespace character at or after `i`.
    (skip-space
     (lambda (s i)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j)
                   (if (and (integer<? j (string-length s))
                            (is-space? (string-nth s j)))
@@ -64,7 +64,7 @@
    ; needle.
    (require-index
     (lambda (s needle i)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j)
                   (if (integer>=? j (string-length s))
                       (error (string-concat "xml-decode: expected \"" needle "\""))
@@ -106,7 +106,7 @@
    ; used for attribute values, which may contain the same entities as text.
    (decode-entities
     (lambda (s i end)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j end)
                       (list->string (list-reverse acc))
@@ -121,7 +121,7 @@
    ; `i`.  Returns (list <decoded-text> <index-of-">).
    (decode-text
     (lambda (s i)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j (string-length s))
                       (list (list->string (list-reverse acc)) j)
@@ -138,7 +138,7 @@
    ; (list <attrs-dict> <index-of-"> or "/">).
    (parse-attributes
     (lambda (s i)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j attrs)
                   (let ((k (skip-space s j)))
                     (let ((ch (string-nth s k)))
@@ -161,7 +161,7 @@
    ; (list <tag-name> <attrs-dict> <self-closing?> <index-after-tag>).
    (parse-start-tag
     (lambda (s i)
-      (letrec ((name-end
+      (let ((name-end
                 (lambda (j)
                   (if (integer>=? j (string-length s))
                       (error "xml-decode: unterminated start tag")
@@ -186,7 +186,7 @@
    ; `tag`.  Returns (list <children-list> <index-after-end-tag>).
    (parse-content
     (lambda (s i tag)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j (string-length s))
                       (error (string-concat "xml-decode: missing end tag for <" tag ">"))
@@ -244,7 +244,7 @@
    (decode
     (lambda (s)
       (if (string? s)
-          (letrec ((skip-prolog
+          (let ((skip-prolog
                     (lambda (j)
                       (let ((k (skip-space s j)))
                         (if (starts-at? s k "<?")

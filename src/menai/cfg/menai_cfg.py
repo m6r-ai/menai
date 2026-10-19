@@ -145,7 +145,7 @@ class MenaiCFGMakeClosureInstr:
     needs_patching: bool = False
     # When True, the VM must create a mutable closure object (MAKE_CLOSURE)
     # even if `captures` is empty, because PATCH_CLOSURE instructions will
-    # fill in sibling captures after all closures in the letrec are created.
+    # fill in sibling captures after all closures in the $letrec are created.
     # The total capture slot count is len(function.free_vars).
 
 
@@ -274,7 +274,7 @@ class MenaiCFGPatchClosureInstr:
     patch_closure %closure, capture_index, %value
 
     Installs `value` into capture slot `capture_index` of `closure`.
-    Used exclusively during letrec initialisation to break mutual-recursion
+    Used exclusively during $letrec initialisation to break mutual-recursion
     cycles.  The VM codegen lowers this to PATCH_CLOSURE.
 
     This instruction has no result (it is a side-effecting mutation of the
@@ -496,7 +496,7 @@ class MenaiCFGBlock:
     id          : unique integer within the enclosing MenaiCFGFunction (0 = entry)
     label       : human-readable name for debugging ("entry", "then_0", etc.)
     instrs      : non-terminator instructions, in emission order
-    patch_instrs: MenaiCFGPatchClosureInstr instructions for letrec fixup,
+    patch_instrs: MenaiCFGPatchClosureInstr instructions for $letrec fixup,
                   emitted after `instrs` but before the terminator
     terminator  : the block's single exit instruction (set by the builder)
 
@@ -895,7 +895,7 @@ def result_id_in_instr(instr: 'MenaiCFGInstr') -> int | None:
 
     Every instruction type in MenaiCFGInstr defines a result except
     MenaiCFGGuardInstr, which validates an existing value in place, and
-    MenaiCFGPatchClosureInstr, which mutates a closure during letrec fixup.
+    MenaiCFGPatchClosureInstr, which mutates a closure during $letrec fixup.
     """
     if isinstance(instr, (MenaiCFGGuardInstr, MenaiCFGPatchClosureInstr)):
         return None

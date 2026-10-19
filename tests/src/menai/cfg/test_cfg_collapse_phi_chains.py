@@ -1028,10 +1028,10 @@ class TestTrivialPhiVCodeIntegration:
         phi is removed, so the CFG has fewer phis than without the pass.
         """
         source = """
-        (letrec
+        (let
           ((skip-ws
             (lambda (s pos)
-              (letrec ((loop (lambda (i)
+              (let ((loop (lambda (i)
                                (if (integer>=? i (string-length s))
                                    i
                                    (let ((ch (string-nth s i)))
@@ -1066,10 +1066,10 @@ class TestTrivialPhiVCodeIntegration:
         menai = Menai()
 
         result = menai.evaluate("""
-        (letrec
+        (let
           ((skip-ws
             (lambda (s pos)
-              (letrec ((loop (lambda (i)
+              (let ((loop (lambda (i)
                                (if (integer>=? i (string-length s))
                                    i
                                    (let ((ch (string-nth s i)))

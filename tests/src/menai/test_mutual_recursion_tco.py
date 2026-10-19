@@ -20,7 +20,7 @@ class TestMutualRecursionBasic:
         This should work even without TCO optimization.
         """
         even_odd = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 10))
         '''
@@ -33,7 +33,7 @@ class TestMutualRecursionBasic:
         This should work even without TCO optimization.
         """
         even_odd = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 100))
         '''
@@ -46,7 +46,7 @@ class TestMutualRecursionBasic:
         This REQUIRES TCO to work - will fail without it.
         """
         even_odd = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 10000))
         '''
@@ -59,7 +59,7 @@ class TestMutualRecursionBasic:
         This is the stress test from the issue documentation.
         """
         even_odd = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 100000))
         '''
@@ -72,7 +72,7 @@ class TestMutualRecursionBasic:
         Verifies that both directions of mutual recursion work.
         """
         even_odd = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (odd? 10001))
         '''
@@ -89,7 +89,7 @@ class TestMutualRecursionWithAccumulators:
         Tests that TCO works when mutually recursive functions carry state.
         """
         mutual_with_acc = '''
-        (letrec ((count-down-a (lambda (n acc)
+        (let ((count-down-a (lambda (n acc)
                                  (if (integer<=? n 0)
                                      acc
                                      (count-down-b (integer- n 1) (integer+ acc 1)))))
@@ -110,7 +110,7 @@ class TestMutualRecursionWithAccumulators:
         Tests a practical use case: processing lists with alternating logic.
         """
         list_processor = '''
-        (letrec ((process-evens (lambda (lst acc)
+        (let ((process-evens (lambda (lst acc)
                                   (if (list-null? lst)
                                       acc
                                       (process-odds (list-rest lst) (list-prepend acc (list-first lst))))))
@@ -134,7 +134,7 @@ class TestMutualRecursionMultipleFunctions:
         Tests that TCO works for more complex mutual recursion patterns.
         """
         three_way = '''
-        (letrec ((func-a (lambda (n) (if (integer<=? n 0) "a" (func-b (integer- n 1)))))
+        (let ((func-a (lambda (n) (if (integer<=? n 0) "a" (func-b (integer- n 1)))))
                  (func-b (lambda (n) (if (integer<=? n 0) "b" (func-c (integer- n 1)))))
                  (func-c (lambda (n) (if (integer<=? n 0) "c" (func-a (integer- n 1))))))
           (func-a 10000))
@@ -149,7 +149,7 @@ class TestMutualRecursionMultipleFunctions:
         Tests even more complex mutual recursion patterns.
         """
         four_way = '''
-        (letrec ((func-a (lambda (n) (if (integer<=? n 0) 1 (func-b (integer- n 1)))))
+        (let ((func-a (lambda (n) (if (integer<=? n 0) 1 (func-b (integer- n 1)))))
                  (func-b (lambda (n) (if (integer<=? n 0) 2 (func-c (integer- n 1)))))
                  (func-c (lambda (n) (if (integer<=? n 0) 3 (func-d (integer- n 1)))))
                  (func-d (lambda (n) (if (integer<=? n 0) 4 (func-a (integer- n 1))))))
@@ -169,7 +169,7 @@ class TestMutualRecursionWithLet:
         Combines two features: mutual recursion and let-based tail calls.
         """
         mutual_with_let = '''
-        (letrec ((even? (lambda (n)
+        (let ((even? (lambda (n)
                           (if (integer=? n 0)
                               #t
                               (let ((next (integer- n 1)))
@@ -188,7 +188,7 @@ class TestMutualRecursionWithLet:
         Mutual recursion with multiple let bindings works.
         """
         mutual_complex = '''
-        (letrec ((func-a (lambda (n acc)
+        (let ((func-a (lambda (n acc)
                           (if (integer<=? n 0)
                               acc
                               (let ((next-n (integer- n 1))
@@ -217,7 +217,7 @@ class TestMutualRecursionEdgeCases:
         This should work even without TCO.
         """
         different_arities = '''
-        (letrec ((func-one (lambda (n) (if (integer<=? n 0) "done" (func-two n 0))))
+        (let ((func-one (lambda (n) (if (integer<=? n 0) "done" (func-two n 0))))
                  (func-two (lambda (n acc) (if (integer<=? n 0) acc (func-one (integer- n 1))))))
           (func-one 10))
         '''
@@ -231,7 +231,7 @@ class TestMutualRecursionEdgeCases:
         Tests that TCO handles functions with different parameter counts.
         """
         different_arities = '''
-        (letrec ((func-one (lambda (n) (if (integer<=? n 0) "done" (func-two n 0))))
+        (let ((func-one (lambda (n) (if (integer<=? n 0) "done" (func-two n 0))))
                  (func-two (lambda (n acc) (if (integer<=? n 0) acc (func-one (integer- n 1))))))
           (func-one 10000))
         '''
@@ -245,7 +245,7 @@ class TestMutualRecursionEdgeCases:
         Tests that TCO works with multiple conditional branches.
         """
         with_conditionals = '''
-        (letrec ((process-a (lambda (n mode)
+        (let ((process-a (lambda (n mode)
                              (if (integer<=? n 0)
                                  mode
                                  (if (integer=? mode 0)
@@ -269,7 +269,7 @@ class TestMutualRecursionEdgeCases:
         Tests that both patterns can coexist in the same letrec.
         """
         mixed = '''
-        (letrec ((self-rec (lambda (n) (if (integer<=? n 0) 0 (self-rec (integer- n 1)))))
+        (let ((self-rec (lambda (n) (if (integer<=? n 0) 0 (self-rec (integer- n 1)))))
                  (mutual-a (lambda (n) (if (integer<=? n 0) 1 (mutual-b (integer- n 1)))))
                  (mutual-b (lambda (n) (if (integer<=? n 0) 2 (mutual-a (integer- n 1))))))
           (list (self-rec 10) (mutual-a 10)))
@@ -283,7 +283,7 @@ class TestMutualRecursionEdgeCases:
         Self-recursion should use existing TCO, mutual recursion should use new TCO.
         """
         mixed = '''
-        (letrec ((self-rec (lambda (n) (if (integer<=? n 0) 0 (self-rec (integer- n 1)))))
+        (let ((self-rec (lambda (n) (if (integer<=? n 0) 0 (self-rec (integer- n 1)))))
                  (mutual-a (lambda (n) (if (integer<=? n 0) 1 (mutual-b (integer- n 1)))))
                  (mutual-b (lambda (n) (if (integer<=? n 0) 2 (mutual-a (integer- n 1))))))
           (list (self-rec 10000) (mutual-a 10000)))
@@ -301,7 +301,7 @@ class TestMutualRecursionPracticalExamples:
         Practical example: parsing with different states represented as functions.
         """
         state_machine = '''
-        (letrec ((state-normal (lambda (chars acc)
+        (let ((state-normal (lambda (chars acc)
                                  (if (list-null? chars)
                                      acc
                                      (let ((c (list-first chars)))
@@ -327,7 +327,7 @@ class TestMutualRecursionPracticalExamples:
         Practical example: processing list elements with alternating logic.
         """
         alternating = '''
-        (letrec ((process-pos (lambda (lst pos-acc neg-acc)
+        (let ((process-pos (lambda (lst pos-acc neg-acc)
                                (if (list-null? lst)
                                    (list pos-acc neg-acc)
                                    (let ((val (list-first lst)))
@@ -353,7 +353,7 @@ class TestMutualRecursionPerformance:
         This is the ultimate test - the value from the issue documentation.
         """
         deep = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 100000))
         '''
@@ -368,14 +368,14 @@ class TestMutualRecursionPerformance:
         """
         # Self-recursion (already works)
         self_rec = '''
-        (letrec ((countdown (lambda (n) (if (integer<=? n 0) "done" (countdown (integer- n 1))))))
+        (let ((countdown (lambda (n) (if (integer<=? n 0) "done" (countdown (integer- n 1))))))
           (countdown 100000))
         '''
         assert menai.evaluate_and_format(self_rec) == '"done"'
 
         # Mutual recursion (now works!)
         mutual_rec = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 100000))
         '''
@@ -392,12 +392,12 @@ class TestMutualRecursionCorrectness:
         This validates the logic is correct before testing TCO.
         """
         tests = [
-            ('(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 0))', '#t'),
-            ('(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 0))', '#f'),
-            ('(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 1))', '#f'),
-            ('(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 1))', '#t'),
-            ('(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 4))', '#t'),
-            ('(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 5))', '#t'),
+            ('(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 0))', '#t'),
+            ('(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 0))', '#f'),
+            ('(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 1))', '#f'),
+            ('(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 1))', '#t'),
+            ('(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 4))', '#t'),
+            ('(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 5))', '#t'),
         ]
 
         for expr, expected in tests:
@@ -412,13 +412,13 @@ class TestMutualRecursionCorrectness:
         # Test even numbers
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 10000))',
+            '(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 10000))',
             '#t'
         )
 
         # Test odd numbers
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 10001))',
+            '(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (odd? 10001))',
             '#t'
         )

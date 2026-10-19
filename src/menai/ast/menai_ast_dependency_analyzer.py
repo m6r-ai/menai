@@ -1,6 +1,9 @@
 """
-Dependency analysis for letrec bindings to support mutual recursion.
-Note: This is only used for letrec, not for regular let (which uses simple sequential binding).
+Dependency analysis for let bindings.
+
+Groups a let's bindings into strongly-connected components so the desugarer can
+emit a $let for each acyclic group and a $letrec for each recursive one, in
+topological order.
 """
 
 from dataclasses import dataclass
@@ -20,11 +23,11 @@ class MenaiBindingGroup:
 class MenaiASTDependencyAnalyzer:
     """Analyzes dependencies in let bindings to determine evaluation strategy."""
 
-    def analyze_letrec_bindings(self, bindings: list[tuple[str, MenaiASTNode]]) -> list[MenaiBindingGroup]:
+    def analyze_bindings(self, bindings: list[tuple[str, MenaiASTNode]]) -> list[MenaiBindingGroup]:
         """
-        Analyze letrec bindings and group them by dependencies.
+        Analyze let bindings and group them by dependencies.
 
-        For letrec, all bindings can reference each other (including themselves).
+        Every binding can reference every sibling, including itself.
         Returns:
             List of MenaiBindingGroup objects in topological order
         """
@@ -92,7 +95,7 @@ class MenaiASTDependencyAnalyzer:
         Recursively scan expr for references to names in targets that are not
         shadowed by an inner binding, accumulating hits into refs.
 
-        targets:  the letrec binding names we care about (never changes).
+        targets:  the binding names we care about (never changes).
         shadowed: names bound by enclosing inner forms (grows as we descend).
         refs:     the output set for the current top-level binding.
         """
@@ -135,22 +138,6 @@ class MenaiASTDependencyAnalyzer:
                 binding_list, body = expr.elements[1], expr.elements[2]
                 new_shadowed = shadowed
                 if isinstance(binding_list, MenaiASTList):
-                    for binding in binding_list.elements:
-                        if isinstance(binding, MenaiASTList) and len(binding.elements) == 2:
-                            self._scan_refs(binding.elements[1], targets, shadowed, refs)
-                            var = binding.elements[0]
-                            if isinstance(var, MenaiASTSymbol):
-                                new_shadowed = new_shadowed | frozenset({var.name})
-
-                self._scan_refs(body, targets, new_shadowed, refs)
-
-            return
-
-        if name == 'letrec':
-            if len(expr.elements) == 3:
-                binding_list, body = expr.elements[1], expr.elements[2]
-                new_shadowed = shadowed
-                if isinstance(binding_list, MenaiASTList):
                     extra = frozenset(
                         binding.elements[0].name
                         for binding in binding_list.elements
@@ -166,6 +153,17 @@ class MenaiASTDependencyAnalyzer:
                             self._scan_refs(binding.elements[1], targets, new_shadowed, refs)
 
                 self._scan_refs(body, targets, new_shadowed, refs)
+
+            return
+
+        if name == '::':
+            # (:: namespace member): the namespace name is a reference, but the
+            # member name is a key into the module's export map, not a variable.
+            # Scanning it as a reference would make a binding whose value reads
+            # a module member appear to depend on a same-named local binding,
+            # inventing a cycle that does not exist.
+            if len(expr.elements) >= 2:
+                self._scan_refs(expr.elements[1], targets, shadowed, refs)
 
             return
 

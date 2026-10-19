@@ -59,7 +59,7 @@ class TestSelfLoopMoveSchedulingBasic:
 
     def test_move_eliminated(self):
         """
-        (letrec ((loop (lambda (lst prev)
+        (let ((loop (lambda (lst prev)
                          (if ($list-null? lst)
                              #t
                              (if ($boolean=? prev (list-first lst))
@@ -76,7 +76,7 @@ class TestSelfLoopMoveSchedulingBasic:
         directly into lst's slot → MOVE eliminated.
         """
         src = """
-        (letrec ((loop (lambda (lst prev)
+        (let ((loop (lambda (lst prev)
                          (if ($list-null? lst)
                              #t
                              (if ($boolean=? prev (list-first lst))
@@ -95,7 +95,7 @@ class TestSelfLoopMoveSchedulingBasic:
         from menai import Menai
         m = Menai()
         src = """
-        (letrec ((loop (lambda (lst prev)
+        (let ((loop (lambda (lst prev)
                          (if ($list-null? lst)
                              #t
                              (if ($boolean=? prev (list-first lst))
@@ -117,7 +117,7 @@ class TestSelfLoopMoveSchedulingDataDependent:
         When the second instruction reads the first instruction's output,
         they cannot be swapped and the MOVE must remain.
 
-        (letrec ((loop (lambda (lst acc)
+        (let ((loop (lambda (lst acc)
                          (if ($list-null? lst)
                              acc
                              (let ((rest (list-rest lst)))
@@ -138,7 +138,7 @@ class TestSelfLoopMoveSchedulingDataDependent:
         from menai import Menai
         m = Menai()
         src = """
-        (letrec ((loop (lambda (lst acc)
+        (let ((loop (lambda (lst acc)
                          (if ($list-null? lst)
                              acc
                              (let ((rest (list-rest lst)))
@@ -169,7 +169,7 @@ class TestSelfLoopMoveSchedulingWithGuard:
 
     def test_move_eliminated_with_guard(self):
         """
-        (letrec ((sum (lambda (lst acc)
+        (let ((sum (lambda (lst acc)
                        (if ($list-null? lst)
                            acc
                            (sum (list-rest lst) ($integer+ acc ($list-first lst)))))))
@@ -181,7 +181,7 @@ class TestSelfLoopMoveSchedulingWithGuard:
         The scan must pass the guard to reach the swap candidates.
         """
         src = """
-        (letrec ((sum (lambda (lst acc)
+        (let ((sum (lambda (lst acc)
                         (if ($list-null? lst)
                             acc
                             (sum (list-rest lst) ($integer+ acc ($list-first lst)))))))
@@ -201,7 +201,7 @@ class TestSelfLoopMoveSchedulingCorrectness:
         from menai import Menai
         m = Menai()
         src = """
-        (letrec ((sum (lambda (lst acc)
+        (let ((sum (lambda (lst acc)
                         (if ($list-null? lst)
                             acc
                             (sum (list-rest lst) ($integer+ acc ($list-first lst)))))))
@@ -214,7 +214,7 @@ class TestSelfLoopMoveSchedulingCorrectness:
         from menai import Menai
         m = Menai()
         src = """
-        (letrec ((cat (lambda (lst acc)
+        (let ((cat (lambda (lst acc)
                         (if ($list-null? lst)
                             acc
                             (cat (list-rest lst) ($string-concat acc ($list-first lst)))))))
@@ -227,7 +227,7 @@ class TestSelfLoopMoveSchedulingCorrectness:
         from menai import Menai
         m = Menai()
         src = """
-        (letrec ((count (lambda (n)
+        (let ((count (lambda (n)
                           (if (integer<=? n 0)
                               "done"
                               (count (integer- n 1))))))
@@ -240,7 +240,7 @@ class TestSelfLoopMoveSchedulingCorrectness:
         from menai import Menai
         m = Menai()
         src = """
-        (letrec ((loop (lambda (lst prev)
+        (let ((loop (lambda (lst prev)
                          (if ($list-null? lst)
                              prev
                              (loop (list-rest lst) ($list-first lst))))))
@@ -258,7 +258,7 @@ class TestLoopCarriedParamCoalescing:
         straight into the loop parameter, so no back-edge MOVE remains.
 
         (let ((my-filter (lambda (pred v)
-                           (letrec ((loop (lambda (i acc)
+                           (let ((loop (lambda (i acc)
                                             (if ($integer<? i 0)
                                                 ($list->vector acc)
                                                 (loop ($integer- i 1)
@@ -274,7 +274,7 @@ class TestLoopCarriedParamCoalescing:
         """
         src = """
         (let ((my-filter (lambda (pred v)
-                           (letrec ((loop (lambda (i acc)
+                           (let ((loop (lambda (i acc)
                                             (if ($integer<? i 0)
                                                 ($list->vector acc)
                                                 (loop ($integer- i 1)
@@ -296,7 +296,7 @@ class TestLoopCarriedParamCoalescing:
         m = Menai()
         src = """
         (let ((my-filter (lambda (pred v)
-                           (letrec ((loop (lambda (i acc)
+                           (let ((loop (lambda (i acc)
                                             (if ($integer<? i 0)
                                                 ($list->vector acc)
                                                 (loop ($integer- i 1)
@@ -324,7 +324,7 @@ class TestPhiArgumentCoalescing:
         """
         src = """
         (let ((my-filter (lambda (pred v)
-                           (letrec ((loop (lambda (i acc)
+                           (let ((loop (lambda (i acc)
                                             (if ($integer<? i 0)
                                                 ($list->vector acc)
                                                 (loop ($integer- i 1)

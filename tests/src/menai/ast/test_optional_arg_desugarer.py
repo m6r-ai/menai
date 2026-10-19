@@ -260,7 +260,7 @@ class TestStringSliceDesugarerStructure:
         """(string-slice s start) → (let ((#:t s)) ($string-slice #:t start ($string-length #:t)))"""
         result = desugar('(string-slice "hello" 1)')
         # Outer form is a let
-        assert op_name(result) == 'let'
+        assert op_name(result) == '$let'
         assert isinstance(result, MenaiASTList)
         bindings = result.elements[1]
         assert isinstance(bindings, MenaiASTList)
@@ -292,7 +292,7 @@ class TestStringSliceDesugarerStructure:
         result = desugar('(string-slice "hello" 1)')
         # The string literal "hello" should appear exactly once (in the let binding),
         # not also inside the body.
-        assert op_name(result) == 'let'
+        assert op_name(result) == '$let'
         body = result.elements[2]
         # body is ($string-slice temp ...) — temp is a symbol, not the literal
         assert isinstance(body.elements[1], MenaiASTSymbol)
@@ -304,7 +304,7 @@ class TestListSliceDesugarerStructure:
     def test_two_arg_wraps_in_let_with_length_default(self):
         """(list-slice l start) → (let ((#:t l)) ($list-slice #:t start ($list-length #:t)))"""
         result = desugar('(list-slice (list 1 2 3) 1)')
-        assert op_name(result) == 'let'
+        assert op_name(result) == '$let'
         assert isinstance(result, MenaiASTList)
         bindings = result.elements[1]
         binding = bindings.elements[0]
@@ -327,7 +327,7 @@ class TestListSliceDesugarerStructure:
     def test_collection_not_double_evaluated(self):
         """The collection expression appears only once in the desugared output."""
         result = desugar('(list-slice (list 1 2 3) 1)')
-        assert op_name(result) == 'let'
+        assert op_name(result) == '$let'
         body = result.elements[2]
         assert isinstance(body.elements[1], MenaiASTSymbol)
 

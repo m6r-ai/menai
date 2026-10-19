@@ -23,7 +23,7 @@ class TestEnumDeclaration:
     def test_enum_declared_in_letrec(self, menai):
         """An enum may be declared in letrec alongside functions."""
         assert menai.evaluate_and_format(
-            '(letrec ((State (enum (idle running)))'
+            '(let ((State (enum (idle running)))'
             '         (first-state (lambda () (State \'idle))))'
             '  (first-state))'
         ) == '(State idle)'
@@ -288,7 +288,7 @@ class TestEnumSwitchTypeSafety:
     def test_wrong_typed_scrutinee_through_a_parameter(self, menai):
         """The guard holds when the scrutinee's type is not known at the call site."""
         assert menai.evaluate_and_format(
-            '(letrec ((A (enum (x y z)))'
+            '(let ((A (enum (x y z)))'
             '         (B (enum (x y z)))'
             '         (classify (lambda (v)'
             '                     (match v'
@@ -337,7 +337,7 @@ class TestEnumSwitchTypeSafety:
     def test_every_variant_of_the_right_type_still_dispatches(self, menai):
         """The guard does not disturb correct dispatch for the match's own type."""
         assert menai.evaluate_and_format(
-            '(letrec ((State (enum (idle running stopped paused)))'
+            '(let ((State (enum (idle running stopped paused)))'
             '         (classify (lambda (s)'
             '           (match s'
             '             ((: State \'idle) "i")'
@@ -436,7 +436,7 @@ class TestEnumPatternMatching:
     def test_match_in_a_recursive_function(self, menai):
         """Enums dispatch correctly inside a recursive function."""
         assert menai.evaluate_and_format(
-            '(letrec ((State (enum (idle running stopped)))'
+            '(let ((State (enum (idle running stopped)))'
             '         (describe (lambda (s)'
             '                     (match s'
             '                       ((: State \'idle) "idle")'
@@ -462,7 +462,7 @@ class TestEnumtypeAsFirstClassValue:
         """A passed enumtype is callable in tail position."""
         assert menai.evaluate_and_format(
             '(let ((State (enum (idle running))))'
-            '  (letrec ((make (lambda (ctor n)'
+            '  (let ((make (lambda (ctor n)'
             '                  (if (integer=? n 0)'
             '                      (ctor \'running)'
             '                      (make ctor (integer- n 1))))))'

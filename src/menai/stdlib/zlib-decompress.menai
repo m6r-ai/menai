@@ -14,13 +14,13 @@
 ;
 ; Preset dictionaries (FDICT set) are not supported and raise an error.
 
-(letrec
+(let
   ((deflate-lib (import "deflate-decompress"))
 
    (adler32
     (lambda (b)
       (let ((modulus 65521))
-        (letrec ((loop
+        (let ((loop
                   (lambda (i a bb)
                     (if (integer>=? i (bytes-length b))
                         (integer-bit-or (integer-bit-shift-left bb 16) a)

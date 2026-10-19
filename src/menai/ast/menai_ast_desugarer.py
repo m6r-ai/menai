@@ -116,7 +116,7 @@ class _NamespaceBinding:
     declarations maps each renamed binding name to its declaration node, so a
     member whose declaration is a struct type can be recognised as one.
     bindings is the module's full set of renamed (name, value) pairs, emitted
-    once as a letrec so the module's declarations can reference their siblings.
+    once as a $letrec so the module's declarations can reference their siblings.
     """
     members: dict[str, str]
     declarations: dict[str, MenaiASTNode]
@@ -243,7 +243,7 @@ class MenaiASTDesugarer:
         self.temp_counter = 0  # For generating unique temp variable names
 
         # Lexical scope for ordinary variable bindings, innermost frame last.
-        # Each frame is the set of names bound by one binder (let/letrec/
+        # Each frame is the set of names bound by one binder (let/
         # lambda/match).  A name-based builtin rewrite must not fire when the
         # name is bound by any enclosing frame, because the binding shadows the
         # builtin/prelude function the rewrite assumes.
@@ -265,7 +265,7 @@ class MenaiASTDesugarer:
         # Namespace names in lexical scope, innermost frame last.  Each frame
         # maps a namespace name to its export map (export key -> renamed binding
         # name).  A namespace is compile-time only: the binding that introduces
-        # it is replaced by the module's renamed letrec, and member access
+        # it is replaced by the module's renamed $letrec, and member access
         # resolves to the renamed binding.
         self._namespace_stack: list[dict[str, _NamespaceBinding]] = []
 
@@ -520,7 +520,7 @@ class MenaiASTDesugarer:
         # Lists need inspection - anything else does not
         if not isinstance(expr, MenaiASTList):
             # MenaiASTStruct nodes are already fully resolved — pass through as-is.
-            # A struct node only ever appears as a let/letrec binding value,
+            # A struct node only ever appears as a let binding value,
             # and the binder registers its type name in the scope it introduces.
             return expr
 
@@ -548,8 +548,12 @@ class MenaiASTDesugarer:
             if name == 'let':
                 return self._desugar_let(expr)
 
-            if name == 'letrec':
-                return self._desugar_letrec(expr)
+            # $let and $letrec are internal only.  The desugarer emits them for
+            # binding groups it has already classified, so they must not be
+            # re-split -- but their children may still be raw (the match builders
+            # emit raw clause bodies), so desugar those in place.
+            if name in ('$let', '$letrec'):
+                return self._desugar_internal_binding(expr)
 
             if name == 'lambda':
                 return self._desugar_lambda(expr)
@@ -642,7 +646,7 @@ class MenaiASTDesugarer:
                         length_call,
                     ), expr)
                     return self._make_list((
-                        self._make_symbol('let', expr),
+                        self._make_symbol('$let', expr),
                         self._make_list((
                             self._make_list((temp_sym, coll_arg), expr),
                         ), expr),
@@ -701,120 +705,93 @@ class MenaiASTDesugarer:
             desugared_condition, desugared_then, desugared_else
         ), expr)
 
-    def _desugar_let(self, expr: MenaiASTList) -> MenaiASTNode:
-        """Desugar let expression by desugaring its subexpressions."""
-        # Validation already done by semantic analyzer
-        assert len(expr.elements) == 3, "Let expression should have exactly 3 elements (validated by semantic analyzer)"
+    def _desugar_internal_binding(self, expr: MenaiASTList) -> MenaiASTNode:
+        """
+        Desugar the children of an internal $let/$letrec node, in place.
 
-        let_symbol = expr.elements[0]
-        bindings_list = expr.elements[1]
-        body = expr.elements[2]
+        The desugarer emits $let and $letrec for binding groups it has already
+        classified, so the split must not be recomputed.  The children, however,
+        may still be raw: the match-clause builders emit raw clause bodies and
+        binding values, which are desugared by the caller's desugar() call.
+        Desugaring the values and the body here keeps that contract.
 
-        assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list (validated by semantic analyzer)"
+        The extraction bindings built for nested list patterns are sequential:
+        each temp is defined in terms of an earlier temp.  Each name is therefore
+        pushed into scope before the next value is desugared, so those references
+        resolve.  Names are unique by construction (they are generated temps), so
+        this cannot mask a duplicate-binding error.
 
-        # let is parallel: each binding value is desugared in the enclosing
-        # scope and cannot see its siblings.  Struct and enum declarations are the
-        # one exception: they are hoisted so that sibling binding values and the
-        # body can use them as constructors and pattern heads.
-        struct_bindings: dict[str, MenaiASTStruct] = {}
-        enum_bindings: dict[str, MenaiASTEnum] = {}
-        namespace_bindings: dict[str, _NamespaceBinding] = {}
-        namespace_modules: list[tuple[tuple[str, MenaiASTNode], ...]] = []
-        for binding in bindings_list.elements:
-            assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
-            var_name, value_expr = binding.elements
-            assert isinstance(var_name, MenaiASTSymbol)
+        Args:
+            expr: A ($let|$letrec ((name value) ...) body) form.
 
-            # A binding whose value is a struct declaration — written directly
-            # or accessed through a namespace — is hoisted so sibling values and
-            # the body can use it as a constructor and pattern head.
-            struct_node = self._struct_from_value(value_expr)
-            if struct_node is not None:
-                struct_bindings[var_name.name] = struct_node
+        Returns:
+            The same form with its binding values and body desugared.
+        """
+        assert len(expr.elements) == 3, "Internal binding form should have exactly 3 elements"
 
-            # An enum declaration is hoisted for the same reason.
-            enum_node = self._enum_from_value(value_expr)
-            if enum_node is not None:
-                enum_bindings[var_name.name] = enum_node
-
-            if isinstance(value_expr, MenaiASTNamespace):
-                namespace_bindings[var_name.name] = _namespace_binding(value_expr)
-                namespace_modules.append(value_expr.bindings)
+        kind, bindings_list, body = expr.elements
+        assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list"
 
         desugared_bindings = []
-        bound_names: set[str] = set()
-        self._push_scope(set(struct_bindings), struct_bindings)
-        self._set_scope_enums(enum_bindings)
-        self._push_namespace_scope(namespace_bindings)
+        bound_names: list[str] = []
+        self._push_scope(set())
         try:
-            for i, binding in enumerate(bindings_list.elements):
-                assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2, \
-                    f"Binding {i+1} should be a list with 2 elements (validated by semantic analyzer)"
+            for binding in bindings_list.elements:
+                assert isinstance(binding, MenaiASTList) and len(binding.elements) == 2
+                name_expr, value_expr = binding.elements
+                assert isinstance(name_expr, MenaiASTSymbol)
+                desugared_bindings.append(
+                    self._make_list((name_expr, self.desugar(value_expr)), binding)
+                )
+                self._push_scope({name_expr.name})
+                bound_names.append(name_expr.name)
 
-                var_name, value_expr = binding.elements
-                assert isinstance(var_name, MenaiASTSymbol)
-
-                # A namespace binding is compile-time only: it introduces no
-                # runtime binding of its own, so it is dropped from the emitted
-                # bindings.  The module's renamed bindings are emitted around
-                # the body below.
-                if isinstance(value_expr, MenaiASTNamespace):
-                    continue
-
-                desugared_value = self.desugar(value_expr)
-                desugared_bindings.append(self._make_list((var_name, desugared_value), binding))
-                bound_names.add(var_name.name)
-
-            # The body sees every binding name in addition to the struct types.
-            self._push_scope(bound_names)
-            try:
-                desugared_body = self.desugar(body)
-
-            finally:
-                self._pop_scope()
+            desugared_body = self.desugar(body)
 
         finally:
-            self._pop_namespace_scope()
+            for _ in bound_names:
+                self._pop_scope()
+
             self._pop_scope()
 
-        desugared_body = self._wrap_namespace_modules(namespace_modules, desugared_body, expr)
-
         return self._make_list((
-            let_symbol, self._make_list(tuple(desugared_bindings), bindings_list), desugared_body
+            kind,
+            self._make_list(tuple(desugared_bindings), bindings_list),
+            desugared_body,
         ), expr)
 
-    def _desugar_letrec(self, expr: MenaiASTList) -> MenaiASTNode:
+    def _desugar_let(self, expr: MenaiASTList) -> MenaiASTNode:
         """
-        Desugar letrec by splitting mixed bindings into nested let/letrec forms.
+        Desugar let by splitting its bindings into nested $let/$letrec forms.
 
-        A letrec with mixed lambda and non-lambda bindings is transformed into a
-        sequence of let/letrec forms in topological order:
+        A let is transformed into a sequence of $let/$letrec forms in
+        topological order:
 
-          - Non-recursive binding (lambda or non-lambda) -> let
-          - Recursive group (always lambdas after splitting) -> letrec
+          - Acyclic binding group (lambda or non-lambda) -> $let
+          - Recursive group (always lambdas after splitting) -> $letrec
 
         For example:
 
-          (letrec ((a (list 1 2 3))
-                   (f (lambda (x) ... a ...))
-                   (g (lambda (x) ... f ...)))
+          (let ((a (list 1 2 3))
+                (f (lambda (x) ... a ...))
+                (g (lambda (x) ... f ...)))
             body)
 
         becomes:
 
-          (let ((a (list 1 2 3)))
-            (letrec ((f (lambda (x) ... a ...))
-                     (g (lambda (x) ... f ...)))
+          ($let ((a (list 1 2 3)))
+            ($letrec ((f (lambda (x) ... a ...))
+                      (g (lambda (x) ... f ...)))
               body))
 
-        After splitting, every remaining letrec contains only a genuine mutually-
-        recursive group of lambdas, and all non-lambda values live in let bindings
-        where they belong.
+        After splitting, every remaining $letrec contains only a genuine mutually-
+        recursive group of lambdas, and all non-lambda values live in $let
+        bindings where they belong.
 
         Desugaring of binding values and body happens as the split nodes are built,
         so no separate desugaring pass over the result is needed.
         """
-        assert len(expr.elements) == 3, "Letrec expression should have exactly 3 elements (validated by semantic analyzer)"
+        assert len(expr.elements) == 3, "Let expression should have exactly 3 elements (validated by semantic analyzer)"
 
         bindings_list = expr.elements[1]
         assert isinstance(bindings_list, MenaiASTList), "Binding list should be a list (validated by semantic analyzer)"
@@ -841,21 +818,21 @@ class MenaiASTDesugarer:
         raw_dict = dict(raw_pairs)
 
         # Compute topological binding groups (already in dependency order).
-        binding_groups = MenaiASTDependencyAnalyzer().analyze_letrec_bindings(raw_pairs)
+        binding_groups = MenaiASTDependencyAnalyzer().analyze_bindings(raw_pairs)
 
-        # Every letrec binding (and any struct type it declares) is visible to
+        # Every let binding (and any struct type it declares) is visible to
         # every sibling value and to the body, so all names are in scope
         # throughout.
-        letrec_names = {name for name, _ in raw_pairs}
+        binding_names = {name for name, _ in raw_pairs}
         self._push_namespace_scope(namespace_bindings)
-        letrec_structs = {name: struct_node for name, value in raw_pairs
-                          if (struct_node := self._struct_from_value(value)) is not None}
-        letrec_enums = {name: enum_node for name, value in raw_pairs
-                        if (enum_node := self._enum_from_value(value)) is not None}
-        self._push_scope(letrec_names, letrec_structs)
-        self._set_scope_enums(letrec_enums)
+        binding_structs = {name: struct_node for name, value in raw_pairs
+                           if (struct_node := self._struct_from_value(value)) is not None}
+        binding_enums = {name: enum_node for name, value in raw_pairs
+                         if (enum_node := self._enum_from_value(value)) is not None}
+        self._push_scope(binding_names, binding_structs)
+        self._set_scope_enums(binding_enums)
         try:
-            result = self._desugar_letrec_body(expr, raw_dict, binding_groups)
+            result = self._desugar_let_body(expr, raw_dict, binding_groups)
 
         finally:
             self._pop_scope()
@@ -863,16 +840,16 @@ class MenaiASTDesugarer:
 
         return self._wrap_namespace_modules(namespace_modules, result, expr)
 
-    def _desugar_letrec_body(
+    def _desugar_let_body(
         self,
         expr: MenaiASTList,
         raw_dict: dict[str, MenaiASTNode],
         binding_groups: list,
     ) -> MenaiASTNode:
         """
-        Desugar a letrec body and binding values into nested let/letrec forms.
+        Desugar a let body and binding values into nested $let/$letrec forms.
 
-        Called with the letrec's binding names already pushed onto the scope
+        Called with the let's binding names already pushed onto the scope
         stack, so binding values and the body resolve those names as ordinary
         lexical references.
         """
@@ -887,7 +864,7 @@ class MenaiASTDesugarer:
         # batched into a single let; only when a binding depends on an earlier
         # sibling does a new nested let begin.  This keeps nesting depth
         # proportional to the number of inter-sibling dependencies, not the
-        # total number of bindings — which matters for large letrecs like a
+        # total number of bindings — which matters for large lets like a
         # library module where almost all bindings are independent.
         result: MenaiASTNode = self.desugar(body)
 
@@ -905,11 +882,11 @@ class MenaiASTDesugarer:
         for group in binding_groups:
             if group.is_recursive:
                 if current_batch:
-                    runs.append(('let', current_batch))
+                    runs.append(('$let', current_batch))
                     current_batch = []
                     current_batch_names = set()
 
-                runs.append(('letrec', [group]))
+                runs.append(('$letrec', [group]))
 
             else:
                 # Check whether this group's binding references any name already
@@ -918,7 +895,7 @@ class MenaiASTDesugarer:
                 # since the dependency analyser already computed it.
                 if group.depends_on & current_batch_names:
                     # Dependency on a batch sibling — close current batch first.
-                    runs.append(('let', current_batch))
+                    runs.append(('$let', current_batch))
                     current_batch = [group]
                     current_batch_names = set(group.names)
 
@@ -927,7 +904,7 @@ class MenaiASTDesugarer:
                     current_batch_names.update(group.names)
 
         if current_batch:
-            runs.append(('let', current_batch))
+            runs.append(('$let', current_batch))
 
         for kind, run_groups in reversed(runs):
             combined_bindings: list[MenaiASTNode] = []
@@ -984,7 +961,7 @@ class MenaiASTDesugarer:
             message="export is only valid as a module body",
             received=f"export used in: {expr.describe()}",
             expected="A module ends with (export name1 name2 ...)",
-            example="(letrec ((f (lambda (x) x))) (export f))",
+            example="(let ((f (lambda (x) x))) (export f))",
             suggestion="Move the export form to the end of a module body",
             line=expr.line,
             column=expr.column,
@@ -1043,12 +1020,12 @@ class MenaiASTDesugarer:
         """
         Wrap a body in the renamed bindings of each imported module.
 
-        Each module's bindings are emitted once as a letrec, named with the
+        Each module's bindings are emitted once as a surface let, named with the
         module's rename prefix, so the module's exported declarations can
         reference their siblings.  Modules are wrapped innermost-first so that
         an earlier module's bindings are visible to a later module's body.
 
-        The letrec is desugared through the ordinary path, so a module binding
+        The wrapper is desugared through the ordinary path, so a module binding
         whose value is itself an import (a nested namespace) is handled the
         same way as any other namespace binding.
         """
@@ -1061,12 +1038,16 @@ class MenaiASTDesugarer:
                 )
                 for name, value in bindings
             ]
-            letrec = self._make_list((
-                self._make_symbol('letrec', source_node),
+            # Emit a surface `let` so self.desugar() processes this wrapper: the
+            # module bindings are still raw AST and must be desugared, and the
+            # recursive split must run over them.  The body is already
+            # desugared, and desugaring it again is a no-op.
+            let = self._make_list((
+                self._make_symbol('let', source_node),
                 self._make_list(tuple(binding_forms), source_node),
                 result,
             ), source_node)
-            result = self.desugar(letrec)
+            result = self.desugar(let)
 
         return result
 
@@ -1264,10 +1245,10 @@ class MenaiASTDesugarer:
         # Chain with 'and' for ordered comparisons
         body: MenaiASTNode = self._make_and(pairs, expr)
 
-        # Wrap in letrec bindings from innermost outward
+        # Wrap in $let bindings from innermost outward
         for temp, desugared_arg in reversed(list(zip(temps, desugared_args))):
             body = self._make_list((
-                self._make_symbol('letrec', expr),
+                self._make_symbol('$let', expr),
                 self._make_list((
                     self._make_list((self._make_symbol(temp, expr), desugared_arg), expr),
                 ), expr),
@@ -1288,7 +1269,7 @@ class MenaiASTDesugarer:
         prelude lambda and with _desugar_comparison_chain.
 
         For example, (integer=? a b c) becomes:
-            (letrec ((t0 a) (t1 b) (t2 c))
+            (let ((t0 a) (t1 b) (t2 c))
               (and (integer=? t0 t1)
                    (integer=? t1 t2)))
 
@@ -1326,10 +1307,10 @@ class MenaiASTDesugarer:
             body: MenaiASTNode = (self._make_and(pairs, expr) if check_eq
                                   else self._make_or(pairs, expr))
 
-            # Wrap arg values in letrec bindings (innermost first)
+            # Wrap arg values in $let bindings (innermost first)
             for temp, desugared_arg in reversed(list(zip(temps, desugared_args))):
                 body = self._make_list((
-                    self._make_symbol('letrec', expr),
+                    self._make_symbol('$let', expr),
                     self._make_list((
                         self._make_list((self._make_symbol(temp, expr), desugared_arg), expr),
                     ), expr),
@@ -1382,7 +1363,7 @@ class MenaiASTDesugarer:
         match_logic = self._build_match_clauses(temp_var, clauses)
         self._check_match_size(match_logic, expr)
         result = MenaiASTList((
-            MenaiASTSymbol('letrec'),
+            MenaiASTSymbol('$let'),
             MenaiASTList((
                 MenaiASTList((MenaiASTSymbol(temp_var), desugared_value)),
             )),
@@ -1776,7 +1757,7 @@ class MenaiASTDesugarer:
         if isinstance(test_expr, MenaiASTBoolean) and test_expr.value:
             if bindings:
                 return MenaiASTList((
-                    MenaiASTSymbol('letrec'),
+                    MenaiASTSymbol('$let'),
                     MenaiASTList(tuple(MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in bindings)),
                     result_expr
                 ))
@@ -1787,7 +1768,7 @@ class MenaiASTDesugarer:
             binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in bindings]
 
             then_expr: MenaiASTNode = MenaiASTList((
-                MenaiASTSymbol('letrec'),
+                MenaiASTSymbol('$let'),
                 MenaiASTList(tuple(binding_list)),
                 result_expr
             ))
@@ -2194,7 +2175,7 @@ class MenaiASTDesugarer:
             if pattern_bindings:
                 binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in pattern_bindings]
                 pattern_let: MenaiASTNode = MenaiASTList((
-                    MenaiASTSymbol('letrec'),
+                    MenaiASTSymbol('$let'),
                     MenaiASTList(tuple(binding_list)),
                     result_expr
                 ))
@@ -2215,7 +2196,7 @@ class MenaiASTDesugarer:
             if pattern_bindings:
                 binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in pattern_bindings]
                 inner_if = MenaiASTList((
-                    MenaiASTSymbol('letrec'),
+                    MenaiASTSymbol('$let'),
                     MenaiASTList(tuple(binding_list)),
                     result_expr
                 ))
@@ -2226,7 +2207,7 @@ class MenaiASTDesugarer:
         # Wrap in element extraction let
         extraction_binding_list = [MenaiASTList((MenaiASTSymbol(vn), ve)) for vn, ve in extraction_bindings]
         extraction_let = MenaiASTList((
-            MenaiASTSymbol('letrec'),
+            MenaiASTSymbol('$let'),
             MenaiASTList(tuple(extraction_binding_list)),
             inner_if
         ))

@@ -1,6 +1,6 @@
 ; Tests for tar-create.menai
 
-(letrec
+(let
   ((tar-create (import "tar-create"))
    (tar-extract (import "tar-extract"))
    (tar-entries (import "tar-entries"))

@@ -281,7 +281,7 @@ def prune_dead_definitions(
     value is unused (an unused parameter, or a capture the body never reads).
     MenaiCFGGuardInstr and MenaiCFGPatchClosureInstr define no result, so they
     are not candidates: a guard raises at runtime and a patch mutates a closure
-    during letrec fixup, and neither is dead code.
+    during $letrec fixup, and neither is dead code.
 
     The counts are recomputed each round so that the decrements from one
     removal are seen by the next; the loop terminates because each round either

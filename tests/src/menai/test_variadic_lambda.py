@@ -200,8 +200,8 @@ class TestVariadicLambdaHigherOrder:
     def test_variadic_in_letrec(self, menai):
         """Variadic function defined in letrec can be recursive."""
         expr = '''
-        (letrec ((sum-all (lambda (. args)
-                            (letrec ((loop (lambda (lst acc)
+        (let ((sum-all (lambda (. args)
+                            (let ((loop (lambda (lst acc)
                                              (if (list-null? lst) acc
                                                  (loop (list-rest lst) (integer+ acc (list-first lst)))))))
                               (loop args 0)))))
@@ -227,7 +227,7 @@ class TestVariadicLambdaTailCalls:
         """Variadic entry point delegating to a tail-recursive helper."""
         expr = '''
         (let ((sum-all (lambda (. args)
-                         (letrec ((loop (lambda (lst acc)
+                         (let ((loop (lambda (lst acc)
                                           (if (list-null? lst) acc
                                               (loop (list-rest lst) (integer+ acc (list-first lst)))))))
                            (loop args 0)))))
@@ -240,7 +240,7 @@ class TestVariadicLambdaTailCalls:
         # Build (sum-all 1 2 ... 100) dynamically via range + apply-style fold
         expr = '''
         (let ((sum-all (lambda (. args)
-                         (letrec ((loop (lambda (lst acc)
+                         (let ((loop (lambda (lst acc)
                                           (if (list-null? lst) acc
                                               (loop (list-rest lst) (integer+ acc (list-first lst)))))))
                            (loop args 0)))))
@@ -252,7 +252,7 @@ class TestVariadicLambdaTailCalls:
         # The above is awkward - just call directly with 20 args
         expr2 = '''
         (let ((sum-all (lambda (. args)
-                         (letrec ((loop (lambda (lst acc)
+                         (let ((loop (lambda (lst acc)
                                           (if (list-null? lst) acc
                                               (loop (list-rest lst) (integer+ acc (list-first lst)))))))
                            (loop args 0)))))
@@ -267,7 +267,7 @@ class TestVariadicLambdaSelfLoop:
     def test_self_call_packs_old_param_into_rest(self, menai):
         """A self-call passing an earlier param as an excess arg captures its pre-update value."""
         expr = '''
-        (letrec ((f (lambda (n . acc)
+        (let ((f (lambda (n . acc)
                       (if (integer=? n 0)
                           acc
                           (f (integer- n 1) n)))))
@@ -278,7 +278,7 @@ class TestVariadicLambdaSelfLoop:
     def test_self_call_rest_is_a_list(self, menai):
         """The rest parameter receives a list, not the bare excess argument."""
         expr = '''
-        (letrec ((f (lambda (n . acc)
+        (let ((f (lambda (n . acc)
                       (if (integer=? n 0)
                           (list? acc)
                           (f (integer- n 1) n)))))
@@ -289,7 +289,7 @@ class TestVariadicLambdaSelfLoop:
     def test_self_call_with_two_fixed_params(self, menai):
         """Two fixed params: the self-call passes both old values as excess args."""
         expr = '''
-        (letrec ((f (lambda (n a . acc)
+        (let ((f (lambda (n a . acc)
                       (if (integer=? n 0)
                           acc
                           (f (integer- n 1) (integer+ a n) a n)))))

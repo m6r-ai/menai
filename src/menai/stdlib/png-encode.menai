@@ -10,7 +10,7 @@
 ; compressed with zlib-compress to form the IDAT chunk.  Each chunk carries a
 ; CRC-32 of its type and data.
 
-(letrec
+(let
   ((zlib-lib (import "zlib-compress"))
    (signature (string-hex->bytes "89504e470d0a1a0a"))
 
@@ -54,7 +54,7 @@
     (lambda (pixel channels)
       (if (vector? pixel)
           (if (integer=? (vector-length pixel) channels)
-              (letrec ((loop
+              (let ((loop
                         (lambda (c acc)
                           (if (integer>=? c channels)
                               acc
@@ -72,11 +72,11 @@
    (build-scanlines
     (lambda (pixels width height channels)
       (if (vector? pixels)
-          (letrec
+          (let
             ((row-bytes
               (lambda (row)
                 (list->bytes
-                  (letrec ((loop
+                  (let ((loop
                             (lambda (x acc)
                               (if (integer>=? x width)
                                   acc

@@ -15,10 +15,10 @@
 ; strings, and the delimiter must be a single-character string.  Anything else
 ; raises a runtime error.
 
-(letrec
+(let
   ((needs-quoting?
     (lambda (field delim)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i)
                   (if (integer>=? i (string-length field))
                       #f
@@ -36,7 +36,7 @@
    (encode-field
     (lambda (field delim)
       (if (needs-quoting? field delim)
-          (letrec ((loop
+          (let ((loop
                     (lambda (i acc)
                       (if (integer>=? i (string-length field))
                           (list-prepend acc "\"")
@@ -54,7 +54,7 @@
    ; Encode one row as its fields joined by the delimiter.
    (encode-row
     (lambda (row delim)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc first)
                   (if (integer>=? i (vector-length row))
                       (list->string (list-reverse acc))
@@ -81,7 +81,7 @@
                      (list-first rest))))
             (if (and (string? delim)
                      (integer=? (string-length delim) 1))
-                (letrec ((loop
+                (let ((loop
                           (lambda (i acc first)
                             (if (integer>=? i (vector-length rows))
                                 (list->string (list-reverse acc))

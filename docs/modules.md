@@ -18,7 +18,7 @@ form, which must be the final form of the module body:
 ```
 
 Each name must be a binding the module defines (by an enclosing `let` or
-`letrec`). A binding not named in the `export` form is private to the module.
+`let`). A binding not named in the `export` form is private to the module.
 
 ### Example module: `math_utils.menai`
 
@@ -48,7 +48,7 @@ An `export` form that is not the body of a module is a compile-time error.
 
 `(import "module-name")` loads a module as a **namespace**. Import is a
 compile-time operation, and it is only valid as the value of a `let` or
-`letrec` binding:
+`let` binding:
 
 ```menai
 (let ((math (import "math_utils")))
@@ -65,7 +65,7 @@ compiler keeps full static knowledge of it.
 A namespace is a compile-time construct, not an ordinary value. A namespace name
 may only be:
 
-- bound directly by a `let`/`letrec` binding whose value is an `import`, and
+- bound directly by a `let` binding whose value is an `import`, and
 - used as the first argument of a member access, `(:: namespace member)`.
 
 Using a namespace name anywhere else — passing it to a function, storing it in a
@@ -174,7 +174,7 @@ struct available as a constructor and pattern head:
 
 ```menai
 ; shapes.menai
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (make-point (lambda (x y) (point x y)))
          (point-distance (lambda (p1 p2)
                            (let ((dx (integer- (struct-get p1 'x) (struct-get p2 'x)))

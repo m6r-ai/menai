@@ -168,7 +168,7 @@ class TestClosureMoveElimination:
         back-propagated.
         """
         src = """
-            (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+            (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                      (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
               (list-length (filter-list even? (list 0 1 2 3 4 5))))
         """
@@ -179,7 +179,7 @@ class TestClosureMoveElimination:
     def test_letrec_closure_correct_result(self, menai):
         """Verify the optimised letrec code produces correct results."""
         result = menai.evaluate("""
-            (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+            (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                      (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
               (list-length (filter-list even? (list 0 1 2 3 4 5))))
         """)

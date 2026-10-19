@@ -5,11 +5,11 @@ calls, which evaluate all arguments and pass them to the function, core forms ha
 special evaluation rules — some arguments are evaluated lazily, some are not
 evaluated at all.
 
-## let — parallel bindings
+## let — local bindings
 
-`let` creates local bindings where all binding expressions are evaluated in the
-enclosing scope, then bound to their names simultaneously. Bindings cannot reference
-each other.
+`let` is Menai's only binding form. Every binding name is in scope for every
+binding value and for the body, so a binding may reference any sibling — including
+itself and the other bindings in the form.
 
 ```menai
 (let ((x 5) (y 10))
@@ -17,37 +17,28 @@ each other.
 → 15
 ```
 
-The binding expressions `5` and `10` are evaluated before `x` or `y` are bound. This
-means `y` cannot reference `x`:
+Because all names are in scope throughout, a later binding can reference an
+earlier one. This covers the case other Lisps spell `let*`:
 
 ```menai
-(let ((x 5) (y (integer* x 2))) ...)   ; ERROR: x is not in scope yet
+(let ((x 5) (y (integer* x 2)))
+  (integer+ x y))
+→ 15
 ```
 
-Use `letrec` for sequential bindings where later bindings can reference earlier ones.
+The dependency analyser orders the bindings, and any binding that does not
+actually participate in a cycle is hoisted to a parallel group internally, so
+writing a sequential chain costs nothing at runtime.
 
-### Syntax
+### Recursion
 
-```menai
-(let ((name1 expr1) (name2 expr2) ...) body)
-```
-
-The body is a single expression. Use `let` for independent bindings.
-
-Binding names may not be reserved words — see
-[Syntax — Reserved words](syntax.md#reserved-words).
-
-## letrec — recursive bindings
-
-`letrec` creates bindings where all names are in scope for all binding expressions.
-This enables self-recursion, mutual recursion, and sequential bindings where a
-binding depends on an earlier one.
+Self-recursion:
 
 ```menai
-(letrec ((fact (lambda (n)
-                 (if (integer<=? n 1)
-                     1
-                     (integer* n (fact (integer- n 1)))))))
+(let ((fact (lambda (n)
+              (if (integer<=? n 1)
+                  1
+                  (integer* n (fact (integer- n 1)))))))
   (fact 5))
 → 120
 ```
@@ -55,103 +46,91 @@ binding depends on an earlier one.
 Mutual recursion:
 
 ```menai
-(letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
-         (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
+(let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+      (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
   (even? 10))
 → #t
 ```
 
-### Sequential bindings
+### Struct definitions in let
 
-Because every name is in scope for every binding expression, a later binding can
-reference an earlier one. This covers the case other Lisps spell `let*`:
-
-```menai
-(letrec ((x 5) (y (integer* x 2)))
-  (integer+ x y))
-→ 15
-```
-
-The dependency analyser orders the bindings, and any binding that does not
-actually participate in a cycle is hoisted to a `let` internally, so writing a
-sequential chain as `letrec` costs nothing at runtime.
-
-### Struct definitions in letrec
-
-Struct type definitions can appear in `letrec` alongside function definitions. They
-are hoisted to `let` automatically. Use this when defining a module that exports a
-struct type alongside its associated functions:
-
-```menai
-(letrec ((point (struct (x y)))
-         (make-point (lambda (x y) (point x y)))
-         (distance (lambda (p1 p2)
-                     (let ((dx (integer- (struct-get p1 'x) (struct-get p2 'x)))
-                           (dy (integer- (struct-get p1 'y) (struct-get p2 'y))))
-                       (integer+ (integer* dx dx) (integer* dy dy)))))
-  (dict "point" point "make-point" make-point "distance" distance))
-```
-
-### Enum definitions in letrec
-
-Enum type definitions can appear in `letrec` alongside function definitions, for the
-same reason: they have no recursive semantics and are hoisted to `let` automatically.
-Use this when defining a module that exports an enum type alongside its associated
+Struct type definitions can appear alongside function definitions. Use this when
+defining a module that exports a struct type together with its associated
 functions:
 
 ```menai
-(letrec ((state (enum (idle running stopped)))
-         (describe (lambda (s)
-                     (match s
-                       ((: state 'idle) "idle")
-                       ((: state 'running) "running")
-                       ((: state 'stopped) "stopped")))))
+(let ((point (struct (x y)))
+      (make-point (lambda (x y) (point x y)))
+      (distance (lambda (p1 p2)
+                  (let ((dx (integer- (struct-get p1 'x) (struct-get p2 'x)))
+                        (dy (integer- (struct-get p1 'y) (struct-get p2 'y))))
+                    (integer+ (integer* dx dx) (integer* dy dy))))))
+  (dict "point" point "make-point" make-point "distance" distance))
+```
+
+### Enum definitions in let
+
+Enum type definitions can appear alongside function definitions for the same
+reason:
+
+```menai
+(let ((state (enum (idle running stopped)))
+      (describe (lambda (s)
+                  (match s
+                    ((: state 'idle) "idle")
+                    ((: state 'running) "running")
+                    ((: state 'stopped) "stopped")))))
   (dict "state" state "describe" describe))
 ```
 
 ### Syntax
 
 ```menai
-(letrec ((name1 expr1) (name2 expr2) ...) body)
+(let ((name1 expr1) (name2 expr2) ...) body)
 ```
 
-Use `letrec` when a binding depends on another binding in the same form, or when
-you need functions that reference themselves or each other.
+The body is a single expression.
 
-Binding names must be unique within one `letrec`. A repeated name is ambiguous
-rather than a shadow, because a recursive group defines each name once:
+Binding names may not be reserved words — see
+[Syntax — Reserved words](syntax.md#reserved-words).
+
+### Binding names must be unique
+
+A repeated name is ambiguous rather than a shadow, because the form defines each
+name once:
 
 ```menai
-(letrec ((x 1) (x (integer+ x 10))) x)   ; ERROR: duplicate binding name
+(let ((x 1) (x (integer+ x 10))) x)   ; ERROR: duplicate binding name
 ```
 
-A `letrec` binding may shadow a name bound by an enclosing `let`, but a nested
-`letrec` cannot shadow a `letrec` binding of the same name — the inner group's own
-binding wins, so the reference becomes a self-reference. To pass an outer value
-down, bind it under a different name:
+To shadow, nest a `let`. A nested `let` may shadow an enclosing binding, but the
+inner binding's own value cannot reference the outer one of the same name — the
+inner name wins, so the reference becomes a self-reference. Bind the outer value
+under a different name to pass it down:
 
 ```menai
-(letrec ((outer 1))
-  (letrec ((inner (integer+ outer 10)))
+(let ((outer 1))
+  (let ((inner (integer+ outer 10)))
     inner))
 → 11
 ```
+
+### Self-reference
 
 A non-lambda binding may not refer to itself, since its value would have nothing
 to read. Wrap the reference in a lambda to defer it:
 
 ```menai
-(letrec ((x (integer+ x 1))) x)   ; ERROR: cannot refer to itself
-(letrec ((x (list (lambda () x)))) x)   ; OK: reference is deferred
+(let ((x (integer+ x 1))) x)   ; ERROR: cannot refer to itself
+(let ((x (list (lambda () x)))) x)   ; OK: reference is deferred
 ```
 
 ## No sequencing form
 
-Menai has no `begin` or sequencing form. Both binding forms (`let`, `letrec`)
-and `lambda` accept exactly one body expression. Because Menai is
-pure, there are no side effects to sequence — if an intermediate result is
-unused, it is dead code and should be removed. Use `letrec` for multi-step
-computations where each step depends on the previous one.
+Menai has no `begin` or sequencing form. `let` and `lambda` accept exactly one
+body expression. Because Menai is pure, there are no side effects to sequence —
+if an intermediate result is unused, it is dead code and should be removed. Use
+`let` for multi-step computations where each step depends on the previous one.
 
 ## lambda — anonymous functions
 
@@ -219,10 +198,10 @@ Recursive functions in tail position do not consume stack space. This means
 recursion can be used as a loop without risk of stack overflow:
 
 ```menai
-(letrec ((loop (lambda (i acc)
-                 (if (integer>=? i 1000000)
-                     acc
-                     (loop (integer+ i 1) (integer+ acc i))))))
+(let ((loop (lambda (i acc)
+              (if (integer>=? i 1000000)
+                  acc
+                  (loop (integer+ i 1) (integer+ acc i))))))
   (loop 0 0))
 → 499999500000
 ```
@@ -363,9 +342,8 @@ The message can be a computed string:
 ## import — load a module
 
 `import` loads a module as a namespace. It is a compile-time operation — the module
-is compiled once and cached. It is only valid as the value of a `let`/`letrec`
-binding; access an export with member access. See [Modules](modules.md) for full
-details.
+is compiled once and cached. It is only valid as the value of a `let` binding;
+access an export with member access. See [Modules](modules.md) for full details.
 
 ```menai
 (let ((math (import "math_utils")))

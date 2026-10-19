@@ -1,6 +1,6 @@
 ; Tests for gzip-compress.menai
 
-(letrec
+(let
   ((gzip-compress (import "gzip-compress"))
    (gzip-decompress (import "gzip-decompress"))
    (t (import "menai-test"))

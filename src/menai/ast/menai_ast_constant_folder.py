@@ -275,7 +275,6 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         self._special_form_jump_table = {
             'if': self._optimize_if,
             'let': self._optimize_let,
-            'letrec': self._optimize_let,
             'lambda': self._optimize_lambda,
             'quote': self._optimize_quote,
             'error': self._optimize_error,
@@ -385,7 +384,7 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
 
     def _optimize_let(self, expr: MenaiASTList) -> MenaiASTNode:
         """
-        Optimize 'let'/'letrec' special form: (let ((var val) ...) body)
+        Optimize the 'let' special form: (let ((var val) ...) body)
 
         Optimizes binding values and body.
         """

@@ -39,7 +39,7 @@ class TestLetrecSplittingSemantics:
         all-moves is a list value, get-candidates is a lambda that uses it.
         """
         src = '''
-        (letrec ((all-moves (list "U" "D" "F"))
+        (let ((all-moves (list "U" "D" "F"))
                  (get-candidates (lambda (last-move)
                                    (filter-list (lambda (m) (string!=? m last-move))
                                                 all-moves))))
@@ -53,7 +53,7 @@ class TestLetrecSplittingSemantics:
         Both lambdas should see the same value.
         """
         src = '''
-        (letrec ((base 10)
+        (let ((base 10)
                  (add-base (lambda (x) (integer+ x base)))
                  (mul-base (lambda (x) (integer* x base))))
           (list (add-base 5) (mul-base 3)))
@@ -66,7 +66,7 @@ class TestLetrecSplittingSemantics:
         The recursive group must stay as a letrec; the non-lambda becomes a let.
         """
         src = '''
-        (letrec ((limit 0)
+        (let ((limit 0)
                  (even? (lambda (n) (if (integer=? n limit) #t (odd?  (integer- n 1)))))
                  (odd?  (lambda (n) (if (integer=? n limit) #f (even? (integer- n 1))))))
           (even? 10))
@@ -78,7 +78,7 @@ class TestLetrecSplittingSemantics:
         Multiple non-lambda bindings each become their own let.
         """
         src = '''
-        (letrec ((a 1)
+        (let ((a 1)
                  (b 2)
                  (c 3)
                  (sum (lambda () (integer+ a (integer+ b c)))))
@@ -93,7 +93,7 @@ class TestLetrecSplittingSemantics:
         that depends on it (or independently if there is no dependency).
         """
         src = '''
-        (letrec ((double (lambda (x) (integer* x factor)))
+        (let ((double (lambda (x) (integer* x factor)))
                  (factor 2))
           (double 7))
         '''
@@ -105,7 +105,7 @@ class TestLetrecSplittingSemantics:
         Each should become a separate let in the correct order.
         """
         src = '''
-        (letrec ((a 3)
+        (let ((a 3)
                  (b (integer* a 2))
                  (c (integer+ a b))
                  (show (lambda () c)))
@@ -119,17 +119,17 @@ class TestLetrecSplittingSemantics:
         become a let, not a letrec.  It must still be callable.
         """
         src = '''
-        (letrec ((square (lambda (x) (integer* x x))))
+        (let ((square (lambda (x) (integer* x x))))
           (square 6))
         '''
         helpers.assert_evaluates_to(menai, src, '36')
 
     def test_self_recursive_lambda_stays_letrec(self, menai, helpers):
         """
-        A self-recursive lambda must remain a letrec so it can reference itself.
+        A self-recursive lambda must remain a $letrec (the internal recursive node) so it can reference itself.
         """
         src = '''
-        (letrec ((fact (lambda (n)
+        (let ((fact (lambda (n)
                          (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1)))))))
           (fact 6))
         '''
@@ -140,7 +140,7 @@ class TestLetrecSplittingSemantics:
         Mutually recursive lambdas must remain in a single letrec group.
         """
         src = '''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd?  (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd?  (integer- n 1)))))
                  (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 100))
         '''
@@ -152,7 +152,7 @@ class TestLetrecSplittingSemantics:
         The non-lambda becomes a let; the recursive lambda stays letrec.
         """
         src = '''
-        (letrec ((base 10)
+        (let ((base 10)
                  (fact (lambda (n)
                          (if (integer<=? n 1) base (integer* n (fact (integer- n 1)))))))
           (fact 5))
@@ -168,7 +168,7 @@ class TestLetrecSplittingSemantics:
         another lambda (closure over closure).
         """
         src = '''
-        (letrec ((offset 100)
+        (let ((offset 100)
                  (make-adder (lambda (x) (lambda (y) (integer+ y (integer+ x offset))))))
           ((make-adder 5) 3))
         '''
@@ -179,7 +179,7 @@ class TestLetrecSplittingSemantics:
         Non-lambda binding that is a list literal (the motivating rubiks_cube case).
         """
         src = '''
-        (letrec ((moves (list "U" "D" "F" "B" "L" "R"))
+        (let ((moves (list "U" "D" "F" "B" "L" "R"))
                  (count-moves (lambda () (list-length moves))))
           (count-moves))
         '''
@@ -190,7 +190,7 @@ class TestLetrecSplittingSemantics:
         Non-lambda binding whose value is a function call result.
         """
         src = '''
-        (letrec ((doubled (integer* 6 7))
+        (let ((doubled (integer* 6 7))
                  (show (lambda () doubled)))
           (show))
         '''
@@ -202,7 +202,7 @@ class TestLetrecSplittingSemantics:
         All bindings are independent; order is topological.
         """
         src = '''
-        (letrec ((x 1)
+        (let ((x 1)
                  (y 2)
                  (z 3))
           (integer+ x (integer+ y z)))
@@ -214,7 +214,7 @@ class TestLetrecSplittingSemantics:
         The body of the split form is still in tail position; TCO must work.
         """
         src = '''
-        (letrec ((limit 100000)
+        (let ((limit 100000)
                  (loop (lambda (n)
                           (if (integer>=? n limit) n (loop (integer+ n 1))))))
           (loop 0))
@@ -226,7 +226,7 @@ class TestLetrecSplittingSemantics:
         TCO still works for the mutually recursive group after splitting.
         """
         src = '''
-        (letrec ((zero 0)
+        (let ((zero 0)
                  (even? (lambda (n) (if (integer=? n zero) #t (odd?  (integer- n 1)))))
                  (odd?  (lambda (n) (if (integer=? n zero) #f (even? (integer- n 1))))))
           (even? 100000))
@@ -264,17 +264,17 @@ class TestLetrecSplittingStructure:
 
     def test_pure_recursive_letrec_unchanged(self):
         """
-        A letrec with only mutually recursive lambdas must remain a letrec.
+        A letrec with only mutually recursive lambdas must remain a $letrec (the internal recursive node).
         """
         from menai.ast.menai_ast import MenaiASTList, MenaiASTSymbol
 
         result = self._desugar('''
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd?  (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd?  (integer- n 1)))))
                  (odd?  (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (even? 4))
         ''')
-        # Top-level form must be letrec
-        assert self._head_symbol(result) == 'letrec'
+        # Top-level form must be the internal recursive node
+        assert self._head_symbol(result) == '$letrec'
 
     def test_non_recursive_lambda_becomes_let(self):
         """
@@ -283,11 +283,11 @@ class TestLetrecSplittingStructure:
         from menai.ast.menai_ast import MenaiASTList, MenaiASTSymbol
 
         result = self._desugar('''
-        (letrec ((square (lambda (x) (integer* x x))))
+        (let ((square (lambda (x) (integer* x x))))
           (square 5))
         ''')
         # Non-recursive lambda -> let
-        assert self._head_symbol(result) == 'let'
+        assert self._head_symbol(result) == '$let'
 
     def test_non_lambda_binding_becomes_let(self):
         """
@@ -296,31 +296,31 @@ class TestLetrecSplittingStructure:
         from menai.ast.menai_ast import MenaiASTList
 
         result = self._desugar('''
-        (letrec ((x 42))
+        (let ((x 42))
           x)
         ''')
-        assert self._head_symbol(result) == 'let'
+        assert self._head_symbol(result) == '$let'
 
     def test_mixed_produces_let_wrapping_letrec(self):
         """
         A non-lambda binding followed by a recursive lambda group must produce
-        (let ((non-lambda ...)) (letrec ((lambda ...)) body)).
+        ($let ((non-lambda ...)) ($letrec ((lambda ...)) body)).
         """
         from menai.ast.menai_ast import MenaiASTList, MenaiASTSymbol
 
         result = self._desugar('''
-        (letrec ((base 10)
+        (let ((base 10)
                  (fact (lambda (n)
                           (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1)))))))
           (fact 5))
         ''')
         # Outer form: let (for base)
-        assert self._head_symbol(result) == 'let'
+        assert self._head_symbol(result) == '$let'
 
-        # Inner form (body of the let): letrec (for fact)
+        # Inner form (body of the let): $letrec (for fact)
         assert isinstance(result, MenaiASTList)
         inner = result.elements[2]
-        assert self._head_symbol(inner) == 'letrec'
+        assert self._head_symbol(inner) == '$letrec'
 
     def test_two_independent_non_lambda_bindings_produce_single_let(self):
         """
@@ -330,12 +330,12 @@ class TestLetrecSplittingStructure:
         from menai.ast.menai_ast import MenaiASTList, MenaiASTSymbol
 
         result = self._desugar('''
-        (letrec ((a 1)
+        (let ((a 1)
                  (b 2))
           (integer+ a b))
         ''')
         # Single flat let with both bindings
-        assert self._head_symbol(result) == 'let'
+        assert self._head_symbol(result) == '$let'
         assert isinstance(result, MenaiASTList)
         bindings = result.elements[1]
         assert isinstance(bindings, MenaiASTList)
@@ -354,18 +354,18 @@ class TestLetrecSplittingStructure:
         from menai.ast.menai_ast import MenaiASTList, MenaiASTSymbol
 
         result = self._desugar('''
-        (letrec ((zero 0)
+        (let ((zero 0)
                  (even? (lambda (n) (if (integer=? n zero) #t (odd?  (integer- n 1)))))
                  (odd?  (lambda (n) (if (integer=? n zero) #f (even? (integer- n 1))))))
           (even? 4))
         ''')
         # Outer: let (for zero)
-        assert self._head_symbol(result) == 'let'
+        assert self._head_symbol(result) == '$let'
 
-        # Inner: letrec (for even? and odd?)
+        # Inner: $letrec (for even? and odd?)
         assert isinstance(result, MenaiASTList)
         inner = result.elements[2]
-        assert self._head_symbol(inner) == 'letrec'
+        assert self._head_symbol(inner) == '$letrec'
 
         # The letrec must contain both even? and odd?
         assert isinstance(inner, MenaiASTList)
@@ -386,16 +386,16 @@ class TestLetrecSplittingEdgeCases:
 
     def test_single_non_lambda_binding(self, menai, helpers):
         """Single non-lambda binding in letrec."""
-        helpers.assert_evaluates_to(menai, '(letrec ((x 99)) x)', '99')
+        helpers.assert_evaluates_to(menai, '(let ((x 99)) x)', '99')
 
     def test_single_recursive_lambda(self, menai, helpers):
         """Single self-recursive lambda — must stay letrec."""
-        src = '(letrec ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 5))'
+        src = '(let ((f (lambda (n) (if (integer<=? n 0) 0 (f (integer- n 1)))))) (f 5))'
         helpers.assert_evaluates_to(menai, src, '0')
 
     def test_single_non_recursive_lambda(self, menai, helpers):
         """Single non-recursive lambda — becomes let."""
-        src = '(letrec ((f (lambda (x) (integer+ x 1)))) (f 41))'
+        src = '(let ((f (lambda (x) (integer+ x 1)))) (f 41))'
         helpers.assert_evaluates_to(menai, src, '42')
 
     def test_binding_that_references_earlier_non_lambda(self, menai, helpers):
@@ -404,7 +404,7 @@ class TestLetrecSplittingEdgeCases:
         defined earlier in the same letrec.
         """
         src = '''
-        (letrec ((a 5)
+        (let ((a 5)
                  (b (integer* a 2))
                  (f (lambda () b)))
           (f))
@@ -417,7 +417,7 @@ class TestLetrecSplittingEdgeCases:
         Both become lets; the inner one must be in scope when the outer is called.
         """
         src = '''
-        (letrec ((double (lambda (x) (integer* x 2)))
+        (let ((double (lambda (x) (integer* x 2)))
                  (quad   (lambda (x) (double (double x)))))
           (quad 3))
         '''
@@ -425,17 +425,17 @@ class TestLetrecSplittingEdgeCases:
 
     def test_non_lambda_binding_is_boolean(self, menai, helpers):
         """Non-lambda binding that is a boolean literal."""
-        src = '(letrec ((flag #t) (f (lambda () flag))) (f))'
+        src = '(let ((flag #t) (f (lambda () flag))) (f))'
         helpers.assert_evaluates_to(menai, src, '#t')
 
     def test_non_lambda_binding_is_string(self, menai, helpers):
         """Non-lambda binding that is a string literal."""
-        src = '(letrec ((greeting "hello") (f (lambda () greeting))) (f))'
+        src = '(let ((greeting "hello") (f (lambda () greeting))) (f))'
         helpers.assert_evaluates_to(menai, src, '"hello"')
 
     def test_non_lambda_binding_is_empty_list(self, menai, helpers):
         """Non-lambda binding that is an empty list."""
-        src = '(letrec ((empty (list)) (f (lambda () empty))) (f))'
+        src = '(let ((empty (list)) (f (lambda () empty))) (f))'
         helpers.assert_evaluates_to(menai, src, '()')
 
     def test_letrec_inside_letrec(self, menai, helpers):
@@ -443,9 +443,9 @@ class TestLetrecSplittingEdgeCases:
         Nested letrec forms — both should be split independently.
         """
         src = '''
-        (letrec ((outer-val 10)
+        (let ((outer-val 10)
                  (outer-f (lambda (x)
-                            (letrec ((inner-val 5)
+                            (let ((inner-val 5)
                                      (inner-f (lambda (y) (integer+ y inner-val))))
                               (integer+ x (inner-f outer-val))))))
           (outer-f 3))
@@ -459,7 +459,7 @@ class TestLetrecSplittingEdgeCases:
         """
         src = '''
         (let ((base 100))
-          (letrec ((offset 7)
+          (let ((offset 7)
                    (f (lambda (x) (integer+ x (integer+ base offset)))))
             (f 0)))
         '''
@@ -472,7 +472,7 @@ class TestLetrecSplittingEdgeCases:
         """
         src = '''
         (let ((x 1))
-          (letrec ((x 2)
+          (let ((x 2)
                    (f (lambda () x)))
             (f)))
         '''
@@ -484,7 +484,7 @@ class TestLetrecSplittingEdgeCases:
         metadata is present (regression guard).
         """
         src = '''
-        (letrec ((a 1)
+        (let ((a 1)
                  (b (integer+ a 1))
                  (f (lambda (n) (integer+ n b))))
           (f a))
@@ -511,14 +511,14 @@ class TestLetrecSelfReferentialNonLambda:
     """
 
     def test_self_referential_non_lambda_is_compile_error(self, menai):
-        """The canonical case: (letrec ((x (integer+ x 1))) x)."""
+        """The canonical case: (let ((x (integer+ x 1))) x)."""
         with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
-            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+            menai.evaluate('(let ((x (integer+ x 1))) x)')
 
     def test_self_referential_non_lambda_error_has_location(self, menai):
         """The error must carry a source location, not be a bare assert."""
         with pytest.raises(MenaiEvalError) as exc_info:
-            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+            menai.evaluate('(let ((x (integer+ x 1))) x)')
 
         err = exc_info.value
         assert err.suggestion is not None
@@ -531,23 +531,23 @@ class TestLetrecSelfReferentialNonLambda:
         escape to the user.
         """
         with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
-            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+            menai.evaluate('(let ((x (integer+ x 1))) x)')
 
         # The specific internal failure mode that used to leak.
         try:
-            menai.evaluate('(letrec ((x (integer+ x 1))) x)')
+            menai.evaluate('(let ((x (integer+ x 1))) x)')
         except MenaiEvalError as e:
             assert 'has no assigned slot' not in str(e)
 
     def test_direct_self_reference_in_call(self, menai):
         """A self-reference buried in a nested call is also rejected."""
         with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
-            menai.evaluate('(letrec ((x (integer* 2 (integer+ x 1)))) x)')
+            menai.evaluate('(let ((x (integer* 2 (integer+ x 1)))) x)')
 
     def test_self_reference_in_list_literal(self, menai):
         """A self-reference inside a list literal is rejected."""
         with pytest.raises(MenaiEvalError, match="cannot refer to itself"):
-            menai.evaluate('(letrec ((x (list x))) x)')
+            menai.evaluate('(let ((x (list x))) x)')
 
     def test_legitimate_self_reference_through_lambda_still_works(self, menai, helpers):
         """
@@ -555,10 +555,10 @@ class TestLetrecSelfReferentialNonLambda:
         lambda body is not evaluated during binding initialisation.  This must
         continue to work.
         """
-        src = '(letrec ((x (list (lambda () x)))) (function? (list-first x)))'
+        src = '(let ((x (list (lambda () x)))) (function? (list-first x)))'
         helpers.assert_evaluates_to(menai, src, '#t')
 
     def test_mutual_non_lambda_cycle_is_rejected(self, menai):
         """A cycle between two non-lambda bindings is also rejected."""
         with pytest.raises(MenaiEvalError, match="cannot refer to '"):
-            menai.evaluate('(letrec ((a (integer+ b 1)) (b (integer+ a 1))) a)')
+            menai.evaluate('(let ((a (integer+ b 1)) (b (integer+ a 1))) a)')

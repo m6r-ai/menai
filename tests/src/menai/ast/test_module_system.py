@@ -71,7 +71,7 @@ class TestModuleSystemBasics:
         """Test that functions not in the export form are private."""
         module_file = tmp_path / "private_test.menai"
         module_file.write_text("""
-(letrec ((helper (lambda (x) (integer* x 2)))
+(let ((helper (lambda (x) (integer* x 2)))
          (public-fn (lambda (x) (helper x)))
          (also-public (lambda (x) (integer+ x 1))))
   (export public-fn also-public))
@@ -349,7 +349,7 @@ class TestModuleMemberInLetrecBindingValue:
         menai = Menai(module_path=[str(tmp_path)])
 
         result = menai.evaluate('''
-(letrec ((math (import "math_utils"))
+(let ((math (import "math_utils"))
        (square (:: math square))
        (n (square 5)))
   n)
@@ -659,7 +659,7 @@ class TestModuleCompilation:
     def test_module_with_letrec(self, tmp_path):
         """Test module using letrec for recursion."""
         (tmp_path / "recursive.menai").write_text("""
-(letrec ((factorial (lambda (n)
+(let ((factorial (lambda (n)
                       (if (integer<=? n 1)
                           1
                           (integer* n (factorial (integer- n 1)))))))
@@ -825,7 +825,7 @@ class TestImportedStructAsPatternHead:
     def test_imported_struct_pattern_head(self, tmp_path):
         """An imported struct bound to a local name is a valid pattern head."""
         (tmp_path / "shapes.menai").write_text("""
-(letrec ((point (struct (x y)))
+(let ((point (struct (x y)))
          (make-point (lambda (x y) (point x y))))
   (export point make-point))
 """)
@@ -846,7 +846,7 @@ class TestImportedStructAsPatternHead:
     def test_imported_struct_constructor(self, tmp_path):
         """An imported struct bound to a local name is a valid constructor."""
         (tmp_path / "shapes.menai").write_text("""
-(letrec ((point (struct (x y))))
+(let ((point (struct (x y))))
   (export point))
 """)
 
@@ -868,7 +868,7 @@ class TestImportedEnumAsPatternHead:
     def test_imported_enum_pattern_head(self, tmp_path):
         """An imported enum bound to a local name is a valid pattern head."""
         (tmp_path / "traffic.menai").write_text("""
-(letrec ((light (enum (red amber green)))
+(let ((light (enum (red amber green)))
          (next (lambda (l)
                  (match l
                    ((: light 'red) (light 'green))
@@ -891,7 +891,7 @@ class TestImportedEnumAsPatternHead:
     def test_imported_enum_pattern_head_does_not_bind_the_variant(self, tmp_path):
         """An enum pattern's quoted variant is a name, not a variable binding."""
         (tmp_path / "traffic.menai").write_text("""
-(letrec ((light (enum (red amber green)))
+(let ((light (enum (red amber green)))
          (green (lambda () (light 'green)))
          (describe (lambda (l)
                      (match l
@@ -936,7 +936,7 @@ class TestDirectModuleCompilation:
         """A directly-compiled module exports only the bindings it names."""
         module_file = tmp_path / "private_test.menai"
         module_file.write_text("""
-(letrec ((helper (lambda (x) (integer* x 2)))
+(let ((helper (lambda (x) (integer* x 2)))
          (public-fn (lambda (x) (helper x))))
   (export public-fn))
 """)
@@ -968,7 +968,7 @@ class TestDirectModuleCompilation:
         """A directly-compiled letrec-based module evaluates to a dict of exports."""
         module_file = tmp_path / "letrec_module.menai"
         module_file.write_text("""
-(letrec ((x 10)
+(let ((x 10)
        (y (integer+ x 5)))
   (export x y))
 """)

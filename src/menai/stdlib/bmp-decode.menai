@@ -3,7 +3,7 @@
 ; Only uncompressed files (compression = 0) with 24 or 32 bits per pixel are
 ; supported.  Anything else raises a runtime error.
 
-(letrec
+(let
   ((read-header
     (lambda (b)
       (if (integer<? (bytes-length b) 54)
@@ -57,7 +57,7 @@
    (decode-row
     (lambda (b start width bpp)
       (let ((bytes-per-pixel (integer/ bpp 8)))
-        (letrec ((loop
+        (let ((loop
                   (lambda (x acc)
                     (if (integer>=? x width)
                         (list->vector (list-reverse acc))
@@ -90,7 +90,7 @@
    (decode-rows
     (lambda (b data-offset width height bpp)
       (let ((row-stride (integer* (integer/ (integer+ (integer* width bpp) 31) 32) 4)))
-        (letrec ((loop
+        (let ((loop
                   (lambda (y acc)
                     (if (integer>=? y (integer-abs height))
                         (if (integer>? height 0)
@@ -117,7 +117,7 @@
    (decode
     (lambda (b)
       (if (bytes? b)
-          (letrec ((header (read-header b))
+          (let ((header (read-header b))
                  (width (dict-get header "width"))
                  (height (dict-get header "height"))
                  (bpp (dict-get header "bpp"))

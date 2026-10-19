@@ -50,10 +50,10 @@ _SOURCES = {
           (match n (0 100) (1 200) (2 300) (_ 0)))
     """,
     "two-loops": """
-        (let ((a (letrec ((f (lambda (n acc)
+        (let ((a (let ((f (lambda (n acc)
                                (if (integer=? n 0) acc (f (integer- n 1) (integer+ acc n))))))
                    (f 10 0)))
-              (b (letrec ((g (lambda (m s)
+              (b (let ((g (lambda (m s)
                                (if (integer=? m 0) s (g (integer- m 1) (integer* s m))))))
                    (g 10 1))))
           (integer+ a b))
@@ -63,7 +63,7 @@ _SOURCES = {
           (integer+ (integer+ 1000 x) (integer+ 1000 x)))
     """,
     "tail-loop": """
-        (letrec ((f (lambda (n acc)
+        (let ((f (lambda (n acc)
                       (if (integer=? n 0)
                           acc
                           (f (integer- n 1) (integer+ acc 1))))))

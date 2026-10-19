@@ -12,7 +12,7 @@
 ; a repetition count above the limit, a non-string where a string is required, or
 ; a replacement that refers to a group the pattern lacks raises an error.
 
-(letrec
+(let
   (; regexp-op names the variants of a parsed node.  A node is a list whose first
    ; element is one of these variants and whose remaining elements are the node's
    ; operands.  A group node wraps a sub-node and carries its 1-based group number,
@@ -85,7 +85,7 @@
 
    (regexp-parse-class
     (lambda (p i)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j ranges)
                   (if (integer>=? j (string-length p))
                       (error "Unterminated character class in pattern")
@@ -138,7 +138,7 @@
                  (list (regexp-n-group g (list-first inner)) (integer+ (list-nth inner 1) 1) (list-nth inner 2))
                  (error "Unterminated group in pattern"))))
           ("["
-           (letrec              ((neg
+           (let              ((neg
                (and (integer<? (integer+ i 1) (string-length p))
                     (string=? (string-nth p (integer+ i 1)) "^")))
 
@@ -159,7 +159,7 @@
    ; (list <node> <next-index> <next-group>).
    (regexp-parse-quant
     (lambda (p i g)
-      (letrec ((atom-result (regexp-parse-atom p i g))
+      (let ((atom-result (regexp-parse-atom p i g))
              (node (list-first atom-result))
              (after (list-nth atom-result 1))
              (next (list-nth atom-result 2)))
@@ -184,7 +184,7 @@
    ; Raises when a count exceeds regexp-repeat-limit.
    (regexp-parse-brace
     (lambda (p i)
-      (letrec
+      (let
         ((digits
           (lambda (j)
             (if (and (integer<? j (string-length p))
@@ -202,7 +202,7 @@
                       n))))))
         (if (integer>=? (integer+ i 1) (string-length p))
             #none
-            (letrec ((start (integer+ i 1))
+            (let ((start (integer+ i 1))
                    (j (digits start)))
               (if (integer=? j start)
                   #none
@@ -232,14 +232,14 @@
    ; numbered separately.
    (regexp-expand-repeat
     (lambda (node lo hi)
-      (letrec ((copies
+      (let ((copies
                 (lambda (n)
                   (if (integer<=? n 0)
                       (regexp-n-empty)
                       (regexp-n-seq node (copies (integer- n 1)))))))
         (if (none? hi)
             (regexp-n-seq (copies lo) (regexp-n-star node))
-            (letrec ((optionals
+            (let ((optionals
                       (lambda (n)
                         (if (integer<=? n 0)
                             (regexp-n-empty)
@@ -248,7 +248,7 @@
 
    (regexp-parse-seq
     (lambda (p i g)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j node gn)
                   (if (integer>=? j (string-length p))
                       (list node j gn)
@@ -267,9 +267,9 @@
 
    (regexp-parse-alt
     (lambda (p i g)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j node gn)
-                  (letrec ((seq (regexp-parse-seq p j gn))
+                  (let ((seq (regexp-parse-seq p j gn))
                          (snode (list-first seq))
                          (after (list-nth seq 1))
                          (next (list-nth seq 2)))
@@ -292,7 +292,7 @@
    (regexp-class-match?
     (lambda (ranges negated ch)
       (let ((cp (string->integer-codepoint ch)))
-        (letrec ((loop
+        (let ((loop
                   (lambda (rs)
                     (if (list-null? rs)
                         negated
@@ -307,7 +307,7 @@
    ; number `n` set to `value`.  Group n occupies element n-1.
    (regexp-caps-set
     (lambda (caps n value)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i rest acc)
                   (if (list-null? rest)
                       (list-reverse acc)
@@ -393,7 +393,7 @@
                (k (list pos caps))
                r)))
         ((: regexp-op 'star)
-         (letrec
+         (let
            ((consume
              (lambda (p c acc)
                (let ((r
@@ -413,7 +413,7 @@
              (lambda (states)
                (if (list-null? states)
                    #none
-                   (letrec ((st (list-first states))
+                   (let ((st (list-first states))
                           (r (k (list (list-nth st 0) (list-nth st 1)))))
                      (if (none? r)
                          (try (list-rest states))
@@ -444,7 +444,7 @@
         ((: regexp-op 'char) (list-nth node 1))
         ((: regexp-op 'group) (regexp-literal-prefix (list-nth node 2)))
         ((: regexp-op 'seq)
-         (letrec ((a (list-nth node 1))
+         (let ((a (list-nth node 1))
                 (pa (regexp-literal-prefix a)))
            (if (integer=? (string-length pa) (regexp-literal-length a))
                (string-concat pa (regexp-literal-prefix (list-nth node 2)))
@@ -483,7 +483,7 @@
    ; capture vector, which is all #none.
    (regexp-match-from-start
     (lambda (node prefix s start caps)
-      (letrec ((loop
+      (let ((loop
                 (lambda (pos)
                   (if (integer>? pos (string-length s))
                       #none
@@ -500,7 +500,7 @@
    ; capturing group, in group-number order.
    (regexp-caps-new
     (lambda (n)
-      (letrec ((loop
+      (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i n)
                       (list-reverse acc)
@@ -519,7 +519,7 @@
    (compile
     (lambda (p)
       (if (string? p)
-          (letrec ((parsed (regexp-parse-alt p 0 1))
+          (let ((parsed (regexp-parse-alt p 0 1))
                  (node (list-first parsed))
                  (groups (integer- (list-nth parsed 2) 1)))
             (if (integer=? (list-nth parsed 1) (string-length p))
@@ -595,7 +595,7 @@
    (search-all
     (lambda (rx s)
       (if (string? s)
-          (letrec ((loop
+          (let ((loop
                     (lambda (pos acc)
                       (let ((m (regexp-match-at rx s pos)))
                         (if (none? m)
@@ -614,7 +614,7 @@
    (search-all-groups
     (lambda (rx s)
       (if (string? s)
-          (letrec ((loop
+          (let ((loop
                     (lambda (pos acc)
                       (let ((m (regexp-match-at rx s pos)))
                         (if (none? m)
@@ -632,7 +632,7 @@
    (split
     (lambda (rx s)
       (if (string? s)
-          (letrec ((loop
+          (let ((loop
                     (lambda (pos last acc)
                       (let ((m (regexp-match-at rx s pos)))
                         (if (none? m)
@@ -653,7 +653,7 @@
    ; substitutes the empty string.
    (regexp-expand-replacement
     (lambda (replacement s start end caps)
-      (letrec
+      (let
         ((digit?
           (lambda (ch)
             (let ((cp (string->integer-codepoint ch)))
@@ -708,7 +708,7 @@
    (replace
     (lambda (rx s replacement)
       (if (string? s)
-          (letrec ((loop
+          (let ((loop
                     (lambda (pos acc)
                       (let ((m (regexp-match-at rx s pos)))
                         (if (none? m)

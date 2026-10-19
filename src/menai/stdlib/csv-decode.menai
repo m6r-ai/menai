@@ -23,7 +23,7 @@
 ; character following a closing quote other than the delimiter or a line
 ; terminator.
 
-(letrec
+(let
   (; The dispatch tag after-field returns: another field follows in the same row
    ; (field), the row ends (row), or the input ends (end).
    (after-field-tag (enum (field row end)))
@@ -47,7 +47,7 @@
    ; terminator, or end of input.  Returns (list <field-string> <next-pos>).
    (scan-unquoted
     (lambda (s i delim)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j)
                   (if (integer>=? j (string-length s))
                       j
@@ -66,7 +66,7 @@
    ; after the closing quote.
    (scan-quoted
     (lambda (s i)
-      (letrec ((loop
+      (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j (string-length s))
                       (error "Unterminated quoted field in CSV input")
@@ -116,14 +116,14 @@
                      (list-first rest))))
             (if (and (string? delim)
                      (integer=? (string-length delim) 1))
-                (letrec
+                (let
                   ((finish
                     (lambda (rows-acc row)
                       (list->vector (map-list list->vector (list-reverse (list-prepend rows-acc (list-reverse row)))))))
 
                    (loop
                     (lambda (i row-acc rows-acc)
-                      (letrec ((field-result (parse-field csv-string i delim))
+                      (let ((field-result (parse-field csv-string i delim))
                              (field (list-first field-result))
                              (pos (list-nth field-result 1))
                              (row (list-prepend row-acc field))

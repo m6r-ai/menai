@@ -79,7 +79,7 @@ class ASTList(ASTNode):
         self.blank_before = False
 
 
-COMPOUND_FORMS = frozenset({'if', 'lambda', 'let', 'letrec'})
+COMPOUND_FORMS = frozenset({'if', 'lambda', 'let'})
 ALIGN_ONLY_FORMS = frozenset({'if', 'and', 'or'})
 
 
@@ -335,7 +335,7 @@ class Renderer:
 
     def _has_nested_body(self, head_name: str, body: list[ASTNode | ASTComment]) -> bool:
         """Return whether a compound form has a nested body, so it must be multi-line."""
-        if head_name in ('lambda', 'let', 'letrec'):
+        if head_name in ('lambda', 'let'):
             body = body[1:]
 
         return any(isinstance(elem, (ASTList, ASTQuote)) for elem in body)
@@ -388,7 +388,7 @@ class Renderer:
         if head_name == 'dict':
             return self._render_dict(head, body, column, trailing)
 
-        if head_name in ('let', 'letrec'):
+        if head_name in ('let',):
             return self._render_binding_form(head_name, body, column, trailing)
 
         if head_name == 'lambda':
@@ -522,7 +522,7 @@ class Renderer:
         return -1
 
     def _render_binding_form(self, name: str, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
-        """Render let/letrec: bindings then body, both indented by two."""
+        """Render let: bindings then body, both indented by two."""
         if not body:
             return f'({name})'
 

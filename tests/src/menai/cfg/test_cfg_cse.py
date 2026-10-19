@@ -77,7 +77,7 @@ class TestRedundantComputationElimination:
 
     def test_duplicate_across_dominating_blocks_eliminated(self):
         """
-        (letrec ((loop (lambda (n)
+        (let ((loop (lambda (n)
                          (if (integer=? n 0)
                              (list-length x)
                              (integer+ (list-length x) (loop (integer- n 1))))))
@@ -90,7 +90,7 @@ class TestRedundantComputationElimination:
         dominates the other and both are kept.
         """
         cfg = _compile_cfg("""
-        (letrec ((loop (lambda (n)
+        (let ((loop (lambda (n)
                          (if (integer=? n 0)
                              (list-length x)
                              (integer+ (list-length x) (loop (integer- n 1))))))
@@ -272,7 +272,7 @@ class TestClosureCaptureSubstitution:
         reference a value id that no instruction defines.
         """
         cfg = _compile_cfg("""
-        (letrec ((f (lambda (n) (if (integer=? n 0) 0 (g (integer- n 1)))))
+        (let ((f (lambda (n) (if (integer=? n 0) 0 (g (integer- n 1)))))
                  (g (lambda (n) (if (integer=? n 0) 1 (f (integer- n 1))))))
           (f 5))
         """)
@@ -300,7 +300,7 @@ class TestClosureCaptureSubstitution:
         """
         menai = Menai()
         result = menai.evaluate("""
-        (letrec ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
+        (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
                  (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1))))))
           (list-length (filter-list even? (list 0 1 2 3 4 5))))
         """)

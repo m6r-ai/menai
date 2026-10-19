@@ -25,9 +25,9 @@ class TestReservedNamesInBindingForms:
 
     @pytest.mark.parametrize("name", sorted(RESERVED_NAMES))
     def test_letrec_rejects_reserved_binding_name(self, menai, name):
-        """(letrec ((<reserved> 5)) ...) is a compile-time error."""
+        """(let ((<reserved> 5)) ...) is a compile-time error."""
         with pytest.raises(MenaiEvalError, match=re.escape(f"Binding name '{name}' is a reserved word")):
-            menai.evaluate(f"(letrec (({name} 5)) {name})")
+            menai.evaluate(f"(let (({name} 5)) {name})")
 
     def test_error_points_at_the_binding_name(self, menai):
         """The error location is the offending name, not the enclosing form."""
@@ -140,7 +140,7 @@ class TestReservedNameSet:
     """The reserved-name set covers every form head the compiler dispatches on."""
 
     @pytest.mark.parametrize("name", [
-        "::", "if", "let", "letrec", "lambda", "quote", "match",
+        "::", "if", "let", "lambda", "quote", "match",
         "and", "or", "import", "struct", "enum", "export", "apply", ":",
     ])
     def test_reserved_name_is_in_the_set(self, name):

@@ -75,13 +75,13 @@ class TestFunctional:
         """Test that letrec bindings are sequential (later can reference earlier)."""
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((x 5) (y (integer* x 2))) (integer+ x y))',
+            '(let ((x 5) (y (integer* x 2))) (integer+ x y))',
             '15'  # x=5, y=10, sum=15
         )
 
         helpers.assert_evaluates_to(
             menai,
-            '(letrec ((a 3) (b (integer+ a 2)) (c (integer* b 2))) c)',
+            '(let ((a 3) (b (integer+ a 2)) (c (integer* b 2))) c)',
             '10'  # a=3, b=5, c=10
         )
 
@@ -448,7 +448,7 @@ class TestFunctional:
         """Test recursive lambda functions with tail call optimization."""
         # Factorial using tail recursion
         factorial_expr = '''
-        (letrec ((factorial (lambda (n acc)
+        (let ((factorial (lambda (n acc)
                              (if (integer<=? n 1) acc (factorial (integer- n 1) (integer* n acc))))))
           (factorial 5 1))
         '''
@@ -456,7 +456,7 @@ class TestFunctional:
 
         # Sum of list using tail recursion
         sum_list_expr = '''
-        (letrec ((sum-list (lambda (lst acc)
+        (let ((sum-list (lambda (lst acc)
                             (if (list-null? lst) 
                                 acc 
                                 (sum-list (list-rest lst) (integer+ acc (list-first lst)))))))
@@ -468,7 +468,7 @@ class TestFunctional:
         """Test mutual recursion between lambda functions."""
         # Even/odd mutual recursion
         even_odd_expr = '''
-        (letrec ((is-even (lambda (n) (if (integer=? n 0) #t (is-odd (integer- n 1)))))
+        (let ((is-even (lambda (n) (if (integer=? n 0) #t (is-odd (integer- n 1)))))
                  (is-odd (lambda (n) (if (integer=? n 0) #f (is-even (integer- n 1))))))
           (list (is-even 4) (is-odd 4) (is-even 7) (is-odd 7)))
         '''
@@ -478,7 +478,7 @@ class TestFunctional:
         """Test functions that take and return functions."""
         # Function composition
         compose_expr = '''
-        (letrec ((compose (lambda (f g) (lambda (x) (f (g x)))))
+        (let ((compose (lambda (f g) (lambda (x) (f (g x)))))
                (double (lambda (x) (integer* x 2)))
                (square (lambda (x) (integer* x x)))
                (double-then-square (compose square double)))
@@ -488,7 +488,7 @@ class TestFunctional:
 
         # Curried functions
         curry_expr = '''
-        (letrec ((add (lambda (x) (lambda (y) (integer+ x y))))
+        (let ((add (lambda (x) (lambda (y) (integer+ x y))))
                (add5 (add 5)))
           (add5 10))
         '''
@@ -606,7 +606,7 @@ class TestFunctional:
 
         # Pass functions as arguments
         apply_twice = '''
-        (letrec ((apply-twice (lambda (f x) (f (f x))))
+        (let ((apply-twice (lambda (f x) (f (f x))))
                (increment (lambda (x) (integer+ x 1))))
           (apply-twice increment 5))
         '''
@@ -614,7 +614,7 @@ class TestFunctional:
 
         # Return functions from functions
         make_multiplier = '''
-        (letrec ((make-multiplier (lambda (n) (lambda (x) (integer* x n))))
+        (let ((make-multiplier (lambda (n) (lambda (x) (integer* x n))))
                (times3 (make-multiplier 3)))
           (times3 7))
         '''
@@ -667,7 +667,7 @@ class TestFunctional:
         # More complex case: conditional nested lambdas in map
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((process-list (lambda (lst)
+            '''(let ((process-list (lambda (lst)
                                      (map-list (lambda (x) 
                                             (if (integer>? x 0)
                                                 ((lambda (y) (integer* y y)) x)
@@ -719,7 +719,7 @@ class TestFunctional:
         # (this should work both before and after the fix)
         helpers.assert_evaluates_to(
             menai,
-            '''(letrec ((factorial (lambda (n)
+            '''(let ((factorial (lambda (n)
                                    (if (integer<=? n 1) 
                                        1 
                                        (integer* n (factorial (integer- n 1)))))))

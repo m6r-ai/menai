@@ -157,8 +157,12 @@ class TestNameValidation:
 class TestBindingInjector:
     """Test the injector in isolation."""
 
-    def test_wrap_produces_a_let(self):
-        """wrap returns a (let ((name value)) program) form."""
+    def test_wrap_produces_an_internal_let(self):
+        """wrap returns a ($let ((name value)) program) form.
+
+        The injector runs after desugaring, so it emits the internal parallel
+        binding node rather than the surface `let` form.
+        """
         from menai.ast.menai_ast import MenaiASTInteger, MenaiASTList, MenaiASTSymbol
 
         program = MenaiASTInteger(1)
@@ -166,7 +170,7 @@ class TestBindingInjector:
 
         assert isinstance(wrapped, MenaiASTList)
         assert isinstance(wrapped.elements[0], MenaiASTSymbol)
-        assert wrapped.elements[0].name == 'let'
+        assert wrapped.elements[0].name == '$let'
         assert wrapped.elements[2] is program
 
     def test_wrap_binding_carries_the_value(self):
