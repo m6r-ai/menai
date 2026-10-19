@@ -1,10 +1,10 @@
 """Tests for let binding semantics.
 
-Menai has one binding form, ``let``.  It binds recursively: every binding name is
+Menai has one binding form, `let`.  It binds recursively: every binding name is
 in scope for every binding value and for the body.  This subsumes the
-sequential-binding behaviour that other Lisps spell ``let*``, so a chain of
-dependent bindings is written as a single ``let``.  There is no parallel-binding
-form, and no ``letrec``.
+sequential-binding behaviour that other Lisps spell `let*`, so a chain of
+dependent bindings is written as a single `let`.  There is no parallel-binding
+form, and no `letrec`.
 """
 
 import pytest

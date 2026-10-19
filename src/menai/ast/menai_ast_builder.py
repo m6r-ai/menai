@@ -334,15 +334,15 @@ class MenaiASTBuilder:
         """
         Detect a binding form whose bindings list closed before its last binding.
 
-        A binding form is ``(let <bindings-list> <body>)``: exactly two forms
-        sit directly inside it, the bindings list and the body.  When a ``)``
+        A binding form is `(let <bindings-list> <body>)`: exactly two forms
+        sit directly inside it, the bindings list and the body.  When a `)`
         that should have closed a binding's value instead closes the bindings
         list, the forms that follow are read as further body expressions, and
         the parser reports a spurious "second body expression" at one of them.
 
         This is distinct from a *named* form closing before its body, which the
-        parenthesis diagnosis reports as ``suspected_line``.  A bindings list is
-        a bare ``(`` with no head symbol, so it has no minimum element count and
+        parenthesis diagnosis reports as `suspected_line`.  A bindings list is
+        a bare `(` with no head symbol, so it has no minimum element count and
         the diagnosis cannot see it; the shape of the forms it leaves behind is
         the only signal.
 
@@ -353,10 +353,10 @@ class MenaiASTBuilder:
         line that closed it is the line the reader has to change.
 
         Not every "second body expression" is an early close, however.  A
-        genuine second body — ``(let ((x 5)) (integer+ x 1) (integer+ x 2))`` —
+        genuine second body — `(let ((x 5)) (integer+ x 1) (integer+ x 2))` —
         also leaves more than one form after the bindings list.  The two are
         told apart by shape: the forms an early close leaves behind are bindings
-        (a two-element ``(name value)`` form) that the bindings list should have
+        (a two-element `(name value)` form) that the bindings list should have
         kept, whereas a genuine body is an ordinary expression.  The diagnosis
         is only reported when every form after the bindings list except the
         last (the body) has the shape of a binding.
@@ -366,7 +366,7 @@ class MenaiASTBuilder:
             keyword_column: Column of the binding form's opening parenthesis.
 
         Returns:
-            The (line, column) of the ``)`` that closed the bindings list early,
+            The (line, column) of the `)` that closed the bindings list early,
             or None when the structure is not an early close.
         """
         tokens = cast(list[MenaiToken], self.tokens) if self.tokens is not None else []
@@ -442,8 +442,8 @@ class MenaiASTBuilder:
         """
         Report whether the form opening at *start* has the shape of a binding.
 
-        A binding is a two-element ``(name value)`` form: a symbol followed by a
-        single expression.  This is the shape a bindings list keeps when a ``)``
+        A binding is a two-element `(name value)` form: a symbol followed by a
+        single expression.  This is the shape a bindings list keeps when a `)`
         closes it early and the remaining bindings are read as body expressions.
 
         Args:
@@ -740,17 +740,17 @@ class MenaiASTBuilder:
         """
         Create an error for a binding form whose bindings list closed early.
 
-        The parser reports a "second body expression" because a ``)`` closed
+        The parser reports a "second body expression" because a `)` closed
         the bindings list before its last binding, so the forms that follow are
-        read as body expressions.  The depth profile identifies the ``)`` that
+        read as body expressions.  The depth profile identifies the `)` that
         closed the bindings list, and that is the line the reader has to change,
         not the form the parser happened to flag.
 
         Args:
             start_line: Line where the binding form started.
             start_col: Column where the binding form started.
-            close_line: Line of the ``)`` that closed the bindings list early.
-            close_column: Column of that ``)``.
+            close_line: Line of the `)` that closed the bindings list early.
+            close_column: Column of that `)`.
 
         Returns:
             MenaiASTBuildError describing the early close.
@@ -920,9 +920,9 @@ class MenaiASTBuilder:
         Validate the shape of a parsed match pattern, recursing into sub-patterns.
 
         A pattern is one of: an atom (a variable, wildcard, or literal), the
-        empty list, a predicate pattern ``(? pred var)``, a type pattern
-        ``(: TypeName ...)``, a dotted pattern ``(head . tail)``, or a list
-        destructuring pattern ``(p1 p2 ...)``.
+        empty list, a predicate pattern `(? pred var)`, a type pattern
+        `(: TypeName ...)`, a dotted pattern `(head . tail)`, or a list
+        destructuring pattern `(p1 p2 ...)`.
 
         Args:
             pattern: The parsed pattern to validate.

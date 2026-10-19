@@ -20,12 +20,12 @@ Pattern recognised
     (let ((name (lambda (p1 ... pN) ...body...)))
       (name arg1 ... argN))
 
-where the body's self-referencing calls are tail calls (the call to ``name``
+where the body's self-referencing calls are tail calls (the call to `name`
 appears in tail position within the lambda body).
 
 The letrec body is a single call to the letrec-bound lambda.  The call may be
-direct (``MenaiIRCall`` with ``func_plan = MenaiIRVariable(name)``) or wrapped
-in ``MenaiIRReturn`` (when the letrec is in tail position).
+direct (`MenaiIRCall` with `func_plan = MenaiIRVariable(name)`) or wrapped
+in `MenaiIRReturn` (when the letrec is in tail position).
 
 Transform
 ---------
@@ -38,8 +38,8 @@ The letrec is replaced by::
         body_plan=<lambda body with self-calls -> MenaiIRRecur>,
     )
 
-The lambda's self-referencing tail calls (``(name new-arg1 ... new-argN)``)
-are replaced by ``MenaiIRRecur(arg_plans=[new-arg1, ... new-argN])``.
+The lambda's self-referencing tail calls (`(name new-arg1 ... new-argN)`)
+are replaced by `MenaiIRRecur(arg_plans=[new-arg1, ... new-argN])`.
 
 Only self-referencing tail calls are converted.  A non-tail self-call, or a
 reference to the name outside call position, causes the letrec to be rejected
@@ -87,7 +87,7 @@ class MenaiIRLetrecToLoop(MenaiIROptimizationPass):
         """
         Recursively walk the IR tree and convert eligible letrecs.
 
-        ``loop_name`` is the name of the enclosing loop (if any), used to
+        `loop_name` is the name of the enclosing loop (if any), used to
         identify self-referencing calls that should become MenaiIRRecur nodes.
         """
         if isinstance(ir, MenaiIRLetrec):
@@ -542,11 +542,11 @@ def _references_name(ir: MenaiIRExpr, name: str) -> bool:
 def _references_name_outside_call(ir: MenaiIRExpr, name: str) -> bool:
     """
     Check whether *ir* references *name* as a local variable anywhere except in
-    direct call position (i.e. as the ``func_plan`` of a ``MenaiIRCall``).
+    direct call position (i.e. as the `func_plan` of a `MenaiIRCall`).
 
     After letrec-to-loop conversion, the letrec name is no longer in scope.
-    Self-referencing calls are converted to ``MenaiIRRecur``, so they are safe.
-    But any other reference — as a variable, as an argument to ``apply``, inside
+    Self-referencing calls are converted to `MenaiIRRecur`, so they are safe.
+    But any other reference — as a variable, as an argument to `apply`, inside
     a list literal, etc. — would become unresolvable.
     """
     if isinstance(ir, MenaiIRVariable):

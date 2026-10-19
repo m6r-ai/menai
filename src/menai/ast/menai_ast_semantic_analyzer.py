@@ -11,7 +11,7 @@ checks only what needs the enclosing scope:
 - Binding and parameter names (a name must be a symbol, must not be a reserved
   word, and must be unique within its binder)
 - Namespace use (a namespace is second-class: it may only be bound and used as
-  the first argument of ``::``)
+  the first argument of `::`)
 - Call arity against the builtin registry, respecting lexical shadowing
 - Duplicate keys in a dict literal
 - Struct and enum definitions (field and variant names)

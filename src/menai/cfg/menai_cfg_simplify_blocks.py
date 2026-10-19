@@ -116,11 +116,11 @@ class MenaiCFGSimplifyBlocks(MenaiCFGPerFunctionPass):
         Bypass blocks that are pure indirections: no instructions, no
         patch_instrs, and an unconditional jump terminator.
 
-        For each such empty block E with ``MenaiCFGJumpTerm(T)``, E can be
+        For each such empty block E with `MenaiCFGJumpTerm(T)`, E can be
         bypassed only if the bypass is safe with respect to the VM codegen's
         phi store mechanism.
 
-        Phi stores are emitted only when a block emits its own ``JumpTerm``.
+        Phi stores are emitted only when a block emits its own `JumpTerm`.
         If a BranchTerm block is re-pointed to jump directly to a phi-bearing
         block, no phi store is emitted for the branch's contribution.
         Therefore:

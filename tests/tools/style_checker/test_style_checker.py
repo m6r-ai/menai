@@ -384,7 +384,7 @@ def foo(x: int) -> str:
         assert MSG_BLANK_BEFORE_DEDENT not in _msg_ids(results)
 
     def test_ternary_else_is_not_flagged(self):
-        """A ternary ``else`` should never be flagged as a dedent."""
+        """A ternary `else` should never be flagged as a dedent."""
         source = '''\
 """Module."""
 

@@ -696,16 +696,16 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         Check whether the self-loop back-edge preserves a hypothetical type
         for a reassigned param.
 
-        Given the assumption that ``param_id`` has ``expected_type``, compute
+        Given the assumption that `param_id` has `expected_type`, compute
         the type of the back-edge value (the SelfLoopTerm arg for that param)
         under the assumption.  If the back-edge value also has
-        ``expected_type``, the type is preserved across iterations and the
+        `expected_type`, the type is preserved across iterations and the
         guard is loop-invariant.
 
         This handles the case where the back-edge value is a phi node with
         the param itself as one incoming value (a skip path).  The param's
-        type is unknown in the normal ``_type_of_value`` lookup, but under
-        the hypothesis it has ``expected_type``, which may make the phi's
+        type is unknown in the normal `_type_of_value` lookup, but under
+        the hypothesis it has `expected_type`, which may make the phi's
         type known and matching.
 
         Every back-edge must preserve the type: a loop with several
@@ -745,14 +745,14 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         Determine the type of an SSA value, using a hypothesis for specific
         param ids and handling phi nodes recursively.
 
-        ``hypothesis`` maps param SSA value ids to assumed types.  When
+        `hypothesis` maps param SSA value ids to assumed types.  When
         encountering a param in the hypothesis, its assumed type is used
         instead of unknown.  When encountering a phi node, the types of all
         incoming values are computed recursively (with the hypothesis) and
         joined: if all incoming values share the same known type, that is
         the phi's type; otherwise it is unknown.
 
-        ``visited`` prevents infinite recursion on cyclic phi references
+        `visited` prevents infinite recursion on cyclic phi references
         (e.g. a phi whose incoming value is the param being hypothesised
         about, which in turn depends on the phi).
         """
@@ -1104,7 +1104,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         self-loops of one loop pass the same number of args, so the first
         self-loop's arity is representative.
 
-        A MenaiIRLoop back-edge (``param_vals`` is not None) updates the
+        A MenaiIRLoop back-edge (`param_vals` is not None) updates the
         loop-carried phi values rather than the function's params, so none of
         the function's params are reassigned by it and all of them are
         unchanged.

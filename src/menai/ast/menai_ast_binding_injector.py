@@ -2,14 +2,14 @@
 Menai Binding Injector Pass - splices host-supplied values into a program as a
 lexical binding.
 
-This pass wraps a program in a single ``let`` binding whose right-hand side is a
+This pass wraps a program in a single `let` binding whose right-hand side is a
 value the host constructed, so the program can read it by name::
 
     (let ((inputs <host-supplied value>))
       <program>)
 
 The value is carried into the compilation as an ordinary constant via
-``MenaiASTConstant``; no source text is generated and no value is ever
+`MenaiASTConstant`; no source text is generated and no value is ever
 converted to a string.
 
 The binding is one layer above the prelude and one layer below the program, so
@@ -26,7 +26,7 @@ The binding name is chosen by the host, not fixed by the language, so the
 language reserves no identifier for this purpose.  Two names are rejected
 because they cannot be ordinary lexical bindings:
 
-- A ``$``-prefixed name is an opcode-backed primitive, resolved before name
+- A `$`-prefixed name is an opcode-backed primitive, resolved before name
   resolution is involved, so it is never a lexical binding.
 - A reserved word is syntax, not a name: a form headed by it is always
   interpreted as that form, so the binding could never be referenced.
@@ -49,7 +49,7 @@ class MenaiASTBindingInjector:
     @classmethod
     def wrap(cls, program: MenaiASTNode, name: str, value: MenaiValue) -> MenaiASTNode:
         """
-        Return the program wrapped in ``(let ((name value)) program)``.
+        Return the program wrapped in `(let ((name value)) program)`.
 
         Args:
             program: The program to wrap.
@@ -57,10 +57,10 @@ class MenaiASTBindingInjector:
             value: The host-supplied value.
 
         Returns:
-            The program wrapped in a single ``let`` binding.
+            The program wrapped in a single `let` binding.
 
         Raises:
-            MenaiCodegenError: If the name is a ``$``-prefixed primitive name, a
+            MenaiCodegenError: If the name is a `$`-prefixed primitive name, a
                 reserved word, or a prelude name.
         """
         cls._validate_name(name)
@@ -77,7 +77,7 @@ class MenaiASTBindingInjector:
         Reject names that cannot be ordinary lexical bindings.
 
         Raises:
-            MenaiCodegenError: If the name is a ``$``-prefixed primitive name, a
+            MenaiCodegenError: If the name is a `$`-prefixed primitive name, a
                 reserved word, or a prelude name.
         """
         if name.startswith('$'):

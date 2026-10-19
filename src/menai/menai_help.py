@@ -3,7 +3,7 @@ Menai language reference for AI agents.
 
 This module is the canonical source of the Menai help text shown to AI agents
 via the `help` tool.  It is the single source of truth for the AI-facing
-language reference: the Menai AI tool (e.g. Humbug's ``menai_ai_tool.py``)
+language reference: the Menai AI tool (e.g. Humbug's `menai_ai_tool.py`)
 fetches this text rather than maintaining its own copy, so the help can never
 drift out of sync with the language.
 
@@ -11,7 +11,7 @@ The standard library listing in the module system section is generated at call
 time by scanning the shipped standard library, so it names every module that is
 actually present and cannot drift as modules are added or removed.
 
-The human-readable language manual lives in ``docs/`` and is kept consistent
+The human-readable language manual lives in `docs/` and is kept consistent
 with this text.
 """
 
@@ -30,7 +30,7 @@ def _stdlib_modules_section() -> str:
 
     Each module is listed with the path to its source and the one-line
     description from the first line of that source.  The path is resolved at
-    call time so it reflects however the ``menai`` package was installed.
+    call time so it reflects however the `menai` package was installed.
 
     Returns:
         The rendered listing, ending in a newline

@@ -6,7 +6,7 @@ The checks normally run as part of the full code checker:
     source venv/bin/activate && python -m tools.code_checker
 
 This module runs just the style-check portion (the pylint plugin)
-against ``src`` for quick iteration during development:
+against `src` for quick iteration during development:
 
     source venv/bin/activate && python -m tools.style_checker
 """

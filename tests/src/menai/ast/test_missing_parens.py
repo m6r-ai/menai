@@ -382,7 +382,7 @@ class TestEarlyBindingsClose:
         """
         A genuine second body expression keeps the original message.
 
-        ``(let ((x 1)) x x)`` has two body expressions and no misplaced ')'.
+        `(let ((x 1)) x x)` has two body expressions and no misplaced ')'.
         The extra form is not binding-shaped, so it must not be reported as an
         early bindings-list close.
         """
@@ -393,8 +393,8 @@ class TestEarlyBindingsClose:
         """
         A body that looks like a binding does not trigger the early-close error.
 
-        ``(let ((x 1)) (f x) (g x))`` has a first body ``(f x)`` that is
-        binding-shaped, but the final form ``(g x)`` is the genuine second body,
+        `(let ((x 1)) (f x) (g x))` has a first body `(f x)` that is
+        binding-shaped, but the final form `(g x)` is the genuine second body,
         so this is not an early close.
         """
         with pytest.raises(MenaiASTBuildError, match="let body must be a single expression"):
@@ -451,7 +451,7 @@ class TestEnclosingFormClosedEarly:
         """
         A genuine 'if' arity error is reported as an arity error.
 
-        ``(if 1 2 3 4)`` has four arguments but no enclosing form closed early,
+        `(if 1 2 3 4)` has four arguments but no enclosing form closed early,
         so it must not be reported as an early close.
         """
         with pytest.raises(MenaiASTBuildError, match="'if' has the wrong number of elements"):
@@ -461,7 +461,7 @@ class TestEnclosingFormClosedEarly:
         """
         A 'let' with too few elements keeps the original message.
 
-        ``(let ())`` has no body, but the 'let' itself is the form that
+        `(let ())` has no body, but the 'let' itself is the form that
         closed early, so this is its own structural error, not a misplaced ')'.
         """
         with pytest.raises(MenaiEvalError, match="Let expression structure is incorrect"):

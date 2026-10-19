@@ -10,7 +10,7 @@ attributed back to individual instructions by the Python renderers.
 The ordering is:
 
   * Code objects are visited depth-first, root first, and within each code
-    object its children are visited in list order (``code_objects[0]`` first).
+    object its children are visited in list order (`code_objects[0]` first).
   * Each code object is assigned a code ordinal (0-based) in visit order.
   * Each instruction is assigned a global instruction ordinal (0-based)
     in visit order: all of the root's instructions come first, then all of
@@ -18,7 +18,7 @@ The ordering is:
 
 Because the traversal depends only on the tree structure, it is stable across
 repeated conversions of the same CodeObject, which is what makes the trace
-buffer meaningful across multiple ``execute()`` calls.
+buffer meaningful across multiple `execute()` calls.
 """
 
 from collections.abc import Iterator
@@ -33,7 +33,7 @@ class CodeObjectVisit:
     One code object encountered during a tree walk.
 
     path            — child indices from the root to this code object, so the
-                      root has path ``()`` and its second child ``(1,)``.
+                      root has path `()` and its second child `(1,)`.
     code_ordinal    — 0-based position of this code object in visit order.
     instr_base      — global instruction ordinal of this code object's
                       instruction 0.

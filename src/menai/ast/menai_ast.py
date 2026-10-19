@@ -469,8 +469,8 @@ class MenaiASTNamespace(MenaiASTNode):
 
     The module's bindings are alpha-renamed with a prefix derived from the
     module name, so that importing two modules that both bind the same private
-    name does not collide.  ``bindings`` holds the renamed (name, value) pairs;
-    ``members`` maps each export key to its renamed binding name.
+    name does not collide.  `bindings` holds the renamed (name, value) pairs;
+    `members` maps each export key to its renamed binding name.
 
     Because member access resolves to a specific binding, the compiler keeps
     full static knowledge of it — a struct type stays a struct type, a function

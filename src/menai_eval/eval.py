@@ -197,7 +197,7 @@ def profile_compiler(
     Compile the source under cProfile and report the per-pass breakdown.
 
     Only the compilation pipeline is profiled; execution is performed
-    separately so that the single opaque C ``execute`` frame does not
+    separately so that the single opaque C `execute` frame does not
     dominate the cumulative-time table.
 
     Args:

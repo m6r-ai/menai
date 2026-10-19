@@ -30,7 +30,7 @@ class Implementation:
     timed iteration.  This lets the implementation move string construction
     and compilation out of the measured section.
 
-    When *prepare* is ``None`` (the default), *run* receives the case
+    When *prepare* is `None` (the default), *run* receives the case
     input directly.
     """
 
@@ -47,9 +47,9 @@ class MenaiProgram:
     maps a case input to an expression string.
 
     *fixture* is an optional callable that maps a case input to the bytes
-    bound as the ``inputs`` dict's ``"input-data"`` member.  When it is
+    bound as the `inputs` dict's `"input-data"` member.  When it is
     provided, the expression reads its input via
-    ``(dict-get inputs "input-data")``; when it is ``None`` the expression is
+    `(dict-get inputs "input-data")`; when it is `None` the expression is
     compiled with no injected binding.
     """
 

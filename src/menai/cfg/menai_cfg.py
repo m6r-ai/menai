@@ -439,7 +439,7 @@ class MenaiCFGSelfLoopTerm:
     """
     Direct self-recursive tail call.
 
-    The callee is the enclosing function itself, or (when ``param_vals`` is
+    The callee is the enclosing function itself, or (when `param_vals` is
     set) a MenaiIRLoop whose loop-carried variables are being updated.  `args`
     are the new argument values, in parameter order.  The VM codegen lowers
     this to JUMP (after storing args into the destination slots).

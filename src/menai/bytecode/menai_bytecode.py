@@ -633,7 +633,7 @@ class Instruction:
         Return a human-readable disassembly using raw slot indices (r0, r1, …).
 
         For fully symbolic register names (rp*, rc*, rs*, ro*) use
-        ``format(code)`` with a CodeObject.
+        `format(code)` with a CodeObject.
         """
         return self._disassemble(lambda slot: f"r{slot}")
 

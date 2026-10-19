@@ -7,26 +7,26 @@ by the AST builder to place its compile-time error on the line the reader has to
 change rather than the line where the offending form opened.
 
 The starting observation is that an opening parenthesis is never the mistake.
-Menai is written by adding forms, so a ``(`` that is present is intended; what
-goes wrong is a ``)`` that is missing or one that is present and should not be.
+Menai is written by adding forms, so a `(` that is present is intended; what
+goes wrong is a `)` that is missing or one that is present and should not be.
 That asymmetry is what makes the offending line derivable rather than guessed:
 
 - The intended depth profile is known up to the point of the error, because
   every line's *starting* depth is correct.  A line whose ending depth fails to
-  return to its starting depth is a line where a ``)`` is missing.
+  return to its starting depth is a line where a `)` is missing.
 - A line whose ending depth falls *below* its starting depth has closed
-  something that was not open, so a ``)`` on that line is extra.
+  something that was not open, so a `)` on that line is extra.
 
 Balance alone is not enough to be useful: a file can have equal numbers of
 opens and closes and still be malformed, and a genuinely unbalanced file leaves
 the parser unable to say which of the many closes is the wrong one.  The
 diagnosis therefore also reports the insertion point for missing closes (the
-position the ``)`` should occupy) and, for extra closes, the first ``)`` that
+position the `)` should occupy) and, for extra closes, the first `)` that
 cannot be matched together with any earlier close that completed a form which
 cannot be complete.
 
 It also reports the forms still open when the token stream ran out.  That is the
-nesting the reader intended to write, and it localises a missing ``)`` to a form
+nesting the reader intended to write, and it localises a missing `)` to a form
 rather than to a line: the innermost open form is the one whose close is absent.
 The parser's own in-progress stack is not used for this, because it diverges from
 the token stream once the parser starts recovering from the error.
@@ -75,13 +75,13 @@ class OpenScope:
     """
     A form still open when the token stream ran out.
 
-    ``form_type`` is the form's head symbol (``'let'``, ``'if'``, ...), or
-    ``'('`` for a parenthesised group with no head.  A binding form's bindings
-    list has no head of its own, so it is named by ``is_bindings_list`` and
-    ``enclosing_form`` instead: it is the ``'let'`` whose
+    `form_type` is the form's head symbol (`'let'`, `'if'`, ...), or
+    `'('` for a parenthesised group with no head.  A binding form's bindings
+    list has no head of its own, so it is named by `is_bindings_list` and
+    `enclosing_form` instead: it is the `'let'` whose
     bindings it holds.
 
-    ``element_count`` is how many complete elements the form holds.  For a
+    `element_count` is how many complete elements the form holds.  For a
     bindings list that has swallowed its own body, this counts the bindings
     parsed, which is what tells the reader the body was read as a binding.
     """
@@ -99,18 +99,18 @@ class ParenDiagnosis:
     """
     The result of analysing parenthesis balance over a token stream.
 
-    ``insertion_line`` and ``insertion_column`` are where the missing closes
-    belong, and are set only when closes are missing.  ``extra_line`` and
-    ``extra_column`` are the first ``)`` that cannot be matched, and are set only
-    when closes are extra.  ``suspected_*`` name an earlier ``)`` that closed a
+    `insertion_line` and `insertion_column` are where the missing closes
+    belong, and are set only when closes are missing.  `extra_line` and
+    `extra_column` are the first `)` that cannot be matched, and are set only
+    when closes are extra.  `suspected_*` name an earlier `)` that closed a
     form before its body, which is the likely cause of an extra close.
 
-    ``suspected_open_line`` and ``suspected_open_column`` are where that form
+    `suspected_open_line` and `suspected_open_column` are where that form
     opened.  A caller comparing them with the form it is reporting can tell
-    whether the early close is that form's own error or a misplaced ``)`` that
+    whether the early close is that form's own error or a misplaced `)` that
     closed an enclosing form.
 
-    ``open_scopes`` lists the forms still open when the token stream ran out,
+    `open_scopes` lists the forms still open when the token stream ran out,
     outermost first.  It is the nesting the reader intended to write, read in
     source order: the innermost scope is the form whose close is absent, and the
     scopes before it are the context it sits in.
@@ -150,7 +150,7 @@ def _form_type_at(tokens: list[MenaiToken], index: int) -> str:
     """
     Name the form opened by the parenthesis at *index*.
 
-    The name is the symbol that follows the parenthesis, or ``'('`` for a
+    The name is the symbol that follows the parenthesis, or `'('` for a
     parenthesised group with no head symbol.
     """
     if index + 1 < len(tokens) and tokens[index + 1].type == MenaiTokenType.SYMBOL:
@@ -397,7 +397,7 @@ def describe_open_scope(scope: OpenScope) -> str:
     Name an open scope for display in an error message.
 
     A bindings list is named by the binding form that holds it, because its own
-    head is another ``(`` and carries no name of its own.
+    head is another `(` and carries no name of its own.
     """
     if scope.is_bindings_list:
         return f"bindings list of '{scope.enclosing_form}'"
@@ -414,8 +414,8 @@ def format_open_scopes(diagnosis: ParenDiagnosis) -> str:
 
     This is the nesting the reader intended to write, listed in source order so
     the line numbers increase down the list.  The innermost scope is the form
-    whose closing ``)`` is absent, and each scope before it is the context it
-    sits in, so the list localises the missing ``)`` to a form rather than to a
+    whose closing `)` is absent, and each scope before it is the context it
+    sits in, so the list localises the missing `)` to a form rather than to a
     line.  The element count is what distinguishes a form that simply ran out of
     input from one that swallowed its own body: a bindings list that holds more
     elements than it has bindings has read the body as a binding.
@@ -452,15 +452,15 @@ def early_close_error(
     Build an error for a form whose enclosing form closed before its body.
 
     A structural error — a form with the wrong number of elements — is often
-    the symptom of a misplaced ``)`` that closed an enclosing form before its
+    the symptom of a misplaced `)` that closed an enclosing form before its
     body, so the elements that follow are read as further elements of the form.
     The parser reports the symptom at whichever form it happened to be reading,
-    which is nowhere near the mistake.  The diagnosis identifies the ``)`` that
+    which is nowhere near the mistake.  The diagnosis identifies the `)` that
     closed the enclosing form early, and that is the line the reader has to
     change.
 
     The diagnosis also fires when a form closed before its *own* body, which is
-    a genuine structural error rather than a misplaced ``)``.  The two are told
+    a genuine structural error rather than a misplaced `)`.  The two are told
     apart by position: when the form that closed early is the same form whose
     structural check failed, the error is genuine and this returns None so the
     caller reports its own message.
@@ -480,7 +480,7 @@ def early_close_error(
         form_column: Column of the form whose structural check failed.
 
     Returns:
-        An error pointing at the ``)`` that closed the enclosing form early, or
+        An error pointing at the `)` that closed the enclosing form early, or
         None when the diagnosis shows no such close.
     """
     if diagnosis.suspected_line is None or diagnosis.suspected_column is None:

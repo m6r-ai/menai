@@ -29,8 +29,8 @@ def discover_suites() -> list[tuple[Path, type[BenchmarkSuite]]]:
     """
     Discover all suite classes by scanning suites/*/suite.py.
 
-    Each suite module must contain a class named ``Suite`` that subclasses
-    ``BenchmarkSuite``.  Suites are returned in alphabetical order by
+    Each suite module must contain a class named `Suite` that subclasses
+    `BenchmarkSuite`.  Suites are returned in alphabetical order by
     directory name.
 
     Returns:
@@ -71,14 +71,14 @@ def find_suite(
     """
     Return the suite whose name exactly matches, ignoring case.
 
-    A suite's name is taken from its ``BenchmarkSuite.name`` class attribute.
+    A suite's name is taken from its `BenchmarkSuite.name` class attribute.
 
     Args:
         all_suites: The full list of discovered (directory, class) pairs.
         name:       The suite name to match.
 
     Returns:
-        The matching (directory, class) pair, or ``None`` if there is no match.
+        The matching (directory, class) pair, or `None` if there is no match.
     """
     lowered = name.lower()
     for suite_dir, cls in all_suites:
@@ -97,7 +97,7 @@ def find_case(cases: list[BenchmarkCase], name: str) -> BenchmarkCase | None:
         name:  The case name to match.
 
     Returns:
-        The matching case, or ``None`` if there is no match.
+        The matching case, or `None` if there is no match.
     """
     lowered = name.lower()
     for case in cases:
@@ -243,18 +243,18 @@ def run_suite(
     Instantiate, run, and report a single benchmark suite.
 
     Args:
-        suite_dir:    Directory containing the suite's ``suite.py`` (and any
-                      ``.menai`` files it imports).
-        suite_class:  The ``Suite`` subclass to instantiate.
+        suite_dir:    Directory containing the suite's `suite.py` (and any
+                      `.menai` files it imports).
+        suite_class:  The `Suite` subclass to instantiate.
         case_name:    If given, run only the case with this name (case-insensitive
                       exact match); otherwise run every case in the suite.
-        iterations:   If given, override ``BenchmarkCase.iterations`` on every
+        iterations:   If given, override `BenchmarkCase.iterations` on every
                       case before running.
-        opcodes:      If ``True``, enable opcode profiling during timed runs.
+        opcodes:      If `True`, enable opcode profiling during timed runs.
         opcodes_top:  Number of top opcodes to show in the opcode output.
-        profile:      If ``True``, enable per-function profiling during timed runs.
+        profile:      If `True`, enable per-function profiling during timed runs.
         profile_top:  Number of top functions to show per case in the profile output.
-        annotate:     If ``True``, print the annotated disassembly per case.
+        annotate:     If `True`, print the annotated disassembly per case.
         color:        Whether the profile and annotated reports emit ANSI colour.
         module_path:  Directories to prepend to the module search path, ahead of
                       the suite directory and the standard library.

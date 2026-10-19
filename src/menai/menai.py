@@ -438,11 +438,11 @@ class Menai:
         """
         Return the on-disk directory containing the standard library modules.
 
-        The standard library ships as package data inside the ``menai`` package
-        and is located through ``importlib.resources``.  When the package is
+        The standard library ships as package data inside the `menai` package
+        and is located through `importlib.resources`.  When the package is
         installed unpacked (the normal case for a wheel) the resource directory
         is a real filesystem path and is returned here.  Returns None when there
-        is no filesystem location, in which case ``stdlib_source`` is still
+        is no filesystem location, in which case `stdlib_source` is still
         usable.
 
         Returns:
@@ -462,7 +462,7 @@ class Menai:
 
         This is the primitive for reading the standard library: it works for
         every installation shape, including ones where the package is not
-        unpacked to a real directory, because ``importlib.resources`` can read
+        unpacked to a real directory, because `importlib.resources` can read
         a resource without it corresponding to a file.
 
         Args:
@@ -492,7 +492,7 @@ class Menai:
         preserving precedence.
 
         This is the composition the tools use when no explicit path is given.
-        A caller that needs full control passes ``module_path`` to the
+        A caller that needs full control passes `module_path` to the
         constructor instead, which is used verbatim.
 
         Args:

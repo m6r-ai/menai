@@ -1,22 +1,22 @@
 """
 Pylint plugin implementing project-specific style checks.
 
-The plugin is loaded automatically by pylint via ``load-plugins`` in
-``pyproject.toml``.  A single checker class registers all message IDs.
+The plugin is loaded automatically by pylint via `load-plugins` in
+`pyproject.toml`.  A single checker class registers all message IDs.
 Messages are emitted in line-number order within each file.
 
 Checks implemented:
 
-* ``m6r-no-property``         -- ``@property`` is banned; use a getter method.
-* ``m6r-no-optional``         -- ``Optional[X]`` is banned; use ``X | None``.
-* ``m6r-no-union``            -- ``Union[X, Y]`` is banned; use ``X | Y``.
-* ``m6r-no-typing-aliases``   -- legacy ``typing.Dict``, ``typing.List``, etc. are
-                                 banned; use builtins or ``collections.abc``.
-* ``m6r-no-aligned-assigns``  -- consecutive assignments must not have their
-                                 ``=`` signs padded into alignment.
-* ``m6r-blank-before-dedent`` -- a blank line is required before any line
+* `m6r-no-property`         -- `@property` is banned; use a getter method.
+* `m6r-no-optional`         -- `Optional[X]` is banned; use `X | None`.
+* `m6r-no-union`            -- `Union[X, Y]` is banned; use `X | Y`.
+* `m6r-no-typing-aliases`   -- legacy `typing.Dict`, `typing.List`, etc. are
+                                 banned; use builtins or `collections.abc`.
+* `m6r-no-aligned-assigns`  -- consecutive assignments must not have their
+                                 `=` signs padded into alignment.
+* `m6r-blank-before-dedent` -- a blank line is required before any line
                                  that dedents from the previous statement.
-* ``m6r-multiline-docstring`` -- multi-line docstring ``\"\"\"`` delimiters must
+* `m6r-multiline-docstring` -- multi-line docstring `\"\"\"` delimiters must
                                  sit on their own lines.
 """
 
@@ -120,7 +120,7 @@ class M6rStyleChecker(BaseRawFileChecker):
     def _check_property(
         self, node: nodes.Module, pending: list[tuple[int, str, tuple[str, ...]]]
     ) -> None:
-        """Flag any decorator whose name resolves to ``property``."""
+        """Flag any decorator whose name resolves to `property`."""
         for dec_node in node.nodes_of_class(nodes.Decorators):
             for decorator in dec_node.nodes:
                 expr = decorator.func if hasattr(decorator, "func") else decorator
@@ -130,7 +130,7 @@ class M6rStyleChecker(BaseRawFileChecker):
     def _check_optional(
         self, node: nodes.Module, pending: list[tuple[int, str, tuple[str, ...]]]
     ) -> None:
-        """Flag ``Optional[...]`` subscript expressions."""
+        """Flag `Optional[...]` subscript expressions."""
         for sub_node in node.nodes_of_class(nodes.Subscript):
             if _dotted_name(sub_node.value) == "Optional":
                 pending.append((sub_node.lineno, MSG_NO_OPTIONAL, ()))
@@ -138,7 +138,7 @@ class M6rStyleChecker(BaseRawFileChecker):
     def _check_union(
         self, node: nodes.Module, pending: list[tuple[int, str, tuple[str, ...]]]
     ) -> None:
-        """Flag ``Union[...]`` subscript expressions."""
+        """Flag `Union[...]` subscript expressions."""
         for sub_node in node.nodes_of_class(nodes.Subscript):
             if _dotted_name(sub_node.value) == "Union":
                 pending.append((sub_node.lineno, MSG_NO_UNION, ()))
@@ -167,16 +167,16 @@ class M6rStyleChecker(BaseRawFileChecker):
         self, node: nodes.Module, lines: list[str], pending: list[tuple[int, str, tuple[str, ...]]]
     ) -> None:
         """
-        Find padded-alignment ``=`` runs among assignment statements.
+        Find padded-alignment `=` runs among assignment statements.
 
-        Only actual assignment statements (``Assign`` and ``AnnAssign`` nodes)
+        Only actual assignment statements (`Assign` and `AnnAssign` nodes)
         are considered; keyword arguments in function calls are not affected.
-        When two assignments have the same target length the ``=`` naturally
+        When two assignments have the same target length the `=` naturally
         lines up without padding -- that is fine and not flagged.
         """
         # Collect assignment lines in a single tree walk.  Record (column of
-        # ``=``, length of the target expression) for each.  Two lines are
-        # "aligned" only when their ``=`` columns match but their target lengths
+        # `=`, length of the target expression) for each.  Two lines are
+        # "aligned" only when their `=` columns match but their target lengths
         # differ -- that is the case where extra padding was inserted.
         assign_info: dict[int, tuple[int, int]] = {}
 
@@ -221,7 +221,7 @@ class M6rStyleChecker(BaseRawFileChecker):
 
         A dedent occurs when a line of code has strictly less indentation than
         the previous statement.  This generalises the old else/elif check:
-        any block exit (``else``, ``elif``, ``return`` after an ``if`` body,
+        any block exit (`else`, `elif`, `return` after an `if` body,
         the next function after a nested block, etc.) must be visually
         separated by a blank line.
 
@@ -268,7 +268,7 @@ class _DedentScanner:
 
     The scanner walks lines sequentially, tracking:
 
-    * **Bracket depth** — lines inside ``()``, ``[]``, ``{}`` are continuation
+    * **Bracket depth** — lines inside `()`, `[]`, `{}` are continuation
       lines, not statements.  Their indentation is irrelevant.
     * **String state** — lines inside a multi-line string are skipped entirely.
     * **Code indent** — the indentation of the last real statement line.
@@ -297,7 +297,7 @@ class _DedentScanner:
             # If we are inside a multi-line string, consume the line and check
             # whether the string ends here.  When the string closes mid-line,
             # the remainder must still be scanned for brackets so that e.g. a
-            # closing ``)`` on the same line as ``"""`` is properly counted.
+            # closing `)` on the same line as `"""` is properly counted.
             # Indentation of string-body lines is irrelevant either way.
             if in_triple is not None:
                 bracket_depth, in_triple = _scan_line_brackets_and_strings(
@@ -422,9 +422,9 @@ def _target_length(line: str, eq_col: int) -> int:
     """
     Return the length of the assignment target on *line*.
 
-    *eq_col* is the 0-based column of the ``=`` sign.  The target length is
+    *eq_col* is the 0-based column of the `=` sign.  The target length is
     the number of characters from the end of indentation to the start of the
-    whitespace preceding ``=``, i.e. the length of the target expression
+    whitespace preceding `=`, i.e. the length of the target expression
     without any padding spaces.
     """
     prefix = line[:eq_col].rstrip()
@@ -433,12 +433,12 @@ def _target_length(line: str, eq_col: int) -> int:
 
 def _find_assign_eq_column(lines: list[str], lineno: int) -> int | None:
     """
-    Return the 0-based column of the assignment ``=`` on line *lineno*.
+    Return the 0-based column of the assignment `=` on line *lineno*.
 
     *lineno* is 1-based.  The function scans the source line character by
-    character, skipping strings and comments, and finds the first ``=`` that is
-    not part of a comparison operator (``==``, ``!=``, ``<=``, ``>=``) or
-    walrus operator (``:=``).  Returns None if no assignment ``=`` is found.
+    character, skipping strings and comments, and finds the first `=` that is
+    not part of a comparison operator (`==`, `!=`, `<=`, `>=`) or
+    walrus operator (`:=`).  Returns None if no assignment `=` is found.
     """
     if lineno < 1 or lineno > len(lines):
         return None

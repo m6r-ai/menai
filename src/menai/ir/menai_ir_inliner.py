@@ -105,7 +105,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         """
         Generate a unique temporary variable name for an inlined argument.
 
-        Uses the compiler-generated ``#:`` prefix so the name cannot collide
+        Uses the compiler-generated `#:` prefix so the name cannot collide
         with a user identifier.  The counter is per-instance and monotonically
         increasing, so repeated inlining never reuses a name.
         """

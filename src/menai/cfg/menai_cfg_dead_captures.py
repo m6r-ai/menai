@@ -3,20 +3,20 @@ CFG pass: dead capture elimination.
 
 After all other CFG optimizations have run, some captured free variables may
 no longer be referenced anywhere in the function body.  The most common case
-is a self-recursive ``$letrec`` lambda whose only self-reference is a tail call
-that the CFG builder has already converted to a ``SelfLoopTerm`` (back-edge
-jump).  The self-capture slot is allocated by the ``$letrec`` lowering but never
+is a self-recursive `$letrec` lambda whose only self-reference is a tail call
+that the CFG builder has already converted to a `SelfLoopTerm` (back-edge
+jump).  The self-capture slot is allocated by the `$letrec` lowering but never
 read, because the self-loop reuses the function's own registers instead of
 loading the closure from the capture.
 
 This pass detects and removes such dead captures.  For each
-``MakeClosureInstr`` in the parent function, it scans the child
-``MenaiCFGFunction`` for ``FreeVarInstr`` instances whose result SSA value is
+`MakeClosureInstr` in the parent function, it scans the child
+`MenaiCFGFunction` for `FreeVarInstr` instances whose result SSA value is
 never referenced by any instruction or terminator.  Dead captures are removed
-from the child, and the parent's ``PatchClosureInstr`` instances and
-``MakeClosureInstr`` are updated to match.  When ``needs_patching`` becomes
-``False`` and ``captures`` becomes empty, the bytecode builder will emit
-``LOAD_CONST`` (a pre-built function) instead of ``MAKE_CLOSURE``, eliminating
+from the child, and the parent's `PatchClosureInstr` instances and
+`MakeClosureInstr` are updated to match.  When `needs_patching` becomes
+`False` and `captures` becomes empty, the bytecode builder will emit
+`LOAD_CONST` (a pre-built function) instead of `MAKE_CLOSURE`, eliminating
 the closure object and capture slot entirely.
 
 The pass must run last in the CFG pass list so that it sees the final state
@@ -49,8 +49,8 @@ class MenaiCFGDeadCaptures(MenaiCFGPerFunctionPass):
     """
     Eliminate dead captures from CFG functions.
 
-    For each ``MakeClosureInstr``, scans the child function for
-    ``FreeVarInstr`` instances whose result is never referenced.  Removes them
+    For each `MakeClosureInstr`, scans the child function for
+    `FreeVarInstr` instances whose result is never referenced.  Removes them
     and updates the parent's closure-creation instructions to match.
     """
 
