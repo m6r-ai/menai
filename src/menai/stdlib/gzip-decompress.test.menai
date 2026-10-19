@@ -1,132 +1,134 @@
 ; Tests for gzip-decompress.menai
 
-(let
-  ((gzip-mod (import "gzip-decompress"))
-   (t (import "menai-test"))
-   (decompress (:: gzip-mod decompress))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((gzip-mod (import "gzip-decompress"))
+      (t (import "menai-test"))
+      (decompress (:: gzip-mod decompress))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; A deflate stream decompresses to its text.
-   (test-deflate-stream
-    (lambda ()
-      (let ((r (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000"))))
-        (assert-equal (bytes->string r) "hello world"))))
+      ; A deflate stream decompresses to its text.
+      (test-deflate-stream
+       (lambda ()
+         (let ((r (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+           (assert-equal (bytes->string r) "hello world"))))
 
-   ; An empty stream decompresses to zero bytes.
-   (test-empty-stream
-    (lambda ()
-      (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff03000000000000000000"))))
-        (assert-equal (bytes-length r) 0))))
+      ; An empty stream decompresses to zero bytes.
+      (test-empty-stream
+       (lambda ()
+         (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff03000000000000000000"))))
+           (assert-equal (bytes-length r) 0))))
 
-   ; A stored stream decompresses to its text.
-   (test-stored-stream
-    (lambda ()
-      (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff010800f7ff6162636465666768502aefae08000000"))))
-        (assert-equal (bytes->string r) "abcdefgh"))))
+      ; A stored stream decompresses to its text.
+      (test-stored-stream
+       (lambda ()
+         (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff010800f7ff6162636465666768502aefae08000000"))))
+           (assert-equal (bytes->string r) "abcdefgh"))))
 
-   ; An FNAME field is parsed and skipped.
-   (test-skips-fname
-    (lambda ()
-      (let ((r
-             (decompress
-               (string-hex->bytes "1f8b08080000000000ff6f7269672e74787400cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
-        (assert-equal (bytes->string r) "hello world"))))
+      ; An FNAME field is parsed and skipped.
+      (test-skips-fname
+       (lambda ()
+         (let ((r
+                (decompress
+                  (string-hex->bytes
+                    "1f8b08080000000000ff6f7269672e74787400cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+           (assert-equal (bytes->string r) "hello world"))))
 
-   ; An FCOMMENT field is parsed and skipped.
-   (test-skips-fcomment
-    (lambda ()
-      (let ((r
-             (decompress
-               (string-hex->bytes "1f8b08100000000000ff61206e6f746500cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
-        (assert-equal (bytes->string r) "hello world"))))
+      ; An FCOMMENT field is parsed and skipped.
+      (test-skips-fcomment
+       (lambda ()
+         (let ((r
+                (decompress
+                  (string-hex->bytes "1f8b08100000000000ff61206e6f746500cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+           (assert-equal (bytes->string r) "hello world"))))
 
-   ; An FEXTRA field is parsed and skipped.
-   (test-skips-fextra
-    (lambda ()
-      (let ((r
-             (decompress
-               (string-hex->bytes "1f8b08040000000000ff0600414202007879cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
-        (assert-equal (bytes->string r) "hello world"))))
+      ; An FEXTRA field is parsed and skipped.
+      (test-skips-fextra
+       (lambda ()
+         (let ((r
+                (decompress
+                  (string-hex->bytes
+                    "1f8b08040000000000ff0600414202007879cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+           (assert-equal (bytes->string r) "hello world"))))
 
-   ; An FHCRC field is verified.
-   (test-verifies-fhcrc
-    (lambda ()
-      (let ((r (decompress (string-hex->bytes "1f8b08020000000000ff90c9cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
-        (assert-equal (bytes->string r) "hello world"))))
+      ; An FHCRC field is verified.
+      (test-verifies-fhcrc
+       (lambda ()
+         (let ((r
+                (decompress (string-hex->bytes "1f8b08020000000000ff90c9cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+           (assert-equal (bytes->string r) "hello world"))))
 
-   ; FNAME and FHCRC together are handled.
-   (test-fname-and-fhcrc
-    (lambda ()
-      (let ((r
-             (decompress
-               (string-hex->bytes
-                 "1f8b080a0000000000ff6f7269672e747874001a1ecb48cdc9c95728cf2fca49010085114a0d0b000000"))))
-        (assert-equal (bytes->string r) "hello world"))))
+      ; FNAME and FHCRC together are handled.
+      (test-fname-and-fhcrc
+       (lambda ()
+         (let ((r
+                (decompress
+                  (string-hex->bytes
+                    "1f8b080a0000000000ff6f7269672e747874001a1ecb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+           (assert-equal (bytes->string r) "hello world"))))
 
-   ; A non-bytes argument is rejected.
-   (test-rejects-non-bytes
-    (lambda ()
-      (decompress "not bytes")))
+      ; A non-bytes argument is rejected.
+      (test-rejects-non-bytes
+       (lambda ()
+         (decompress "not bytes")))
 
-   ; Too-short input is rejected.
-   (test-rejects-too-short
-    (lambda ()
-      (decompress (string-hex->bytes "1f8b08000000000000ff"))))
+      ; Too-short input is rejected.
+      (test-rejects-too-short
+       (lambda ()
+         (decompress (string-hex->bytes "1f8b08000000000000ff"))))
 
-   ; A bad magic number is rejected.
-   (test-rejects-bad-magic
-    (lambda ()
-      (decompress (string-hex->bytes "1e8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+      ; A bad magic number is rejected.
+      (test-rejects-bad-magic
+       (lambda ()
+         (decompress (string-hex->bytes "1e8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000"))))
 
-   ; A non-DEFLATE compression method is rejected.
-   (test-rejects-non-deflate
-    (lambda ()
-      (decompress (string-hex->bytes "1f8b07000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+      ; A non-DEFLATE compression method is rejected.
+      (test-rejects-non-deflate
+       (lambda ()
+         (decompress (string-hex->bytes "1f8b07000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b000000"))))
 
-   ; A bad FHCRC is rejected.
-   (test-rejects-bad-fhcrc
-    (lambda ()
-      (decompress (string-hex->bytes "1f8b08020000000000ff0000cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
+      ; A bad FHCRC is rejected.
+      (test-rejects-bad-fhcrc
+       (lambda ()
+         (decompress (string-hex->bytes "1f8b08020000000000ff0000cb48cdc9c95728cf2fca49010085114a0d0b000000"))))
 
-   ; A checksum mismatch is rejected.
-   (test-rejects-checksum-mismatch
-    (lambda ()
-      (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0e0b000000"))))
+      ; A checksum mismatch is rejected.
+      (test-rejects-checksum-mismatch
+       (lambda ()
+         (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0e0b000000"))))
 
-   ; A size mismatch is rejected.
-   (test-rejects-size-mismatch
-    (lambda ()
-      (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b0c0000"))))
+      ; A size mismatch is rejected.
+      (test-rejects-size-mismatch
+       (lambda ()
+         (decompress (string-hex->bytes "1f8b08000000000000ffcb48cdc9c95728cf2fca49010085114a0d0b0c0000"))))
 
-   (tests
-    (list
-      (list
-        "decompress"
-        (list
-          (expect-pass "decompresses a deflate stream" test-deflate-stream)
-          (expect-pass "decompresses an empty stream" test-empty-stream)
-          (expect-pass "decompresses a stored stream" test-stored-stream)))
+      (tests
+       (list
+         (list
+           "decompress"
+           (list
+             (expect-pass "decompresses a deflate stream" test-deflate-stream)
+             (expect-pass "decompresses an empty stream" test-empty-stream)
+             (expect-pass "decompresses a stored stream" test-stored-stream)))
 
-      (list
-        "optional header fields"
-        (list
-          (expect-pass "skips FNAME" test-skips-fname)
-          (expect-pass "skips FCOMMENT" test-skips-fcomment)
-          (expect-pass "skips FEXTRA" test-skips-fextra)
-          (expect-pass "verifies FHCRC" test-verifies-fhcrc)
-          (expect-pass "handles FNAME and FHCRC together" test-fname-and-fhcrc)))
+         (list
+           "optional header fields"
+           (list
+             (expect-pass "skips FNAME" test-skips-fname)
+             (expect-pass "skips FCOMMENT" test-skips-fcomment)
+             (expect-pass "skips FEXTRA" test-skips-fextra)
+             (expect-pass "verifies FHCRC" test-verifies-fhcrc)
+             (expect-pass "handles FNAME and FHCRC together" test-fname-and-fhcrc)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
-          (expect-fail "rejects too-short input" test-rejects-too-short "too short")
-          (expect-fail "rejects a bad magic number" test-rejects-bad-magic "bad magic number")
-          (expect-fail "rejects non-DEFLATE compression method" test-rejects-non-deflate "not DEFLATE")
-          (expect-fail "rejects a bad FHCRC" test-rejects-bad-fhcrc "header checksum mismatch")
-          (expect-fail "rejects a checksum mismatch" test-rejects-checksum-mismatch "checksum mismatch")
-          (expect-fail "rejects a size mismatch" test-rejects-size-mismatch "size mismatch"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
+             (expect-fail "rejects too-short input" test-rejects-too-short "too short")
+             (expect-fail "rejects a bad magic number" test-rejects-bad-magic "bad magic number")
+             (expect-fail "rejects non-DEFLATE compression method" test-rejects-non-deflate "not DEFLATE")
+             (expect-fail "rejects a bad FHCRC" test-rejects-bad-fhcrc "header checksum mismatch")
+             (expect-fail "rejects a checksum mismatch" test-rejects-checksum-mismatch "checksum mismatch")
+             (expect-fail "rejects a size mismatch" test-rejects-size-mismatch "size mismatch"))))))
 
   (export tests))

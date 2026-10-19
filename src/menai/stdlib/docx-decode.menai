@@ -47,100 +47,99 @@
 ; It is the inverse of docx-encode's encode: for every value tree v that encode
 ; accepts, (decode (encode v)) reproduces v.
 
-(let
-  ((zip-extract (import "zip-extract"))
-   (xml-decode (import "xml-decode"))
+(let ((zip-extract (import "zip-extract"))
+      (xml-decode (import "xml-decode"))
 
-   (document-part "word/document.xml")
-   (styles-part "word/styles.xml")
-   (numbering-part "word/numbering.xml")
-   (document-rels-part "word/_rels/document.xml.rels")
-   (media-prefix "word/media/")
+      (document-part "word/document.xml")
+      (styles-part "word/styles.xml")
+      (numbering-part "word/numbering.xml")
+      (document-rels-part "word/_rels/document.xml.rels")
+      (media-prefix "word/media/")
 
-   ; The package's parts as a dict from part name to bytes.
-   (parts-of
-    (lambda (b)
-      (fold-list
-        (lambda (acc entry)
-          (dict-with acc (dict-get entry "name") (dict-get entry "content")))
-        (dict)
-        (dict-get ((:: zip-extract extract) b) "entries"))))
+      ; The package's parts as a dict from part name to bytes.
+      (parts-of
+       (lambda (b)
+         (fold-list
+           (lambda (acc entry)
+             (dict-with acc (dict-get entry "name") (dict-get entry "content")))
+           (dict)
+           (dict-get ((:: zip-extract extract) b) "entries"))))
 
-   ; The decoded element for a part, or #none when the part is absent.
-   (decode-part
-    (lambda (parts name)
-      (let ((content (dict-get parts name)))
-        (if (bytes? content)
-            ((:: xml-decode decode) (bytes->string content))
-            #none))))
+      ; The decoded element for a part, or #none when the part is absent.
+      (decode-part
+       (lambda (parts name)
+         (let ((content (dict-get parts name)))
+           (if (bytes? content)
+               ((:: xml-decode decode) (bytes->string content))
+               #none))))
 
-   ; The decoded element for a part that must be present.
-   (decode-required-part
-    (lambda (parts name)
-      (let ((content (dict-get parts name)))
-        (if (bytes? content)
-            ((:: xml-decode decode) (bytes->string content))
-            (error (string-concat "docx-decode: package has no " name))))))
+      ; The decoded element for a part that must be present.
+      (decode-required-part
+       (lambda (parts name)
+         (let ((content (dict-get parts name)))
+           (if (bytes? content)
+               ((:: xml-decode decode) (bytes->string content))
+               (error (string-concat "docx-decode: package has no " name))))))
 
-   ; Add one <Relationship> element to the relationships dict.  A child that is
-   ; not an element (the whitespace text nodes between the elements), or an
-   ; element missing its Id, Type, or Target, contributes nothing.  The target
-   ; mode is #none when the element declares none.
-   (add-relationship
-    (lambda (rels child)
-      (if (dict? child)
-          (let ((attrs (dict-get child "attrs"))
-                 (id (dict-get attrs "Id"))
-                 (type (dict-get attrs "Type"))
-                 (target (dict-get attrs "Target"))
-                 (mode (dict-get attrs "TargetMode")))
-            (if (and (string? id)
-                     (string? type)
-                     (string? target))
-                (dict-with rels id (dict "type" type "target" target "mode" mode))
-                rels))
-          rels)))
+      ; Add one <Relationship> element to the relationships dict.  A child that is
+      ; not an element (the whitespace text nodes between the elements), or an
+      ; element missing its Id, Type, or Target, contributes nothing.  The target
+      ; mode is #none when the element declares none.
+      (add-relationship
+       (lambda (rels child)
+         (if (dict? child)
+             (let ((attrs (dict-get child "attrs"))
+                   (id (dict-get attrs "Id"))
+                   (type (dict-get attrs "Type"))
+                   (target (dict-get attrs "Target"))
+                   (mode (dict-get attrs "TargetMode")))
+               (if (and (string? id)
+                        (string? type)
+                        (string? target))
+                   (dict-with rels id (dict "type" type "target" target "mode" mode))
+                   rels))
+             rels)))
 
-   ; The document relationships map from the decoded relationships part.  The
-   ; root element's children are the <Relationship> elements.  The map is empty
-   ; when the part is absent.
-   (relationships-of
-    (lambda (parts)
-      (let ((root (decode-part parts document-rels-part)))
-        (if (dict? root)
-            (fold-list add-relationship (dict) (dict-get root "children"))
-            (dict)))))
+      ; The document relationships map from the decoded relationships part.  The
+      ; root element's children are the <Relationship> elements.  The map is empty
+      ; when the part is absent.
+      (relationships-of
+       (lambda (parts)
+         (let ((root (decode-part parts document-rels-part)))
+           (if (dict? root)
+               (fold-list add-relationship (dict) (dict-get root "children"))
+               (dict)))))
 
-   ; The media parts as a dict from part name to bytes, or #none when there are
-   ; none.  Only parts with byte content are included, so a directory entry
-   ; under word/media/ is not mistaken for a media part.
-   (media-of
-    (lambda (parts)
-      (let ((names
-             (filter-list
-               (lambda (name)
-                 (and (string-prefix? name media-prefix)
-                      (bytes? (dict-get parts name))))
-               (dict-keys parts))))
-        (if (list-null? names)
-            #none
-            (fold-list
-              (lambda (acc name)
-                (dict-with acc name (dict-get parts name)))
-              (dict)
-              names)))))
+      ; The media parts as a dict from part name to bytes, or #none when there are
+      ; none.  Only parts with byte content are included, so a directory entry
+      ; under word/media/ is not mistaken for a media part.
+      (media-of
+       (lambda (parts)
+         (let ((names
+                (filter-list
+                  (lambda (name)
+                    (and (string-prefix? name media-prefix)
+                         (bytes? (dict-get parts name))))
+                  (dict-keys parts))))
+           (if (list-null? names)
+               #none
+               (fold-list
+                 (lambda (acc name)
+                   (dict-with acc name (dict-get parts name)))
+                 (dict)
+                 names)))))
 
-   ; Decode a bytes value containing a DOCX package into a value tree.  It is
-   ; the inverse of docx-encode's encode.
-   (decode
-    (lambda (b)
-      (if (bytes? b)
-          (let ((parts (parts-of b)))
-            (dict "document" (decode-required-part parts document-part)
-                  "styles" (decode-part parts styles-part)
-                  "numbering" (decode-part parts numbering-part)
-                  "relationships" (relationships-of parts)
-                  "media" (media-of parts)))
-          (error "docx-decode: decode expects a bytes value")))))
+      ; Decode a bytes value containing a DOCX package into a value tree.  It is
+      ; the inverse of docx-encode's encode.
+      (decode
+       (lambda (b)
+         (if (bytes? b)
+             (let ((parts (parts-of b)))
+               (dict "document" (decode-required-part parts document-part)
+                     "styles" (decode-part parts styles-part)
+                     "numbering" (decode-part parts numbering-part)
+                     "relationships" (relationships-of parts)
+                     "media" (media-of parts)))
+             (error "docx-decode: decode expects a bytes value")))))
 
   (export decode))

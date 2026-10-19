@@ -15,10 +15,9 @@
 ; strings, and the delimiter must be a single-character string.  Anything else
 ; raises a runtime error.
 
-(let
-  ((needs-quoting?
-    (lambda (field delim)
-      (let ((loop
+(let ((needs-quoting?
+       (lambda (field delim)
+         (let ((loop
                 (lambda (i)
                   (if (integer>=? i (string-length field))
                       #f
@@ -29,14 +28,14 @@
                                 (string=? ch "\n"))
                             #t
                             (loop (integer+ i 1))))))))
-        (loop 0))))
+           (loop 0))))
 
-   ; Encode one field, quoting it only if it contains a character that requires
-   ; it.  Returns the field's source text.
-   (encode-field
-    (lambda (field delim)
-      (if (needs-quoting? field delim)
-          (let ((loop
+      ; Encode one field, quoting it only if it contains a character that requires
+      ; it.  Returns the field's source text.
+      (encode-field
+       (lambda (field delim)
+         (if (needs-quoting? field delim)
+             (let ((loop
                     (lambda (i acc)
                       (if (integer>=? i (string-length field))
                           (list-prepend acc "\"")
@@ -48,13 +47,13 @@
                                 (if (string=? ch "\"")
                                     "\"\""
                                     ch))))))))
-            (list->string (list-reverse (loop 0 (list "\"")))))
-          field)))
+               (list->string (list-reverse (loop 0 (list "\"")))))
+             field)))
 
-   ; Encode one row as its fields joined by the delimiter.
-   (encode-row
-    (lambda (row delim)
-      (let ((loop
+      ; Encode one row as its fields joined by the delimiter.
+      (encode-row
+       (lambda (row delim)
+         (let ((loop
                 (lambda (i acc first)
                   (if (integer>=? i (vector-length row))
                       (list->string (list-reverse acc))
@@ -69,19 +68,19 @@
                                 (encode-field field delim))
                               #f)
                             (error "CSV field must be a string")))))))
-        (loop 0 (list) #t))))
+           (loop 0 (list) #t))))
 
-   ; Encode a vector of rows as CSV text, joining rows with CRLF.
-   (encode
-    (lambda (rows . rest)
-      (if (vector? rows)
-          (let ((delim
-                 (if (list-null? rest)
-                     ","
-                     (list-first rest))))
-            (if (and (string? delim)
-                     (integer=? (string-length delim) 1))
-                (let ((loop
+      ; Encode a vector of rows as CSV text, joining rows with CRLF.
+      (encode
+       (lambda (rows . rest)
+         (if (vector? rows)
+             (let ((delim
+                    (if (list-null? rest)
+                        ","
+                        (list-first rest))))
+               (if (and (string? delim)
+                        (integer=? (string-length delim) 1))
+                   (let ((loop
                           (lambda (i acc first)
                             (if (integer>=? i (vector-length rows))
                                 (list->string (list-reverse acc))
@@ -96,8 +95,8 @@
                                           (encode-row row delim))
                                         #f)
                                       (error "CSV row must be a vector of strings")))))))
-                  (loop 0 (list) #t))
-                (error "CSV delimiter must be a single-character string")))
-          (error "CSV input must be a vector of rows")))))
+                     (loop 0 (list) #t))
+                   (error "CSV delimiter must be a single-character string")))
+             (error "CSV input must be a vector of rows")))))
 
   (export encode))

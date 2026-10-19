@@ -1,251 +1,253 @@
 ; Tests for base64-decode.menai
 
-(let
-  ((base64-decode (import "base64-decode"))
-   (base64-encode (import "base64-encode"))
-   (t (import "menai-test"))
-   (decode (:: base64-decode decode))
-   (dv (:: base64-decode variant))
-   (encode (:: base64-encode encode))
-   (ev (:: base64-encode variant))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((base64-decode (import "base64-decode"))
+      (base64-encode (import "base64-encode"))
+      (t (import "menai-test"))
+      (decode (:: base64-decode decode))
+      (dv (:: base64-decode variant))
+      (encode (:: base64-encode encode))
+      (ev (:: base64-encode variant))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; Build a bytes value containing every byte value from 0 to 255.
-   (all-bytes
-    (lambda ()
-      (let ((mk
+      ; Build a bytes value containing every byte value from 0 to 255.
+      (all-bytes
+       (lambda ()
+         (let ((mk
                 (lambda (i acc)
                   (if (integer>=? i 256)
                       (list->bytes (list-reverse acc))
                       (mk (integer+ i 1) (list-prepend acc i))))))
-        (mk 0 (list)))))
+           (mk 0 (list)))))
 
-   ; The empty input decodes to the empty bytes value.
-   (test-empty-input
-    (lambda ()
-      (assert-equal (decode "") (string->bytes ""))))
+      ; The empty input decodes to the empty bytes value.
+      (test-empty-input
+       (lambda ()
+         (assert-equal (decode "") (string->bytes ""))))
 
-   ; "Zg==" decodes to "f".
-   (test-vector-zg
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zg==")) "f")))
+      ; "Zg==" decodes to "f".
+      (test-vector-zg
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zg==")) "f")))
 
-   ; "Zm8=" decodes to "fo".
-   (test-vector-zm8
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm8=")) "fo")))
+      ; "Zm8=" decodes to "fo".
+      (test-vector-zm8
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm8=")) "fo")))
 
-   ; "Zm9v" decodes to "foo".
-   (test-vector-zm9v
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm9v")) "foo")))
+      ; "Zm9v" decodes to "foo".
+      (test-vector-zm9v
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9v")) "foo")))
 
-   ; "Zm9vYg==" decodes to "foob".
-   (test-vector-zm9vyg
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm9vYg==")) "foob")))
+      ; "Zm9vYg==" decodes to "foob".
+      (test-vector-zm9vyg
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9vYg==")) "foob")))
 
-   ; "Zm9vYmE=" decodes to "fooba".
-   (test-vector-zm9vyme
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm9vYmE=")) "fooba")))
+      ; "Zm9vYmE=" decodes to "fooba".
+      (test-vector-zm9vyme
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9vYmE=")) "fooba")))
 
-   ; "Zm9vYmFy" decodes to "foobar".
-   (test-vector-zm9vymfy
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm9vYmFy")) "foobar")))
+      ; "Zm9vYmFy" decodes to "foobar".
+      (test-vector-zm9vymfy
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9vYmFy")) "foobar")))
 
-   ; One padding character yields two bytes.
-   (test-padding-one
-    (lambda ()
-      (assert-equal (bytes-length (decode "AAA=")) 2)))
+      ; One padding character yields two bytes.
+      (test-padding-one
+       (lambda ()
+         (assert-equal (bytes-length (decode "AAA=")) 2)))
 
-   ; Two padding characters yield one byte.
-   (test-padding-two
-    (lambda ()
-      (assert-equal (bytes-length (decode "AA==")) 1)))
+      ; Two padding characters yield one byte.
+      (test-padding-two
+       (lambda ()
+         (assert-equal (bytes-length (decode "AA==")) 1)))
 
-   ; No padding yields three bytes.
-   (test-padding-none
-    (lambda ()
-      (assert-equal (bytes-length (decode "AAAA")) 3)))
+      ; No padding yields three bytes.
+      (test-padding-none
+       (lambda ()
+         (assert-equal (bytes-length (decode "AAAA")) 3)))
 
-   ; The standard variant is the default.
-   (test-variant-standard-default
-    (lambda ()
-      (assert-equal (decode "Zm9vYg==") (decode "Zm9vYg==" (dv 'standard)))))
+      ; The standard variant is the default.
+      (test-variant-standard-default
+       (lambda ()
+         (assert-equal (decode "Zm9vYg==") (decode "Zm9vYg==" (dv 'standard)))))
 
-   ; The standard variant decodes + and /.
-   (test-variant-standard-alphabet
-    (lambda ()
-      (assert-equal (decode "+//+" (dv 'standard)) (list->bytes (list 251 255 254)))))
+      ; The standard variant decodes + and /.
+      (test-variant-standard-alphabet
+       (lambda ()
+         (assert-equal (decode "+//+" (dv 'standard)) (list->bytes (list 251 255 254)))))
 
-   ; The url variant decodes - and _.
-   (test-variant-url-alphabet
-    (lambda ()
-      (assert-equal (decode "-__-" (dv 'url)) (list->bytes (list 251 255 254)))))
+      ; The url variant decodes - and _.
+      (test-variant-url-alphabet
+       (lambda ()
+         (assert-equal (decode "-__-" (dv 'url)) (list->bytes (list 251 255 254)))))
 
-   ; The standard-unpadded variant decodes input without padding.
-   (test-variant-standard-unpadded
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm9vYg" (dv 'standard-unpadded))) "foob")))
+      ; The standard-unpadded variant decodes input without padding.
+      (test-variant-standard-unpadded
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9vYg" (dv 'standard-unpadded))) "foob")))
 
-   ; The url-unpadded variant decodes input without padding.
-   (test-variant-url-unpadded
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm9vYg" (dv 'url-unpadded))) "foob")))
+      ; The url-unpadded variant decodes input without padding.
+      (test-variant-url-unpadded
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9vYg" (dv 'url-unpadded))) "foob")))
 
-   ; An unpadded variant accepts a length that is a multiple of four.
-   (test-variant-unpadded-multiple-of-four
-    (lambda ()
-      (assert-equal (bytes->string (decode "Zm9vYmFy" (dv 'url-unpadded))) "foobar")))
+      ; An unpadded variant accepts a length that is a multiple of four.
+      (test-variant-unpadded-multiple-of-four
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9vYmFy" (dv 'url-unpadded))) "foobar")))
 
-   ; Text round-trips through encode then decode unchanged.
-   (test-round-trip-text
-    (lambda ()
-      (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
+      ; Text round-trips through encode then decode unchanged.
+      (test-round-trip-text
+       (lambda ()
+         (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
 
-   ; Every byte value round-trips through the standard variant.
-   (test-round-trip-all-bytes-standard
-    (lambda ()
-      (let ((all (all-bytes)))
-        (assert-equal (decode (encode all (ev 'standard)) (dv 'standard)) all))))
+      ; Every byte value round-trips through the standard variant.
+      (test-round-trip-all-bytes-standard
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'standard)) (dv 'standard)) all))))
 
-   ; Every byte value round-trips through the url-unpadded variant.
-   (test-round-trip-all-bytes-url-unpadded
-    (lambda ()
-      (let ((all (all-bytes)))
-        (assert-equal (decode (encode all (ev 'url-unpadded)) (dv 'url-unpadded)) all))))
+      ; Every byte value round-trips through the url-unpadded variant.
+      (test-round-trip-all-bytes-url-unpadded
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'url-unpadded)) (dv 'url-unpadded)) all))))
 
-   ; An input length that is not a multiple of four is rejected.
-   (test-rejects-bad-length
-    (lambda ()
-      (decode "Zm9")))
+      ; An input length that is not a multiple of four is rejected.
+      (test-rejects-bad-length
+       (lambda ()
+         (decode "Zm9")))
 
-   ; An invalid character is rejected.
-   (test-rejects-invalid-character
-    (lambda ()
-      (decode "Zm9v!!!!")))
+      ; An invalid character is rejected.
+      (test-rejects-invalid-character
+       (lambda ()
+         (decode "Zm9v!!!!")))
 
-   ; The url-safe alphabet is rejected by the standard variant.
-   (test-rejects-url-alphabet-in-standard
-    (lambda ()
-      (decode "Zm-v")))
+      ; The url-safe alphabet is rejected by the standard variant.
+      (test-rejects-url-alphabet-in-standard
+       (lambda ()
+         (decode "Zm-v")))
 
-   ; The standard alphabet is rejected by the url variant.
-   (test-rejects-standard-alphabet-in-url
-    (lambda ()
-      (decode "+//+" (dv 'url))))
+      ; The standard alphabet is rejected by the url variant.
+      (test-rejects-standard-alphabet-in-url
+       (lambda ()
+         (decode "+//+" (dv 'url))))
 
-   ; Whitespace is rejected.
-   (test-rejects-whitespace
-    (lambda ()
-      (decode "Zm 9")))
+      ; Whitespace is rejected.
+      (test-rejects-whitespace
+       (lambda ()
+         (decode "Zm 9")))
 
-   ; Padding in a non-final group is rejected.
-   (test-rejects-padding-not-final
-    (lambda ()
-      (decode "AA==AAAA")))
+      ; Padding in a non-final group is rejected.
+      (test-rejects-padding-not-final
+       (lambda ()
+         (decode "AA==AAAA")))
 
-   ; Padding as the third character is rejected.
-   (test-rejects-padding-third-character
-    (lambda ()
-      (decode "Zm=v")))
+      ; Padding as the third character is rejected.
+      (test-rejects-padding-third-character
+       (lambda ()
+         (decode "Zm=v")))
 
-   ; Padding as the second character is rejected.
-   (test-rejects-padding-second-character
-    (lambda ()
-      (decode "Z===")))
+      ; Padding as the second character is rejected.
+      (test-rejects-padding-second-character
+       (lambda ()
+         (decode "Z===")))
 
-   ; An all-padding input is rejected.
-   (test-rejects-all-padding
-    (lambda ()
-      (decode "====")))
+      ; An all-padding input is rejected.
+      (test-rejects-all-padding
+       (lambda ()
+         (decode "====")))
 
-   ; An unpadded variant rejects padding.
-   (test-rejects-padding-in-unpadded
-    (lambda ()
-      (decode "Zm9vYg==" (dv 'url-unpadded))))
+      ; An unpadded variant rejects padding.
+      (test-rejects-padding-in-unpadded
+       (lambda ()
+         (decode "Zm9vYg==" (dv 'url-unpadded))))
 
-   ; A padded variant rejects unpadded input.
-   (test-rejects-unpadded-in-padded
-    (lambda ()
-      (decode "Zm9vYg" (dv 'standard))))
+      ; A padded variant rejects unpadded input.
+      (test-rejects-unpadded-in-padded
+       (lambda ()
+         (decode "Zm9vYg" (dv 'standard))))
 
-   ; An unpadded variant rejects a length of one mod four.
-   (test-rejects-unpadded-length-one
-    (lambda ()
-      (decode "Zm9vY" (dv 'standard-unpadded))))
+      ; An unpadded variant rejects a length of one mod four.
+      (test-rejects-unpadded-length-one
+       (lambda ()
+         (decode "Zm9vY" (dv 'standard-unpadded))))
 
-   ; A non-string argument is rejected.
-   (test-rejects-non-string
-    (lambda ()
-      (decode 42)))
+      ; A non-string argument is rejected.
+      (test-rejects-non-string
+       (lambda ()
+         (decode 42)))
 
-   (tests
-    (list
-      (list
-        "rfc-4648-vectors"
-        (list
-          (expect-pass "empty input" test-empty-input)
-          (expect-pass "Zg==" test-vector-zg)
-          (expect-pass "Zm8=" test-vector-zm8)
-          (expect-pass "Zm9v" test-vector-zm9v)
-          (expect-pass "Zm9vYg==" test-vector-zm9vyg)
-          (expect-pass "Zm9vYmE=" test-vector-zm9vyme)
-          (expect-pass "Zm9vYmFy" test-vector-zm9vymfy)))
+      (tests
+       (list
+         (list
+           "rfc-4648-vectors"
+           (list
+             (expect-pass "empty input" test-empty-input)
+             (expect-pass "Zg==" test-vector-zg)
+             (expect-pass "Zm8=" test-vector-zm8)
+             (expect-pass "Zm9v" test-vector-zm9v)
+             (expect-pass "Zm9vYg==" test-vector-zm9vyg)
+             (expect-pass "Zm9vYmE=" test-vector-zm9vyme)
+             (expect-pass "Zm9vYmFy" test-vector-zm9vymfy)))
 
-      (list
-        "padding"
-        (list
-          (expect-pass "one padding character yields two bytes" test-padding-one)
-          (expect-pass "two padding characters yields one byte" test-padding-two)
-          (expect-pass "no padding yields three bytes" test-padding-none)))
+         (list
+           "padding"
+           (list
+             (expect-pass "one padding character yields two bytes" test-padding-one)
+             (expect-pass "two padding characters yields one byte" test-padding-two)
+             (expect-pass "no padding yields three bytes" test-padding-none)))
 
-      (list
-        "variants"
-        (list
-          (expect-pass "standard is the default" test-variant-standard-default)
-          (expect-pass "standard decodes + and /" test-variant-standard-alphabet)
-          (expect-pass "url decodes - and _" test-variant-url-alphabet)
-          (expect-pass "standard-unpadded decodes without padding" test-variant-standard-unpadded)
-          (expect-pass "url-unpadded decodes without padding" test-variant-url-unpadded)
-          (expect-pass "unpadded accepts a length that is a multiple of four" test-variant-unpadded-multiple-of-four)))
+         (list
+           "variants"
+           (list
+             (expect-pass "standard is the default" test-variant-standard-default)
+             (expect-pass "standard decodes + and /" test-variant-standard-alphabet)
+             (expect-pass "url decodes - and _" test-variant-url-alphabet)
+             (expect-pass "standard-unpadded decodes without padding" test-variant-standard-unpadded)
+             (expect-pass "url-unpadded decodes without padding" test-variant-url-unpadded)
+             (expect-pass "unpadded accepts a length that is a multiple of four"
+                          test-variant-unpadded-multiple-of-four)))
 
-      (list
-        "round-trips"
-        (list
-          (expect-pass "text" test-round-trip-text)
-          (expect-pass "every byte value, standard" test-round-trip-all-bytes-standard)
-          (expect-pass "every byte value, url-unpadded" test-round-trip-all-bytes-url-unpadded)))
+         (list
+           "round-trips"
+           (list
+             (expect-pass "text" test-round-trip-text)
+             (expect-pass "every byte value, standard" test-round-trip-all-bytes-standard)
+             (expect-pass "every byte value, url-unpadded" test-round-trip-all-bytes-url-unpadded)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "length not a multiple of four" test-rejects-bad-length "not a multiple of four")
-          (expect-fail "invalid character" test-rejects-invalid-character "invalid character")
-          (expect-fail "url-safe alphabet is rejected by the standard variant"
-                       test-rejects-url-alphabet-in-standard
-                       "invalid character")
-          (expect-fail "standard alphabet is rejected by the url variant"
-                       test-rejects-standard-alphabet-in-url
-                       "invalid character")
-          (expect-fail "whitespace is rejected" test-rejects-whitespace "invalid character")
-          (expect-fail "padding in a non-final group"
-                       test-rejects-padding-not-final
-                       "padding may appear only at the end")
-          (expect-fail "padding as the third character" test-rejects-padding-third-character "invalid padding")
-          (expect-fail "padding as the second character"
-                       test-rejects-padding-second-character
-                       "padding may appear only at the end")
-          (expect-fail "all padding" test-rejects-all-padding "padding may appear only at the end")
-          (expect-fail "unpadded variant rejects padding" test-rejects-padding-in-unpadded "invalid character")
-          (expect-fail "padded variant rejects unpadded input" test-rejects-unpadded-in-padded "not a multiple of four")
-          (expect-fail "unpadded variant rejects a length of one mod four"
-                       test-rejects-unpadded-length-one
-                       "invalid for unpadded Base64")
-          (expect-fail "rejects a non-string argument" test-rejects-non-string "expects a string"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "length not a multiple of four" test-rejects-bad-length "not a multiple of four")
+             (expect-fail "invalid character" test-rejects-invalid-character "invalid character")
+             (expect-fail "url-safe alphabet is rejected by the standard variant"
+                          test-rejects-url-alphabet-in-standard
+                          "invalid character")
+             (expect-fail "standard alphabet is rejected by the url variant"
+                          test-rejects-standard-alphabet-in-url
+                          "invalid character")
+             (expect-fail "whitespace is rejected" test-rejects-whitespace "invalid character")
+             (expect-fail "padding in a non-final group"
+                          test-rejects-padding-not-final
+                          "padding may appear only at the end")
+             (expect-fail "padding as the third character" test-rejects-padding-third-character "invalid padding")
+             (expect-fail "padding as the second character"
+                          test-rejects-padding-second-character
+                          "padding may appear only at the end")
+             (expect-fail "all padding" test-rejects-all-padding "padding may appear only at the end")
+             (expect-fail "unpadded variant rejects padding" test-rejects-padding-in-unpadded "invalid character")
+             (expect-fail "padded variant rejects unpadded input"
+                          test-rejects-unpadded-in-padded
+                          "not a multiple of four")
+             (expect-fail "unpadded variant rejects a length of one mod four"
+                          test-rejects-unpadded-length-one
+                          "invalid for unpadded Base64")
+             (expect-fail "rejects a non-string argument" test-rejects-non-string "expects a string"))))))
 
   (export tests))

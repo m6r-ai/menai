@@ -1,78 +1,77 @@
 ; Tests for zlib-decompress.menai
 
-(let
-  ((zlib-mod (import "zlib-decompress"))
-   (t (import "menai-test"))
-   (decompress (:: zlib-mod decompress))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((zlib-mod (import "zlib-decompress"))
+      (t (import "menai-test"))
+      (decompress (:: zlib-mod decompress))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; A deflate stream decompresses to its text.
-   (test-deflate-stream
-    (lambda ()
-      (let ((r (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b045d"))))
-        (assert-equal (bytes->string r) "hello world"))))
+      ; A deflate stream decompresses to its text.
+      (test-deflate-stream
+       (lambda ()
+         (let ((r (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b045d"))))
+           (assert-equal (bytes->string r) "hello world"))))
 
-   ; An empty stream decompresses to zero bytes.
-   (test-empty-stream
-    (lambda ()
-      (let ((r (decompress (string-hex->bytes "789c030000000001"))))
-        (assert-equal (bytes-length r) 0))))
+      ; An empty stream decompresses to zero bytes.
+      (test-empty-stream
+       (lambda ()
+         (let ((r (decompress (string-hex->bytes "789c030000000001"))))
+           (assert-equal (bytes-length r) 0))))
 
-   ; A stored stream decompresses to its text.
-   (test-stored-stream
-    (lambda ()
-      (let ((r (decompress (string-hex->bytes "7801010800f7ff61626364656667680e000325"))))
-        (assert-equal (bytes->string r) "abcdefgh"))))
+      ; A stored stream decompresses to its text.
+      (test-stored-stream
+       (lambda ()
+         (let ((r (decompress (string-hex->bytes "7801010800f7ff61626364656667680e000325"))))
+           (assert-equal (bytes->string r) "abcdefgh"))))
 
-   ; A non-bytes argument is rejected.
-   (test-rejects-non-bytes
-    (lambda ()
-      (decompress "not bytes")))
+      ; A non-bytes argument is rejected.
+      (test-rejects-non-bytes
+       (lambda ()
+         (decompress "not bytes")))
 
-   ; Too-short input is rejected.
-   (test-rejects-too-short
-    (lambda ()
-      (decompress (string-hex->bytes "789c"))))
+      ; Too-short input is rejected.
+      (test-rejects-too-short
+       (lambda ()
+         (decompress (string-hex->bytes "789c"))))
 
-   ; A non-DEFLATE compression method is rejected.
-   (test-rejects-non-deflate
-    (lambda ()
-      (decompress (string-hex->bytes "7709cbc80400013b00d2"))))
+      ; A non-DEFLATE compression method is rejected.
+      (test-rejects-non-deflate
+       (lambda ()
+         (decompress (string-hex->bytes "7709cbc80400013b00d2"))))
 
-   ; A failed header check is rejected.
-   (test-rejects-bad-header-check
-    (lambda ()
-      (decompress (string-hex->bytes "789dcbc80400013b00d2"))))
+      ; A failed header check is rejected.
+      (test-rejects-bad-header-check
+       (lambda ()
+         (decompress (string-hex->bytes "789dcbc80400013b00d2"))))
 
-   ; A preset dictionary is rejected.
-   (test-rejects-preset-dictionary
-    (lambda ()
-      (decompress (string-hex->bytes "7820cbc80400013b00d2"))))
+      ; A preset dictionary is rejected.
+      (test-rejects-preset-dictionary
+       (lambda ()
+         (decompress (string-hex->bytes "7820cbc80400013b00d2"))))
 
-   ; A checksum mismatch is rejected.
-   (test-rejects-checksum-mismatch
-    (lambda ()
-      (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b04a2"))))
+      ; A checksum mismatch is rejected.
+      (test-rejects-checksum-mismatch
+       (lambda ()
+         (decompress (string-hex->bytes "789ccb48cdc9c95728cf2fca4901001a0b04a2"))))
 
-   (tests
-    (list
-      (list
-        "decompress"
-        (list
-          (expect-pass "decompresses a deflate stream" test-deflate-stream)
-          (expect-pass "decompresses an empty stream" test-empty-stream)
-          (expect-pass "decompresses a stored stream" test-stored-stream)))
+      (tests
+       (list
+         (list
+           "decompress"
+           (list
+             (expect-pass "decompresses a deflate stream" test-deflate-stream)
+             (expect-pass "decompresses an empty stream" test-empty-stream)
+             (expect-pass "decompresses a stored stream" test-stored-stream)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
-          (expect-fail "rejects too-short input" test-rejects-too-short "too short")
-          (expect-fail "rejects non-DEFLATE compression method" test-rejects-non-deflate "not DEFLATE")
-          (expect-fail "rejects a failed header check" test-rejects-bad-header-check "header check failed")
-          (expect-fail "rejects preset dictionaries" test-rejects-preset-dictionary "preset dictionaries")
-          (expect-fail "rejects a checksum mismatch" test-rejects-checksum-mismatch "checksum mismatch"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
+             (expect-fail "rejects too-short input" test-rejects-too-short "too short")
+             (expect-fail "rejects non-DEFLATE compression method" test-rejects-non-deflate "not DEFLATE")
+             (expect-fail "rejects a failed header check" test-rejects-bad-header-check "header check failed")
+             (expect-fail "rejects preset dictionaries" test-rejects-preset-dictionary "preset dictionaries")
+             (expect-fail "rejects a checksum mismatch" test-rejects-checksum-mismatch "checksum mismatch"))))))
 
   (export tests))

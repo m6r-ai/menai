@@ -1,134 +1,133 @@
 ; Tests for json-decode.menai
 
-(let
-  ((json (import "json-decode"))
-   (t (import "menai-test"))
-   (decode (:: json decode))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
+(let ((json (import "json-decode"))
+      (t (import "menai-test"))
+      (decode (:: json decode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
 
-   ; An empty object decodes to an empty dict.
-   (test-empty-object
-    (lambda ()
-      (assert-equal (decode "{}") (dict))))
+      ; An empty object decodes to an empty dict.
+      (test-empty-object
+       (lambda ()
+         (assert-equal (decode "{}") (dict))))
 
-   ; An object with a single key decodes to a one-entry dict.
-   (test-single-key
-    (lambda ()
-      (assert-equal (decode "{\"a\": 1}") (dict "a" 1))))
+      ; An object with a single key decodes to a one-entry dict.
+      (test-single-key
+       (lambda ()
+         (assert-equal (decode "{\"a\": 1}") (dict "a" 1))))
 
-   ; A nested object decodes to a nested dict.
-   (test-nested-object
-    (lambda ()
-      (assert-equal (decode "{\"a\": {\"b\": 2}}") (dict "a" (dict "b" 2)))))
+      ; A nested object decodes to a nested dict.
+      (test-nested-object
+       (lambda ()
+         (assert-equal (decode "{\"a\": {\"b\": 2}}") (dict "a" (dict "b" 2)))))
 
-   ; An empty array decodes to an empty list.
-   (test-empty-array
-    (lambda ()
-      (assert-equal (decode "[]") (list))))
+      ; An empty array decodes to an empty list.
+      (test-empty-array
+       (lambda ()
+         (assert-equal (decode "[]") (list))))
 
-   ; An integer array decodes to a list of integers.
-   (test-integer-array
-    (lambda ()
-      (assert-equal (decode "[1, 2, 3]") (list 1 2 3))))
+      ; An integer array decodes to a list of integers.
+      (test-integer-array
+       (lambda ()
+         (assert-equal (decode "[1, 2, 3]") (list 1 2 3))))
 
-   ; A nested array decodes to a nested list.
-   (test-nested-array
-    (lambda ()
-      (assert-equal (decode "[[1, 2], [3, 4]]") (list (list 1 2) (list 3 4)))))
+      ; A nested array decodes to a nested list.
+      (test-nested-array
+       (lambda ()
+         (assert-equal (decode "[[1, 2], [3, 4]]") (list (list 1 2) (list 3 4)))))
 
-   ; An empty string decodes to the empty string.
-   (test-empty-string
-    (lambda ()
-      (assert-equal (decode "\"\"") "")))
+      ; An empty string decodes to the empty string.
+      (test-empty-string
+       (lambda ()
+         (assert-equal (decode "\"\"") "")))
 
-   ; A simple string decodes to itself.
-   (test-simple-string
-    (lambda ()
-      (assert-equal (decode "\"hello\"") "hello")))
+      ; A simple string decodes to itself.
+      (test-simple-string
+       (lambda ()
+         (assert-equal (decode "\"hello\"") "hello")))
 
-   ; A newline escape decodes to a newline.
-   (test-escape-newline
-    (lambda ()
-      (assert-equal (decode "\"\\n\"") "\n")))
+      ; A newline escape decodes to a newline.
+      (test-escape-newline
+       (lambda ()
+         (assert-equal (decode "\"\\n\"") "\n")))
 
-   ; A tab escape decodes to a tab.
-   (test-escape-tab
-    (lambda ()
-      (assert-equal (decode "\"\\t\"") "\t")))
+      ; A tab escape decodes to a tab.
+      (test-escape-tab
+       (lambda ()
+         (assert-equal (decode "\"\\t\"") "\t")))
 
-   ; A unicode escape decodes to the character it names.
-   (test-escape-unicode
-    (lambda ()
-      (assert-equal (decode "\"\\u0041\"") "A")))
+      ; A unicode escape decodes to the character it names.
+      (test-escape-unicode
+       (lambda ()
+         (assert-equal (decode "\"\\u0041\"") "A")))
 
-   ; An integer decodes to an integer.
-   (test-integer
-    (lambda ()
-      (assert-equal (decode "42") 42)))
+      ; An integer decodes to an integer.
+      (test-integer
+       (lambda ()
+         (assert-equal (decode "42") 42)))
 
-   ; A negative integer decodes to a negative integer.
-   (test-negative-integer
-    (lambda ()
-      (assert-equal (decode "-7") -7)))
+      ; A negative integer decodes to a negative integer.
+      (test-negative-integer
+       (lambda ()
+         (assert-equal (decode "-7") -7)))
 
-   ; A float decodes to a float.
-   (test-float
-    (lambda ()
-      (assert-equal (decode "3.14") 3.14)))
+      ; A float decodes to a float.
+      (test-float
+       (lambda ()
+         (assert-equal (decode "3.14") 3.14)))
 
-   ; true decodes to #t.
-   (test-true
-    (lambda ()
-      (assert-equal (decode "true") #t)))
+      ; true decodes to #t.
+      (test-true
+       (lambda ()
+         (assert-equal (decode "true") #t)))
 
-   ; false decodes to #f.
-   (test-false
-    (lambda ()
-      (assert-equal (decode "false") #f)))
+      ; false decodes to #f.
+      (test-false
+       (lambda ()
+         (assert-equal (decode "false") #f)))
 
-   ; null decodes to #none.
-   (test-null
-    (lambda ()
-      (assert-equal (decode "null") #none)))
+      ; null decodes to #none.
+      (test-null
+       (lambda ()
+         (assert-equal (decode "null") #none)))
 
-   (tests
-    (list
-      (list
-        "objects"
-        (list
-          (expect-pass "empty object" test-empty-object)
-          (expect-pass "single key" test-single-key)
-          (expect-pass "nested object" test-nested-object)))
+      (tests
+       (list
+         (list
+           "objects"
+           (list
+             (expect-pass "empty object" test-empty-object)
+             (expect-pass "single key" test-single-key)
+             (expect-pass "nested object" test-nested-object)))
 
-      (list
-        "arrays"
-        (list
-          (expect-pass "empty array" test-empty-array)
-          (expect-pass "integer array" test-integer-array)
-          (expect-pass "nested array" test-nested-array)))
+         (list
+           "arrays"
+           (list
+             (expect-pass "empty array" test-empty-array)
+             (expect-pass "integer array" test-integer-array)
+             (expect-pass "nested array" test-nested-array)))
 
-      (list
-        "strings"
-        (list
-          (expect-pass "empty string" test-empty-string)
-          (expect-pass "simple string" test-simple-string)
-          (list
-            "escapes"
-            (list
-              (expect-pass "newline" test-escape-newline)
-              (expect-pass "tab" test-escape-tab)
-              (expect-pass "unicode" test-escape-unicode)))))
+         (list
+           "strings"
+           (list
+             (expect-pass "empty string" test-empty-string)
+             (expect-pass "simple string" test-simple-string)
+             (list
+               "escapes"
+               (list
+                 (expect-pass "newline" test-escape-newline)
+                 (expect-pass "tab" test-escape-tab)
+                 (expect-pass "unicode" test-escape-unicode)))))
 
-      (list
-        "numbers"
-        (list
-          (expect-pass "integer" test-integer)
-          (expect-pass "negative integer" test-negative-integer)
-          (expect-pass "float" test-float)))
+         (list
+           "numbers"
+           (list
+             (expect-pass "integer" test-integer)
+             (expect-pass "negative integer" test-negative-integer)
+             (expect-pass "float" test-float)))
 
-      (list
-        "literals"
-        (list (expect-pass "true" test-true) (expect-pass "false" test-false) (expect-pass "null" test-null))))))
+         (list
+           "literals"
+           (list (expect-pass "true" test-true) (expect-pass "false" test-false) (expect-pass "null" test-null))))))
 
   (export tests))

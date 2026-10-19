@@ -67,53 +67,53 @@
 ; non-#none "shared-strings" or a shared-string entry that is not an element, a
 ; non-dict "media", or a non-bytes media part.
 
-(let
-  ((zip-create (import "zip-create"))
-   (xml-encode (import "xml-encode"))
+(let ((zip-create (import "zip-create"))
+      (xml-encode (import "xml-encode"))
 
-   (content-types-part "[Content_Types].xml")
-   (root-rels-part "_rels/.rels")
-   (workbook-part "xl/workbook.xml")
-   (workbook-rels-part "xl/_rels/workbook.xml.rels")
-   (shared-strings-part "xl/sharedStrings.xml")
-   (styles-part "xl/styles.xml")
-   (theme-part "xl/theme/theme1.xml")
+      (content-types-part "[Content_Types].xml")
+      (root-rels-part "_rels/.rels")
+      (workbook-part "xl/workbook.xml")
+      (workbook-rels-part "xl/_rels/workbook.xml.rels")
+      (shared-strings-part "xl/sharedStrings.xml")
+      (styles-part "xl/styles.xml")
+      (theme-part "xl/theme/theme1.xml")
 
-   (rels-namespace "http://schemas.openxmlformats.org/package/2006/relationships")
-   (content-types-namespace "http://schemas.openxmlformats.org/package/2006/content-types")
-   (main-namespace "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
+      (rels-namespace "http://schemas.openxmlformats.org/package/2006/relationships")
+      (content-types-namespace "http://schemas.openxmlformats.org/package/2006/content-types")
+      (main-namespace "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
 
-   (office-document-relationship "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument")
+      (office-document-relationship
+       "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument")
 
-   (workbook-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml")
+      (workbook-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml")
 
-   (worksheet-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")
+      (worksheet-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")
 
-   (shared-strings-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml")
+      (shared-strings-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml")
 
-   (styles-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml")
-   (theme-content-type "application/vnd.openxmlformats-officedocument.theme+xml")
-   (rels-content-type "application/vnd.openxmlformats-package.relationships+xml")
-   (xml-content-type "application/xml")
+      (styles-content-type "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml")
+      (theme-content-type "application/vnd.openxmlformats-officedocument.theme+xml")
+      (rels-content-type "application/vnd.openxmlformats-package.relationships+xml")
+      (xml-content-type "application/xml")
 
-   ; An XML element with the given tag, attributes, and children.
-   (element
-    (lambda (tag attrs children)
-      (dict "tag" tag "attrs" attrs "children" children)))
+      ; An XML element with the given tag, attributes, and children.
+      (element
+       (lambda (tag attrs children)
+         (dict "tag" tag "attrs" attrs "children" children)))
 
-   ; Serialise an element to a UTF-8 bytes value.
-   (element-bytes
-    (lambda (e)
-      (string->bytes ((:: xml-encode encode) e))))
+      ; Serialise an element to a UTF-8 bytes value.
+      (element-bytes
+       (lambda (e)
+         (string->bytes ((:: xml-encode encode) e))))
 
-   ; The lowercased extension of a part name: the text after the last ".",
-   ; or the whole name when it has none.
-   (extension-of
-    (lambda (name)
-      (let ((dot (string-index name ".")))
-        (if (none? dot)
-            (string-downcase name)
-            (let ((last-dot
+      ; The lowercased extension of a part name: the text after the last ".",
+      ; or the whole name when it has none.
+      (extension-of
+       (lambda (name)
+         (let ((dot (string-index name ".")))
+           (if (none? dot)
+               (string-downcase name)
+               (let ((last-dot
                       (lambda (i found)
                         (if (integer>=? i (string-length name))
                             found
@@ -122,12 +122,12 @@
                               (if (string=? (string-nth name i) ".")
                                   i
                                   found))))))
-              (string-downcase (string-slice name (integer+ (last-dot 0 dot) 1))))))))
+                 (string-downcase (string-slice name (integer+ (last-dot 0 dot) 1))))))))
 
-   ; The final "/"-separated segment of a part name.
-   (last-path-segment
-    (lambda (name)
-      (let ((loop
+      ; The final "/"-separated segment of a part name.
+      (last-path-segment
+       (lambda (name)
+         (let ((loop
                 (lambda (i found)
                   (if (integer>=? i (string-length name))
                       found
@@ -136,70 +136,70 @@
                         (if (string=? (string-nth name i) "/")
                             (integer+ i 1)
                             found))))))
-        (string-slice name (loop 0 0)))))
+           (string-slice name (loop 0 0)))))
 
-   ; The attributes of one <Relationship> element.  The target mode is omitted
-   ; when it is #none.
-   (relationship-attributes
-    (lambda (id relationship)
-      (let ((type (dict-get relationship "type"))
-            (target (dict-get relationship "target"))
-            (mode (dict-get relationship "mode")))
-        (if (string? type)
-            (if (string? target)
-                (let ((attrs (dict "Id" id "Type" type "Target" target)))
-                  (if (string? mode)
-                      (dict-with attrs "TargetMode" mode)
-                      attrs))
-                (error (string-concat "xlsx-encode: relationship \"" id "\" \"target\" must be a string")))
-            (error (string-concat "xlsx-encode: relationship \"" id "\" \"type\" must be a string"))))))
+      ; The attributes of one <Relationship> element.  The target mode is omitted
+      ; when it is #none.
+      (relationship-attributes
+       (lambda (id relationship)
+         (let ((type (dict-get relationship "type"))
+               (target (dict-get relationship "target"))
+               (mode (dict-get relationship "mode")))
+           (if (string? type)
+               (if (string? target)
+                   (let ((attrs (dict "Id" id "Type" type "Target" target)))
+                     (if (string? mode)
+                         (dict-with attrs "TargetMode" mode)
+                         attrs))
+                   (error (string-concat "xlsx-encode: relationship \"" id "\" \"target\" must be a string")))
+               (error (string-concat "xlsx-encode: relationship \"" id "\" \"type\" must be a string"))))))
 
-   ; One <Relationship> element for a relationship id and relationship dict.
-   (relationship-element
-    (lambda (id relationship)
-      (if (dict? relationship)
-          (element "Relationship" (relationship-attributes id relationship) (list))
-          (error (string-concat "xlsx-encode: relationship \"" id "\" must be a dict")))))
+      ; One <Relationship> element for a relationship id and relationship dict.
+      (relationship-element
+       (lambda (id relationship)
+         (if (dict? relationship)
+             (element "Relationship" (relationship-attributes id relationship) (list))
+             (error (string-concat "xlsx-encode: relationship \"" id "\" must be a dict")))))
 
-   ; The <Relationships> root for a relationships map.  Entries are emitted in
-   ; the dict's insertion order.
-   (relationships-element
-    (lambda (relationships)
-      (element
-        "Relationships"
-        (dict "xmlns" rels-namespace)
-        (map-list
-          (lambda (id)
-            (relationship-element id (dict-get relationships id)))
-          (dict-keys relationships)))))
+      ; The <Relationships> root for a relationships map.  Entries are emitted in
+      ; the dict's insertion order.
+      (relationships-element
+       (lambda (relationships)
+         (element
+           "Relationships"
+           (dict "xmlns" rels-namespace)
+           (map-list
+             (lambda (id)
+               (relationship-element id (dict-get relationships id)))
+             (dict-keys relationships)))))
 
-   ; The root relationships part, pointing at xl/workbook.xml.
-   (root-rels-element
-    (lambda ()
-      (element
-        "Relationships"
-        (dict "xmlns" rels-namespace)
-        (list
-          (element
-            "Relationship"
-            (dict "Id" "rId1" "Type" office-document-relationship "Target" workbook-part)
-            (list))))))
+      ; The root relationships part, pointing at xl/workbook.xml.
+      (root-rels-element
+       (lambda ()
+         (element
+           "Relationships"
+           (dict "xmlns" rels-namespace)
+           (list
+             (element
+               "Relationship"
+               (dict "Id" "rId1" "Type" office-document-relationship "Target" workbook-part)
+               (list))))))
 
-   ; One <Default> content-type element.
-   (default-element
-    (lambda (extension content-type)
-      (element "Default" (dict "Extension" extension "ContentType" content-type) (list))))
+      ; One <Default> content-type element.
+      (default-element
+       (lambda (extension content-type)
+         (element "Default" (dict "Extension" extension "ContentType" content-type) (list))))
 
-   ; One <Override> content-type element.
-   (override-element
-    (lambda (part-name content-type)
-      (element "Override" (dict "PartName" part-name "ContentType" content-type) (list))))
+      ; One <Override> content-type element.
+      (override-element
+       (lambda (part-name content-type)
+         (element "Override" (dict "PartName" part-name "ContentType" content-type) (list))))
 
-   ; The distinct lowercased extensions of the media part names, in first-seen
-   ; order.
-   (media-extensions
-    (lambda (media)
-      (let ((loop
+      ; The distinct lowercased extensions of the media part names, in first-seen
+      ; order.
+      (media-extensions
+       (lambda (media)
+         (let ((loop
                 (lambda (names seen acc)
                   (if (list-null? names)
                       (list-reverse acc)
@@ -207,165 +207,165 @@
                         (if (list-member? seen ext)
                             (loop (list-rest names) seen acc)
                             (loop (list-rest names) (list-append seen ext) (list-prepend acc ext))))))))
-        (loop (dict-keys media) (list) (list)))))
+           (loop (dict-keys media) (list) (list)))))
 
-   ; The <Default> elements for the media extensions.
-   (media-defaults
-    (lambda (media)
-      (map-list
-        (lambda (ext)
-          (default-element ext (string-concat "image/" ext)))
-        (media-extensions media))))
+      ; The <Default> elements for the media extensions.
+      (media-defaults
+       (lambda (media)
+         (map-list
+           (lambda (ext)
+             (default-element ext (string-concat "image/" ext)))
+           (media-extensions media))))
 
-   ; The <Override> elements for the XML parts present.
-   (part-overrides
-    (lambda (sheets shared-strings styles theme)
-      (list-concat
-        (list (override-element (string-concat "/" workbook-part) workbook-content-type))
-        (map-list
-          (lambda (s)
-            (override-element (string-concat "/" (sheet-part-of s)) worksheet-content-type))
-          sheets)
-        (if (list? shared-strings)
-            (list (override-element (string-concat "/" shared-strings-part) shared-strings-content-type))
-            (list))
-        (if (dict? styles)
-            (list (override-element (string-concat "/" styles-part) styles-content-type))
-            (list))
-        (if (dict? theme)
-            (list (override-element (string-concat "/" theme-part) theme-content-type))
-            (list)))))
+      ; The <Override> elements for the XML parts present.
+      (part-overrides
+       (lambda (sheets shared-strings styles theme)
+         (list-concat
+           (list (override-element (string-concat "/" workbook-part) workbook-content-type))
+           (map-list
+             (lambda (s)
+               (override-element (string-concat "/" (sheet-part-of s)) worksheet-content-type))
+             sheets)
+           (if (list? shared-strings)
+               (list (override-element (string-concat "/" shared-strings-part) shared-strings-content-type))
+               (list))
+           (if (dict? styles)
+               (list (override-element (string-concat "/" styles-part) styles-content-type))
+               (list))
+           (if (dict? theme)
+               (list (override-element (string-concat "/" theme-part) theme-content-type))
+               (list)))))
 
-   ; The [Content_Types].xml part.
-   (content-types-element
-    (lambda (sheets shared-strings styles theme media)
-      (element
-        "Types"
-        (dict "xmlns" content-types-namespace)
-        (list-concat
-          (list (default-element "rels" rels-content-type) (default-element "xml" xml-content-type))
-          (if (dict? media)
-              (media-defaults media)
-              (list))
-          (part-overrides sheets shared-strings styles theme)))))
+      ; The [Content_Types].xml part.
+      (content-types-element
+       (lambda (sheets shared-strings styles theme media)
+         (element
+           "Types"
+           (dict "xmlns" content-types-namespace)
+           (list-concat
+             (list (default-element "rels" rels-content-type) (default-element "xml" xml-content-type))
+             (if (dict? media)
+                 (media-defaults media)
+                 (list))
+             (part-overrides sheets shared-strings styles theme)))))
 
-   ; The shared strings part: an <sst> root whose children are the list's <si>
-   ; elements.  A list entry that is not an element raises.
-   (shared-strings-element
-    (lambda (shared-strings)
-      (element
-        "sst"
-        (dict "xmlns" main-namespace)
-        (map-list
-          (lambda (si)
-            (if (dict? si)
-                si
-                (error "xlsx-encode: a shared-string entry must be an element dict")))
-          shared-strings))))
+      ; The shared strings part: an <sst> root whose children are the list's <si>
+      ; elements.  A list entry that is not an element raises.
+      (shared-strings-element
+       (lambda (shared-strings)
+         (element
+           "sst"
+           (dict "xmlns" main-namespace)
+           (map-list
+             (lambda (si)
+               (if (dict? si)
+                   si
+                   (error "xlsx-encode: a shared-string entry must be an element dict")))
+             shared-strings))))
 
-   ; The part name of one sheet, raising when the sheet is not a dict or its
-   ; "part" is not a string.
-   (sheet-part-of
-    (lambda (s)
-      (if (dict? s)
-          (let ((part (dict-get s "part")))
-            (if (string? part)
-                part
-                (error "xlsx-encode: a sheet \"part\" must be a string")))
-          (error "xlsx-encode: a sheet \"part\" must be a string"))))
+      ; The part name of one sheet, raising when the sheet is not a dict or its
+      ; "part" is not a string.
+      (sheet-part-of
+       (lambda (s)
+         (if (dict? s)
+             (let ((part (dict-get s "part")))
+               (if (string? part)
+                   part
+                   (error "xlsx-encode: a sheet \"part\" must be a string")))
+             (error "xlsx-encode: a sheet \"part\" must be a string"))))
 
-   ; The entries for one sheet: the sheet part, plus its rels part when the
-   ; relationships map is non-empty.
-   (sheet-entries
-    (lambda (s)
-      (let ((part (sheet-part-of s))
-            (sheet-element (dict-get s "element"))
-            (rels (dict-get s "relationships")))
-        (if (dict? sheet-element)
-            (if (dict? rels)
-                (list-concat
-                  (list (dict "name" part "content" (element-bytes sheet-element)))
-                  (if (integer=? (dict-length rels) 0)
-                      (list)
-                      (list
-                        (dict "name" (string-concat "xl/worksheets/_rels/" (last-path-segment part) ".rels")
-                              "content" (element-bytes (relationships-element rels))))))
-                (error "xlsx-encode: a sheet \"relationships\" must be a dict"))
-            (error "xlsx-encode: a sheet \"element\" must be an element dict")))))
+      ; The entries for one sheet: the sheet part, plus its rels part when the
+      ; relationships map is non-empty.
+      (sheet-entries
+       (lambda (s)
+         (let ((part (sheet-part-of s))
+               (sheet-element (dict-get s "element"))
+               (rels (dict-get s "relationships")))
+           (if (dict? sheet-element)
+               (if (dict? rels)
+                   (list-concat
+                     (list (dict "name" part "content" (element-bytes sheet-element)))
+                     (if (integer=? (dict-length rels) 0)
+                         (list)
+                         (list
+                           (dict "name" (string-concat "xl/worksheets/_rels/" (last-path-segment part) ".rels")
+                                 "content" (element-bytes (relationships-element rels))))))
+                   (error "xlsx-encode: a sheet \"relationships\" must be a dict"))
+               (error "xlsx-encode: a sheet \"element\" must be an element dict")))))
 
-   ; The entries for every sheet, in sheet order.
-   (all-sheet-entries
-    (lambda (sheets)
-      (fold-list
-        (lambda (acc s)
-          (list-concat acc (sheet-entries s)))
-        (list)
-        sheets)))
+      ; The entries for every sheet, in sheet order.
+      (all-sheet-entries
+       (lambda (sheets)
+         (fold-list
+           (lambda (acc s)
+             (list-concat acc (sheet-entries s)))
+           (list)
+           sheets)))
 
-   ; The media parts as entry dicts, in the dict's insertion order.  A part
-   ; whose value is not bytes raises.
-   (media-entries
-    (lambda (media)
-      (map-list
-        (lambda (name)
-          (let ((content (dict-get media name)))
-            (if (bytes? content)
-                (dict "name" name "content" content)
-                (error (string-concat "xlsx-encode: media part \"" name "\" must be bytes")))))
-        (dict-keys media))))
+      ; The media parts as entry dicts, in the dict's insertion order.  A part
+      ; whose value is not bytes raises.
+      (media-entries
+       (lambda (media)
+         (map-list
+           (lambda (name)
+             (let ((content (dict-get media name)))
+               (if (bytes? content)
+                   (dict "name" name "content" content)
+                   (error (string-concat "xlsx-encode: media part \"" name "\" must be bytes")))))
+           (dict-keys media))))
 
-   ; The package parts as a list of entry dicts for zip-create, in a canonical
-   ; order: the structural parts first, then the workbook, then the sheets, then
-   ; the shared strings, styles, and theme, then the media.
-   (package-entries
-    (lambda (v)
-      (let ((workbook (dict-get v "workbook"))
-            (relationships (dict-get v "relationships"))
-            (shared-strings (dict-get v "shared-strings"))
-            (styles (dict-get v "styles"))
-            (theme (dict-get v "theme"))
-            (sheets (dict-get v "sheets"))
-            (media (dict-get v "media")))
-        (if (dict? workbook)
-            (if (dict? relationships)
-                (if (list? sheets)
-                    (if (or (none? shared-strings)
-                            (list? shared-strings))
-                        (list-concat
-                          (list
-                            (dict "name" content-types-part
-                                  "content" (element-bytes
-                                              (content-types-element sheets shared-strings styles theme media)))
-                            (dict "name" root-rels-part "content" (element-bytes (root-rels-element)))
-                            (dict "name" workbook-part "content" (element-bytes workbook))
-                            (dict "name" workbook-rels-part
-                                  "content" (element-bytes (relationships-element relationships))))
-                          (all-sheet-entries sheets)
-                          (if (list? shared-strings)
-                              (list
-                                (dict "name" shared-strings-part
-                                      "content" (element-bytes (shared-strings-element shared-strings))))
-                              (list))
-                          (if (dict? styles)
-                              (list (dict "name" styles-part "content" (element-bytes styles)))
-                              (list))
-                          (if (dict? theme)
-                              (list (dict "name" theme-part "content" (element-bytes theme)))
-                              (list))
-                          (if (dict? media)
-                              (media-entries media)
-                              (list)))
-                        (error "xlsx-encode: \"shared-strings\" must be a list or #none"))
-                    (error "xlsx-encode: \"sheets\" must be a list"))
-                (error "xlsx-encode: \"relationships\" must be a dict"))
-            (error "xlsx-encode: \"workbook\" must be an element dict")))))
+      ; The package parts as a list of entry dicts for zip-create, in a canonical
+      ; order: the structural parts first, then the workbook, then the sheets, then
+      ; the shared strings, styles, and theme, then the media.
+      (package-entries
+       (lambda (v)
+         (let ((workbook (dict-get v "workbook"))
+               (relationships (dict-get v "relationships"))
+               (shared-strings (dict-get v "shared-strings"))
+               (styles (dict-get v "styles"))
+               (theme (dict-get v "theme"))
+               (sheets (dict-get v "sheets"))
+               (media (dict-get v "media")))
+           (if (dict? workbook)
+               (if (dict? relationships)
+                   (if (list? sheets)
+                       (if (or (none? shared-strings)
+                               (list? shared-strings))
+                           (list-concat
+                             (list
+                               (dict "name" content-types-part
+                                     "content" (element-bytes
+                                                 (content-types-element sheets shared-strings styles theme media)))
+                               (dict "name" root-rels-part "content" (element-bytes (root-rels-element)))
+                               (dict "name" workbook-part "content" (element-bytes workbook))
+                               (dict "name" workbook-rels-part
+                                     "content" (element-bytes (relationships-element relationships))))
+                             (all-sheet-entries sheets)
+                             (if (list? shared-strings)
+                                 (list
+                                   (dict "name" shared-strings-part
+                                         "content" (element-bytes (shared-strings-element shared-strings))))
+                                 (list))
+                             (if (dict? styles)
+                                 (list (dict "name" styles-part "content" (element-bytes styles)))
+                                 (list))
+                             (if (dict? theme)
+                                 (list (dict "name" theme-part "content" (element-bytes theme)))
+                                 (list))
+                             (if (dict? media)
+                                 (media-entries media)
+                                 (list)))
+                           (error "xlsx-encode: \"shared-strings\" must be a list or #none"))
+                       (error "xlsx-encode: \"sheets\" must be a list"))
+                   (error "xlsx-encode: \"relationships\" must be a dict"))
+               (error "xlsx-encode: \"workbook\" must be an element dict")))))
 
-   ; Encode an XLSX value tree as a bytes value containing a .xlsx package.  It
-   ; is the inverse of xlsx-decode's decode.
-   (encode
-    (lambda (v)
-      (if (dict? v)
-          ((:: zip-create create) (dict "entries" (package-entries v) "meta" (dict)))
-          (error "xlsx-encode: encode expects a dict")))))
+      ; Encode an XLSX value tree as a bytes value containing a .xlsx package.  It
+      ; is the inverse of xlsx-decode's decode.
+      (encode
+       (lambda (v)
+         (if (dict? v)
+             ((:: zip-create create) (dict "entries" (package-entries v) "meta" (dict)))
+             (error "xlsx-encode: encode expects a dict")))))
 
   (export encode))

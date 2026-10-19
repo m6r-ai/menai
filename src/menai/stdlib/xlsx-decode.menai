@@ -73,102 +73,101 @@
 ; It is the inverse of xlsx-encode's encode: for every value tree v that encode
 ; accepts, (decode (encode v)) reproduces v.
 
-(let
-  ((zip-extract (import "zip-extract"))
-   (xml-decode (import "xml-decode"))
+(let ((zip-extract (import "zip-extract"))
+      (xml-decode (import "xml-decode"))
 
-   (workbook-part "xl/workbook.xml")
-   (workbook-rels-part "xl/_rels/workbook.xml.rels")
-   (shared-strings-part "xl/sharedStrings.xml")
-   (styles-part "xl/styles.xml")
-   (theme-part "xl/theme/theme1.xml")
-   (worksheets-prefix "xl/worksheets/")
-   (media-prefix "xl/media/")
+      (workbook-part "xl/workbook.xml")
+      (workbook-rels-part "xl/_rels/workbook.xml.rels")
+      (shared-strings-part "xl/sharedStrings.xml")
+      (styles-part "xl/styles.xml")
+      (theme-part "xl/theme/theme1.xml")
+      (worksheets-prefix "xl/worksheets/")
+      (media-prefix "xl/media/")
 
-   ; The package's parts as a dict from part name to bytes.
-   (parts-of
-    (lambda (b)
-      (fold-list
-        (lambda (acc entry)
-          (dict-with acc (dict-get entry "name") (dict-get entry "content")))
-        (dict)
-        (dict-get ((:: zip-extract extract) b) "entries"))))
+      ; The package's parts as a dict from part name to bytes.
+      (parts-of
+       (lambda (b)
+         (fold-list
+           (lambda (acc entry)
+             (dict-with acc (dict-get entry "name") (dict-get entry "content")))
+           (dict)
+           (dict-get ((:: zip-extract extract) b) "entries"))))
 
-   ; The decoded element for a part, or #none when the part is absent.
-   (decode-part
-    (lambda (parts name)
-      (let ((content (dict-get parts name)))
-        (if (bytes? content)
-            ((:: xml-decode decode) (bytes->string content))
-            #none))))
+      ; The decoded element for a part, or #none when the part is absent.
+      (decode-part
+       (lambda (parts name)
+         (let ((content (dict-get parts name)))
+           (if (bytes? content)
+               ((:: xml-decode decode) (bytes->string content))
+               #none))))
 
-   ; The decoded element for a part that must be present.
-   (decode-required-part
-    (lambda (parts name)
-      (let ((content (dict-get parts name)))
-        (if (bytes? content)
-            ((:: xml-decode decode) (bytes->string content))
-            (error (string-concat "xlsx-decode: package has no " name))))))
+      ; The decoded element for a part that must be present.
+      (decode-required-part
+       (lambda (parts name)
+         (let ((content (dict-get parts name)))
+           (if (bytes? content)
+               ((:: xml-decode decode) (bytes->string content))
+               (error (string-concat "xlsx-decode: package has no " name))))))
 
-   ; Add one <Relationship> element to the relationships dict.  A child that is
-   ; not an element (the whitespace text nodes between the elements), or an
-   ; element missing its Id, Type, or Target, contributes nothing.  The target
-   ; mode is #none when the element declares none.
-   (add-relationship
-    (lambda (rels child)
-      (if (dict? child)
-          (let ((attrs (dict-get child "attrs"))
-                 (id (dict-get attrs "Id"))
-                 (type (dict-get attrs "Type"))
-                 (target (dict-get attrs "Target"))
-                 (mode (dict-get attrs "TargetMode")))
-            (if (and (string? id)
-                     (string? type)
-                     (string? target))
-                (dict-with rels id (dict "type" type "target" target "mode" mode))
-                rels))
-          rels)))
+      ; Add one <Relationship> element to the relationships dict.  A child that is
+      ; not an element (the whitespace text nodes between the elements), or an
+      ; element missing its Id, Type, or Target, contributes nothing.  The target
+      ; mode is #none when the element declares none.
+      (add-relationship
+       (lambda (rels child)
+         (if (dict? child)
+             (let ((attrs (dict-get child "attrs"))
+                   (id (dict-get attrs "Id"))
+                   (type (dict-get attrs "Type"))
+                   (target (dict-get attrs "Target"))
+                   (mode (dict-get attrs "TargetMode")))
+               (if (and (string? id)
+                        (string? type)
+                        (string? target))
+                   (dict-with rels id (dict "type" type "target" target "mode" mode))
+                   rels))
+             rels)))
 
-   ; The relationships map from a decoded relationships part, or an empty map
-   ; when the part is absent.  The root element's children are the
-   ; <Relationship> elements.
-   (relationships-of-part
-    (lambda (parts name)
-      (let ((root (decode-part parts name)))
-        (if (dict? root)
-            (fold-list add-relationship (dict) (dict-get root "children"))
-            (dict)))))
+      ; The relationships map from a decoded relationships part, or an empty map
+      ; when the part is absent.  The root element's children are the
+      ; <Relationship> elements.
+      (relationships-of-part
+       (lambda (parts name)
+         (let ((root (decode-part parts name)))
+           (if (dict? root)
+               (fold-list add-relationship (dict) (dict-get root "children"))
+               (dict)))))
 
-   ; The workbook's relationships map.
-   (relationships-of
-    (lambda (parts)
-      (relationships-of-part parts workbook-rels-part)))
+      ; The workbook's relationships map.
+      (relationships-of
+       (lambda (parts)
+         (relationships-of-part parts workbook-rels-part)))
 
-   ; The relationship target of a relationship id, or #none when the id is
-   ; unknown.
-   (relationship-target
-    (lambda (rels id)
-      (if (string? id)
-          (let ((relationship (dict-get rels id)))
-            (if (dict? relationship)
-                (dict-get relationship "target")
-                #none))
-          #none)))
+      ; The relationship target of a relationship id, or #none when the id is
+      ; unknown.
+      (relationship-target
+       (lambda (rels id)
+         (if (string? id)
+             (let ((relationship (dict-get rels id)))
+               (if (dict? relationship)
+                   (dict-get relationship "target")
+                   #none))
+             #none)))
 
-   ; The part names under a prefix, in part-name order, restricted to parts with
-   ; byte content so a directory entry is not mistaken for a part.
-   (parts-under
-    (lambda (parts prefix)
-      (filter-list
-        (lambda (name)
-          (and (string-prefix? name prefix)
-               (bytes? (dict-get parts name))))
-        (dict-keys parts))))
+      ; The part names under a prefix, in part-name order, restricted to parts with
+      ; byte content so a directory entry is not mistaken for a part.
+      (parts-under
+       (lambda (parts prefix)
+         (filter-list
+           (lambda (name)
+             (and (string-prefix? name prefix)
+                  (bytes? (dict-get parts name))))
+           (dict-keys parts))))
 
-   ; The final "/"-separated segment of a part name.
-   (last-path-segment
-    (lambda (name)
-      (let ((loop
+      ; The final "/"-separated segment of a part name.
+      (last-path-segment
+       (lambda (name)
+         (let ((loop
                 (lambda (i found)
                   (if (integer>=? i (string-length name))
                       found
@@ -177,110 +176,110 @@
                         (if (string=? (string-nth name i) "/")
                             (integer+ i 1)
                             found))))))
-        (string-slice name (loop 0 0)))))
+           (string-slice name (loop 0 0)))))
 
-   ; The <sheet> children of the workbook's <sheets>, in order.  The workbook
-   ; part's children are the <sheets> element; its children are the <sheet>
-   ; elements.  Returns an empty list when the workbook has no sheets list.
-   (sheet-elements
-    (lambda (workbook)
-      (let ((lists
-             (filter-list
-               (lambda (child)
-                 (and (dict? child)
-                      (string=? (dict-get child "tag") "sheets")))
-               (dict-get workbook "children"))))
-        (if (list-null? lists)
-            (list)
-            (dict-get (list-first lists) "children")))))
+      ; The <sheet> children of the workbook's <sheets>, in order.  The workbook
+      ; part's children are the <sheets> element; its children are the <sheet>
+      ; elements.  Returns an empty list when the workbook has no sheets list.
+      (sheet-elements
+       (lambda (workbook)
+         (let ((lists
+                (filter-list
+                  (lambda (child)
+                    (and (dict? child)
+                         (string=? (dict-get child "tag") "sheets")))
+                  (dict-get workbook "children"))))
+           (if (list-null? lists)
+               (list)
+               (dict-get (list-first lists) "children")))))
 
-   ; The relationship id carried by one <sheet> element, or #none.
-   (sheet-relationship
-    (lambda (child)
-      (if (dict? child)
-          (dict-get (dict-get child "attrs") "r:id")
-          #none)))
+      ; The relationship id carried by one <sheet> element, or #none.
+      (sheet-relationship
+       (lambda (child)
+         (if (dict? child)
+             (dict-get (dict-get child "attrs") "r:id")
+             #none)))
 
-   ; The sheet name carried by one <sheet> element, or #none.
-   (sheet-name
-    (lambda (child)
-      (if (dict? child)
-          (dict-get (dict-get child "attrs") "name")
-          #none)))
+      ; The sheet name carried by one <sheet> element, or #none.
+      (sheet-name
+       (lambda (child)
+         (if (dict? child)
+             (dict-get (dict-get child "attrs") "name")
+             #none)))
 
-   ; The worksheet part name for one <sheet> element.  The relationship target
-   ; is relative to the workbook part's directory ("xl/"), so
-   ; "worksheets/sheet1.xml" resolves to "xl/worksheets/sheet1.xml".  Raises when
-   ; the relationship id is missing or does not resolve, because a sheet that
-   ; cannot be located is a malformed package rather than a sheet to skip.
-   (sheet-part-of
-    (lambda (rels child)
-      (let ((target (relationship-target rels (sheet-relationship child))))
-        (if (string? target)
-            (string-concat "xl/" target)
-            (error "xlsx-decode: a sheet has no resolvable relationship")))))
+      ; The worksheet part name for one <sheet> element.  The relationship target
+      ; is relative to the workbook part's directory ("xl/"), so
+      ; "worksheets/sheet1.xml" resolves to "xl/worksheets/sheet1.xml".  Raises when
+      ; the relationship id is missing or does not resolve, because a sheet that
+      ; cannot be located is a malformed package rather than a sheet to skip.
+      (sheet-part-of
+       (lambda (rels child)
+         (let ((target (relationship-target rels (sheet-relationship child))))
+           (if (string? target)
+               (string-concat "xl/" target)
+               (error "xlsx-decode: a sheet has no resolvable relationship")))))
 
-   ; One sheet entry: the sheet's name, its part name, its decoded element, and
-   ; its own relationships.
-   (sheet-entry
-    (lambda (parts rels child)
-      (let ((part (sheet-part-of rels child)))
-        (dict "name" (sheet-name child)
-              "part" part
-              "element" (decode-required-part parts part)
-              "relationships" (relationships-of-part
-                                parts
-                                (string-concat "xl/worksheets/_rels/" (last-path-segment part) ".rels"))))))
+      ; One sheet entry: the sheet's name, its part name, its decoded element, and
+      ; its own relationships.
+      (sheet-entry
+       (lambda (parts rels child)
+         (let ((part (sheet-part-of rels child)))
+           (dict "name" (sheet-name child)
+                 "part" part
+                 "element" (decode-required-part parts part)
+                 "relationships" (relationships-of-part
+                                   parts
+                                   (string-concat "xl/worksheets/_rels/" (last-path-segment part) ".rels"))))))
 
-   ; The workbook's sheets, in workbook order.
-   (sheets-of
-    (lambda (parts workbook)
-      (let ((rels (relationships-of parts)))
-        (map-list
-          (lambda (child)
-            (sheet-entry parts rels child))
-          (sheet-elements workbook)))))
+      ; The workbook's sheets, in workbook order.
+      (sheets-of
+       (lambda (parts workbook)
+         (let ((rels (relationships-of parts)))
+           (map-list
+             (lambda (child)
+               (sheet-entry parts rels child))
+             (sheet-elements workbook)))))
 
-   ; The decoded <si> elements of the shared string table, or #none when the
-   ; part is absent.
-   (shared-strings-of
-    (lambda (parts)
-      (let ((root (decode-part parts shared-strings-part)))
-        (if (dict? root)
-            (filter-list
-              (lambda (child)
-                (and (dict? child)
-                     (string=? (dict-get child "tag") "si")))
-              (dict-get root "children"))
-            #none))))
+      ; The decoded <si> elements of the shared string table, or #none when the
+      ; part is absent.
+      (shared-strings-of
+       (lambda (parts)
+         (let ((root (decode-part parts shared-strings-part)))
+           (if (dict? root)
+               (filter-list
+                 (lambda (child)
+                   (and (dict? child)
+                        (string=? (dict-get child "tag") "si")))
+                 (dict-get root "children"))
+               #none))))
 
-   ; The media parts as a dict from part name to bytes, or #none when there are
-   ; none.
-   (media-of
-    (lambda (parts)
-      (let ((names (parts-under parts media-prefix)))
-        (if (list-null? names)
-            #none
-            (fold-list
-              (lambda (acc name)
-                (dict-with acc name (dict-get parts name)))
-              (dict)
-              names)))))
+      ; The media parts as a dict from part name to bytes, or #none when there are
+      ; none.
+      (media-of
+       (lambda (parts)
+         (let ((names (parts-under parts media-prefix)))
+           (if (list-null? names)
+               #none
+               (fold-list
+                 (lambda (acc name)
+                   (dict-with acc name (dict-get parts name)))
+                 (dict)
+                 names)))))
 
-   ; Decode a bytes value containing an XLSX package into a value tree.  It is
-   ; the inverse of xlsx-encode's encode.
-   (decode
-    (lambda (b)
-      (if (bytes? b)
-          (let ((parts (parts-of b))
-                 (workbook (decode-required-part parts workbook-part)))
-            (dict "workbook" workbook
-                  "relationships" (relationships-of parts)
-                  "shared-strings" (shared-strings-of parts)
-                  "styles" (decode-part parts styles-part)
-                  "theme" (decode-part parts theme-part)
-                  "sheets" (sheets-of parts workbook)
-                  "media" (media-of parts)))
-          (error "xlsx-decode: decode expects a bytes value")))))
+      ; Decode a bytes value containing an XLSX package into a value tree.  It is
+      ; the inverse of xlsx-encode's encode.
+      (decode
+       (lambda (b)
+         (if (bytes? b)
+             (let ((parts (parts-of b))
+                   (workbook (decode-required-part parts workbook-part)))
+               (dict "workbook" workbook
+                     "relationships" (relationships-of parts)
+                     "shared-strings" (shared-strings-of parts)
+                     "styles" (decode-part parts styles-part)
+                     "theme" (decode-part parts theme-part)
+                     "sheets" (sheets-of parts workbook)
+                     "media" (media-of parts)))
+             (error "xlsx-decode: decode expects a bytes value")))))
 
   (export decode))

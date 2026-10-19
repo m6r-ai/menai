@@ -35,78 +35,77 @@
 ; It is the inverse of xml-encode's encode: for every value tree v that encode
 ; accepts, (decode (encode v)) reproduces v.
 
-(let
-  ((is-space?
-    (lambda (ch)
-      (or (string=? ch " ")
-          (string=? ch "\t")
-          (string=? ch "\n")
-          (string=? ch "\r"))))
+(let ((is-space?
+       (lambda (ch)
+         (or (string=? ch " ")
+             (string=? ch "\t")
+             (string=? ch "\n")
+             (string=? ch "\r"))))
 
-   ; The index of the first non-whitespace character at or after `i`.
-   (skip-space
-    (lambda (s i)
-      (let ((loop
+      ; The index of the first non-whitespace character at or after `i`.
+      (skip-space
+       (lambda (s i)
+         (let ((loop
                 (lambda (j)
                   (if (and (integer<? j (string-length s))
                            (is-space? (string-nth s j)))
                       (loop (integer+ j 1))
                       j))))
-        (loop i))))
+           (loop i))))
 
-   ; The index of the first occurrence of `needle` at or after `i`, raising if
-   ; it does not occur.
-   ;
-   ; The scan advances one character at a time and tests the needle in place,
-   ; rather than slicing the remainder of the string and searching that.  A
-   ; slice would copy the whole tail on every call, making the parser quadratic
-   ; in the input length; scanning in place costs only the distance to the
-   ; needle.
-   (require-index
-    (lambda (s needle i)
-      (let ((loop
+      ; The index of the first occurrence of `needle` at or after `i`, raising if
+      ; it does not occur.
+      ;
+      ; The scan advances one character at a time and tests the needle in place,
+      ; rather than slicing the remainder of the string and searching that.  A
+      ; slice would copy the whole tail on every call, making the parser quadratic
+      ; in the input length; scanning in place costs only the distance to the
+      ; needle.
+      (require-index
+       (lambda (s needle i)
+         (let ((loop
                 (lambda (j)
                   (if (integer>=? j (string-length s))
                       (error (string-concat "xml-decode: expected \"" needle "\""))
                       (if (starts-at? s j needle)
                           j
                           (loop (integer+ j 1)))))))
-        (loop i))))
+           (loop i))))
 
-   ; #t when `s` starts with `prefix` at index `i`.  Unlike slicing to a fixed
-   ; end, this is safe when fewer than (string-length prefix) characters remain.
-   (starts-at?
-    (lambda (s i prefix)
-      (let ((end (integer+ i (string-length prefix))))
-        (and (integer<=? end (string-length s))
-             (string=? (string-slice s i end) prefix)))))
+      ; #t when `s` starts with `prefix` at index `i`.  Unlike slicing to a fixed
+      ; end, this is safe when fewer than (string-length prefix) characters remain.
+      (starts-at?
+       (lambda (s i prefix)
+         (let ((end (integer+ i (string-length prefix))))
+           (and (integer<=? end (string-length s))
+                (string=? (string-slice s i end) prefix)))))
 
-   ; Decode the entity starting at the "&" at `i`.  Returns
-   ; (list <decoded-string> <index-after-semicolon>).
-   (decode-entity
-    (lambda (s i)
-      (let ((semi (require-index s ";" i)))
-        (let ((body (string-slice s (integer+ i 1) semi)))
-          (list
-            (match body
-              ("amp" "&")
-              ("lt" "<")
-              ("gt" ">")
-              ("quot" "\"")
-              ("apos" "'")
-              (_
-               (if (string-prefix? body "#x")
-                   (integer-codepoint->string (string->integer (string-slice body 2) 16))
-                   (if (string-prefix? body "#")
-                       (integer-codepoint->string (string->integer (string-slice body 1)))
-                       (error (string-concat "xml-decode: unsupported entity \"&" body ";\""))))))
-            (integer+ semi 1))))))
+      ; Decode the entity starting at the "&" at `i`.  Returns
+      ; (list <decoded-string> <index-after-semicolon>).
+      (decode-entity
+       (lambda (s i)
+         (let ((semi (require-index s ";" i)))
+           (let ((body (string-slice s (integer+ i 1) semi)))
+             (list
+               (match body
+                 ("amp" "&")
+                 ("lt" "<")
+                 ("gt" ">")
+                 ("quot" "\"")
+                 ("apos" "'")
+                 (_
+                  (if (string-prefix? body "#x")
+                      (integer-codepoint->string (string->integer (string-slice body 2) 16))
+                      (if (string-prefix? body "#")
+                          (integer-codepoint->string (string->integer (string-slice body 1)))
+                          (error (string-concat "xml-decode: unsupported entity \"&" body ";\""))))))
+               (integer+ semi 1))))))
 
-   ; Decode the entities in s[i, end), returning the decoded string.  This is
-   ; used for attribute values, which may contain the same entities as text.
-   (decode-entities
-    (lambda (s i end)
-      (let ((loop
+      ; Decode the entities in s[i, end), returning the decoded string.  This is
+      ; used for attribute values, which may contain the same entities as text.
+      (decode-entities
+       (lambda (s i end)
+         (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j end)
                       (list->string (list-reverse acc))
@@ -115,13 +114,13 @@
                             (let ((decoded (decode-entity s j)))
                               (loop (list-nth decoded 1) (list-prepend acc (list-first decoded))))
                             (loop (integer+ j 1) (list-prepend acc ch))))))))
-        (loop i (list)))))
+           (loop i (list)))))
 
-   ; Decode a run of text, resolving entities, up to the next "<" at or after
-   ; `i`.  Returns (list <decoded-text> <index-of-">).
-   (decode-text
-    (lambda (s i)
-      (let ((loop
+      ; Decode a run of text, resolving entities, up to the next "<" at or after
+      ; `i`.  Returns (list <decoded-text> <index-of-">).
+      (decode-text
+       (lambda (s i)
+         (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j (string-length s))
                       (list (list->string (list-reverse acc)) j)
@@ -132,13 +131,13 @@
                                 (let ((decoded (decode-entity s j)))
                                   (loop (list-nth decoded 1) (list-prepend acc (list-first decoded))))
                                 (loop (integer+ j 1) (list-prepend acc ch)))))))))
-        (loop i (list)))))
+           (loop i (list)))))
 
-   ; Parse an attribute list starting at `i` (just after the tag name).  Returns
-   ; (list <attrs-dict> <index-of-"> or "/">).
-   (parse-attributes
-    (lambda (s i)
-      (let ((loop
+      ; Parse an attribute list starting at `i` (just after the tag name).  Returns
+      ; (list <attrs-dict> <index-of-"> or "/">).
+      (parse-attributes
+       (lambda (s i)
+         (let ((loop
                 (lambda (j attrs)
                   (let ((k (skip-space s j)))
                     (let ((ch (string-nth s k)))
@@ -155,13 +154,13 @@
                                         (integer+ close 1)
                                         (dict-with attrs name (decode-entities s (integer+ eq 2) close))))
                                     (error "xml-decode: attribute value must be quoted")))))))))))
-        (loop i (dict)))))
+           (loop i (dict)))))
 
-   ; Parse a start tag at `i` (the position of "<").  Returns
-   ; (list <tag-name> <attrs-dict> <self-closing?> <index-after-tag>).
-   (parse-start-tag
-    (lambda (s i)
-      (let ((name-end
+      ; Parse a start tag at `i` (the position of "<").  Returns
+      ; (list <tag-name> <attrs-dict> <self-closing?> <index-after-tag>).
+      (parse-start-tag
+       (lambda (s i)
+         (let ((name-end
                 (lambda (j)
                   (if (integer>=? j (string-length s))
                       (error "xml-decode: unterminated start tag")
@@ -171,22 +170,22 @@
                                 (string=? ch "/"))
                             j
                             (name-end (integer+ j 1))))))))
-        (let ((ne (name-end (integer+ i 1))))
-          (let ((name (string-slice s (integer+ i 1) ne)))
-            (if (string=? name "")
-                (error "xml-decode: empty tag name")
-                (let ((parsed (parse-attributes s ne)))
-                  (let ((attrs (list-first parsed))
-                        (stop (list-nth parsed 1)))
-                    (if (string=? (string-nth s stop) "/")
-                        (list name attrs #t (integer+ stop 2))
-                        (list name attrs #f (integer+ stop 1)))))))))))
+           (let ((ne (name-end (integer+ i 1))))
+             (let ((name (string-slice s (integer+ i 1) ne)))
+               (if (string=? name "")
+                   (error "xml-decode: empty tag name")
+                   (let ((parsed (parse-attributes s ne)))
+                     (let ((attrs (list-first parsed))
+                           (stop (list-nth parsed 1)))
+                       (if (string=? (string-nth s stop) "/")
+                           (list name attrs #t (integer+ stop 2))
+                           (list name attrs #f (integer+ stop 1)))))))))))
 
-   ; Parse the content of an element from `i` until the matching end tag for
-   ; `tag`.  Returns (list <children-list> <index-after-end-tag>).
-   (parse-content
-    (lambda (s i tag)
-      (let ((loop
+      ; Parse the content of an element from `i` until the matching end tag for
+      ; `tag`.  Returns (list <children-list> <index-after-end-tag>).
+      (parse-content
+       (lambda (s i tag)
+         (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j (string-length s))
                       (error (string-concat "xml-decode: missing end tag for <" tag ">"))
@@ -223,28 +222,28 @@
                               (if (string=? (list-first text) "")
                                   acc
                                   (list-prepend acc (list-first text))))))))))
-        (loop i (list)))))
+           (loop i (list)))))
 
-   ; Parse a complete element at `i` (the position of "<").  Returns
-   ; (list <element-dict> <index-after-element>).
-   (parse-element
-    (lambda (s i)
-      (let ((start (parse-start-tag s i)))
-        (let ((tag (list-first start))
-              (attrs (list-nth start 1))
-              (self-closing (list-nth start 2))
-              (after (list-nth start 3)))
-          (if self-closing
-              (list (dict "tag" tag "attrs" attrs "children" (list)) after)
-              (let ((content (parse-content s after tag)))
-                (list (dict "tag" tag "attrs" attrs "children" (list-first content)) (list-nth content 1))))))))
+      ; Parse a complete element at `i` (the position of "<").  Returns
+      ; (list <element-dict> <index-after-element>).
+      (parse-element
+       (lambda (s i)
+         (let ((start (parse-start-tag s i)))
+           (let ((tag (list-first start))
+                 (attrs (list-nth start 1))
+                 (self-closing (list-nth start 2))
+                 (after (list-nth start 3)))
+             (if self-closing
+                 (list (dict "tag" tag "attrs" attrs "children" (list)) after)
+                 (let ((content (parse-content s after tag)))
+                   (list (dict "tag" tag "attrs" attrs "children" (list-first content)) (list-nth content 1))))))))
 
-   ; Parse an XML document and return its document element as a value tree.
-   ; It is the inverse of xml-encode's encode.
-   (decode
-    (lambda (s)
-      (if (string? s)
-          (let ((skip-prolog
+      ; Parse an XML document and return its document element as a value tree.
+      ; It is the inverse of xml-encode's encode.
+      (decode
+       (lambda (s)
+         (if (string? s)
+             (let ((skip-prolog
                     (lambda (j)
                       (let ((k (skip-space s j)))
                         (if (starts-at? s k "<?")
@@ -252,16 +251,16 @@
                             (if (starts-at? s k "<!--")
                                 (skip-prolog (integer+ (require-index s "-->" k) 3))
                                 k))))))
-            (let ((start (skip-prolog 0)))
-              (if (integer>=? start (string-length s))
-                  (error "xml-decode: no document element found")
-                  (if (starts-at? s start "<!DOCTYPE")
-                      (error "xml-decode: document type definitions are not supported")
-                      (let ((parsed (parse-element s start)))
-                        (let ((after (skip-prolog (list-nth parsed 1))))
-                          (if (integer>=? after (string-length s))
-                              (list-first parsed)
-                              (error "xml-decode: content after the document element"))))))))
-          (error "xml-decode: decode expects a string")))))
+               (let ((start (skip-prolog 0)))
+                 (if (integer>=? start (string-length s))
+                     (error "xml-decode: no document element found")
+                     (if (starts-at? s start "<!DOCTYPE")
+                         (error "xml-decode: document type definitions are not supported")
+                         (let ((parsed (parse-element s start)))
+                           (let ((after (skip-prolog (list-nth parsed 1))))
+                             (if (integer>=? after (string-length s))
+                                 (list-first parsed)
+                                 (error "xml-decode: content after the document element"))))))))
+             (error "xml-decode: decode expects a string")))))
 
   (export decode))

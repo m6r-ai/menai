@@ -81,6 +81,7 @@ class ASTList(ASTNode):
 
 COMPOUND_FORMS = frozenset({'if', 'lambda', 'let'})
 ALIGN_ONLY_FORMS = frozenset({'if', 'and', 'or'})
+COMMENT_ON_HEAD_FORMS = frozenset({'let', 'and', 'or'})
 
 
 class TreeBuilder:
@@ -349,6 +350,11 @@ class Renderer:
         head_name = head.value if isinstance(head, ASTAtom) else None
         return head_name in COMPOUND_FORMS and self._has_nested_body(head_name, node.elements[1:])
 
+    def _comment_stays_on_head(self, head: ASTNode) -> bool:
+        """Return whether a comment directly after the head stays on the head's line."""
+        head_name = head.value if isinstance(head, ASTAtom) else None
+        return head_name in COMMENT_ON_HEAD_FORMS
+
     def _break_after_head(self, head: ASTNode, body: list[ASTNode | ASTComment]) -> bool:
         """Return whether a general list breaks after the head, each argument on its own line."""
         head_name = head.value if isinstance(head, ASTAtom) else None
@@ -417,7 +423,11 @@ class Renderer:
 
         first_col = column + 1 + len(head_str) + 1
 
-        if isinstance(body[0], ASTComment):
+        if isinstance(body[0], ASTComment) and self._comment_stays_on_head(head):
+            lines = [f'({head_str} {body[0].text}']
+            lines.extend(self._render_tail(body[1:], first_col, trailing + 1))
+
+        elif isinstance(body[0], ASTComment):
             lines = [f'({head_str}']
             lines.extend(self._render_tail(body, first_col, trailing + 1))
 
@@ -551,28 +561,14 @@ class Renderer:
         inline_col = column + 1 + len(name) + 1
         binding_lines = self._render_bindings(bindings, inline_col, binding_reserve)
 
-        binding_elems = [e for e in bindings.elements if not isinstance(e, ASTComment)]
-        single_binding = len(binding_elems) <= 1
-        all_single_line = all(
-            '\n' not in self._render_binding(e, inline_col + 1) for e in binding_elems
-        )
-        first_is_binding = bool(bindings.elements) and \
-            not isinstance(bindings.elements[0], ASTComment)
-
-        first_line = binding_lines[0].split('\n')[0]
-        inline = not leading and first_is_binding and binding_elems and \
-            (single_binding or all_single_line) and \
-            inline_col + len(first_line) <= self.options.max_width
-
-        if inline:
-            lines = [f'({name} {binding_lines[0]}']
+        if leading:
+            lines = [f'({name} {leading[0].text}']
+            lines.extend(' ' * inline_col + comment.text for comment in leading[1:])
+            lines.append(' ' * inline_col + binding_lines[0])
             lines.extend(binding_lines[1:])
 
         else:
-            binding_lines = self._render_bindings(bindings, inner_col, binding_reserve)
-            lines = [f'({name}']
-            lines.extend(' ' * inner_col + comment.text for comment in leading)
-            lines.append(' ' * inner_col + binding_lines[0])
+            lines = [f'({name} {binding_lines[0]}']
             lines.extend(binding_lines[1:])
 
         if tail:

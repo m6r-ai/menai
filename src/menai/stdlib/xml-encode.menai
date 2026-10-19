@@ -28,94 +28,93 @@
 ; non-string attribute value, or a child that is neither a string nor an
 ; element dict.
 
-(let
-  ((escape-text
-    (lambda (s)
-      (let ((loop
+(let ((escape-text
+       (lambda (s)
+         (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i (string-length s))
                       (list->string (list-reverse acc))
                       (loop (integer+ i 1) (list-prepend acc (escape-text-char (string-nth s i))))))))
-        (loop 0 (list)))))
+           (loop 0 (list)))))
 
-   (escape-text-char
-    (lambda (ch)
-      (match ch
-        ("&" "&amp;")
-        ("<" "&lt;")
-        (">" "&gt;")
-        (_ ch))))
+      (escape-text-char
+       (lambda (ch)
+         (match ch
+           ("&" "&amp;")
+           ("<" "&lt;")
+           (">" "&gt;")
+           (_ ch))))
 
-   (escape-attribute-char
-    (lambda (ch)
-      (match ch
-        ("&" "&amp;")
-        ("<" "&lt;")
-        (">" "&gt;")
-        ("\"" "&quot;")
-        (_ ch))))
+      (escape-attribute-char
+       (lambda (ch)
+         (match ch
+           ("&" "&amp;")
+           ("<" "&lt;")
+           (">" "&gt;")
+           ("\"" "&quot;")
+           (_ ch))))
 
-   (escape-attribute
-    (lambda (s)
-      (let ((loop
+      (escape-attribute
+       (lambda (s)
+         (let ((loop
                 (lambda (i acc)
                   (if (integer>=? i (string-length s))
                       (list->string (list-reverse acc))
                       (loop (integer+ i 1) (list-prepend acc (escape-attribute-char (string-nth s i))))))))
-        (loop 0 (list)))))
+           (loop 0 (list)))))
 
-   ; One attribute as " name=\"value\"".
-   (encode-attribute
-    (lambda (name value)
-      (if (string? name)
-          (if (string? value)
-              (string-concat " " name "=\"" (escape-attribute value) "\"")
-              (error (string-concat "xml-encode: attribute \"" name "\" value must be a string")))
-          (error "xml-encode: attribute name must be a string"))))
+      ; One attribute as " name=\"value\"".
+      (encode-attribute
+       (lambda (name value)
+         (if (string? name)
+             (if (string? value)
+                 (string-concat " " name "=\"" (escape-attribute value) "\"")
+                 (error (string-concat "xml-encode: attribute \"" name "\" value must be a string")))
+             (error "xml-encode: attribute name must be a string"))))
 
-   (encode-attributes
-    (lambda (attrs)
-      (if (dict? attrs)
-          (list->string
-            (map-list
-              (lambda (name)
-                (encode-attribute name (dict-get attrs name)))
-              (dict-keys attrs)))
-          (error "xml-encode: \"attrs\" must be a dict"))))
+      (encode-attributes
+       (lambda (attrs)
+         (if (dict? attrs)
+             (list->string
+               (map-list
+                 (lambda (name)
+                   (encode-attribute name (dict-get attrs name)))
+                 (dict-keys attrs)))
+             (error "xml-encode: \"attrs\" must be a dict"))))
 
-   ; One child node: text is escaped, an element dict is serialised.
-   (encode-child
-    (lambda (node)
-      (if (string? node)
-          (escape-text node)
-          (if (dict? node)
-              (encode-element node)
-              (error "xml-encode: a child must be a string or an element dict")))))
+      ; One child node: text is escaped, an element dict is serialised.
+      (encode-child
+       (lambda (node)
+         (if (string? node)
+             (escape-text node)
+             (if (dict? node)
+                 (encode-element node)
+                 (error "xml-encode: a child must be a string or an element dict")))))
 
-   (encode-children
-    (lambda (children)
-      (if (list? children)
-          (list->string (map-list encode-child children))
-          (error "xml-encode: \"children\" must be a list"))))
+      (encode-children
+       (lambda (children)
+         (if (list? children)
+             (list->string (map-list encode-child children))
+             (error "xml-encode: \"children\" must be a list"))))
 
-   ; One element as "<tag attrs>children</tag>", or self-closing when childless.
-   (encode-element
-    (lambda (element)
-      (let ((tag (dict-get element "tag"))
-            (attrs (dict-get element "attrs"))
-            (children (dict-get element "children")))
-        (if (string? tag)
-            (let ((attr-text (encode-attributes attrs)))
-              (if (and (list? children)
-                       (list-null? children))
-                  (string-concat "<" tag attr-text "/>")
-                  (string-concat "<" tag attr-text ">" (encode-children children) "</" tag ">")))
-            (error "xml-encode: element \"tag\" must be a string")))))
+      ; One element as "<tag attrs>children</tag>", or self-closing when childless.
+      (encode-element
+       (lambda (element)
+         (let ((tag (dict-get element "tag"))
+               (attrs (dict-get element "attrs"))
+               (children (dict-get element "children")))
+           (if (string? tag)
+               (let ((attr-text (encode-attributes attrs)))
+                 (if (and (list? children)
+                          (list-null? children))
+                     (string-concat "<" tag attr-text "/>")
+                     (string-concat "<" tag attr-text ">" (encode-children children) "</" tag ">")))
+               (error "xml-encode: element \"tag\" must be a string")))))
 
-   (encode
-    (lambda (v)
-      (if (dict? v)
-          (encode-element v)
-          (error "xml-encode: encode expects an element dict")))))
+      (encode
+       (lambda (v)
+         (if (dict? v)
+             (encode-element v)
+             (error "xml-encode: encode expects an element dict")))))
 
   (export encode))

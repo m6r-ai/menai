@@ -28,77 +28,76 @@
 ; guarantee meaningful and keeps a decode failure from silently producing wrong
 ; bytes.
 
-(let
-  ((standard-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
-   (url-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+(let ((standard-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+      (url-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
-   ; The alphabet and padding to accept: the standard alphabet with or without
-   ; padding, or the URL-safe alphabet with or without padding.
-   (variant (enum (standard standard-unpadded url url-unpadded)))
+      ; The alphabet and padding to accept: the standard alphabet with or without
+      ; padding, or the URL-safe alphabet with or without padding.
+      (variant (enum (standard standard-unpadded url url-unpadded)))
 
-   ; The 64-character alphabet for a variant.
-   (alphabet-for
-    (lambda (v)
-      (match v
-        ((: variant 'standard) standard-alphabet)
-        ((: variant 'standard-unpadded) standard-alphabet)
-        ((: variant 'url) url-alphabet)
-        ((: variant 'url-unpadded) url-alphabet))))
+      ; The 64-character alphabet for a variant.
+      (alphabet-for
+       (lambda (v)
+         (match v
+           ((: variant 'standard) standard-alphabet)
+           ((: variant 'standard-unpadded) standard-alphabet)
+           ((: variant 'url) url-alphabet)
+           ((: variant 'url-unpadded) url-alphabet))))
 
-   ; Whether a variant requires "=" padding.
-   (padded?
-    (lambda (v)
-      (match v
-        ((: variant 'standard) #t)
-        ((: variant 'standard-unpadded) #f)
-        ((: variant 'url) #t)
-        ((: variant 'url-unpadded) #f))))
+      ; Whether a variant requires "=" padding.
+      (padded?
+       (lambda (v)
+         (match v
+           ((: variant 'standard) #t)
+           ((: variant 'standard-unpadded) #f)
+           ((: variant 'url) #t)
+           ((: variant 'url-unpadded) #f))))
 
-   ; The 6-bit value of a data character, raising if it is not in the alphabet.
-   (require-value
-    (lambda (alphabet ch)
-      (let ((v (string-index alphabet ch)))
-        (if (none? v)
-            (error (string-concat "base64-decode: invalid character \"" ch "\""))
-            v))))
+      ; The 6-bit value of a data character, raising if it is not in the alphabet.
+      (require-value
+       (lambda (alphabet ch)
+         (let ((v (string-index alphabet ch)))
+           (if (none? v)
+               (error (string-concat "base64-decode: invalid character \"" ch "\""))
+               v))))
 
-   ; Decode a full group of four data characters (no padding) to a list of
-   ; three byte values.
-   (decode-group
-    (lambda (alphabet c0 c1 c2 c3)
-      (let ((v0 (require-value alphabet c0))
-            (v1 (require-value alphabet c1))
-            (v2 (require-value alphabet c2))
-            (v3 (require-value alphabet c3)))
-        (list
-          (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
-          (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))
-          (integer-bit-or (integer-bit-and (integer-bit-shift-left v2 6) #xc0) v3)))))
+      ; Decode a full group of four data characters (no padding) to a list of
+      ; three byte values.
+      (decode-group
+       (lambda (alphabet c0 c1 c2 c3)
+         (let ((v0 (require-value alphabet c0))
+               (v1 (require-value alphabet c1))
+               (v2 (require-value alphabet c2))
+               (v3 (require-value alphabet c3)))
+           (list
+             (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
+             (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))
+             (integer-bit-or (integer-bit-and (integer-bit-shift-left v2 6) #xc0) v3)))))
 
-   ; Decode a final group of two data characters to a list of one byte value.
-   (decode-final-one
-    (lambda (alphabet c0 c1)
-      (list
-        (integer-bit-or
-          (integer-bit-shift-left (require-value alphabet c0) 2)
-          (integer-bit-shift-right (require-value alphabet c1) 4)))))
+      ; Decode a final group of two data characters to a list of one byte value.
+      (decode-final-one
+       (lambda (alphabet c0 c1)
+         (list
+           (integer-bit-or
+             (integer-bit-shift-left (require-value alphabet c0) 2)
+             (integer-bit-shift-right (require-value alphabet c1) 4)))))
 
-   ; Decode a final group of three data characters to a list of two byte values.
-   (decode-final-two
-    (lambda (alphabet c0 c1 c2)
-      (let ((v0 (require-value alphabet c0))
-            (v1 (require-value alphabet c1))
-            (v2 (require-value alphabet c2)))
-        (list
-          (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
-          (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))))))
+      ; Decode a final group of three data characters to a list of two byte values.
+      (decode-final-two
+       (lambda (alphabet c0 c1 c2)
+         (let ((v0 (require-value alphabet c0))
+               (v1 (require-value alphabet c1))
+               (v2 (require-value alphabet c2)))
+           (list
+             (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
+             (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))))))
 
-   ; Raise if "=" appears anywhere other than as the final one or two
-   ; characters of the input.  This runs before decoding so that misplaced
-   ; padding is reported as such rather than as an invalid data character.
-   (validate-padding-position
-    (lambda (s n)
-      (let ((loop
+      ; Raise if "=" appears anywhere other than as the final one or two
+      ; characters of the input.  This runs before decoding so that misplaced
+      ; padding is reported as such rather than as an invalid data character.
+      (validate-padding-position
+       (lambda (s n)
+         (let ((loop
                 (lambda (i)
                   (if (integer>=? i n)
                       #t
@@ -107,124 +106,125 @@
                               (loop (integer+ i 1))
                               (error "base64-decode: padding may appear only at the end of the input"))
                           (loop (integer+ i 1)))))))
-        (loop 0))))
+           (loop 0))))
 
-   ; Decode the final group of four characters of a padded input, which may
-   ; carry "=" padding.  The padding shape must be exactly one of: no padding,
-   ; "=" as the fourth character, or "==" as the third and fourth characters.
-   ; The caller has already checked that "=" appears only in the final two
-   ; positions, so c0 and c1 are always data characters here.
-   (decode-final-group
-    (lambda (alphabet s i)
-      (let ((c0 (string-nth s i))
-            (c1 (string-nth s (integer+ i 1)))
-            (c2 (string-nth s (integer+ i 2)))
-            (c3 (string-nth s (integer+ i 3))))
-        (if (string=? c3 "=")
-            (if (string=? c2 "=")
-                (decode-final-one alphabet c0 c1)
-                (decode-final-two alphabet c0 c1 c2))
-            (if (string=? c2 "=")
-                (error "base64-decode: invalid padding")
-                (decode-group alphabet c0 c1 c2 c3))))))
+      ; Decode the final group of four characters of a padded input, which may
+      ; carry "=" padding.  The padding shape must be exactly one of: no padding,
+      ; "=" as the fourth character, or "==" as the third and fourth characters.
+      ; The caller has already checked that "=" appears only in the final two
+      ; positions, so c0 and c1 are always data characters here.
+      (decode-final-group
+       (lambda (alphabet s i)
+         (let ((c0 (string-nth s i))
+               (c1 (string-nth s (integer+ i 1)))
+               (c2 (string-nth s (integer+ i 2)))
+               (c3 (string-nth s (integer+ i 3))))
+           (if (string=? c3 "=")
+               (if (string=? c2 "=")
+                   (decode-final-one alphabet c0 c1)
+                   (decode-final-two alphabet c0 c1 c2))
+               (if (string=? c2 "=")
+                   (error "base64-decode: invalid padding")
+                   (decode-group alphabet c0 c1 c2 c3))))))
 
-   ; Decode a padded input: its length must be a multiple of four and its
-   ; padding must be well formed.
-   (decode-padded
-    (lambda (s alphabet)
-      (let ((n (string-length s)))
-        (if (integer=? (integer% n 4) 0)
-            (if (integer=? n 0)
-                (bytes-concat)
-                (and (validate-padding-position s n)
-                     (list->bytes (list-reverse (decode-padded-bytes s alphabet n 0 (list))))))
-            (error "base64-decode: input length is not a multiple of four")))))
+      ; Decode a padded input: its length must be a multiple of four and its
+      ; padding must be well formed.
+      (decode-padded
+       (lambda (s alphabet)
+         (let ((n (string-length s)))
+           (if (integer=? (integer% n 4) 0)
+               (if (integer=? n 0)
+                   (bytes-concat)
+                   (and (validate-padding-position s n)
+                        (list->bytes (list-reverse (decode-padded-bytes s alphabet n 0 (list))))))
+               (error "base64-decode: input length is not a multiple of four")))))
 
-   ; Decode an unpadded input: it must contain no "=", and its length modulo
-   ; four must be 0, 2, or 3 (a remainder of 1 is impossible in Base64).
-   (decode-unpadded
-    (lambda (s alphabet)
-      (let ((n (string-length s)))
-        (if (integer=? (integer% n 4) 1)
-            (error "base64-decode: input length is invalid for unpadded Base64")
-            (list->bytes (list-reverse (decode-unpadded-bytes s alphabet n 0 (list))))))))
+      ; Decode an unpadded input: it must contain no "=", and its length modulo
+      ; four must be 0, 2, or 3 (a remainder of 1 is impossible in Base64).
+      (decode-unpadded
+       (lambda (s alphabet)
+         (let ((n (string-length s)))
+           (if (integer=? (integer% n 4) 1)
+               (error "base64-decode: input length is invalid for unpadded Base64")
+               (list->bytes (list-reverse (decode-unpadded-bytes s alphabet n 0 (list))))))))
 
-   ; Prepend a group's byte values (in forward order) onto a reversed
-   ; accumulator.  Each byte is a separate O(1) prepend, so a group costs its
-   ; own length rather than a copy of the accumulator.
-   (prepend-bytes
-    (lambda (acc group)
-      (fold-list
-        (lambda (a byte)
-          (list-prepend a byte))
-        acc
-        group)))
+      ; Prepend a group's byte values (in forward order) onto a reversed
+      ; accumulator.  Each byte is a separate O(1) prepend, so a group costs its
+      ; own length rather than a copy of the accumulator.
+      (prepend-bytes
+       (lambda (acc group)
+         (fold-list
+           (lambda (a byte)
+             (list-prepend a byte))
+           acc
+           group)))
 
-   ; The decoded byte values of a padded input, in reverse order.  The final
-   ; group carries the padding.
-   (decode-padded-bytes
-    (lambda (s alphabet n i acc)
-      (if (integer>=? (integer+ i 4) n)
-          (prepend-bytes acc (decode-final-group alphabet s i))
-          (decode-padded-bytes
-            s
-            alphabet
-            n
-            (integer+ i 4)
-            (prepend-bytes
-              acc
-              (decode-group
-                alphabet
-                (string-nth s i)
-                (string-nth s (integer+ i 1))
-                (string-nth s (integer+ i 2))
-                (string-nth s (integer+ i 3))))))))
+      ; The decoded byte values of a padded input, in reverse order.  The final
+      ; group carries the padding.
+      (decode-padded-bytes
+       (lambda (s alphabet n i acc)
+         (if (integer>=? (integer+ i 4) n)
+             (prepend-bytes acc (decode-final-group alphabet s i))
+             (decode-padded-bytes
+               s
+               alphabet
+               n
+               (integer+ i 4)
+               (prepend-bytes
+                 acc
+                 (decode-group
+                   alphabet
+                   (string-nth s i)
+                   (string-nth s (integer+ i 1))
+                   (string-nth s (integer+ i 2))
+                   (string-nth s (integer+ i 3))))))))
 
-   ; The decoded byte values of an unpadded input, in reverse order.
-   (decode-unpadded-bytes
-    (lambda (s alphabet n i acc)
-      (let ((remaining (integer- n i)))
-        (if (integer>=? remaining 4)
-            (decode-unpadded-bytes
-              s
-              alphabet
-              n
-              (integer+ i 4)
-              (prepend-bytes
-                acc
-                (decode-group
-                  alphabet
-                  (string-nth s i)
-                  (string-nth s (integer+ i 1))
-                  (string-nth s (integer+ i 2))
-                  (string-nth s (integer+ i 3)))))
-            (if (integer=? remaining 3)
-                (prepend-bytes
-                  acc
-                  (decode-final-two
-                    alphabet
-                    (string-nth s i)
-                    (string-nth s (integer+ i 1))
-                    (string-nth s (integer+ i 2))))
-                (if (integer=? remaining 2)
-                    (prepend-bytes acc (decode-final-one alphabet (string-nth s i) (string-nth s (integer+ i 1))))
-                    acc))))))
+      ; The decoded byte values of an unpadded input, in reverse order.
+      (decode-unpadded-bytes
+       (lambda (s alphabet n i acc)
+         (let ((remaining (integer- n i)))
+           (if (integer>=? remaining 4)
+               (decode-unpadded-bytes
+                 s
+                 alphabet
+                 n
+                 (integer+ i 4)
+                 (prepend-bytes
+                   acc
+                   (decode-group
+                     alphabet
+                     (string-nth s i)
+                     (string-nth s (integer+ i 1))
+                     (string-nth s (integer+ i 2))
+                     (string-nth s (integer+ i 3)))))
+               (if (integer=? remaining 3)
+                   (prepend-bytes
+                     acc
+                     (decode-final-two
+                       alphabet
+                       (string-nth s i)
+                       (string-nth s (integer+ i 1))
+                       (string-nth s (integer+ i 2))))
+                   (if (integer=? remaining 2)
+                       (prepend-bytes acc (decode-final-one alphabet (string-nth s i) (string-nth s (integer+ i 1))))
+                       acc))))))
 
-   ; Decode Base64 text to bytes.  It is the inverse of base64-encode's encode.
-   ;
-   ; The optional second argument selects the alphabet and padding and defaults
-   ; to (variant 'standard).
-   (decode
-    (lambda (s . rest)
-      (if (string? s)
-          (let ((v
-                  (if (list-null? rest)
-                      (variant 'standard)
-                      (list-first rest)))
-                 (alphabet (alphabet-for v)))
-            (if (padded? v)
-                (decode-padded s alphabet)
-                (decode-unpadded s alphabet)))
-          (error "base64-decode: decode expects a string")))))
+      ; Decode Base64 text to bytes.  It is the inverse of base64-encode's encode.
+      ;
+      ; The optional second argument selects the alphabet and padding and defaults
+      ; to (variant 'standard).
+      (decode
+       (lambda (s . rest)
+         (if (string? s)
+             (let ((v
+                    (if (list-null? rest)
+                        (variant 'standard)
+                        (list-first rest)))
+
+                   (alphabet (alphabet-for v)))
+               (if (padded? v)
+                   (decode-padded s alphabet)
+                   (decode-unpadded s alphabet)))
+             (error "base64-decode: decode expects a string")))))
 
   (export decode variant))

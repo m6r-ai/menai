@@ -21,83 +21,82 @@
 ; The first argument must be a bytes value and the second, when present, must be
 ; a variant value; anything else raises a runtime error.
 
-(let
-  ((standard-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
-   (url-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+(let ((standard-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+      (url-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
-   ; The alphabet and padding to emit: the standard alphabet with or without
-   ; padding, or the URL-safe alphabet with or without padding.
-   (variant (enum (standard standard-unpadded url url-unpadded)))
+      ; The alphabet and padding to emit: the standard alphabet with or without
+      ; padding, or the URL-safe alphabet with or without padding.
+      (variant (enum (standard standard-unpadded url url-unpadded)))
 
-   ; The 64-character alphabet for a variant.
-   (alphabet-for
-    (lambda (v)
-      (match v
-        ((: variant 'standard) standard-alphabet)
-        ((: variant 'standard-unpadded) standard-alphabet)
-        ((: variant 'url) url-alphabet)
-        ((: variant 'url-unpadded) url-alphabet))))
+      ; The 64-character alphabet for a variant.
+      (alphabet-for
+       (lambda (v)
+         (match v
+           ((: variant 'standard) standard-alphabet)
+           ((: variant 'standard-unpadded) standard-alphabet)
+           ((: variant 'url) url-alphabet)
+           ((: variant 'url-unpadded) url-alphabet))))
 
-   ; Whether a variant emits "=" padding.
-   (padded?
-    (lambda (v)
-      (match v
-        ((: variant 'standard) #t)
-        ((: variant 'standard-unpadded) #f)
-        ((: variant 'url) #t)
-        ((: variant 'url-unpadded) #f))))
+      ; Whether a variant emits "=" padding.
+      (padded?
+       (lambda (v)
+         (match v
+           ((: variant 'standard) #t)
+           ((: variant 'standard-unpadded) #f)
+           ((: variant 'url) #t)
+           ((: variant 'url-unpadded) #f))))
 
-   ; Encode one 24-bit group (three input bytes) as four Base64 characters.
-   (encode-group
-    (lambda (alphabet b0 b1 b2)
-      (string-concat
-        (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
-        (string-nth
-          alphabet
-          (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f))
-        (string-nth
-          alphabet
-          (integer-bit-and (integer-bit-or (integer-bit-shift-left b1 2) (integer-bit-shift-right b2 6)) #x3f))
-        (string-nth alphabet (integer-bit-and b2 #x3f)))))
+      ; Encode one 24-bit group (three input bytes) as four Base64 characters.
+      (encode-group
+       (lambda (alphabet b0 b1 b2)
+         (string-concat
+           (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
+           (string-nth
+             alphabet
+             (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f))
+           (string-nth
+             alphabet
+             (integer-bit-and (integer-bit-or (integer-bit-shift-left b1 2) (integer-bit-shift-right b2 6)) #x3f))
+           (string-nth alphabet (integer-bit-and b2 #x3f)))))
 
-   ; Encode a trailing group of one byte as two Base64 characters, with "=="
-   ; appended when the variant is padded.
-   (encode-final-one
-    (lambda (alphabet pad b0)
-      (string-concat
-        (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
-        (string-nth alphabet (integer-bit-and (integer-bit-shift-left b0 4) #x3f))
-        (if pad "==" ""))))
+      ; Encode a trailing group of one byte as two Base64 characters, with "=="
+      ; appended when the variant is padded.
+      (encode-final-one
+       (lambda (alphabet pad b0)
+         (string-concat
+           (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
+           (string-nth alphabet (integer-bit-and (integer-bit-shift-left b0 4) #x3f))
+           (if pad "==" ""))))
 
-   ; Encode a trailing group of two bytes as three Base64 characters, with "="
-   ; appended when the variant is padded.
-   (encode-final-two
-    (lambda (alphabet pad b0 b1)
-      (string-concat
-        (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
-        (string-nth
-          alphabet
-          (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f))
-        (string-nth alphabet (integer-bit-and (integer-bit-shift-left b1 2) #x3f))
-        (if pad "=" ""))))
+      ; Encode a trailing group of two bytes as three Base64 characters, with "="
+      ; appended when the variant is padded.
+      (encode-final-two
+       (lambda (alphabet pad b0 b1)
+         (string-concat
+           (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
+           (string-nth
+             alphabet
+             (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f))
+           (string-nth alphabet (integer-bit-and (integer-bit-shift-left b1 2) #x3f))
+           (if pad "=" ""))))
 
-   ; Encode a bytes value as Base64 text.  It is the inverse of
-   ; base64-decode's decode.
-   ;
-   ; The optional second argument selects the alphabet and padding and defaults
-   ; to (variant 'standard).
-   (encode
-    (lambda (b . rest)
-      (if (bytes? b)
-          (let             ((v
-              (if (list-null? rest)
-                  (variant 'standard)
-                  (list-first rest)))
+      ; Encode a bytes value as Base64 text.  It is the inverse of
+      ; base64-decode's decode.
+      ;
+      ; The optional second argument selects the alphabet and padding and defaults
+      ; to (variant 'standard).
+      (encode
+       (lambda (b . rest)
+         (if (bytes? b)
+             (let ((v
+                    (if (list-null? rest)
+                        (variant 'standard)
+                        (list-first rest)))
 
-             (alphabet (alphabet-for v))
-             (pad (padded? v))
-             (n (bytes-length b)))
-            (let ((loop
+                   (alphabet (alphabet-for v))
+                   (pad (padded? v))
+                   (n (bytes-length b)))
+               (let ((loop
                       (lambda (i acc)
                         (if (integer>=? i n)
                             (list->string (list-reverse acc))
@@ -125,7 +124,7 @@
                                       (list->string
                                         (list-reverse
                                           (list-prepend acc (encode-final-one alphabet pad (bytes-nth b i))))))))))))
-              (loop 0 (list))))
-          (error "base64-encode: encode expects a bytes value")))))
+                 (loop 0 (list))))
+             (error "base64-encode: encode expects a bytes value")))))
 
   (export encode variant))

@@ -14,13 +14,12 @@
 ;
 ; Preset dictionaries (FDICT set) are not supported and raise an error.
 
-(let
-  ((deflate-lib (import "deflate-decompress"))
+(let ((deflate-lib (import "deflate-decompress"))
 
-   (adler32
-    (lambda (b)
-      (let ((modulus 65521))
-        (let ((loop
+      (adler32
+       (lambda (b)
+         (let ((modulus 65521))
+           (let ((loop
                   (lambda (i a bb)
                     (if (integer>=? i (bytes-length b))
                         (integer-bit-or (integer-bit-shift-left bb 16) a)
@@ -28,45 +27,45 @@
                           (integer+ i 1)
                           (integer% (integer+ a (bytes-nth b i)) modulus)
                           (integer% (integer+ bb a (bytes-nth b i)) modulus))))))
-          (loop 0 1 0)))))
+             (loop 0 1 0)))))
 
-   (check-header
-    (lambda (b)
-      (let ((cmf (bytes-nth b 0))
-            (flg (bytes-nth b 1)))
-        (if (integer!=? (integer-bit-and cmf #x0f) 8)
-            (error
-              (string-concat
-                "Unsupported zlib stream: compression method "
-                (integer->string (integer-bit-and cmf #x0f))
-                " is not DEFLATE (8)"))
-            (if (integer!=? (integer% (integer+ (integer* cmf 256) flg) 31) 0)
-                (error "Malformed zlib stream: header check failed")
-                (if (integer=? (integer-bit-and flg #x20) #x20)
-                    (error "Unsupported zlib stream: preset dictionaries are not supported")
-                    #t))))))
+      (check-header
+       (lambda (b)
+         (let ((cmf (bytes-nth b 0))
+               (flg (bytes-nth b 1)))
+           (if (integer!=? (integer-bit-and cmf #x0f) 8)
+               (error
+                 (string-concat
+                   "Unsupported zlib stream: compression method "
+                   (integer->string (integer-bit-and cmf #x0f))
+                   " is not DEFLATE (8)"))
+               (if (integer!=? (integer% (integer+ (integer* cmf 256) flg) 31) 0)
+                   (error "Malformed zlib stream: header check failed")
+                   (if (integer=? (integer-bit-and flg #x20) #x20)
+                       (error "Unsupported zlib stream: preset dictionaries are not supported")
+                       #t))))))
 
-   ; Decompress a bytes value containing a complete zlib stream (2-byte header,
-   ; DEFLATE data, 4-byte Adler-32 trailer) and return the decompressed bytes.
-   (decompress
-    (lambda (b)
-      (if (bytes? b)
-          (if (integer<? (bytes-length b) 6)
-              (error "Not a zlib stream: too short")
-              (if (check-header b)
-                  (let ((decompress (:: deflate-lib decompress)))
-                    (let ((data (decompress (bytes-slice b 2 (integer- (bytes-length b) 4)))))
-                      (let ((expected (bytes-read-u32-be b (integer- (bytes-length b) 4)))
-                            (actual (adler32 data)))
-                        (if (integer=? expected actual)
-                            data
-                            (error
-                              (string-concat
-                                "zlib stream checksum mismatch: expected "
-                                (integer->string expected)
-                                " but computed "
-                                (integer->string actual)))))))
-                  (error "Malformed zlib stream: header check failed")))
-          (error "zlib-decompress: decompress expects a bytes value")))))
+      ; Decompress a bytes value containing a complete zlib stream (2-byte header,
+      ; DEFLATE data, 4-byte Adler-32 trailer) and return the decompressed bytes.
+      (decompress
+       (lambda (b)
+         (if (bytes? b)
+             (if (integer<? (bytes-length b) 6)
+                 (error "Not a zlib stream: too short")
+                 (if (check-header b)
+                     (let ((decompress (:: deflate-lib decompress)))
+                       (let ((data (decompress (bytes-slice b 2 (integer- (bytes-length b) 4)))))
+                         (let ((expected (bytes-read-u32-be b (integer- (bytes-length b) 4)))
+                               (actual (adler32 data)))
+                           (if (integer=? expected actual)
+                               data
+                               (error
+                                 (string-concat
+                                   "zlib stream checksum mismatch: expected "
+                                   (integer->string expected)
+                                   " but computed "
+                                   (integer->string actual)))))))
+                     (error "Malformed zlib stream: header check failed")))
+             (error "zlib-decompress: decompress expects a bytes value")))))
 
   (export decompress))

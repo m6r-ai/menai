@@ -250,7 +250,7 @@ class TestBindings:
     def test_lambda_value_on_next_line(self):
         """A binding whose value is a lambda puts the lambda on the next line."""
         result = format_code('(let ((f (lambda () 1)) (g 2)) (f))')
-        assert '(f\n    (lambda () 1))' in result
+        assert '(f\n       (lambda () 1))' in result
 
     def test_value_on_next_line(self):
         """A binding whose value is multi-line puts the value on the next line."""
@@ -305,7 +305,7 @@ class TestBindings:
 
 
 class TestBindingList:
-    """A binding list is inline when its bindings are short, else on the next line."""
+    """A binding list always starts on the let line, aligned under the first binding."""
 
     def test_single_binding_inline(self):
         """A single binding keeps the binding list on the form line."""
@@ -319,11 +319,11 @@ class TestBindingList:
         result = format_code(code, max_width=20)
         assert result.startswith('(let ((a 1)\n')
 
-    def test_long_bindings_on_next_line(self):
-        """A binding list with a multi-line binding goes on the next line."""
+    def test_long_bindings_stay_on_let_line(self):
+        """A binding list with a multi-line binding still starts on the let line."""
         code = '(let ((f (lambda (x) (foo aaaa bbbb cccc dddd))) (g (lambda (y) y))) (f 1))'
         result = format_code(code, max_width=20)
-        assert result.startswith('(let\n  ((f\n')
+        assert result.startswith('(let ((f\n')
 
     def test_body_indent(self):
         """The body is indented by two from the form."""
@@ -342,10 +342,10 @@ class TestComments:
         assert result == '(foo a\n     ; hello\n     b)\n'
 
     def test_comment_before_binding(self):
-        """A comment before a binding is placed on its own line."""
+        """A comment after let stays on the let line, bindings directly underneath."""
         code = '(let\n  (; note\n   (a 1))\n  a)'
         result = format_code(code)
-        assert result == '(let\n  (; note\n   (a 1))\n  a)\n'
+        assert result == '(let (; note\n      (a 1))\n  a)\n'
 
     def test_comment_preserved_in_compact(self):
         """A comment prevents compact rendering."""
@@ -422,20 +422,20 @@ class TestBlankLines:
         """A multi-line binding is followed by a blank line before the next."""
         code = '(let ((a (lambda (x) (foo aaaa bbbb cccc dddd))) (b 2)) (+ a b))'
         result = format_code(code, max_width=20)
-        assert 'dddd)))\n\n   (b 2)' in result
+        assert 'dddd)))\n\n      (b 2)' in result
 
     def test_blank_line_before_multiline_binding(self):
         """A multi-line binding is preceded by a blank line after the previous."""
         code = '(let ((a 1) (b (lambda (x) (foo aaaa bbbb cccc dddd))) (c 3)) (+ a b c))'
         result = format_code(code, max_width=20)
-        assert '(a 1)\n\n   (b\n' in result
-        assert 'dddd)))\n\n   (c 3)' in result
+        assert '(a 1)\n\n      (b\n' in result
+        assert 'dddd)))\n\n      (c 3)' in result
 
     def test_blank_line_before_comment_after_multiline_binding(self):
         """The blank line goes before a comment that precedes the next binding."""
         code = '(let ((a (lambda (x) (foo aaaa bbbb cccc dddd)))\n; note\n(b 2)) (+ a b))'
         result = format_code(code, max_width=20)
-        assert 'dddd)))\n\n   ; note\n   (b 2)' in result
+        assert 'dddd)))\n\n      ; note\n      (b 2)' in result
 
     def test_no_blank_line_between_single_line_bindings(self):
         """Single-line bindings are not separated by blank lines."""

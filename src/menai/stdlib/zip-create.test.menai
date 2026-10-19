@@ -1,261 +1,264 @@
 ; Tests for zip-create.menai
 
-(let
-  ((zip-create (import "zip-create"))
-   (zip-entries (import "zip-entries"))
-   (zip-extract (import "zip-extract"))
-   (t (import "menai-test"))
-   (create (:: zip-create create))
-   (entries (:: zip-entries entries))
-   (extract (:: zip-extract extract))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((zip-create (import "zip-create"))
+      (zip-entries (import "zip-entries"))
+      (zip-extract (import "zip-extract"))
+      (t (import "menai-test"))
+      (create (:: zip-create create))
+      (entries (:: zip-entries entries))
+      (extract (:: zip-extract extract))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; An archive with no entries reads back as an empty entry list.
-   (test-empty-archive
-    (lambda ()
-      (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get r "entries") (list)))))
+      ; An archive with no entries reads back as an empty entry list.
+      (test-empty-archive
+       (lambda ()
+         (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get r "entries") (list)))))
 
-   ; A single stored entry's content round-trips through extract.
-   (test-single-stored-entry
-    (lambda ()
-      (let ((r
-             (extract
-               (create
-                 (dict "entries" (list (dict "name" "a.txt" "compression" 0 "content" (string->bytes "AAAA")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "AAAA")))))
+      ; A single stored entry's content round-trips through extract.
+      (test-single-stored-entry
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "compression" 0 "content" (string->bytes "AAAA")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "AAAA")))))
 
-   ; A single deflate entry's content round-trips through extract.
-   (test-single-deflate-entry
-    (lambda ()
-      (let ((r
-             (extract
-               (create
-                 (dict "entries" (list
-                                   (dict "name" "hello.txt" "compression" 8 "content" (string->bytes "hello world")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "hello world")))))
+      ; A single deflate entry's content round-trips through extract.
+      (test-single-deflate-entry
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "hello.txt" "compression" 8 "content" (string->bytes "hello world")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "hello world")))))
 
-   ; An entry's name is preserved, including path separators.
-   (test-entry-name-preserved
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list (dict "name" "dir/sub/file.txt" "compression" 0 "content" (string->bytes "x")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "name") "dir/sub/file.txt"))))
+      ; An entry's name is preserved, including path separators.
+      (test-entry-name-preserved
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "dir/sub/file.txt" "compression" 0 "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "name") "dir/sub/file.txt"))))
 
-   ; An entry's explicit compression method is preserved.
-   (test-compression-preserved
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list (dict "name" "a.txt" "compression" 8 "content" (string->bytes "x")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 8))))
+      ; An entry's explicit compression method is preserved.
+      (test-compression-preserved
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "compression" 8 "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 8))))
 
-   ; An entry with no compression method defaults to stored.
-   (test-compression-defaults-to-stored
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list (dict "name" "a.txt" "content" (string->bytes "x")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 0))))
+      ; An entry with no compression method defaults to stored.
+      (test-compression-defaults-to-stored
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 0))))
 
-   ; An entry with a trailing slash and no content is flagged as a directory.
-   (test-directory-entry-flagged
-    (lambda ()
-      (let ((r
-             (entries
-               (create (dict "entries" (list (dict "name" "dir/" "content" #none)) "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #t))))
+      ; An entry with a trailing slash and no content is flagged as a directory.
+      (test-directory-entry-flagged
+       (lambda ()
+         (let ((r
+                (entries
+                  (create (dict "entries" (list (dict "name" "dir/" "content" #none)) "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #t))))
 
-   ; A file entry is not flagged as a directory.
-   (test-file-entry-not-flagged
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list (dict "name" "a.txt" "content" (string->bytes "x")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #f))))
+      ; A file entry is not flagged as a directory.
+      (test-file-entry-not-flagged
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #f))))
 
-   ; Entry order is preserved.
-   (test-entry-order-preserved
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list
-                                   (dict "name" "one" "content" (string->bytes "1"))
-                                   (dict "name" "two" "content" (string->bytes "2"))
-                                   (dict "name" "three" "content" (string->bytes "3")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal
-          (map-list
-            (lambda (e)
-              (dict-get e "name"))
-            (dict-get r "entries"))
-          (list "one" "two" "three")))))
+      ; Entry order is preserved.
+      (test-entry-order-preserved
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "one" "content" (string->bytes "1"))
+                                      (dict "name" "two" "content" (string->bytes "2"))
+                                      (dict "name" "three" "content" (string->bytes "3")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal
+             (map-list
+               (lambda (e)
+                 (dict-get e "name"))
+               (dict-get r "entries"))
+             (list "one" "two" "three")))))
 
-   ; Multiple entries of mixed compression methods round-trip through extract.
-   (test-mixed-methods
-    (lambda ()
-      (let ((r
-             (extract
-               (create
-                 (dict "entries" (list
-                                   (dict "name" "stored.txt" "compression" 0 "content" (string->bytes "plain"))
-                                   (dict "name" "deflated.txt"
-                                         "compression" 8
-                                         "content" (string->bytes "repeated repeated repeated")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal
-          (map-list
-            (lambda (e)
-              (dict-get e "content"))
-            (dict-get r "entries"))
-          (list (string->bytes "plain") (string->bytes "repeated repeated repeated"))))))
+      ; Multiple entries of mixed compression methods round-trip through extract.
+      (test-mixed-methods
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "stored.txt" "compression" 0 "content" (string->bytes "plain"))
+                                      (dict "name" "deflated.txt"
+                                            "compression" 8
+                                            "content" (string->bytes "repeated repeated repeated")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal
+             (map-list
+               (lambda (e)
+                 (dict-get e "content"))
+               (dict-get r "entries"))
+             (list (string->bytes "plain") (string->bytes "repeated repeated repeated"))))))
 
-   ; An entry with empty content round-trips through extract.
-   (test-empty-content
-    (lambda ()
-      (let ((r
-             (extract
-               (create
-                 (dict "entries" (list (dict "name" "empty" "compression" 0 "content" (string->bytes "")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "")))))
+      ; An entry with empty content round-trips through extract.
+      (test-empty-content
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list (dict "name" "empty" "compression" 0 "content" (string->bytes "")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "")))))
 
-   ; An entry's crc-32 is recomputed from its content, not taken from the input.
-   (test-crc32-recomputed
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list
-                                   (dict "name" "a.txt" "compression" 0 "content" (string->bytes "AAAA") "crc32" 999))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "crc32") (bytes-crc32 (string->bytes "AAAA"))))))
+      ; An entry's crc-32 is recomputed from its content, not taken from the input.
+      (test-crc32-recomputed
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "a.txt"
+                                            "compression" 0
+                                            "content" (string->bytes "AAAA")
+                                            "crc32" 999))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "crc32") (bytes-crc32 (string->bytes "AAAA"))))))
 
-   ; An entry's uncompressed size is recomputed from its content, not taken from the input.
-   (test-uncompressed-size-recomputed
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list
-                                   (dict "name" "a.txt"
-                                         "compression" 0
-                                         "content" (string->bytes "AAAA")
-                                         "uncompressed-size" 999))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "uncompressed-size") 4))))
+      ; An entry's uncompressed size is recomputed from its content, not taken from the input.
+      (test-uncompressed-size-recomputed
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "a.txt"
+                                            "compression" 0
+                                            "content" (string->bytes "AAAA")
+                                            "uncompressed-size" 999))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "uncompressed-size") 4))))
 
-   ; An entry's compressed size is recomputed from its content, not taken from the input.
-   (test-compressed-size-recomputed
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list
-                                   (dict "name" "a.txt"
-                                         "compression" 0
-                                         "content" (string->bytes "AAAA")
-                                         "compressed-size" 999))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (list-first (dict-get r "entries")) "compressed-size") 4))))
+      ; An entry's compressed size is recomputed from its content, not taken from the input.
+      (test-compressed-size-recomputed
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "a.txt"
+                                            "compression" 0
+                                            "content" (string->bytes "AAAA")
+                                            "compressed-size" 999))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "compressed-size") 4))))
 
-   ; The archive metadata reports the entry count.
-   (test-entry-count
-    (lambda ()
-      (let ((r
-             (entries
-               (create
-                 (dict "entries" (list
-                                   (dict "name" "a" "content" (string->bytes "1"))
-                                   (dict "name" "b" "content" (string->bytes "2")))
-                       "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (dict-get r "meta") "entry-count") 2))))
+      ; The archive metadata reports the entry count.
+      (test-entry-count
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "a" "content" (string->bytes "1"))
+                                      (dict "name" "b" "content" (string->bytes "2")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (dict-get r "meta") "entry-count") 2))))
 
-   ; The archive comment is preserved.
-   (test-comment-preserved
-    (lambda ()
-      (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" "made by menai"))))))
-        (assert-equal (dict-get (dict-get r "meta") "comment") "made by menai"))))
+      ; The archive comment is preserved.
+      (test-comment-preserved
+       (lambda ()
+         (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" "made by menai"))))))
+           (assert-equal (dict-get (dict-get r "meta") "comment") "made by menai"))))
 
-   ; An absent comment reads back as #none.
-   (test-comment-absent
-    (lambda ()
-      (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" #none))))))
-        (assert-equal (dict-get (dict-get r "meta") "comment") #none))))
+      ; An absent comment reads back as #none.
+      (test-comment-absent
+       (lambda ()
+         (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (dict-get r "meta") "comment") #none))))
 
-   ; A non-dict argument is rejected.
-   (test-rejects-non-dict
-    (lambda ()
-      (create "not a dict")))
+      ; A non-dict argument is rejected.
+      (test-rejects-non-dict
+       (lambda ()
+         (create "not a dict")))
 
-   ; A non-list entries field is rejected.
-   (test-rejects-non-list-entries
-    (lambda ()
-      (create (dict "entries" "not a list"))))
+      ; A non-list entries field is rejected.
+      (test-rejects-non-list-entries
+       (lambda ()
+         (create (dict "entries" "not a list"))))
 
-   ; An entry without a string name is rejected.
-   (test-rejects-entry-without-name
-    (lambda ()
-      (create (dict "entries" (list (dict "name" 42))))))
+      ; An entry without a string name is rejected.
+      (test-rejects-entry-without-name
+       (lambda ()
+         (create (dict "entries" (list (dict "name" 42))))))
 
-   ; An unsupported compression method is rejected.
-   (test-rejects-unsupported-compression
-    (lambda ()
-      (create (dict "entries" (list (dict "name" "a.txt" "compression" 99 "content" (string->bytes "x")))))))
+      ; An unsupported compression method is rejected.
+      (test-rejects-unsupported-compression
+       (lambda ()
+         (create (dict "entries" (list (dict "name" "a.txt" "compression" 99 "content" (string->bytes "x")))))))
 
-   (tests
-    (list
-      (list
-        "round-trips"
-        (list
-          (expect-pass "empty archive" test-empty-archive)
-          (expect-pass "single stored entry" test-single-stored-entry)
-          (expect-pass "single deflate entry" test-single-deflate-entry)
-          (expect-pass "entry name is preserved" test-entry-name-preserved)
-          (expect-pass "compression method is preserved" test-compression-preserved)
-          (expect-pass "compression method defaults to stored" test-compression-defaults-to-stored)
-          (expect-pass "directory entry is flagged" test-directory-entry-flagged)
-          (expect-pass "file entry is not flagged as a directory" test-file-entry-not-flagged)
-          (expect-pass "entry order is preserved" test-entry-order-preserved)
-          (expect-pass "multiple entries of mixed methods" test-mixed-methods)
-          (expect-pass "empty content" test-empty-content)))
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "empty archive" test-empty-archive)
+             (expect-pass "single stored entry" test-single-stored-entry)
+             (expect-pass "single deflate entry" test-single-deflate-entry)
+             (expect-pass "entry name is preserved" test-entry-name-preserved)
+             (expect-pass "compression method is preserved" test-compression-preserved)
+             (expect-pass "compression method defaults to stored" test-compression-defaults-to-stored)
+             (expect-pass "directory entry is flagged" test-directory-entry-flagged)
+             (expect-pass "file entry is not flagged as a directory" test-file-entry-not-flagged)
+             (expect-pass "entry order is preserved" test-entry-order-preserved)
+             (expect-pass "multiple entries of mixed methods" test-mixed-methods)
+             (expect-pass "empty content" test-empty-content)))
 
-      (list
-        "derived-fields"
-        (list
-          (expect-pass "crc-32 is recomputed" test-crc32-recomputed)
-          (expect-pass "uncompressed size is recomputed" test-uncompressed-size-recomputed)
-          (expect-pass "compressed size is recomputed" test-compressed-size-recomputed)))
+         (list
+           "derived-fields"
+           (list
+             (expect-pass "crc-32 is recomputed" test-crc32-recomputed)
+             (expect-pass "uncompressed size is recomputed" test-uncompressed-size-recomputed)
+             (expect-pass "compressed size is recomputed" test-compressed-size-recomputed)))
 
-      (list
-        "meta"
-        (list
-          (expect-pass "entry count is reported" test-entry-count)
-          (expect-pass "comment is preserved" test-comment-preserved)
-          (expect-pass "absent comment reads back as none" test-comment-absent)))
+         (list
+           "meta"
+           (list
+             (expect-pass "entry count is reported" test-entry-count)
+             (expect-pass "comment is preserved" test-comment-preserved)
+             (expect-pass "absent comment reads back as none" test-comment-absent)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
-          (expect-fail "rejects a non-list entries field" test-rejects-non-list-entries "\"entries\" must be a list")
-          (expect-fail "rejects an entry without a string name" test-rejects-entry-without-name "must be a string")
-          (expect-fail "rejects an unsupported compression method"
-                       test-rejects-unsupported-compression
-                       "unsupported compression method"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
+             (expect-fail "rejects a non-list entries field" test-rejects-non-list-entries "\"entries\" must be a list")
+             (expect-fail "rejects an entry without a string name" test-rejects-entry-without-name "must be a string")
+             (expect-fail "rejects an unsupported compression method"
+                          test-rejects-unsupported-compression
+                          "unsupported compression method"))))))
 
   (export tests))

@@ -6,22 +6,21 @@
 (let ((bmp-decoder (import "bmp-decode")))
   (let ((run
          (lambda (inputs)
-           (let
-             ((pixel->string
-               (lambda (p)
-                 (string-concat "(" (list->string (map-list integer->string (vector->list p)) ",") ")")))
+           (let ((pixel->string
+                  (lambda (p)
+                    (string-concat "(" (list->string (map-list integer->string (vector->list p)) ",") ")")))
 
-              (row->string
-               (lambda (row)
-                 (list->string (map-list pixel->string (vector->list row)) " ")))
+                 (row->string
+                  (lambda (row)
+                    (list->string (map-list pixel->string (vector->list row)) " ")))
 
-              (grid->string
-               (lambda (pixels)
-                 (list->string (map-list row->string (vector->list pixels)) "\n"))))
+                 (grid->string
+                  (lambda (pixels)
+                    (list->string (map-list row->string (vector->list pixels)) "\n"))))
              (let ((content (dict-get inputs "content"))
-                    (parsed ((:: bmp-decoder decode) content))
-                    (header (dict-get parsed "header"))
-                    (meta (dict-get parsed "meta")))
+                   (parsed ((:: bmp-decoder decode) content))
+                   (header (dict-get parsed "header"))
+                   (meta (dict-get parsed "meta")))
                (dict "result" (string-concat
                                 "BMP "
                                 (integer->string (dict-get header "width"))

@@ -1,152 +1,152 @@
 ; Tests for png-encode.menai
 
-(let
-  ((png-encode (import "png-encode"))
-   (png-decode (import "png-decode"))
-   (t (import "menai-test"))
-   (encode (:: png-encode encode))
-   (decode (:: png-decode decode))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((png-encode (import "png-encode"))
+      (png-decode (import "png-decode"))
+      (t (import "menai-test"))
+      (encode (:: png-encode encode))
+      (decode (:: png-decode decode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; A 2x2 truecolour file.
-   (truecolour
-    (string-hex->bytes
-      "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))
+      ; A 2x2 truecolour file.
+      (truecolour
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))
 
-   ; A 2x2 truecolour-with-alpha file.
-   (truecolour-alpha
-    (string-hex->bytes
-      "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000174944415478da63f8cfc0f01f081b1880b4c3ffffff1900401807ba5e4291230000000049454e44ae426082"))
+      ; A 2x2 truecolour-with-alpha file.
+      (truecolour-alpha
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000174944415478da63f8cfc0f01f081b1880b4c3ffffff1900401807ba5e4291230000000049454e44ae426082"))
 
-   ; A 2x2 palette file.
-   (palette
-    (string-hex->bytes
-      "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))
+      ; A 2x2 palette file.
+      (palette
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))
 
-   ; A truecolour file round-trips through decode then encode then decode unchanged.
-   (test-round-trip-truecolour
-    (lambda ()
-      (let ((v (decode truecolour)))
-        (assert-equal (decode (encode v)) v))))
+      ; A truecolour file round-trips through decode then encode then decode unchanged.
+      (test-round-trip-truecolour
+       (lambda ()
+         (let ((v (decode truecolour)))
+           (assert-equal (decode (encode v)) v))))
 
-   ; A truecolour-with-alpha file round-trips through decode then encode then decode unchanged.
-   (test-round-trip-truecolour-alpha
-    (lambda ()
-      (let ((v (decode truecolour-alpha)))
-        (assert-equal (decode (encode v)) v))))
+      ; A truecolour-with-alpha file round-trips through decode then encode then decode unchanged.
+      (test-round-trip-truecolour-alpha
+       (lambda ()
+         (let ((v (decode truecolour-alpha)))
+           (assert-equal (decode (encode v)) v))))
 
-   ; A single-pixel value round-trips through encode then decode unchanged.
-   (test-round-trip-single-pixel
-    (lambda ()
-      (let ((v
-             (decode
-               (encode
-                 (dict "header" (dict "width" 1 "height" 1)
-                       "pixels" (vector (vector (vector 18 52 86)))
-                       "meta" (dict "channels" 3))))))
-        (assert-equal (dict-get v "pixels") (vector (vector (vector 18 52 86)))))))
+      ; A single-pixel value round-trips through encode then decode unchanged.
+      (test-round-trip-single-pixel
+       (lambda ()
+         (let ((v
+                (decode
+                  (encode
+                    (dict "header" (dict "width" 1 "height" 1)
+                          "pixels" (vector (vector (vector 18 52 86)))
+                          "meta" (dict "channels" 3))))))
+           (assert-equal (dict-get v "pixels") (vector (vector (vector 18 52 86)))))))
 
-   ; A palette image re-encodes to truecolour with the same pixels.
-   (test-palette-to-truecolour
-    (lambda ()
-      (let ((v (decode palette)))
-        (let ((re (decode (encode v))))
-          (assert-equal
-            (list (dict-get (dict-get re "header") "colour-type") (dict-get re "pixels"))
-            (list 2 (dict-get v "pixels")))))))
+      ; A palette image re-encodes to truecolour with the same pixels.
+      (test-palette-to-truecolour
+       (lambda ()
+         (let ((v (decode palette)))
+           (let ((re (decode (encode v))))
+             (assert-equal
+               (list (dict-get (dict-get re "header") "colour-type") (dict-get re "pixels"))
+               (list 2 (dict-get v "pixels")))))))
 
-   ; The produced file starts with the PNG signature.
-   (test-signature
-    (lambda ()
-      (let ((v (decode truecolour)))
-        (assert-equal (bytes-slice (encode v) 0 8) (string-hex->bytes "89504e470d0a1a0a")))))
+      ; The produced file starts with the PNG signature.
+      (test-signature
+       (lambda ()
+         (let ((v (decode truecolour)))
+           (assert-equal (bytes-slice (encode v) 0 8) (string-hex->bytes "89504e470d0a1a0a")))))
 
-   ; The colour type matches the channel count.
-   (test-colour-type-matches-channels
-    (lambda ()
-      (let ((v (decode truecolour-alpha)))
-        (assert-equal (dict-get (dict-get (decode (encode v)) "header") "colour-type") 6))))
+      ; The colour type matches the channel count.
+      (test-colour-type-matches-channels
+       (lambda ()
+         (let ((v (decode truecolour-alpha)))
+           (assert-equal (dict-get (dict-get (decode (encode v)) "header") "colour-type") 6))))
 
-   ; The dimensions are preserved.
-   (test-dimensions-preserved
-    (lambda ()
-      (let ((v (decode truecolour)))
-        (let ((h (dict-get (decode (encode v)) "header")))
-          (assert-equal (list (dict-get h "width") (dict-get h "height")) (list 2 2))))))
+      ; The dimensions are preserved.
+      (test-dimensions-preserved
+       (lambda ()
+         (let ((v (decode truecolour)))
+           (let ((h (dict-get (decode (encode v)) "header")))
+             (assert-equal (list (dict-get h "width") (dict-get h "height")) (list 2 2))))))
 
-   ; Bit depth, compression, filter, and interlace are the supported values.
-   (test-header-constants
-    (lambda ()
-      (let ((v (decode truecolour)))
-        (let ((h (dict-get (decode (encode v)) "header")))
-          (assert-equal
-            (list (dict-get h "bit-depth") (dict-get h "compression") (dict-get h "filter") (dict-get h "interlace"))
-            (list 8 0 0 0))))))
+      ; Bit depth, compression, filter, and interlace are the supported values.
+      (test-header-constants
+       (lambda ()
+         (let ((v (decode truecolour)))
+           (let ((h (dict-get (decode (encode v)) "header")))
+             (assert-equal
+               (list (dict-get h "bit-depth") (dict-get h "compression") (dict-get h "filter") (dict-get h "interlace"))
+               (list 8 0 0 0))))))
 
-   ; A non-dict argument is rejected.
-   (test-rejects-non-dict
-    (lambda ()
-      (encode "not a dict")))
+      ; A non-dict argument is rejected.
+      (test-rejects-non-dict
+       (lambda ()
+         (encode "not a dict")))
 
-   ; A value with no header is rejected.
-   (test-rejects-missing-header
-    (lambda ()
-      (encode (dict "pixels" (vector)))))
+      ; A value with no header is rejected.
+      (test-rejects-missing-header
+       (lambda ()
+         (encode (dict "pixels" (vector)))))
 
-   ; An unsupported channel count is rejected.
-   (test-rejects-unsupported-channel-count
-    (lambda ()
-      (encode
-        (dict "header" (dict "width" 1 "height" 1)
-              "pixels" (vector (vector (vector 1 2)))
-              "meta" (dict "channels" 2)))))
+      ; An unsupported channel count is rejected.
+      (test-rejects-unsupported-channel-count
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1)
+                 "pixels" (vector (vector (vector 1 2)))
+                 "meta" (dict "channels" 2)))))
 
-   ; A non-vector pixel grid is rejected.
-   (test-rejects-non-vector-pixels
-    (lambda ()
-      (encode (dict "header" (dict "width" 1 "height" 1) "pixels" "not a vector" "meta" (dict "channels" 3)))))
+      ; A non-vector pixel grid is rejected.
+      (test-rejects-non-vector-pixels
+       (lambda ()
+         (encode (dict "header" (dict "width" 1 "height" 1) "pixels" "not a vector" "meta" (dict "channels" 3)))))
 
-   ; A pixel with the wrong channel count is rejected.
-   (test-rejects-wrong-channel-count
-    (lambda ()
-      (encode
-        (dict "header" (dict "width" 1 "height" 1)
-              "pixels" (vector (vector (vector 1 2)))
-              "meta" (dict "channels" 3)))))
+      ; A pixel with the wrong channel count is rejected.
+      (test-rejects-wrong-channel-count
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1)
+                 "pixels" (vector (vector (vector 1 2)))
+                 "meta" (dict "channels" 3)))))
 
-   (tests
-    (list
-      (list
-        "round-trips"
-        (list
-          (expect-pass "truecolour file is reproduced" test-round-trip-truecolour)
-          (expect-pass "truecolour with alpha file is reproduced" test-round-trip-truecolour-alpha)
-          (expect-pass "single pixel is reproduced" test-round-trip-single-pixel)
-          (expect-pass "palette image re-encodes to truecolour with the same pixels" test-palette-to-truecolour)))
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "truecolour file is reproduced" test-round-trip-truecolour)
+             (expect-pass "truecolour with alpha file is reproduced" test-round-trip-truecolour-alpha)
+             (expect-pass "single pixel is reproduced" test-round-trip-single-pixel)
+             (expect-pass "palette image re-encodes to truecolour with the same pixels" test-palette-to-truecolour)))
 
-      (list
-        "structure"
-        (list
-          (expect-pass "starts with the PNG signature" test-signature)
-          (expect-pass "colour type matches the channel count" test-colour-type-matches-channels)
-          (expect-pass "dimensions are preserved" test-dimensions-preserved)
-          (expect-pass "bit depth, compression, filter, and interlace are the supported values" test-header-constants)))
+         (list
+           "structure"
+           (list
+             (expect-pass "starts with the PNG signature" test-signature)
+             (expect-pass "colour type matches the channel count" test-colour-type-matches-channels)
+             (expect-pass "dimensions are preserved" test-dimensions-preserved)
+             (expect-pass "bit depth, compression, filter, and interlace are the supported values"
+                          test-header-constants)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
-          (expect-fail "rejects a missing header" test-rejects-missing-header "\"header\" must be a dict")
-          (expect-fail "rejects an unsupported channel count"
-                       test-rejects-unsupported-channel-count
-                       "unsupported channel count")
-          (expect-fail "rejects a non-vector pixel grid"
-                       test-rejects-non-vector-pixels
-                       "\"pixels\" must be a vector of rows")
-          (expect-fail "rejects a pixel with the wrong channel count"
-                       test-rejects-wrong-channel-count
-                       "must have 3 channels"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
+             (expect-fail "rejects a missing header" test-rejects-missing-header "\"header\" must be a dict")
+             (expect-fail "rejects an unsupported channel count"
+                          test-rejects-unsupported-channel-count
+                          "unsupported channel count")
+             (expect-fail "rejects a non-vector pixel grid"
+                          test-rejects-non-vector-pixels
+                          "\"pixels\" must be a vector of rows")
+             (expect-fail "rejects a pixel with the wrong channel count"
+                          test-rejects-wrong-channel-count
+                          "must have 3 channels"))))))
 
   (export tests))

@@ -1,162 +1,161 @@
 ; Tests for bmp-decode.menai
 
-(let
-  ((bmp (import "bmp-decode"))
-   (t (import "menai-test"))
-   (decode (:: bmp decode))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((bmp (import "bmp-decode"))
+      (t (import "menai-test"))
+      (decode (:: bmp decode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; A 2x2 24-bit bottom-up file with four distinct colours.
-   (bottom-up-24
-    (string-hex->bytes
-      "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+      ; A 2x2 24-bit bottom-up file with four distinct colours.
+      (bottom-up-24
+       (string-hex->bytes
+         "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
 
-   ; A 2x2 24-bit top-down file with four distinct colours.
-   (top-down-24
-    (string-hex->bytes
-      "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
+      ; A 2x2 24-bit top-down file with four distinct colours.
+      (top-down-24
+       (string-hex->bytes
+         "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
 
-   ; A 3x2 24-bit bottom-up file whose rows need padding.
-   (padded-24
-    (string-hex->bytes
-      "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
+      ; A 3x2 24-bit bottom-up file whose rows need padding.
+      (padded-24
+       (string-hex->bytes
+         "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
 
-   ; A 2x2 32-bit bottom-up file with an alpha channel.
-   (alpha-32
-    (string-hex->bytes
-      "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))
+      ; A 2x2 32-bit bottom-up file with an alpha channel.
+      (alpha-32
+       (string-hex->bytes
+         "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))
 
-   ; A 1x1 24-bit file.
-   (single-pixel
-    (string-hex->bytes
-      "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
+      ; A 1x1 24-bit file.
+      (single-pixel
+       (string-hex->bytes
+         "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
 
-   ; The header fields are decoded.
-   (test-header-fields
-    (lambda ()
-      (let ((h (dict-get (decode bottom-up-24) "header")))
-        (assert-equal
-          h
-          (dict "file-size" 70
-                "data-offset" 54
-                "dib-size" 40
-                "width" 2
-                "height" 2
-                "planes" 1
-                "bpp" 24
-                "compression" 0
-                "image-size" 16
-                "x-ppm" 2835
-                "y-ppm" 2835
-                "colours-used" 0
-                "colours-important" 0)))))
+      ; The header fields are decoded.
+      (test-header-fields
+       (lambda ()
+         (let ((h (dict-get (decode bottom-up-24) "header")))
+           (assert-equal
+             h
+             (dict "file-size" 70
+                   "data-offset" 54
+                   "dib-size" 40
+                   "width" 2
+                   "height" 2
+                   "planes" 1
+                   "bpp" 24
+                   "compression" 0
+                   "image-size" 16
+                   "x-ppm" 2835
+                   "y-ppm" 2835
+                   "colours-used" 0
+                   "colours-important" 0)))))
 
-   ; A bottom-up file's rows are normalised to top-down order.
-   (test-bottom-up-rows
-    (lambda ()
-      (assert-equal
-        (dict-get (decode bottom-up-24) "pixels")
-        (vector (vector (vector 255 0 0) (vector 0 255 0)) (vector (vector 0 0 255) (vector 255 255 255))))))
+      ; A bottom-up file's rows are normalised to top-down order.
+      (test-bottom-up-rows
+       (lambda ()
+         (assert-equal
+           (dict-get (decode bottom-up-24) "pixels")
+           (vector (vector (vector 255 0 0) (vector 0 255 0)) (vector (vector 0 0 255) (vector 255 255 255))))))
 
-   ; A top-down file's rows keep file order.
-   (test-top-down-rows
-    (lambda ()
-      (assert-equal
-        (dict-get (decode top-down-24) "pixels")
-        (vector (vector (vector 255 0 0) (vector 0 255 0)) (vector (vector 0 0 255) (vector 255 255 255))))))
+      ; A top-down file's rows keep file order.
+      (test-top-down-rows
+       (lambda ()
+         (assert-equal
+           (dict-get (decode top-down-24) "pixels")
+           (vector (vector (vector 255 0 0) (vector 0 255 0)) (vector (vector 0 0 255) (vector 255 255 255))))))
 
-   ; Row padding bytes are stripped from the pixel grid.
-   (test-row-padding-stripped
-    (lambda ()
-      (assert-equal
-        (dict-get (decode padded-24) "pixels")
-        (vector
-          (vector (vector 10 20 30) (vector 40 50 60) (vector 70 80 90))
-          (vector (vector 1 2 3) (vector 4 5 6) (vector 7 8 9))))))
+      ; Row padding bytes are stripped from the pixel grid.
+      (test-row-padding-stripped
+       (lambda ()
+         (assert-equal
+           (dict-get (decode padded-24) "pixels")
+           (vector
+             (vector (vector 10 20 30) (vector 40 50 60) (vector 70 80 90))
+             (vector (vector 1 2 3) (vector 4 5 6) (vector 7 8 9))))))
 
-   ; 32-bit pixels carry an alpha channel.
-   (test-32-bit-alpha
-    (lambda ()
-      (assert-equal
-        (dict-get (decode alpha-32) "pixels")
-        (vector
-          (vector (vector 255 0 0 255) (vector 0 255 0 128))
-          (vector (vector 0 0 255 64) (vector 255 255 255 0))))))
+      ; 32-bit pixels carry an alpha channel.
+      (test-32-bit-alpha
+       (lambda ()
+         (assert-equal
+           (dict-get (decode alpha-32) "pixels")
+           (vector
+             (vector (vector 255 0 0 255) (vector 0 255 0 128))
+             (vector (vector 0 0 255 64) (vector 255 255 255 0))))))
 
-   ; A single-pixel file decodes to a 1x1 grid.
-   (test-single-pixel
-    (lambda ()
-      (assert-equal (dict-get (decode single-pixel) "pixels") (vector (vector (vector 18 52 86))))))
+      ; A single-pixel file decodes to a 1x1 grid.
+      (test-single-pixel
+       (lambda ()
+         (assert-equal (dict-get (decode single-pixel) "pixels") (vector (vector (vector 18 52 86))))))
 
-   ; The metadata reports the format, row padding, and bottom-up orientation.
-   (test-meta-bottom-up
-    (lambda ()
-      (assert-equal (dict-get (decode padded-24) "meta") (dict "format" "bmp" "row-padding" 3 "bottom-up" #t))))
+      ; The metadata reports the format, row padding, and bottom-up orientation.
+      (test-meta-bottom-up
+       (lambda ()
+         (assert-equal (dict-get (decode padded-24) "meta") (dict "format" "bmp" "row-padding" 3 "bottom-up" #t))))
 
-   ; The metadata reports bottom-up false for a top-down file.
-   (test-meta-top-down
-    (lambda ()
-      (assert-equal (dict-get (dict-get (decode top-down-24) "meta") "bottom-up") #f)))
+      ; The metadata reports bottom-up false for a top-down file.
+      (test-meta-top-down
+       (lambda ()
+         (assert-equal (dict-get (dict-get (decode top-down-24) "meta") "bottom-up") #f)))
 
-   ; A file without the BM signature is rejected.
-   (test-rejects-bad-signature
-    (lambda ()
-      (decode
-        (string-hex->bytes
-          "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"))))
+      ; A file without the BM signature is rejected.
+      (test-rejects-bad-signature
+       (lambda ()
+         (decode
+           (string-hex->bytes
+             "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"))))
 
-   ; A truncated header is rejected.
-   (test-rejects-truncated-header
-    (lambda ()
-      (decode (string-hex->bytes "424d00"))))
+      ; A truncated header is rejected.
+      (test-rejects-truncated-header
+       (lambda ()
+         (decode (string-hex->bytes "424d00"))))
 
-   ; An unsupported bit depth is rejected.
-   (test-rejects-unsupported-bit-depth
-    (lambda ()
-      (decode
-        (string-hex->bytes
-          "424d460000000000000036000000280000000200000002000000010008000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
+      ; An unsupported bit depth is rejected.
+      (test-rejects-unsupported-bit-depth
+       (lambda ()
+         (decode
+           (string-hex->bytes
+             "424d460000000000000036000000280000000200000002000000010008000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
 
-   ; A compressed file is rejected.
-   (test-rejects-compressed
-    (lambda ()
-      (decode
-        (string-hex->bytes
-          "424d460000000000000036000000280000000200000002000000010018000100000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
+      ; A compressed file is rejected.
+      (test-rejects-compressed
+       (lambda ()
+         (decode
+           (string-hex->bytes
+             "424d460000000000000036000000280000000200000002000000010018000100000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
 
-   ; A non-bytes argument is rejected.
-   (test-rejects-non-bytes
-    (lambda ()
-      (decode "not bytes")))
+      ; A non-bytes argument is rejected.
+      (test-rejects-non-bytes
+       (lambda ()
+         (decode "not bytes")))
 
-   (tests
-    (list
-      (list "header" (list (expect-pass "file and dib fields" test-header-fields)))
+      (tests
+       (list
+         (list "header" (list (expect-pass "file and dib fields" test-header-fields)))
 
-      (list
-        "pixels"
-        (list
-          (expect-pass "24-bit bottom-up rows are normalised top-down" test-bottom-up-rows)
-          (expect-pass "24-bit top-down rows keep file order" test-top-down-rows)
-          (expect-pass "row padding is stripped" test-row-padding-stripped)
-          (expect-pass "32-bit pixels include alpha" test-32-bit-alpha)
-          (expect-pass "single pixel" test-single-pixel)))
+         (list
+           "pixels"
+           (list
+             (expect-pass "24-bit bottom-up rows are normalised top-down" test-bottom-up-rows)
+             (expect-pass "24-bit top-down rows keep file order" test-top-down-rows)
+             (expect-pass "row padding is stripped" test-row-padding-stripped)
+             (expect-pass "32-bit pixels include alpha" test-32-bit-alpha)
+             (expect-pass "single pixel" test-single-pixel)))
 
-      (list
-        "meta"
-        (list
-          (expect-pass "bottom-up file reports padding and orientation" test-meta-bottom-up)
-          (expect-pass "top-down file reports bottom-up false" test-meta-top-down)))
+         (list
+           "meta"
+           (list
+             (expect-pass "bottom-up file reports padding and orientation" test-meta-bottom-up)
+             (expect-pass "top-down file reports bottom-up false" test-meta-top-down)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "rejects non-BMP signature" test-rejects-bad-signature "missing BM signature")
-          (expect-fail "rejects truncated header" test-rejects-truncated-header "too short")
-          (expect-fail "rejects unsupported bit depth" test-rejects-unsupported-bit-depth "8 bits per pixel")
-          (expect-fail "rejects compressed files" test-rejects-compressed "compression 1")
-          (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects non-BMP signature" test-rejects-bad-signature "missing BM signature")
+             (expect-fail "rejects truncated header" test-rejects-truncated-header "too short")
+             (expect-fail "rejects unsupported bit depth" test-rejects-unsupported-bit-depth "8 bits per pixel")
+             (expect-fail "rejects compressed files" test-rejects-compressed "compression 1")
+             (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
 
   (export tests))

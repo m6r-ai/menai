@@ -1,192 +1,191 @@
 ; Tests for bmp-encode.menai
 
-(let
-  ((bmp-encode (import "bmp-encode"))
-   (bmp-decode (import "bmp-decode"))
-   (t (import "menai-test"))
-   (encode (:: bmp-encode encode))
-   (decode (:: bmp-decode decode))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((bmp-encode (import "bmp-encode"))
+      (bmp-decode (import "bmp-decode"))
+      (t (import "menai-test"))
+      (encode (:: bmp-encode encode))
+      (decode (:: bmp-decode decode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; A 2x2 24-bit bottom-up file with four distinct colours.
-   (bottom-up-24
-    (string-hex->bytes
-      "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+      ; A 2x2 24-bit bottom-up file with four distinct colours.
+      (bottom-up-24
+       (string-hex->bytes
+         "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
 
-   ; A 2x2 24-bit top-down file with four distinct colours.
-   (top-down-24
-    (string-hex->bytes
-      "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
+      ; A 2x2 24-bit top-down file with four distinct colours.
+      (top-down-24
+       (string-hex->bytes
+         "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
 
-   ; A 3x2 24-bit bottom-up file whose rows need padding.
-   (padded-24
-    (string-hex->bytes
-      "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
+      ; A 3x2 24-bit bottom-up file whose rows need padding.
+      (padded-24
+       (string-hex->bytes
+         "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
 
-   ; A 2x2 32-bit bottom-up file with an alpha channel.
-   (alpha-32
-    (string-hex->bytes
-      "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))
+      ; A 2x2 32-bit bottom-up file with an alpha channel.
+      (alpha-32
+       (string-hex->bytes
+         "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))
 
-   ; A 1x1 24-bit file.
-   (single-pixel
-    (string-hex->bytes
-      "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
+      ; A 1x1 24-bit file.
+      (single-pixel
+       (string-hex->bytes
+         "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
 
-   ; A 24-bit bottom-up file round-trips through decode then encode then decode unchanged.
-   (test-round-trip-bottom-up
-    (lambda ()
-      (let ((v (decode bottom-up-24)))
-        (assert-equal (decode (encode v)) v))))
+      ; A 24-bit bottom-up file round-trips through decode then encode then decode unchanged.
+      (test-round-trip-bottom-up
+       (lambda ()
+         (let ((v (decode bottom-up-24)))
+           (assert-equal (decode (encode v)) v))))
 
-   ; A 24-bit top-down file round-trips through decode then encode then decode unchanged.
-   (test-round-trip-top-down
-    (lambda ()
-      (let ((v (decode top-down-24)))
-        (assert-equal (decode (encode v)) v))))
+      ; A 24-bit top-down file round-trips through decode then encode then decode unchanged.
+      (test-round-trip-top-down
+       (lambda ()
+         (let ((v (decode top-down-24)))
+           (assert-equal (decode (encode v)) v))))
 
-   ; A padded file round-trips through decode then encode then decode unchanged.
-   (test-round-trip-padded
-    (lambda ()
-      (let ((v (decode padded-24)))
-        (assert-equal (decode (encode v)) v))))
+      ; A padded file round-trips through decode then encode then decode unchanged.
+      (test-round-trip-padded
+       (lambda ()
+         (let ((v (decode padded-24)))
+           (assert-equal (decode (encode v)) v))))
 
-   ; A 32-bit file round-trips through decode then encode then decode unchanged.
-   (test-round-trip-32-bit
-    (lambda ()
-      (let ((v (decode alpha-32)))
-        (assert-equal (decode (encode v)) v))))
+      ; A 32-bit file round-trips through decode then encode then decode unchanged.
+      (test-round-trip-32-bit
+       (lambda ()
+         (let ((v (decode alpha-32)))
+           (assert-equal (decode (encode v)) v))))
 
-   ; A single-pixel file round-trips through decode then encode then decode unchanged.
-   (test-round-trip-single-pixel
-    (lambda ()
-      (let ((v (decode single-pixel)))
-        (assert-equal (decode (encode v)) v))))
+      ; A single-pixel file round-trips through decode then encode then decode unchanged.
+      (test-round-trip-single-pixel
+       (lambda ()
+         (let ((v (decode single-pixel)))
+           (assert-equal (decode (encode v)) v))))
 
-   ; A canonical file is reproduced byte for byte.
-   (test-canonical-byte-for-byte
-    (lambda ()
-      (let ((hex
-             "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
-        (assert-equal (encode (decode (string-hex->bytes hex))) (string-hex->bytes hex)))))
+      ; A canonical file is reproduced byte for byte.
+      (test-canonical-byte-for-byte
+       (lambda ()
+         (let ((hex
+                "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+           (assert-equal (encode (decode (string-hex->bytes hex))) (string-hex->bytes hex)))))
 
-   ; Width and height are preserved through a round-trip.
-   (test-width-height-preserved
-    (lambda ()
-      (let ((v (decode padded-24)))
-        (let ((h (dict-get (decode (encode v)) "header")))
-          (assert-equal (list (dict-get h "width") (dict-get h "height")) (list 3 2))))))
+      ; Width and height are preserved through a round-trip.
+      (test-width-height-preserved
+       (lambda ()
+         (let ((v (decode padded-24)))
+           (let ((h (dict-get (decode (encode v)) "header")))
+             (assert-equal (list (dict-get h "width") (dict-get h "height")) (list 3 2))))))
 
-   ; Bit depth is preserved through a round-trip.
-   (test-bit-depth-preserved
-    (lambda ()
-      (let ((v (decode alpha-32)))
-        (assert-equal (dict-get (dict-get (decode (encode v)) "header") "bpp") 32))))
+      ; Bit depth is preserved through a round-trip.
+      (test-bit-depth-preserved
+       (lambda ()
+         (let ((v (decode alpha-32)))
+           (assert-equal (dict-get (dict-get (decode (encode v)) "header") "bpp") 32))))
 
-   ; Resolution is preserved through a round-trip.
-   (test-resolution-preserved
-    (lambda ()
-      (let ((v (decode bottom-up-24)))
-        (let ((h (dict-get (decode (encode v)) "header")))
-          (assert-equal (list (dict-get h "x-ppm") (dict-get h "y-ppm")) (list 2835 2835))))))
+      ; Resolution is preserved through a round-trip.
+      (test-resolution-preserved
+       (lambda ()
+         (let ((v (decode bottom-up-24)))
+           (let ((h (dict-get (decode (encode v)) "header")))
+             (assert-equal (list (dict-get h "x-ppm") (dict-get h "y-ppm")) (list 2835 2835))))))
 
-   ; File size and data offset are recomputed on encode.
-   (test-file-size-recomputed
-    (lambda ()
-      (let ((v (decode bottom-up-24)))
-        (let ((h (dict-get (decode (encode v)) "header")))
-          (assert-equal (list (dict-get h "file-size") (dict-get h "data-offset")) (list 70 54))))))
+      ; File size and data offset are recomputed on encode.
+      (test-file-size-recomputed
+       (lambda ()
+         (let ((v (decode bottom-up-24)))
+           (let ((h (dict-get (decode (encode v)) "header")))
+             (assert-equal (list (dict-get h "file-size") (dict-get h "data-offset")) (list 70 54))))))
 
-   ; Bottom-up orientation is preserved through a round-trip.
-   (test-bottom-up-preserved
-    (lambda ()
-      (let ((v (decode bottom-up-24)))
-        (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "bottom-up") #t))))
+      ; Bottom-up orientation is preserved through a round-trip.
+      (test-bottom-up-preserved
+       (lambda ()
+         (let ((v (decode bottom-up-24)))
+           (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "bottom-up") #t))))
 
-   ; Top-down orientation is preserved through a round-trip.
-   (test-top-down-preserved
-    (lambda ()
-      (let ((v (decode top-down-24)))
-        (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "bottom-up") #f))))
+      ; Top-down orientation is preserved through a round-trip.
+      (test-top-down-preserved
+       (lambda ()
+         (let ((v (decode top-down-24)))
+           (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "bottom-up") #f))))
 
-   ; Row padding is recomputed on encode.
-   (test-row-padding-recomputed
-    (lambda ()
-      (let ((v (decode padded-24)))
-        (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "row-padding") 3))))
+      ; Row padding is recomputed on encode.
+      (test-row-padding-recomputed
+       (lambda ()
+         (let ((v (decode padded-24)))
+           (assert-equal (dict-get (dict-get (decode (encode v)) "meta") "row-padding") 3))))
 
-   ; A non-dict argument is rejected.
-   (test-rejects-non-dict
-    (lambda ()
-      (encode "not a dict")))
+      ; A non-dict argument is rejected.
+      (test-rejects-non-dict
+       (lambda ()
+         (encode "not a dict")))
 
-   ; A value with no header is rejected.
-   (test-rejects-missing-header
-    (lambda ()
-      (encode (dict "pixels" (vector)))))
+      ; A value with no header is rejected.
+      (test-rejects-missing-header
+       (lambda ()
+         (encode (dict "pixels" (vector)))))
 
-   ; An unsupported bit depth is rejected.
-   (test-rejects-unsupported-bit-depth
-    (lambda ()
-      (encode
-        (dict "header" (dict "width" 1 "height" 1 "bpp" 8)
-              "pixels" (vector (vector (vector 0 0 0)))
-              "meta" (dict "bottom-up" #t)))))
+      ; An unsupported bit depth is rejected.
+      (test-rejects-unsupported-bit-depth
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1 "bpp" 8)
+                 "pixels" (vector (vector (vector 0 0 0)))
+                 "meta" (dict "bottom-up" #t)))))
 
-   ; A non-vector pixel grid is rejected.
-   (test-rejects-non-vector-pixels
-    (lambda ()
-      (encode
-        (dict "header" (dict "width" 1 "height" 1 "bpp" 24) "pixels" "not a vector" "meta" (dict "bottom-up" #t)))))
+      ; A non-vector pixel grid is rejected.
+      (test-rejects-non-vector-pixels
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1 "bpp" 24) "pixels" "not a vector" "meta" (dict "bottom-up" #t)))))
 
-   ; A pixel with the wrong channel count is rejected.
-   (test-rejects-wrong-channel-count
-    (lambda ()
-      (encode
-        (dict "header" (dict "width" 1 "height" 1 "bpp" 24)
-              "pixels" (vector (vector (vector 1 2)))
-              "meta" (dict "bottom-up" #t)))))
+      ; A pixel with the wrong channel count is rejected.
+      (test-rejects-wrong-channel-count
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1 "bpp" 24)
+                 "pixels" (vector (vector (vector 1 2)))
+                 "meta" (dict "bottom-up" #t)))))
 
-   (tests
-    (list
-      (list
-        "round-trips"
-        (list
-          (expect-pass "24-bit bottom-up file is reproduced" test-round-trip-bottom-up)
-          (expect-pass "24-bit top-down file is reproduced" test-round-trip-top-down)
-          (expect-pass "padded file is reproduced" test-round-trip-padded)
-          (expect-pass "32-bit file is reproduced" test-round-trip-32-bit)
-          (expect-pass "single pixel is reproduced" test-round-trip-single-pixel)
-          (expect-pass "canonical files are reproduced byte for byte" test-canonical-byte-for-byte)))
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "24-bit bottom-up file is reproduced" test-round-trip-bottom-up)
+             (expect-pass "24-bit top-down file is reproduced" test-round-trip-top-down)
+             (expect-pass "padded file is reproduced" test-round-trip-padded)
+             (expect-pass "32-bit file is reproduced" test-round-trip-32-bit)
+             (expect-pass "single pixel is reproduced" test-round-trip-single-pixel)
+             (expect-pass "canonical files are reproduced byte for byte" test-canonical-byte-for-byte)))
 
-      (list
-        "header"
-        (list
-          (expect-pass "width and height are preserved" test-width-height-preserved)
-          (expect-pass "bit depth is preserved" test-bit-depth-preserved)
-          (expect-pass "resolution is preserved" test-resolution-preserved)
-          (expect-pass "file size and data offset are recomputed" test-file-size-recomputed)))
+         (list
+           "header"
+           (list
+             (expect-pass "width and height are preserved" test-width-height-preserved)
+             (expect-pass "bit depth is preserved" test-bit-depth-preserved)
+             (expect-pass "resolution is preserved" test-resolution-preserved)
+             (expect-pass "file size and data offset are recomputed" test-file-size-recomputed)))
 
-      (list
-        "layout"
-        (list
-          (expect-pass "bottom-up orientation is preserved" test-bottom-up-preserved)
-          (expect-pass "top-down orientation is preserved" test-top-down-preserved)
-          (expect-pass "row padding is recomputed" test-row-padding-recomputed)))
+         (list
+           "layout"
+           (list
+             (expect-pass "bottom-up orientation is preserved" test-bottom-up-preserved)
+             (expect-pass "top-down orientation is preserved" test-top-down-preserved)
+             (expect-pass "row padding is recomputed" test-row-padding-recomputed)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
-          (expect-fail "rejects a missing header" test-rejects-missing-header "\"header\" must be a dict")
-          (expect-fail "rejects an unsupported bit depth" test-rejects-unsupported-bit-depth "unsupported bit depth")
-          (expect-fail "rejects a non-vector pixel grid"
-                       test-rejects-non-vector-pixels
-                       "\"pixels\" must be a vector of rows")
-          (expect-fail "rejects a pixel with the wrong channel count"
-                       test-rejects-wrong-channel-count
-                       "must have 3 channels"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
+             (expect-fail "rejects a missing header" test-rejects-missing-header "\"header\" must be a dict")
+             (expect-fail "rejects an unsupported bit depth" test-rejects-unsupported-bit-depth "unsupported bit depth")
+             (expect-fail "rejects a non-vector pixel grid"
+                          test-rejects-non-vector-pixels
+                          "\"pixels\" must be a vector of rows")
+             (expect-fail "rejects a pixel with the wrong channel count"
+                          test-rejects-wrong-channel-count
+                          "must have 3 channels"))))))
 
   (export tests))

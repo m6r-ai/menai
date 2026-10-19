@@ -1,230 +1,229 @@
 ; Tests for base64-encode.menai
 
-(let
-  ((base64-encode (import "base64-encode"))
-   (base64-decode (import "base64-decode"))
-   (t (import "menai-test"))
-   (encode (:: base64-encode encode))
-   (ev (:: base64-encode variant))
-   (decode (:: base64-decode decode))
-   (dv (:: base64-decode variant))
-   (assert-equal (:: t assert-equal))
-   (expect-pass (:: t expect-pass))
-   (expect-fail (:: t expect-fail))
+(let ((base64-encode (import "base64-encode"))
+      (base64-decode (import "base64-decode"))
+      (t (import "menai-test"))
+      (encode (:: base64-encode encode))
+      (ev (:: base64-encode variant))
+      (decode (:: base64-decode decode))
+      (dv (:: base64-decode variant))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-   ; Build a bytes value containing every byte value from 0 to 255.
-   (all-bytes
-    (lambda ()
-      (let ((mk
+      ; Build a bytes value containing every byte value from 0 to 255.
+      (all-bytes
+       (lambda ()
+         (let ((mk
                 (lambda (i acc)
                   (if (integer>=? i 256)
                       (list->bytes (list-reverse acc))
                       (mk (integer+ i 1) (list-prepend acc i))))))
-        (mk 0 (list)))))
+           (mk 0 (list)))))
 
-   ; Build a bytes value of the given length cycling through byte values.
-   (cycling-bytes
-    (lambda (n)
-      (let ((mk
+      ; Build a bytes value of the given length cycling through byte values.
+      (cycling-bytes
+       (lambda (n)
+         (let ((mk
                 (lambda (i acc)
                   (if (integer>=? i n)
                       (list->bytes (list-reverse acc))
                       (mk (integer+ i 1) (list-prepend acc (integer% i 256)))))))
-        (mk 0 (list)))))
+           (mk 0 (list)))))
 
-   ; The empty input encodes to the empty string.
-   (test-vector-empty
-    (lambda ()
-      (assert-equal (encode (string->bytes "")) "")))
+      ; The empty input encodes to the empty string.
+      (test-vector-empty
+       (lambda ()
+         (assert-equal (encode (string->bytes "")) "")))
 
-   ; "f" encodes to "Zg==".
-   (test-vector-f
-    (lambda ()
-      (assert-equal (encode (string->bytes "f")) "Zg==")))
+      ; "f" encodes to "Zg==".
+      (test-vector-f
+       (lambda ()
+         (assert-equal (encode (string->bytes "f")) "Zg==")))
 
-   ; "fo" encodes to "Zm8=".
-   (test-vector-fo
-    (lambda ()
-      (assert-equal (encode (string->bytes "fo")) "Zm8=")))
+      ; "fo" encodes to "Zm8=".
+      (test-vector-fo
+       (lambda ()
+         (assert-equal (encode (string->bytes "fo")) "Zm8=")))
 
-   ; "foo" encodes to "Zm9v".
-   (test-vector-foo
-    (lambda ()
-      (assert-equal (encode (string->bytes "foo")) "Zm9v")))
+      ; "foo" encodes to "Zm9v".
+      (test-vector-foo
+       (lambda ()
+         (assert-equal (encode (string->bytes "foo")) "Zm9v")))
 
-   ; "foob" encodes to "Zm9vYg==".
-   (test-vector-foob
-    (lambda ()
-      (assert-equal (encode (string->bytes "foob")) "Zm9vYg==")))
+      ; "foob" encodes to "Zm9vYg==".
+      (test-vector-foob
+       (lambda ()
+         (assert-equal (encode (string->bytes "foob")) "Zm9vYg==")))
 
-   ; "fooba" encodes to "Zm9vYmE=".
-   (test-vector-fooba
-    (lambda ()
-      (assert-equal (encode (string->bytes "fooba")) "Zm9vYmE=")))
+      ; "fooba" encodes to "Zm9vYmE=".
+      (test-vector-fooba
+       (lambda ()
+         (assert-equal (encode (string->bytes "fooba")) "Zm9vYmE=")))
 
-   ; "foobar" encodes to "Zm9vYmFy".
-   (test-vector-foobar
-    (lambda ()
-      (assert-equal (encode (string->bytes "foobar")) "Zm9vYmFy")))
+      ; "foobar" encodes to "Zm9vYmFy".
+      (test-vector-foobar
+       (lambda ()
+         (assert-equal (encode (string->bytes "foobar")) "Zm9vYmFy")))
 
-   ; A length of 3 has no padding.
-   (test-padding-length-3
-    (lambda ()
-      (assert-equal (encode (string->bytes "abc")) "YWJj")))
+      ; A length of 3 has no padding.
+      (test-padding-length-3
+       (lambda ()
+         (assert-equal (encode (string->bytes "abc")) "YWJj")))
 
-   ; A length of 4 has one padding character.
-   (test-padding-length-4
-    (lambda ()
-      (assert-equal (encode (string->bytes "abcd")) "YWJjZA==")))
+      ; A length of 4 has one padding character.
+      (test-padding-length-4
+       (lambda ()
+         (assert-equal (encode (string->bytes "abcd")) "YWJjZA==")))
 
-   ; A length of 5 has two padding characters.
-   (test-padding-length-5
-    (lambda ()
-      (assert-equal (encode (string->bytes "abcde")) "YWJjZGU=")))
+      ; A length of 5 has two padding characters.
+      (test-padding-length-5
+       (lambda ()
+         (assert-equal (encode (string->bytes "abcde")) "YWJjZGU=")))
 
-   ; The output length is always a multiple of four.
-   (test-padding-output-multiple-of-four
-    (lambda ()
-      (assert-equal (integer% (string-length (encode (string->bytes "a"))) 4) 0)))
+      ; The output length is always a multiple of four.
+      (test-padding-output-multiple-of-four
+       (lambda ()
+         (assert-equal (integer% (string-length (encode (string->bytes "a"))) 4) 0)))
 
-   ; The standard variant is the default.
-   (test-variant-standard-default
-    (lambda ()
-      (assert-equal (encode (string->bytes "foob") (ev 'standard)) (encode (string->bytes "foob")))))
+      ; The standard variant is the default.
+      (test-variant-standard-default
+       (lambda ()
+         (assert-equal (encode (string->bytes "foob") (ev 'standard)) (encode (string->bytes "foob")))))
 
-   ; The standard variant pads.
-   (test-variant-standard-pads
-    (lambda ()
-      (assert-equal (encode (string->bytes "foob") (ev 'standard)) "Zm9vYg==")))
+      ; The standard variant pads.
+      (test-variant-standard-pads
+       (lambda ()
+         (assert-equal (encode (string->bytes "foob") (ev 'standard)) "Zm9vYg==")))
 
-   ; The standard-unpadded variant omits padding.
-   (test-variant-standard-unpadded
-    (lambda ()
-      (assert-equal (encode (string->bytes "foob") (ev 'standard-unpadded)) "Zm9vYg")))
+      ; The standard-unpadded variant omits padding.
+      (test-variant-standard-unpadded
+       (lambda ()
+         (assert-equal (encode (string->bytes "foob") (ev 'standard-unpadded)) "Zm9vYg")))
 
-   ; The url variant pads.
-   (test-variant-url-pads
-    (lambda ()
-      (assert-equal (encode (string->bytes "foob") (ev 'url)) "Zm9vYg==")))
+      ; The url variant pads.
+      (test-variant-url-pads
+       (lambda ()
+         (assert-equal (encode (string->bytes "foob") (ev 'url)) "Zm9vYg==")))
 
-   ; The url-unpadded variant omits padding.
-   (test-variant-url-unpadded
-    (lambda ()
-      (assert-equal (encode (string->bytes "foob") (ev 'url-unpadded)) "Zm9vYg")))
+      ; The url-unpadded variant omits padding.
+      (test-variant-url-unpadded
+       (lambda ()
+         (assert-equal (encode (string->bytes "foob") (ev 'url-unpadded)) "Zm9vYg")))
 
-   ; The standard and url variants agree when no special character occurs.
-   (test-variant-standard-url-agree
-    (lambda ()
-      (assert-equal (encode (string->bytes "foobar") (ev 'standard)) (encode (string->bytes "foobar") (ev 'url)))))
+      ; The standard and url variants agree when no special character occurs.
+      (test-variant-standard-url-agree
+       (lambda ()
+         (assert-equal (encode (string->bytes "foobar") (ev 'standard)) (encode (string->bytes "foobar") (ev 'url)))))
 
-   ; The standard variant uses + and /.
-   (test-variant-standard-special
-    (lambda ()
-      (assert-equal (encode (list->bytes (list 251 255 254)) (ev 'standard)) "+//+")))
+      ; The standard variant uses + and /.
+      (test-variant-standard-special
+       (lambda ()
+         (assert-equal (encode (list->bytes (list 251 255 254)) (ev 'standard)) "+//+")))
 
-   ; The url variant uses - and _.
-   (test-variant-url-special
-    (lambda ()
-      (assert-equal (encode (list->bytes (list 251 255 254)) (ev 'url)) "-__-")))
+      ; The url variant uses - and _.
+      (test-variant-url-special
+       (lambda ()
+         (assert-equal (encode (list->bytes (list 251 255 254)) (ev 'url)) "-__-")))
 
-   ; The empty bytes value round-trips through decode then encode unchanged.
-   (test-round-trip-empty
-    (lambda ()
-      (assert-equal (decode (encode (string->bytes ""))) (string->bytes ""))))
+      ; The empty bytes value round-trips through decode then encode unchanged.
+      (test-round-trip-empty
+       (lambda ()
+         (assert-equal (decode (encode (string->bytes ""))) (string->bytes ""))))
 
-   ; Text round-trips through encode then decode unchanged.
-   (test-round-trip-text
-    (lambda ()
-      (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
+      ; Text round-trips through encode then decode unchanged.
+      (test-round-trip-text
+       (lambda ()
+         (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
 
-   ; Every byte value round-trips through the standard variant.
-   (test-round-trip-all-bytes-standard
-    (lambda ()
-      (let ((all (all-bytes)))
-        (assert-equal (decode (encode all (ev 'standard)) (dv 'standard)) all))))
+      ; Every byte value round-trips through the standard variant.
+      (test-round-trip-all-bytes-standard
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'standard)) (dv 'standard)) all))))
 
-   ; Every byte value round-trips through the standard-unpadded variant.
-   (test-round-trip-all-bytes-standard-unpadded
-    (lambda ()
-      (let ((all (all-bytes)))
-        (assert-equal (decode (encode all (ev 'standard-unpadded)) (dv 'standard-unpadded)) all))))
+      ; Every byte value round-trips through the standard-unpadded variant.
+      (test-round-trip-all-bytes-standard-unpadded
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'standard-unpadded)) (dv 'standard-unpadded)) all))))
 
-   ; Every byte value round-trips through the url variant.
-   (test-round-trip-all-bytes-url
-    (lambda ()
-      (let ((all (all-bytes)))
-        (assert-equal (decode (encode all (ev 'url)) (dv 'url)) all))))
+      ; Every byte value round-trips through the url variant.
+      (test-round-trip-all-bytes-url
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'url)) (dv 'url)) all))))
 
-   ; Every byte value round-trips through the url-unpadded variant.
-   (test-round-trip-all-bytes-url-unpadded
-    (lambda ()
-      (let ((all (all-bytes)))
-        (assert-equal (decode (encode all (ev 'url-unpadded)) (dv 'url-unpadded)) all))))
+      ; Every byte value round-trips through the url-unpadded variant.
+      (test-round-trip-all-bytes-url-unpadded
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'url-unpadded)) (dv 'url-unpadded)) all))))
 
-   ; A long payload spanning many groups round-trips unchanged.
-   (test-round-trip-long-payload
-    (lambda ()
-      (let ((data (cycling-bytes 1000)))
-        (assert-equal (decode (encode data)) data))))
+      ; A long payload spanning many groups round-trips unchanged.
+      (test-round-trip-long-payload
+       (lambda ()
+         (let ((data (cycling-bytes 1000)))
+           (assert-equal (decode (encode data)) data))))
 
-   ; A string argument is rejected.
-   (test-rejects-string
-    (lambda ()
-      (encode "not bytes")))
+      ; A string argument is rejected.
+      (test-rejects-string
+       (lambda ()
+         (encode "not bytes")))
 
-   ; An integer argument is rejected.
-   (test-rejects-integer
-    (lambda ()
-      (encode 42)))
+      ; An integer argument is rejected.
+      (test-rejects-integer
+       (lambda ()
+         (encode 42)))
 
-   (tests
-    (list
-      (list
-        "rfc-4648-vectors"
-        (list
-          (expect-pass "empty input" test-vector-empty)
-          (expect-pass "f" test-vector-f)
-          (expect-pass "fo" test-vector-fo)
-          (expect-pass "foo" test-vector-foo)
-          (expect-pass "foob" test-vector-foob)
-          (expect-pass "fooba" test-vector-fooba)
-          (expect-pass "foobar" test-vector-foobar)))
+      (tests
+       (list
+         (list
+           "rfc-4648-vectors"
+           (list
+             (expect-pass "empty input" test-vector-empty)
+             (expect-pass "f" test-vector-f)
+             (expect-pass "fo" test-vector-fo)
+             (expect-pass "foo" test-vector-foo)
+             (expect-pass "foob" test-vector-foob)
+             (expect-pass "fooba" test-vector-fooba)
+             (expect-pass "foobar" test-vector-foobar)))
 
-      (list
-        "padding"
-        (list
-          (expect-pass "length 3 has no padding" test-padding-length-3)
-          (expect-pass "length 4 has one padding character" test-padding-length-4)
-          (expect-pass "length 5 has two padding characters" test-padding-length-5)
-          (expect-pass "output length is always a multiple of four" test-padding-output-multiple-of-four)))
+         (list
+           "padding"
+           (list
+             (expect-pass "length 3 has no padding" test-padding-length-3)
+             (expect-pass "length 4 has one padding character" test-padding-length-4)
+             (expect-pass "length 5 has two padding characters" test-padding-length-5)
+             (expect-pass "output length is always a multiple of four" test-padding-output-multiple-of-four)))
 
-      (list
-        "variants"
-        (list
-          (expect-pass "standard is the default" test-variant-standard-default)
-          (expect-pass "standard pads" test-variant-standard-pads)
-          (expect-pass "standard-unpadded omits padding" test-variant-standard-unpadded)
-          (expect-pass "url pads" test-variant-url-pads)
-          (expect-pass "url-unpadded omits padding" test-variant-url-unpadded)
-          (expect-pass "standard and url agree when no special character occurs" test-variant-standard-url-agree)
-          (expect-pass "standard uses + and /" test-variant-standard-special)
-          (expect-pass "url uses - and _" test-variant-url-special)))
+         (list
+           "variants"
+           (list
+             (expect-pass "standard is the default" test-variant-standard-default)
+             (expect-pass "standard pads" test-variant-standard-pads)
+             (expect-pass "standard-unpadded omits padding" test-variant-standard-unpadded)
+             (expect-pass "url pads" test-variant-url-pads)
+             (expect-pass "url-unpadded omits padding" test-variant-url-unpadded)
+             (expect-pass "standard and url agree when no special character occurs" test-variant-standard-url-agree)
+             (expect-pass "standard uses + and /" test-variant-standard-special)
+             (expect-pass "url uses - and _" test-variant-url-special)))
 
-      (list
-        "round-trips"
-        (list
-          (expect-pass "empty" test-round-trip-empty)
-          (expect-pass "text" test-round-trip-text)
-          (expect-pass "every byte value, standard" test-round-trip-all-bytes-standard)
-          (expect-pass "every byte value, standard-unpadded" test-round-trip-all-bytes-standard-unpadded)
-          (expect-pass "every byte value, url" test-round-trip-all-bytes-url)
-          (expect-pass "every byte value, url-unpadded" test-round-trip-all-bytes-url-unpadded)
-          (expect-pass "long payload spanning many groups" test-round-trip-long-payload)))
+         (list
+           "round-trips"
+           (list
+             (expect-pass "empty" test-round-trip-empty)
+             (expect-pass "text" test-round-trip-text)
+             (expect-pass "every byte value, standard" test-round-trip-all-bytes-standard)
+             (expect-pass "every byte value, standard-unpadded" test-round-trip-all-bytes-standard-unpadded)
+             (expect-pass "every byte value, url" test-round-trip-all-bytes-url)
+             (expect-pass "every byte value, url-unpadded" test-round-trip-all-bytes-url-unpadded)
+             (expect-pass "long payload spanning many groups" test-round-trip-long-payload)))
 
-      (list
-        "errors"
-        (list
-          (expect-fail "rejects a string argument" test-rejects-string "expects a bytes value")
-          (expect-fail "rejects an integer argument" test-rejects-integer "expects a bytes value"))))))
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects a string argument" test-rejects-string "expects a bytes value")
+             (expect-fail "rejects an integer argument" test-rejects-integer "expects a bytes value"))))))
 
   (export tests))

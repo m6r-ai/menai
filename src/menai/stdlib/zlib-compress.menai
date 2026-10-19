@@ -13,33 +13,32 @@
 ; preset dictionary, and the default compression level.  The header check is
 ; that (CMF * 256 + FLG) is a multiple of 31, which 0x789c satisfies.
 
-(let
-  ((deflate-lib (import "deflate-compress"))
-   (deflate-lib-mode (:: deflate-lib mode))
+(let ((deflate-lib (import "deflate-compress"))
+      (deflate-lib-mode (:: deflate-lib mode))
 
-   ; The DEFLATE block encoding to request: choose the smallest of the three
-   ; encodings, or force a stored, fixed Huffman, or dynamic Huffman block.
-   (mode (enum (auto stored fixed dynamic)))
+      ; The DEFLATE block encoding to request: choose the smallest of the three
+      ; encodings, or force a stored, fixed Huffman, or dynamic Huffman block.
+      (mode (enum (auto stored fixed dynamic)))
 
-   ; Map this module's mode to deflate-compress's mode.  The two enum types are
-   ; distinct, so the mapping is explicit; a change to either variant set is a
-   ; compile-time error here until it is decided how to expose it.
-   (deflate-mode
-    (lambda (m)
-      (match m
-        ((: mode 'auto) (deflate-lib-mode 'auto))
-        ((: mode 'stored) (deflate-lib-mode 'stored))
-        ((: mode 'fixed) (deflate-lib-mode 'fixed))
-        ((: mode 'dynamic) (deflate-lib-mode 'dynamic)))))
+      ; Map this module's mode to deflate-compress's mode.  The two enum types are
+      ; distinct, so the mapping is explicit; a change to either variant set is a
+      ; compile-time error here until it is decided how to expose it.
+      (deflate-mode
+       (lambda (m)
+         (match m
+           ((: mode 'auto) (deflate-lib-mode 'auto))
+           ((: mode 'stored) (deflate-lib-mode 'stored))
+           ((: mode 'fixed) (deflate-lib-mode 'fixed))
+           ((: mode 'dynamic) (deflate-lib-mode 'dynamic)))))
 
-   ; The modulus used by Adler-32 (the largest prime below 65536).
-   (adler-modulus 65521)
+      ; The modulus used by Adler-32 (the largest prime below 65536).
+      (adler-modulus 65521)
 
-   ; Compute the Adler-32 checksum of a bytes value as an integer: two running
-   ; sums taken modulo 65521, combined as (b << 16) | a.
-   (adler32
-    (lambda (b)
-      (let ((loop
+      ; Compute the Adler-32 checksum of a bytes value as an integer: two running
+      ; sums taken modulo 65521, combined as (b << 16) | a.
+      (adler32
+       (lambda (b)
+         (let ((loop
                 (lambda (i a bb)
                   (if (integer>=? i (bytes-length b))
                       (integer-bit-or (integer-bit-shift-left bb 16) a)
@@ -48,31 +47,31 @@
                           (integer+ i 1)
                           (integer% (integer+ a next-byte) adler-modulus)
                           (integer% (integer+ bb a next-byte) adler-modulus)))))))
-        (loop 0 1 0))))
+           (loop 0 1 0))))
 
-   ; The two-byte zlib header: CMF = 0x78, FLG = 0x9c.
-   (header (string-hex->bytes "789c"))
+      ; The two-byte zlib header: CMF = 0x78, FLG = 0x9c.
+      (header (string-hex->bytes "789c"))
 
-   ; Compress a bytes value into a complete zlib stream.  It is the inverse of
-   ; zlib-decompress's decompress: for every bytes value b,
-   ; (decompress (compress b)) reproduces b.
-   ;
-   ; The optional second argument selects the DEFLATE block encoding and is
-   ; mapped to the equivalent deflate-compress mode; it defaults to (mode 'auto).
-   ; It does not affect decompression.
-   (compress
-    (lambda (b . rest)
-      (if (bytes? b)
-          (let             ((block-mode
-              (if (list-null? rest)
-                  (mode 'auto)
-                  (list-first rest)))
+      ; Compress a bytes value into a complete zlib stream.  It is the inverse of
+      ; zlib-decompress's decompress: for every bytes value b,
+      ; (decompress (compress b)) reproduces b.
+      ;
+      ; The optional second argument selects the DEFLATE block encoding and is
+      ; mapped to the equivalent deflate-compress mode; it defaults to (mode 'auto).
+      ; It does not affect decompression.
+      (compress
+       (lambda (b . rest)
+         (if (bytes? b)
+             (let ((block-mode
+                    (if (list-null? rest)
+                        (mode 'auto)
+                        (list-first rest)))
 
-             (deflate (:: deflate-lib compress)))
-            (bytes-concat
-              header
-              (deflate b (deflate-mode block-mode))
-              (bytes-append-u32-be (bytes-concat) (adler32 b))))
-          (error "zlib-compress: compress expects a bytes value")))))
+                   (deflate (:: deflate-lib compress)))
+               (bytes-concat
+                 header
+                 (deflate b (deflate-mode block-mode))
+                 (bytes-append-u32-be (bytes-concat) (adler32 b))))
+             (error "zlib-compress: compress expects a bytes value")))))
 
   (export compress mode))
