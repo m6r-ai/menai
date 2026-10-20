@@ -461,13 +461,16 @@ Syntax: (operator arg1 arg2 ...)
 ## let — local bindings
 
 - (let ((var1 val1) (var2 val2) ...) body) → local bindings; every binding name is in scope for every binding value and for the body
+- Bindings are mutually visible, in either order: a value may reference a sibling that appears before it or after it
 - (let ((x 5) (y (integer* x 2))) (integer+ x y)) → 15 (y can reference x)
-- (let ((x 5) (y 10)) (integer+ x y)) → 15 (independent bindings need no special form)
+- (let ((y (integer* x 2)) (x 5)) (integer+ x y)) → 15 (y can reference x even though x is written second)
+- Values are evaluated in dependency order, not source order, so a group of dependent bindings is written as one flat let
 - (let ((fact (lambda (n) (if (integer<=? n 1) 1 (integer* n (fact (integer- n 1))))))) (fact 5)) → 120 (self-recursion)
 - (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1))))) (odd? (lambda (n) (if (integer=? n 0) #f (even? (integer- n 1)))))) (even? 10)) → #t (mutual recursion)
 - let is the only binding form; there is no let* or letrec
 - Binding names must be unique within one let; nest let forms to shadow a name
-- A non-lambda binding cannot refer to itself — wrap the reference in a lambda to defer it
+- A non-lambda binding cannot refer to itself, and two non-lambda bindings cannot refer to each other: neither has a value when the other is evaluated, so there is no base case. Wrap the reference in a lambda to defer it, or move the dependency outside the let
+- A lambda binding may refer to itself or to any sibling, which is what makes self-recursion and mutual recursion work
 - Struct and enum definitions are permitted as let binding values — use this when defining a module that exports a type alongside its associated functions
 - let and lambda accept exactly one body expression; there is no begin or sequencing form — nest let for multi-step computations
 - Menai has no define special form; all variable bindings use let
