@@ -224,10 +224,10 @@
                                       (list-rest lens)
                                       (integer+ sym 1)
                                       (dict-with codes len (integer+ code 1))
-                                      (dict-with table key sym)))))))))))
+                                      (dict-with table key sym))))))))))
 
-           (let ((counted (count-lengths lengths (dict) 0)))
-             (assign lengths 0 (first-codes (list-first counted) (list-nth counted 1)) (dict))))))
+               (counted (count-lengths lengths (dict) 0)))
+           (assign lengths 0 (first-codes (list-first counted) (list-nth counted 1)) (dict)))))
 
       ; Decode one symbol using a canonical Huffman table, reading bits one at a
       ; time until a code matches.  The table is keyed by (1 << length) + code, so
