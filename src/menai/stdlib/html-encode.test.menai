@@ -1,10 +1,8 @@
 ; Tests for html-encode.menai
 
 (let ((html-encode (import "html-encode"))
-      (html-decode (import "html-decode"))
       (t (import "menai-test"))
       (encode (:: html-encode encode))
-      (decode (:: html-decode decode))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
@@ -134,31 +132,6 @@
        (lambda ()
          (encode (list (dict "tag" "!--" "attrs" (dict) "children" (list 42))))))
 
-      ; An element tree round-trips through encode then decode unchanged.
-      (test-round-trip-element
-       (lambda ()
-         (assert-equal (decode (encode (decode "<p>x</p>"))) (decode "<p>x</p>"))))
-
-      ; Mixed content round-trips through encode then decode unchanged.
-      (test-round-trip-mixed-content
-       (lambda ()
-         (assert-equal (decode (encode (decode "<p>a<b>c</b>d</p>"))) (decode "<p>a<b>c</b>d</p>"))))
-
-      ; Attributes round-trip through encode then decode unchanged.
-      (test-round-trip-attributes
-       (lambda ()
-         (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>"))) (decode "<a x=\"1\" y=\"2\">t</a>"))))
-
-      ; A comment round-trips through encode then decode unchanged.
-      (test-round-trip-comment
-       (lambda ()
-         (assert-equal (decode (encode (decode "<!-- c -->"))) (decode "<!-- c -->"))))
-
-      ; A doctype round-trips through encode then decode unchanged.
-      (test-round-trip-doctype
-       (lambda ()
-         (assert-equal (decode (encode (decode "<!DOCTYPE html>"))) (decode "<!DOCTYPE html>"))))
-
       (tests
        (list
          (list
@@ -190,15 +163,6 @@
              (expect-pass "empty comment" test-empty-comment)
              (expect-pass "doctype" test-doctype)
              (expect-pass "doctype text is not escaped" test-doctype-text-not-escaped)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "element" test-round-trip-element)
-             (expect-pass "mixed content" test-round-trip-mixed-content)
-             (expect-pass "attributes" test-round-trip-attributes)
-             (expect-pass "comment" test-round-trip-comment)
-             (expect-pass "doctype" test-round-trip-doctype)))
 
          (list
            "errors"

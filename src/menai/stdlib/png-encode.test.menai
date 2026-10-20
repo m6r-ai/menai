@@ -24,38 +24,6 @@
        (string-hex->bytes
          "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))
 
-      ; A truecolour file round-trips through decode then encode then decode unchanged.
-      (test-round-trip-truecolour
-       (lambda ()
-         (let ((v (decode truecolour)))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A truecolour-with-alpha file round-trips through decode then encode then decode unchanged.
-      (test-round-trip-truecolour-alpha
-       (lambda ()
-         (let ((v (decode truecolour-alpha)))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A single-pixel value round-trips through encode then decode unchanged.
-      (test-round-trip-single-pixel
-       (lambda ()
-         (let ((v
-                (decode
-                  (encode
-                    (dict "header" (dict "width" 1 "height" 1)
-                          "pixels" (vector (vector (vector 18 52 86)))
-                          "meta" (dict "channels" 3))))))
-           (assert-equal (dict-get v "pixels") (vector (vector (vector 18 52 86)))))))
-
-      ; A palette image re-encodes to truecolour with the same pixels.
-      (test-palette-to-truecolour
-       (lambda ()
-         (let ((v (decode palette)))
-           (let ((re (decode (encode v))))
-             (assert-equal
-               (list (dict-get (dict-get re "header") "colour-type") (dict-get re "pixels"))
-               (list 2 (dict-get v "pixels")))))))
-
       ; The produced file starts with the PNG signature.
       (test-signature
        (lambda ()
@@ -117,14 +85,6 @@
 
       (tests
        (list
-         (list
-           "round-trips"
-           (list
-             (expect-pass "truecolour file is reproduced" test-round-trip-truecolour)
-             (expect-pass "truecolour with alpha file is reproduced" test-round-trip-truecolour-alpha)
-             (expect-pass "single pixel is reproduced" test-round-trip-single-pixel)
-             (expect-pass "palette image re-encodes to truecolour with the same pixels" test-palette-to-truecolour)))
-
          (list
            "structure"
            (list

@@ -1,0 +1,51 @@
+; Round-trip tests for the csv-decode and csv-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every CSV table v
+; that encode accepts.  These tests exercise that contract; the per-operation
+; behaviour of each half is tested in its own suite.
+
+(let ((csv-decode (import "csv-decode"))
+      (csv-encode (import "csv-encode"))
+      (t (import "menai-test"))
+      (decode (:: csv-decode decode))
+      (encode (:: csv-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; A simple table round-trips through encode then decode unchanged.
+      (test-simple
+       (lambda ()
+         (assert-equal
+           (decode (encode (vector (vector "a" "b") (vector "c" "d"))))
+           (vector (vector "a" "b") (vector "c" "d")))))
+
+      ; Fields with delimiters, quotes, and newlines round-trip through encode then decode unchanged.
+      (test-special-fields
+       (lambda ()
+         (assert-equal
+           (decode (encode (vector (vector "a" "b,c" "d\"e") (vector "x\ny" ""))))
+           (vector (vector "a" "b,c" "d\"e") (vector "x\ny" "")))))
+
+      ; A table with a custom delimiter round-trips through encode then decode unchanged.
+      (test-custom-delimiter
+       (lambda ()
+         (assert-equal
+           (decode (encode (vector (vector "a" "b;c") (vector "d" "e")) ";") ";")
+           (vector (vector "a" "b;c") (vector "d" "e")))))
+
+      ; A table with an empty field round-trips through encode then decode unchanged.
+      (test-empty-field
+       (lambda ()
+         (assert-equal (decode (encode (vector (vector "")))) (vector (vector "")))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "simple table" test-simple)
+             (expect-pass "fields with delimiters, quotes, and newlines" test-special-fields)
+             (expect-pass "custom delimiter" test-custom-delimiter)
+             (expect-pass "empty field" test-empty-field))))))
+
+  (export tests))

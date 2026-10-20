@@ -1,13 +1,11 @@
 ; Tests for docx-encode.menai
 
 (let ((docx-encode (import "docx-encode"))
-      (docx-decode (import "docx-decode"))
       (zip-entries (import "zip-entries"))
       (zip-extract (import "zip-extract"))
       (xml (import "xml-decode"))
       (t (import "menai-test"))
       (encode (:: docx-encode encode))
-      (decode (:: docx-decode decode))
       (entries (:: zip-entries entries))
       (extract (:: zip-extract extract))
       (xml-decode (:: xml decode))
@@ -161,16 +159,6 @@
          (let ((rels (decode-part full "word/_rels/document.xml.rels")))
            (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "TargetMode") #none))))
 
-      ; A minimal value tree round-trips through encode then decode unchanged.
-      (test-round-trip-minimal
-       (lambda ()
-         (assert-equal (decode (encode minimal)) minimal)))
-
-      ; A value tree with every part round-trips through encode then decode unchanged.
-      (test-round-trip-full
-       (lambda ()
-         (assert-equal (decode (encode full)) full)))
-
       ; A non-dict value is rejected.
       (test-rejects-non-dict
        (lambda ()
@@ -228,12 +216,6 @@
              (expect-pass "relationship type and target are emitted" test-relationship-type-and-target)
              (expect-pass "target mode is emitted when present" test-relationship-mode-emitted)
              (expect-pass "target mode is omitted when #none" test-relationship-mode-omitted)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "minimal value tree" test-round-trip-minimal)
-             (expect-pass "value tree with every part" test-round-trip-full)))
 
          (list
            "errors"

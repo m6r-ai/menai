@@ -1,13 +1,11 @@
 ; Tests for pptx-encode.menai
 
 (let ((pptx-encode (import "pptx-encode"))
-      (pptx-decode (import "pptx-decode"))
       (zip-entries (import "zip-entries"))
       (zip-extract (import "zip-extract"))
       (xml (import "xml-decode"))
       (t (import "menai-test"))
       (encode (:: pptx-encode encode))
-      (decode (:: pptx-decode decode))
       (entries (:: zip-entries entries))
       (extract (:: zip-extract extract))
       (xml-decode (:: xml decode))
@@ -192,16 +190,6 @@
          (let ((rels (decode-part full "ppt/slides/_rels/slide1.xml.rels")))
            (assert-equal (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "Type") image-rel))))
 
-      ; A minimal value tree round-trips through encode then decode unchanged.
-      (test-round-trip-minimal
-       (lambda ()
-         (assert-equal (decode (encode minimal)) minimal)))
-
-      ; A value tree with every part round-trips through encode then decode unchanged.
-      (test-round-trip-full
-       (lambda ()
-         (assert-equal (decode (encode full)) full)))
-
       ; A non-dict value is rejected.
       (test-rejects-non-dict
        (lambda ()
@@ -291,12 +279,6 @@
            (list
              (expect-pass "presentation relationships are emitted verbatim" test-presentation-relationships-verbatim)
              (expect-pass "a slide's own relationships are emitted" test-slide-relationships-emitted)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "minimal value tree" test-round-trip-minimal)
-             (expect-pass "value tree with every part" test-round-trip-full)))
 
          (list
            "errors"

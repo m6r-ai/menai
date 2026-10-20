@@ -34,43 +34,6 @@
        (string-hex->bytes
          "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
 
-      ; A 24-bit bottom-up file round-trips through decode then encode then decode unchanged.
-      (test-round-trip-bottom-up
-       (lambda ()
-         (let ((v (decode bottom-up-24)))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A 24-bit top-down file round-trips through decode then encode then decode unchanged.
-      (test-round-trip-top-down
-       (lambda ()
-         (let ((v (decode top-down-24)))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A padded file round-trips through decode then encode then decode unchanged.
-      (test-round-trip-padded
-       (lambda ()
-         (let ((v (decode padded-24)))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A 32-bit file round-trips through decode then encode then decode unchanged.
-      (test-round-trip-32-bit
-       (lambda ()
-         (let ((v (decode alpha-32)))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A single-pixel file round-trips through decode then encode then decode unchanged.
-      (test-round-trip-single-pixel
-       (lambda ()
-         (let ((v (decode single-pixel)))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A canonical file is reproduced byte for byte.
-      (test-canonical-byte-for-byte
-       (lambda ()
-         (let ((hex
-                "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
-           (assert-equal (encode (decode (string-hex->bytes hex))) (string-hex->bytes hex)))))
-
       ; Width and height are preserved through a round-trip.
       (test-width-height-preserved
        (lambda ()
@@ -150,16 +113,6 @@
 
       (tests
        (list
-         (list
-           "round-trips"
-           (list
-             (expect-pass "24-bit bottom-up file is reproduced" test-round-trip-bottom-up)
-             (expect-pass "24-bit top-down file is reproduced" test-round-trip-top-down)
-             (expect-pass "padded file is reproduced" test-round-trip-padded)
-             (expect-pass "32-bit file is reproduced" test-round-trip-32-bit)
-             (expect-pass "single pixel is reproduced" test-round-trip-single-pixel)
-             (expect-pass "canonical files are reproduced byte for byte" test-canonical-byte-for-byte)))
-
          (list
            "header"
            (list

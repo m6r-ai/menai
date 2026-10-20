@@ -1,10 +1,8 @@
 ; Tests for csv-encode.menai
 
 (let ((csv-encode (import "csv-encode"))
-      (csv-decode (import "csv-decode"))
       (t (import "menai-test"))
       (encode (:: csv-encode encode))
-      (decode (:: csv-decode decode))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
@@ -134,32 +132,6 @@
        (lambda ()
          (assert-equal (encode (vector (vector "a,b" "c")) ";") "a,b;c")))
 
-      ; A simple table round-trips through encode then decode unchanged.
-      (test-round-trip-simple
-       (lambda ()
-         (assert-equal
-           (decode (encode (vector (vector "a" "b") (vector "c" "d"))))
-           (vector (vector "a" "b") (vector "c" "d")))))
-
-      ; Fields with delimiters, quotes, and newlines round-trip through encode then decode unchanged.
-      (test-round-trip-special-fields
-       (lambda ()
-         (assert-equal
-           (decode (encode (vector (vector "a" "b,c" "d\"e") (vector "x\ny" ""))))
-           (vector (vector "a" "b,c" "d\"e") (vector "x\ny" "")))))
-
-      ; A table with a custom delimiter round-trips through encode then decode unchanged.
-      (test-round-trip-custom-delimiter
-       (lambda ()
-         (assert-equal
-           (decode (encode (vector (vector "a" "b;c") (vector "d" "e")) ";") ";")
-           (vector (vector "a" "b;c") (vector "d" "e")))))
-
-      ; A table with an empty field round-trips through encode then decode unchanged.
-      (test-round-trip-empty-field
-       (lambda ()
-         (assert-equal (decode (encode (vector (vector "")))) (vector (vector "")))))
-
       ; A list of lists is rejected.
       (test-rejects-non-vector-input
        (lambda ()
@@ -232,14 +204,6 @@
              (expect-pass "tab delimiter" test-tab-delimiter)
              (expect-pass "field with custom delimiter is quoted" test-custom-delimiter-quoted)
              (expect-pass "comma is literal when delimiter is semicolon" test-comma-literal-with-semicolon)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "simple table" test-round-trip-simple)
-             (expect-pass "fields with delimiters, quotes, and newlines" test-round-trip-special-fields)
-             (expect-pass "custom delimiter" test-round-trip-custom-delimiter)
-             (expect-pass "empty field" test-round-trip-empty-field)))
 
          (list
            "errors"

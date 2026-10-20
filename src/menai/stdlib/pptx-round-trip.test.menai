@@ -1,0 +1,178 @@
+; Round-trip tests for the pptx-decode and pptx-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every PPTX value tree
+; v that encode accepts.  These tests exercise that contract from both ends: a
+; package decoded and re-encoded, and a value tree encoded and decoded.  The
+; per-operation behaviour of each half is tested in its own suite.
+
+(let ((pptx-decode (import "pptx-decode"))
+      (pptx-encode (import "pptx-encode"))
+      (zip-create (import "zip-create"))
+      (t (import "menai-test"))
+      (decode (:: pptx-decode decode))
+      (encode (:: pptx-encode encode))
+      (create (:: zip-create create))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      (main-ns "http://schemas.openxmlformats.org/presentationml/2006/main")
+      (rels-ns "http://schemas.openxmlformats.org/package/2006/relationships")
+      (slide-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide")
+      (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
+
+      (presentation-xml
+       (string->bytes
+         (string-concat "<p:presentation xmlns:p=\""
+                        main-ns
+                        "\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                        "<p:sldIdLst>"
+                        "<p:sldId id=\"256\" r:id=\"rId2\"/>"
+                        "<p:sldId id=\"257\" r:id=\"rId3\"/>"
+                        "</p:sldIdLst></p:presentation>")))
+
+      (presentation-rels-xml
+       (string->bytes
+         (string-concat "<Relationships xmlns=\""
+                        rels-ns
+                        "\"><Relationship Id=\"rId2\" Type=\""
+                        slide-rel
+                        "\" Target=\"slides/slide1.xml\"/>"
+                        "<Relationship Id=\"rId3\" Type=\""
+                        slide-rel
+                        "\" Target=\"slides/slide2.xml\"/></Relationships>")))
+
+      (slide-xml (string->bytes (string-concat "<p:sld xmlns:p=\"" main-ns "\"><p:cSld/></p:sld>")))
+
+      (slide1-rels-xml
+       (string->bytes
+         (string-concat "<Relationships xmlns=\""
+                        rels-ns
+                        "\"><Relationship Id=\"rId1\" Type=\""
+                        image-rel
+                        "\" Target=\"../media/image1.png\"/></Relationships>")))
+
+      (theme-xml (string->bytes (string-concat "<a:theme xmlns:a=\"" main-ns "\"/>")))
+      (master-xml (string->bytes (string-concat "<p:sldMaster xmlns:p=\"" main-ns "\"/>")))
+      (layout-xml (string->bytes (string-concat "<p:sldLayout xmlns:p=\"" main-ns "\"/>")))
+      (media-bytes (string-hex->bytes "89504e470d0a1a0a"))
+
+      (presentation-empty-xml (string->bytes (string-concat "<p:presentation xmlns:p=\"" main-ns "\"/>")))
+
+      ; Build a package from a list of (part-name content) pairs, with no metadata.
+      (package-of
+       (lambda (parts)
+         (create
+           (dict "entries" (map-list
+                             (lambda (p)
+                               (dict "name" (list-first p) "content" (list-nth p 1)))
+                             parts)
+                 "meta" (dict)))))
+
+      (minimal-package
+       (create
+         (dict "entries" (list (dict "name" "ppt/presentation.xml" "content" presentation-empty-xml)) "meta" (dict))))
+
+      (full-package
+       (create
+         (dict "entries" (list
+                           (dict "name" "ppt/presentation.xml" "content" presentation-xml)
+                           (dict "name" "ppt/_rels/presentation.xml.rels" "content" presentation-rels-xml)
+                           (dict "name" "ppt/slides/slide1.xml" "content" slide-xml)
+                           (dict "name" "ppt/slides/slide2.xml" "content" slide-xml)
+                           (dict "name" "ppt/slides/_rels/slide1.xml.rels" "content" slide1-rels-xml)
+                           (dict "name" "ppt/slideMasters/slideMaster1.xml" "content" master-xml)
+                           (dict "name" "ppt/slideLayouts/slideLayout1.xml" "content" layout-xml)
+                           (dict "name" "ppt/theme/theme1.xml" "content" theme-xml)
+                           (dict "name" "ppt/media/image1.png" "content" media-bytes))
+               "meta" (dict))))
+
+      (presentation (dict "tag" "p:presentation" "attrs" (dict "xmlns:p" main-ns) "children" (list)))
+
+      (presentation-with-slides
+       (dict "tag" "p:presentation"
+             "attrs" (dict "xmlns:p" main-ns
+                           "xmlns:r" "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+             "children" (list
+                          (dict "tag" "p:sldIdLst"
+                                "attrs" (dict)
+                                "children" (list
+                                             (dict "tag" "p:sldId"
+                                                   "attrs" (dict "id" "256" "r:id" "rId2")
+                                                   "children" (list))
+                                             (dict "tag" "p:sldId"
+                                                   "attrs" (dict "id" "257" "r:id" "rId3")
+                                                   "children" (list)))))))
+
+      (slide1
+       (dict "tag" "p:sld"
+             "attrs" (dict "xmlns:p" main-ns)
+             "children" (list (dict "tag" "p:cSld" "attrs" (dict) "children" (list)))))
+
+      (slide2
+       (dict "tag" "p:sld"
+             "attrs" (dict "xmlns:p" main-ns)
+             "children" (list (dict "tag" "p:cSld" "attrs" (dict) "children" (list)))))
+
+      (master (dict "tag" "p:sldMaster" "attrs" (dict "xmlns:p" main-ns) "children" (list)))
+      (layout (dict "tag" "p:sldLayout" "attrs" (dict "xmlns:p" main-ns) "children" (list)))
+      (theme (dict "tag" "a:theme" "attrs" (dict "xmlns:a" main-ns) "children" (list)))
+
+      (slide1-rels (dict "rId1" (dict "type" image-rel "target" "../media/image1.png" "mode" #none)))
+
+      (slide-relationships
+       (dict "rId2" (dict "type" slide-rel "target" "slides/slide1.xml" "mode" #none)
+             "rId3" (dict "type" slide-rel "target" "slides/slide2.xml" "mode" #none)))
+
+      (media (dict "ppt/media/image1.png" (string-hex->bytes "89504e47")))
+
+      (minimal-value
+       (dict "presentation" presentation
+             "slides" (list)
+             "slide-masters" (list)
+             "slide-layouts" (list)
+             "theme" #none
+             "relationships" (dict)
+             "media" #none))
+
+      (full-value
+       (dict "presentation" presentation-with-slides
+             "slides" (list
+                        (dict "part" "ppt/slides/slide1.xml" "element" slide1 "relationships" slide1-rels)
+                        (dict "part" "ppt/slides/slide2.xml" "element" slide2 "relationships" (dict)))
+             "slide-masters" (list master)
+             "slide-layouts" (list layout)
+             "theme" theme
+             "relationships" slide-relationships
+             "media" media))
+
+      ; A minimal package round-trips through decode then encode then decode unchanged.
+      (test-package-minimal
+       (lambda ()
+         (assert-equal (decode (encode (decode minimal-package))) (decode minimal-package))))
+
+      ; A package with every part round-trips through decode then encode then decode unchanged.
+      (test-package-full
+       (lambda ()
+         (assert-equal (decode (encode (decode full-package))) (decode full-package))))
+
+      ; A minimal value tree round-trips through encode then decode unchanged.
+      (test-value-minimal
+       (lambda ()
+         (assert-equal (decode (encode minimal-value)) minimal-value)))
+
+      ; A value tree with every part round-trips through encode then decode unchanged.
+      (test-value-full
+       (lambda ()
+         (assert-equal (decode (encode full-value)) full-value)))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "minimal package" test-package-minimal)
+             (expect-pass "package with all parts" test-package-full)
+             (expect-pass "minimal value tree" test-value-minimal)
+             (expect-pass "value tree with every part" test-value-full))))))
+
+  (export tests))

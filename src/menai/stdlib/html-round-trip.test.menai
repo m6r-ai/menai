@@ -1,0 +1,79 @@
+; Round-trip tests for the html-decode and html-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every HTML node list
+; v that encode accepts.  These tests exercise that contract; the per-operation
+; behaviour of each half is tested in its own suite.
+
+(let ((html-decode (import "html-decode"))
+      (html-encode (import "html-encode"))
+      (t (import "menai-test"))
+      (decode (:: html-decode decode))
+      (encode (:: html-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; A single element round-trips through encode then decode unchanged.
+      (test-element
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>x</p>"))) (decode "<p>x</p>"))))
+
+      ; An element tree round-trips through encode then decode unchanged.
+      (test-nested
+       (lambda ()
+         (assert-equal
+           (decode (encode (decode "<r><a><b>x</b></a><c></c></r>")))
+           (decode "<r><a><b>x</b></a><c></c></r>"))))
+
+      ; Mixed content round-trips through encode then decode unchanged.
+      (test-mixed-content
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>Hello <b>world</b>!</p>"))) (decode "<p>Hello <b>world</b>!</p>"))))
+
+      ; Attributes round-trip through encode then decode unchanged.
+      (test-attributes
+       (lambda ()
+         (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>"))) (decode "<a x=\"1\" y=\"2\">t</a>"))))
+
+      ; Escaped characters round-trip through encode then decode unchanged.
+      (test-escapes
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>a &amp; b &lt; c</p>"))) (decode "<p>a &amp; b &lt; c</p>"))))
+
+      ; A comment and doctype round-trip through encode then decode unchanged.
+      (test-declarations
+       (lambda ()
+         (assert-equal
+           (decode (encode (decode "<!DOCTYPE html><!-- c --><p>x</p>")))
+           (decode "<!DOCTYPE html><!-- c --><p>x</p>"))))
+
+      ; Elements an omitted end tag produced round-trip through encode then decode unchanged.
+      (test-omitted-end-tags
+       (lambda ()
+         (assert-equal (decode (encode (decode "<ul><li>a<li>b</ul>"))) (decode "<ul><li>a<li>b</ul>"))))
+
+      ; A comment round-trips through encode then decode unchanged.
+      (test-comment
+       (lambda ()
+         (assert-equal (decode (encode (decode "<!-- c -->"))) (decode "<!-- c -->"))))
+
+      ; A doctype round-trips through encode then decode unchanged.
+      (test-doctype
+       (lambda ()
+         (assert-equal (decode (encode (decode "<!DOCTYPE html>"))) (decode "<!DOCTYPE html>"))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "element" test-element)
+             (expect-pass "nested structure" test-nested)
+             (expect-pass "mixed content" test-mixed-content)
+             (expect-pass "attributes" test-attributes)
+             (expect-pass "escapes survive the round-trip" test-escapes)
+             (expect-pass "declarations" test-declarations)
+             (expect-pass "omitted end tags" test-omitted-end-tags)
+             (expect-pass "comment" test-comment)
+             (expect-pass "doctype" test-doctype))))))
+
+  (export tests))

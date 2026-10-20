@@ -1,0 +1,72 @@
+; Round-trip tests for the png-decode and png-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every PNG value tree
+; v that encode accepts.  These tests exercise that contract; the per-operation
+; behaviour of each half is tested in its own suite.
+
+(let ((png-decode (import "png-decode"))
+      (png-encode (import "png-encode"))
+      (t (import "menai-test"))
+      (decode (:: png-decode decode))
+      (encode (:: png-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; A 2x2 truecolour file.
+      (truecolour
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))
+
+      ; A 2x2 truecolour-with-alpha file.
+      (truecolour-alpha
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000174944415478da63f8cfc0f01f081b1880b4c3ffffff1900401807ba5e4291230000000049454e44ae426082"))
+
+      ; A 2x2 palette file.
+      (palette
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))
+
+      ; A truecolour file round-trips through decode then encode then decode unchanged.
+      (test-truecolour
+       (lambda ()
+         (let ((v (decode truecolour)))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A truecolour-with-alpha file round-trips through decode then encode then decode unchanged.
+      (test-truecolour-alpha
+       (lambda ()
+         (let ((v (decode truecolour-alpha)))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A single-pixel value round-trips through encode then decode unchanged.
+      (test-single-pixel
+       (lambda ()
+         (let ((v
+                (decode
+                  (encode
+                    (dict "header" (dict "width" 1 "height" 1)
+                          "pixels" (vector (vector (vector 18 52 86)))
+                          "meta" (dict "channels" 3))))))
+           (assert-equal (dict-get v "pixels") (vector (vector (vector 18 52 86)))))))
+
+      ; A palette image re-encodes to truecolour with the same pixels.
+      (test-palette-to-truecolour
+       (lambda ()
+         (let ((v (decode palette)))
+           (let ((re (decode (encode v))))
+             (assert-equal
+               (list (dict-get (dict-get re "header") "colour-type") (dict-get re "pixels"))
+               (list 2 (dict-get v "pixels")))))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "truecolour file is reproduced" test-truecolour)
+             (expect-pass "truecolour with alpha file is reproduced" test-truecolour-alpha)
+             (expect-pass "single pixel is reproduced" test-single-pixel)
+             (expect-pass "palette image re-encodes to truecolour with the same pixels" test-palette-to-truecolour))))))
+
+  (export tests))

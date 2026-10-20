@@ -1,0 +1,72 @@
+; Round-trip tests for the xml-decode and xml-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every XML element tree
+; v that encode accepts.  These tests exercise that contract; the per-operation
+; behaviour of each half is tested in its own suite.
+
+(let ((xml-decode (import "xml-decode"))
+      (xml-encode (import "xml-encode"))
+      (t (import "menai-test"))
+      (decode (:: xml-decode decode))
+      (encode (:: xml-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; A self-closing element round-trips through encode then decode unchanged.
+      (test-self-closing
+       (lambda ()
+         (assert-equal (decode (encode (decode "<a/>"))) (decode "<a/>"))))
+
+      ; Mixed content round-trips through encode then decode unchanged.
+      (test-mixed-content
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>Hello <b>world</b>!</p>"))) (decode "<p>Hello <b>world</b>!</p>"))))
+
+      ; Attributes round-trip through encode then decode unchanged.
+      (test-attributes
+       (lambda ()
+         (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>"))) (decode "<a x=\"1\" y=\"2\">t</a>"))))
+
+      ; Entities survive a round-trip through encode then decode.
+      (test-entities
+       (lambda ()
+         (assert-equal (decode (encode (decode "<a>&amp;&lt;&gt;</a>"))) (decode "<a>&amp;&lt;&gt;</a>"))))
+
+      ; A nested structure round-trips through encode then decode unchanged.
+      (test-nested
+       (lambda ()
+         (assert-equal (decode (encode (decode "<r><a><b>x</b></a><c/></r>"))) (decode "<r><a><b>x</b></a><c/></r>"))))
+
+      ; Text with every escaped character round-trips through encode then decode unchanged.
+      (test-escaped-text
+       (lambda ()
+         (let ((v (decode "<a>&amp;&lt;&gt;&quot;&apos;</a>")))
+           (assert-equal (decode (encode v)) v))))
+
+      ; An attribute with every escaped character round-trips through encode then decode unchanged.
+      (test-escaped-attribute
+       (lambda ()
+         (let ((v (dict "tag" "a" "attrs" (dict "x" "&<>\"'") "children" (list))))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A deeply nested structure round-trips through encode then decode unchanged.
+      (test-deeply-nested
+       (lambda ()
+         (let ((v (decode "<r><a><b><c>x</c></b></a><d/></r>")))
+           (assert-equal (decode (encode v)) v))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "self-closing" test-self-closing)
+             (expect-pass "mixed content" test-mixed-content)
+             (expect-pass "attributes" test-attributes)
+             (expect-pass "entities survive the round-trip" test-entities)
+             (expect-pass "nested structure" test-nested)
+             (expect-pass "text with all escaped characters" test-escaped-text)
+             (expect-pass "attribute with all escaped characters" test-escaped-attribute)
+             (expect-pass "deeply nested structure" test-deeply-nested))))))
+
+  (export tests))

@@ -1,10 +1,8 @@
 ; Tests for html-decode.menai
 
 (let ((html-decode (import "html-decode"))
-      (html-encode (import "html-encode"))
       (t (import "menai-test"))
       (decode (:: html-decode decode))
-      (encode (:: html-encode encode))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
@@ -176,40 +174,6 @@
        (lambda ()
          (decode 42)))
 
-      ; An element tree round-trips through encode then decode unchanged.
-      (test-round-trip-nested
-       (lambda ()
-         (assert-equal
-           (decode (encode (decode "<r><a><b>x</b></a><c></c></r>")))
-           (decode "<r><a><b>x</b></a><c></c></r>"))))
-
-      ; Mixed content round-trips through encode then decode unchanged.
-      (test-round-trip-mixed-content
-       (lambda ()
-         (assert-equal (decode (encode (decode "<p>Hello <b>world</b>!</p>"))) (decode "<p>Hello <b>world</b>!</p>"))))
-
-      ; Attributes round-trip through encode then decode unchanged.
-      (test-round-trip-attributes
-       (lambda ()
-         (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>"))) (decode "<a x=\"1\" y=\"2\">t</a>"))))
-
-      ; Escaped characters round-trip through encode then decode unchanged.
-      (test-round-trip-escapes
-       (lambda ()
-         (assert-equal (decode (encode (decode "<p>a &amp; b &lt; c</p>"))) (decode "<p>a &amp; b &lt; c</p>"))))
-
-      ; A comment and doctype round-trip through encode then decode unchanged.
-      (test-round-trip-declarations
-       (lambda ()
-         (assert-equal
-           (decode (encode (decode "<!DOCTYPE html><!-- c --><p>x</p>")))
-           (decode "<!DOCTYPE html><!-- c --><p>x</p>"))))
-
-      ; Elements an omitted end tag produced round-trip through encode then decode unchanged.
-      (test-round-trip-omitted-end-tags
-       (lambda ()
-         (assert-equal (decode (encode (decode "<ul><li>a<li>b</ul>"))) (decode "<ul><li>a<li>b</ul>"))))
-
       (tests
        (list
          (list
@@ -265,16 +229,6 @@
              (expect-pass "comment" test-comment)
              (expect-pass "comment inside an element" test-comment-inside-element)
              (expect-pass "doctype" test-doctype)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "nested structure" test-round-trip-nested)
-             (expect-pass "mixed content" test-round-trip-mixed-content)
-             (expect-pass "attributes" test-round-trip-attributes)
-             (expect-pass "escapes survive the round-trip" test-round-trip-escapes)
-             (expect-pass "declarations" test-round-trip-declarations)
-             (expect-pass "omitted end tags" test-round-trip-omitted-end-tags)))
 
          (list
            "errors"

@@ -1,64 +1,11 @@
 ; Tests for tar-create.menai
 
 (let ((tar-create (import "tar-create"))
-      (tar-extract (import "tar-extract"))
-      (tar-entries (import "tar-entries"))
       (t (import "menai-test"))
       (create (:: tar-create create))
-      (extract (:: tar-extract extract))
-      (extract-entry (:: tar-extract extract-entry))
-      (entries (:: tar-entries entries))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
-
-      ; An archive with no entries extracts to an empty entry list.
-      (test-empty-archive
-       (lambda ()
-         (let ((archive (create (dict "entries" (list)))))
-           (assert-equal (list-length (dict-get (extract archive) "entries")) 0))))
-
-      ; A single file's content round-trips through extract-entry.
-      (test-single-file
-       (lambda ()
-         (let ((archive
-                (create (dict "entries" (list (dict "name" "hello.txt" "content" (string->bytes "hello world")))))))
-           (assert-equal (bytes->string (dict-get (extract-entry archive "hello.txt") "content")) "hello world"))))
-
-      ; A nested path's content round-trips through extract-entry.
-      (test-nested-path
-       (lambda ()
-         (let ((archive (create (dict "entries" (list (dict "name" "a/b/c.txt" "content" (string->bytes "deep")))))))
-           (assert-equal (bytes->string (dict-get (extract-entry archive "a/b/c.txt") "content")) "deep"))))
-
-      ; A directory entry is preserved as a directory.
-      (test-directory-entry
-       (lambda ()
-         (let ((archive (create (dict "entries" (list (dict "name" "dir/"))))))
-           (assert-equal (dict-get (extract-entry archive "dir/") "is-directory") #t))))
-
-      ; A symlink entry preserves its link name and has no content.
-      (test-symlink-entry
-       (lambda ()
-         (let ((archive (create (dict "entries" (list (dict "name" "link" "typeflag" "2" "linkname" "target.txt"))))))
-           (let ((entry (extract-entry archive "link")))
-             (assert-equal (list (dict-get entry "linkname") (dict-get entry "content")) (list "target.txt" #none))))))
-
-      ; Multiple entries keep their order.
-      (test-multiple-entries-order
-       (lambda ()
-         (let ((archive
-                (create
-                  (dict "entries" (list
-                                    (dict "name" "one" "content" (string->bytes "1"))
-                                    (dict "name" "two" "content" (string->bytes "2"))
-                                    (dict "name" "three" "content" (string->bytes "3")))))))
-           (assert-equal
-             (map-list
-               (lambda (e)
-                 (dict-get e "name"))
-               (dict-get (entries archive) "entries"))
-             (list "one" "two" "three")))))
 
       ; The archive length is a multiple of 512 bytes.
       (test-length-multiple-of-512
@@ -107,16 +54,6 @@
 
       (tests
        (list
-         (list
-           "round-trips"
-           (list
-             (expect-pass "empty archive" test-empty-archive)
-             (expect-pass "single file" test-single-file)
-             (expect-pass "nested path" test-nested-path)
-             (expect-pass "directory entry" test-directory-entry)
-             (expect-pass "symlink entry" test-symlink-entry)
-             (expect-pass "multiple entries keep order" test-multiple-entries-order)))
-
          (list
            "layout"
            (list

@@ -1,0 +1,89 @@
+; Round-trip tests for the bmp-decode and bmp-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every BMP value tree
+; v that encode accepts.  These tests exercise that contract; the per-operation
+; behaviour of each half is tested in its own suite.
+
+(let ((bmp-decode (import "bmp-decode"))
+      (bmp-encode (import "bmp-encode"))
+      (t (import "menai-test"))
+      (decode (:: bmp-decode decode))
+      (encode (:: bmp-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; A 2x2 24-bit bottom-up file with four distinct colours.
+      (bottom-up-24
+       (string-hex->bytes
+         "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+
+      ; A 2x2 24-bit top-down file with four distinct colours.
+      (top-down-24
+       (string-hex->bytes
+         "424d4600000000000000360000002800000002000000feffffff010018000000000010000000130b0000130b000000000000000000000000ff00ff000000ff0000ffffff0000"))
+
+      ; A 3x2 24-bit bottom-up file whose rows need padding.
+      (padded-24
+       (string-hex->bytes
+         "424d4e0000000000000036000000280000000300000002000000010018000000000018000000130b0000130b000000000000000000000302010605040908070000001e140a3c32285a5046000000"))
+
+      ; A 2x2 32-bit bottom-up file with an alpha channel.
+      (alpha-32
+       (string-hex->bytes
+         "424d460000000000000036000000280000000200000002000000010020000000000010000000130b0000130b00000000000000000000ff000040ffffff000000ffff00ff0080"))
+
+      ; A 1x1 24-bit file.
+      (single-pixel
+       (string-hex->bytes
+         "424d3a0000000000000036000000280000000100000001000000010018000000000004000000130b0000130b0000000000000000000056341200"))
+
+      ; A 24-bit bottom-up file round-trips through decode then encode then decode unchanged.
+      (test-bottom-up
+       (lambda ()
+         (let ((v (decode bottom-up-24)))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A 24-bit top-down file round-trips through decode then encode then decode unchanged.
+      (test-top-down
+       (lambda ()
+         (let ((v (decode top-down-24)))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A padded file round-trips through decode then encode then decode unchanged.
+      (test-padded
+       (lambda ()
+         (let ((v (decode padded-24)))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A 32-bit file round-trips through decode then encode then decode unchanged.
+      (test-32-bit
+       (lambda ()
+         (let ((v (decode alpha-32)))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A single-pixel file round-trips through decode then encode then decode unchanged.
+      (test-single-pixel
+       (lambda ()
+         (let ((v (decode single-pixel)))
+           (assert-equal (decode (encode v)) v))))
+
+      ; A canonical file is reproduced byte for byte.
+      (test-canonical-byte-for-byte
+       (lambda ()
+         (let ((hex
+                "424d460000000000000036000000280000000200000002000000010018000000000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))
+           (assert-equal (encode (decode (string-hex->bytes hex))) (string-hex->bytes hex)))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "24-bit bottom-up file is reproduced" test-bottom-up)
+             (expect-pass "24-bit top-down file is reproduced" test-top-down)
+             (expect-pass "padded file is reproduced" test-padded)
+             (expect-pass "32-bit file is reproduced" test-32-bit)
+             (expect-pass "single pixel is reproduced" test-single-pixel)
+             (expect-pass "canonical files are reproduced byte for byte" test-canonical-byte-for-byte))))))
+
+  (export tests))

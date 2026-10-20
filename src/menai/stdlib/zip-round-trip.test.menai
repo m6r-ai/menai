@@ -1,0 +1,157 @@
+; Round-trip tests for the zip-create, zip-entries, and zip-extract container.
+;
+; Creating an archive and reading it back recovers the logical entries that were
+; put in.  This is a content round-trip, not a byte round-trip.  The
+; per-operation behaviour of each module is tested in its own suite.
+
+(let ((zip-create (import "zip-create"))
+      (zip-entries (import "zip-entries"))
+      (zip-extract (import "zip-extract"))
+      (t (import "menai-test"))
+      (create (:: zip-create create))
+      (entries (:: zip-entries entries))
+      (extract (:: zip-extract extract))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; An archive with no entries reads back as an empty entry list.
+      (test-empty-archive
+       (lambda ()
+         (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get r "entries") (list)))))
+
+      ; A single stored entry's content round-trips through extract.
+      (test-single-stored-entry
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "compression" 0 "content" (string->bytes "AAAA")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "AAAA")))))
+
+      ; A single deflate entry's content round-trips through extract.
+      (test-single-deflate-entry
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "hello.txt" "compression" 8 "content" (string->bytes "hello world")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "hello world")))))
+
+      ; An entry's name is preserved, including path separators.
+      (test-entry-name-preserved
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "dir/sub/file.txt" "compression" 0 "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "name") "dir/sub/file.txt"))))
+
+      ; An entry's explicit compression method is preserved.
+      (test-compression-preserved
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "compression" 8 "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 8))))
+
+      ; An entry with no compression method defaults to stored.
+      (test-compression-defaults-to-stored
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "compression") 0))))
+
+      ; An entry with a trailing slash and no content is flagged as a directory.
+      (test-directory-entry-flagged
+       (lambda ()
+         (let ((r
+                (entries
+                  (create (dict "entries" (list (dict "name" "dir/" "content" #none)) "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #t))))
+
+      ; A file entry is not flagged as a directory.
+      (test-file-entry-not-flagged
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list (dict "name" "a.txt" "content" (string->bytes "x")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "is-directory") #f))))
+
+      ; Entry order is preserved.
+      (test-entry-order-preserved
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "one" "content" (string->bytes "1"))
+                                      (dict "name" "two" "content" (string->bytes "2"))
+                                      (dict "name" "three" "content" (string->bytes "3")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal
+             (map-list
+               (lambda (e)
+                 (dict-get e "name"))
+               (dict-get r "entries"))
+             (list "one" "two" "three")))))
+
+      ; Multiple entries of mixed compression methods round-trip through extract.
+      (test-mixed-methods
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "stored.txt" "compression" 0 "content" (string->bytes "plain"))
+                                      (dict "name" "deflated.txt"
+                                            "compression" 8
+                                            "content" (string->bytes "repeated repeated repeated")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal
+             (map-list
+               (lambda (e)
+                 (dict-get e "content"))
+               (dict-get r "entries"))
+             (list (string->bytes "plain") (string->bytes "repeated repeated repeated"))))))
+
+      ; An entry with empty content round-trips through extract.
+      (test-empty-content
+       (lambda ()
+         (let ((r
+                (extract
+                  (create
+                    (dict "entries" (list (dict "name" "empty" "compression" 0 "content" (string->bytes "")))
+                          "meta" (dict "comment" #none))))))
+           (assert-equal (dict-get (list-first (dict-get r "entries")) "content") (string->bytes "")))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "empty archive" test-empty-archive)
+             (expect-pass "single stored entry" test-single-stored-entry)
+             (expect-pass "single deflate entry" test-single-deflate-entry)
+             (expect-pass "entry name is preserved" test-entry-name-preserved)
+             (expect-pass "compression method is preserved" test-compression-preserved)
+             (expect-pass "compression method defaults to stored" test-compression-defaults-to-stored)
+             (expect-pass "directory entry is flagged" test-directory-entry-flagged)
+             (expect-pass "file entry is not flagged as a directory" test-file-entry-not-flagged)
+             (expect-pass "entry order is preserved" test-entry-order-preserved)
+             (expect-pass "multiple entries of mixed methods" test-mixed-methods)
+             (expect-pass "empty content" test-empty-content))))))
+
+  (export tests))

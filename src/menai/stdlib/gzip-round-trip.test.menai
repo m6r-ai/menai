@@ -1,0 +1,47 @@
+; Round-trip tests for the gzip-compress and gzip-decompress pair.
+;
+; The pair carries the contract decompress(compress(b)) == b for every bytes
+; value b.  These tests exercise that contract; the per-operation behaviour of
+; each half is tested in its own suite.
+
+(let ((gzip-compress (import "gzip-compress"))
+      (gzip-decompress (import "gzip-decompress"))
+      (t (import "menai-test"))
+      (compress (:: gzip-compress compress))
+      (decompress (:: gzip-decompress decompress))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; The empty input round-trips through compress then decompress unchanged.
+      (test-empty
+       (lambda ()
+         (assert-equal (decompress (compress (string->bytes ""))) (string->bytes ""))))
+
+      ; A short text round-trips through compress then decompress unchanged.
+      (test-short-text
+       (lambda ()
+         (assert-equal (decompress (compress (string->bytes "hello world"))) (string->bytes "hello world"))))
+
+      ; Repetitive text round-trips through compress then decompress unchanged.
+      (test-repetitive
+       (lambda ()
+         (assert-equal
+           (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
+           (string->bytes "abcabcabcabcabcabcabcabc"))))
+
+      ; A single byte round-trips through compress then decompress unchanged.
+      (test-single-byte
+       (lambda ()
+         (assert-equal (decompress (compress (string->bytes "x"))) (string->bytes "x"))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "empty input" test-empty)
+             (expect-pass "short text" test-short-text)
+             (expect-pass "repetitive text" test-repetitive)
+             (expect-pass "single byte" test-single-byte))))))
+
+  (export tests))

@@ -1,0 +1,90 @@
+; Round-trip tests for the base64-decode and base64-encode pair.
+;
+; The pair carries the contract decode(encode(b)) == b for every bytes value b,
+; for each of the four variants.  These tests exercise that contract; the
+; per-operation behaviour of each half is tested in its own suite.
+
+(let ((base64-decode (import "base64-decode"))
+      (base64-encode (import "base64-encode"))
+      (t (import "menai-test"))
+      (decode (:: base64-decode decode))
+      (dv (:: base64-decode variant))
+      (encode (:: base64-encode encode))
+      (ev (:: base64-encode variant))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; Build a bytes value containing every byte value from 0 to 255.
+      (all-bytes
+       (lambda ()
+         (let ((mk
+                (lambda (i acc)
+                  (if (integer>=? i 256)
+                      (list->bytes (list-reverse acc))
+                      (mk (integer+ i 1) (list-prepend acc i))))))
+           (mk 0 (list)))))
+
+      ; Build a bytes value of the given length cycling through byte values.
+      (cycling-bytes
+       (lambda (n)
+         (let ((mk
+                (lambda (i acc)
+                  (if (integer>=? i n)
+                      (list->bytes (list-reverse acc))
+                      (mk (integer+ i 1) (list-prepend acc (integer% i 256)))))))
+           (mk 0 (list)))))
+
+      ; The empty bytes value round-trips through encode then decode unchanged.
+      (test-empty
+       (lambda ()
+         (assert-equal (decode (encode (string->bytes ""))) (string->bytes ""))))
+
+      ; Text round-trips through encode then decode unchanged.
+      (test-text
+       (lambda ()
+         (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
+
+      ; Every byte value round-trips through the standard variant.
+      (test-all-bytes-standard
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'standard)) (dv 'standard)) all))))
+
+      ; Every byte value round-trips through the standard-unpadded variant.
+      (test-all-bytes-standard-unpadded
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'standard-unpadded)) (dv 'standard-unpadded)) all))))
+
+      ; Every byte value round-trips through the url variant.
+      (test-all-bytes-url
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'url)) (dv 'url)) all))))
+
+      ; Every byte value round-trips through the url-unpadded variant.
+      (test-all-bytes-url-unpadded
+       (lambda ()
+         (let ((all (all-bytes)))
+           (assert-equal (decode (encode all (ev 'url-unpadded)) (dv 'url-unpadded)) all))))
+
+      ; A long payload spanning many groups round-trips unchanged.
+      (test-long-payload
+       (lambda ()
+         (let ((data (cycling-bytes 1000)))
+           (assert-equal (decode (encode data)) data))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "empty" test-empty)
+             (expect-pass "text" test-text)
+             (expect-pass "every byte value, standard" test-all-bytes-standard)
+             (expect-pass "every byte value, standard-unpadded" test-all-bytes-standard-unpadded)
+             (expect-pass "every byte value, url" test-all-bytes-url)
+             (expect-pass "every byte value, url-unpadded" test-all-bytes-url-unpadded)
+             (expect-pass "long payload spanning many groups" test-long-payload))))))
+
+  (export tests))

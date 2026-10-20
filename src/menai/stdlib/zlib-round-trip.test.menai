@@ -1,0 +1,54 @@
+; Round-trip tests for the zlib-compress and zlib-decompress pair.
+;
+; The pair carries the contract decompress(compress(b)) == b for every bytes
+; value b.  These tests exercise that contract; the per-operation behaviour of
+; each half is tested in its own suite.
+
+(let ((zlib-compress (import "zlib-compress"))
+      (zlib-decompress (import "zlib-decompress"))
+      (t (import "menai-test"))
+      (compress (:: zlib-compress compress))
+      (decompress (:: zlib-decompress decompress))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      ; The empty input round-trips through compress then decompress unchanged.
+      (test-empty
+       (lambda ()
+         (assert-equal (decompress (compress (string->bytes ""))) (string->bytes ""))))
+
+      ; A short text round-trips through compress then decompress unchanged.
+      (test-short-text
+       (lambda ()
+         (assert-equal (decompress (compress (string->bytes "hello world"))) (string->bytes "hello world"))))
+
+      ; Repetitive text round-trips through compress then decompress unchanged.
+      (test-repetitive
+       (lambda ()
+         (assert-equal
+           (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
+           (string->bytes "abcabcabcabcabcabcabcabc"))))
+
+      ; A single byte round-trips through compress then decompress unchanged.
+      (test-single-byte
+       (lambda ()
+         (assert-equal (decompress (compress (string->bytes "x"))) (string->bytes "x"))))
+
+      ; The empty bytes value round-trips through compress then decompress unchanged.
+      (test-all-byte-values
+       (lambda ()
+         (let ((data (string->bytes "")))
+           (assert-equal (decompress (compress data)) data))))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "empty input" test-empty)
+             (expect-pass "short text" test-short-text)
+             (expect-pass "repetitive text" test-repetitive)
+             (expect-pass "single byte" test-single-byte)
+             (expect-pass "all byte values" test-all-byte-values))))))
+
+  (export tests))

@@ -1,13 +1,11 @@
 ; Tests for xlsx-encode.menai
 
 (let ((xlsx-encode (import "xlsx-encode"))
-      (xlsx-decode (import "xlsx-decode"))
       (zip-entries (import "zip-entries"))
       (zip-extract (import "zip-extract"))
       (xml (import "xml-decode"))
       (t (import "menai-test"))
       (encode (:: xlsx-encode encode))
-      (decode (:: xlsx-decode decode))
       (entries (:: zip-entries entries))
       (extract (:: zip-extract extract))
       (xml-decode (:: xml decode))
@@ -220,16 +218,6 @@
        (lambda ()
          (assert-equal (part-content minimal "xl/sharedStrings.xml") #none)))
 
-      ; A minimal value tree round-trips through encode then decode unchanged.
-      (test-round-trip-minimal
-       (lambda ()
-         (assert-equal (decode (encode minimal)) minimal)))
-
-      ; A value tree with every part round-trips through encode then decode unchanged.
-      (test-round-trip-full
-       (lambda ()
-         (assert-equal (decode (encode full)) full)))
-
       ; A non-dict value is rejected.
       (test-rejects-non-dict
        (lambda ()
@@ -358,12 +346,6 @@
            (list
              (expect-pass "shared strings are written as an sst of si elements" test-shared-strings-sst)
              (expect-pass "a shared string part is absent when shared-strings is #none" test-shared-strings-absent)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "minimal value tree" test-round-trip-minimal)
-             (expect-pass "value tree with every part" test-round-trip-full)))
 
          (list
            "errors"

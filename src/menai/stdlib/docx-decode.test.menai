@@ -1,11 +1,9 @@
 ; Tests for docx-decode.menai
 
 (let ((docx-decode (import "docx-decode"))
-      (docx-encode (import "docx-encode"))
       (zip-create (import "zip-create"))
       (t (import "menai-test"))
       (decode (:: docx-decode decode))
-      (encode (:: docx-encode encode))
       (create (:: zip-create create))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
@@ -133,16 +131,6 @@
            (dict-get (dict-get (dict-get (decode full) "relationships") "rId6") "target")
            "https://example.com/")))
 
-      ; A minimal package round-trips through decode then encode then decode unchanged.
-      (test-round-trip-minimal
-       (lambda ()
-         (assert-equal (decode (encode (decode minimal))) (decode minimal))))
-
-      ; A package with every part round-trips through decode then encode then decode unchanged.
-      (test-round-trip-full
-       (lambda ()
-         (assert-equal (decode (encode (decode full))) (decode full))))
-
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes
        (lambda ()
@@ -182,12 +170,6 @@
              (expect-pass "relationship id maps to a relationship dict" test-relationship-maps-to-dict)
              (expect-pass "relationship target mode is preserved" test-relationship-mode-preserved)
              (expect-pass "relationship target is preserved verbatim" test-relationship-target-verbatim)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "minimal package" test-round-trip-minimal)
-             (expect-pass "package with all parts" test-round-trip-full)))
 
          (list
            "errors"

@@ -1,0 +1,126 @@
+; Round-trip tests for the docx-decode and docx-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every DOCX value tree
+; v that encode accepts.  These tests exercise that contract from both ends: a
+; package decoded and re-encoded, and a value tree encoded and decoded.  The
+; per-operation behaviour of each half is tested in its own suite.
+
+(let ((docx-decode (import "docx-decode"))
+      (docx-encode (import "docx-encode"))
+      (zip-create (import "zip-create"))
+      (t (import "menai-test"))
+      (decode (:: docx-decode decode))
+      (encode (:: docx-encode encode))
+      (create (:: zip-create create))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      (main-ns "http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+      (rels-ns "http://schemas.openxmlformats.org/package/2006/relationships")
+      (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
+
+      (document-xml
+       (string->bytes
+         (string-concat "<w:document xmlns:w=\""
+                        main-ns
+                        "\"><w:body><w:p><w:r><w:t>Hi</w:t></w:r></w:p></w:body></w:document>")))
+
+      (styles-xml (string->bytes (string-concat "<w:styles xmlns:w=\"" main-ns "\"/>")))
+      (numbering-xml (string->bytes (string-concat "<w:numbering xmlns:w=\"" main-ns "\"/>")))
+      (media-bytes (string-hex->bytes "89504e470d0a1a0a"))
+
+      (rels-xml
+       (string->bytes
+         (string-concat "<Relationships xmlns=\""
+                        rels-ns
+                        "\"><Relationship Id=\"rId5\" Type=\""
+                        image-rel
+                        "\" Target=\"media/dot.png\"/>"
+                        "<Relationship Id=\"rId6\" Type=\""
+                        image-rel
+                        "\" Target=\"https://example.com/\" TargetMode=\"External\"/></Relationships>")))
+
+      ; Build a package from a list of (part-name content) pairs, with no metadata.
+      (package-of
+       (lambda (parts)
+         (create
+           (dict "entries" (map-list
+                             (lambda (p)
+                               (dict "name" (list-first p) "content" (list-nth p 1)))
+                             parts)
+                 "meta" (dict)))))
+
+      (minimal-package (package-of (list (list "word/document.xml" document-xml))))
+
+      (full-package
+       (package-of
+         (list
+           (list "word/document.xml" document-xml)
+           (list "word/styles.xml" styles-xml)
+           (list "word/numbering.xml" numbering-xml)
+           (list "word/_rels/document.xml.rels" rels-xml)
+           (list "word/media/dot.png" media-bytes))))
+
+      (document
+       (dict "tag" "w:document"
+             "attrs" (dict "xmlns:w" main-ns)
+             "children" (list
+                          (dict "tag" "w:body"
+                                "attrs" (dict)
+                                "children" (list
+                                             (dict "tag" "w:p"
+                                                   "attrs" (dict)
+                                                   "children" (list
+                                                                (dict "tag" "w:r"
+                                                                      "attrs" (dict)
+                                                                      "children" (list
+                                                                                   (dict "tag" "w:t"
+                                                                                         "attrs" (dict)
+                                                                                         "children" (list
+                                                                                                      "Hi")))))))))))
+
+      (styles (dict "tag" "w:styles" "attrs" (dict "xmlns:w" main-ns) "children" (list)))
+      (numbering (dict "tag" "w:numbering" "attrs" (dict "xmlns:w" main-ns) "children" (list)))
+
+      (media (dict "word/media/a.png" (string-hex->bytes "89504e47") "word/media/b.jpg" (string-hex->bytes "ffd8ff")))
+
+      (relationships
+       (dict "rId5" (dict "type" image-rel "target" "media/a.png" "mode" #none)
+             "rId6" (dict "type" image-rel "target" "https://example.com/" "mode" "External")))
+
+      (minimal-value (dict "document" document "styles" #none "numbering" #none "relationships" (dict) "media" #none))
+
+      (full-value
+       (dict "document" document "styles" styles "numbering" numbering "relationships" relationships "media" media))
+
+      ; A minimal package round-trips through decode then encode then decode unchanged.
+      (test-package-minimal
+       (lambda ()
+         (assert-equal (decode (encode (decode minimal-package))) (decode minimal-package))))
+
+      ; A package with every part round-trips through decode then encode then decode unchanged.
+      (test-package-full
+       (lambda ()
+         (assert-equal (decode (encode (decode full-package))) (decode full-package))))
+
+      ; A minimal value tree round-trips through encode then decode unchanged.
+      (test-value-minimal
+       (lambda ()
+         (assert-equal (decode (encode minimal-value)) minimal-value)))
+
+      ; A value tree with every part round-trips through encode then decode unchanged.
+      (test-value-full
+       (lambda ()
+         (assert-equal (decode (encode full-value)) full-value)))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "minimal package" test-package-minimal)
+             (expect-pass "package with all parts" test-package-full)
+             (expect-pass "minimal value tree" test-value-minimal)
+             (expect-pass "value tree with every part" test-value-full))))))
+
+  (export tests))

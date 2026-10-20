@@ -1,11 +1,9 @@
 ; Tests for pptx-decode.menai
 
 (let ((pptx-decode (import "pptx-decode"))
-      (pptx-encode (import "pptx-encode"))
       (zip-create (import "zip-create"))
       (t (import "menai-test"))
       (decode (:: pptx-decode decode))
-      (encode (:: pptx-encode encode))
       (create (:: zip-create create))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
@@ -242,16 +240,6 @@
        (lambda ()
          (assert-equal (dict-get (dict-get (dict-get (decode with-mode) "relationships") "rId2") "mode") "External")))
 
-      ; A minimal package round-trips through decode then encode then decode unchanged.
-      (test-round-trip-minimal
-       (lambda ()
-         (assert-equal (decode (encode (decode minimal))) (decode minimal))))
-
-      ; A package with every part round-trips through decode then encode then decode unchanged.
-      (test-round-trip-full
-       (lambda ()
-         (assert-equal (decode (encode (decode full))) (decode full))))
-
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes
        (lambda ()
@@ -302,12 +290,6 @@
            (list
              (expect-pass "relationship id maps to a relationship dict" test-relationship-maps-to-dict)
              (expect-pass "relationship target mode is preserved" test-relationship-mode-preserved)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "minimal package" test-round-trip-minimal)
-             (expect-pass "package with all parts" test-round-trip-full)))
 
          (list
            "errors"

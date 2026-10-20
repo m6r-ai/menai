@@ -1,0 +1,110 @@
+; Round-trip tests for the xlsx-decode and xlsx-encode pair.
+;
+; The pair carries the contract decode(encode(v)) == v for every XLSX value tree
+; v that encode accepts.  These tests exercise that contract; the per-operation
+; behaviour of each half is tested in its own suite.
+
+(let ((xlsx-decode (import "xlsx-decode"))
+      (xlsx-encode (import "xlsx-encode"))
+      (t (import "menai-test"))
+      (decode (:: xlsx-decode decode))
+      (encode (:: xlsx-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+
+      (main-ns "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
+      (worksheet-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet")
+
+      (shared-strings-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings")
+
+      (image-rel "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image")
+
+      (workbook (dict "tag" "workbook" "attrs" (dict "xmlns" main-ns) "children" (list)))
+
+      (workbook-with-sheets
+       (dict "tag" "workbook"
+             "attrs" (dict "xmlns" main-ns
+                           "xmlns:r" "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+             "children" (list
+                          (dict "tag" "sheets"
+                                "attrs" (dict)
+                                "children" (list
+                                             (dict "tag" "sheet"
+                                                   "attrs" (dict "name" "First" "sheetId" "1" "r:id" "rId1")
+                                                   "children" (list))
+                                             (dict "tag" "sheet"
+                                                   "attrs" (dict "name" "Second" "sheetId" "2" "r:id" "rId2")
+                                                   "children" (list)))))))
+
+      (sheet1
+       (dict "tag" "worksheet"
+             "attrs" (dict "xmlns" main-ns)
+             "children" (list (dict "tag" "sheetData" "attrs" (dict) "children" (list)))))
+
+      (sheet2
+       (dict "tag" "worksheet"
+             "attrs" (dict "xmlns" main-ns)
+             "children" (list (dict "tag" "sheetData" "attrs" (dict) "children" (list)))))
+
+      (styles (dict "tag" "styleSheet" "attrs" (dict "xmlns" main-ns) "children" (list)))
+      (theme (dict "tag" "a:theme" "attrs" (dict "xmlns:a" main-ns) "children" (list)))
+
+      (shared-strings
+       (list
+         (dict "tag" "si" "attrs" (dict) "children" (list (dict "tag" "t" "attrs" (dict) "children" (list "Hello"))))
+         (dict "tag" "si" "attrs" (dict) "children" (list (dict "tag" "t" "attrs" (dict) "children" (list "World"))))))
+
+      (sheet1-rels (dict "rId1" (dict "type" image-rel "target" "../media/image1.png" "mode" #none)))
+
+      (workbook-relationships
+       (dict "rId1" (dict "type" worksheet-rel "target" "worksheets/sheet1.xml" "mode" #none)
+             "rId2" (dict "type" worksheet-rel "target" "worksheets/sheet2.xml" "mode" #none)
+             "rId3" (dict "type" shared-strings-rel "target" "sharedStrings.xml" "mode" #none)))
+
+      (media (dict "xl/media/image1.png" (string-hex->bytes "89504e47")))
+
+      (minimal
+       (dict "workbook" workbook
+             "relationships" (dict)
+             "shared-strings" #none
+             "styles" #none
+             "theme" #none
+             "sheets" (list)
+             "media" #none))
+
+      (full
+       (dict "workbook" workbook-with-sheets
+             "relationships" workbook-relationships
+             "shared-strings" shared-strings
+             "styles" styles
+             "theme" theme
+             "sheets" (list
+                        (dict "name" "First"
+                              "part" "xl/worksheets/sheet1.xml"
+                              "element" sheet1
+                              "relationships" sheet1-rels)
+                        (dict "name" "Second"
+                              "part" "xl/worksheets/sheet2.xml"
+                              "element" sheet2
+                              "relationships" (dict)))
+             "media" media))
+
+      ; A minimal value tree round-trips through encode then decode unchanged.
+      (test-minimal
+       (lambda ()
+         (assert-equal (decode (encode minimal)) minimal)))
+
+      ; A value tree with every part round-trips through encode then decode unchanged.
+      (test-full
+       (lambda ()
+         (assert-equal (decode (encode full)) full)))
+
+      (tests
+       (list
+         (list
+           "round-trips"
+           (list
+             (expect-pass "minimal value tree" test-minimal)
+             (expect-pass "value tree with every part" test-full))))))
+
+  (export tests))

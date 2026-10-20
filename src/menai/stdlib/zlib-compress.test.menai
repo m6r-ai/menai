@@ -10,34 +10,6 @@
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
 
-      ; The empty input round-trips through compress then decompress unchanged.
-      (test-round-trip-empty
-       (lambda ()
-         (assert-equal (decompress (compress (string->bytes ""))) (string->bytes ""))))
-
-      ; A short text round-trips through compress then decompress unchanged.
-      (test-round-trip-short-text
-       (lambda ()
-         (assert-equal (decompress (compress (string->bytes "hello world"))) (string->bytes "hello world"))))
-
-      ; Repetitive text round-trips through compress then decompress unchanged.
-      (test-round-trip-repetitive
-       (lambda ()
-         (assert-equal
-           (decompress (compress (string->bytes "abcabcabcabcabcabcabcabc")))
-           (string->bytes "abcabcabcabcabcabcabcabc"))))
-
-      ; A single byte round-trips through compress then decompress unchanged.
-      (test-round-trip-single-byte
-       (lambda ()
-         (assert-equal (decompress (compress (string->bytes "x"))) (string->bytes "x"))))
-
-      ; The empty bytes value round-trips through compress then decompress unchanged.
-      (test-round-trip-all-byte-values
-       (lambda ()
-         (let ((data (string->bytes "")))
-           (assert-equal (decompress (compress data)) data))))
-
       ; The stream starts with the 0x789c header.
       (test-header-bytes
        (lambda ()
@@ -98,15 +70,6 @@
 
       (tests
        (list
-         (list
-           "round-trips"
-           (list
-             (expect-pass "empty input" test-round-trip-empty)
-             (expect-pass "short text" test-round-trip-short-text)
-             (expect-pass "repetitive text" test-round-trip-repetitive)
-             (expect-pass "single byte" test-round-trip-single-byte)
-             (expect-pass "all byte values" test-round-trip-all-byte-values)))
-
          (list
            "header"
            (list

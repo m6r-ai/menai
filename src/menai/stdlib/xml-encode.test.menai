@@ -1,10 +1,8 @@
 ; Tests for xml-encode.menai
 
 (let ((xml-encode (import "xml-encode"))
-      (xml-decode (import "xml-decode"))
       (t (import "menai-test"))
       (encode (:: xml-encode encode))
-      (decode (:: xml-decode decode))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
@@ -105,31 +103,6 @@
        (lambda ()
          (assert-equal (encode (dict "tag" "a" "attrs" (dict) "children" (list "\u03c0"))) "<a>\u03c0</a>")))
 
-      ; A self-closing element round-trips through encode then decode unchanged.
-      (test-round-trip-self-closing
-       (lambda ()
-         (assert-equal
-           (decode (encode (dict "tag" "a" "attrs" (dict) "children" (list))))
-           (dict "tag" "a" "attrs" (dict) "children" (list)))))
-
-      ; Text with every escaped character round-trips through encode then decode unchanged.
-      (test-round-trip-escaped-text
-       (lambda ()
-         (let ((v (dict "tag" "a" "attrs" (dict) "children" (list "&<>\"'"))))
-           (assert-equal (decode (encode v)) v))))
-
-      ; An attribute with every escaped character round-trips through encode then decode unchanged.
-      (test-round-trip-escaped-attribute
-       (lambda ()
-         (let ((v (dict "tag" "a" "attrs" (dict "x" "&<>\"'") "children" (list))))
-           (assert-equal (decode (encode v)) v))))
-
-      ; A deeply nested structure round-trips through encode then decode unchanged.
-      (test-round-trip-deeply-nested
-       (lambda ()
-         (let ((v (decode "<r><a><b><c>x</c></b></a><d/></r>")))
-           (assert-equal (decode (encode v)) v))))
-
       ; A non-dict value is rejected.
       (test-rejects-non-dict
        (lambda ()
@@ -195,14 +168,6 @@
              (expect-pass "greater than" test-text-escapes-greater-than)
              (expect-pass "double quote is not escaped in text" test-text-quote-not-escaped)
              (expect-pass "non-ASCII is emitted literally" test-text-non-ascii-literal)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "self-closing" test-round-trip-self-closing)
-             (expect-pass "text with all escaped characters" test-round-trip-escaped-text)
-             (expect-pass "attribute with all escaped characters" test-round-trip-escaped-attribute)
-             (expect-pass "deeply nested structure" test-round-trip-deeply-nested)))
 
          (list
            "errors"

@@ -1,35 +1,12 @@
 ; Tests for base64-encode.menai
 
 (let ((base64-encode (import "base64-encode"))
-      (base64-decode (import "base64-decode"))
       (t (import "menai-test"))
       (encode (:: base64-encode encode))
       (ev (:: base64-encode variant))
-      (decode (:: base64-decode decode))
-      (dv (:: base64-decode variant))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
-
-      ; Build a bytes value containing every byte value from 0 to 255.
-      (all-bytes
-       (lambda ()
-         (let ((mk
-                (lambda (i acc)
-                  (if (integer>=? i 256)
-                      (list->bytes (list-reverse acc))
-                      (mk (integer+ i 1) (list-prepend acc i))))))
-           (mk 0 (list)))))
-
-      ; Build a bytes value of the given length cycling through byte values.
-      (cycling-bytes
-       (lambda (n)
-         (let ((mk
-                (lambda (i acc)
-                  (if (integer>=? i n)
-                      (list->bytes (list-reverse acc))
-                      (mk (integer+ i 1) (list-prepend acc (integer% i 256)))))))
-           (mk 0 (list)))))
 
       ; The empty input encodes to the empty string.
       (test-vector-empty
@@ -126,46 +103,6 @@
        (lambda ()
          (assert-equal (encode (list->bytes (list 251 255 254)) (ev 'url)) "-__-")))
 
-      ; The empty bytes value round-trips through decode then encode unchanged.
-      (test-round-trip-empty
-       (lambda ()
-         (assert-equal (decode (encode (string->bytes ""))) (string->bytes ""))))
-
-      ; Text round-trips through encode then decode unchanged.
-      (test-round-trip-text
-       (lambda ()
-         (assert-equal (decode (encode (string->bytes "hello world"))) (string->bytes "hello world"))))
-
-      ; Every byte value round-trips through the standard variant.
-      (test-round-trip-all-bytes-standard
-       (lambda ()
-         (let ((all (all-bytes)))
-           (assert-equal (decode (encode all (ev 'standard)) (dv 'standard)) all))))
-
-      ; Every byte value round-trips through the standard-unpadded variant.
-      (test-round-trip-all-bytes-standard-unpadded
-       (lambda ()
-         (let ((all (all-bytes)))
-           (assert-equal (decode (encode all (ev 'standard-unpadded)) (dv 'standard-unpadded)) all))))
-
-      ; Every byte value round-trips through the url variant.
-      (test-round-trip-all-bytes-url
-       (lambda ()
-         (let ((all (all-bytes)))
-           (assert-equal (decode (encode all (ev 'url)) (dv 'url)) all))))
-
-      ; Every byte value round-trips through the url-unpadded variant.
-      (test-round-trip-all-bytes-url-unpadded
-       (lambda ()
-         (let ((all (all-bytes)))
-           (assert-equal (decode (encode all (ev 'url-unpadded)) (dv 'url-unpadded)) all))))
-
-      ; A long payload spanning many groups round-trips unchanged.
-      (test-round-trip-long-payload
-       (lambda ()
-         (let ((data (cycling-bytes 1000)))
-           (assert-equal (decode (encode data)) data))))
-
       ; A string argument is rejected.
       (test-rejects-string
        (lambda ()
@@ -208,17 +145,6 @@
              (expect-pass "standard and url agree when no special character occurs" test-variant-standard-url-agree)
              (expect-pass "standard uses + and /" test-variant-standard-special)
              (expect-pass "url uses - and _" test-variant-url-special)))
-
-         (list
-           "round-trips"
-           (list
-             (expect-pass "empty" test-round-trip-empty)
-             (expect-pass "text" test-round-trip-text)
-             (expect-pass "every byte value, standard" test-round-trip-all-bytes-standard)
-             (expect-pass "every byte value, standard-unpadded" test-round-trip-all-bytes-standard-unpadded)
-             (expect-pass "every byte value, url" test-round-trip-all-bytes-url)
-             (expect-pass "every byte value, url-unpadded" test-round-trip-all-bytes-url-unpadded)
-             (expect-pass "long payload spanning many groups" test-round-trip-long-payload)))
 
          (list
            "errors"
