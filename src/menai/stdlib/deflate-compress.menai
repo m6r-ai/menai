@@ -148,37 +148,40 @@
                   (lambda (acc len)
                     (integer-max acc len))
                   0
-                  lengths)))
-           (let ((bl-count
-                  (lambda (lst acc)
-                    (if (list-null? lst)
-                        acc
-                        (let ((lst-head (list-first lst)))
-                          (bl-count (list-rest lst) (dict-with acc lst-head (integer+ (dict-get acc lst-head 0) 1)))))))
+                  lengths))
 
-                 (next-codes
-                  (lambda (bl maxlen)
-                    (let ((loop
-                           (lambda (len code acc)
-                             (if (integer>? len maxlen)
-                                 acc
-                                 (let ((next (integer-bit-shift-left (integer+ code (dict-get bl len 0)) 1)))
-                                   (loop (integer+ len 1) next (dict-with acc len code)))))))
-                      (loop 1 0 (dict))))))
-             (let ((nexts (next-codes (bl-count lengths (dict)) maxlen)))
-               (let ((assign
-                      (lambda (lst codes acc)
-                        (if (list-null? lst)
-                            (list-reverse acc)
-                            (let ((len (list-first lst)))
-                              (if (integer=? len 0)
-                                  (assign (list-rest lst) codes (list-prepend acc (list 0 0)))
-                                  (let ((code (dict-get codes len)))
-                                    (assign
-                                      (list-rest lst)
-                                      (dict-with codes len (integer+ code 1))
-                                      (list-prepend acc (list (reverse-bits code len) len))))))))))
-                 (assign lengths nexts (list))))))))
+               (bl-count
+                (lambda (lst acc)
+                  (if (list-null? lst)
+                      acc
+                      (let ((lst-head (list-first lst)))
+                        (bl-count (list-rest lst) (dict-with acc lst-head (integer+ (dict-get acc lst-head 0) 1)))))))
+
+               (next-codes
+                (lambda (bl)
+                  (let ((loop
+                         (lambda (len code acc)
+                           (if (integer>? len maxlen)
+                               acc
+                               (let ((next (integer-bit-shift-left (integer+ code (dict-get bl len 0)) 1)))
+                                 (loop (integer+ len 1) next (dict-with acc len code)))))))
+                    (loop 1 0 (dict)))))
+
+               (nexts (next-codes (bl-count lengths (dict))))
+
+               (assign
+                (lambda (lst codes acc)
+                  (if (list-null? lst)
+                      (list-reverse acc)
+                      (let ((len (list-first lst)))
+                        (if (integer=? len 0)
+                            (assign (list-rest lst) codes (list-prepend acc (list 0 0)))
+                            (let ((code (dict-get codes len)))
+                              (assign
+                                (list-rest lst)
+                                (dict-with codes len (integer+ code 1))
+                                (list-prepend acc (list (reverse-bits code len) len))))))))))
+           (assign lengths nexts (list)))))
 
       ; Emit one symbol's Huffman code using a symbol-code list.
       (write-symbol
