@@ -283,6 +283,22 @@ menai`. Currently it includes:
   fields, delegating the DEFLATE data to `deflate-decompress`, and verifying the
   CRC-32 and ISIZE trailer.  Only the first member of a concatenated stream is
   decompressed (`decompress`)
+- `html-decode.menai` — parses an HTML document (as a string) into a list of its
+  top-level nodes, in the element shape `xml-decode` produces.  A doctype and a
+  comment are carried as element dicts with the reserved tags `!doctype` and
+  `!--`.  Decoding is lenient and raises only on a non-string argument: void
+  elements, raw-text script and style content, omitted end tags, unquoted and
+  valueless attributes, and unknown character references are recovered from
+  rather than rejected.  It is a capture layer and does not build the HTML5 tree
+  (`decode`)
+- `html-encode.menai` — serialises an HTML value tree (the shape `html-decode`
+  produces) to a string of HTML; the inverse of `html-decode`, so
+  `(decode (encode v))` reproduces `v` for every value tree `v` that `encode`
+  accepts.  Every element is written with an explicit end tag, so this is a value
+  round-trip rather than a byte round-trip (`encode`)
+- `html-entities.menai` — the named character references HTML documents use, as a
+  dict mapping each reference's name to its character.  Not an operation module;
+  it exports specification data
 - `json-decode.menai` — decodes a JSON string to the equivalent Menai value
   (`decode`)
 - `json-encode.menai` — encodes a Menai value as a JSON string; the inverse of

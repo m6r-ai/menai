@@ -199,6 +199,25 @@ the package with `zip-create`.  Seven cases mirror the DOCX Decode cases
 are constructed as Menai expressions rather than parsed from bytes, so the
 timing measures encoding alone.
 
+### HTML Decode
+Decodes HTML documents: a string parsed into the same element tree `xml-decode`
+produces.  Nine cases cover the shapes that distinguish HTML from XML — a wide
+sibling list, 200 levels of nesting, four attributes per element, mixed text and
+child elements, 2000 paragraphs of named/decimal/hex character references, 1000
+paragraphs dense with void elements (`br`, `img`, `input`), 1000 list items
+relying on omitted end tags, 500 script and style elements whose content is raw
+text, and a realistic page combining a doctype, head, comments, a table, and a
+script.  These exercise the recovery paths (void elements, omitted end tags, raw
+text) that the XML decoder never takes, so the timings are not comparable with
+the XML Decode suite.  Inputs are generated fixtures (see [Fixtures](#fixtures)).
+
+### HTML Encode
+Encodes HTML value trees, writing each element with an explicit end tag and
+escaping text and attribute values.  Seven cases mirror the HTML Decode shapes
+(wide, deep, attributes, mixed, void elements, escaping, and declarations) so the
+write and read directions can be compared.  The trees are constructed as Menai
+expressions rather than parsed from bytes, so the timing measures encoding alone.
+
 ### JSON Decode
 Decodes JSON strings of varying structure and size using a hand-written decoder
 in Menai. Nine cases cover primitives (integer, float, booleans, null), strings

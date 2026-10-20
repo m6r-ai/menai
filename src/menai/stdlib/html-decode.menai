@@ -1,0 +1,486 @@
+; html-decode — parses an HTML document into a value tree.
+;
+; The input is a string containing HTML and the output is a value tree.  An
+; element is a dict, in the same shape xml-decode produces:
+;
+;   (dict "tag" <string> "attrs" <dict> "children" <list>)
+;
+; "tag" is the element's name, lowercased ("<DIV>" is "div").  "attrs" maps each
+; attribute's name, lowercased, to its value as a string.  "children" is an
+; ordered list of nodes, where each node is either a string (a text node) or an
+; element dict.  Text and child elements share one ordered list so that mixed
+; content survives.
+;
+; Two node kinds have no XML equivalent and are carried as element dicts with a
+; reserved tag, so every child is still a string or an element dict:
+;
+;   (dict "tag" "!doctype" "attrs" (dict) "children" (list "html"))
+;   (dict "tag" "!--" "attrs" (dict) "children" (list "a comment"))
+;
+; The doctype's children are the declaration's text after "<!DOCTYPE ", and a
+; comment's children are the comment's text.  They are carried, not discarded,
+; so that a document containing them round-trips.
+;
+; The result is a list of the document's top-level nodes, in order.  HTML has no
+; single document element, and a fragment such as "a <b>c</b>" has none at all,
+; so the result cannot be an element.  A document with one element yields a
+; one-element list.
+;
+; The decoder is lenient: it raises only when its argument is not a string, and
+; recovers from malformed input rather than rejecting it.  Void elements need no
+; end tag, script and style content is raw text, an end tag closes the nearest
+; open element with that name, an element may be closed by the start of a
+; sibling that cannot nest inside it, unclosed elements are closed at end of
+; input, attribute values may be unquoted or absent, and a "<" that does not
+; begin a tag is text.  Character references are decoded from html-entities; a
+; "&" that does not begin a known reference is left as literal text.
+;
+; It does not build the HTML5 tree.  There is no implied html, head, or tbody
+; element, no foster parenting, and no adoption agency algorithm: the tree
+; reports the tags the document contains, nested by their own start and end
+; markers.  A page that relies on implied structure therefore decodes to a tree
+; that differs from a browser's DOM.
+;
+; It is the inverse of html-encode's encode: for every value tree v that encode
+; accepts, (decode (encode v)) reproduces v.
+
+(let ((entities-lib (import "html-entities"))
+      (entities (:: entities-lib entities))
+
+      ; Elements that have no content and no end tag.
+      (void-elements
+       (set "area" "base" "br" "col" "embed" "hr" "img" "input" "link" "meta" "param" "source" "track" "wbr"))
+
+      ; Elements whose content is raw text, in which "<" does not begin a tag.
+      (raw-text-elements (set "script" "style"))
+
+      ; Elements whose start tag closes an open element of the same name: a "li"
+      ; cannot contain a "li", and so on.
+      (self-closing-on-start (set "li" "p" "dt" "dd" "option" "tr" "td" "th"))
+
+      (is-space?
+       (lambda (ch)
+         (or (string=? ch " ")
+             (string=? ch "\t")
+             (string=? ch "\n")
+             (string=? ch "\r")
+             (string=? ch (integer-codepoint->string 12)))))
+
+      ; The index of the first non-whitespace character at or after `i`.
+      (skip-space
+       (lambda (s i)
+         (let ((loop
+                (lambda (j)
+                  (if (and (integer<? j (string-length s))
+                           (is-space? (string-nth s j)))
+                      (loop (integer+ j 1))
+                      j))))
+           (loop i))))
+
+      ; #t when `s` starts with `prefix` at index `i`.
+      (starts-at?
+       (lambda (s i prefix)
+         (let ((end (integer+ i (string-length prefix))))
+           (and (integer<=? end (string-length s))
+                (string=? (string-slice s i end) prefix)))))
+
+      ; The index of the first occurrence of the character `ch` at or after `i`,
+      ; or the end of the string when there is none.
+      (find-char
+       (lambda (s ch i)
+         (let ((loop
+                (lambda (j)
+                  (if (integer>=? j (string-length s))
+                      j
+                      (if (string=? (string-nth s j) ch)
+                          j
+                          (loop (integer+ j 1)))))))
+           (loop i))))
+
+      ; The index of the first occurrence of `needle` at or after `i`, or #none.
+      (find-string
+       (lambda (s needle i)
+         (let ((loop
+                (lambda (j)
+                  (if (integer>=? j (string-length s))
+                      #none
+                      (if (starts-at? s j needle)
+                          j
+                          (loop (integer+ j 1)))))))
+           (loop i))))
+
+      ; #t when the character can appear in an element or attribute name.
+      (is-name-char?
+       (lambda (ch)
+         (and (boolean-not (is-space? ch))
+              (boolean-not (string=? ch ">"))
+              (boolean-not (string=? ch "/"))
+              (boolean-not (string=? ch "="))
+              (boolean-not (string=? ch "<"))
+              (boolean-not (string=? ch "\""))
+              (boolean-not (string=? ch "'")))))
+
+      ; The index of the first character at or after `i` that is not a name
+      ; character.
+      (name-end
+       (lambda (s i)
+         (let ((loop
+                (lambda (j)
+                  (if (and (integer<? j (string-length s))
+                           (is-name-char? (string-nth s j)))
+                      (loop (integer+ j 1))
+                      j))))
+           (loop i))))
+
+      ; #t when the character is an ASCII digit.
+      (is-digit?
+       (lambda (ch)
+         (let ((cp (string->integer-codepoint ch)))
+           (and (integer>=? cp 48)
+                (integer<=? cp 57)))))
+
+      ; #t when the character is an ASCII hex digit.
+      (is-hex-digit?
+       (lambda (ch)
+         (let ((cp (string->integer-codepoint ch)))
+           (or (and (integer>=? cp 48)
+                    (integer<=? cp 57))
+               (and (integer>=? cp 65)
+                    (integer<=? cp 70))
+               (and (integer>=? cp 97)
+                    (integer<=? cp 102))))))
+
+      ; The index of the first ";" at or after `i`, or #none when there is none
+      ; within `limit` characters.  A reference longer than its name cannot be a
+      ; known entity, so the search is bounded.
+      (semicolon-within
+       (lambda (s i limit)
+         (let ((stop (integer-min (string-length s) (integer+ i limit))))
+           (let ((loop
+                  (lambda (j)
+                    (if (integer>=? j stop)
+                        #none
+                        (if (string=? (string-nth s j) ";")
+                            j
+                            (loop (integer+ j 1)))))))
+             (loop i)))))
+
+      ; Decode the character reference starting at the "&" at `i`.  Returns
+      ; (list <text> <index-after-reference>).  When the reference is not one the
+      ; table knows, the text is the literal "&" and only the "&" is consumed.
+      (decode-reference
+       (lambda (s i)
+         (let ((semi (semicolon-within s (integer+ i 1) 32)))
+           (if (none? semi)
+               (list "&" (integer+ i 1))
+               (let ((body (string-slice s (integer+ i 1) semi)))
+                 (if (string-prefix? body "#")
+                     (let ((digits (string-slice body 1)))
+                       (if (string-prefix? digits "x")
+                           (let ((hex (string-slice digits 1)))
+                             (if (and (integer>? (string-length hex) 0)
+                                      (all-list? is-hex-digit? (string->list hex)))
+                                 (list (integer-codepoint->string (string->integer hex 16)) (integer+ semi 1))
+                                 (list "&" (integer+ i 1))))
+                           (if (and (integer>? (string-length digits) 0)
+                                    (all-list? is-digit? (string->list digits)))
+                               (list (integer-codepoint->string (string->integer digits)) (integer+ semi 1))
+                               (list "&" (integer+ i 1)))))
+                     (let ((named (dict-get entities body)))
+                       (if (none? named)
+                           (list "&" (integer+ i 1))
+                           (list named (integer+ semi 1))))))))))
+
+      ; Decode the character references in s[i, end), returning the decoded
+      ; string.  Used for text runs and for attribute values.
+      (decode-references
+       (lambda (s i end)
+         (let ((loop
+                (lambda (j acc)
+                  (if (integer>=? j end)
+                      (list->string (list-reverse acc))
+                      (if (string=? (string-nth s j) "&")
+                          (let ((decoded (decode-reference s j)))
+                            (loop (integer-min (list-nth decoded 1) end) (list-prepend acc (list-first decoded))))
+                          (loop (integer+ j 1) (list-prepend acc (string-nth s j))))))))
+           (loop i (list)))))
+
+      ; Append a text run to a reversed node accumulator.  Adjacent text is one
+      ; node, so a run is merged into the preceding node when that node is a
+      ; string.  This is what keeps "<p>a < b</p>" a single "a < b" child rather
+      ; than three: the "<" that does not begin a tag is text like any other.
+      (append-text
+       (lambda (acc text)
+         (if (string=? text "")
+             acc
+             (if (and (boolean-not (list-null? acc))
+                      (string? (list-first acc)))
+                 (list-prepend (list-rest acc) (string-concat (list-first acc) text))
+                 (list-prepend acc text)))))
+
+      ; Decode a run of text, resolving references, up to the next "<" at or
+      ; after `i`.  Returns (list <decoded-text> <index-of-">).
+      (decode-text
+       (lambda (s i)
+         (let ((loop
+                (lambda (j)
+                  (if (integer>=? j (string-length s))
+                      j
+                      (if (string=? (string-nth s j) "<")
+                          j
+                          (loop (integer+ j 1)))))))
+           (let ((end (loop i)))
+             (list (decode-references s i end) end)))))
+
+      ; The index at which an unquoted attribute value starting at `i` ends: at
+      ; whitespace, ">", or the end of the string.
+      (unquoted-end
+       (lambda (s i)
+         (let ((loop
+                (lambda (j)
+                  (if (integer>=? j (string-length s))
+                      j
+                      (let ((ch (string-nth s j)))
+                        (if (or (is-space? ch)
+                                (string=? ch ">"))
+                            j
+                            (loop (integer+ j 1))))))))
+           (loop i))))
+
+      ; Parse an attribute list starting at `i` (just after the tag name).
+      ; Returns (list <attrs-dict> <self-closing?> <index-of-">).
+      (parse-attributes
+       (lambda (s i)
+         (let ((loop
+                (lambda (j attrs)
+                  (let ((k (skip-space s j)))
+                    (if (integer>=? k (string-length s))
+                        (list attrs #f k)
+                        (let ((ch (string-nth s k)))
+                          (if (string=? ch ">")
+                              (list attrs #f k)
+                              (if (string=? ch "/")
+                                  (list attrs #t (integer+ k 1))
+                                  (let ((ne (name-end s k)))
+                                    (if (integer=? ne k)
+                                        ; A character that cannot begin a name
+                                        ; is skipped rather than ending the tag.
+                                        (loop (integer+ k 1) attrs)
+                                        (let ((name (string-downcase (string-slice s k ne))))
+                                          (let ((after (skip-space s ne)))
+                                            (if (and (integer<? after (string-length s))
+                                                     (string=? (string-nth s after) "="))
+                                                (let ((vstart (skip-space s (integer+ after 1))))
+                                                  (if (integer>=? vstart (string-length s))
+                                                      (list (dict-with attrs name "") #f vstart)
+                                                      (let ((quote-char (string-nth s vstart)))
+                                                        (if (or (string=? quote-char "\"")
+                                                                (string=? quote-char "'"))
+                                                            (let ((close (find-char s quote-char (integer+ vstart 1))))
+                                                              (loop
+                                                                (integer+ close 1)
+                                                                (dict-with
+                                                                  attrs
+                                                                  name
+                                                                  (decode-references s (integer+ vstart 1) close))))
+                                                            (let ((vend (unquoted-end s vstart)))
+                                                              (loop
+                                                                vend
+                                                                (dict-with
+                                                                  attrs
+                                                                  name
+                                                                  (decode-references s vstart vend))))))))
+                                                (loop after (dict-with attrs name "")))))))))))))))
+           (loop i (dict)))))
+
+      ; Parse a start tag at `i` (the position of "<").  Returns
+      ; (list <tag-name> <attrs-dict> <self-closing?> <index-after-tag>).
+      (parse-start-tag
+       (lambda (s i)
+         (let ((ne (name-end s (integer+ i 1))))
+           (let ((name (string-downcase (string-slice s (integer+ i 1) ne))))
+             (let ((parsed (parse-attributes s ne)))
+               (let ((attrs (list-first parsed))
+                     (slash (list-nth parsed 1))
+                     (stop (list-nth parsed 2)))
+                 (let ((gt (find-char s ">" stop)))
+                   (list name attrs slash (integer+ gt 1)))))))))
+
+      ; #t when the end tag at `i` names `tag`.
+      (end-tag-names?
+       (lambda (s i tag)
+         (and (starts-at? s i "</")
+              (let ((ne (name-end s (integer+ i 2))))
+                (string=? (string-downcase (string-slice s (integer+ i 2) ne)) tag)))))
+
+      ; Parse the raw text of a script or style element, starting at `i`.  The
+      ; content runs to the matching end tag.  Returns
+      ; (list <children-list> <index-after-end-tag>).
+      (parse-raw-text
+       (lambda (s i tag)
+         (let ((loop
+                (lambda (j)
+                  (if (integer>=? j (string-length s))
+                      j
+                      (if (end-tag-names? s j tag)
+                          j
+                          (loop (integer+ j 1)))))))
+           (let ((end (loop i)))
+             (let ((text (string-slice s i end)))
+               (if (integer>=? end (string-length s))
+                   (list
+                     (if (string=? text "")
+                         (list)
+                         (list text))
+                     end)
+                   (let ((gt (find-char s ">" end)))
+                     (list
+                       (if (string=? text "")
+                           (list)
+                           (list text))
+                       (integer+ gt 1)))))))))
+
+      ; Parse a comment at `i` (the position of "<!--").  Returns
+      ; (list <node> <index-after-comment>).
+      (parse-comment
+       (lambda (s i)
+         (let ((body-start (integer+ i 4)))
+           (if (starts-at? s body-start ">")
+               (list (dict "tag" "!--" "attrs" (dict) "children" (list)) (integer+ body-start 1))
+               (let ((close (find-string s "-->" body-start)))
+                 (if (none? close)
+                     (list
+                       (dict "tag" "!--" "attrs" (dict) "children" (list (string-slice s body-start (string-length s))))
+                       (string-length s))
+                     (list
+                       (dict "tag" "!--" "attrs" (dict) "children" (list (string-slice s body-start close)))
+                       (integer+ close 3))))))))
+
+      ; Parse the content of an element from `i` until the element is closed.
+      ; Returns (list <children-list> <index-after-close>).  `tag` is the open
+      ; element's name and `open` is the list of names of the elements open
+      ; around it, outermost first.
+      (parse-content
+       (lambda (s i tag open)
+         (let ((loop
+                (lambda (j acc)
+                  (if (integer>=? j (string-length s))
+                      (list (list-reverse acc) j)
+                      (if (string=? (string-nth s j) "<")
+                          (if (starts-at? s j "<!--")
+                              (let ((parsed (parse-comment s j)))
+                                (loop (list-nth parsed 1) (list-prepend acc (list-first parsed))))
+                              (if (starts-at? s j "<!")
+                                  ; A declaration other than a comment is skipped
+                                  ; to its ">".
+                                  (let ((close (find-char s ">" j)))
+                                    (loop (integer+ close 1) acc))
+                                  (if (starts-at? s j "</")
+                                      (let ((ne (name-end s (integer+ j 2))))
+                                        (let ((name (string-downcase (string-slice s (integer+ j 2) ne))))
+                                          (let ((close (find-char s ">" j)))
+                                            (if (string=? name tag)
+                                                (list (list-reverse acc) (integer+ close 1))
+                                                (if (list-member? open name)
+                                                    ; The end tag closes an
+                                                    ; ancestor: this element is
+                                                    ; implicitly closed and the
+                                                    ; ancestor's parser resumes.
+                                                    (list (list-reverse acc) j)
+                                                    ; No element of that name is
+                                                    ; open, so the end tag is
+                                                    ; ignored.
+                                                    (loop (integer+ close 1) acc))))))
+                                      (if (starts-at? s j "<>")
+                                          (loop (integer+ j 2) acc)
+                                          (let ((ne (name-end s (integer+ j 1))))
+                                            (if (integer=? ne (integer+ j 1))
+                                                ; The "<" is not followed by a name, so it
+                                                ; does not begin a tag: it is a literal
+                                                ; character, and the scan resumes after it.
+                                                (loop (integer+ j 1) (append-text acc "<"))
+                                                (let ((child (string-downcase (string-slice s (integer+ j 1) ne))))
+                                                  (if (and (set-member? self-closing-on-start child)
+                                                           (string=? child tag))
+                                                      ; A sibling start tag closes this
+                                                      ; element: the parent resumes at it.
+                                                      (list (list-reverse acc) j)
+                                                      (let ((parsed (parse-element s j (list-prepend open tag))))
+                                                        (loop
+                                                          (list-nth parsed 1)
+                                                          (list-prepend acc (list-first parsed))))))))))))
+                          (let ((text (decode-text s j)))
+                            (loop (list-nth text 1) (append-text acc (list-first text)))))))))
+           (loop i (list)))))
+
+      ; Parse a complete element at `i` (the position of "<").  Returns
+      ; (list <element-dict> <index-after-element>).  `open` is the list of
+      ; names of the elements open around this one, outermost first.
+      (parse-element
+       (lambda (s i open)
+         (let ((start (parse-start-tag s i)))
+           (let ((tag (list-first start))
+                 (attrs (list-nth start 1))
+                 (self-closing (list-nth start 2))
+                 (after (list-nth start 3)))
+             (if (or self-closing
+                     (set-member? void-elements tag))
+                 (list (dict "tag" tag "attrs" attrs "children" (list)) after)
+                 (if (set-member? raw-text-elements tag)
+                     (let ((content (parse-raw-text s after tag)))
+                       (list (dict "tag" tag "attrs" attrs "children" (list-first content)) (list-nth content 1)))
+                     (let ((content (parse-content s after tag open)))
+                       (list (dict "tag" tag "attrs" attrs "children" (list-first content)) (list-nth content 1)))))))))
+
+      ; Parse a doctype declaration at `i` (the position of "<").  Returns
+      ; (list <node> <index-after-declaration>).
+      (parse-doctype
+       (lambda (s i)
+         (let ((gt (find-char s ">" i)))
+           (list
+             (dict "tag" "!doctype" "attrs" (dict) "children" (list (string-trim (string-slice s (integer+ i 9) gt))))
+             (integer+ gt 1)))))
+
+      ; Parse a document into a list of its top-level nodes.  It is the inverse
+      ; of html-encode's encode.
+      (decode
+       (lambda (s)
+         (if (string? s)
+             (let ((loop
+                    (lambda (j acc)
+                      (if (integer>=? j (string-length s))
+                          (list-reverse acc)
+                          (if (string=? (string-nth s j) "<")
+                              (if (starts-at? s j "<!--")
+                                  (let ((parsed (parse-comment s j)))
+                                    (loop (list-nth parsed 1) (list-prepend acc (list-first parsed))))
+                                  (if (starts-at? s j "<!DOCTYPE")
+                                      (let ((parsed (parse-doctype s j)))
+                                        (loop (list-nth parsed 1) (list-prepend acc (list-first parsed))))
+                                      (if (starts-at? s j "<!")
+                                          (let ((close (find-char s ">" j)))
+                                            (loop (integer+ close 1) acc))
+                                          (if (starts-at? s j "</")
+                                              ; A stray end tag at top level is
+                                              ; ignored.
+                                              (let ((close (find-char s ">" j)))
+                                                (loop (integer+ close 1) acc))
+                                              (if (starts-at? s j "<>")
+                                                  (loop (integer+ j 2) acc)
+                                                  (let ((ne (name-end s (integer+ j 1))))
+                                                    (if (integer=? ne (integer+ j 1))
+                                                        ; The "<" is not followed by a name,
+                                                        ; so it does not begin a tag: it is a
+                                                        ; literal character, and the scan
+                                                        ; resumes after it.
+                                                        (loop (integer+ j 1) (append-text acc "<"))
+                                                        (let ((parsed (parse-element s j (list))))
+                                                          (loop
+                                                            (list-nth parsed 1)
+                                                            (list-prepend acc (list-first parsed)))))))))))
+                              (let ((text (decode-text s j)))
+                                (loop (list-nth text 1) (append-text acc (list-first text)))))))))
+               (loop 0 (list)))
+             (error "html-decode: decode expects a string")))))
+
+  (export decode))

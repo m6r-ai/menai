@@ -1,0 +1,218 @@
+; Tests for html-encode.menai
+
+(let ((html-encode (import "html-encode"))
+      (html-decode (import "html-decode"))
+      (t (import "menai-test"))
+      (encode (:: html-encode encode))
+      (decode (:: html-decode decode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
+
+      (el
+       (lambda (tag attrs children)
+         (dict "tag" tag "attrs" attrs "children" children)))
+
+      ; An empty node list encodes to the empty string.
+      (test-empty
+       (lambda ()
+         (assert-equal (encode (list)) "")))
+
+      ; An empty text node encodes to the empty string.
+      (test-empty-text
+       (lambda ()
+         (assert-equal (encode (list "")) "")))
+
+      ; An element with no children is written with an explicit end tag, not
+      ; self-closing, because HTML has no self-closing syntax.
+      (test-childless-element
+       (lambda ()
+         (assert-equal (encode (list (el "div" (dict) (list)))) "<div></div>")))
+
+      ; A void element is written the same way, with an explicit end tag.
+      (test-void-element
+       (lambda ()
+         (assert-equal (encode (list (el "br" (dict) (list)))) "<br></br>")))
+
+      ; A nested element is written inside its parent.
+      (test-nested-element
+       (lambda ()
+         (assert-equal (encode (list (el "p" (dict) (list (el "b" (dict) (list "x")))))) "<p><b>x</b></p>")))
+
+      ; Text content is written inline.
+      (test-element-with-text
+       (lambda ()
+         (assert-equal (encode (list (el "p" (dict) (list "x")))) "<p>x</p>")))
+
+      ; Mixed content is written in order.
+      (test-mixed-content
+       (lambda ()
+         (assert-equal (encode (list (el "p" (dict) (list "a" (el "b" (dict) (list "c")) "d")))) "<p>a<b>c</b>d</p>")))
+
+      ; A single attribute is written as name="value".
+      (test-one-attribute
+       (lambda ()
+         (assert-equal (encode (list (el "a" (dict "x" "1") (list)))) "<a x=\"1\"></a>")))
+
+      ; Two attributes are both written.
+      (test-two-attributes
+       (lambda ()
+         (assert-equal (encode (list (el "p" (dict "a" "1" "b" "2") (list)))) "<p a=\"1\" b=\"2\"></p>")))
+
+      ; Text escapes "&", "<", and ">".
+      (test-escapes-text
+       (lambda ()
+         (assert-equal (encode (list "a & b < c > d")) "a &amp; b &lt; c &gt; d")))
+
+      ; An attribute value escapes "&", "<", ">", and the double quote.
+      (test-escapes-attribute
+       (lambda ()
+         (assert-equal (encode (list (el "a" (dict "x" "\"&<>") (list)))) "<a x=\"&quot;&amp;&lt;&gt;\"></a>")))
+
+      ; A non-ASCII character is written literally.
+      (test-non-ascii-literal
+       (lambda ()
+         (assert-equal (encode (list "café")) "café")))
+
+      ; A comment node is written as a comment.
+      (test-comment
+       (lambda ()
+         (assert-equal (encode (list (dict "tag" "!--" "attrs" (dict) "children" (list " c ")))) "<!-- c -->")))
+
+      ; An empty comment is written as an empty comment.
+      (test-empty-comment
+       (lambda ()
+         (assert-equal (encode (list (dict "tag" "!--" "attrs" (dict) "children" (list)))) "<!---->")))
+
+      ; A doctype node is written as a declaration.
+      (test-doctype
+       (lambda ()
+         (assert-equal
+           (encode (list (dict "tag" "!doctype" "attrs" (dict) "children" (list "html"))))
+           "<!DOCTYPE html>")))
+
+      ; A doctype's text is not escaped, because it is a declaration rather than
+      ; content.
+      (test-doctype-text-not-escaped
+       (lambda ()
+         (assert-equal
+           (encode (list (dict "tag" "!doctype" "attrs" (dict) "children" (list "html"))))
+           "<!DOCTYPE html>")))
+
+      ; A value that is not a list of nodes is rejected.
+      (test-rejects-non-list
+       (lambda ()
+         (encode 42)))
+
+      ; A child that is neither a string nor an element dict is rejected.
+      (test-rejects-bad-child
+       (lambda ()
+         (encode (list 42))))
+
+      ; A non-string tag is rejected.
+      (test-rejects-non-string-tag
+       (lambda ()
+         (encode (list (dict "tag" 42 "attrs" (dict) "children" (list))))))
+
+      ; A non-dict attrs is rejected.
+      (test-rejects-non-dict-attrs
+       (lambda ()
+         (encode (list (dict "tag" "p" "attrs" 42 "children" (list))))))
+
+      ; A non-list children is rejected.
+      (test-rejects-non-list-children
+       (lambda ()
+         (encode (list (dict "tag" "p" "attrs" (dict) "children" 42)))))
+
+      ; A non-string attribute value is rejected.
+      (test-rejects-non-string-attribute
+       (lambda ()
+         (encode (list (dict "tag" "p" "attrs" (dict "x" 42) "children" (list))))))
+
+      ; A non-string comment child is rejected.
+      (test-rejects-non-string-comment-child
+       (lambda ()
+         (encode (list (dict "tag" "!--" "attrs" (dict) "children" (list 42))))))
+
+      ; An element tree round-trips through encode then decode unchanged.
+      (test-round-trip-element
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>x</p>"))) (decode "<p>x</p>"))))
+
+      ; Mixed content round-trips through encode then decode unchanged.
+      (test-round-trip-mixed-content
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>a<b>c</b>d</p>"))) (decode "<p>a<b>c</b>d</p>"))))
+
+      ; Attributes round-trip through encode then decode unchanged.
+      (test-round-trip-attributes
+       (lambda ()
+         (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>"))) (decode "<a x=\"1\" y=\"2\">t</a>"))))
+
+      ; A comment round-trips through encode then decode unchanged.
+      (test-round-trip-comment
+       (lambda ()
+         (assert-equal (decode (encode (decode "<!-- c -->"))) (decode "<!-- c -->"))))
+
+      ; A doctype round-trips through encode then decode unchanged.
+      (test-round-trip-doctype
+       (lambda ()
+         (assert-equal (decode (encode (decode "<!DOCTYPE html>"))) (decode "<!DOCTYPE html>"))))
+
+      (tests
+       (list
+         (list
+           "elements"
+           (list
+             (expect-pass "empty node list" test-empty)
+             (expect-pass "empty text node" test-empty-text)
+             (expect-pass "childless element" test-childless-element)
+             (expect-pass "void element" test-void-element)
+             (expect-pass "nested element" test-nested-element)
+             (expect-pass "element with text" test-element-with-text)
+             (expect-pass "mixed content" test-mixed-content)))
+
+         (list
+           "attributes"
+           (list (expect-pass "one attribute" test-one-attribute) (expect-pass "two attributes" test-two-attributes)))
+
+         (list
+           "escaping"
+           (list
+             (expect-pass "text is escaped" test-escapes-text)
+             (expect-pass "attribute value is escaped" test-escapes-attribute)
+             (expect-pass "non-ASCII is literal" test-non-ascii-literal)))
+
+         (list
+           "declarations"
+           (list
+             (expect-pass "comment" test-comment)
+             (expect-pass "empty comment" test-empty-comment)
+             (expect-pass "doctype" test-doctype)
+             (expect-pass "doctype text is not escaped" test-doctype-text-not-escaped)))
+
+         (list
+           "round-trips"
+           (list
+             (expect-pass "element" test-round-trip-element)
+             (expect-pass "mixed content" test-round-trip-mixed-content)
+             (expect-pass "attributes" test-round-trip-attributes)
+             (expect-pass "comment" test-round-trip-comment)
+             (expect-pass "doctype" test-round-trip-doctype)))
+
+         (list
+           "errors"
+           (list
+             (expect-fail "rejects a non-list argument" test-rejects-non-list "expects a list of nodes")
+             (expect-fail "rejects a bad child" test-rejects-bad-child "must be a string or an element dict")
+             (expect-fail "rejects a non-string tag" test-rejects-non-string-tag "\"tag\" must be a string")
+             (expect-fail "rejects a non-dict attrs" test-rejects-non-dict-attrs "\"attrs\" must be a dict")
+             (expect-fail "rejects a non-list children" test-rejects-non-list-children "\"children\" must be a list")
+             (expect-fail "rejects a non-string attribute value"
+                          test-rejects-non-string-attribute
+                          "value must be a string")
+             (expect-fail "rejects a non-string comment child"
+                          test-rejects-non-string-comment-child
+                          "must be a string"))))))
+
+  (export tests))

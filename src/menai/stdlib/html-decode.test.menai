@@ -1,0 +1,283 @@
+; Tests for html-decode.menai
+
+(let ((html-decode (import "html-decode"))
+      (html-encode (import "html-encode"))
+      (t (import "menai-test"))
+      (decode (:: html-decode decode))
+      (encode (:: html-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
+
+      (el
+       (lambda (tag attrs children)
+         (dict "tag" tag "attrs" attrs "children" children)))
+
+      ; A document with one element decodes to a one-element list of nodes.
+      (test-single-element
+       (lambda ()
+         (assert-equal (decode "<p>x</p>") (list (el "p" (dict) (list "x"))))))
+
+      ; A fragment with text around an element decodes to top-level nodes in order.
+      (test-fragment
+       (lambda ()
+         (assert-equal (decode "a <b>c</b>") (list "a " (el "b" (dict) (list "c"))))))
+
+      ; An element's tag is lowercased.
+      (test-tag-lowercased
+       (lambda ()
+         (assert-equal (decode "<DIV></DIV>") (list (el "div" (dict) (list))))))
+
+      ; An attribute name is lowercased and its value kept.
+      (test-attribute-lowercased
+       (lambda ()
+         (assert-equal (dict-get (list-first (decode "<a HREF=\"x\">t</a>")) "attrs") (dict "href" "x"))))
+
+      ; A single-quoted attribute value is captured.
+      (test-single-quoted-attribute
+       (lambda ()
+         (assert-equal (dict-get (list-first (decode "<a x='1'></a>")) "attrs") (dict "x" "1"))))
+
+      ; An unquoted attribute value is captured.
+      (test-unquoted-attribute
+       (lambda ()
+         (assert-equal (dict-get (list-first (decode "<a x=1></a>")) "attrs") (dict "x" "1"))))
+
+      ; An attribute with no value gets the empty string.
+      (test-valueless-attribute
+       (lambda ()
+         (assert-equal (dict-get (list-first (decode "<input disabled>")) "attrs") (dict "disabled" ""))))
+
+      ; A void element needs no end tag and has no children.
+      (test-void-element
+       (lambda ()
+         (assert-equal (decode "<br>") (list (el "br" (dict) (list))))))
+
+      ; A void element written self-closing decodes the same way.
+      (test-void-element-self-closing
+       (lambda ()
+         (assert-equal (decode "<br/>") (list (el "br" (dict) (list))))))
+
+      ; A void element does not swallow the content that follows it.
+      (test-void-element-does-not-swallow
+       (lambda ()
+         (assert-equal (decode "<p>a<br>b</p>") (list (el "p" (dict) (list "a" (el "br" (dict) (list)) "b"))))))
+
+      ; A self-closing non-void element has no children.
+      (test-self-closing-element
+       (lambda ()
+         (assert-equal (decode "<div/>") (list (el "div" (dict) (list))))))
+
+      ; An end tag closes the nearest open element with that name.
+      (test-nested-elements
+       (lambda ()
+         (assert-equal (decode "<a><b></b></a>") (list (el "a" (dict) (list (el "b" (dict) (list))))))))
+
+      ; A sibling start tag closes an element that cannot contain it.
+      (test-omitted-end-tag
+       (lambda ()
+         (assert-equal
+           (decode "<ul><li>a<li>b</ul>")
+           (list (el "ul" (dict) (list (el "li" (dict) (list "a")) (el "li" (dict) (list "b"))))))))
+
+      ; An element left open at end of input is closed implicitly.
+      (test-unclosed-element
+       (lambda ()
+         (assert-equal (decode "<p>unclosed") (list (el "p" (dict) (list "unclosed"))))))
+
+      ; An end tag that closes an ancestor closes the intervening elements.
+      (test-end-tag-closes-ancestor
+       (lambda ()
+         (assert-equal (decode "<div><p>x</div>") (list (el "div" (dict) (list (el "p" (dict) (list "x"))))))))
+
+      ; An end tag with no open element of that name is ignored.
+      (test-stray-end-tag
+       (lambda ()
+         (assert-equal (decode "<p>a</b>b</p>") (list (el "p" (dict) (list "ab"))))))
+
+      ; Script content is raw text, so "<" inside it does not begin a tag.
+      (test-script-raw-text
+       (lambda ()
+         (assert-equal (decode "<script>if (a<b) {}</script>") (list (el "script" (dict) (list "if (a<b) {}"))))))
+
+      ; Style content is raw text.
+      (test-style-raw-text
+       (lambda ()
+         (assert-equal (decode "<style>a>b{}</style>") (list (el "style" (dict) (list "a>b{}"))))))
+
+      ; The five predefined entities are decoded.
+      (test-predefined-entities
+       (lambda ()
+         (assert-equal (decode "<p>&amp;&lt;&gt;&quot;&apos;</p>") (list (el "p" (dict) (list "&<>\"'"))))))
+
+      ; A named HTML entity is decoded.
+      (test-named-entity
+       (lambda ()
+         (assert-equal
+           (decode "<p>a&nbsp;b</p>")
+           (list (el "p" (dict) (list (string-concat "a" (integer-codepoint->string 160) "b")))))))
+
+      ; A decimal character reference is decoded.
+      (test-decimal-reference
+       (lambda ()
+         (assert-equal (decode "<p>&#38;</p>") (list (el "p" (dict) (list "&"))))))
+
+      ; A hexadecimal character reference is decoded.
+      (test-hex-reference
+       (lambda ()
+         (assert-equal (decode "<p>&#x26;</p>") (list (el "p" (dict) (list "&"))))))
+
+      ; An unknown named reference is left as literal text.
+      (test-unknown-entity
+       (lambda ()
+         (assert-equal (decode "<p>&bogus;</p>") (list (el "p" (dict) (list "&bogus;"))))))
+
+      ; A stray "&" that does not begin a reference is literal text.
+      (test-bare-ampersand
+       (lambda ()
+         (assert-equal (decode "<p>a & b</p>") (list (el "p" (dict) (list "a & b"))))))
+
+      ; A reference in an attribute value is decoded.
+      (test-attribute-reference
+       (lambda ()
+         (assert-equal (dict-get (list-first (decode "<a x=\"&quot;q&quot;\"></a>")) "attrs") (dict "x" "\"q\""))))
+
+      ; A comment is carried as a node with the reserved tag.
+      (test-comment
+       (lambda ()
+         (assert-equal (decode "<!-- c -->") (list (dict "tag" "!--" "attrs" (dict) "children" (list " c "))))))
+
+      ; A comment inside an element is a child node.
+      (test-comment-inside-element
+       (lambda ()
+         (assert-equal
+           (decode "<p><!-- c --></p>")
+           (list (el "p" (dict) (list (dict "tag" "!--" "attrs" (dict) "children" (list " c "))))))))
+
+      ; A doctype is carried as a node with the reserved tag.
+      (test-doctype
+       (lambda ()
+         (assert-equal
+           (decode "<!DOCTYPE html><p>x</p>")
+           (list (dict "tag" "!doctype" "attrs" (dict) "children" (list "html")) (el "p" (dict) (list "x"))))))
+
+      ; A "<" that does not begin a tag is text.
+      (test-stray-less-than
+       (lambda ()
+         (assert-equal (decode "<p>a < b</p>") (list (el "p" (dict) (list "a < b"))))))
+
+      ; An empty document decodes to no nodes.
+      (test-empty-document
+       (lambda ()
+         (assert-equal (decode "") (list))))
+
+      ; A non-string argument is rejected.
+      (test-rejects-non-string
+       (lambda ()
+         (decode 42)))
+
+      ; An element tree round-trips through encode then decode unchanged.
+      (test-round-trip-nested
+       (lambda ()
+         (assert-equal
+           (decode (encode (decode "<r><a><b>x</b></a><c></c></r>")))
+           (decode "<r><a><b>x</b></a><c></c></r>"))))
+
+      ; Mixed content round-trips through encode then decode unchanged.
+      (test-round-trip-mixed-content
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>Hello <b>world</b>!</p>"))) (decode "<p>Hello <b>world</b>!</p>"))))
+
+      ; Attributes round-trip through encode then decode unchanged.
+      (test-round-trip-attributes
+       (lambda ()
+         (assert-equal (decode (encode (decode "<a x=\"1\" y=\"2\">t</a>"))) (decode "<a x=\"1\" y=\"2\">t</a>"))))
+
+      ; Escaped characters round-trip through encode then decode unchanged.
+      (test-round-trip-escapes
+       (lambda ()
+         (assert-equal (decode (encode (decode "<p>a &amp; b &lt; c</p>"))) (decode "<p>a &amp; b &lt; c</p>"))))
+
+      ; A comment and doctype round-trip through encode then decode unchanged.
+      (test-round-trip-declarations
+       (lambda ()
+         (assert-equal
+           (decode (encode (decode "<!DOCTYPE html><!-- c --><p>x</p>")))
+           (decode "<!DOCTYPE html><!-- c --><p>x</p>"))))
+
+      ; Elements an omitted end tag produced round-trip through encode then decode unchanged.
+      (test-round-trip-omitted-end-tags
+       (lambda ()
+         (assert-equal (decode (encode (decode "<ul><li>a<li>b</ul>"))) (decode "<ul><li>a<li>b</ul>"))))
+
+      (tests
+       (list
+         (list
+           "structure"
+           (list
+             (expect-pass "single element" test-single-element)
+             (expect-pass "fragment" test-fragment)
+             (expect-pass "tag is lowercased" test-tag-lowercased)
+             (expect-pass "nested elements" test-nested-elements)
+             (expect-pass "empty document" test-empty-document)
+             (expect-pass "stray less-than is text" test-stray-less-than)))
+
+         (list
+           "attributes"
+           (list
+             (expect-pass "attribute name is lowercased" test-attribute-lowercased)
+             (expect-pass "single-quoted value" test-single-quoted-attribute)
+             (expect-pass "unquoted value" test-unquoted-attribute)
+             (expect-pass "valueless attribute" test-valueless-attribute)
+             (expect-pass "reference in a value" test-attribute-reference)))
+
+         (list
+           "recovery"
+           (list
+             (expect-pass "void element" test-void-element)
+             (expect-pass "void element written self-closing" test-void-element-self-closing)
+             (expect-pass "void element does not swallow content" test-void-element-does-not-swallow)
+             (expect-pass "self-closing element" test-self-closing-element)
+             (expect-pass "omitted end tag" test-omitted-end-tag)
+             (expect-pass "unclosed element" test-unclosed-element)
+             (expect-pass "end tag closes an ancestor" test-end-tag-closes-ancestor)
+             (expect-pass "stray end tag" test-stray-end-tag)))
+
+         (list
+           "raw-text"
+           (list
+             (expect-pass "script content is raw text" test-script-raw-text)
+             (expect-pass "style content is raw text" test-style-raw-text)))
+
+         (list
+           "character-references"
+           (list
+             (expect-pass "predefined entities" test-predefined-entities)
+             (expect-pass "named entity" test-named-entity)
+             (expect-pass "decimal reference" test-decimal-reference)
+             (expect-pass "hex reference" test-hex-reference)
+             (expect-pass "unknown entity is literal" test-unknown-entity)
+             (expect-pass "bare ampersand is literal" test-bare-ampersand)))
+
+         (list
+           "declarations"
+           (list
+             (expect-pass "comment" test-comment)
+             (expect-pass "comment inside an element" test-comment-inside-element)
+             (expect-pass "doctype" test-doctype)))
+
+         (list
+           "round-trips"
+           (list
+             (expect-pass "nested structure" test-round-trip-nested)
+             (expect-pass "mixed content" test-round-trip-mixed-content)
+             (expect-pass "attributes" test-round-trip-attributes)
+             (expect-pass "escapes survive the round-trip" test-round-trip-escapes)
+             (expect-pass "declarations" test-round-trip-declarations)
+             (expect-pass "omitted end tags" test-round-trip-omitted-end-tags)))
+
+         (list
+           "errors"
+           (list (expect-fail "decode rejects a non-string argument" test-rejects-non-string "expects a string"))))))
+
+  (export tests))

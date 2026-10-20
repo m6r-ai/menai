@@ -123,3 +123,4 @@ What costs, risks, or constraints does this decision impose?
 | [0052](0052-regular-expression-captures.md) | Regular-expression captures | Accepted |
 | [0053](0053-paren-diagnostics-locate-the-line-to-change.md) | Paren diagnostics locate the line to change, not the symptom | Accepted |
 | [0054](0054-let-is-the-only-binding-form.md) | `let` is the only binding form | Accepted |
+| [0055](0055-html-codec-capture-layer.md) | HTML codec — the tag capture layer | Accepted |

@@ -21,6 +21,7 @@ New features:
 - Removed the `Correct:`/`Incorrect:` toy examples from syntax errors.  They
   restated the rule with generic code unrelated to the source being compiled.
   Examples that show the shape of a form the reader may not know are kept.
+- Added `html-decode` and `html-encode` modules to the standard library.
 
 Bug fixes:
 
