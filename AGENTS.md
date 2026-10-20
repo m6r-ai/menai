@@ -422,15 +422,42 @@ types declared by the enclosing lexical binders, exactly like any other name.
 A struct type is not visible outside the binder that declares it, and two
 struct types with the same name in different scopes are distinct.
 
-Struct declarations are the one exception to `let` being parallel: a struct
-binding is hoisted so that sibling binding values and the body can use it as a
-constructor or pattern head. Ordinary `let` bindings are not hoisted.
+A struct declaration in a `let` is hoisted so that sibling binding values and the
+body can use it as a constructor or pattern head. This is not an exception to how
+`let` binds names — every `let` binding is visible to every sibling value (see
+below) — it is only that a struct type is used in *head* position, where the
+desugarer must resolve it before it can desugar the form at all.
 
 Consequence: a struct type exported from a module and rebound by the importer
 (e.g. bound from a namespace member) *is* recognised as a struct by name, because
 binding it to a local name puts the declaration in the importer's lexical scope.
 An imported struct is used as a constructor and pattern head exactly like a locally
 declared one; the importer binds the member to a local name first (see ADR-0023).
+
+### `let` bindings are mutually visible; evaluation is dependency-ordered
+
+`let` is the only binding form, and it is recursive in scope: every binding name
+is visible to every binding value and to the body, regardless of source order.
+`(let ((y (integer* x 2)) (x 5)) ...)` is valid and evaluates `y` to 10.
+
+Evaluation order is computed, not written. `MenaiASTDependencyAnalyzer` groups the
+bindings into strongly-connected components and the desugarer emits them in
+topological order as nested `$let` (acyclic) and `$letrec` (a genuine cycle)
+forms. A chain of dependent bindings is therefore written as one flat `let`, and
+the desugarer reintroduces the nesting. Do not infer from the presence of nested
+`$let` nodes in the IR that the source had nested `let` forms, and do not
+"simplify" a flat `let` containing dependencies into nested source `let`s — the
+desugarer will re-split it, so the change is cosmetic at best.
+
+The one restriction is that a non-lambda binding may not depend on another
+non-lambda binding in the same group: neither has a value when the other is
+evaluated, so there is no base case. This covers both a direct self-reference and
+a cycle between two computed bindings, and is enforced by the CFG builder
+(`_build_letrec` Phase 2b). A reference shielded by a lambda is fine, because the
+lambda body runs later; that is what makes self-recursion and mutual recursion
+work. A lambda binding may read any sibling.
+
+See [ADR-0054](docs/adr/0054-let-is-the-only-binding-form.md).
 
 ### Modules export named bindings; namespaces are second-class
 

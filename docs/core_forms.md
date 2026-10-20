@@ -17,8 +17,8 @@ itself and the other bindings in the form.
 → 15
 ```
 
-Because all names are in scope throughout, a later binding can reference an
-earlier one. This covers the case other Lisps spell `let*`:
+Because all names are in scope throughout, a binding can reference a sibling
+written before it *or* after it. Source order carries no meaning:
 
 ```menai
 (let ((x 5) (y (integer* x 2)))
@@ -26,9 +26,19 @@ earlier one. This covers the case other Lisps spell `let*`:
 → 15
 ```
 
-The dependency analyser orders the bindings, and any binding that does not
-actually participate in a cycle is hoisted to a parallel group internally, so
-writing a sequential chain costs nothing at runtime.
+```menai
+(let ((y (integer* x 2)) (x 5))
+  (integer+ x y))
+→ 15
+```
+
+This covers the case other Lisps spell `let*`, but it is not the same thing. A
+`let*` evaluates its bindings in source order; Menai evaluates them in dependency
+order, computed from which bindings reference which. A chain of dependent
+bindings is therefore written as one flat `let`, and the desugarer reintroduces
+whatever nesting the dependencies require. Any binding that does not actually
+participate in a cycle is hoisted to a parallel group internally, so writing a
+sequential chain costs nothing at runtime.
 
 ### Recursion
 
@@ -117,13 +127,24 @@ under a different name to pass it down:
 
 ### Self-reference
 
-A non-lambda binding may not refer to itself, since its value would have nothing
-to read. Wrap the reference in a lambda to defer it:
+A non-lambda binding may not depend on another non-lambda binding in the same
+group, since neither has a value when the other is evaluated. This covers both a
+direct self-reference and a cycle between two computed bindings:
 
 ```menai
 (let ((x (integer+ x 1))) x)   ; ERROR: cannot refer to itself
+(let ((a (integer* b 2)) (b (integer* a 3))) a)   ; ERROR: no base case
 (let ((x (list (lambda () x)))) x)   ; OK: reference is deferred
 ```
+
+Reading a *lambda* sibling is always fine, because the closure exists before any
+non-lambda value in the group is computed. A reference shielded by a lambda is
+also fine, because the lambda body runs later. That is the boundary between a
+recursive group, which is meaningful, and a cyclic one, which is not.
+
+This restriction is what makes the dependency ordering well-defined: a binding
+that depends on itself has no topological position. See
+[ADR-0054](adr/0054-let-is-the-only-binding-form.md).
 
 ## No sequencing form
 

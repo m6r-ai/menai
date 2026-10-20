@@ -22,6 +22,15 @@ out not to be recursive into a `let`. So `letrec` already subsumed both other
 forms internally, and the parallel/sequential distinction was recomputed rather
 than declared.
 
+The surviving form takes its **scoping** from `letrec` — all siblings visible to
+all values — but not its **evaluation strategy**. `letrec` conventionally leaves
+the order of binding evaluation unspecified, so a `letrec` whose values depend on
+each other in a non-trivial way is undefined behaviour. Menai instead computes an
+evaluation order from the dependency graph, which is what makes a single flat
+`let` usable for ordinary sequential code. That difference is the subject of the
+"Evaluation order is dependency-ordered" section below, and it is the reason the
+form cannot simply be described as `letrec` under another name.
+
 Two further pressures pointed the same way:
 
 - A language used by AI agents benefits from a small core. Three binding forms
@@ -68,8 +77,59 @@ binding form and is rejected as an unbound head.
 `let` rejects duplicate binding names. A recursive group defines each name once,
 so a repeated name is ambiguous rather than a shadow; to shadow, nest a `let`.
 
-A non-lambda binding may not refer to itself, since its value would have nothing
-to read. The reference may be deferred inside a lambda.
+A non-lambda binding may not depend on another non-lambda binding in the same
+group, since neither has a value when the other is evaluated. This covers both a
+direct self-reference and a cycle between two computed bindings; the reference
+may be deferred inside a lambda.
+
+### Evaluation order is dependency-ordered
+
+Sibling visibility alone does not determine what a `let` means, because a group
+whose values reference each other still has to be evaluated in *some* order.
+Menai computes that order rather than leaving it unspecified:
+
+- `MenaiASTDependencyAnalyzer` builds a dependency graph over the binding names
+  and finds its strongly-connected components with Tarjan's algorithm, returning
+  them in topological order (dependencies before dependents).
+- The desugarer emits one binding form per run of components, innermost-last, so
+  each component's body is the already-built inner expression. Acyclic components
+  become `$let`; a genuine cycle becomes `$letrec`.
+- Consecutive acyclic components are sub-partitioned greedily into flat `$let`
+  batches. A binding joins the current batch unless it depends on a name already
+  in that batch, in which case a new nested `$let` begins. Nesting depth is
+  therefore proportional to the number of inter-sibling dependencies, not to the
+  total number of bindings — which is what keeps a large module's top-level `let`
+  from becoming a chain of hundreds of nested forms.
+
+Two consequences follow, and both are easy to get wrong:
+
+- **Source order is irrelevant.** `(let ((y (integer* x 2)) (x 5)) ...)` is valid
+  and evaluates `y` to 10, because the dependency analyser places `x` first. The
+  order in which bindings are written carries no meaning.
+- **Nested source `let`s are not required for sequencing, and do not survive
+  desugaring as written.** A flat `let` whose bindings depend on each other is
+  re-split into nested `$let` nodes by the desugarer. Rewriting such a `let` into
+  nested source `let`s is therefore cosmetic: it changes the source, not the IR.
+
+This is the property that most clearly separates Menai's `let` from Scheme's
+`letrec`. In Scheme, `letrec` leaves the evaluation order of the initialisers
+unspecified and a `letrec` whose initialisers depend on each other in a
+non-trivial way is undefined; the conventional advice is to use `let*` instead.
+Menai has no `let*`, so the ordering must be defined, and it is defined by the
+dependency graph.
+
+### The self-reference restriction is what makes ordering well-defined
+
+A non-lambda binding that depends on a sibling non-lambda binding has no
+topological position: neither value exists before the other is computed. Rather
+than leaving this undefined, the CFG builder rejects it at compile time, in
+`_build_letrec` Phase 2b. The check covers a direct self-reference and a cycle
+between two computed bindings, and reports them as distinct errors.
+
+Reading a *lambda* sibling is always fine, because the closure exists before any
+non-lambda value in the group is computed. A read shielded by a lambda is also
+fine, because the lambda body runs later. This is precisely the boundary between
+"recursive, and therefore meaningful" and "cyclic, and therefore meaningless".
 
 ### Internal nodes
 
@@ -166,6 +226,21 @@ Rejected. `let` is the name users expect for local bindings, and the recursive
 semantics are an implementation detail of how bindings are ordered. Naming the
 only form `letrec` would foreground a distinction the language no longer makes.
 
+It would also misdescribe the form. Scheme's `letrec` leaves initialiser
+evaluation order unspecified, so a `letrec` whose initialisers depend on each
+other is undefined; Menai's `let` defines that order from the dependency graph.
+Calling it `letrec` would invite readers to assume the undefined behaviour, and
+to reach for a `let*` that no longer exists.
+
+### Specify no evaluation order, as `letrec` does
+
+Rejected. If initialiser order were unspecified, every `let` whose values depend
+on each other would be undefined, and since `let*` has been removed there would be
+no way to express ordinary sequential code at all. The dependency analyser
+already had to compute the order in order to hoist non-recursive groups out of
+`letrec`; defining the order merely makes an existing computation observable
+rather than hidden.
+
 ### Keep `let` and `letrec`, drop only `let*`
 
 Rejected. Once `let*` is gone, `let` and `letrec` differ only in whether sibling
@@ -222,6 +297,15 @@ correct model.
   a `let`. No code in the repository relied on it.
 - `let` now rejects duplicate names where `let*` permitted them, so code written
   against the old `let*` must nest instead.
+- Evaluation order is a language guarantee rather than an implementation detail,
+  so the dependency analyser is now part of the language specification and cannot
+  be simplified away. Any future pass that reorders bindings must preserve the
+  order the analyser computes.
+- The scoping and the evaluation strategy pull in different directions, and the
+  form is easy to describe wrongly. `let` is `letrec`-scoped but not
+  `letrec`-ordered, and both the help text and AGENTS.md initially described it
+  as parallel — the opposite of the truth. Documentation for this form needs to
+  state the scoping rule and the ordering rule separately.
 - The `$let`/`$letrec` distinction is a compiler-internal concept that every pass
   touching binding nodes must respect. Passes that inspect a binding node must
   handle both, and the desugarer must emit the correct one for each group it
@@ -229,6 +313,9 @@ correct model.
 - `$let` carries two meanings that must be kept distinct: acyclic, and
   sequentially ordered. A pass that assumes `$let` values are mutually
   independent will mis-handle the match desugarer's extraction temps.
+- Nesting depth in the IR is a function of the dependency graph, not of the
+  source, so a source `let` and its desugared form do not correspond
+  one-to-one. Reading the IR to infer what the source looked like will mislead.
 - Existing code using `letrec` must be rewritten to `let`. This is a breaking
   change to the surface language.
 
