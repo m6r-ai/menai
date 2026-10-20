@@ -35,7 +35,6 @@ from menai.ast.menai_ast import (
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
 from menai.ast.menai_ast import MenaiASTStruct, MenaiASTEnum
-from menai.ast.menai_paren_diagnostic import ParenDiagnosis, early_close_error
 
 
 # Names that are syntax rather than names.  A form headed by one of these is
@@ -82,7 +81,7 @@ class MenaiASTSemanticAnalyzer:
         """Initialize the semantic analyzer."""
         self.source = ""
         self.source_file = ""
-        self._diagnosis: ParenDiagnosis | None = None
+        self._early_close: tuple[int, int, str, int, int] | None = None
         self._next_struct_tag: int = 0
         self._next_enum_tag: int = 0
 
@@ -161,7 +160,7 @@ class MenaiASTSemanticAnalyzer:
         expr: MenaiASTNode,
         source: str = "",
         source_file: str = "",
-        diagnosis: ParenDiagnosis | None = None,
+        early_close: tuple[int, int, str, int, int] | None = None,
     ) -> MenaiASTNode:
         """
         Analyze an expression recursively, validating all special forms.
@@ -170,10 +169,10 @@ class MenaiASTSemanticAnalyzer:
             expr: AST to analyze
             source: Original source code (for error reporting with line/column)
             source_file: Source file name for location display
-            diagnosis: Parenthesis diagnosis for the token stream.  When a
-                structural check fails, it identifies a ')' that closed an
-                enclosing form before its body, which is the misplaced ')' the
-                reader has to change.
+            early_close: The first ')' the parser recorded as closing a form
+                before its body, as (line, column, form_type, open_line,
+                open_column).  When a structural check fails, this identifies
+                the misplaced ')' the reader has to change.
 
         Returns:
             The same AST (unmodified) if validation passes
@@ -185,12 +184,12 @@ class MenaiASTSemanticAnalyzer:
         self.source = source
         self.source_file = source_file
 
-        # The diagnosis is set by the outermost call and kept for the whole
-        # traversal.  Recursive calls pass no diagnosis, so they must not clear
-        # it: a nested form's structural error still needs the diagnosis to tell
-        # whether a misplaced ')' caused it.
-        if diagnosis is not None:
-            self._diagnosis = diagnosis
+        # The early close is set by the outermost call and kept for the whole
+        # traversal.  Recursive calls pass none, so they must not clear it: a
+        # nested form's structural error still needs it to tell whether a
+        # misplaced ')' caused it.
+        if early_close is not None:
+            self._early_close = early_close
 
         # Lists need inspection
         if isinstance(expr, MenaiASTList):
@@ -211,9 +210,9 @@ class MenaiASTSemanticAnalyzer:
         misplaced ')'.
 
         A form with the wrong number of elements is often the symptom of a ')'
-        that closed an enclosing form before its body.  When the diagnosis
-        identifies such a close, it is raised here so the reader is sent to the
-        ')' to change rather than to the form the analyzer happened to flag.
+        that closed an enclosing form before its body.  When the parser recorded
+        such a close, it is raised here so the reader is sent to the ')' to
+        change rather than to the form the analyzer happened to flag.
 
         Args:
             expr: The form whose structural check failed.  Only its position is
@@ -221,21 +220,44 @@ class MenaiASTSemanticAnalyzer:
             form_name: The name of the form whose structural check failed.
 
         Raises:
-            MenaiEvalError: When the diagnosis shows an enclosing form closed
+            MenaiEvalError: When the parser recorded an enclosing form closed
                 before its body.
         """
-        if self._diagnosis is None:
+        if self._early_close is None:
             return
 
         if expr.line is None or expr.column is None:
             return
 
-        error = early_close_error(
-            self._diagnosis, MenaiEvalError, self.source, self.source_file,
-            form_name, expr.line, expr.column,
+        line, column, closed_form, open_line, open_column = self._early_close
+
+        # The form that closed early is this form, so the fault is its own
+        # structural error rather than a misplaced ')' in an enclosing form.
+        if open_line == expr.line and open_column == expr.column:
+            return
+
+        context = (
+            f"The '{form_name}' has the wrong number of elements because the ')' at "
+            f"line {line}, column {column} closed the '{closed_form}' before its body. "
+            f"The elements that follow were read as further elements of the '{form_name}' "
+            f"rather than as the body of the '{closed_form}'. The parentheses balance, "
+            f"so no ')' is missing or extra — it is in the wrong place."
         )
-        if error is not None:
-            raise error
+
+        raise MenaiEvalError(
+            message=(
+                f"'{closed_form}' closed before its body at line {line}, "
+                f"column {column} (reported as '{form_name}' structure error)"
+            ),
+            line=line,
+            column=column,
+            received=f"The ')' at line {line}, column {column} closed the '{closed_form}' before its body",
+            expected=f"A body expression before the ')' that closes the '{closed_form}'",
+            suggestion=f"Move the ')' at line {line}, column {column} to after the body of the '{closed_form}'",
+            context=context,
+            source=self.source,
+            source_file=self.source_file,
+        )
 
     def _analyze_list(self, expr: MenaiASTList) -> MenaiASTList:
         """Analyze a list expression (special form or function call)."""

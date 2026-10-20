@@ -286,18 +286,29 @@ class TestExtraCloseLocation:
 
     def test_extra_close_names_earlier_culprit(self, menai):
         """
-        A ')' that closed a form before its body is named as the likely culprit.
+        A ')' that closed a form before its body is reported as the error.
 
         The provable extra ')' is on the last line, but the mistake the reader
-        has to fix is the earlier ')' that ended the 'let' early.
+        has to fix is the earlier ')' that ended the 'let' early, so the error
+        is located there and the later ')' is described as its consequence.
         """
         with pytest.raises(MenaiASTBuildError) as exc_info:
             menai.evaluate("(let ((x 5)\n      (y 10)))\n  (integer+ x y))\n")
 
+        error = exc_info.value
+        assert error.line == 2
+        assert error.column == 14
+        assert "Extra closing parenthesis at line 2, column 14" in str(error)
+        assert "Remove the ')' at line 2, column 14" in str(error)
+
+    def test_extra_close_reports_the_later_unmatched_close(self, menai):
+        """The unmatched ')' that proves the imbalance is still reported."""
+        with pytest.raises(MenaiASTBuildError) as exc_info:
+            menai.evaluate("(let ((x 5)\n      (y 10)))\n  (integer+ x y))\n")
+
         error = str(exc_info.value)
-        assert "Likely culprit" in error
-        assert "line 2, column 14" in error
-        assert "'let'" in error
+        assert "Unmatched ')' at line 3, column 17" in error
+        assert "closed the 'let' opened at line 1, column 1" in error
 
     def test_balanced_structure_error_points_at_early_close(self, menai):
         """A form closed before its body is reported at that close."""

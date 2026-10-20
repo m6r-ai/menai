@@ -5,8 +5,7 @@ from dataclasses import dataclass
 from menai.menai_error import MenaiASTBuildError
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
 from menai.ast.menai_paren_diagnostic import (
-    ParenDiagnosis, diagnose_parens, format_depth_table, format_open_scopes,
-    early_close_error,
+    ParenDiagnosis, diagnose_parens, format_depth_table,
 )
 from menai.ast.menai_ast import (
     MenaiASTNode, MenaiASTInteger, MenaiASTFloat, MenaiASTComplex, MenaiASTString,
@@ -48,6 +47,22 @@ _SPECIAL_FORM_ELEMENTS = {
 }
 
 
+# Forms whose elements are variadic in shape, so they cannot be described by a
+# fixed role list, but which still cannot be complete with fewer elements than
+# this (head included).  A 'let' needs a head, a bindings list and a body; a
+# 'match' a head, the value and at least one clause.
+_VARIADIC_FORM_MINIMUM = {
+    'let': 3,
+    'match': 3,
+}
+
+
+# Form heads that are reserved: they are syntax, not names, so a form headed by
+# one can never be a binding.  A bindings list that absorbs one has absorbed its
+# own body, which means it is missing its close paren.
+_RESERVED_FORMS = frozenset({'export', 'import', 'struct', '::', 'quote'})
+
+
 # The shape of each special form, named by its head symbol.  Used in an arity
 # error to show what the form takes, in place of a worked example.
 _SPECIAL_FORM_SHAPE = {
@@ -80,10 +95,35 @@ def _is_quoted_symbol(node: MenaiASTNode) -> bool:
 
 @dataclass(slots=True)
 class ParenStackFrame:
-    """An open parenthesis being tracked while parsing."""
+    """
+    An open parenthesis being tracked while parsing.
+
+    `form_type` is the form's head symbol ('let', 'if', ...), or '(' for a
+    parenthesised group with no head.  A bindings list has no head of its own,
+    so it is named by `is_bindings_list` and `enclosing_form` instead: it is
+    the binding form whose bindings it holds.
+
+    `element_count` is how many complete elements the form has parsed so far.
+    It is what lets an error say how far the form got before the input ran out.
+
+    `required_elements` is how many elements the form needs before it can be
+    complete, head included, or None when the form has no fixed arity.  When the
+    form is closed with fewer than that, the close is premature: it ended the
+    form before its body, which is what leaves the forms that follow reading as
+    further elements of this one.  `closed_short_line` and `closed_short_column`
+    record where that ')' was, so an error can point at the line to change.
+    """
+
     line: int
     column: int
     related_symbol: str | None = None  # For bindings: the variable name
+    form_type: str = '('
+    element_count: int = 0
+    is_bindings_list: bool = False
+    enclosing_form: str | None = None
+    required_elements: int | None = None
+    closed_short_line: int | None = None
+    closed_short_column: int | None = None
 
 
 class MenaiASTBuilder:
@@ -116,6 +156,19 @@ class MenaiASTBuilder:
         self.last_token_end_line: int = 1
         self.last_token_end_column: int = 1
 
+        # The first ')' that closed a form before its body, as
+        # (line, column, form_type, open_line, open_column).  This is the
+        # mistake a structural error downstream is usually the symptom of, so
+        # the error paths report it in preference to the symptom.  None when no
+        # form has closed short.
+        self.early_close: tuple[int, int, str, int, int] | None = None
+
+        # Where a bindings list should have closed, as (line, column), when it
+        # absorbed its own body.  A reserved form can never be a binding, so one
+        # appearing where a binding is expected means the bindings list is
+        # missing its close, and the close belongs after the previous binding.
+        self.bindings_close_after: tuple[int | None, int | None] | None = None
+
     def build(self, tokens: list[MenaiToken], expression: str = "", source_file: str = "") -> MenaiASTNode:
         """
         Parse tokens into AST with detailed error reporting.
@@ -146,6 +199,8 @@ class MenaiASTBuilder:
         # leak into error messages for this expression.
         self.last_close_line = 1
         self.last_close_column = 1
+        self.early_close = None
+        self.bindings_close_after = None
 
         if self.current_token is None:
             raise MenaiASTBuildError(
@@ -171,9 +226,9 @@ class MenaiASTBuilder:
                     diagnosis, current_value, current_line, current_col
                 )
 
-            if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
+            if self.early_close is not None:
                 raise self._create_form_closed_early_error(
-                    diagnosis, current_value, current_line, current_col
+                    current_value, current_line, current_col
                 )
 
             raise MenaiASTBuildError(
@@ -194,6 +249,8 @@ class MenaiASTBuilder:
         """Parse a single expression with detailed error reporting."""
         token = self.current_token
         assert token is not None, "Should not be called at EOF"
+
+        self._count_element()
 
         # Our if table is quicker than using a jump table.  As we've got to do this sequentially we
         # try to order the checks by expected frequency.
@@ -249,13 +306,57 @@ class MenaiASTBuilder:
             source_file=self.source_file,
         )
 
-    def _push_paren_frame(self, line: int, column: int) -> ParenStackFrame:
+    def _count_element(self) -> None:
+        """
+        Count one element against the form currently being parsed.
+
+        Every element of every form is counted here or at the few parse paths
+        that do not go through _parse_expression (a bindings list and its
+        bindings).  The count is what an unterminated-form error reports as how
+        far the form got before the input ran out.
+        """
+        if self.paren_stack:
+            self.paren_stack[-1].element_count += 1
+
+    def _form_head_at(self, index: int) -> str:
+        """
+        Name the form whose opening parenthesis is at *index*.
+
+        The name is the symbol that follows the parenthesis, or an empty string
+        when the form has no head symbol.
+
+        Args:
+            index: Index of the form's opening parenthesis in the token stream.
+
+        Returns:
+            The head symbol, or an empty string for a group with no head.
+        """
+        if self.tokens is None or index + 1 >= len(self.tokens):
+            return ""
+
+        head = self.tokens[index + 1]
+        return str(head.value) if head.type == MenaiTokenType.SYMBOL else ""
+
+    def _push_paren_frame(
+        self,
+        line: int,
+        column: int,
+        form_type: str = '(',
+        is_bindings_list: bool = False,
+        enclosing_form: str | None = None,
+        required_elements: int | None = None,
+    ) -> ParenStackFrame:
         """
         Push a new opening paren onto the tracking stack.
 
         Args:
             line: Line number (1-indexed)
             column: Column number (1-indexed)
+            form_type: The form's head symbol, or '(' for a group with no head
+            is_bindings_list: True when this is a binding form's bindings list
+            enclosing_form: For a bindings list, the binding form that holds it
+            required_elements: The form's arity, head included, or None when it
+                has no fixed arity
 
         Returns:
             The created frame (so caller can update it)
@@ -263,6 +364,10 @@ class MenaiASTBuilder:
         frame = ParenStackFrame(
             line=line,
             column=column,
+            form_type=form_type,
+            is_bindings_list=is_bindings_list,
+            enclosing_form=enclosing_form,
+            required_elements=required_elements,
         )
 
         self.paren_stack.append(frame)
@@ -271,7 +376,9 @@ class MenaiASTBuilder:
     def _pop_paren_frame(self) -> None:
         """Pop an opening paren from the stack when it's successfully closed."""
         assert self.paren_stack, "Paren stack underflow - trying to pop from empty stack"
-        self.paren_stack.pop()
+
+        frame = self.paren_stack.pop()
+
         # current_token is the ')' that just closed this frame — record its position
         if self.current_token is not None:
             self.last_close_line = self.current_token.line
@@ -281,16 +388,174 @@ class MenaiASTBuilder:
             self.last_close_line = self.last_token_end_line
             self.last_close_column = self.last_token_end_column
 
+        # A form closed with fewer elements than it needs ended before its body.
+        # That is the mistake, and the ')' that did it is the line to change.
+        # Record the first such close, which the error paths report in
+        # preference to whatever structural symptom it produced downstream.
+        if (
+            frame.required_elements is not None
+            and frame.element_count < frame.required_elements
+            and self.early_close is None
+        ):
+            self.early_close = (
+                self.last_close_line,
+                self.last_close_column,
+                frame.form_type,
+                frame.line,
+                frame.column,
+            )
+
     def _diagnose_parens(self) -> ParenDiagnosis:
         """
-        Analyse parenthesis balance over the whole token stream.
+        Measure parenthesis balance over the whole token stream.
 
-        The diagnosis is computed from the token stream rather than from the
-        parser's in-progress state, so it can say where a missing ')' belongs
-        and which ')' is the extra one, independently of how far the parse got.
+        This answers only what balance can: where a ')' is unmatched, where a
+        missing ')' belongs, and the per-line depth profile.  Which form is at
+        fault is the parser's own business, recorded on its frames.
         """
         tokens = cast(list[MenaiToken], self.tokens) if self.tokens is not None else []
         return diagnose_parens(tokens, self.expression)
+
+    def _missing_close_report(
+        self, fallback_line: int, fallback_column: int
+    ) -> tuple[int, int, str, str, str]:
+        """
+        Locate the closes missing at end of input, and describe them.
+
+        Every end-of-input error needs the same three things: where to point,
+        a sentence saying which ')' goes where, and a one-line statement of what
+        is expected.  They are computed together because they must agree — a
+        message that names one position while the suggestion names another sends
+        the reader to the wrong line.
+
+        The closes do not necessarily all belong in one place.  When a bindings
+        list absorbed its own body, one ')' closes that list immediately after
+        its last binding, and the rest close the forms enclosing it at the end
+        of the input.  Reporting the whole run at the first position would tell
+        the reader to put the body's close before the body.
+
+        Args:
+            fallback_line: Line to point at when there is no insertion point.
+            fallback_column: Column to point at in the same case.
+
+        Returns:
+            A tuple of (line, column, where, expected, table_block), where
+            `where` is the suggestion sentence, `expected` the one-line
+            statement of what is missing, and `table_block` the depth profile.
+        """
+        depth = len(self.paren_stack)
+        closing_parens = ")" * depth
+
+        diagnosis = self._diagnose_parens()
+        end_line = diagnosis.insertion_line
+        end_column = diagnosis.insertion_column
+
+        if end_line is not None and end_column is not None:
+            end_position = f"at line {end_line}, column {end_column}"
+
+        else:
+            end_position = "at the end of the input"
+
+        if (
+            self.bindings_close_after is not None
+            and self.bindings_close_after[0] is not None
+            and self.bindings_close_after[1] is not None
+            and depth > 1
+        ):
+            bindings_line = self.bindings_close_after[0]
+            bindings_column = self.bindings_close_after[1]
+            error_line = bindings_line
+            error_column = bindings_column
+
+            outer_count = depth - 1
+            outer_parens = ")" * outer_count
+            outer_word = "parenthesis" if outer_count == 1 else "parentheses"
+            outer_forms = "form" if outer_count == 1 else "forms"
+
+            where = (
+                f"Insert ')' at line {bindings_line}, column {bindings_column}, "
+                f"immediately after the last binding, to close the bindings list. "
+                f"Insert '{outer_parens}' ({outer_count} closing {outer_word}) "
+                f"{end_position}, after the last form, to close the "
+                f"{outer_count} {outer_forms} enclosing it."
+            )
+            expected = (
+                f"')' after the last binding to close the bindings list, then "
+                f"'{outer_parens}' {end_position} to close the enclosing forms"
+            )
+
+        elif (
+            self.bindings_close_after is not None
+            and self.bindings_close_after[0] is not None
+            and self.bindings_close_after[1] is not None
+        ):
+            # The bindings list is the only form left open, so its close is the
+            # whole of what is missing.  There is no second insertion point.
+            bindings_line = self.bindings_close_after[0]
+            bindings_column = self.bindings_close_after[1]
+            error_line = bindings_line
+            error_column = bindings_column
+
+            where = (
+                f"Insert ')' at line {bindings_line}, column {bindings_column}, "
+                f"immediately after the last binding, to close the bindings list."
+            )
+            expected = "')' after the last binding to close the bindings list"
+
+        else:
+            if end_line is not None and end_column is not None:
+                error_line = end_line
+                error_column = end_column
+                where = (
+                    f"Insert {closing_parens} at line {error_line}, column {error_column} "
+                    f"(immediately after the last token)."
+                )
+
+            else:
+                error_line = fallback_line
+                error_column = fallback_column
+                where = f"Insert {closing_parens} to close the unclosed expressions."
+
+            expected = f'Additional parentheses, "{closing_parens}", to close all expressions'
+
+        table_block = self._depth_table_block(error_line)
+
+        return error_line, error_column, where, expected, table_block
+
+    def _open_scope_lines(self) -> list[str]:
+        """
+        Render the forms still open on the parser's stack, outermost first.
+
+        This reads the parser's own frames rather than re-deriving the nesting
+        from the token stream.  At the point an unterminated-form error is
+        raised the parser has simply run out of tokens: it has not backtracked
+        or resynchronised, so its stack is exactly as deep as the input was, and
+        it knows each form's name because it recorded it when opening the form.
+
+        Returns:
+            One line per open form, or an empty list when nothing is open.
+        """
+        lines = []
+        for index, frame in enumerate(self.paren_stack, 1):
+            if frame.is_bindings_list:
+                name = f"bindings list of '{frame.enclosing_form}'"
+
+            elif frame.related_symbol is not None:
+                # A binding frame knows the variable it binds, which names the
+                # binding far better than its position does.
+                name = f"binding '{frame.related_symbol}'"
+
+            elif frame.form_type == '(':
+                name = "parenthesised group"
+
+            else:
+                name = f"'{frame.form_type}'"
+
+            count = frame.element_count
+            elements = f"{count} element{'s' if count != 1 else ''}"
+            lines.append(f"  {index}. {name} at line {frame.line}, column {frame.column} ({elements})")
+
+        return lines
 
     def _depth_table_around(self, line: int, context: int = 3) -> str:
         """
@@ -328,157 +593,24 @@ class MenaiASTBuilder:
 
         return f"\n\nParenthesis depth by line (start->end):\n{depth_table}"
 
-    def _detect_early_bindings_close(
-        self, keyword_line: int, keyword_column: int
-    ) -> tuple[int, int] | None:
+    def _is_binding_node(self, node: MenaiASTNode) -> bool:
         """
-        Detect a binding form whose bindings list closed before its last binding.
-
-        A binding form is `(let <bindings-list> <body>)`: exactly two forms
-        sit directly inside it, the bindings list and the body.  When a `)`
-        that should have closed a binding's value instead closes the bindings
-        list, the forms that follow are read as further body expressions, and
-        the parser reports a spurious "second body expression" at one of them.
-
-        This is distinct from a *named* form closing before its body, which the
-        parenthesis diagnosis reports as `suspected_line`.  A bindings list is
-        a bare `(` with no head symbol, so it has no minimum element count and
-        the diagnosis cannot see it; the shape of the forms it leaves behind is
-        the only signal.
-
-        The token stream says where this happened: the bindings list opens at
-        the form's content depth and closes on the line where the depth first
-        returns to it.  If more than one form then opens at that depth before
-        the binding form itself closes, the bindings list closed early, and the
-        line that closed it is the line the reader has to change.
-
-        Not every "second body expression" is an early close, however.  A
-        genuine second body — `(let ((x 5)) (integer+ x 1) (integer+ x 2))` —
-        also leaves more than one form after the bindings list.  The two are
-        told apart by shape: the forms an early close leaves behind are bindings
-        (a two-element `(name value)` form) that the bindings list should have
-        kept, whereas a genuine body is an ordinary expression.  The diagnosis
-        is only reported when every form after the bindings list except the
-        last (the body) has the shape of a binding.
-
-        Args:
-            keyword_line: Line of the binding form's opening parenthesis.
-            keyword_column: Column of the binding form's opening parenthesis.
-
-        Returns:
-            The (line, column) of the `)` that closed the bindings list early,
-            or None when the structure is not an early close.
-        """
-        tokens = cast(list[MenaiToken], self.tokens) if self.tokens is not None else []
-        if not tokens:
-            return None
-
-        form_index: int | None = None
-        for index, token in enumerate(tokens):
-            if (
-                token.type == MenaiTokenType.LPAREN
-                and token.line == keyword_line
-                and token.column == keyword_column
-            ):
-                form_index = index
-                break
-
-        if form_index is None:
-            return None
-
-        depth = 0
-        content_depth = 0
-        bindings_open_depth: int | None = None
-        bindings_close_line: int | None = None
-        bindings_close_column: int | None = None
-        form_starts: list[int] = []
-
-        for index, token in enumerate(tokens):
-            if index < form_index:
-                continue
-
-            if token.type == MenaiTokenType.LPAREN:
-                if index == form_index:
-                    content_depth = depth + 1
-
-                elif depth == content_depth:
-                    if bindings_open_depth is None:
-                        bindings_open_depth = depth
-
-                    else:
-                        form_starts.append(index)
-
-                depth += 1
-
-            elif token.type == MenaiTokenType.RPAREN:
-                depth -= 1
-                if index == form_index:
-                    break
-
-                if (
-                    bindings_open_depth is not None
-                    and depth == content_depth
-                    and bindings_close_line is None
-                ):
-                    bindings_close_line = token.line
-                    bindings_close_column = token.column
-
-                if depth < content_depth:
-                    break
-
-        if len(form_starts) <= 1:
-            return None
-
-        for start in form_starts[:-1]:
-            if not self._is_binding_shape(tokens, start):
-                return None
-
-        if bindings_close_line is None or bindings_close_column is None:
-            return None
-
-        return bindings_close_line, bindings_close_column
-
-    def _is_binding_shape(self, tokens: list[MenaiToken], start: int) -> bool:
-        """
-        Report whether the form opening at *start* has the shape of a binding.
+        Report whether *node* has the shape of a let binding.
 
         A binding is a two-element `(name value)` form: a symbol followed by a
         single expression.  This is the shape a bindings list keeps when a `)`
         closes it early and the remaining bindings are read as body expressions.
 
         Args:
-            tokens: The full token stream.
-            start: Index of the form's opening parenthesis.
+            node: The parsed form to test.
 
         Returns:
             True when the form is a two-element symbol-headed list.
         """
-        depth = 0
-        elements = 0
-        head_is_symbol = False
+        if not isinstance(node, MenaiASTList) or len(node.elements) != 2:
+            return False
 
-        for index in range(start, len(tokens)):
-            token = tokens[index]
-
-            if token.type == MenaiTokenType.LPAREN:
-                if depth == 1:
-                    elements += 1
-
-                depth += 1
-
-            elif token.type == MenaiTokenType.RPAREN:
-                depth -= 1
-                if depth == 0:
-                    break
-
-            else:
-                if depth == 1:
-                    if elements == 0 and token.type == MenaiTokenType.SYMBOL:
-                        head_is_symbol = True
-
-                    elements += 1
-
-        return head_is_symbol and elements == 2
+        return isinstance(node.elements[0], MenaiASTSymbol)
 
     def _create_enhanced_unterminated_error(self, start_line: int, start_col: int) -> MenaiASTBuildError:
         """
@@ -499,57 +631,26 @@ class MenaiASTBuilder:
         """
         depth = len(self.paren_stack)
 
-        closing_parens = ")" * depth
-
-        # The missing ')' belongs where the structure first went wrong.  When a
-        # binding form's body was read at the bindings list's own depth, the
-        # bindings list never closed and the ')' belongs immediately after the
-        # last binding.  Otherwise it belongs immediately after the last token in
-        # the source, which is where the parse ran out of input.  Pointing at the
-        # opening paren of the unclosed form instead would send the reader to the
-        # wrong line entirely.
-        diagnosis = self._diagnose_parens()
-        if diagnosis.binding_list_line is not None and diagnosis.binding_list_column is not None:
-            error_line = diagnosis.binding_list_line
-            error_column = diagnosis.binding_list_column
-            where = (
-                f"Insert {closing_parens} at line {error_line}, column {error_column} "
-                f"(immediately after the last binding, which is where the bindings "
-                f"list should have closed)."
-            )
-
-        elif diagnosis.insertion_line is not None and diagnosis.insertion_column is not None:
-            error_line = diagnosis.insertion_line
-            error_column = diagnosis.insertion_column
-            where = (
-                f"Insert {closing_parens} at line {error_line}, column {error_column} "
-                f"(immediately after the last token)."
-            )
-
-        else:
-            error_line = start_line
-            error_column = start_col
-            where = f"Insert {closing_parens} to close the unclosed expressions."
+        error_line, error_column, where, expected, table_block = self._missing_close_report(
+            start_line, start_col
+        )
 
         # A form that closed before its body is why the input ran out with a form
         # still open: the ')' that ended it early is the mistake, and the open
         # form above it is the symptom.  Naming the early close is what turns
         # "something is unclosed" into "this ')' ended this form too soon".
         early_close_block = ""
-        if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
-            early_form = diagnosis.suspected_form or "form"
+        if self.early_close is not None:
+            early_line, early_column, early_form, early_open_line, early_open_column = self.early_close
             early_close_block = (
-                f"\n\nThe '{early_form}' at line {diagnosis.suspected_open_line}, "
-                f"column {diagnosis.suspected_open_column} was closed by the ')' at "
-                f"line {diagnosis.suspected_line}, column {diagnosis.suspected_column} "
+                f"\n\nThe '{early_form}' at line {early_open_line}, "
+                f"column {early_open_column} was closed by the ')' at "
+                f"line {early_line}, column {early_column} "
                 f"before its body, which is what left the input unbalanced."
             )
 
-        scopes = format_open_scopes(diagnosis)
-        scope_block = f"Forms still open (outermost first):\n{scopes}" if scopes else ""
-
-        depth_table = self._depth_table_around(error_line)
-        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+        scope_lines = self._open_scope_lines()
+        scope_block = "Forms still open (outermost first):\n" + "\n".join(scope_lines) if scope_lines else ""
 
         # Create the context message
         context_msg = (
@@ -567,7 +668,7 @@ class MenaiASTBuilder:
             message=f"Unterminated list - missing {depth} closing {paren_word}",
             line=error_line,
             column=error_column,
-            expected=f'Additional parentheses, "{closing_parens}", to close all expressions',
+            expected=expected,
             suggestion=where,
             context=context_msg,
             source=self.expression,
@@ -584,11 +685,14 @@ class MenaiASTBuilder:
         """
         Create an error for a ')' that cannot be matched to any '('.
 
-        The location is the first ')' at which the depth went negative, which is
-        the earliest point at which an extra ')' is provable.  When an earlier
-        ')' closed a form that cannot be complete without a body, that close is
-        the likelier mistake — it ended the form early, leaving this ')' with
-        nothing to close — so it is named as the likely culprit.
+        The location is the ')' the reader has to remove.  When an earlier ')'
+        closed a form that cannot be complete without a body, that close is the
+        mistake: it ended the form early, which is what leaves the first
+        unmatched ')' with nothing to close.  The error is therefore anchored on
+        that earlier close, and the unmatched ')' is reported as the symptom it
+        is.  Only when no such early close exists is the location the first ')'
+        at which the depth went negative — the earliest point at which an extra
+        ')' is provable.
 
         Args:
             diagnosis: The parenthesis diagnosis for the token stream.
@@ -602,17 +706,27 @@ class MenaiASTBuilder:
         extra_line = cast(int, diagnosis.extra_line)
         extra_column = cast(int, diagnosis.extra_column)
 
+        if self.early_close is not None:
+            error_line, error_column, early_form, early_open_line, early_open_column = self.early_close
+
+        else:
+            error_line = extra_line
+            error_column = extra_column
+            early_form = ""
+            early_open_line = 0
+            early_open_column = 0
+
         culprit = ""
-        if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
+        if self.early_close is not None:
             culprit = (
-                f"\n\nLikely culprit: the ')' at line {diagnosis.suspected_line}, "
-                f"column {diagnosis.suspected_column} closed the "
-                f"'{diagnosis.suspected_form}' opened earlier before it had a body. "
-                f"Removing that ')' would leave the ')' at line {extra_line}, "
-                f"column {extra_column} with something to close."
+                f"\n\nThe ')' at line {error_line}, column {error_column} closed the "
+                f"'{early_form}' opened at line {early_open_line}, "
+                f"column {early_open_column} before it had a body, which is "
+                f"what leaves the ')' at line {extra_line}, column {extra_column} with "
+                f"nothing to close."
             )
 
-        depth_table = self._depth_table_around(extra_line)
+        depth_table = self._depth_table_around(error_line)
         table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
 
         if current_value == ')':
@@ -621,21 +735,32 @@ class MenaiASTBuilder:
         else:
             follows = f"'{current_value}' at line {current_line}, column {current_col} follows it."
 
-        context = (
-            f"The ')' at line {extra_line}, column {extra_column} closes nothing: "
-            f"every '(' before it is already matched, so this ')' is one too many. "
-            f"{follows}"
-            f"{culprit}"
-            f"{table_block}"
-        )
+        if self.early_close is not None:
+            context = (
+                f"The ')' at line {error_line}, column {error_column} closed the "
+                f"'{early_form}' before its body, which left the parentheses "
+                f"unbalanced. The ')' at line {extra_line}, column {extra_column} then "
+                f"closes nothing: every '(' before it is already matched. "
+                f"{follows}"
+                f"{culprit}"
+                f"{table_block}"
+            )
+
+        else:
+            context = (
+                f"The ')' at line {extra_line}, column {extra_column} closes nothing: "
+                f"every '(' before it is already matched, so this ')' is one too many. "
+                f"{follows}"
+                f"{table_block}"
+            )
 
         return MenaiASTBuildError(
-            message=f"Extra closing parenthesis at line {extra_line}, column {extra_column}",
-            line=extra_line,
-            column=extra_column,
+            message=f"Extra closing parenthesis at line {error_line}, column {error_column}",
+            line=error_line,
+            column=error_column,
             received=f"Unmatched ')' at line {extra_line}, column {extra_column}",
             expected="A matching '(' before this ')'",
-            suggestion=f"Remove the ')' at line {extra_line}, column {extra_column}",
+            suggestion=f"Remove the ')' at line {error_line}, column {error_column}",
             context=context,
             source=self.expression,
             source_file=self.source_file,
@@ -643,7 +768,6 @@ class MenaiASTBuilder:
 
     def _create_form_closed_early_error(
         self,
-        diagnosis: ParenDiagnosis,
         current_value: object,
         current_line: int,
         current_col: int,
@@ -657,7 +781,6 @@ class MenaiASTBuilder:
         rather than the body.  The error points at that early ')'.
 
         Args:
-            diagnosis: The parenthesis diagnosis for the token stream.
             current_value: The token value found after the parsed expression.
             current_line: Line of that token.
             current_col: Column of that token.
@@ -665,9 +788,9 @@ class MenaiASTBuilder:
         Returns:
             MenaiASTBuildError describing the form closed before its body.
         """
-        early_line = cast(int, diagnosis.suspected_line)
-        early_column = cast(int, diagnosis.suspected_column)
-        form = diagnosis.suspected_form
+        early_line, early_column, form, _, _ = cast(
+            tuple[int, int, str, int, int], self.early_close
+        )
 
         depth_table = self._depth_table_around(early_line)
         table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
@@ -688,6 +811,69 @@ class MenaiASTBuilder:
             received=f"'{form}' has no body before the ')' at line {early_line}, column {early_column}",
             expected=f"A body expression before the ')' that closes the '{form}'",
             suggestion=f"Move the ')' at line {early_line}, column {early_column} to after the body",
+            context=context,
+            source=self.expression,
+            source_file=self.source_file,
+        )
+
+    def _early_close_error_for(
+        self, form_name: str, form_line: int, form_column: int
+    ) -> MenaiASTBuildError | None:
+        """
+        Build an error for a structural fault caused by an enclosing form that
+        closed before its body.
+
+        A form with the wrong number of elements is often the symptom of a ')'
+        that closed an enclosing form before its body, so the elements that
+        follow are read as further elements of this form.  When the parser
+        recorded such a close, that close is the line the reader has to change,
+        so it is reported instead of the symptom.
+
+        The diagnosis is the parser's own: a frame is recorded as closing short
+        when it is popped with fewer elements than its arity requires, so this
+        cannot disagree with the parse the way a separate token walk could.
+
+        Args:
+            form_name: The name of the form whose structural check failed.
+            form_line: Line of the form whose structural check failed.
+            form_column: Column of the form whose structural check failed.
+
+        Returns:
+            An error pointing at the ')' that closed the enclosing form early,
+            or None when the parser recorded no such close, or when the form
+            that closed early is this form itself (in which case the fault is
+            its own structural error, not a misplaced ')').
+        """
+        if self.early_close is None:
+            return None
+
+        line, column, closed_form, open_line, open_column = self.early_close
+
+        if open_line == form_line and open_column == form_column:
+            return None
+
+        depth_table = self._depth_table_around(line)
+        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+
+        context = (
+            f"The '{form_name}' has the wrong number of elements because the ')' at "
+            f"line {line}, column {column} closed the '{closed_form}' before its body. "
+            f"The elements that follow were read as further elements of the '{form_name}' "
+            f"rather than as the body of the '{closed_form}'. The parentheses balance, "
+            f"so no ')' is missing or extra — it is in the wrong place."
+            f"{table_block}"
+        )
+
+        return MenaiASTBuildError(
+            message=(
+                f"'{closed_form}' closed before its body at line {line}, "
+                f"column {column} (reported as '{form_name}' structure error)"
+            ),
+            line=line,
+            column=column,
+            received=f"The ')' at line {line}, column {column} closed the '{closed_form}' before its body",
+            expected=f"A body expression before the ')' that closes the '{closed_form}'",
+            suggestion=f"Move the ')' at line {line}, column {column} to after the body of the '{closed_form}'",
             context=context,
             source=self.expression,
             source_file=self.source_file,
@@ -794,7 +980,30 @@ class MenaiASTBuilder:
         assert current_token is not None, "Should not be called at EOF"
         start_line = current_token.line
         start_col = current_token.column
-        self._push_paren_frame(start_line, start_col)
+
+        # The head symbol names the form, so the frame can record it.  Peeking
+        # here rather than after the push is what lets an unterminated-form
+        # error say which form ran out of input instead of guessing it from the
+        # token stream.
+        head = self.tokens[self.pos + 1] if self.tokens is not None and self.pos + 1 < len(self.tokens) else None
+        form_type = head.value if head is not None and head.type == MenaiTokenType.SYMBOL else '('
+
+        # The arity comes from the same table that drives the parse, so the
+        # premature-close check cannot disagree with it.  'let' and 'match' are
+        # not in that table because their elements are variadic in shape, but
+        # both need a head, a second element, and a body, so their minimum is
+        # the same 3.
+        roles = _SPECIAL_FORM_ELEMENTS.get(str(form_type))
+        required: int | None
+        if roles is not None:
+            required = len(roles) + 1
+
+        else:
+            required = _VARIADIC_FORM_MINIMUM.get(str(form_type))
+
+        self._push_paren_frame(
+            start_line, start_col, form_type=str(form_type), required_elements=required
+        )
 
         self._advance()  # consume '('
 
@@ -804,7 +1013,6 @@ class MenaiASTBuilder:
         # that knows each element's role, because a reserved word can also head a
         # list that is data rather than a form: in (lambda (if) if) the (if) is a
         # parameter list, not an if form, and only the lambda path knows that.
-        head = self.current_token
         if head is not None and head.type == MenaiTokenType.SYMBOL and head.value == 'let':
             return self._parse_let_with_tracking(start_line, start_col, elements)
 
@@ -1160,8 +1368,12 @@ class MenaiASTBuilder:
         token = self.current_token
         assert token is not None, "Should not be called at EOF"
 
+        # An element is counted by _parse_expression, which every path below
+        # reaches for an atom.  Only a data list bypasses it entirely, so only
+        # that path counts for itself.
         if role == 'data-list':
             if token.type == MenaiTokenType.LPAREN:
+                self._count_element()
                 return self._parse_data_list()
 
             # Not a list.  Parse it as an ordinary expression so the semantic
@@ -1199,11 +1411,7 @@ class MenaiASTBuilder:
         Returns:
             Never returns: it always raises.
         """
-        diagnosis = self._diagnose_parens()
-        error = early_close_error(
-            diagnosis, MenaiASTBuildError, self.expression, self.source_file,
-            form, start_line, start_col,
-        )
+        error = self._early_close_error_for(form, start_line, start_col)
         if error is not None:
             raise error
 
@@ -1252,6 +1460,7 @@ class MenaiASTBuilder:
             raise self._create_arity_error('match', 2, 3, start_line, start_col, None)
 
         while self.current_token is not None and self.current_token.type != MenaiTokenType.RPAREN:
+            self._count_element()
             elements.append(self._parse_match_clause())
 
         if self.current_token is None:
@@ -1282,7 +1491,7 @@ class MenaiASTBuilder:
 
         clause_line = token.line
         clause_col = token.column
-        self._push_paren_frame(clause_line, clause_col)
+        self._push_paren_frame(clause_line, clause_col, form_type='match-clause')
         self._advance()  # consume '('
 
         clause: list[MenaiASTNode] = []
@@ -1449,9 +1658,14 @@ class MenaiASTBuilder:
             return MenaiASTList(tuple(elements), line=start_line, column=start_col, source_file=self.source_file)
 
         # Parse bindings with special tracking
+        bindings_close_line: int | None = None
+        bindings_close_column: int | None = None
         if self.current_token.type == MenaiTokenType.LPAREN:
             bindings = self._parse_let_bindings()
+            self._count_element()
             elements.append(bindings)
+            bindings_close_line = self.last_close_line
+            bindings_close_column = self.last_close_column
 
         else:
             # Not our job to validate structure - just parse what's there
@@ -1472,18 +1686,25 @@ class MenaiASTBuilder:
             raise self._create_enhanced_unterminated_error(start_line, start_col)
 
         if self.current_token.type != MenaiTokenType.RPAREN:
-            diagnosis = self._diagnose_parens()
-            error = early_close_error(
-                diagnosis, MenaiASTBuildError, self.expression, self.source_file,
-                "let", start_line, start_col,
-            )
+            error = self._early_close_error_for("let", start_line, start_col)
             if error is not None:
                 raise error
 
-            early_close = self._detect_early_bindings_close(start_line, start_col)
-            if early_close is not None:
+            # The bindings list has no head symbol, so it has no arity to check
+            # against: closing it after two bindings is not by itself wrong.
+            # What marks it as closed early is the shape of what follows.  A
+            # form that reads as a binding, where only the single body was
+            # allowed, is a binding the list should have kept.  The parser stops
+            # at the first such form, so that one is what it can test.
+            extra_forms = elements[2:]
+            if (
+                bindings_close_line is not None
+                and bindings_close_column is not None
+                and extra_forms
+                and self._is_binding_node(extra_forms[0])
+            ):
                 raise self._create_early_bindings_close_error(
-                    start_line, start_col, early_close[0], early_close[1]
+                    start_line, start_col, bindings_close_line, bindings_close_column
                 )
 
             raise self._create_multiple_body_error(start_line, start_col)
@@ -1507,7 +1728,12 @@ class MenaiASTBuilder:
         bindings_start_col = self.current_token.column
 
         # Push frame for bindings list
-        self._push_paren_frame(bindings_start_line, bindings_start_col)
+        self._push_paren_frame(
+            bindings_start_line,
+            bindings_start_col,
+            is_bindings_list=True,
+            enclosing_form='let',
+        )
 
         self._advance()  # consume '('
 
@@ -1527,11 +1753,25 @@ class MenaiASTBuilder:
 
             # Each binding should start with '('
             if self.current_token.type == MenaiTokenType.LPAREN:
+                # A reserved form can never be a binding, so a form headed by one
+                # is the let's body, read as a binding because the bindings list
+                # is missing its close.  That close belongs immediately after the
+                # previous binding, which is the line the reader has to change.
+                if (
+                    self._form_head_at(self.pos) in _RESERVED_FORMS
+                    and self.bindings_close_after is None
+                ):
+                    self.bindings_close_after = (
+                        prev_binding_end_line,
+                        prev_binding_end_column,
+                    )
+
                 binding = self._parse_single_binding(
                     binding_index, prev_binding_name,
                     prev_binding_end_line, prev_binding_end_column,
                 )
                 bindings.append(binding)
+                self._count_element()
 
                 prev_binding_name = self._binding_name(binding)
                 prev_binding_end_line = self.last_close_line
@@ -1703,11 +1943,7 @@ class MenaiASTBuilder:
                     form_name = tokens[peek_pos].value
 
             var_name = binding_frame.related_symbol or f"#{binding_index}"
-            diagnosis = self._diagnose_parens()
-            error = early_close_error(
-                diagnosis, MenaiASTBuildError, self.expression, self.source_file,
-                "binding", binding_start_line, binding_start_col,
-            )
+            error = self._early_close_error_for("binding", binding_start_line, binding_start_col)
             if error is not None:
                 raise error
 
@@ -1750,8 +1986,11 @@ class MenaiASTBuilder:
              previous binding, so the form's body was misread as a binding.
 
         Case 2 is only possible when a previous binding exists.  When it does,
-        the error names both possibilities and points at the previous binding's
-        closing paren, which is where the missing ')' belongs.
+        the error names both possibilities and points at the third element — the
+        one thing that is definitely wrong and definitely observable — rather
+        than at a position that is correct under only one of the two
+        hypotheses.  No single insertion point is asserted, because there is no
+        evidence for one.
 
         Args:
             var_name: The name of the binding being parsed
@@ -1809,33 +2048,35 @@ class MenaiASTBuilder:
 
         return MenaiASTBuildError(
             message=(
-                f"Missing closing parenthesis — insert ')' at line "
-                f"{prev_binding_end_line}, column {prev_binding_end_column} "
-                f"(after the previous binding) or at the end of binding "
-                f"'{var_name}''s value. Without it, '{form_name}' at line "
+                f"Missing closing parenthesis — '{form_name}' at line "
                 f"{token.line}, column {token.column} is read as a third element "
                 f"of binding '{var_name}'"
             ),
-            line=prev_binding_end_line,
-            column=prev_binding_end_column,
+            line=token.line,
+            column=token.column,
             expected="')' to close the binding",
             suggestion=(
-                f"Insert ')' at line {prev_binding_end_line}, column "
-                f"{prev_binding_end_column} if the bindings list should have closed "
-                f"after binding '{prev_binding_name}', or at the end of binding "
-                f"'{var_name}''s value if that value is missing a close"
+                f"Add a ')' to close the value of binding '{var_name}' if its value "
+                f"is missing one, or to close the bindings list after binding "
+                f"'{prev_binding_name}' if the form that follows was meant to be "
+                f"the body. The two are indistinguishable here, so check which "
+                f"form the ')' at line {prev_binding_end_line}, column "
+                f"{prev_binding_end_column} was meant to close."
             ),
             context=(
                 f"Binding '{var_name}' at line {binding_start_line}, "
                 f"column {binding_start_col} already has its name and value, but "
                 f"'{form_name}' at line {token.line}, column {token.column} appears as "
-                f"a third element. The token stream cannot say which of two places "
-                f"the missing ')' belongs:\n"
-                f"  1. The value expression of binding '{var_name}' is missing a ')'.\n"
+                f"a third element. Two different mistakes produce exactly this state, "
+                f"and the parser cannot tell them apart:\n"
+                f"  1. The value expression of binding '{var_name}' is missing a ')',\n"
+                f"     so the binding absorbed the element that follows it.\n"
                 f"  2. The enclosing bindings list is missing its ')' after binding "
                 f"'{prev_binding_name}' (line {prev_binding_end_line}, "
-                f"column {prev_binding_end_column}), so the body was read as a binding."
-                f"{self._depth_table_block(prev_binding_end_line)}"
+                f"column {prev_binding_end_column}), so the body was read as a binding.\n"
+                f"Nothing in the token stream distinguishes them, so no single "
+                f"position is reported as the place to insert the ')'."
+                f"{self._depth_table_block(token.line)}"
             ),
             source=self.expression,
             source_file=self.source_file,
@@ -1879,45 +2120,27 @@ class MenaiASTBuilder:
         depth = len(self.paren_stack)
         assert depth >= 2, "Bindings error should have at least 2 frames on stack"
 
-        # Build closing parens (always multiple since depth >= 2)
-        closing_parens = ")" * depth
-
         paren_word = "parentheses"  # Always plural since depth >= 2
 
-        # The missing ')' belongs immediately after the last token in the
-        # source, which is where the parse ran out of input.
-        diagnosis = self._diagnose_parens()
-        if diagnosis.insertion_line is not None and diagnosis.insertion_column is not None:
-            error_line = diagnosis.insertion_line
-            error_column = diagnosis.insertion_column
-            where = (
-                f"Insert {closing_parens} at line {error_line}, column {error_column} "
-                f"(immediately after the last token)."
-            )
-
-        else:
-            error_line = bindings_start_line
-            error_column = bindings_start_col
-            where = f"Insert {closing_parens} to close the unclosed expressions."
-
-        depth_table = self._depth_table_around(error_line)
-        table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
+        error_line, error_column, where, expected, table_block = self._missing_close_report(
+            bindings_start_line, bindings_start_col
+        )
 
         # A form that closed before its body is why the input ran out with a form
         # still open: the ')' that ended it early is the mistake, and the open
         # form above it is the symptom.
         early_close_block = ""
-        if diagnosis.suspected_line is not None and diagnosis.suspected_column is not None:
-            early_form = diagnosis.suspected_form or "form"
+        if self.early_close is not None:
+            early_line, early_column, early_form, early_open_line, early_open_column = self.early_close
             early_close_block = (
-                f"\n\nThe '{early_form}' at line {diagnosis.suspected_open_line}, "
-                f"column {diagnosis.suspected_open_column} was closed by the ')' at "
-                f"line {diagnosis.suspected_line}, column {diagnosis.suspected_column} "
+                f"\n\nThe '{early_form}' at line {early_open_line}, "
+                f"column {early_open_column} was closed by the ')' at "
+                f"line {early_line}, column {early_column} "
                 f"before its body, which is what left the input unbalanced."
             )
 
-        scopes = format_open_scopes(diagnosis)
-        scope_block = f"Forms still open (outermost first):\n{scopes}" if scopes else ""
+        scope_lines = self._open_scope_lines()
+        scope_block = "Forms still open (outermost first):\n" + "\n".join(scope_lines) if scope_lines else ""
 
         context_msg = (
             f"Reached end of input while parsing let bindings.\n\n"
@@ -1932,7 +2155,7 @@ class MenaiASTBuilder:
             message=f"Incomplete let bindings - missing {depth} closing {paren_word}",
             line=error_line,
             column=error_column,
-            expected=f'Add "{closing_parens}" to close all expressions',
+            expected=expected,
             suggestion=where,
             context=context_msg,
             source=self.expression,

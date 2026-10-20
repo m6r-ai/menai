@@ -2,9 +2,9 @@
 Menai parenthesis diagnostics.
 
 Menai source is an S-expression tree, so an unbalanced parenthesis is the most
-common syntax error.  This module locates one from the token stream, and is used
-by the AST builder to place its compile-time error on the line the reader has to
-change rather than the line where the offending form opened.
+common syntax error.  This module measures the balance of a token stream, and is
+used by the AST builder to place its compile-time error on the line the reader
+has to change rather than the line where the offending form opened.
 
 The starting observation is that an opening parenthesis is never the mistake.
 Menai is written by adding forms, so a `(` that is present is intended; what
@@ -17,47 +17,18 @@ That asymmetry is what makes the offending line derivable rather than guessed:
 - A line whose ending depth falls *below* its starting depth has closed
   something that was not open, so a `)` on that line is extra.
 
-Balance alone is not enough to be useful: a file can have equal numbers of
-opens and closes and still be malformed, and a genuinely unbalanced file leaves
-the parser unable to say which of the many closes is the wrong one.  The
-diagnosis therefore also reports the insertion point for missing closes (the
-position the `)` should occupy) and, for extra closes, the first `)` that
-cannot be matched together with any earlier close that completed a form which
-cannot be complete.
-
-It also reports the forms still open when the token stream ran out.  That is the
-nesting the reader intended to write, and it localises a missing `)` to a form
-rather than to a line: the innermost open form is the one whose close is absent.
-The parser's own in-progress stack is not used for this, because it diverges from
-the token stream once the parser starts recovering from the error.
+What this module does NOT do is decide which form is at fault.  The parser knows
+that from its own frames: it records a form as closing short when it pops a
+frame with fewer elements than the form's arity requires.  Inferring the same
+thing from token balance was a second, independent model of the nesting, and the
+two could disagree.  This module therefore reports only what balance alone can
+establish: where a `)` is missing, where one is unmatched, and the per-line depth
+profile used to display both.
 """
 
 from dataclasses import dataclass
 
 from menai.ast.menai_token import MenaiToken, MenaiTokenType
-from menai.menai_error import MenaiError
-
-
-# Forms whose body is required, with the number of elements they must have
-# before a close can be legitimate.  A close that completes one of these forms
-# with fewer elements has closed it before its body, which is the signature of a
-# stray ')' that ended the form early.
-_MINIMUM_ELEMENTS = {
-    'let': 3,
-    'lambda': 3,
-    'if': 4,
-    'quote': 2,
-    'match': 3,
-    '::': 3,
-    'import': 2,
-    'apply': 3,
-}
-
-
-# Form heads that are reserved: they are syntax, not names, so a form headed by
-# one can never be a binding.  A bindings list that absorbs one has absorbed its
-# own body, which means it is missing its close paren.
-_RESERVED_FORMS = frozenset({'export', 'import', 'struct', '::', 'quote'})
 
 
 @dataclass(frozen=True)
@@ -71,30 +42,6 @@ class LineDepth:
 
 
 @dataclass(frozen=True)
-class OpenScope:
-    """
-    A form still open when the token stream ran out.
-
-    `form_type` is the form's head symbol (`'let'`, `'if'`, ...), or
-    `'('` for a parenthesised group with no head.  A binding form's bindings
-    list has no head of its own, so it is named by `is_bindings_list` and
-    `enclosing_form` instead: it is the `'let'` whose
-    bindings it holds.
-
-    `element_count` is how many complete elements the form holds.  For a
-    bindings list that has swallowed its own body, this counts the bindings
-    parsed, which is what tells the reader the body was read as a binding.
-    """
-
-    line: int
-    column: int
-    form_type: str
-    element_count: int
-    is_bindings_list: bool
-    enclosing_form: str | None
-
-
-@dataclass(frozen=True)
 class ParenDiagnosis:
     """
     The result of analysing parenthesis balance over a token stream.
@@ -102,74 +49,32 @@ class ParenDiagnosis:
     `insertion_line` and `insertion_column` are where the missing closes
     belong, and are set only when closes are missing.  `extra_line` and
     `extra_column` are the first `)` that cannot be matched, and are set only
-    when closes are extra.  `suspected_*` name an earlier `)` that closed a
-    form before its body, which is the likely cause of an extra close.
-
-    `suspected_open_line` and `suspected_open_column` are where that form
-    opened.  A caller comparing them with the form it is reporting can tell
-    whether the early close is that form's own error or a misplaced `)` that
-    closed an enclosing form.
-
-    `open_scopes` lists the forms still open when the token stream ran out,
-    outermost first.  It is the nesting the reader intended to write, read in
-    source order: the innermost scope is the form whose close is absent, and the
-    scopes before it are the context it sits in.
+    when closes are extra.
     """
 
     insertion_line: int | None
     insertion_column: int | None
-    binding_list_line: int | None
-    binding_list_column: int | None
     extra_line: int | None
     extra_column: int | None
     lines: list[LineDepth]
-    open_scopes: list[OpenScope]
-    suspected_line: int | None
-    suspected_column: int | None
-    suspected_form: str | None
-    suspected_open_line: int | None
-    suspected_open_column: int | None
-
-
-@dataclass
-class _OpenForm:
-    """An open parenthesis being tracked while scanning."""
-
-    line: int
-    column: int
-    form_type: str
-    depth_when_opened: int
-    is_bindings_list: bool = False
-    enclosing_form: str | None = None
-    element_count: int = 0
-    last_element_line: int = 0
-    last_element_column: int = 0
-
-
-def _form_type_at(tokens: list[MenaiToken], index: int) -> str:
-    """
-    Name the form opened by the parenthesis at *index*.
-
-    The name is the symbol that follows the parenthesis, or `'('` for a
-    parenthesised group with no head symbol.
-    """
-    if index + 1 < len(tokens) and tokens[index + 1].type == MenaiTokenType.SYMBOL:
-        return str(tokens[index + 1].value)
-
-    return '('
 
 
 def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
     """
-    Analyse parenthesis balance over a token stream.
+    Measure parenthesis balance over a token stream.
+
+    This reports only what balance alone can establish: where a `)` is
+    unmatched, where a missing `)` belongs, and the per-line depth profile.
+    It does not decide which form is at fault — the parser knows that from its
+    own frames.
 
     Args:
         tokens: The token stream, with comments already discarded.
         source: The original source text, used for the per-line depth table.
 
     Returns:
-        A ParenDiagnosis describing the balance, the position of any missing or
-        extra parenthesis, and the unclosed forms.
+        A ParenDiagnosis describing the balance and the position of any missing
+        or extra parenthesis.
     """
     source_lines = source.split('\n')
     line_count = max(len(source_lines), 1)
@@ -177,23 +82,13 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
     start_depths: list[int | None] = [None] * line_count
     end_depths: list[int | None] = [None] * line_count
 
-    open_forms: list[_OpenForm] = []
     depth = 0
     last_token: MenaiToken | None = None
-    previous_end_line = 0
-    previous_end_column = 0
-    body_after_line: int | None = None
-    body_after_column: int | None = None
 
     extra_line: int | None = None
     extra_column: int | None = None
-    suspected_line: int | None = None
-    suspected_column: int | None = None
-    suspected_form: str | None = None
-    suspected_open_line: int | None = None
-    suspected_open_column: int | None = None
 
-    for index, token in enumerate(tokens):
+    for token in tokens:
         line_index = token.line - 1
         if line_index < 0 or line_index >= line_count:
             continue
@@ -203,81 +98,17 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
 
         last_token = token
 
-        # Every open form contains this token, so its end is the end of the last
-        # element of each of them.  That is where a missing ')' for that form
-        # belongs.
-        for form in open_forms:
-            form.last_element_line = token.line
-            form.last_element_column = token.column + token.length
-
         if token.type == MenaiTokenType.LPAREN:
-            is_bindings_list = False
-            enclosing_form: str | None = None
-            if open_forms:
-                parent = open_forms[-1]
-                parent.element_count += 1
-
-                # A binding form's bindings list is its second element (after the
-                # keyword).  Its head is another '(', so it is identified by
-                # position rather than by the symbol after the paren.
-                is_bindings_list = (
-                    parent.form_type == 'let'
-                    and parent.element_count == 2
-                )
-                enclosing_form = parent.form_type if is_bindings_list else None
-
-                # A reserved form can never be a binding, so if a bindings list
-                # absorbs one, that form is the body and the bindings list is
-                # missing its close immediately before it.  The close belongs at
-                # the end of the token preceding this form.
-                if (
-                    parent.is_bindings_list
-                    and _form_type_at(tokens, index) in _RESERVED_FORMS
-                    and body_after_line is None
-                ):
-                    body_after_line = previous_end_line
-                    body_after_column = previous_end_column
-
-            form = _OpenForm(
-                line=token.line,
-                column=token.column,
-                form_type=_form_type_at(tokens, index),
-                depth_when_opened=depth,
-                is_bindings_list=is_bindings_list,
-                enclosing_form=enclosing_form,
-            )
-            open_forms.append(form)
             depth += 1
 
         elif token.type == MenaiTokenType.RPAREN:
             depth -= 1
 
-            if open_forms:
-                closed = open_forms.pop()
-                minimum = _MINIMUM_ELEMENTS.get(closed.form_type)
-                if (
-                    minimum is not None
-                    and closed.element_count < minimum
-                    and extra_line is None
-                    and suspected_line is None
-                ):
-                    suspected_line = token.line
-                    suspected_column = token.column
-                    suspected_form = closed.form_type
-                    suspected_open_line = closed.line
-                    suspected_open_column = closed.column
-
-            elif extra_line is None:
+            if depth < 0 and extra_line is None:
                 extra_line = token.line
                 extra_column = token.column
 
-        else:
-            if open_forms:
-                open_forms[-1].element_count += 1
-
         end_depths[line_index] = depth
-        previous_end_line = token.line
-        previous_end_column = token.column + token.length
 
     lines = _build_line_depths(source_lines, start_depths, end_depths)
 
@@ -288,32 +119,12 @@ def diagnose_parens(tokens: list[MenaiToken], source: str) -> ParenDiagnosis:
             insertion_line = last_token.line
             insertion_column = last_token.column + last_token.length
 
-    open_scopes = [
-        OpenScope(
-            line=form.line,
-            column=form.column,
-            form_type=form.form_type,
-            element_count=form.element_count,
-            is_bindings_list=form.is_bindings_list,
-            enclosing_form=form.enclosing_form,
-        )
-        for form in open_forms
-    ]
-
     return ParenDiagnosis(
         insertion_line=insertion_line,
         insertion_column=insertion_column,
-        binding_list_line=body_after_line,
-        binding_list_column=body_after_column,
         extra_line=extra_line,
         extra_column=extra_column,
         lines=lines,
-        open_scopes=open_scopes,
-        suspected_line=suspected_line,
-        suspected_column=suspected_column,
-        suspected_form=suspected_form,
-        suspected_open_line=suspected_open_line,
-        suspected_open_column=suspected_open_column,
     )
 
 
@@ -390,137 +201,3 @@ def format_depth_table(
         rows.append(f"  {entry.line:>{width}} | {depth:^11} | {entry.content}")
 
     return "\n".join(rows)
-
-
-def describe_open_scope(scope: OpenScope) -> str:
-    """
-    Name an open scope for display in an error message.
-
-    A bindings list is named by the binding form that holds it, because its own
-    head is another `(` and carries no name of its own.
-    """
-    if scope.is_bindings_list:
-        return f"bindings list of '{scope.enclosing_form}'"
-
-    if scope.form_type == '(':
-        return "parenthesised group"
-
-    return f"'{scope.form_type}'"
-
-
-def format_open_scopes(diagnosis: ParenDiagnosis) -> str:
-    """
-    Render the forms still open at end of input, outermost first.
-
-    This is the nesting the reader intended to write, listed in source order so
-    the line numbers increase down the list.  The innermost scope is the form
-    whose closing `)` is absent, and each scope before it is the context it
-    sits in, so the list localises the missing `)` to a form rather than to a
-    line.  The element count is what distinguishes a form that simply ran out of
-    input from one that swallowed its own body: a bindings list that holds more
-    elements than it has bindings has read the body as a binding.
-
-    Args:
-        diagnosis: The diagnosis to render.
-
-    Returns:
-        The formatted list, one scope per line, or an empty string when no form
-        is open.
-    """
-    if not diagnosis.open_scopes:
-        return ""
-
-    rows = []
-    for index, scope in enumerate(diagnosis.open_scopes, 1):
-        name = describe_open_scope(scope)
-        elements = f"{scope.element_count} element{'s' if scope.element_count != 1 else ''}"
-        rows.append(f"  {index}. {name} at line {scope.line}, column {scope.column} ({elements})")
-
-    return "\n".join(rows)
-
-
-def early_close_error(
-    diagnosis: ParenDiagnosis,
-    error_class: type[MenaiError],
-    source: str,
-    source_file: str,
-    form_name: str,
-    form_line: int,
-    form_column: int,
-) -> MenaiError | None:
-    """
-    Build an error for a form whose enclosing form closed before its body.
-
-    A structural error — a form with the wrong number of elements — is often
-    the symptom of a misplaced `)` that closed an enclosing form before its
-    body, so the elements that follow are read as further elements of the form.
-    The parser reports the symptom at whichever form it happened to be reading,
-    which is nowhere near the mistake.  The diagnosis identifies the `)` that
-    closed the enclosing form early, and that is the line the reader has to
-    change.
-
-    The diagnosis also fires when a form closed before its *own* body, which is
-    a genuine structural error rather than a misplaced `)`.  The two are told
-    apart by position: when the form that closed early is the same form whose
-    structural check failed, the error is genuine and this returns None so the
-    caller reports its own message.
-
-    The caller supplies the error class so that the AST builder and the semantic
-    analyzer can each raise their own error type from one shared diagnosis.
-
-    Args:
-        diagnosis: The parenthesis diagnosis for the token stream.
-        error_class: The error class to instantiate (MenaiASTBuildError or
-            MenaiEvalError).
-        source: The original source text, for context display.
-        source_file: The source file name, for location display.
-        form_name: The name of the form whose structural check failed, used in
-            the message.
-        form_line: Line of the form whose structural check failed.
-        form_column: Column of the form whose structural check failed.
-
-    Returns:
-        An error pointing at the `)` that closed the enclosing form early, or
-        None when the diagnosis shows no such close.
-    """
-    if diagnosis.suspected_line is None or diagnosis.suspected_column is None:
-        return None
-
-    if (
-        diagnosis.suspected_open_line == form_line
-        and diagnosis.suspected_open_column == form_column
-    ):
-        # The form that closed early is the form being reported, so this is its
-        # own structural error, not a misplaced ')' in an enclosing form.
-        return None
-
-    line = diagnosis.suspected_line
-    column = diagnosis.suspected_column
-    closed_form = diagnosis.suspected_form or "form"
-
-    depth_table = format_depth_table(diagnosis, line - 3, line + 3)
-    table_block = f"\n\nParenthesis depth by line (start->end):\n{depth_table}" if depth_table else ""
-
-    context = (
-        f"The '{form_name}' has the wrong number of elements because the ')' at "
-        f"line {line}, column {column} closed the '{closed_form}' before its body. "
-        f"The elements that follow were read as further elements of the '{form_name}' "
-        f"rather than as the body of the '{closed_form}'. The parentheses balance, "
-        f"so no ')' is missing or extra \u2014 it is in the wrong place."
-        f"{table_block}"
-    )
-
-    return error_class(
-        message=(
-            f"'{closed_form}' closed before its body at line {line}, "
-            f"column {column} (reported as '{form_name}' structure error)"
-        ),
-        line=line,
-        column=column,
-        received=f"The ')' at line {line}, column {column} closed the '{closed_form}' before its body",
-        expected=f"A body expression before the ')' that closes the '{closed_form}'",
-        suggestion=f"Move the ')' at line {line}, column {column} to after the body of the '{closed_form}'",
-        context=context,
-        source=source,
-        source_file=source_file,
-    )

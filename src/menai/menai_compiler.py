@@ -19,7 +19,6 @@ from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
 from menai.ast.menai_ast_binding_injector import MenaiASTBindingInjector
 from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
 from menai.ast.menai_lexer import MenaiLexer
-from menai.ast.menai_paren_diagnostic import diagnose_parens
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.bytecode.menai_bytecode_builder import MenaiBytecodeBuilder
 from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
@@ -159,8 +158,9 @@ class MenaiCompiler:
         """Run the front-end stages without the internal-error boundary."""
         tokens = self._lexer.lex(source)
         ast = self._ast_builder.build(tokens, source, source_file)
-        diagnosis = diagnose_parens(tokens, source)
-        checked_ast = self._ast_semantic_analyzer.analyze(ast, source, source_file, diagnosis)
+        checked_ast = self._ast_semantic_analyzer.analyze(
+            ast, source, source_file, self._ast_builder.early_close
+        )
         if is_program:
             resolved_ast = self._ast_module_resolver.resolve_program(checked_ast)
 
