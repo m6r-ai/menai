@@ -35,6 +35,7 @@ from menai.ast.menai_ast import (
 from menai.menai_builtin_registry import MenaiBuiltinRegistry
 from menai.menai_error import MenaiEvalError
 from menai.ast.menai_ast import MenaiASTStruct, MenaiASTEnum
+from menai.ast.menai_ast_desugarer import _BUILTIN_SEQUENCE_PATTERN_TYPES
 
 
 # Names that are syntax rather than names.  A form headed by one of these is
@@ -818,6 +819,8 @@ class MenaiASTSemanticAnalyzer:
         if (len(pattern.elements) >= 1 and
             isinstance(pattern.elements[0], MenaiASTSymbol) and
             pattern.elements[0].name == ':'):
+            self._reject_shadowed_builtin_type_pattern_head(pattern)
+
             for elem in pattern.elements[2:]:
                 if _is_quoted_symbol(elem):
                     continue
@@ -828,6 +831,46 @@ class MenaiASTSemanticAnalyzer:
 
         for elem_pattern in pattern.elements:
             self._analyze_match_pattern(elem_pattern)
+
+    def _reject_shadowed_builtin_type_pattern_head(self, pattern: MenaiASTList) -> None:
+        """
+        Raise when a type pattern's head names a builtin sequence type that is shadowed.
+
+        A type pattern head must name a type.  `list` and `vector` name builtin
+        types when unshadowed, but they are ordinary binding names, so an
+        enclosing binder can shadow them with a non-type value.  The head then
+        names neither a struct nor an enum type, and the pattern cannot mean
+        anything: it must be rejected rather than silently resolved to the
+        builtin type the user's binding replaced.
+
+        Args:
+            pattern: A type pattern, (: TypeName ...).
+
+        Raises:
+            MenaiEvalError: If the type name is a shadowed builtin sequence type.
+        """
+        type_name_expr = pattern.elements[1]
+        if not isinstance(type_name_expr, MenaiASTSymbol):
+            return
+
+        type_name = type_name_expr.name
+        if type_name not in _BUILTIN_SEQUENCE_PATTERN_TYPES or not self._is_shadowed(type_name):
+            return
+
+        raise MenaiEvalError(
+            message=f"Type pattern head '{type_name}' is shadowed by a binding",
+            received=f"Pattern: {pattern}",
+            expected="The name of a struct or enum type in scope",
+            example="(: Point x y) or (: state 'idle)",
+            suggestion=(
+                f"'{type_name}' is bound by an enclosing lexical binding, so it no longer "
+                f"names the builtin type. Rename the binding, or write the pattern where "
+                f"the builtin type is in scope."
+            ),
+            line=pattern.line,
+            column=pattern.column,
+            source=self.source,
+        )
 
     def _analyze_and(self, expr: MenaiASTList) -> MenaiASTList:
         """Validate and expression: (and arg1 arg2 ...)"""

@@ -2549,7 +2549,14 @@ class MenaiASTDesugarer:
         # and enum lookups so that a user type of the same name wins.  A builtin
         # head is recognised before any list-pattern fallback, so it can never
         # silently degrade to a list destructuring pattern.
-        if type_name in _BUILTIN_SEQUENCE_PATTERN_TYPES:
+        #
+        # The name must not be shadowed by an enclosing lexical binder.  A binding
+        # of `list` is an ordinary binding, but it is not a type, so a `(: list ...)`
+        # head that resolves to it cannot mean anything.  Falling through to the
+        # error below is the only honest outcome: treating the head as the builtin
+        # would silently ignore the user's binding and match against a type the
+        # program never mentioned.
+        if type_name in _BUILTIN_SEQUENCE_PATTERN_TYPES and not self._is_shadowed(type_name):
             return self._desugar_builtin_sequence_pattern(
                 pattern, temp_var, type_name
             )

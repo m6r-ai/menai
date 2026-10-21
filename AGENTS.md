@@ -414,6 +414,21 @@ opcode-backed builtin in explicit `$`-prefixed form; it must not rely on the
 desugarer's name-based rewrites. Prelude-only functions (which have no primitive
 form) are called unprefixed, as normal.
 
+### A builtin type pattern head must not resolve through a shadowing binding
+
+`(: list ...)` and `(: vector ...)` name builtin sequence types that have no type
+binding in scope, so the desugarer resolves them by name against
+`_BUILTIN_SEQUENCE_PATTERN_TYPES`. That lookup must be gated on `_is_shadowed`,
+exactly like the name-based call rewrites above.
+
+`list` and `vector` are ordinary prelude binding names as well as pattern-head
+types, so an enclosing binder can shadow them with a value that is not a type. A
+head that resolves to such a binding names no type at all, and the pattern cannot
+mean anything. Both the semantic analyser and the desugarer reject it. Resolving
+it to the builtin instead would silently ignore the user's binding and match
+against a type the program never mentioned, which is a miscompile rather than a
+missed error.
+
 ### Struct type recognition is lexically scoped
 
 Struct recognition in the desugarer (constructor calls `(Point 1 2)` and

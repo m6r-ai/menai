@@ -514,6 +514,7 @@ Syntax: (operator arg1 arg2 ...)
 - Fixed-arity destructuring names its type with a : head: (: list a b c), (: vector a b c), (: Point x y)
 - Prefix-plus-rest decomposition uses the . notation and takes no type head: (match lst ((head . tail) (list-prepend tail head)))
 - A bare (a b c) is NOT a list destructuring pattern; write (: list a b c)
+- The : head must name a type. list and vector name builtin types, but they are also ordinary binding names, so a binding of list or vector by an enclosing let or lambda makes (: list ...) a compile-time error rather than silently meaning the builtin type
 - Enum variants: (match s ((: state 'idle) "i") ((: state 'running) "r") (_ "other")) — the type name is preceded by the : head symbol, the variant a quoted symbol
 - Nested patterns: (match data ((: list (? integer? x) (? string? y)) (list x y)) (_ "no match"))
 - First match wins: patterns are tested in order, use specific patterns before general ones
