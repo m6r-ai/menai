@@ -510,10 +510,12 @@ Syntax: (operator arg1 arg2 ...)
 - Variable binding: (match x ((? integer? n) (integer* n 2)) ((? string? s) (string-upcase s)))
 - Wildcard patterns: _ matches anything without binding
 - Predicate patterns: (? pred var) — pred can be any expression, including user-defined predicates: (? integer? n), (? string? s), (? my-pred? x)
-- Empty list: (match lst (() "empty") ((x) "singleton") (_ "multiple"))
-- List destructuring: (match lst ((a b c) (integer+ a b c)) ((head . tail) (list-prepend tail head)))
+- Empty list: (match lst ((: list) "empty") ((: list x) "singleton") (_ "multiple"))
+- Fixed-arity destructuring names its type with a : head: (: list a b c), (: vector a b c), (: Point x y)
+- Prefix-plus-rest decomposition uses the . notation and takes no type head: (match lst ((head . tail) (list-prepend tail head)))
+- A bare (a b c) is NOT a list destructuring pattern; write (: list a b c)
 - Enum variants: (match s ((: state 'idle) "i") ((: state 'running) "r") (_ "other")) — the type name is preceded by the : head symbol, the variant a quoted symbol
-- Nested patterns: (match data (((? integer? x) (? string? y)) (list x y)) (_ "no match"))
+- Nested patterns: (match data ((: list (? integer? x) (? string? y)) (list x y)) (_ "no match"))
 - First match wins: patterns are tested in order, use specific patterns before general ones
 - Example: (match data (42 "answer") ((? integer? n) (integer* n 2)) ((? string? s) (string-upcase s)) ((head . tail) (list head (list-length tail))) (_ "unknown"))
 

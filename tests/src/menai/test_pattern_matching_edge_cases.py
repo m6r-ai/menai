@@ -138,7 +138,7 @@ class TestMenaiPatternMatchingEdgeCases:
         """Test nested pattern matching edge cases."""
         # Nested list patterns
         try:
-            result = menai.evaluate('(match (list (list 1 2) 3) (((a b) c) (integer+ a b c)) (_ 0))')
+            result = menai.evaluate('(match (list (list 1 2) 3) (((: list a b) c) (integer+ a b c)) (_ 0))')
             assert result == 6
         except MenaiEvalError:
             # Nested patterns might not be supported

@@ -301,9 +301,9 @@ class TestDesugarerMatchList:
         """Test desugaring of simple fixed-length list pattern."""
         desugarer = MenaiASTDesugarer()
 
-        # (match x ((a b) (list a b)) (_ "wrong"))
+        # (match x ((: list a b) (list a b)) (_ "wrong"))
         # Scrutinee is a symbol — result is if directly.
-        expr = parse_and_analyze_expression('(match x ((a b) (list a b)) (_ "wrong"))')
+        expr = parse_and_analyze_expression('(match x ((: list a b) (list a b)) (_ "wrong"))')
         result = desugarer.desugar(expr)
 
         assert isinstance(result, MenaiASTList)
@@ -375,9 +375,9 @@ class TestDesugarerMatchNested:
         """Test desugaring of nested list pattern."""
         desugarer = MenaiASTDesugarer()
 
-        # (match x (((a b)) (list a b)) (_ "wrong"))
+        # (match x (((: list a b)) (list a b)) (_ "wrong"))
         # Scrutinee is a symbol — result is if directly.
-        expr = parse_and_analyze_expression('(match x (((a b)) (list a b)) (_ "wrong"))')
+        expr = parse_and_analyze_expression('(match x (((: list a b)) (list a b)) (_ "wrong"))')
         result = desugarer.desugar(expr)
 
         assert isinstance(result, MenaiASTList)

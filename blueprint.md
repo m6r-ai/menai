@@ -66,6 +66,25 @@ arithmetic operators are type-specific (e.g. `integer+`, `float*`). This prevent
 a class of bugs that arise from silent coercion and makes the type system more
 predictable for both AIs and humans.
 
+### Patterns name the type they decompose
+
+There is no implicit container. A structural pattern states in its form which
+operation it performs and on what:
+
+- **Fixed-arity positional binding** names its type with a `:` head — `(: list a b c)`,
+  `(: vector a b c)`, `(: Point x y)`, `(: state 'idle)`. The head is the same for a
+  builtin structural type and a user-declared nominal one, because the distinction that
+  matters in a pattern is that it decomposes a typed value, not how that type was
+  declared.
+- **Prefix-plus-rest decomposition** uses the `.` notation and takes no type head —
+  `(head . tail)`, matching `(lambda (a . rest) ...)`. `.` is already the language's
+  notation for prefix-plus-rest, so the pattern form needs no marker of its own.
+
+This is the same principle as strict numeric typing applied to destructuring: no
+operation is inferred from the absence of a marker. In particular, lists are not the
+default container and a bare `(a b c)` is not a list destructuring pattern. See
+[ADR-0057](docs/adr/0057-typed-destructuring-patterns.md).
+
 ### Safety by design, not by sandboxing
 
 The safety model is not "we sandboxed the dangerous parts." There are no dangerous

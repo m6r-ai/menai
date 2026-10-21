@@ -1068,7 +1068,7 @@ class TestBytesLeb128:
         """bytes-read-uleb128 decodes unsigned LEB128 and returns (value next-offset)."""
         expr = f'''
             (match (bytes-read-uleb128 (string-hex->bytes "{hex_str}") 0)
-              ((val next) (list val next)))
+              ((: list val next) (list val next)))
         '''
         assert menai.evaluate(expr) == [expected_value, expected_next]
 
@@ -1076,7 +1076,7 @@ class TestBytesLeb128:
         """bytes-read-uleb128 works at non-zero offset."""
         expr = '''
             (match (bytes-read-uleb128 (string-hex->bytes "ffac02ff") 1)
-              ((val next) (list val next)))
+              ((: list val next) (list val next)))
         '''
         assert menai.evaluate(expr) == [300, 3]
 
@@ -1084,7 +1084,7 @@ class TestBytesLeb128:
         """Encode then decode recovers the original value."""
         expr = '''
             (match (bytes-read-uleb128 (bytes-append-uleb128 (string-hex->bytes "") 624485) 0)
-              ((val next) val))
+              ((: list val next) val))
         '''
         assert menai.evaluate(expr) == 624485
 
@@ -1130,7 +1130,7 @@ class TestBytesLeb128:
         """bytes-read-sleb128 decodes signed LEB128."""
         expr = f'''
             (match (bytes-read-sleb128 (string-hex->bytes "{hex_str}") 0)
-              ((val next) val))
+              ((: list val next) val))
         '''
         assert menai.evaluate(expr) == expected_value
 
@@ -1138,7 +1138,7 @@ class TestBytesLeb128:
         """Encode then decode recovers the original signed value."""
         expr = '''
             (match (bytes-read-sleb128 (bytes-append-sleb128 (string-hex->bytes "") -123456) 0)
-              ((val next) val))
+              ((: list val next) val))
         '''
         assert menai.evaluate(expr) == -123456
 
@@ -1350,7 +1350,7 @@ class TestBytesUleb128RoundTrip:
         """bytes-append-uleb128 then bytes-read-uleb128 recovers the original value."""
         expr = f'''
             (match (bytes-read-uleb128 (bytes-append-uleb128 (string-hex->bytes "") {value}) 0)
-              ((val next) val))
+              ((: list val next) val))
         '''
         assert menai.evaluate(expr) == value
 

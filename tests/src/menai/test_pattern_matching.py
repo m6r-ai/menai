@@ -114,7 +114,7 @@ class TestPatternMatching:
         ('(match #f (#t "true") (_ "not true"))', '"not true"'),
 
         # Wildcard as catch-all
-        ('(match (list 1 2 3) ((list 1 2) "short") (_ "other"))', '"other"'),
+        ('(match (list 1 2 3) ((: list 1 2) "short") (_ "other"))', '"other"'),
         ('(match 3.14 (2.71 "e") (_ "not e"))', '"not e"'),
 
         # Multiple wildcards (should all match but first wins)
@@ -248,16 +248,16 @@ class TestPatternMatching:
         ('(match (list 1) (() "empty") (_ "non-empty"))', '"non-empty"'),
 
         # Fixed-length list patterns
-        ('(match (list 1 2 3) ((a b c) (integer+ a b c)) (_ "wrong length"))', '6'),
-        ('(match (list 1 2) ((a b c) (integer+ a b c)) (_ "wrong length"))', '"wrong length"'),
-        ('(match (list "x" "y") ((a b) (string-concat a b)) (_ "other"))', '"xy"'),
+        ('(match (list 1 2 3) ((: list a b c) (integer+ a b c)) (_ "wrong length"))', '6'),
+        ('(match (list 1 2) ((: list a b c) (integer+ a b c)) (_ "wrong length"))', '"wrong length"'),
+        ('(match (list "x" "y") ((: list a b) (string-concat a b)) (_ "other"))', '"xy"'),
 
         # Single element list patterns
-        ('(match (list 42) ((x) (integer* x 2)) (_ "not single"))', '84'),
-        ('(match (list 1 2) ((x) (integer* x 2)) (_ "not single"))', '"not single"'),
+        ('(match (list 42) ((: list x) (integer* x 2)) (_ "not single"))', '84'),
+        ('(match (list 1 2) ((: list x) (integer* x 2)) (_ "not single"))', '"not single"'),
 
         # Nested list patterns
-        ('(match (list (list 1 2) (list 3 4)) (((a b) (c d)) (integer+ a b c d)) (_ "other"))', '10'),
+        ('(match (list (list 1 2) (list 3 4)) (((: list a b) (: list c d)) (integer+ a b c d)) (_ "other"))', '10'),
     ])
     def test_list_structure_patterns(self, menai, expression, expected):
         """Test list structure pattern matching."""
@@ -285,7 +285,7 @@ class TestPatternMatching:
         # All variables should be bound
         helpers.assert_evaluates_to(
             menai,
-            '(match (list 10 20 30) ((x y z) (list z y x)))',
+            '(match (list 10 20 30) ((: list x y z) (list z y x)))',
             '(30 20 10)'
         )
 
@@ -310,7 +310,7 @@ class TestPatternMatching:
         # Number in specific position
         helpers.assert_evaluates_to(
             menai,
-            '(match (list 10 "hello" #t) ((a (? string? s) c) (list a (string-length s) c)))',
+            '(match (list 10 "hello" #t) ((: list a (? string? s) c) (list a (string-length s) c)))',
             '(10 5 #t)'
         )
 
@@ -319,7 +319,7 @@ class TestPatternMatching:
         # Nested list with type patterns
         complex_pattern = '''
         (match (list (list 1 2) "test" (list 3 4))
-               (((a b) (? string? s) (c d)) (list (integer+ a b c d) (string-length s)))
+               (((: list a b) (? string? s) (: list c d)) (list (integer+ a b c d) (string-length s)))
                (_ "no match"))
         '''
         helpers.assert_evaluates_to(menai, complex_pattern, '(10 4)')
@@ -327,7 +327,7 @@ class TestPatternMatching:
         # Mixed patterns with multiple levels
         mixed_pattern = '''
         (match (list 42 (list "x" "y") #t)
-               (((? integer? n) (a b) (? boolean? flag))
+               ((: list (? integer? n) (: list a b) (? boolean? flag))
                 (if flag (integer+ n (string-length (string-concat a b))) n))
                (_ "no match"))
         '''
@@ -357,7 +357,7 @@ class TestPatternMatching:
         let_with_match = '''
         (let ((data (list 1 2 3)))
           (match data
-                 ((a b c) (integer+ a b c))
+                 ((: list a b c) (integer+ a b c))
                  (_ 0)))
         '''
         helpers.assert_evaluates_to(menai, let_with_match, '6')
@@ -420,9 +420,9 @@ class TestPatternMatching:
         """Test nested match expressions."""
         nested_match = '''
         (match (list 1 (list 2 3))
-               ((a (? list? inner))
+               ((: list a (? list? inner))
                 (match inner
-                       ((b c) (integer+ a b c))
+                       ((: list b c) (integer+ a b c))
                        (_ a)))
                (_ 0))
         '''
@@ -483,16 +483,16 @@ class TestPatternMatching:
     def test_list_pattern_length_mismatch(self, menai):
         """Test that list patterns with wrong length fall through to wildcard."""
         # Pattern expects 3 elements, value has 2 - should match wildcard
-        result = menai.evaluate_and_format('(match (list 1 2) ((a b c) "three") (_ "other"))')
+        result = menai.evaluate_and_format('(match (list 1 2) ((: list a b c) "three") (_ "other"))')
         assert result == '"other"'
 
         # Pattern expects 2 elements, value has 3 - should match wildcard
-        result = menai.evaluate_and_format('(match (list 1 2 3) ((a b) "two") (_ "other"))')
+        result = menai.evaluate_and_format('(match (list 1 2 3) ((: list a b) "two") (_ "other"))')
         assert result == '"other"'
 
         # Test actual no-match error (no wildcard)
         with pytest.raises(MenaiEvalError, match="No patterns matched"):
-            menai.evaluate('(match (list 1 2) ((a b c) "three"))')
+            menai.evaluate('(match (list 1 2) ((: list a b c) "three"))')
 
     def test_type_pattern_with_wrong_type(self, menai):
         """Test type patterns with wrong types fall through correctly."""
@@ -587,7 +587,7 @@ class TestPatternMatching:
         (let ((sum-tree (lambda (tree)
                             (match tree
                                    ((? integer? n) n)
-                                   ((left right) (integer+ (sum-tree left) (sum-tree right)))
+                                   ((: list left right) (integer+ (sum-tree left) (sum-tree right)))
                                    (_ 0)))))
           (sum-tree (list (list 1 2) (list 3 4))))
         '''
@@ -650,7 +650,7 @@ class TestPatternMatching:
         # Deeply nested list patterns
         deep_nesting = '''
         (match (list (list (list 1 2) (list 3 4)) (list (list 5 6) (list 7 8)))
-               ((((a b) (c d)) ((e f) (g h))) (integer+ a b c d e f g h))
+               ((((: list a b) (: list c d)) ((: list e f) (: list g h))) (integer+ a b c d e f g h))
                (_ "no match"))
         '''
         helpers.assert_evaluates_to(menai, deep_nesting, '36')  # 1+2+3+4+5+6+7+8
@@ -763,10 +763,10 @@ class TestPatternMatching:
         # Each arm is a list pattern whose length grows, and whose body is itself
         # a match, so the desugared form grows well past the limit.
         inner = " ".join(
-            f"(({' '.join(chr(97 + i) for i in range(k))}) {k})" for k in range(1, 19)
+            f"((: list {' '.join(chr(97 + i) for i in range(k))}) {k})" for k in range(1, 19)
         )
         arms = " ".join(
-            f"(({' '.join(chr(97 + i) for i in range(k))}) (match (list 1 2) {inner} (_ 0)))"
+            f"((: list {' '.join(chr(97 + i) for i in range(k))}) (match (list 1 2) {inner} (_ 0)))"
             for k in range(1, 19)
         )
         source = f"(match (list 1 2) {arms} (_ 0))"
@@ -777,7 +777,7 @@ class TestPatternMatching:
     def test_match_within_desugared_size_limit_is_accepted(self, menai):
         """A match whose desugared form is within the limit compiles and runs."""
         arms = " ".join(
-            f"(({' '.join(chr(97 + i) for i in range(k))}) {k})" for k in range(1, 11)
+            f"((: list {' '.join(chr(97 + i) for i in range(k))}) {k})" for k in range(1, 11)
         )
         source = f"(match (list 1 2 3) {arms} (_ 0))"
 

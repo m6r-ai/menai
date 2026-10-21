@@ -187,6 +187,17 @@ def _quoted_symbol_name(expr: MenaiASTNode) -> str | None:
     return name_expr.name
 
 
+# Builtin ordered types that support fixed-arity structural destructuring.  Each
+# entry maps the type name used in a pattern head to the predicate and accessor
+# that decompose a value of that type.  See ADR-0057: a type qualifies if it has
+# an ordered shape with a runtime-determinable length, which is why dict and set
+# are absent.
+_BUILTIN_SEQUENCE_PATTERN_TYPES: dict[str, tuple[str, str, str]] = {
+    'list': ('$list?', '$list-length', '$list-nth'),
+    'vector': ('$vector?', '$vector-length', '$vector-nth'),
+}
+
+
 def _is_type_pattern_head(expr: MenaiASTNode) -> bool:
     """
     Return True when expr is the reserved ':' head of a type pattern.
@@ -1974,7 +1985,26 @@ class MenaiASTDesugarer:
             dot_position = dot_positions[0]
             return self._desugar_cons_pattern(pattern, temp_var, dot_position)
 
-        # Fixed-length list pattern: (p1 p2 p3)
+        # A bare fixed-arity list pattern is not a destructuring form.  See
+        # ADR-0057: fixed-arity destructuring names its type with a : head, so
+        # list destructuring is written (: list a b c).  A bare (a b c) is a
+        # list pattern whose head is the symbol a, which binds a and matches
+        # nothing — the same meaning any other list whose head is a symbol has.
+        head = pattern.elements[0]
+        if isinstance(head, MenaiASTSymbol) and head.name != '?':
+            raise MenaiEvalError(
+                message="A bare list pattern is not a destructuring pattern",
+                received=f"Pattern: {pattern}",
+                expected="A typed destructuring pattern, e.g. (: list a b c)",
+                example="(: list a b c) or (: vector a b c)",
+                suggestion=(
+                    "Write (: list ...) to destructure a list, or (: vector ...) "
+                    "to destructure a vector"
+                ),
+                line=pattern.line,
+                column=pattern.column,
+            )
+
         return self._desugar_fixed_list_pattern(pattern, temp_var)
 
     def _desugar_fixed_list_pattern(
@@ -2514,6 +2544,16 @@ class MenaiASTDesugarer:
 
             return self._desugar_struct_pattern(pattern, temp_var)
 
+        # Builtin structural types: (: list ...) and (: vector ...).  These have no
+        # type binding in scope, so they are resolved by name here, after the struct
+        # and enum lookups so that a user type of the same name wins.  A builtin
+        # head is recognised before any list-pattern fallback, so it can never
+        # silently degrade to a list destructuring pattern.
+        if type_name in _BUILTIN_SEQUENCE_PATTERN_TYPES:
+            return self._desugar_builtin_sequence_pattern(
+                pattern, temp_var, type_name
+            )
+
         raise MenaiEvalError(
             message=f"'{type_name}' does not name a struct or enum type in scope",
             received=f"Pattern: {pattern}",
@@ -2523,6 +2563,65 @@ class MenaiASTDesugarer:
             line=pattern.line,
             column=pattern.column,
         )
+
+    def _desugar_builtin_sequence_pattern(
+        self,
+        pattern: MenaiASTList,
+        temp_var: str,
+        type_name: str,
+    ) -> tuple[MenaiASTNode, list[tuple[str, Any]]]:
+        """
+        Desugar a fixed-arity builtin sequence pattern, (: list ...) or (: vector ...).
+
+        Both types decompose identically: test the type, test the length, extract
+        each element positionally, then match the element patterns.  Only the
+        predicate and accessor differ, so the two share one implementation driven
+        by _BUILTIN_SEQUENCE_PATTERN_TYPES.
+
+        The returned bindings use the same __LIST_PATTERN_ marker as a fixed-arity
+        list pattern, because the marker carries element extraction info and
+        _build_list_pattern_clause consumes it without caring which accessor
+        produced the elements.
+
+        Args:
+            pattern: The normalised pattern, e.g. (vector a b) for (: vector a b)
+            temp_var: Name of temp variable holding the match value
+            type_name: The builtin type name, 'list' or 'vector'
+
+        Returns:
+            (test_expression, [marker]) where marker defers element extraction
+        """
+        type_pred, length_fn, nth_fn = _BUILTIN_SEQUENCE_PATTERN_TYPES[type_name]
+        element_patterns = pattern.elements[1:]
+
+        type_test = MenaiASTList((
+            MenaiASTSymbol(type_pred),
+            MenaiASTSymbol(temp_var),
+        ))
+
+        length_test = MenaiASTList((
+            MenaiASTSymbol('$integer=?'),
+            MenaiASTList((
+                MenaiASTSymbol(length_fn),
+                MenaiASTSymbol(temp_var),
+            )),
+            MenaiASTInteger(len(element_patterns)),
+        ))
+
+        combined_test = self._make_and([type_test, length_test], pattern)
+
+        element_info: list[tuple[MenaiASTNode, str, MenaiASTNode]] = []
+        for i, elem_pattern in enumerate(element_patterns):
+            elem_temp = self._gen_temp()
+            elem_value = MenaiASTList((
+                MenaiASTSymbol(nth_fn),
+                MenaiASTSymbol(temp_var),
+                MenaiASTInteger(i),
+            ))
+            element_info.append((elem_pattern, elem_temp, elem_value))
+
+        marker_name = f'__LIST_PATTERN_{self._gen_temp()}__'
+        return (combined_test, [(marker_name, element_info)])
 
     def _desugar_struct_pattern(
         self,
