@@ -195,10 +195,10 @@ class _RecordingInliner(MenaiIRInliner):
         super().__init__()
         self._seen_letrec_names = seen_letrec_names
 
-    def _is_inlineable(self, target, func_plan, letrec_names, arg_count):
+    def _is_inlineable(self, target, func_plan, letrec_names, arg_plans):
         """Record the letrec names in scope, then delegate to the base check."""
         self._seen_letrec_names.append(set(letrec_names))
-        return super()._is_inlineable(target, func_plan, letrec_names, arg_count)
+        return super()._is_inlineable(target, func_plan, letrec_names, arg_plans)
 
 
 class TestLocalLambdaInlining:
@@ -453,6 +453,56 @@ class TestBoundNameShadowsOuterLambda:
             m.evaluate("(let ((f (lambda (x) (integer+ x 1)))) (let ((f 99)) (f 5)))")
 
         assert exc_info.value.error_code == VMErrorCode.NOT_CALLABLE
+
+
+class TestArgumentCapturePreventingInlining:
+    """Tests that an argument whose free variables would be captured by a
+    binding in the callee body prevents inlining."""
+
+    def test_captured_variable_in_map_vector_callback(self):
+        """
+        A callback passed to map-vector that references a variable bound by a
+        binding inside map-vector's body is not inlined into that body, so the
+        variable keeps the caller's value rather than the callee's.
+        """
+        from menai.menai import Menai
+
+        m = Menai()
+        result = m.evaluate(
+            "(let ((table (vector (vector 10 11) (vector 20 21))))"
+            "  (let ((i 0))"
+            "    (map-vector (lambda (row) (vector-nth row i)) table)))"
+        )
+        assert list(result) == [10, 20]
+
+    def test_captured_variable_in_fold_vector_callback(self):
+        """
+        A callback passed to fold-vector that references a variable bound by a
+        binding inside fold-vector's body is not inlined into that body.
+        """
+        from menai.menai import Menai
+
+        m = Menai()
+        result = m.evaluate(
+            "(let ((table (vector (vector 10 11) (vector 20 21))))"
+            "  (let ((i 1))"
+            "    (fold-vector (lambda (acc row) (integer+ acc (vector-nth row i))) 0 table)))"
+        )
+        assert result == 32
+
+    def test_constant_callback_still_inlined(self):
+        """
+        A callback with no free variables is still inlined: the capture check
+        only rejects arguments that reference a name the callee body binds.
+        """
+        ir = _build_ir(
+            "(let ((table (vector (vector 10 11))))"
+            "  (map-vector (lambda (row) (vector-nth row 0)) table))",
+            inject_prelude=True,
+        )
+        new_ir, changed = _inline(ir)
+
+        assert changed
 
 
 class TestInliningIntegration:

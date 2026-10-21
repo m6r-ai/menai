@@ -30,6 +30,10 @@ A lambda is only inlined when:
   parameters via outer_free_vars.  Captures of sibling names or other
   internal bindings are safe because those bindings travel with the inlined
   body.
+- No name bound inside its body (other than its own parameters) is free in an
+  argument expression.  Substituting such an argument would let the body's
+  binding capture the argument's variable, silently rebinding it to the
+  callee's local instead of the caller's.
 - The argument count matches the parameter count (arity must be exact).
 - A lambda bound elsewhere has no captures.  A direct lambda application is
   exempt from this: it is inlined at its own definition site, so its captures
@@ -318,7 +322,9 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         """Try to inline a call site; fall back to optimizing arguments."""
         target = None if ir.is_builtin else self._resolve_target(ir.func_plan, scope_stack)
 
-        if target is not None and self._is_inlineable(target, ir.func_plan, letrec_names, len(ir.arg_plans)):
+        if target is not None and self._is_inlineable(
+            target, ir.func_plan, letrec_names, ir.arg_plans
+        ):
             inlined = self._inline(target, ir.arg_plans, ir.is_tail_call)
             self._inlined += 1
             return self._opt(inlined, scope_stack, letrec_names)
@@ -391,9 +397,11 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         target: MenaiIRLambda,
         func_plan: MenaiIRExpr,
         letrec_names: set[str],
-        arg_count: int,
+        arg_plans: tuple[MenaiIRExpr, ...],
     ) -> bool:
         """Check whether a lambda is eligible for inlining."""
+        arg_count = len(arg_plans)
+
         # Cheap field checks first, so a candidate that fails one of them is
         # rejected without any tree walk.  Most candidates fail here.
         if target.is_variadic:
@@ -442,6 +450,21 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         if _has_captures_of_params(target.body_plan, set(target.params)):
             return False
+
+        # Substituting an argument into the body must not let a binding in the
+        # body capture a variable that is free in the argument.  If the body
+        # binds a name that the argument references, the substituted argument
+        # would resolve that name to the body's binding rather than the
+        # caller's, silently changing its meaning.
+        #
+        # The callee's own parameters are excluded: an argument that references
+        # a name which is also a parameter is being substituted for that
+        # parameter, which is the intended substitution rather than a capture.
+        body_bound = _bound_names(target.body_plan) - set(target.params)
+
+        for arg_plan in arg_plans:
+            if _free_vars(arg_plan) & body_bound:
+                return False
 
         return True
 
@@ -538,6 +561,210 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         temp_name = self._gen_temp()
         captured_bindings.append((temp_name, arg_plan))
         return MenaiIRVariable(name=temp_name)
+
+
+def _bound_names(ir: MenaiIRExpr) -> set[str]:
+    """
+    Collect every name bound by a binding form or lambda within the tree.
+
+    These are the names that could capture a substituted argument expression:
+    if an argument has a free variable with one of these names, substituting
+    the argument into the body would rebind that variable to the body's
+    binding instead of the caller's.
+    """
+    names: set[str] = set()
+
+    if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList)):
+        return names
+
+    if isinstance(ir, MenaiIRError):
+        return _bound_names(ir.message)
+
+    if isinstance(ir, MenaiIRIf):
+        return (_bound_names(ir.condition_plan)
+                | _bound_names(ir.then_plan)
+                | _bound_names(ir.else_plan))
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        for name, value in ir.bindings:
+            names.add(name)
+            names |= _bound_names(value)
+
+        return names | _bound_names(ir.body_plan)
+
+    if isinstance(ir, MenaiIRLambda):
+        names |= set(ir.params)
+
+        return names | _bound_names(ir.body_plan)
+
+    if isinstance(ir, MenaiIRCall):
+        names |= _bound_names(ir.func_plan)
+
+        for arg in ir.arg_plans:
+            names |= _bound_names(arg)
+
+        return names
+
+    if isinstance(ir, MenaiIRReturn):
+        return _bound_names(ir.value_plan)
+
+    if isinstance(ir, MenaiIRBuildList):
+        for element in ir.element_plans:
+            names |= _bound_names(element)
+
+        return names
+
+    if isinstance(ir, MenaiIRBuildDict):
+        for key, value in ir.pair_plans:
+            names |= _bound_names(key)
+            names |= _bound_names(value)
+
+        return names
+
+    if isinstance(ir, MenaiIRBuildSet):
+        for element in ir.element_plans:
+            names |= _bound_names(element)
+
+        return names
+
+    if isinstance(ir, MenaiIRBuildVector):
+        for element in ir.element_plans:
+            names |= _bound_names(element)
+
+        return names
+
+    if isinstance(ir, MenaiIRBuildStruct):
+        for field in ir.field_plans:
+            names |= _bound_names(field)
+
+        return names
+
+    if isinstance(ir, MenaiIRBuildEnum):
+        return names
+
+    if isinstance(ir, MenaiIRLoop):
+        names |= set(ir.params)
+
+        for init in ir.init_plans:
+            names |= _bound_names(init)
+
+        return names | _bound_names(ir.body_plan)
+
+    if isinstance(ir, MenaiIRRecur):
+        for arg in ir.arg_plans:
+            names |= _bound_names(arg)
+
+        return names
+
+    raise TypeError(f"_bound_names: unhandled IR node type {type(ir).__name__}")
+
+
+def _free_vars(ir: MenaiIRExpr) -> set[str]:
+    """
+    Collect the names an expression references that it does not itself bind.
+
+    Only the cases that can appear as an inlining argument are handled: a
+    lambda (whose captures are already recorded), a variable, and the
+    composite forms that can contain them.  Anything else contributes no free
+    variables, which is conservative for the capture check below because the
+    check only ever rejects inlining.
+    """
+    if isinstance(ir, MenaiIRVariable):
+        return {ir.name}
+
+    if isinstance(ir, MenaiIRLambda):
+        # A lambda's captures are exactly its outer_free_vars.  Names in
+        # sibling_free_vars refer to its own $letrec group, which travels with
+        # the lambda when it is substituted, so they are not free here.
+        return set(ir.outer_free_vars)
+
+    if isinstance(ir, (MenaiIRConstant, MenaiIRQuote, MenaiIREmptyList, MenaiIRBuildEnum)):
+        return set()
+
+    if isinstance(ir, MenaiIRError):
+        return _free_vars(ir.message)
+
+    if isinstance(ir, MenaiIRIf):
+        return _free_vars(ir.condition_plan) | _free_vars(ir.then_plan) | _free_vars(ir.else_plan)
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        bound = {name for name, _ in ir.bindings}
+        free: set[str] = set()
+
+        for _, value in ir.bindings:
+            free |= _free_vars(value)
+
+        return (free | _free_vars(ir.body_plan)) - bound
+
+    if isinstance(ir, MenaiIRCall):
+        free = _free_vars(ir.func_plan)
+
+        for arg in ir.arg_plans:
+            free |= _free_vars(arg)
+
+        return free
+
+    if isinstance(ir, MenaiIRReturn):
+        return _free_vars(ir.value_plan)
+
+    if isinstance(ir, MenaiIRBuildList):
+        free = set()
+
+        for element in ir.element_plans:
+            free |= _free_vars(element)
+
+        return free
+
+    if isinstance(ir, MenaiIRBuildDict):
+        free = set()
+
+        for key, value in ir.pair_plans:
+            free |= _free_vars(key)
+            free |= _free_vars(value)
+
+        return free
+
+    if isinstance(ir, MenaiIRBuildSet):
+        free = set()
+
+        for element in ir.element_plans:
+            free |= _free_vars(element)
+
+        return free
+
+    if isinstance(ir, MenaiIRBuildVector):
+        free = set()
+
+        for element in ir.element_plans:
+            free |= _free_vars(element)
+
+        return free
+
+    if isinstance(ir, MenaiIRBuildStruct):
+        free = set()
+
+        for field in ir.field_plans:
+            free |= _free_vars(field)
+
+        return free
+
+    if isinstance(ir, MenaiIRLoop):
+        free = set()
+
+        for init in ir.init_plans:
+            free |= _free_vars(init)
+
+        return (free | _free_vars(ir.body_plan)) - set(ir.params)
+
+    if isinstance(ir, MenaiIRRecur):
+        free = set()
+
+        for arg in ir.arg_plans:
+            free |= _free_vars(arg)
+
+        return free
+
+    return set()
 
 
 def _has_captures_of_params(ir: MenaiIRExpr, params: set[str]) -> bool:
