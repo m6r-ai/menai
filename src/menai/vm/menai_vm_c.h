@@ -1432,6 +1432,8 @@ int menai_bigint_mod(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *
 int menai_bigint_divmod(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *quotient, MenaiBigInt *remainder);
 int menai_bigint_neg(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result);
 int menai_bigint_abs(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result);
+int menai_bigint_gcd(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
+int menai_bigint_lcm(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
 int menai_bigint_pow(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *result);
 int menai_bigint_and(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);
 int menai_bigint_or(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result);

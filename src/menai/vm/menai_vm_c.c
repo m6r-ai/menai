@@ -2897,6 +2897,156 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_INTEGER_GCD: {
+            MenaiInteger *a = (MenaiInteger *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiInteger *b = (MenaiInteger *)operand(constants_items, frame_regs, src1, tag & 2);
+
+            /* LONG_MIN has no positive counterpart in a long, so its magnitude
+             * is not representable and the fast path must not negate it. */
+            if (MENAI_LIKELY(!a->is_big && !b->is_big &&
+                             a->fixed != LONG_MIN && b->fixed != LONG_MIN)) {
+                unsigned long ua = a->fixed < 0 ? (unsigned long)(-a->fixed) : (unsigned long)a->fixed;
+                unsigned long ub = b->fixed < 0 ? (unsigned long)(-b->fixed) : (unsigned long)b->fixed;
+
+                while (ub != 0) {
+                    unsigned long t = ua % ub;
+                    ua = ub;
+                    ub = t;
+                }
+
+                MenaiInteger *r = alloc_menai_integer_from_long(vs, (long)ua);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
+            }
+
+            MenaiBigInt av;
+            menai_bigint_init(&av);
+            vm_err = menai_integer_to_menai_bigint(vs, a, &av);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                goto error;
+            }
+
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(vs, b, &bv);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                menai_bigint_final(vs, &av);
+                goto error;
+            }
+
+            MenaiBigInt res;
+            menai_bigint_init(&res);
+            vm_err = menai_bigint_gcd(vs, &av, &bv, &res);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                menai_bigint_final(vs, &av);
+                menai_bigint_final(vs, &bv);
+                goto error;
+            }
+
+            menai_bigint_final(vs, &av);
+            menai_bigint_final(vs, &bv);
+            MenaiInteger *r = alloc_menai_integer_from_bigint(vs, res);
+            if (!r) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_INTEGER_LCM: {
+            MenaiInteger *a = (MenaiInteger *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiInteger *b = (MenaiInteger *)operand(constants_items, frame_regs, src1, tag & 2);
+
+            /* lcm(0, n) is 0 for every n, including the case where the other
+             * argument is LONG_MIN and its magnitude is not representable. */
+            if (MENAI_LIKELY(!a->is_big && !b->is_big &&
+                             a->fixed != LONG_MIN && b->fixed != LONG_MIN)) {
+                unsigned long ua = a->fixed < 0 ? (unsigned long)(-a->fixed) : (unsigned long)a->fixed;
+                unsigned long ub = b->fixed < 0 ? (unsigned long)(-b->fixed) : (unsigned long)b->fixed;
+
+                if (ua == 0 || ub == 0) {
+                    MenaiInteger *r = alloc_menai_integer_from_long(vs, 0L);
+                    if (!r) {
+                        vm_err = MENAI_ERR_NOMEM;
+                        goto error;
+                    }
+
+                    menai_value_release(vs, frame_regs[dest]);
+                    frame_regs[dest] = (MenaiValue *)r;
+                    break;
+                }
+
+                unsigned long x = ua;
+                unsigned long y = ub;
+                while (y != 0) {
+                    unsigned long t = x % y;
+                    x = y;
+                    y = t;
+                }
+
+                /* Divide before multiplying so the product cannot overflow. */
+                unsigned long lcm = (ua / x) * ub;
+                if (lcm <= (unsigned long)LONG_MAX) {
+                    MenaiInteger *r = alloc_menai_integer_from_long(vs, (long)lcm);
+                    if (!r) {
+                        vm_err = MENAI_ERR_NOMEM;
+                        goto error;
+                    }
+
+                    menai_value_release(vs, frame_regs[dest]);
+                    frame_regs[dest] = (MenaiValue *)r;
+                    break;
+                }
+            }
+
+            MenaiBigInt av;
+            menai_bigint_init(&av);
+            vm_err = menai_integer_to_menai_bigint(vs, a, &av);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                goto error;
+            }
+
+            MenaiBigInt bv;
+            menai_bigint_init(&bv);
+            vm_err = menai_integer_to_menai_bigint(vs, b, &bv);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                menai_bigint_final(vs, &av);
+                goto error;
+            }
+
+            MenaiBigInt res;
+            menai_bigint_init(&res);
+            vm_err = menai_bigint_lcm(vs, &av, &bv, &res);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                menai_bigint_final(vs, &av);
+                menai_bigint_final(vs, &bv);
+                goto error;
+            }
+
+            menai_bigint_final(vs, &av);
+            menai_bigint_final(vs, &bv);
+            MenaiInteger *r = alloc_menai_integer_from_bigint(vs, res);
+            if (!r) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
         case OP_INTEGER_TO_FLOAT: {
             MenaiInteger *a = (MenaiInteger *)operand(constants_items, frame_regs, src0, tag & 1);
 

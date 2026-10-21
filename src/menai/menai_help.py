@@ -109,6 +109,8 @@ Syntax: (operator arg1 arg2 ...)
 - Bit shifts: (integer-bit-shift-left 1 3), (integer-bit-shift-right 8 2)
 - (integer-min 1 2) → 1
 - (integer-max 1 2) → 2
+- (integer-gcd a b) → greatest common divisor, always non-negative: (integer-gcd 12 8) → 4, (integer-gcd -4 6) → 2, (integer-gcd 0 5) → 5, (integer-gcd 0 0) → 0
+- (integer-lcm a b) → least common multiple, always non-negative: (integer-lcm 4 6) → 12, (integer-lcm -4 6) → 12, (integer-lcm 0 5) → 0
 - (integer->float x) → convert integer to float: (integer->float 42) → 42.0, (integer->float 3) → 3.0
 - (integer->complex real [imag]) → construct complex from one or two integers: (integer->complex 3) → 3+0j, (integer->complex 1 -2) → 1-2j
 - (integer->string 42) → "42", (integer->string 255 16) → "ff", (integer->string 255 2) → "11111111", (integer->string 255 8) → "377" (optional radix: 2, 8, 10, or 16; defaults to 10)

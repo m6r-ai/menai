@@ -22,6 +22,7 @@ New features:
   restated the rule with generic code unrelated to the source being compiled.
   Examples that show the shape of a form the reader may not know are kept.
 - Added `html-decode` and `html-encode` modules to the standard library.
+- Added `integer-gcd` and `integer-lcm` operations with VM opcode backing.
 
 Bug fixes:
 

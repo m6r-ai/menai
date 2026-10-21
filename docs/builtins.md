@@ -85,6 +85,8 @@ The same convention applies to bytes (`bytes-X` / `X-bytes`).
 | `(integer-expn base exp)` | Exponentiation; exp must be non-negative; arbitrary precision |
 | `(integer-min a b)` | Minimum |
 | `(integer-max a b)` | Maximum |
+| `(integer-gcd a b)` | Greatest common divisor; always non-negative |
+| `(integer-lcm a b)` | Least common multiple; always non-negative |
 
 ```menai
 (integer+ 1 2 3)    → 6
@@ -99,7 +101,19 @@ The same convention applies to bytes (`bytes-X` / `X-bytes`).
 (integer-expn 2 10) → 1024
 (integer-expn 3 0)  → 1
 (integer-expn 0 0)  → 1
+(integer-gcd 12 8)  → 4
+(integer-gcd -4 6)  → 2
+(integer-gcd 0 0)   → 0
+(integer-lcm 4 6)   → 12
+(integer-lcm -4 6)  → 12
 ```
+
+`integer-gcd` and `integer-lcm` both return a non-negative result regardless of
+the signs of their arguments.  `(integer-gcd 0 0)` is `0`, and `(integer-lcm 0 n)`
+is `0` for every `n`.  The two satisfy the identity
+`gcd(a, b) * lcm(a, b) == |a * b|`.  Both are fixed 2-arity: unlike `integer-min`
+and `integer-max` they are not variadic, so a fold over three or more values is
+written by the caller.
 
 ### Bitwise
 

@@ -72,6 +72,8 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'integer-bit-xor': (['integer', 'integer'], 'integer'),
     'integer-min': (['integer', 'integer'], 'integer'),
     'integer-max': (['integer', 'integer'], 'integer'),
+    'integer-gcd': (['integer', 'integer'], 'integer'),
+    'integer-lcm': (['integer', 'integer'], 'integer'),
     'integer->float': (['integer'], 'float'),
     'integer->complex': (['integer', 'integer'], 'complex'),
     'integer->string': (['integer', 'integer'], 'string'),

@@ -63,6 +63,8 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$integer-bit-shift-right',
         '$integer-min',
         '$integer-max',
+        '$integer-gcd',
+        '$integer-lcm',
         '$integer->complex',
         '$integer-codepoint->string',
         '$float=?',
@@ -182,6 +184,8 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$integer-bit-shift-right': self._fold_integer_bit_shift_right,
             '$integer-min': self._fold_integer_min,
             '$integer-max': self._fold_integer_max,
+            '$integer-gcd': self._fold_integer_gcd,
+            '$integer-lcm': self._fold_integer_lcm,
             '$integer->complex': self._fold_integer_to_complex,
             '$integer-codepoint->string': self._fold_integer_codepoint_to_string,
             '$float=?': self._fold_float_eq,
@@ -828,6 +832,20 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             return None
 
         return MenaiASTInteger(args[0].value if args[0].value >= args[1].value else args[1].value)
+
+    def _fold_integer_gcd(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold integer-gcd: (integer-gcd a b) → greatest common divisor"""
+        if not isinstance(args[0], MenaiASTInteger) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        return MenaiASTInteger(math.gcd(args[0].value, args[1].value))
+
+    def _fold_integer_lcm(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold integer-lcm: (integer-lcm a b) → least common multiple"""
+        if not isinstance(args[0], MenaiASTInteger) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        return MenaiASTInteger(math.lcm(args[0].value, args[1].value))
 
     def _fold_integer_to_complex(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
         """Fold integer->complex: (integer->complex real [imag]) → complex number"""

@@ -493,6 +493,10 @@ class Opcode(IntEnum):
     ENUM_TYPE = _op(355, 1, _FOLD_SRC0)             # r_dest = (enum-type r_src0) → MenaiEnumType value
     ENUM_IS_INSTANCE_P = _op(356, 2, _FOLD_SRC01)   # r_dest = (enum-is-instance? r_src0 r_src1)
 
+    # Integer number-theory operations
+    INTEGER_GCD = _op(357, 2, _FOLD_SRC01)          # r_dest = (integer-gcd r_src0 r_src1)
+    INTEGER_LCM = _op(358, 2, _FOLD_SRC01)          # r_dest = (integer-lcm r_src0 r_src1)
+
 
 # Packed instruction encoding
 #

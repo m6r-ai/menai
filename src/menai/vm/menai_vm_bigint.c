@@ -1343,6 +1343,106 @@ menai_bigint_abs(MenaiVMState *vs, const MenaiBigInt *a, MenaiBigInt *result)
     return 0;
 }
 
+/*
+ * result = gcd(|a|, |b|); the result is always non-negative.
+ *
+ * Euclidean algorithm on the magnitudes.  menai_bigint_divmod implements
+ * floor semantics, which Euclid tolerates: the identity gcd(a, b) =
+ * gcd(b, a mod b) holds for any remainder satisfying 0 <= r < |b|, which
+ * floor modulo does.  The magnitudes are taken first so the sign adjustment
+ * inside divmod never has to be reasoned about here.
+ */
+int
+menai_bigint_gcd(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+{
+    MenaiBigInt x, y;
+    menai_bigint_init(&x);
+    menai_bigint_init(&y);
+
+    if (menai_bigint_abs(vs, a, &x) < 0) {
+        menai_bigint_final(vs, &x);
+        menai_bigint_final(vs, &y);
+        return -1;
+    }
+
+    if (menai_bigint_abs(vs, b, &y) < 0) {
+        menai_bigint_final(vs, &x);
+        menai_bigint_final(vs, &y);
+        return -1;
+    }
+
+    while (y.sign != 0) {
+        MenaiBigInt q, r;
+        menai_bigint_init(&q);
+        menai_bigint_init(&r);
+
+        if (menai_bigint_divmod(vs, &x, &y, &q, &r) < 0) {
+            menai_bigint_final(vs, &q);
+            menai_bigint_final(vs, &r);
+            menai_bigint_final(vs, &x);
+            menai_bigint_final(vs, &y);
+            return -1;
+        }
+
+        menai_bigint_final(vs, &q);
+        menai_bigint_final(vs, &x);
+        x = y;
+        y = r;
+    }
+
+    menai_bigint_final(vs, &y);
+    menai_bigint_final(vs, result);
+    *result = x;
+    return 0;
+}
+
+/*
+ * result = lcm(|a|, |b|); the result is always non-negative.
+ *
+ * lcm(a, b) = |a| / gcd(a, b) * |b|.  The division is performed before the
+ * multiplication so the intermediate never exceeds the final magnitude.
+ * lcm(0, n) is 0, which the zero-gcd guard below produces.
+ */
+int
+menai_bigint_lcm(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *b, MenaiBigInt *result)
+{
+    MenaiBigInt g, q, mag_b;
+    menai_bigint_init(&g);
+    menai_bigint_init(&q);
+    menai_bigint_init(&mag_b);
+
+    if (menai_bigint_gcd(vs, a, b, &g) < 0) {
+        menai_bigint_final(vs, &g);
+        menai_bigint_final(vs, &q);
+        menai_bigint_final(vs, &mag_b);
+        return -1;
+    }
+
+    if (g.sign == 0) {
+        menai_bigint_final(vs, &g);
+        menai_bigint_final(vs, &q);
+        menai_bigint_final(vs, &mag_b);
+        menai_bigint_final(vs, result);
+        return 0;
+    }
+
+    if (menai_bigint_abs(vs, a, &q) < 0 ||
+        menai_bigint_floordiv(vs, &q, &g, &q) < 0 ||
+        menai_bigint_abs(vs, b, &mag_b) < 0 ||
+        menai_bigint_mul(vs, &q, &mag_b, &q) < 0) {
+        menai_bigint_final(vs, &g);
+        menai_bigint_final(vs, &q);
+        menai_bigint_final(vs, &mag_b);
+        return -1;
+    }
+
+    menai_bigint_final(vs, &g);
+    menai_bigint_final(vs, &mag_b);
+    menai_bigint_final(vs, result);
+    *result = q;
+    return 0;
+}
+
 /* result = a ** exp */
 int
 menai_bigint_pow(MenaiVMState *vs, const MenaiBigInt *a, const MenaiBigInt *exp, MenaiBigInt *result)

@@ -332,6 +332,14 @@
                               (loop ($list-rest lst) ($integer-max acc ($list-first lst)))))))
                    (loop ($list-rest args) ($list-first args)))))))
 
+      (integer-gcd
+       (lambda (a b)
+         ($integer-gcd a b)))
+
+      (integer-lcm
+       (lambda (a b)
+         ($integer-lcm a b)))
+
       (integer->complex
        (lambda (real . rest)
          ($integer->complex
@@ -2235,6 +2243,8 @@
         "integer-bit-shift-right" integer-bit-shift-right
         "integer-min" integer-min
         "integer-max" integer-max
+        "integer-gcd" integer-gcd
+        "integer-lcm" integer-lcm
         "integer->complex" integer->complex
         "integer->string" integer->string
         "integer->float" integer->float
