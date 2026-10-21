@@ -23,6 +23,7 @@ New features:
   Examples that show the shape of a form the reader may not know are kept.
 - Added `html-decode` and `html-encode` modules to the standard library.
 - Added `integer-gcd` and `integer-lcm` operations with VM opcode backing.
+- Added more float opcode-backed operations to handle things like NaN, Inf, etc.
 
 Bug fixes:
 

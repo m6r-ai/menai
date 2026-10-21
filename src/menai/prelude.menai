@@ -688,6 +688,30 @@
        (lambda (a b)
          ($float-copysign a b)))
 
+      (float-nan?
+       (lambda (a)
+         ($float-nan? a)))
+
+      (float-inf?
+       (lambda (a)
+         ($float-inf? a)))
+
+      (float-finite?
+       (lambda (a)
+         ($float-finite? a)))
+
+      (float-modf
+       (lambda (a)
+         ($float-modf a)))
+
+      (float-frexp
+       (lambda (a)
+         ($float-frexp a)))
+
+      (float-ldexp
+       (lambda (a b)
+         ($float-ldexp a b)))
+
       (complex?
        (lambda (x)
          ($complex? x)))
@@ -2296,6 +2320,12 @@
         "float-log1p" float-log1p
         "float-trunc" float-trunc
         "float-copysign" float-copysign
+        "float-nan?" float-nan?
+        "float-inf?" float-inf?
+        "float-finite?" float-finite?
+        "float-modf" float-modf
+        "float-frexp" float-frexp
+        "float-ldexp" float-ldexp
         "complex?" complex?
         "complex=?" complex=?
         "complex!=?" complex!=?

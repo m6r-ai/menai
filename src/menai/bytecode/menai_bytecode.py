@@ -497,6 +497,14 @@ class Opcode(IntEnum):
     INTEGER_GCD = _op(357, 2, _FOLD_SRC01)          # r_dest = (integer-gcd r_src0 r_src1)
     INTEGER_LCM = _op(358, 2, _FOLD_SRC01)          # r_dest = (integer-lcm r_src0 r_src1)
 
+    # Floating point classification and decomposition
+    FLOAT_NAN_P = _op(359, 1, _FOLD_SRC0)           # r_dest = (float-nan? r_src0)
+    FLOAT_INF_P = _op(360, 1, _FOLD_SRC0)           # r_dest = (float-inf? r_src0)
+    FLOAT_FINITE_P = _op(361, 1, _FOLD_SRC0)        # r_dest = (float-finite? r_src0)
+    FLOAT_MODF = _op(362, 1, _FOLD_SRC0)            # r_dest = (float-modf r_src0) -> (frac exp) pair
+    FLOAT_FREXP = _op(363, 1, _FOLD_SRC0)           # r_dest = (float-frexp r_src0) -> (mantissa exp) pair
+    FLOAT_LDEXP = _op(364, 2, _FOLD_SRC01)          # r_dest = (float-ldexp r_src0 r_src1)
+
 
 # Packed instruction encoding
 #

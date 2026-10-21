@@ -127,6 +127,12 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'float-log1p': (['float'], 'float'),
     'float-trunc': (['float'], 'float'),
     'float-copysign': (['float', 'float'], 'float'),
+    'float-nan?': (['float'], 'boolean'),
+    'float-inf?': (['float'], 'boolean'),
+    'float-finite?': (['float'], 'boolean'),
+    'float-modf': (['float'], 'list'),
+    'float-frexp': (['float'], 'list'),
+    'float-ldexp': (['float', 'integer'], 'float'),
 
     # Complex operations
     'complex?': (['any'], 'boolean'),

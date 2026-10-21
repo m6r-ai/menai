@@ -126,6 +126,7 @@ class VMErrorCode(IntEnum):
     UNIMPLEMENTED_OPCODE = -59
     USER_ERROR = -60
     ENUM_VARIANT_NOT_FOUND = -61
+    FLOAT_OVERFLOW = -62
 
 
 class _MenaiVMRuntimeError(Exception):
@@ -262,6 +263,9 @@ _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
     VMErrorCode.UNIMPLEMENTED_OPCODE: _eval_error_entry("unimplemented opcode"),
     VMErrorCode.ENUM_VARIANT_NOT_FOUND: _eval_error_entry(
         "enum has no such variant"
+    ),
+    VMErrorCode.FLOAT_OVERFLOW: _eval_error_entry(
+        "float result is not representable"
     ),
 }
 

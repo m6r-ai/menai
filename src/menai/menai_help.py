@@ -152,6 +152,16 @@ Syntax: (operator arg1 arg2 ...)
 - (float-min 1.0 2.0) → 1.0
 - (float-max 1.0 2.0) → 2.0
 - (float-copysign 3.0 -1.0) → -3.0 (magnitude of first arg, sign of second)
+- Classification (each takes a float and returns a boolean):
+  - (float-nan? x) → #t if x is NaN. Use this rather than comparing x to itself: NaN is unequal to itself, so (float=? nan nan) → #f
+  - (float-inf? x) → #t if x is +inf or -inf
+  - (float-finite? x) → #t if x is neither NaN nor infinite
+  - Exactly one of float-nan?, float-inf?, and float-finite? is #t for any float
+- (float-modf 3.75) → (0.75 3.0) (fractional and integral parts, both float; the sign of x is carried by both parts, so (float-modf -3.75) → (-0.75 -3.0))
+- (float-frexp 8.0) → (0.5 4) (mantissa and binary exponent; the mantissa is a float in [0.5, 1) in magnitude and the exponent is an integer)
+- (float-ldexp 0.5 4) → 8.0 (mantissa × 2^exponent; first arg must be float, second an integer; exact for powers of two; overflow to infinity is not an error)
+- float-frexp and float-ldexp are inverses: (float-ldexp (list-nth (float-frexp x) 0) (list-nth (float-frexp x) 1)) reproduces x exactly
+- NaN and infinity are produced by arithmetic (e.g. (float-log 0.0) → -inf, and subtracting two infinities → NaN); there is no literal syntax for either
 - (float-hypot 3.0 4.0) → 5.0 (sqrt(a²+b²) without intermediate overflow/underflow)
 - (float-sqrt 4.0) → 2.0
 - float-sqrt of negative → runtime error (use complex-sqrt instead)

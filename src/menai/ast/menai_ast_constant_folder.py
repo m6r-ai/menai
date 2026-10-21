@@ -106,6 +106,12 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$float-log1p',
         '$float-trunc',
         '$float-copysign',
+        '$float-nan?',
+        '$float-inf?',
+        '$float-finite?',
+        '$float-modf',
+        '$float-frexp',
+        '$float-ldexp',
         '$float->complex',
         '$complex=?',
         '$complex!=?',
@@ -227,6 +233,12 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$float-log1p': self._fold_float_log1p,
             '$float-trunc': self._fold_float_trunc,
             '$float-copysign': self._fold_float_copysign,
+            '$float-nan?': self._fold_float_nan_p,
+            '$float-inf?': self._fold_float_inf_p,
+            '$float-finite?': self._fold_float_finite_p,
+            '$float-modf': self._fold_float_modf,
+            '$float-frexp': self._fold_float_frexp,
+            '$float-ldexp': self._fold_float_ldexp,
             '$float->complex': self._fold_float_to_complex,
             '$complex=?': self._fold_complex_eq,
             '$complex!=?': self._fold_complex_neq,
@@ -1487,6 +1499,56 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             return None
 
         return MenaiASTFloat(math.copysign(args[0].value, args[1].value))
+
+    def _fold_float_nan_p(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-nan?: arg must be float, returns boolean."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTBoolean(math.isnan(args[0].value))
+
+    def _fold_float_inf_p(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-inf?: arg must be float, returns boolean."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTBoolean(math.isinf(args[0].value))
+
+    def _fold_float_finite_p(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-finite?: arg must be float, returns boolean."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        return MenaiASTBoolean(math.isfinite(args[0].value))
+
+    def _fold_float_modf(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-modf: arg must be float, returns a two-element list of floats."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        frac, whole = math.modf(args[0].value)
+        return MenaiASTListLiteral((MenaiASTFloat(frac), MenaiASTFloat(whole)))
+
+    def _fold_float_frexp(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-frexp: arg must be float, returns (mantissa exp) with an integer exponent."""
+        if not isinstance(args[0], MenaiASTFloat):
+            return None
+
+        mantissa, exponent = math.frexp(args[0].value)
+        return MenaiASTListLiteral((MenaiASTFloat(mantissa), MenaiASTInteger(exponent)))
+
+    def _fold_float_ldexp(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float-ldexp: mantissa must be float and exponent an integer, returns float."""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        try:
+            result = math.ldexp(args[0].value, args[1].value)
+
+        except OverflowError:
+            return None  # Let the runtime raise the error
+
+        return MenaiASTFloat(result)
 
     def _fold_string_to_bytes(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
         """Fold string->bytes: arg must be a string, returns bytes (UTF-8 encoded)."""

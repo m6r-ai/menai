@@ -181,6 +181,48 @@ outside 0–0x10FFFF.
 | `(float-copysign a b)` | Magnitude of `a` with the sign of `b` |
 | `(float-hypot a b)` | `sqrt(a²+b²)` without intermediate overflow/underflow |
 
+### Classification
+
+| Function | Description |
+|----------|-------------|
+| `(float-nan? x)` | `→ #t` if x is NaN |
+| `(float-inf? x)` | `→ #t` if x is `+inf` or `-inf` |
+| `(float-finite? x)` | `→ #t` if x is neither NaN nor infinite |
+
+Exactly one of the three predicates is `#t` for any float. NaN is unequal to
+itself, so `(float=? nan nan)` is `#f`; `float-nan?` is the way to test for it.
+Menai has no literal syntax for NaN or infinity, but arithmetic produces them:
+`(float-log 0.0)` is `-inf`, and subtracting two infinities is NaN.
+
+```menai
+(float-nan? 1.0)               → #f
+(float-inf? (float-log 0.0))   → #t
+(float-finite? (float-log 0.0)) → #f
+```
+
+### Decomposition
+
+| Function | Description |
+|----------|-------------|
+| `(float-modf x)` | `→ (fractional integral)`; both parts are floats and both carry x's sign |
+| `(float-frexp x)` | `→ (mantissa exponent)`; mantissa is a float in [0.5, 1) in magnitude, exponent an integer |
+| `(float-ldexp mantissa exponent)` | `mantissa × 2^exponent`; mantissa must be float, exponent an integer |
+
+`float-frexp` and `float-ldexp` are exact inverses, so
+`(float-ldexp (list-nth (float-frexp x) 0) (list-nth (float-frexp x) 1))`
+reproduces `x` for every finite `x`. Scaling by a power of two is exact.
+
+```menai
+(float-modf 3.75)    → (0.75 3.0)
+(float-modf -3.75)   → (-0.75 -3.0)
+(float-frexp 8.0)    → (0.5 4)
+(float-ldexp 0.5 4)  → 8.0
+(float-ldexp 1.0 -1) → 0.5
+```
+
+`float-ldexp` overflows to infinity rather than raising, so
+`(float-ldexp 1.0 1024)` is `inf`.
+
 ### Rounding
 
 | Function | Description |

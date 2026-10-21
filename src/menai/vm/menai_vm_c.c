@@ -3,6 +3,8 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
+#include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -3803,6 +3805,162 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
             MenaiFloat *r = alloc_menai_float(vs, copysign(a->value, b->value));
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
+        case OP_FLOAT_NAN_P: {
+            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            bool_store(vs, frame_regs, dest, isnan(a->value));
+            break;
+        }
+
+        case OP_FLOAT_INF_P: {
+            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            bool_store(vs, frame_regs, dest, isinf(a->value));
+            break;
+        }
+
+        case OP_FLOAT_FINITE_P: {
+            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            bool_store(vs, frame_regs, dest, isfinite(a->value));
+            break;
+        }
+
+        case OP_FLOAT_MODF: {
+            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            double whole;
+            double frac = modf(a->value, &whole);
+
+            MenaiFloat *r_frac = alloc_menai_float(vs, frac);
+            if (r_frac == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiFloat *r_whole = alloc_menai_float(vs, whole);
+            if (r_whole == NULL) {
+                menai_value_release(vs, (MenaiValue *)r_frac);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiList *head = alloc_menai_list(vs);
+            if (head == NULL) {
+                menai_value_release(vs, (MenaiValue *)r_frac);
+                menai_value_release(vs, (MenaiValue *)r_whole);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiList *tail = alloc_menai_list(vs);
+            if (tail == NULL) {
+                menai_value_release(vs, (MenaiValue *)head);
+                menai_value_release(vs, (MenaiValue *)r_frac);
+                menai_value_release(vs, (MenaiValue *)r_whole);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiList *nil = menai_empty_list(vs);
+            menai_value_retain((MenaiValue *)nil);
+            tail->head = (MenaiValue *)r_whole;
+            tail->tail = nil;
+            tail->length = 1;
+
+            head->head = (MenaiValue *)r_frac;
+            head->tail = tail;
+            head->length = 2;
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)head;
+            break;
+        }
+
+        case OP_FLOAT_FREXP: {
+            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            int exponent = 0;
+            double mantissa = frexp(a->value, &exponent);
+
+            MenaiFloat *r_mantissa = alloc_menai_float(vs, mantissa);
+            if (r_mantissa == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiInteger *r_exponent = alloc_menai_integer_from_long(vs, (long)exponent);
+            if (r_exponent == NULL) {
+                menai_value_release(vs, (MenaiValue *)r_mantissa);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiList *head = alloc_menai_list(vs);
+            if (head == NULL) {
+                menai_value_release(vs, (MenaiValue *)r_mantissa);
+                menai_value_release(vs, (MenaiValue *)r_exponent);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiList *tail = alloc_menai_list(vs);
+            if (tail == NULL) {
+                menai_value_release(vs, (MenaiValue *)head);
+                menai_value_release(vs, (MenaiValue *)r_mantissa);
+                menai_value_release(vs, (MenaiValue *)r_exponent);
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            MenaiList *nil = menai_empty_list(vs);
+            menai_value_retain((MenaiValue *)nil);
+            tail->head = (MenaiValue *)r_exponent;
+            tail->tail = nil;
+            tail->length = 1;
+
+            head->head = (MenaiValue *)r_mantissa;
+            head->tail = tail;
+            head->length = 2;
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)head;
+            break;
+        }
+
+        case OP_FLOAT_LDEXP: {
+            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiInteger *b = (MenaiInteger *)operand(constants_items, frame_regs, src1, tag & 2);
+
+            long exp_l;
+            if (!b->is_big) {
+                exp_l = b->fixed;
+            } else {
+                vm_err = menai_bigint_to_long(&b->big, &exp_l);
+                if (MENAI_UNLIKELY(vm_err < 0)) {
+                    goto error;
+                }
+            }
+
+            if (exp_l > INT_MAX || exp_l < INT_MIN) {
+                vm_err = MENAI_ERR_FLOAT_OVERFLOW;
+                goto error;
+            }
+
+            errno = 0;
+            double result = ldexp(a->value, (int)exp_l);
+            if (errno == ERANGE && isinf(result)) {
+                vm_err = MENAI_ERR_FLOAT_OVERFLOW;
+                goto error;
+            }
+
+            MenaiFloat *r = alloc_menai_float(vs, result);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
