@@ -2106,6 +2106,15 @@
        (lambda (. args)
          ($list->vector args)))
 
+      (vector-fill
+       (lambda (n x)
+         (let ((loop
+                (lambda (i acc)
+                  (if ($integer=? i n)
+                      ($list->vector acc)
+                      (loop ($integer+ i 1) ($list-prepend acc x))))))
+           (loop 0 (list)))))
+
       (vector?
        (lambda (x)
          ($vector? x)))
@@ -2550,6 +2559,7 @@
         "bytes-split" bytes-split
         "bytes-split-int" bytes-split-int
         "vector" vector
+        "vector-fill" vector-fill
         "vector?" vector?
         "vector=?" vector=?
         "vector!=?" vector!=?
