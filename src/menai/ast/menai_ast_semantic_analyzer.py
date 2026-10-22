@@ -119,8 +119,23 @@ class MenaiASTSemanticAnalyzer:
         self._namespace_stack.pop()
 
     def _is_namespace(self, name: str) -> bool:
-        """Return True if name is bound to a module namespace in scope."""
-        return any(name in frame for frame in self._namespace_stack)
+        """
+        Return True if the innermost binding of name is a module namespace.
+
+        The ordinary and namespace scope stacks are pushed and popped in
+        lockstep, so frame i of each belongs to the same lexical level.  A
+        name bound as an ordinary value in an inner frame shadows a namespace
+        binding of the same name in an outer frame, exactly as it shadows any
+        other outer binding.
+        """
+        for ordinary, namespaces in zip(reversed(self._scope_stack), reversed(self._namespace_stack)):
+            if name in namespaces:
+                return True
+
+            if name in ordinary:
+                return False
+
+        return False
 
     def _reject_reserved_binding_name(self, name: str, node: MenaiASTNode) -> None:
         """
