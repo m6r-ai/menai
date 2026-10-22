@@ -1,0 +1,3 @@
+(let ((s (import "stats")))
+  (lambda (sample)
+    ((:: s list-summary) sample)))

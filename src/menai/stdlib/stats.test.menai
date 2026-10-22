@@ -1,0 +1,526 @@
+; Tests for stats.menai
+
+(let ((s (import "stats"))
+      (t (import "menai-test"))
+      (vector->floats (:: s vector->floats))
+      (list->floats (:: s list->floats))
+      (vector-mean (:: s vector-mean))
+      (list-mean (:: s list-mean))
+      (vector-median (:: s vector-median))
+      (list-median (:: s list-median))
+      (vector-median-sorted (:: s vector-median-sorted))
+      (list-median-sorted (:: s list-median-sorted))
+      (vector-mode (:: s vector-mode))
+      (list-mode (:: s list-mode))
+      (vector-variance (:: s vector-variance))
+      (list-variance (:: s list-variance))
+      (vector-variance-population (:: s vector-variance-population))
+      (list-variance-population (:: s list-variance-population))
+      (vector-stdev (:: s vector-stdev))
+      (list-stdev (:: s list-stdev))
+      (vector-stdev-population (:: s vector-stdev-population))
+      (list-stdev-population (:: s list-stdev-population))
+      (vector-sum (:: s vector-sum))
+      (list-sum (:: s list-sum))
+      (vector-mean-absolute-deviation (:: s vector-mean-absolute-deviation))
+      (list-mean-absolute-deviation (:: s list-mean-absolute-deviation))
+      (vector-quantile (:: s vector-quantile))
+      (list-quantile (:: s list-quantile))
+      (vector-quantile-sorted (:: s vector-quantile-sorted))
+      (list-quantile-sorted (:: s list-quantile-sorted))
+      (vector-percentile (:: s vector-percentile))
+      (list-percentile (:: s list-percentile))
+      (vector-iqr (:: s vector-iqr))
+      (list-iqr (:: s list-iqr))
+      (vector-histogram (:: s vector-histogram))
+      (list-histogram (:: s list-histogram))
+      (vector-histogram-edges (:: s vector-histogram-edges))
+      (list-histogram-edges (:: s list-histogram-edges))
+      (vector-frequency (:: s vector-frequency))
+      (list-frequency (:: s list-frequency))
+      (vector-correlate (:: s vector-correlate))
+      (list-correlate (:: s list-correlate))
+      (vector-covariance (:: s vector-covariance))
+      (list-covariance (:: s list-covariance))
+      (vector-linear-fit (:: s vector-linear-fit))
+      (list-linear-fit (:: s list-linear-fit))
+      (vector-z-scores (:: s vector-z-scores))
+      (list-z-scores (:: s list-z-scores))
+      (vector-normalise (:: s vector-normalise))
+      (list-normalise (:: s list-normalise))
+      (vector-summary (:: s vector-summary))
+      (list-summary (:: s list-summary))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
+
+      (approx (lambda (expected actual)
+                (assert-equal #t (float<? (float-abs (float- expected actual)) 1.0e-9))))
+
+      (test-vector-mean
+       (lambda ()
+         (approx 2.5 (vector-mean (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-list-mean
+       (lambda ()
+         (approx 2.5 (list-mean (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-mean-empty
+       (lambda ()
+         (assert-equal #none (vector-mean (vector)))))
+
+      (test-vector-mean-single
+       (lambda ()
+         (approx 7.0 (vector-mean (vector 7.0)))))
+
+      (test-vector-median-even
+       (lambda ()
+         (approx 2.5 (vector-median (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-median-odd
+       (lambda ()
+         (approx 3.0 (vector-median (vector 1.0 2.0 3.0 4.0 5.0)))))
+
+      (test-vector-median-unsorted
+       (lambda ()
+         (approx 3.0 (vector-median (vector 5.0 1.0 3.0 2.0 4.0)))))
+
+      (test-list-median
+       (lambda ()
+         (approx 2.5 (list-median (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-median-sorted
+       (lambda ()
+         (approx 3.0 (vector-median-sorted (vector 1.0 2.0 3.0 4.0 5.0)))))
+
+      (test-list-median-sorted
+       (lambda ()
+         (approx 3.0 (list-median-sorted (list 1.0 2.0 3.0 4.0 5.0)))))
+
+      (test-vector-median-empty
+       (lambda ()
+         (assert-equal #none (vector-median (vector)))))
+
+      (test-vector-mode
+       (lambda ()
+         (assert-equal (vector 2.0) (vector-mode (vector 1.0 2.0 2.0 3.0)))))
+
+      (test-list-mode
+       (lambda ()
+         (assert-equal (list 2.0) (list-mode (list 1.0 2.0 2.0 3.0)))))
+
+      (test-vector-mode-bimodal
+       (lambda ()
+         (assert-equal (vector 1.0 3.0) (vector-mode (vector 1.0 3.0 1.0 3.0 2.0)))))
+
+      (test-vector-mode-no-repeats
+       (lambda ()
+         (assert-equal (vector) (vector-mode (vector 1.0 2.0 3.0)))))
+
+      (test-vector-mode-empty
+       (lambda ()
+         (assert-equal (vector) (vector-mode (vector)))))
+
+      (test-vector-variance
+       (lambda ()
+         (approx 1.6666666666666667 (vector-variance (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-list-variance
+       (lambda ()
+         (approx 1.6666666666666667 (list-variance (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-variance-single
+       (lambda ()
+         (assert-equal #none (vector-variance (vector 1.0)))))
+
+      (test-vector-variance-empty
+       (lambda ()
+         (assert-equal #none (vector-variance (vector)))))
+
+      (test-vector-variance-population
+       (lambda ()
+         (approx 1.25 (vector-variance-population (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-list-variance-population
+       (lambda ()
+         (approx 1.25 (list-variance-population (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-variance-large-mean
+       (lambda ()
+         (approx 1.0 (vector-variance (vector 1000000.0 1000001.0 1000002.0)))))
+
+      (test-vector-stdev
+       (lambda ()
+         (approx 1.2909944487358056 (vector-stdev (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-list-stdev
+       (lambda ()
+         (approx 1.2909944487358056 (list-stdev (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-stdev-population
+       (lambda ()
+         (approx 1.118033988749895 (vector-stdev-population (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-list-stdev-population
+       (lambda ()
+         (approx 1.118033988749895 (list-stdev-population (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-stdev-single
+       (lambda ()
+         (assert-equal #none (vector-stdev (vector 1.0)))))
+
+      (test-vector-sum
+       (lambda ()
+         (approx 10.0 (vector-sum (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-list-sum
+       (lambda ()
+         (approx 10.0 (list-sum (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-sum-empty
+       (lambda ()
+         (approx 0.0 (vector-sum (vector)))))
+
+      (test-vector-mean-absolute-deviation
+       (lambda ()
+         (approx 1.0 (vector-mean-absolute-deviation (vector 1.0 2.0 3.0 4.0)))))
+
+      (test-list-mean-absolute-deviation
+       (lambda ()
+         (approx 1.0 (list-mean-absolute-deviation (list 1.0 2.0 3.0 4.0)))))
+
+      (test-vector-quantile-min
+       (lambda ()
+         (approx 1.0 (vector-quantile (vector 1.0 2.0 3.0 4.0) 0.0))))
+
+      (test-vector-quantile-max
+       (lambda ()
+         (approx 4.0 (vector-quantile (vector 1.0 2.0 3.0 4.0) 1.0))))
+
+      (test-vector-quantile-median
+       (lambda ()
+         (approx 2.5 (vector-quantile (vector 1.0 2.0 3.0 4.0) 0.5))))
+
+      (test-vector-quantile-interpolates
+       (lambda ()
+         (approx 1.75 (vector-quantile (vector 1.0 2.0 3.0 4.0) 0.25))))
+
+      (test-vector-quantile-agrees-with-median
+       (lambda ()
+         (approx (vector-median (vector 1.0 2.0 3.0 4.0 5.0))
+                 (vector-quantile (vector 1.0 2.0 3.0 4.0 5.0) 0.5))))
+
+      (test-vector-quantile-sorted
+       (lambda ()
+         (approx 1.75 (vector-quantile-sorted (vector 1.0 2.0 3.0 4.0) 0.25))))
+
+      (test-list-quantile
+       (lambda ()
+         (approx 1.75 (list-quantile (list 1.0 2.0 3.0 4.0) 0.25))))
+
+      (test-list-quantile-sorted
+       (lambda ()
+         (approx 1.75 (list-quantile-sorted (list 1.0 2.0 3.0 4.0) 0.25))))
+
+      (test-vector-quantile-empty
+       (lambda ()
+         (assert-equal #none (vector-quantile (vector) 0.5))))
+
+      (test-vector-quantile-out-of-range
+       (lambda ()
+         (vector-quantile (vector 1.0 2.0) 1.5)))
+
+      (test-vector-percentile
+       (lambda ()
+         (approx 3.25 (vector-percentile (vector 1.0 2.0 3.0 4.0) 75.0))))
+
+      (test-list-percentile
+       (lambda ()
+         (approx 3.25 (list-percentile (list 1.0 2.0 3.0 4.0) 75.0))))
+
+      (test-vector-iqr
+       (lambda ()
+         (approx 2.0 (vector-iqr (vector 1.0 2.0 3.0 4.0 5.0)))))
+
+      (test-list-iqr
+       (lambda ()
+         (approx 2.0 (list-iqr (list 1.0 2.0 3.0 4.0 5.0)))))
+
+      (test-vector-iqr-empty
+       (lambda ()
+         (assert-equal #none (vector-iqr (vector)))))
+
+      (test-vector-histogram
+       (lambda ()
+         (assert-equal (vector (vector 1.0 2.5 2) (vector 2.5 4.0 2))
+                       (vector-histogram (vector 1.0 2.0 3.0 4.0) 2))))
+
+      (test-list-histogram
+       (lambda ()
+         (assert-equal (vector (vector 1.0 2.5 2) (vector 2.5 4.0 2))
+                       (list-histogram (list 1.0 2.0 3.0 4.0) 2))))
+
+      (test-vector-histogram-top-edge-in-last-bin
+       (lambda ()
+         (let ((bins (vector-histogram (vector 0.0 10.0) 2)))
+           (assert-equal 1 (vector-nth (vector-nth bins 1) 2)))))
+
+      (test-vector-histogram-empty
+       (lambda ()
+         (assert-equal #none (vector-histogram (vector) 2))))
+
+      (test-vector-histogram-edges
+       (lambda ()
+         (assert-equal (vector (vector 0.0 2.0 1) (vector 2.0 4.0 3))
+                       (vector-histogram-edges (vector 1.0 2.0 3.0 4.0) (vector 0.0 2.0 4.0)))))
+
+      (test-list-histogram-edges
+       (lambda ()
+         (assert-equal (vector (vector 0.0 2.0 1) (vector 2.0 4.0 3))
+                       (list-histogram-edges (list 1.0 2.0 3.0 4.0) (vector 0.0 2.0 4.0)))))
+
+      (test-vector-histogram-edges-too-few
+       (lambda ()
+         (vector-histogram-edges (vector 1.0) (vector 0.0))))
+
+      (test-vector-frequency
+       (lambda ()
+         (assert-equal 2 (dict-get (vector-frequency (vector 1.0 1.0 2.0)) 1.0))))
+
+      (test-list-frequency
+       (lambda ()
+         (assert-equal 2 (dict-get (list-frequency (list 1.0 1.0 2.0)) 1.0))))
+
+      (test-vector-frequency-distinct
+       (lambda ()
+         (assert-equal 3 (dict-length (vector-frequency (vector 1.0 2.0 3.0))))))
+
+      (test-vector-correlate-perfect
+       (lambda ()
+         (approx 1.0 (vector-correlate (vector 1.0 2.0 3.0) (vector 2.0 4.0 6.0)))))
+
+      (test-list-correlate-perfect
+       (lambda ()
+         (approx 1.0 (list-correlate (list 1.0 2.0 3.0) (list 2.0 4.0 6.0)))))
+
+      (test-vector-correlate-negative
+       (lambda ()
+         (approx -1.0 (vector-correlate (vector 1.0 2.0 3.0) (vector 6.0 4.0 2.0)))))
+
+      (test-vector-correlate-constant
+       (lambda ()
+         (assert-equal #none (vector-correlate (vector 1.0 1.0 1.0) (vector 1.0 2.0 3.0)))))
+
+      (test-vector-correlate-mismatched
+       (lambda ()
+         (assert-equal #none (vector-correlate (vector 1.0 2.0) (vector 1.0 2.0 3.0)))))
+
+      (test-vector-covariance
+       (lambda ()
+         (approx 2.0 (vector-covariance (vector 1.0 2.0 3.0) (vector 2.0 4.0 6.0)))))
+
+      (test-list-covariance
+       (lambda ()
+         (approx 2.0 (list-covariance (list 1.0 2.0 3.0) (list 2.0 4.0 6.0)))))
+
+      (test-vector-linear-fit-slope
+       (lambda ()
+         (approx 2.0 (dict-get (vector-linear-fit (vector 1.0 2.0 3.0) (vector 3.0 5.0 7.0)) "slope"))))
+
+      (test-vector-linear-fit-intercept
+       (lambda ()
+         (approx 1.0 (dict-get (vector-linear-fit (vector 1.0 2.0 3.0) (vector 3.0 5.0 7.0)) "intercept"))))
+
+      (test-vector-linear-fit-r2
+       (lambda ()
+         (approx 1.0 (dict-get (vector-linear-fit (vector 1.0 2.0 3.0) (vector 3.0 5.0 7.0)) "r2"))))
+
+      (test-list-linear-fit
+       (lambda ()
+         (approx 2.0 (dict-get (list-linear-fit (list 1.0 2.0 3.0) (list 3.0 5.0 7.0)) "slope"))))
+
+      (test-vector-linear-fit-constant-x
+       (lambda ()
+         (assert-equal #none (vector-linear-fit (vector 1.0 1.0 1.0) (vector 1.0 2.0 3.0)))))
+
+      (test-vector-z-scores
+       (lambda ()
+         (let ((z (vector-z-scores (vector 1.0 2.0 3.0))))
+           (approx 0.0 (vector-mean z)))))
+
+      (test-list-z-scores
+       (lambda ()
+         (let ((z (list-z-scores (list 1.0 2.0 3.0))))
+           (approx 0.0 (list-mean z)))))
+
+      (test-vector-z-scores-constant
+       (lambda ()
+         (assert-equal #none (vector-z-scores (vector 1.0 1.0 1.0)))))
+
+      (test-vector-normalise
+       (lambda ()
+         (assert-equal (vector 0.0 0.5 1.0) (vector-normalise (vector 1.0 2.0 3.0)))))
+
+      (test-list-normalise
+       (lambda ()
+         (assert-equal (list 0.0 0.5 1.0) (list-normalise (list 1.0 2.0 3.0)))))
+
+      (test-vector-normalise-constant
+       (lambda ()
+         (assert-equal #none (vector-normalise (vector 1.0 1.0)))))
+
+      (test-vector-summary
+       (lambda ()
+         (let ((stats (vector-summary (vector 1.0 2.0 3.0 4.0))))
+           (assert-equal 4 (dict-get stats "count")))))
+
+      (test-vector-summary-quartiles
+       (lambda ()
+         (let ((stats (vector-summary (vector 1.0 2.0 3.0 4.0 5.0))))
+           (assert-equal (list 1.0 2.0 3.0 4.0 5.0)
+                         (list (dict-get stats "min")
+                               (dict-get stats "q1")
+                               (dict-get stats "median")
+                               (dict-get stats "q3")
+                               (dict-get stats "max"))))))
+
+      (test-list-summary
+       (lambda ()
+         (let ((stats (list-summary (list 1.0 2.0 3.0 4.0))))
+           (assert-equal 4 (dict-get stats "count")))))
+
+      (test-vector-summary-empty
+       (lambda ()
+         (assert-equal #none (vector-summary (vector)))))
+
+      (test-vector->floats-from-integers
+       (lambda ()
+         (assert-equal (vector 1.0 2.0 3.0) (vector->floats (vector 1 2 3)))))
+
+      (test-list->floats-from-integers
+       (lambda ()
+         (assert-equal (list 1.0 2.0) (list->floats (list 1 2)))))
+
+      (test-vector->floats-rejects-non-number
+       (lambda ()
+         (vector->floats (vector "a"))))
+
+      (test-list->floats-rejects-non-number
+       (lambda ()
+         (list->floats (list "a"))))
+
+      (tests
+       (list
+         (list "central tendency"
+               (list
+                 (expect-pass "vector mean" test-vector-mean)
+                 (expect-pass "list mean" test-list-mean)
+                 (expect-pass "mean of an empty sample is none" test-vector-mean-empty)
+                 (expect-pass "mean of a single value" test-vector-mean-single)
+                 (expect-pass "median of an even sample" test-vector-median-even)
+                 (expect-pass "median of an odd sample" test-vector-median-odd)
+                 (expect-pass "median sorts its input" test-vector-median-unsorted)
+                 (expect-pass "list median" test-list-median)
+                 (expect-pass "median of an already-sorted vector" test-vector-median-sorted)
+                 (expect-pass "median of an already-sorted list" test-list-median-sorted)
+                 (expect-pass "median of an empty sample is none" test-vector-median-empty)
+                 (expect-pass "vector mode" test-vector-mode)
+                 (expect-pass "list mode" test-list-mode)
+                 (expect-pass "bimodal sample returns every tied value" test-vector-mode-bimodal)
+                 (expect-pass "no repeats gives an empty mode" test-vector-mode-no-repeats)
+                 (expect-pass "mode of an empty sample is empty" test-vector-mode-empty)))
+         (list "dispersion"
+               (list
+                 (expect-pass "vector sample variance" test-vector-variance)
+                 (expect-pass "list sample variance" test-list-variance)
+                 (expect-pass "sample variance of one value is none" test-vector-variance-single)
+                 (expect-pass "sample variance of an empty sample is none" test-vector-variance-empty)
+                 (expect-pass "vector population variance" test-vector-variance-population)
+                 (expect-pass "list population variance" test-list-variance-population)
+                 (expect-pass "variance is stable for a large mean" test-vector-variance-large-mean)
+                 (expect-pass "vector sample stdev" test-vector-stdev)
+                 (expect-pass "list sample stdev" test-list-stdev)
+                 (expect-pass "vector population stdev" test-vector-stdev-population)
+                 (expect-pass "list population stdev" test-list-stdev-population)
+                 (expect-pass "sample stdev of one value is none" test-vector-stdev-single)
+                 (expect-pass "vector sum" test-vector-sum)
+                 (expect-pass "list sum" test-list-sum)
+                 (expect-pass "sum of an empty sample is zero" test-vector-sum-empty)
+                 (expect-pass "vector mean absolute deviation" test-vector-mean-absolute-deviation)
+                 (expect-pass "list mean absolute deviation" test-list-mean-absolute-deviation)))
+         (list "quantiles"
+               (list
+                 (expect-pass "quantile at zero" test-vector-quantile-min)
+                 (expect-pass "quantile at one" test-vector-quantile-max)
+                 (expect-pass "quantile at one half" test-vector-quantile-median)
+                 (expect-pass "quantile interpolates linearly" test-vector-quantile-interpolates)
+                 (expect-pass "quantile agrees with median" test-vector-quantile-agrees-with-median)
+                 (expect-pass "quantile of an already-sorted vector" test-vector-quantile-sorted)
+                 (expect-pass "list quantile" test-list-quantile)
+                 (expect-pass "quantile of an already-sorted list" test-list-quantile-sorted)
+                 (expect-pass "quantile of an empty sample is none" test-vector-quantile-empty)
+                 (expect-fail "quantile rejects q outside [0, 1]"
+                              test-vector-quantile-out-of-range
+                              "quantile q must be in")
+                 (expect-pass "vector percentile" test-vector-percentile)
+                 (expect-pass "list percentile" test-list-percentile)
+                 (expect-pass "vector interquartile range" test-vector-iqr)
+                 (expect-pass "list interquartile range" test-list-iqr)
+                 (expect-pass "interquartile range of an empty sample is none" test-vector-iqr-empty)))
+         (list "shape"
+               (list
+                 (expect-pass "vector histogram" test-vector-histogram)
+                 (expect-pass "list histogram" test-list-histogram)
+                 (expect-pass "the top edge belongs to the last bin" test-vector-histogram-top-edge-in-last-bin)
+                 (expect-pass "histogram of an empty sample is none" test-vector-histogram-empty)
+                 (expect-pass "vector histogram with explicit edges" test-vector-histogram-edges)
+                 (expect-pass "list histogram with explicit edges" test-list-histogram-edges)
+                 (expect-fail "edges must have at least two elements"
+                              test-vector-histogram-edges-too-few
+                              "at least two")
+                 (expect-pass "vector frequency" test-vector-frequency)
+                 (expect-pass "list frequency" test-list-frequency)
+                 (expect-pass "frequency of distinct values" test-vector-frequency-distinct)))
+         (list "relationship"
+               (list
+                 (expect-pass "vector correlate is one for a positive linear relation"
+                              test-vector-correlate-perfect)
+                 (expect-pass "list correlate is one for a positive linear relation"
+                              test-list-correlate-perfect)
+                 (expect-pass "correlate is minus one for a negative linear relation"
+                              test-vector-correlate-negative)
+                 (expect-pass "correlate of a constant column is none" test-vector-correlate-constant)
+                 (expect-pass "correlate of mismatched lengths is none" test-vector-correlate-mismatched)
+                 (expect-pass "vector covariance" test-vector-covariance)
+                 (expect-pass "list covariance" test-list-covariance)
+                 (expect-pass "vector linear fit slope" test-vector-linear-fit-slope)
+                 (expect-pass "vector linear fit intercept" test-vector-linear-fit-intercept)
+                 (expect-pass "vector linear fit r squared" test-vector-linear-fit-r2)
+                 (expect-pass "list linear fit" test-list-linear-fit)
+                 (expect-pass "linear fit of a constant x is none" test-vector-linear-fit-constant-x)))
+         (list "normalisation"
+               (list
+                 (expect-pass "vector z-scores have zero mean" test-vector-z-scores)
+                 (expect-pass "list z-scores have zero mean" test-list-z-scores)
+                 (expect-pass "z-scores of a constant sample is none" test-vector-z-scores-constant)
+                 (expect-pass "vector min-max normalisation" test-vector-normalise)
+                 (expect-pass "list min-max normalisation" test-list-normalise)
+                 (expect-pass "normalising a constant sample is none" test-vector-normalise-constant)))
+         (list "summary"
+               (list
+                 (expect-pass "vector summary count" test-vector-summary)
+                 (expect-pass "vector summary five-number values" test-vector-summary-quartiles)
+                 (expect-pass "list summary count" test-list-summary)
+                 (expect-pass "summary of an empty sample is none" test-vector-summary-empty)))
+         (list "converters"
+               (list
+                 (expect-pass "vector->floats converts integers" test-vector->floats-from-integers)
+                 (expect-pass "list->floats converts integers" test-list->floats-from-integers)
+                 (expect-fail "vector->floats rejects a non-number"
+                              test-vector->floats-rejects-non-number
+                              "must be a number")
+                 (expect-fail "list->floats rejects a non-number"
+                              test-list->floats-rejects-non-number
+                              "must be a number"))))))
+
+  (export tests))

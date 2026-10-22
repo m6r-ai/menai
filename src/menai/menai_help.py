@@ -404,8 +404,10 @@ Syntax: (operator arg1 arg2 ...)
 ## Vector operations:
 
 - Immutable, contiguous-array-backed sequences with O(1) random access; distinct from lists (no coercion)
-- Vectors are NOT pattern-matchable and NOT hashable (cannot be set members or dict keys)
+- Vectors support fixed-arity destructuring: (: vector a b c) binds three elements; an arity mismatch falls through
+- Vectors are NOT hashable (cannot be set members or dict keys)
 - Construction: (vector 1 2 3) → #vector(1 2 3), (vector) → #vector(); no literal syntax
+- Repeated construction: (vector-fill n x) → vector of n copies of x: (vector-fill 3 0) → #vector(0 0 0), (vector-fill 0 9) → #vector()
 - Type predicate: (vector? x) → #t
 - Equality: (vector=? a b), (vector!=? a b) — element-wise, order matters
 - Access: (vector-nth v i) → element at 0-based index (O(1)); (vector-length v) → integer

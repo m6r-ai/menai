@@ -35,6 +35,7 @@ written entirely in Menai. It implements useful binary and text processing featu
 | `json-decode` / `json-encode` | Read and write JSON |
 | `png-decode` / `png-encode` | Read and write non-interlaced 8-bit PNG images |
 | `regexp` | Compile a pattern and search, split, or replace within strings |
+| `stats` | Descriptive statistics — mean, median, variance, quantiles, histograms, correlation, and linear fit — over a column of floats |
 | `tar-entries` / `tar-extract` / `tar-create` | Read tar entry headers, extract entry contents, and build POSIX ustar archives |
 | `xml-decode` / `xml-encode` | Read and write XML |
 | `zip-entries` / `zip-extract` / `zip-create` | Read ZIP central directories, extract and decompress entries, and build archives |

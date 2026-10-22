@@ -1,0 +1,621 @@
+; stats — descriptive statistics over a column of floats.
+;
+; Every export takes a flat column of floats, either as a vector or as a list.
+; The container is named first, following the prelude's convention for
+; non-higher-order operations: `vector-mean` takes a vector, `list-mean` takes
+; a list.  None of the exports is higher-order, so no name puts the container
+; last.
+;
+; The container named in the export is the one the function returns as well as
+; the one it takes: `list-z-scores` takes a list and returns a list,
+; `vector-z-scores` takes a vector and returns a vector.  The exceptions are
+; the operations whose result is not a column at all — a scalar, a dict, or a
+; histogram — where the name refers only to the input.
+;
+; Values must be floats.  Integers are not coerced, because the language has no
+; implicit numeric coercion; use `vector->floats` or `list->floats` to convert a
+; column that may contain integers.  Those converters also reject NaN and
+; infinity, because a non-finite value turns every statistic into NaN or a
+; nonsensical order statistic, silently.  A column built by other means is
+; assumed to be finite; the module does not re-validate it on every call.
+;
+; Where a sample has no defined answer — because it is empty, or because the
+; statistic is undefined for the data — the function returns `#none` rather
+; than raising.  A `#none` is a defined result, not an error.  The one
+; exception is a quantile outside [0, 1], which raises: an out-of-range q is a
+; caller error rather than a degenerate sample.
+;
+; Two conventions are worth stating because callers depend on them:
+;
+;   Sample versus population.  `vector-variance` and `vector-stdev` are the
+;   sample versions (dividing by n-1).  `vector-variance-population` and
+;   `vector-stdev-population` divide by n.  The two are separate names rather
+;   than a flag, so a call site says which it means.
+;
+;   Quantile interpolation.  `vector-quantile` uses linear interpolation between
+;   order statistics, at position `q * (n - 1)` in the sorted sample.  This is
+;   the "type 7" definition, the default in R and NumPy, and it agrees with the
+;   median for every n.  The `-sorted` variants take an already-sorted column
+;   and do not sort it again.
+;
+; Variance is computed by Welford's algorithm, which does not suffer the
+; catastrophic cancellation of the one-pass E[x^2] - E[x]^2 formula when the
+; mean is large relative to the spread.
+
+(let (; The float value of an element that may be an integer or a float.
+      ; Raises if the element is not a finite number.
+      (element->float
+       (lambda (x)
+         (if (float? x)
+             (if (float-finite? x)
+                 x
+                 (error "stats: sample value must be finite"))
+             (if (integer? x)
+                 (integer->float x)
+                 (error "stats: sample value must be a number")))))
+
+      ; Convert a list of numbers to a list of floats, raising on a non-number
+      ; or a non-finite value.
+      (list->floats
+       (lambda (lst)
+         (map-list element->float lst)))
+
+      ; Convert a vector of numbers to a vector of floats, raising on a
+      ; non-number or a non-finite value.
+      (vector->floats
+       (lambda (v)
+         (map-vector element->float v)))
+
+      ; Welford's online update of (mean, m2, n) with one new observation.
+      (welford-step
+       (lambda (state x)
+         (let ((mean (vector-nth state 0))
+               (m2 (vector-nth state 1))
+               (n (vector-nth state 2))
+               (n1 (integer+ n 1))
+               (delta (float- x mean))
+               (mean1 (float+ mean (float/ delta (integer->float n1)))))
+           (vector mean1
+                   (float+ m2 (float* delta (float- x mean1)))
+                   n1))))
+
+      ; The (mean, m2, n) triple for a vector of floats.
+      (welford
+       (lambda (v)
+         (fold-vector welford-step (vector 0.0 0.0 0) v)))
+
+      ; Sample variance from a Welford triple; #none when n < 2.
+      (variance-of
+       (lambda (state)
+         (let ((n (vector-nth state 2)))
+           (if (integer<? n 2)
+               #none
+               (float/ (vector-nth state 1) (integer->float (integer- n 1)))))))
+
+      ; Population variance from a Welford triple; #none when empty.
+      (variance-population-of
+       (lambda (state)
+         (let ((n (vector-nth state 2)))
+           (if (integer<? n 1)
+               #none
+               (float/ (vector-nth state 1) (integer->float n))))))
+
+      ; The sorted list of a vector of floats.
+      (sorted-list
+       (lambda (v)
+         (sort-list float<? (vector->list v))))
+
+      ; The value at position q*(n-1) of a sorted list, interpolating between
+      ; the two neighbouring order statistics.  Raises if q is outside [0, 1].
+      (quantile-of-sorted
+       (lambda (sorted q)
+         (if (or (float<? q 0.0) (float>? q 1.0))
+             (error "stats: quantile q must be in [0, 1]")
+             (let ((n (list-length sorted)))
+               (if (integer=? n 0)
+                   #none
+                   (let ((pos (float* q (integer->float (integer- n 1))))
+                         (lo (float->integer (float-floor pos)))
+                         (frac (float- pos (float-floor pos)))
+                         (a (list-nth sorted lo))
+                         (hi (integer+ lo 1)))
+                     (if (integer>=? hi n)
+                         a
+                         (float+ a (float* frac (float- (list-nth sorted hi) a))))))))))
+
+      ; The median of a sorted list of floats; #none when empty.
+      (median-of-sorted
+       (lambda (sorted)
+         (quantile-of-sorted sorted 0.5)))
+
+      ; The value at position q*(n-1) of a vector, sorting once.
+      (quantile-of
+       (lambda (v q)
+         (quantile-of-sorted (sorted-list v) q)))
+
+      ; A dict from each distinct value of a vector of floats to its count,
+      ; accumulated in a single pass.
+      (frequency-of
+       (lambda (v)
+         (fold-vector
+           (lambda (acc x) (dict-with acc x (integer+ 1 (dict-get acc x 0))))
+           (dict)
+           v)))
+
+      ; The highest count in a frequency dict, or 0 when empty.
+      (max-frequency
+       (lambda (freq)
+         (fold-list (lambda (acc k) (integer-max acc (dict-get freq k))) 0 (dict-keys freq))))
+
+      ; The values occurring most often, in ascending order; empty when no
+      ; value repeats.
+      (modes-of
+       (lambda (v)
+         (let ((freq (frequency-of v)))
+           (let ((top (max-frequency freq)))
+             (if (integer<=? top 1)
+                 (vector)
+                 (list->vector
+                   (sort-list float<?
+                              (filter-list (lambda (k) (integer=? (dict-get freq k) top))
+                                           (dict-keys freq)))))))))
+
+      ; The arithmetic mean of a vector of floats; #none when empty.
+      (mean-of
+       (lambda (v)
+         (let ((n (vector-length v)))
+           (if (integer=? n 0)
+               #none
+               (float/ (fold-vector float+ 0.0 v) (integer->float n))))))
+
+      ; The minimum of a vector of floats; #none when empty.
+      (min-of
+       (lambda (v)
+         (if (vector-empty? v)
+             #none
+             (fold-vector float-min (vector-nth v 0) v))))
+
+      ; The maximum of a vector of floats; #none when empty.
+      (max-of
+       (lambda (v)
+         (if (vector-empty? v)
+             #none
+             (fold-vector float-max (vector-nth v 0) v))))
+
+      ; The mean absolute deviation of a vector of floats; #none when empty.
+      (mad-of
+       (lambda (v)
+         (let ((m (mean-of v)))
+           (if (none? m)
+               #none
+               (float/ (fold-vector (lambda (acc x) (float+ acc (float-abs (float- x m)))) 0.0 v)
+                       (integer->float (vector-length v)))))))
+
+      ; Pearson correlation of two equal-length vectors of floats; #none when
+      ; the sample is too small or either column has zero variance.
+      (correlate-of
+       (lambda (xs ys)
+         (let ((n (vector-length xs)))
+           (if (or (integer<? n 2) (integer!=? n (vector-length ys)))
+               #none
+               (let ((loop
+                      (lambda (i sx sy sxx syy sxy)
+                        (if (integer>=? i n)
+                            (let ((num (float- (float* (integer->float n) sxy) (float* sx sy)))
+                                  (dx (float- (float* (integer->float n) sxx) (float* sx sx)))
+                                  (dy (float- (float* (integer->float n) syy) (float* sy sy))))
+                              (if (or (float<=? dx 0.0) (float<=? dy 0.0))
+                                  #none
+                                  (float/ num (float-sqrt (float* dx dy)))))
+                            (let ((x (vector-nth xs i))
+                                  (y (vector-nth ys i)))
+                              (loop (integer+ i 1)
+                                    (float+ sx x)
+                                    (float+ sy y)
+                                    (float+ sxx (float* x x))
+                                    (float+ syy (float* y y))
+                                    (float+ sxy (float* x y))))))))
+                 (loop 0 0.0 0.0 0.0 0.0 0.0))))))
+
+      ; Sample covariance of two equal-length vectors of floats; #none when
+      ; the sample is too small.
+      (covariance-of
+       (lambda (xs ys)
+         (let ((n (vector-length xs)))
+           (if (or (integer<? n 2) (integer!=? n (vector-length ys)))
+               #none
+               (let ((mx (mean-of xs))
+                     (my (mean-of ys)))
+                 (let ((loop
+                        (lambda (i acc)
+                          (if (integer>=? i n)
+                              (float/ acc (integer->float (integer- n 1)))
+                              (loop (integer+ i 1)
+                                    (float+ acc
+                                            (float* (float- (vector-nth xs i) mx)
+                                                    (float- (vector-nth ys i) my))))))))
+                   (loop 0 0.0)))))))
+
+      ; Least-squares fit of ys on xs; a dict with slope, intercept and r2.
+      ; Returns #none when the sample is too small or xs has zero variance.
+      (linear-fit-of
+       (lambda (xs ys)
+         (let ((n (vector-length xs)))
+           (if (or (integer<? n 2) (integer!=? n (vector-length ys)))
+               #none
+               (let ((mx (mean-of xs))
+                     (my (mean-of ys)))
+                 (let ((loop
+                        (lambda (i sxx sxy syy)
+                          (if (integer>=? i n)
+                              (if (float<=? sxx 0.0)
+                                  #none
+                                  (let ((slope (float/ sxy sxx))
+                                        (intercept (float- my (float* slope mx))))
+                                    (dict "slope" slope
+                                          "intercept" intercept
+                                          "r2" (if (float<=? syy 0.0)
+                                                   1.0
+                                                   (float/ (float* sxy sxy) (float* sxx syy))))))
+                              (let ((dx (float- (vector-nth xs i) mx))
+                                    (dy (float- (vector-nth ys i) my)))
+                                (loop (integer+ i 1)
+                                      (float+ sxx (float* dx dx))
+                                      (float+ sxy (float* dx dy))
+                                      (float+ syy (float* dy dy))))))))
+                   (loop 0 0.0 0.0 0.0)))))))
+
+      ; The bin index of a value given `count` equal-width bins over [lo, hi].
+      ; The top edge belongs to the last bin.
+      (bin-index
+       (lambda (x lo hi count)
+         (let ((width (float/ (float- hi lo) (integer->float count))))
+           (if (float<=? width 0.0)
+               0
+               (let ((i (float->integer (float-floor (float/ (float- x lo) width)))))
+                 (if (integer>=? i count)
+                     (integer- count 1)
+                     (if (integer<? i 0) 0 i)))))))
+
+      ; A histogram of `count` equal-width bins over the range of v, as a
+      ; vector of (: vector low high count).  #none when v is empty or count is
+      ; not positive.  Accumulates counts in a single pass.
+      (histogram-of
+       (lambda (v count)
+         (if (or (integer<? count 1) (vector-empty? v))
+             #none
+             (let ((lo (min-of v))
+                   (hi (max-of v)))
+               (let ((width (float/ (float- hi lo) (integer->float count))))
+                 (let ((counts
+                        (fold-vector
+                          (lambda (acc x)
+                            (vector-with acc
+                                         (bin-index x lo hi count)
+                                         (integer+ 1 (vector-nth acc (bin-index x lo hi count)))))
+                          (vector-fill count 0)
+                          v)))
+                   (let ((loop
+                          (lambda (i bins)
+                            (if (integer>=? i count)
+                                (list->vector (list-reverse bins))
+                                (loop (integer+ i 1)
+                                      (list-prepend bins
+                                                    (vector (float+ lo (float* (integer->float i) width))
+                                                            (float+ lo (float* (integer->float (integer+ i 1)) width))
+                                                            (vector-nth counts i))))))))
+                     (loop 0 (list)))))))))
+
+      ; A histogram of v against explicit bin edges, as a vector of
+      ; (: vector low high count), one per adjacent pair of edges.  The last
+      ; bin is closed at the top.  Raises if edges is not strictly increasing.
+      (histogram-edges-of
+       (lambda (v edges)
+         (let ((n-edges (vector-length edges)))
+           (if (integer<? n-edges 2)
+               (error "stats: histogram edges must have at least two elements")
+               (let ((n-bins (integer- n-edges 1))
+
+                     ; The index of the bin containing x, or #none when x is
+                     ; outside every bin.  The last bin is closed at the top.
+                     (bin-of
+                      (lambda (x)
+                        (let ((loop
+                               (lambda (k)
+                                 (if (integer>=? k n-bins)
+                                     #none
+                                     (let ((lo (vector-nth edges k))
+                                           (hi (vector-nth edges (integer+ k 1))))
+                                       (if (and (float>=? x lo)
+                                                (if (integer=? k (integer- n-bins 1))
+                                                    (float<=? x hi)
+                                                    (float<? x hi)))
+                                           k
+                                           (loop (integer+ k 1))))))))
+                          (loop 0)))))
+
+                 (let ((counts
+                        (fold-vector
+                          (lambda (acc x)
+                            (let ((k (bin-of x)))
+                              (if (none? k)
+                                  acc
+                                  (vector-with acc k (integer+ 1 (vector-nth acc k))))))
+                          (vector-fill n-bins 0)
+                          v)))
+
+                   (let ((loop
+                          (lambda (i bins)
+                            (if (integer>=? i n-bins)
+                                (list->vector (list-reverse bins))
+                                (loop (integer+ i 1)
+                                      (list-prepend bins
+                                                    (vector (vector-nth edges i)
+                                                            (vector-nth edges (integer+ i 1))
+                                                            (vector-nth counts i))))))))
+                     (loop 0 (list)))))))))
+
+      ; The z-scores of v; #none when the sample is too small or has zero spread.
+      (z-scores-of
+       (lambda (v)
+         (let ((m (mean-of v))
+               (var (variance-of (welford v))))
+           (if (or (none? m) (none? var) (float<=? var 0.0))
+               #none
+               (let ((sd (float-sqrt var)))
+                 (map-vector (lambda (x) (float/ (float- x m) sd)) v))))))
+
+      ; Min-max normalisation of v into [0, 1]; #none when empty or constant.
+      (normalise-of
+       (lambda (v)
+         (if (vector-empty? v)
+             #none
+             (let ((lo (min-of v))
+                   (hi (max-of v)))
+               (if (float<=? (float- hi lo) 0.0)
+                   #none
+                   (map-vector (lambda (x) (float/ (float- x lo) (float- hi lo))) v))))))
+
+      ; The five-number summary plus mean and stdev, as a dict; #none when
+      ; empty.  Sorts exactly once.
+      (summary-of
+       (lambda (v)
+         (if (vector-empty? v)
+             #none
+             (let ((sorted (sorted-list v))
+                   (state (welford v)))
+               (let ((var (variance-of state)))
+                 (dict "count" (vector-length v)
+                       "min" (list-first sorted)
+                       "q1" (quantile-of-sorted sorted 0.25)
+                       "median" (quantile-of-sorted sorted 0.5)
+                       "q3" (quantile-of-sorted sorted 0.75)
+                       "max" (list-last sorted)
+                       "mean" (vector-nth state 0)
+                       "stdev" (if (none? var) #none (float-sqrt var))))))))
+
+      ; The arithmetic mean of a vector of floats; #none when empty.
+      (vector-mean (lambda (v) (mean-of (vector->floats v))))
+
+      ; The arithmetic mean of a list of floats; #none when empty.
+      (list-mean (lambda (lst) (mean-of (list->vector (list->floats lst)))))
+
+      ; The median of a vector of floats; #none when empty.
+      (vector-median (lambda (v) (median-of-sorted (sorted-list (vector->floats v)))))
+
+      ; The median of a list of floats; #none when empty.
+      (list-median (lambda (lst) (median-of-sorted (sort-list float<? (list->floats lst)))))
+
+      ; The median of an already-sorted vector of floats; #none when empty.
+      (vector-median-sorted (lambda (v) (median-of-sorted (vector->list (vector->floats v)))))
+
+      ; The median of an already-sorted list of floats; #none when empty.
+      (list-median-sorted (lambda (lst) (median-of-sorted (list->floats lst))))
+
+      ; The values occurring most often, as a vector in ascending order; empty
+      ; when no value repeats.
+      (vector-mode (lambda (v) (modes-of (vector->floats v))))
+
+      ; The values occurring most often in a list of floats; empty when no
+      ; value repeats.  Returns a list.
+      (list-mode
+       (lambda (lst)
+         (vector->list (modes-of (list->vector (list->floats lst))))))
+
+      ; The sample variance (dividing by n-1); #none when n < 2.
+      (vector-variance (lambda (v) (variance-of (welford (vector->floats v)))))
+
+      ; The sample variance of a list of floats; #none when n < 2.
+      (list-variance (lambda (lst) (variance-of (welford (list->vector (list->floats lst))))))
+
+      ; The population variance (dividing by n); #none when empty.
+      (vector-variance-population
+       (lambda (v) (variance-population-of (welford (vector->floats v)))))
+
+      ; The population variance of a list of floats; #none when empty.
+      (list-variance-population
+       (lambda (lst) (variance-population-of (welford (list->vector (list->floats lst))))))
+
+      ; The sample standard deviation; #none when n < 2.
+      (vector-stdev
+       (lambda (v)
+         (let ((var (variance-of (welford (vector->floats v)))))
+           (if (none? var) #none (float-sqrt var)))))
+
+      ; The sample standard deviation of a list of floats; #none when n < 2.
+      (list-stdev
+       (lambda (lst)
+         (let ((var (variance-of (welford (list->vector (list->floats lst))))))
+           (if (none? var) #none (float-sqrt var)))))
+
+      ; The population standard deviation; #none when empty.
+      (vector-stdev-population
+       (lambda (v)
+         (let ((var (variance-population-of (welford (vector->floats v)))))
+           (if (none? var) #none (float-sqrt var)))))
+
+      ; The population standard deviation of a list of floats; #none when empty.
+      (list-stdev-population
+       (lambda (lst)
+         (let ((var (variance-population-of (welford (list->vector (list->floats lst))))))
+           (if (none? var) #none (float-sqrt var)))))
+
+      ; The sum of a vector of floats; 0.0 when empty.
+      (vector-sum (lambda (v) (fold-vector float+ 0.0 (vector->floats v))))
+
+      ; The sum of a list of floats; 0.0 when empty.
+      (list-sum (lambda (lst) (fold-list float+ 0.0 (list->floats lst))))
+
+      ; The mean absolute deviation from the mean; #none when empty.
+      (vector-mean-absolute-deviation (lambda (v) (mad-of (vector->floats v))))
+
+      ; The mean absolute deviation of a list of floats; #none when empty.
+      (list-mean-absolute-deviation
+       (lambda (lst) (mad-of (list->vector (list->floats lst)))))
+
+      ; The value at quantile q of a vector of floats, for q in [0, 1], by
+      ; linear interpolation between order statistics.  Raises if q is outside
+      ; [0, 1]; #none when empty.
+      (vector-quantile (lambda (v q) (quantile-of (vector->floats v) q)))
+
+      ; The quantile of a list of floats; raises if q is outside [0, 1].
+      (list-quantile
+       (lambda (lst q) (quantile-of-sorted (sort-list float<? (list->floats lst)) q)))
+
+      ; The quantile of an already-sorted vector of floats; does not sort.
+      (vector-quantile-sorted
+       (lambda (v q) (quantile-of-sorted (vector->list (vector->floats v)) q)))
+
+      ; The quantile of an already-sorted list of floats; does not sort.
+      (list-quantile-sorted (lambda (lst q) (quantile-of-sorted (list->floats lst) q)))
+
+      ; The value at percentile p of a vector of floats, for p in [0, 100].
+      (vector-percentile
+       (lambda (v p) (quantile-of (vector->floats v) (float/ p 100.0))))
+
+      ; The value at percentile p of a list of floats, for p in [0, 100].
+      (list-percentile
+       (lambda (lst p) (quantile-of-sorted (sort-list float<? (list->floats lst)) (float/ p 100.0))))
+
+      ; The interquartile range, Q3 - Q1; #none when empty.  Sorts once.
+      (vector-iqr
+       (lambda (v)
+         (let ((sorted (sorted-list (vector->floats v))))
+           (let ((q1 (quantile-of-sorted sorted 0.25))
+                 (q3 (quantile-of-sorted sorted 0.75)))
+             (if (or (none? q1) (none? q3)) #none (float- q3 q1))))))
+
+      ; The interquartile range of a list of floats; #none when empty.
+      (list-iqr
+       (lambda (lst)
+         (let ((sorted (sort-list float<? (list->floats lst))))
+           (let ((q1 (quantile-of-sorted sorted 0.25))
+                 (q3 (quantile-of-sorted sorted 0.75)))
+             (if (or (none? q1) (none? q3)) #none (float- q3 q1))))))
+
+      ; A histogram of `bin-count` equal-width bins over the range of v, as a
+      ; vector of (: vector low high count).  #none when v is empty or
+      ; bin-count is not positive.
+      (vector-histogram (lambda (v bin-count) (histogram-of (vector->floats v) bin-count)))
+
+      ; A histogram of a list of floats into equal-width bins.
+      (list-histogram
+       (lambda (lst bin-count) (histogram-of (list->vector (list->floats lst)) bin-count)))
+
+      ; A histogram of v against explicit bin edges, as a vector of
+      ; (: vector low high count).  Raises if edges is not strictly increasing.
+      (vector-histogram-edges
+       (lambda (v edges) (histogram-edges-of (vector->floats v) edges)))
+
+      ; A histogram of a list of floats against explicit bin edges.
+      (list-histogram-edges
+       (lambda (lst edges) (histogram-edges-of (list->vector (list->floats lst)) edges)))
+
+      ; A dict from each distinct value of v to its count.  Keys are floats;
+      ; counting distinct composite values is not a statistics operation.
+      (vector-frequency (lambda (v) (frequency-of (vector->floats v))))
+
+      ; A dict from each distinct value of a list of floats to its count.
+      (list-frequency (lambda (lst) (frequency-of (list->vector (list->floats lst)))))
+
+      ; Pearson correlation of two equal-length vectors; #none when too short
+      ; or a column is constant.
+      (vector-correlate
+       (lambda (xs ys) (correlate-of (vector->floats xs) (vector->floats ys))))
+
+      ; Pearson correlation of two equal-length lists of floats.
+      (list-correlate
+       (lambda (xs ys)
+         (correlate-of (list->vector (list->floats xs)) (list->vector (list->floats ys)))))
+
+      ; The sample covariance of two equal-length vectors; #none when too short.
+      (vector-covariance
+       (lambda (xs ys) (covariance-of (vector->floats xs) (vector->floats ys))))
+
+      ; The sample covariance of two equal-length lists of floats.
+      (list-covariance
+       (lambda (xs ys)
+         (covariance-of (list->vector (list->floats xs)) (list->vector (list->floats ys)))))
+
+      ; The least-squares fit of ys on xs, as a dict with slope, intercept and
+      ; r2; #none when too short or xs is constant.
+      (vector-linear-fit
+       (lambda (xs ys) (linear-fit-of (vector->floats xs) (vector->floats ys))))
+
+      ; The least-squares fit of two equal-length lists of floats.
+      (list-linear-fit
+       (lambda (xs ys)
+         (linear-fit-of (list->vector (list->floats xs)) (list->vector (list->floats ys)))))
+
+      ; The z-scores of v; #none when too short or constant.
+      (vector-z-scores (lambda (v) (z-scores-of (vector->floats v))))
+
+      ; The z-scores of a list of floats; #none when too short or constant.
+      ; Returns a list.
+      (list-z-scores
+       (lambda (lst)
+         (let ((z (z-scores-of (list->vector (list->floats lst)))))
+           (if (none? z) #none (vector->list z)))))
+
+      ; Min-max normalisation of v into [0, 1]; #none when empty or constant.
+      (vector-normalise (lambda (v) (normalise-of (vector->floats v))))
+
+      ; Min-max normalisation of a list of floats into [0, 1].
+      ; Returns a list.
+      (list-normalise
+       (lambda (lst)
+         (let ((n (normalise-of (list->vector (list->floats lst)))))
+           (if (none? n) #none (vector->list n)))))
+
+      ; The five-number summary plus mean and stdev, as a dict; #none when
+      ; empty.  Sorts once.
+      (vector-summary (lambda (v) (summary-of (vector->floats v))))
+
+      ; The five-number summary of a list of floats; #none when empty.
+      (list-summary (lambda (lst) (summary-of (list->vector (list->floats lst))))))
+
+  (export
+    vector->floats list->floats
+    vector-mean list-mean
+    vector-median list-median
+    vector-median-sorted list-median-sorted
+    vector-mode list-mode
+    vector-variance list-variance
+    vector-variance-population list-variance-population
+    vector-stdev list-stdev
+    vector-stdev-population list-stdev-population
+    vector-sum list-sum
+    vector-mean-absolute-deviation list-mean-absolute-deviation
+    vector-quantile list-quantile
+    vector-quantile-sorted list-quantile-sorted
+    vector-percentile list-percentile
+    vector-iqr list-iqr
+    vector-histogram list-histogram
+    vector-histogram-edges list-histogram-edges
+    vector-frequency list-frequency
+    vector-correlate list-correlate
+    vector-covariance list-covariance
+    vector-linear-fit list-linear-fit
+    vector-z-scores list-z-scores
+    vector-normalise list-normalise
+    vector-summary list-summary))

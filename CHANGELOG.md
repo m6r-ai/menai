@@ -24,12 +24,20 @@ New features:
 - Added `html-decode` and `html-encode` modules to the standard library.
 - Added `integer-gcd` and `integer-lcm` operations with VM opcode backing.
 - Added more float opcode-backed operations to handle things like NaN, Inf, etc.
+- Added a `stats` module to the standard library.  It provides descriptive
+  statistics — mean, median, variance, quantiles, histograms, correlation, and
+  linear fit — over a column of floats, with `vector-` and `list-` forms.
+- Added `vector-fill` to the prelude, which builds a vector of n copies of a value.
 
 Bug fixes:
 
 - Fixed a `regexp` stack overflow.  A repetition recursed once per character, so a
   run of a few hundred characters raised "maximum call depth exceeded".
 - Reserved words are now protected correctly.
+- Fixed variable capture during inlining.  A binding in the inlined body could
+  capture a variable that was free in the argument, silently producing a wrong
+  result.
+- Fixed namespace names not being shadowable by an inner `let` binding.
 
 ## v0.8.0 (2026-10-10)
 

@@ -345,6 +345,30 @@ menai`. Currently it includes:
   `replace` expands `$0`..`$n` in its replacement.  The pattern dialect is
   documented in [ADR-0052](adr/0052-regular-expression-captures.md), which
   supersedes [ADR-0042](adr/0042-regular-expression-matching.md)
+- `stats.menai` — descriptive statistics over a flat column of floats, taken
+  either as a vector or as a list.  Every operation has both a `vector-` and a
+  `list-` form, and the container named in the export is the one it returns as
+  well as the one it takes.  Exports `vector->floats` and `list->floats`, which
+  convert a column that may contain integers and reject NaN and infinity; the
+  central-tendency operations `vector-mean`, `vector-median`,
+  `vector-median-sorted`, and `vector-mode`; the dispersion operations
+  `vector-variance` and `vector-variance-population`, `vector-stdev` and
+  `vector-stdev-population`, `vector-sum`, and `vector-mean-absolute-deviation`
+  (the sample versions divide by n-1, the population versions by n, and the two
+  are separate names rather than a flag); the quantile operations
+  `vector-quantile`, `vector-quantile-sorted`, `vector-percentile`, and
+  `vector-iqr`, which interpolate linearly at position `q * (n - 1)` between
+  order statistics (the "type 7" definition, which agrees with the median for
+  every n); the shape operations `vector-histogram`, `vector-histogram-edges`,
+  and `vector-frequency`; the relationship operations `vector-correlate`,
+  `vector-covariance`, and `vector-linear-fit`; the normalisation operations
+  `vector-z-scores` and `vector-normalise`; and `vector-summary`, which returns
+  the five-number summary plus the mean and standard deviation in a single
+  sort.  Each has a `list-` counterpart.  Where a sample has no defined answer
+  the result is `#none` rather than an error; a quantile outside [0, 1] raises.
+  Variance is computed by Welford's algorithm to avoid catastrophic
+  cancellation.  The module does not read tables: extracting a column from
+  `csv-decode` output is the caller's job
 - `tar-entries.menai` — reads a tar archive (as bytes) and returns a dict with an
   `"entries"` list of entry dicts and a `"meta"` dict, without returning entry
   contents.  Both POSIX ustar and GNU tar are accepted, including GNU long names
