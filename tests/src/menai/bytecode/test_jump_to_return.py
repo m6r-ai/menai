@@ -20,6 +20,7 @@ Covers:
   2. Correctness — results are identical with the optimisation
   3. Dead label removal — the unreferenced label and RETURN are dropped
   4. Conditional jumps to a RETURN are left alone
+  5. The leading label run is never dropped — it is the function entry
 """
 
 import pytest
@@ -169,4 +170,68 @@ class TestConditionalJumpToReturnNotInlined:
         assert cond_count >= 1, (
             f"Expected the conditional branch to be preserved.\n"
             f"Disassembly:\n{chr(10).join(_disasm(lam))}"
+        )
+
+
+class TestEntryLabelIsLive:
+    """The leading label run introduces the function entry and is never dead."""
+
+    def test_entry_label_and_return_kept(self):
+        """
+        A function whose first instruction is a label, followed by a jump to a
+        RETURN, inlines the jump into a RETURN.  The leading label is the
+        function entry: execution begins there, so neither it nor the RETURN
+        that follows it may be dropped, even though no jump targets it.
+        """
+        from menai.menai_value import MenaiString
+        from menai.vcode.menai_vcode import (
+            MenaiVCodeJump,
+            MenaiVCodeLabel,
+            MenaiVCodeOperand,
+            MenaiVCodeReturn,
+        )
+        from menai.vcode.menai_vcode_peephole import _inline_jump_to_return
+
+        instrs = [
+            MenaiVCodeLabel(name="entry_label"),
+            MenaiVCodeJump(label="target", is_self_loop=False),
+            MenaiVCodeLabel(name="target"),
+            MenaiVCodeReturn(value=MenaiVCodeOperand.of_const(MenaiString("str"))),
+        ]
+
+        result, changed = _inline_jump_to_return(instrs)
+
+        assert changed
+        assert result, "the function body must not be dropped"
+        assert any(isinstance(i, MenaiVCodeReturn) for i in result), (
+            "the inlined RETURN must be kept"
+        )
+
+    def test_entry_label_run_kept_with_leading_labels(self):
+        """
+        Several consecutive labels open the function.  The whole run is the
+        entry, so the run and the RETURN after it are kept.
+        """
+        from menai.menai_value import MenaiString
+        from menai.vcode.menai_vcode import (
+            MenaiVCodeJump,
+            MenaiVCodeLabel,
+            MenaiVCodeOperand,
+            MenaiVCodeReturn,
+        )
+        from menai.vcode.menai_vcode_peephole import _inline_jump_to_return
+
+        instrs = [
+            MenaiVCodeLabel(name="first"),
+            MenaiVCodeLabel(name="second"),
+            MenaiVCodeJump(label="target", is_self_loop=False),
+            MenaiVCodeLabel(name="target"),
+            MenaiVCodeReturn(value=MenaiVCodeOperand.of_const(MenaiString("str"))),
+        ]
+
+        result, changed = _inline_jump_to_return(instrs)
+
+        assert changed
+        assert any(isinstance(i, MenaiVCodeReturn) for i in result), (
+            "the inlined RETURN must be kept"
         )

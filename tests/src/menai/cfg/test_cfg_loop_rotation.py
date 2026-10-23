@@ -11,7 +11,9 @@ These tests compile Menai source and inspect the resulting bytecode to
 verify that:
   - A rotated loop has a conditional branch back into the body (a backward
     JUMP_IF_FALSE) instead of an unconditional backward JUMP.
-  - The peeled entry test is retained so an empty input skips the loop.
+  - The peeled entry test is retained so an empty input skips the loop, and
+    folds away entirely when its operands are constants (so the loop is
+    skipped without a runtime comparison).
   - The compiled code produces correct results.
   - Functions without a self-loop are unaffected.
 """
@@ -342,14 +344,16 @@ class TestMultiBlockBodyRotation:
             "rotated loop must not have an unconditional back-edge"
         )
 
-    def test_nested_branch_body_retains_entry_test(self):
+    def test_nested_branch_body_folds_entry_test(self):
         """
-        The peeled entry test must be retained so the loop is skipped when the
-        entry condition is false.
+        The peeled entry test is folded away when its operands are constants,
+        so the loop is skipped when the entry condition is false without
+        evaluating a comparison at runtime.
 
         The loop is entered with i bound to 0, so the entry test `0 >= 9` is a
-        comparison of two constants and folds to a constant false.  The bottom
-        test compares the live loop variable and so must remain a comparison.
+        comparison of two constants and folds to a constant false, which makes
+        the entry test a branch on a constant.  The bottom test compares the
+        live loop variable and so must remain a comparison.
         """
         src = """
         (let ((count-mismatch
@@ -368,8 +372,8 @@ class TestMultiBlockBodyRotation:
         assert _count_op(fn, Opcode.INTEGER_GTE_P) == 1, (
             "the bottom test compares the live loop variable and must remain"
         )
-        assert _count_op(fn, Opcode.LOAD_FALSE) >= 1, (
-            "the entry test compares two constants and must fold to a constant"
+        assert _count_op(fn, Opcode.LOAD_FALSE) == 0, (
+            "the entry test compares two constants and must fold away entirely"
         )
 
     def test_nested_branch_body_correct_results(self):
@@ -451,13 +455,14 @@ class TestMultipleBackEdgesRotated:
             "every back-edge must be a conditional branch back into the body"
         )
 
-    def test_two_arms_retains_both_entry_and_bottom_tests(self):
+    def test_two_arms_folds_entry_test_and_keeps_bottom_tests(self):
         """
         Each back-edge gets its own copy of the loop test, so a loop with two
         back-edges has one comparison per back-edge after rotation.
 
         The loop is entered with i bound to 0, so the entry test `0 >= 10` is a
-        comparison of two constants and folds to a constant false.  The
+        comparison of two constants and folds to a constant false, which makes
+        the entry test a branch on a constant and removes it entirely.  The
         per-back-edge copies compare the live loop variable and must remain
         comparisons.
         """
@@ -476,8 +481,8 @@ class TestMultipleBackEdgesRotated:
         assert _count_op(fn, Opcode.INTEGER_GTE_P) == 2, (
             "each back-edge must have its own comparison of the live loop variable"
         )
-        assert _count_op(fn, Opcode.LOAD_FALSE) >= 1, (
-            "the entry test compares two constants and must fold to a constant"
+        assert _count_op(fn, Opcode.LOAD_FALSE) == 0, (
+            "the entry test compares two constants and must fold away entirely"
         )
 
     def test_two_arms_correct_results(self):

@@ -151,7 +151,33 @@ Sub-passes
 
    Does not require a SlotMap — operates entirely on labels and registers.
 
-The six post-allocation sub-passes are composed and iterated to a joint
+7. Branch-on-loaded-constant folding
+   Replaces a conditional jump whose condition register a preceding load set
+   to a literal with the branch the literal decides:
+
+       LOAD_CONST #t r        JUMP @L
+       JUMP_IF_TRUE r, @L  →  ...
+
+       LOAD_CONST #f r        (both removed)
+       JUMP_IF_TRUE r, @L  →  ...
+
+   (and symmetrically for JUMP_IF_FALSE, with the polarity inverted).
+
+   The condition is known at compile time, so the branch either always jumps
+   or never jumps.  A loop rotation peels the loop test into the header and
+   copies it to the bottom, so a loop whose test operands are constants has a
+   header test that folds to a literal; without this sub-pass that literal is
+   loaded and branched on every time the loop is entered, for a direction
+   that is already decided.
+
+   The load and the branch must be adjacent apart from labels, and the branch
+   must read the register the load defined.  The load is removed only when the
+   branch was the register's sole remaining use, so a register read elsewhere
+   keeps its definition.
+
+   Does not require a SlotMap — operates entirely on labels and registers.
+
+The seven post-allocation sub-passes are composed and iterated to a joint
 fixed point.
 
 Pre-allocation passes
@@ -829,6 +855,8 @@ def peephole(func: MenaiVCodeFunction, slot_map: SlotMap) -> MenaiVCodeFunction:
         changed = changed or c
         instrs, c = _eliminate_jump_over_jump(instrs)
         changed = changed or c
+        instrs, c = _fold_branch_on_loaded_constant(instrs)
+        changed = changed or c
         instrs, c = _fold_branch_load_return(instrs, slot_map)
         changed = changed or c
         instrs, c = _thread_jumps(instrs)
@@ -1204,6 +1232,89 @@ def _fold_branch_on_constant(
     return result, changed
 
 
+def _fold_branch_on_loaded_constant(
+    instrs: list[MenaiVCodeInstr],
+) -> tuple[list[MenaiVCodeInstr], bool]:
+    """
+    Fold a conditional jump whose condition a preceding load set to a literal.
+
+    `LOAD_CONST #t r` / `JUMP_IF_TRUE r label` is an unconditional jump to
+    label: the condition is known.  `LOAD_CONST #f r` / `JUMP_IF_TRUE r label`
+    never jumps, so both instructions are removed and control falls through.
+    JUMP_IF_FALSE is handled by inverting the polarity.
+
+    The load and the branch must be adjacent apart from labels, and the branch
+    must read the register the load defined.  The load is removed only when the
+    branch is the register's sole remaining use, so a register read elsewhere
+    keeps its definition.
+
+    This is the loaded-literal counterpart of _fold_branch_on_constant, which
+    folds a branch whose condition is a literal operand.  A branch condition is
+    always a register (the bytecode encodes it as a slot), so a condition that
+    is known only because a preceding load made it so reaches here rather than
+    there.  It is what removes the peeled header test of a rotated loop whose
+    test operands are constants.
+    """
+    result: list[MenaiVCodeInstr] = []
+    changed = False
+    i = 0
+
+    while i < len(instrs):
+        instr = instrs[i]
+
+        if not isinstance(instr, MenaiVCodeLoadConst):
+            result.append(instr)
+            i += 1
+            continue
+
+        if not isinstance(instr.value, MenaiBoolean):
+            result.append(instr)
+            i += 1
+            continue
+
+        # Scan ahead past labels to the next instruction.
+        j = i + 1
+        while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
+            j += 1
+
+        if j >= len(instrs):
+            result.append(instr)
+            i += 1
+            continue
+
+        branch = instrs[j]
+        if not isinstance(branch, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
+            result.append(instr)
+            i += 1
+            continue
+
+        if branch.cond.id != instr.dst.id:
+            result.append(instr)
+            i += 1
+            continue
+
+        # The load must be the register's only remaining use, so removing it
+        # cannot strand a reader.
+        if _count_uses(instrs, instr.dst.id) != 1:
+            result.append(instr)
+            i += 1
+            continue
+
+        taken = instr.value.value
+        if isinstance(branch, MenaiVCodeJumpIfFalse):
+            taken = not taken
+
+        # Labels between the load and the branch stay: a jump may target them.
+        result.extend(instrs[i + 1:j])
+        if taken:
+            result.append(MenaiVCodeJump(label=branch.label))
+
+        i = j + 1
+        changed = True
+
+    return result, changed
+
+
 def _count_uses(instrs: list[MenaiVCodeInstr], reg_id: int) -> int:
     """Return the number of instructions that read reg_id."""
     count = 0
@@ -1519,10 +1630,18 @@ def _inline_jump_to_return(
             live_labels.add(instr.default_label)
             live_labels.update(instr.labels)
 
+    # A label at the start of the instruction list is the function entry:
+    # execution begins there unconditionally, so it is live even though there
+    # is no preceding instruction to fall through from.  Without this the
+    # leading label run is treated as dead, and the run and the RETURN it
+    # introduces are dropped — deleting the whole function body.
     prev: MenaiVCodeInstr | None = None
-    for instr in rewritten:
+    for index, instr in enumerate(rewritten):
         if isinstance(instr, MenaiVCodeLabel):
-            if prev is not None and not isinstance(prev, _no_fallthrough_types):
+            if index == 0:
+                live_labels.add(instr.name)
+
+            elif prev is not None and not isinstance(prev, _no_fallthrough_types):
                 live_labels.add(instr.name)
 
         else:
