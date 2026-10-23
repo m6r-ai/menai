@@ -47,6 +47,10 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$boolean-not',
         '$integer=?',
         '$integer!=?',
+        '$integer<?',
+        '$integer>?',
+        '$integer<=?',
+        '$integer>=?',
         '$integer-abs',
         '$integer+',
         '$integer-',
@@ -69,6 +73,10 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         '$integer-codepoint->string',
         '$float=?',
         '$float!=?',
+        '$float<?',
+        '$float>?',
+        '$float<=?',
+        '$float>=?',
         '$float-abs',
         '$float+',
         '$float-',
@@ -174,6 +182,10 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$boolean-not': self._fold_not,
             '$integer=?': self._fold_integer_eq,
             '$integer!=?': self._fold_integer_neq,
+            '$integer<?': self._fold_integer_lt,
+            '$integer>?': self._fold_integer_gt,
+            '$integer<=?': self._fold_integer_lte,
+            '$integer>=?': self._fold_integer_gte,
             '$integer-abs': self._fold_integer_abs,
             '$integer+': self._fold_integer_add,
             '$integer-': self._fold_integer_sub,
@@ -196,6 +208,10 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             '$integer-codepoint->string': self._fold_integer_codepoint_to_string,
             '$float=?': self._fold_float_eq,
             '$float!=?': self._fold_float_neq,
+            '$float<?': self._fold_float_lt,
+            '$float>?': self._fold_float_gt,
+            '$float<=?': self._fold_float_lte,
+            '$float>=?': self._fold_float_gte,
             '$float-abs': self._fold_float_abs,
             '$float+': self._fold_float_add,
             '$float-': self._fold_float_sub,
@@ -651,6 +667,34 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         first = args[0]
         return MenaiASTBoolean(not all(first == arg for arg in args[1:]))
 
+    def _fold_integer_lt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold integer<?: both args must be integers, returns boolean."""
+        if not isinstance(args[0], MenaiASTInteger) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        return MenaiASTBoolean(args[0].value < args[1].value)
+
+    def _fold_integer_gt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold integer>?: both args must be integers, returns boolean."""
+        if not isinstance(args[0], MenaiASTInteger) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        return MenaiASTBoolean(args[0].value > args[1].value)
+
+    def _fold_integer_lte(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold integer<=?: both args must be integers, returns boolean."""
+        if not isinstance(args[0], MenaiASTInteger) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        return MenaiASTBoolean(args[0].value <= args[1].value)
+
+    def _fold_integer_gte(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold integer>=?: both args must be integers, returns boolean."""
+        if not isinstance(args[0], MenaiASTInteger) or not isinstance(args[1], MenaiASTInteger):
+            return None
+
+        return MenaiASTBoolean(args[0].value >= args[1].value)
+
     def _fold_integer_abs(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
         """Fold integer-abs: arg must be integer, returns integer."""
         if not isinstance(args[0], MenaiASTInteger):
@@ -898,6 +942,34 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
 
         first = args[0]
         return MenaiASTBoolean(not all(first == arg for arg in args[1:]))
+
+    def _fold_float_lt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float<?: both args must be floats, returns boolean."""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTFloat):
+            return None
+
+        return MenaiASTBoolean(args[0].value < args[1].value)
+
+    def _fold_float_gt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float>?: both args must be floats, returns boolean."""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTFloat):
+            return None
+
+        return MenaiASTBoolean(args[0].value > args[1].value)
+
+    def _fold_float_lte(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float<=?: both args must be floats, returns boolean."""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTFloat):
+            return None
+
+        return MenaiASTBoolean(args[0].value <= args[1].value)
+
+    def _fold_float_gte(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
+        """Fold float>=?: both args must be floats, returns boolean."""
+        if not isinstance(args[0], MenaiASTFloat) or not isinstance(args[1], MenaiASTFloat):
+            return None
+
+        return MenaiASTBoolean(args[0].value >= args[1].value)
 
     def _fold_float_abs(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
         """Fold float-abs: arg must be float, returns float."""
