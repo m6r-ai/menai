@@ -337,5 +337,6 @@ class TestPhiArgumentCoalescing:
         code = _compile(src)
         loop = _loop_function(code, "loop")
         # The list-prepend result is written straight into the accumulator
-        # slot, so the only MOVE left is the call-argument staging.
-        assert _count_op(loop, Opcode.MOVE) == 1
+        # slot and the loop-carried update is written straight into the index
+        # slot, so no back-edge MOVE remains.
+        assert _count_op(loop, Opcode.MOVE) == 0
