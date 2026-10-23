@@ -28,6 +28,9 @@ New features:
   statistics — mean, median, variance, quantiles, histograms, correlation, and
   linear fit — over a column of floats, with `vector-` and `list-` forms.
 - Added `vector-fill` to the prelude, which builds a vector of n copies of a value.
+- Improved constant folding for integer and float comparisons.
+- Implemented VCode-level constant folding.
+- Implemented VCode branch folding when the condition is a constant.
 
 Bug fixes:
 

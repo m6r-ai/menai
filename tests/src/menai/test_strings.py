@@ -6,6 +6,40 @@ from menai import Menai, MenaiEvalError, VMErrorCode
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
 
 
+def _opaque(*bindings: str) -> str:
+    """
+    Build an expression whose operands are read from struct fields.
+
+    The runtime-opcode tests need operands the compiler cannot resolve to
+    constants.  A literal, or a `let` binding of one, is folded away — the
+    inliner substitutes the literal into the body — so the opcode under test
+    never reaches the bytecode.  A struct field read is never a compile-time
+    constant, so the operation stays a runtime instruction.
+
+    The last argument is the body; each preceding argument is a
+    `name value` pair binding name to the Menai source literal value.
+    """
+    body = bindings[-1]
+    pairs = [b.split(" ", 1) for b in bindings[:-1]]
+
+    # Each value gets its own single-field struct, so the field read that
+    # supplies it is opaque while the value itself stays a literal.
+    reads = " ".join(
+        f"({name} (struct-get b{index} 'v))"
+        for index, (name, _) in enumerate(pairs)
+    )
+    inner = f"(let ({reads}) {body})" if reads else body
+
+    for index, (_, value) in reversed(list(enumerate(pairs))):
+        inner = (
+            f"(let ((box{index} (struct (v))))"
+            f" (let ((b{index} (box{index} {value})))"
+            f" {inner}))"
+        )
+
+    return inner
+
+
 class TestStrings:
     """Test string operations and manipulation functions."""
 
@@ -339,15 +373,15 @@ class TestStrings:
 
     @pytest.mark.parametrize("expression,expected", [
         # Prefix matches
-        ('(let ((s "hello world") (p "hello")) ($string-prefix? s p))', '#t'),
-        ('(let ((s "hello world") (p "he")) ($string-prefix? s p))', '#t'),
-        ('(let ((s "hello world") (p "")) ($string-prefix? s p))', '#t'),  # Empty prefix
+        (_opaque('s "hello world"', 'p "hello"', '($string-prefix? s p)'), '#t'),
+        (_opaque('s "hello world"', 'p "he"', '($string-prefix? s p)'), '#t'),
+        (_opaque('s "hello world"', 'p ""', '($string-prefix? s p)'), '#t'),  # Empty prefix
         # Prefix non-matches
-        ('(let ((s "hello world") (p "world")) ($string-prefix? s p))', '#f'),  # Not at start
-        ('(let ((s "hello") (p "hello world")) ($string-prefix? s p))', '#f'),  # Prefix longer
+        (_opaque('s "hello world"', 'p "world"', '($string-prefix? s p)'), '#f'),  # Not at start
+        (_opaque('s "hello"', 'p "hello world"', '($string-prefix? s p)'), '#f'),  # Prefix longer
         # Unicode prefix
-        ('(let ((s "世界你好") (p "世界")) ($string-prefix? s p))', '#t'),
-        ('(let ((s "café") (p "ca")) ($string-prefix? s p))', '#t'),
+        (_opaque('s "世界你好"', 'p "世界"', '($string-prefix? s p)'), '#t'),
+        (_opaque('s "café"', 'p "ca"', '($string-prefix? s p)'), '#t'),
     ])
     def test_string_prefix_runtime(self, menai, expression, expected):
         """Test string-prefix? opcode directly (not constant-folded)."""
@@ -359,15 +393,15 @@ class TestStrings:
 
     @pytest.mark.parametrize("expression,expected", [
         # Suffix matches
-        ('(let ((s "hello world") (su "world")) ($string-suffix? s su))', '#t'),
-        ('(let ((s "hello world") (su "ld")) ($string-suffix? s su))', '#t'),
-        ('(let ((s "hello world") (su "")) ($string-suffix? s su))', '#t'),  # Empty suffix
+        (_opaque('s "hello world"', 'su "world"', '($string-suffix? s su)'), '#t'),
+        (_opaque('s "hello world"', 'su "ld"', '($string-suffix? s su)'), '#t'),
+        (_opaque('s "hello world"', 'su ""', '($string-suffix? s su)'), '#t'),  # Empty suffix
         # Suffix non-matches
-        ('(let ((s "hello world") (su "hello")) ($string-suffix? s su))', '#f'),  # Not at end
-        ('(let ((s "hello") (su "hello world")) ($string-suffix? s su))', '#f'),  # Suffix longer
+        (_opaque('s "hello world"', 'su "hello"', '($string-suffix? s su)'), '#f'),  # Not at end
+        (_opaque('s "hello"', 'su "hello world"', '($string-suffix? s su)'), '#f'),  # Suffix longer
         # Unicode suffix
-        ('(let ((s "世界你好") (su "你好")) ($string-suffix? s su))', '#t'),
-        ('(let ((s "café") (su "é")) ($string-suffix? s su))', '#t'),
+        (_opaque('s "世界你好"', 'su "你好"', '($string-suffix? s su)'), '#t'),
+        (_opaque('s "café"', 'su "é"', '($string-suffix? s su)'), '#t'),
     ])
     def test_string_suffix_runtime(self, menai, expression, expected):
         """Test string-suffix? opcode directly (not constant-folded)."""
@@ -462,15 +496,15 @@ class TestStrings:
         assert menai.evaluate_and_format(expression) == expected
 
     @pytest.mark.parametrize("expression,expected", [
-        ('(let ((s "ff") (r 16)) ($string->integer s r))', '255'),
-        ('(let ((s "1010") (r 2)) ($string->integer s r))', '10'),
-        ('(let ((s "377") (r 8)) ($string->integer s r))', '255'),
-        ('(let ((s "42") (r 10)) ($string->integer s r))', '42'),
-        ('(let ((s "-5") (r 10)) ($string->integer s r))', '-5'),
-        ('(let ((s "  42  ") (r 10)) ($string->integer s r))', '42'),
-        ('(let ((s "xyz") (r 10)) ($string->integer s r))', '#none'),
-        ('(let ((s "0xff") (r 16)) ($string->integer s r))', '#none'),
-        ('(let ((s "") (r 10)) ($string->integer s r))', '#none'),
+        (_opaque('s "ff"', 'r 16', '($string->integer s r)'), '255'),
+        (_opaque('s "1010"', 'r 2', '($string->integer s r)'), '10'),
+        (_opaque('s "377"', 'r 8', '($string->integer s r)'), '255'),
+        (_opaque('s "42"', 'r 10', '($string->integer s r)'), '42'),
+        (_opaque('s "-5"', 'r 10', '($string->integer s r)'), '-5'),
+        (_opaque('s "  42  "', 'r 10', '($string->integer s r)'), '42'),
+        (_opaque('s "xyz"', 'r 10', '($string->integer s r)'), '#none'),
+        (_opaque('s "0xff"', 'r 16', '($string->integer s r)'), '#none'),
+        (_opaque('s ""', 'r 10', '($string->integer s r)'), '#none'),
     ])
     def test_string_to_integer_runtime(self, menai, expression, expected):
         """Test the $string->integer opcode directly (not constant-folded)."""
@@ -481,15 +515,15 @@ class TestStrings:
         assert menai.evaluate_and_format(expression) == expected
 
     @pytest.mark.parametrize("expression,expected", [
-        ('(let ((s "3.14")) ($string->float s))', '3.14'),
-        ('(let ((s "-5.5")) ($string->float s))', '-5.5'),
-        ('(let ((s "0")) ($string->float s))', '0.0'),
-        ('(let ((s "1e2")) ($string->float s))', '100.0'),
-        ('(let ((s "  42  ")) ($string->float s))', '42.0'),
-        ('(let ((s "hello")) ($string->float s))', '#none'),
-        ('(let ((s "")) ($string->float s))', '#none'),
-        ('(let ((s "1+2j")) ($string->float s))', '#none'),
-        ('(let ((s "12.34.56")) ($string->float s))', '#none'),
+        (_opaque('s "3.14"', '($string->float s)'), '3.14'),
+        (_opaque('s "-5.5"', '($string->float s)'), '-5.5'),
+        (_opaque('s "0"', '($string->float s)'), '0.0'),
+        (_opaque('s "1e2"', '($string->float s)'), '100.0'),
+        (_opaque('s "  42  "', '($string->float s)'), '42.0'),
+        (_opaque('s "hello"', '($string->float s)'), '#none'),
+        (_opaque('s ""', '($string->float s)'), '#none'),
+        (_opaque('s "1+2j"', '($string->float s)'), '#none'),
+        (_opaque('s "12.34.56"', '($string->float s)'), '#none'),
     ])
     def test_string_to_float_runtime(self, menai, expression, expected):
         """Test the $string->float opcode directly (not constant-folded)."""
@@ -500,14 +534,14 @@ class TestStrings:
         assert menai.evaluate_and_format(expression) == expected
 
     @pytest.mark.parametrize("expression,expected", [
-        ('(let ((s "1+2j")) ($string->complex s))', '1+2j'),
-        ('(let ((s "3j")) ($string->complex s))', '3j'),
-        ('(let ((s "2.5-0.5j")) ($string->complex s))', '2.5-0.5j'),
-        ('(let ((s " 1+2j ")) ($string->complex s))', '1+2j'),
-        ('(let ((s "1.5")) ($string->complex s))', '1.5+0j'),
-        ('(let ((s "hello")) ($string->complex s))', '#none'),
-        ('(let ((s "")) ($string->complex s))', '#none'),
-        ('(let ((s "junk+2j")) ($string->complex s))', '#none'),
+        (_opaque('s "1+2j"', '($string->complex s)'), '1+2j'),
+        (_opaque('s "3j"', '($string->complex s)'), '3j'),
+        (_opaque('s "2.5-0.5j"', '($string->complex s)'), '2.5-0.5j'),
+        (_opaque('s " 1+2j "', '($string->complex s)'), '1+2j'),
+        (_opaque('s "1.5"', '($string->complex s)'), '1.5+0j'),
+        (_opaque('s "hello"', '($string->complex s)'), '#none'),
+        (_opaque('s ""', '($string->complex s)'), '#none'),
+        (_opaque('s "junk+2j"', '($string->complex s)'), '#none'),
     ])
     def test_string_to_complex_runtime(self, menai, expression, expected):
         """Test the $string->complex opcode directly (not constant-folded)."""

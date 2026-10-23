@@ -345,9 +345,11 @@ class TestMultiBlockBodyRotation:
     def test_nested_branch_body_retains_entry_test(self):
         """
         The peeled entry test must be retained so the loop is skipped when the
-        entry condition is false.  The loop test uses INTEGER_GTE_P, so there
-        should be two of them after rotation: one in the header, one at the
-        bottom.
+        entry condition is false.
+
+        The loop is entered with i bound to 0, so the entry test `0 >= 9` is a
+        comparison of two constants and folds to a constant false.  The bottom
+        test compares the live loop variable and so must remain a comparison.
         """
         src = """
         (let ((count-mismatch
@@ -363,8 +365,11 @@ class TestMultiBlockBodyRotation:
         """
         code = _compile(src)
         fn = _loop_function(code, "count-mismatch")
-        assert _count_op(fn, Opcode.INTEGER_GTE_P) == 2, (
-            "rotated loop must have both the entry test and the bottom test"
+        assert _count_op(fn, Opcode.INTEGER_GTE_P) == 1, (
+            "the bottom test compares the live loop variable and must remain"
+        )
+        assert _count_op(fn, Opcode.LOAD_FALSE) >= 1, (
+            "the entry test compares two constants and must fold to a constant"
         )
 
     def test_nested_branch_body_correct_results(self):
@@ -449,8 +454,12 @@ class TestMultipleBackEdgesRotated:
     def test_two_arms_retains_both_entry_and_bottom_tests(self):
         """
         Each back-edge gets its own copy of the loop test, so a loop with two
-        back-edges has three INTEGER_GTE_P tests after rotation: the peeled
-        entry test plus one per back-edge.
+        back-edges has one comparison per back-edge after rotation.
+
+        The loop is entered with i bound to 0, so the entry test `0 >= 10` is a
+        comparison of two constants and folds to a constant false.  The
+        per-back-edge copies compare the live loop variable and must remain
+        comparisons.
         """
         src = """
         (let ((scan
@@ -464,8 +473,11 @@ class TestMultipleBackEdgesRotated:
         """
         code = _compile(src)
         fn = _loop_function(code, "scan")
-        assert _count_op(fn, Opcode.INTEGER_GTE_P) == 3, (
-            "rotated loop must have the entry test plus one test per back-edge"
+        assert _count_op(fn, Opcode.INTEGER_GTE_P) == 2, (
+            "each back-edge must have its own comparison of the live loop variable"
+        )
+        assert _count_op(fn, Opcode.LOAD_FALSE) >= 1, (
+            "the entry test compares two constants and must fold to a constant"
         )
 
     def test_two_arms_correct_results(self):

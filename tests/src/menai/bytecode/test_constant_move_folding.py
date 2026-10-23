@@ -16,12 +16,20 @@ only when every use of its register has been folded, and removal itself runs to
 a fixed point so that removing a carrying MOVE can make the constant's own
 definition removable.
 
+A MOVE whose source is a constant register is rewritten to a LOAD_CONST of the
+same constant, because a MOVE has a register destination and no
+constant-operand form.  The pass runs to a fixed point as a whole, so the
+LOAD_CONST it creates is itself a constant definition that a later round can
+fold through.
+
 Covers:
   1. A capture-less lambda passed to an inlined higher-order function folds
      into the CALL callee operand.
   2. A chain of moves is followed to its constant source.
   3. A register with more than one definition is not folded.
   4. Correctness of results across the optimised code.
+  5. A MOVE of a constant becomes a LOAD_CONST rather than a register copy.
+  6. A LOAD_CONST created by that rewrite is folded through in a later round.
 """
 
 import pytest
@@ -68,6 +76,18 @@ def _call_constant_operands(code) -> list[int]:
     return result
 
 
+def _load_const_destinations(code) -> list[int]:
+    """Return the destination slot of every LOAD_CONST in `code` and its children."""
+    result = []
+    for word in code.instructions:
+        unpacked = unpack_instruction(word)
+        if unpacked.opcode == Opcode.LOAD_CONST:
+            result.append(unpacked.dest)
+    for nested in code.code_objects:
+        result.extend(_load_const_destinations(nested))
+    return result
+
+
 @pytest.fixture
 def menai():
     return Menai()
@@ -96,8 +116,10 @@ class TestConstantMoveFolding:
         # function operand and no MAKE_CLOSURE or function LOAD_CONST remains.
         assert len(_call_constant_operands(code)) == 1
         assert _count_op(code, Opcode.MAKE_CLOSURE) == 0
-        # The only remaining constant load is the integer 0 accumulator seed.
-        assert _count_op(code, Opcode.LOAD_CONST) == 1
+        # The accumulator seed is a loop-carried variable: it is defined once
+        # before the loop and once per back-edge, so its load must be retained.
+        # Removing it would drop one arm of the phi and corrupt the loop.
+        assert _count_op(code, Opcode.LOAD_CONST) == 2
 
     def test_lambda_arg_to_inlined_hof_correct_result(self, menai):
         """The optimised fold-list loop computes the correct maximum."""
@@ -171,6 +193,88 @@ class TestConstantMoveFolding:
               (list (pick #t) (pick #f)))
         """)
         assert result == [6, -6]
+
+
+class TestConstantMoveBecomesLoadConst:
+    """
+    A MOVE of a constant register is rewritten to a LOAD_CONST.
+
+    A MOVE has a register destination and no constant-operand form, so the
+    constant cannot be folded into the instruction.  The move is replaced by a
+    load of the same constant instead, which stops the constant routing through
+    a scratch register.
+    """
+
+    def test_seed_of_loop_carried_variable_is_a_load_const(self):
+        """
+        The seed of a loop-carried variable is a LOAD_CONST, not a MOVE.
+
+        The accumulator of an inlined fold-list is a loop-carried variable: it
+        is defined twice, once by its seed and once by the back-edge, so no
+        constant describes it at its uses inside the loop.  Its seed, however,
+        need not copy from a scratch register, so it becomes a LOAD_CONST.
+        """
+        src = """
+        (let ((total (lambda (lst)
+                       (fold-list (lambda (acc x) (integer+ acc x)) 0 lst))))
+          (total (list 1 2 3)))
+        """
+        code = _find_lambda(_compile(src), "total")
+        assert code is not None
+        # The function holds two constant loads: the lambda, and the
+        # accumulator seed.  The seed is a loop-carried variable, so its load
+        # is retained rather than folded into the loop body.
+        assert len(_load_const_destinations(code)) == 2
+        # The function opens by loading the constant straight into the
+        # accumulator slot.  Before the rewrite this was a LOAD_CONST into a
+        # scratch register followed by a MOVE into the accumulator.
+        first = unpack_instruction(code.instructions[0])
+        assert first.opcode == Opcode.LOAD_CONST
+        # The scratch register is gone, so the function needs one slot fewer
+        # than a load-then-copy would.
+        assert code.local_count == 6
+
+    def test_seed_of_loop_carried_variable_correct_result(self, menai):
+        """A loop-carried accumulator seeded by a LOAD_CONST sums correctly."""
+        result = menai.evaluate("""
+            (let ((total (lambda (lst)
+                           (fold-list (lambda (acc x) (integer+ acc x)) 0 lst))))
+              (list (total (list 1 2 3))
+                    (total (list))
+                    (total (list 5 5 5 5))))
+        """)
+        assert result == [6, 0, 20]
+
+    def test_created_load_const_is_folded_in_a_later_round(self):
+        """
+        A LOAD_CONST created by converting a MOVE is itself folded through.
+
+        A constant that reaches a use through a chain of moves is converted one
+        link per round.  The rounds continue until the constant reaches the
+        use, so a duplicate load of the same value does not survive.
+        """
+        src = """
+        (let ((total (lambda (lst)
+                       (let ((step (lambda (acc x) (integer+ acc x))))
+                         (fold-list step 0 lst)))))
+          (total (list 1 2 3)))
+        """
+        code = _find_lambda(_compile(src), "total")
+        assert code is not None
+        # The constant reaches the CALL callee through the move chain, so the
+        # callee is a constant operand and no closure is materialised.
+        assert len(_call_constant_operands(code)) == 1
+        assert _count_op(code, Opcode.MAKE_CLOSURE) == 0
+
+    def test_created_load_const_correct_result(self, menai):
+        """A constant folded through a move chain computes a correct result."""
+        result = menai.evaluate("""
+            (let ((total (lambda (lst)
+                           (let ((step (lambda (acc x) (integer+ acc x))))
+                             (fold-list step 0 lst)))))
+              (total (list 1 2 3)))
+        """)
+        assert result == 6
 
 
 class TestConstantMoveFoldingCorrectness:

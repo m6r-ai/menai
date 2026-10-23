@@ -219,6 +219,14 @@ class TestGcdLcmConstantFolding:
 
     def test_non_constant_arguments_are_not_folded(self, menai):
         """A call whose arguments are not both constants compiles to a runtime opcode."""
-        code = menai.compile('(let ((x 12)) (integer-gcd x 8))')
+        # The argument is read from a struct field, which is never a
+        # compile-time constant.  A let-bound literal is not equivalent: the
+        # inliner substitutes it, so both arguments become constants and the
+        # call folds.
+        code = menai.compile("""
+        (let ((box (struct (n))))
+          (let ((b (box 12)))
+            (integer-gcd (struct-get b 'n) 8)))
+        """)
         opcodes = {unpack_instruction(w).opcode for w in code.instructions}
         assert Opcode.INTEGER_GCD in opcodes

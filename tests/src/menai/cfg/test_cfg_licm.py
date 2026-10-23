@@ -102,14 +102,19 @@ class TestLoopInvariantComputationHoisting:
                     (if (integer>=? i 10)
                         acc
                         (loop (integer+ i 1)
-                              (integer+ acc (string-length s))))))
-                 (s "hello"))
+                              (integer+ acc (vector-length v))))))
+                 (v (vector 1 2 3)))
           (loop 0 0))
 
-        (string-length s) is loop-invariant — s is a free var that never
+        (vector-length v) is loop-invariant — v is a free var that never
         changes.  Its result is used by (integer+ acc ...) which is a
         self-loop arg, so it passes the use-def safety check.  It should
         be hoisted to the preamble.
+
+        The builtin must be one that is never constant-folded.  A vector has
+        no literal form, so (vector-length ...) always remains an instruction;
+        a foldable builtin such as (string-length "hello") is folded away and
+        leaves nothing for this test to observe.
         """
         src = """
         (let ((loop
@@ -117,21 +122,21 @@ class TestLoopInvariantComputationHoisting:
                     (if (integer>=? i 10)
                         acc
                         (loop (integer+ i 1)
-                              (integer+ acc (string-length s))))))
-                 (s "hello"))
+                              (integer+ acc (vector-length v))))))
+                 (v (vector 1 2 3)))
           (loop 0 0))
         """
         code = _compile(src)
         loop_fn = _loop_function(code, "loop")
-        assert _count_op(loop_fn, Opcode.STRING_LENGTH) == 1
+        assert _count_op(loop_fn, Opcode.VECTOR_LENGTH) == 1
         target = _self_loop_target(loop_fn)
         assert target is not None
         sl_idx = next(
             i for i, instr in enumerate(loop_fn.instructions)
-            if unpack_instruction(instr).opcode == int(Opcode.STRING_LENGTH)
+            if unpack_instruction(instr).opcode == int(Opcode.VECTOR_LENGTH)
         )
         assert target > sl_idx, (
-            "self-loop must skip the hoisted STRING_LENGTH"
+            "self-loop must skip the hoisted VECTOR_LENGTH"
         )
 
     def test_loop_invariant_constant_hoisted(self):
