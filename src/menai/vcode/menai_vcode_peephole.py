@@ -837,6 +837,8 @@ def peephole(func: MenaiVCodeFunction, slot_map: SlotMap) -> MenaiVCodeFunction:
         changed = changed or c
         instrs, c = _fold_conditional_return(instrs)
         changed = changed or c
+        instrs, c = _fold_branch_on_constant(instrs)
+        changed = changed or c
 
     if instrs is func.instrs:
         return func
@@ -1122,6 +1124,97 @@ def _fold_branch_load_return(
     return result, changed
 
 
+def _fold_branch_on_constant(
+    instrs: list[MenaiVCodeInstr],
+) -> tuple[list[MenaiVCodeInstr], bool]:
+    """
+    Fold a branch on a register that a preceding load set to a constant.
+
+    `LOAD_TRUE r` / `JUMP_IF_TRUE r label` is an unconditional jump to label:
+    the condition is known.  `LOAD_FALSE r` / `JUMP_IF_TRUE r label` never
+    jumps, so both instructions are removed and control falls through.
+
+    The load and the branch must be adjacent apart from labels, and the branch
+    must read the register the load defined.  The load is removed only when the
+    branch is the register's sole remaining use, so a register read elsewhere
+    keeps its definition.
+
+    This is the branch counterpart of _fold_branch_load_return: that pass folds
+    a branch whose fall-through returns the complement of its condition, while
+    this one folds a branch whose condition is a literal.
+    """
+    result: list[MenaiVCodeInstr] = []
+    changed = False
+    i = 0
+
+    while i < len(instrs):
+        instr = instrs[i]
+
+        if not isinstance(instr, MenaiVCodeLoadConst):
+            result.append(instr)
+            i += 1
+            continue
+
+        if not isinstance(instr.value, MenaiBoolean):
+            result.append(instr)
+            i += 1
+            continue
+
+        # Scan ahead past labels to the next instruction.
+        j = i + 1
+        while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
+            j += 1
+
+        if j >= len(instrs):
+            result.append(instr)
+            i += 1
+            continue
+
+        branch = instrs[j]
+        if not isinstance(branch, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
+            result.append(instr)
+            i += 1
+            continue
+
+        if branch.cond.id != instr.dst.id:
+            result.append(instr)
+            i += 1
+            continue
+
+        # The load must be the register's only definition reaching the branch,
+        # and the branch its only use, so removing the load cannot strand a
+        # reader.
+        if _count_uses(instrs, instr.dst.id) != 1:
+            result.append(instr)
+            i += 1
+            continue
+
+        taken = instr.value.value
+        if isinstance(branch, MenaiVCodeJumpIfFalse):
+            taken = not taken
+
+        # Labels between the load and the branch stay: a jump may target them.
+        result.extend(instrs[i + 1:j])
+        if taken:
+            result.append(MenaiVCodeJump(label=branch.label))
+
+        i = j + 1
+        changed = True
+
+    return result, changed
+
+
+def _count_uses(instrs: list[MenaiVCodeInstr], reg_id: int) -> int:
+    """Return the number of instructions that read reg_id."""
+    count = 0
+    for instr in instrs:
+        _, uses = _defs_uses(instr)
+        if reg_id in uses:
+            count += 1
+
+    return count
+
+
 def _thread_jumps(
     instrs: list[MenaiVCodeInstr],
 ) -> tuple[list[MenaiVCodeInstr], bool]:
@@ -1217,10 +1310,17 @@ def _thread_jumps(
     # Labels reachable via fall-through.  A label is reachable via
     # fall-through if the preceding non-label instruction is not an
     # unconditional control transfer.  Conditional jumps DO fall through.
+    #
+    # A label at the start of the instruction list is the function entry:
+    # execution begins there unconditionally, so it is reachable even though
+    # there is no preceding instruction to fall through from.
     prev: MenaiVCodeInstr | None = None
-    for instr in instrs:
+    for index, instr in enumerate(instrs):
         if isinstance(instr, MenaiVCodeLabel):
-            if prev is not None and not isinstance(prev, _no_fallthrough_types):
+            if index == 0:
+                targeted_labels.add(instr.name)
+
+            elif prev is not None and not isinstance(prev, _no_fallthrough_types):
                 targeted_labels.add(instr.name)
 
         else:
