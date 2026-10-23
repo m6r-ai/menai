@@ -28,6 +28,19 @@ Covers:
      analysis cannot resolve, so its parameter is not proven and its field
      access stays symbol-based.  A call with a value of another type raises a
      type error rather than reading a non-struct as a struct.
+ 12. A call through a function-valued parameter resolves to the functions that
+     actually reach that parameter.  When every such function returns the same
+     struct type, a field access on the call result is rewritten to the index
+     form.  This is the higher-order case: the callee is a parameter, not a
+     closure created at the call site.
+ 13. A function-valued parameter that may also receive a function the analysis
+     cannot name (an unnamed argument, or a parameter of an escaping function)
+     is not resolved to its known subset alone: a call through it returns a
+     value of any type, so a field access on the result stays symbol-based and a
+     call with a value of another type raises rather than miscompiles.
+ 14. A function-valued parameter fed two functions that return different struct
+     types loses the type identity, so a field access on the call result stays
+     symbol-based.
 """
 
 import pytest
@@ -985,3 +998,263 @@ class TestReturnThroughFunctionParameter:
 
     def test_result_correct(self, menai):
         assert menai.evaluate_and_format(RETURN_THROUGH_FUNCTION_PARAM_SRC) == "(0 2)"
+
+
+HIGHER_ORDER_CALLEE_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (n) (point 1 2)))
+      (apply-fn (lambda (f p n)
+                  (if (integer<=? n 0)
+                      (f p)
+                      (apply-fn f p (integer- n 1)))))
+      (read-x (lambda (v) (struct-get v 'x))))
+  (read-x (apply-fn make (point 7 8) 2)))
+"""
+
+
+class TestHigherOrderCalleeResolves:
+    """
+    A call through a function-valued parameter resolves to the functions that
+    reach it.
+
+    `apply-fn` is recursive, so it is not inlined, and its callee `f` is a
+    parameter.  The only function passed into that parameter is `make`, whose
+    return fact is a `point`.  Resolving `(f p)` to `make` lets the call result
+    carry the `point` type, so the field read on it is rewritten to the index
+    form.
+    """
+
+    def test_field_access_becomes_indexed(self):
+        cfg = _build_cfg(HIGHER_ORDER_CALLEE_SRC)
+        assert "struct-indexed-get" in _ops(cfg)
+        assert "struct-get" not in _ops(cfg)
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(HIGHER_ORDER_CALLEE_SRC) == "1"
+
+
+HIGHER_ORDER_TURN_APPLY_SRC = """
+(let ((cube-repr (struct (U D F B L R)))
+      (move-U (lambda (cube) (cube-repr 1 2 3 4 5 6)))
+      (move-R (lambda (cube) (cube-repr 6 5 4 3 2 1)))
+      (turn-apply (lambda (rotate-cw cube n)
+                    (if (integer<=? n 0)
+                        (rotate-cw cube)
+                        (turn-apply rotate-cw (rotate-cw cube) (integer- n 1)))))
+      (read-u (lambda (cube) (struct-get cube 'U))))
+  (read-u (turn-apply move-U (cube-repr 0 0 0 0 0 0) 2)))
+"""
+
+
+class TestHigherOrderDispatchThroughParameter:
+    """
+    A dispatch helper that applies a function-valued parameter resolves.
+
+    This mirrors the shape of a cube solver's `turn-apply`: the helper calls
+    `rotate-cw`, a function-valued parameter, and every function passed into it
+    returns the same struct type.  Resolving the parameter lets the helper's
+    return type be proven, so a field read on its result is rewritten.
+    """
+
+    def test_field_access_becomes_indexed(self):
+        cfg = _build_cfg(HIGHER_ORDER_TURN_APPLY_SRC)
+        assert "struct-indexed-get" in _ops(cfg)
+        assert "struct-get" not in _ops(cfg)
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(HIGHER_ORDER_TURN_APPLY_SRC) == "1"
+
+
+HIGHER_ORDER_TWO_TYPES_SRC = """
+(let ((point (struct (x y)))
+      (other (struct (x y)))
+      (make-point (lambda (n) (point 1 2)))
+      (make-other (lambda (n) (other 3 4)))
+      (apply-fn (lambda (f n)
+                  (if (integer<=? n 0)
+                      (f n)
+                      (apply-fn f (integer- n 1)))))
+      (driver (lambda (flag)
+                (struct-get (apply-fn (if (boolean? flag) make-point make-other) 1) 'x))))
+  (driver #t))
+"""
+
+
+class TestHigherOrderParameterTwoTypes:
+    """
+    A function-valued parameter fed two functions returning different struct
+    types loses the type identity.
+
+    `apply-fn`'s `f` parameter may denote either `make-point` or `make-other`,
+    which return different struct types, so a call through it returns a value
+    whose struct type identity is not proven.  The field read must stay
+    symbol-based.
+    """
+
+    def test_field_access_stays_symbol_based(self):
+        cfg = _build_cfg(HIGHER_ORDER_TWO_TYPES_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(HIGHER_ORDER_TWO_TYPES_SRC) == "1"
+
+
+HIGHER_ORDER_SAME_TYPE_SRC = """
+(let ((point (struct (x y)))
+      (make-a (lambda (n) (point 1 2)))
+      (make-b (lambda (n) (point 3 4)))
+      (apply-fn (lambda (f n)
+                  (if (integer<=? n 0)
+                      (f n)
+                      (apply-fn f (integer- n 1)))))
+      (driver (lambda (flag)
+                (struct-get (apply-fn (if (boolean? flag) make-a make-b) 1) 'x))))
+  (driver #t))
+"""
+
+
+class TestHigherOrderParameterTwoFunctionsSameType:
+    """
+    A function-valued parameter fed two functions returning the same struct type
+    keeps the type identity.
+
+    `make-a` and `make-b` both return a `point`, so joining them preserves the
+    struct type identity.  The field read on the call result is rewritten.
+    """
+
+    def test_field_access_becomes_indexed(self):
+        cfg = _build_cfg(HIGHER_ORDER_SAME_TYPE_SRC)
+        assert "struct-indexed-get" in _ops(cfg)
+        assert "struct-get" not in _ops(cfg)
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(HIGHER_ORDER_SAME_TYPE_SRC) == "1"
+
+
+HIGHER_ORDER_ESCAPING_FN_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (n) (point 1 2)))
+      (apply-fn (lambda (f p n)
+                  (if (integer<=? n 0)
+                      (f p)
+                      (apply-fn f p (integer- n 1)))))
+      (driver (lambda ()
+                (let ((direct (struct-get (apply-fn make (point 1 2) 1) 'x)))
+                  (list direct apply-fn)))))
+  (driver))
+"""
+
+
+class TestHigherOrderParameterOfEscapingFunction:
+    """
+    A function-valued parameter of an escaping function is not resolved.
+
+    `apply-fn` escapes (it is returned to the host), so the host may call it with
+    a function the analysis cannot name.  Its `f` parameter may therefore denote
+    a function outside the known subset, so a call through it returns a value of
+    any type.  The analysis must not resolve `f` to `make` alone.
+    """
+
+    def test_field_access_stays_symbol_based(self):
+        cfg = _build_cfg(HIGHER_ORDER_ESCAPING_FN_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(HIGHER_ORDER_ESCAPING_FN_SRC) == "(1 <apply-fn (f, p, n)>)"
+
+
+HIGHER_ORDER_APPLY_ESCAPE_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (n) (point 1 2)))
+      (read-x (lambda (v) (struct-get v 'x))))
+  (apply (lambda (g) (read-x (g 1))) (list make)))
+"""
+
+
+class TestHigherOrderParameterPassedToApply:
+    """
+    A function value passed to an unresolved `apply` escapes.
+
+    `make` is passed to `apply`, whose callee the analysis cannot resolve, so
+    `make` may be invoked with a value of any type.  Its parameter must not be
+    proven and its field access (were it to read one) stays symbol-based.  Here
+    `read-x` receives `(g 1)` where `g` is unknown, so its field read is
+    symbol-based.
+    """
+
+    def test_field_access_stays_symbol_based(self):
+        cfg = _build_cfg(HIGHER_ORDER_APPLY_ESCAPE_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(HIGHER_ORDER_APPLY_ESCAPE_SRC) == "1"
+
+
+HIGHER_ORDER_MUTUAL_RECURSION_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (n) (point 5 6)))
+      (ping (lambda (f p n)
+              (if (integer<=? n 0)
+                  (f p)
+                  (pong f p (integer- n 1)))))
+      (pong (lambda (f p n)
+              (if (integer<=? n 0)
+                  (f p)
+                  (ping f p (integer- n 1)))))
+      (read-x (lambda (v) (struct-get v 'x))))
+  (read-x (ping make (point 5 6) 3)))
+"""
+
+
+class TestHigherOrderMutualRecursion:
+    """
+    A function-valued parameter passed through a mutual recursion cycle resolves.
+
+    `ping` and `pong` share a recursion component and both forward `f` to each
+    other.  `f` is fed `make` from outside the component and forwarded unchanged
+    inside it, so it resolves to `make`, whose return is a `point`.  The field
+    read on the call result resolves.
+    """
+
+    def test_field_access_becomes_indexed(self):
+        cfg = _build_cfg(HIGHER_ORDER_MUTUAL_RECURSION_SRC)
+        assert "struct-indexed-get" in _ops(cfg)
+        assert "struct-get" not in _ops(cfg)
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(HIGHER_ORDER_MUTUAL_RECURSION_SRC) == "5"
+
+
+HIGHER_ORDER_WRONG_TYPE_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (n) (point 1 2)))
+      (apply-fn (lambda (f n) (f n)))
+      (driver (lambda (g v)
+                (struct-get (apply-fn (if v make g) 1) 'x))))
+  (apply driver (list 42 #f)))
+"""
+
+
+class TestHigherOrderUnknownCalleeRaises:
+    """
+    A call through a function-valued parameter that may hold a non-function
+    raises a type error rather than miscompiling.
+
+    `driver` is invoked through `apply`, so its `g` parameter is unknown.  `f`
+    receives `(if v make g)`: a known function joined with an unnamed value.
+    The unknown flag must propagate through the phi, so a call through `f`
+    returns a value of any type and the field read stays symbol-based.  Calling
+    with a non-function raises.
+    """
+
+    def test_field_access_stays_symbol_based(self):
+        cfg = _build_cfg(HIGHER_ORDER_WRONG_TYPE_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_non_function_callee_raises(self, menai):
+        with pytest.raises(MenaiError, match="cannot call non-function"):
+            menai.evaluate_and_format(HIGHER_ORDER_WRONG_TYPE_SRC)

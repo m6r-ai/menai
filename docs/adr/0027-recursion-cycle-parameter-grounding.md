@@ -3,6 +3,12 @@
 Date: 2026-09-23  
 Status: Accepted
 
+The three-input parameter-grounding rule decided here remains in force. One
+consequence recorded below is no longer true: the analysis now resolves calls
+through function-valued parameters, so a recursion component reachable only
+through such a call is grounded like any other (ADR-0058). The grounding rule
+itself is unchanged.
+
 ## Context
 
 ADR-0021 introduced the interprocedural flow-based type analysis and recorded a

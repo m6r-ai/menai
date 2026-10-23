@@ -126,3 +126,4 @@ What costs, risks, or constraints does this decision impose?
 | [0055](0055-html-codec-capture-layer.md) | HTML codec — the tag capture layer | Accepted |
 | [0056](0056-integer-gcd-lcm-are-native-vm-operations.md) | Integer gcd and lcm are native VM operations | Accepted |
 | [0057](0057-typed-destructuring-patterns.md) | Typed destructuring patterns | Accepted |
+| [0058](0058-parameter-callee-sets.md) | Function-valued parameters resolve to their callee may-sets | Accepted |

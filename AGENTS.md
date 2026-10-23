@@ -326,7 +326,20 @@ A function whose value can reach a call site the analysis cannot resolve has its
 parameters left unconstrained. This includes a function returned to the host,
 because the host may call it with a value of any type.
 
+Callee resolution tracks a parameter as denoting the union of the functions
+passed into it at any call site, so a call through a function-valued parameter
+resolves to the functions that actually reach it. That union is a *may*-set and
+must carry an "unknown" flag alongside the known functions: a value that is a
+phi of a known closure and an unnamed value denotes the closure *and possibly
+something else*. The unknown flag must propagate through phis and containers
+exactly as the known set does, and a call through a value that is unknown
+returns ANY. Tracking only the known set would let a phi of a known function
+and an unnamed value resolve to the known function alone, reporting a return
+type more precise than reality — a miscompile.
+
 See [ADR-0035](docs/adr/0035-function-provenance-must-follow-containers.md).
+See [ADR-0058](docs/adr/0058-parameter-callee-sets.md) for the parameter
+callee may-set and its unknown flag.
 
 ### Predicate folding may consume any fact the analysis reports
 

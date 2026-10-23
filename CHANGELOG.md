@@ -31,6 +31,7 @@ New features:
 - Improved constant folding for integer and float comparisons.
 - Implemented VCode-level constant folding.
 - Implemented VCode branch folding when the condition is a constant.
+- Improved interprocedural type analysis.
 
 Bug fixes:
 

@@ -9,6 +9,9 @@ conflated "no call site outside the recursion component" with "a call site there
 whose argument is unknown", which both forfeited sound facts and admitted a
 miscompile. ADR-0027 replaces that rule.
 
+One further limitation recorded below is also lifted: the analysis now resolves
+calls through function-valued parameters (ADR-0058).
+
 ## Context
 
 Struct field access in the surface language is by symbol name: `(struct-get p 'x)`
