@@ -99,7 +99,7 @@ What costs, risks, or constraints does this decision impose?
 | [0028](0028-instruction-tracing-by-ordinal.md) | Instruction tracing keyed by walk-order ordinals | Accepted |
 | [0029](0029-predicate-fold-locally-proven-only.md) | Type-predicate folding is restricted to locally-proven arguments | Superseded by ADR-0036 |
 | [0030](0030-exception-blocks-emitted-last.md) | Exception blocks are laid out after the normal path | Accepted |
-| [0031](0031-inliner-does-not-inline-recursive-calls.md) | The IR inliner does not inline recursive or mutually-recursive calls | Accepted |
+| [0031](0031-inliner-does-not-inline-recursive-calls.md) | The IR inliner does not inline recursive or mutually-recursive calls | Superseded by ADR-0059 |
 | [0032](0032-single-binding-tail-recursive-letrecs-become-loops.md) | Single-binding tail-recursive letrecs are converted to loops before inlining | Accepted |
 | [0033](0033-cfg-is-an-immutable-value.md) | The CFG is an immutable value | Accepted |
 | [0034](0034-the-compiler-is-expressible-in-menai.md) | The compiler is expressible in Menai | Accepted |
@@ -127,3 +127,4 @@ What costs, risks, or constraints does this decision impose?
 | [0056](0056-integer-gcd-lcm-are-native-vm-operations.md) | Integer gcd and lcm are native VM operations | Accepted |
 | [0057](0057-typed-destructuring-patterns.md) | Typed destructuring patterns | Accepted |
 | [0058](0058-parameter-callee-sets.md) | Function-valued parameters resolve to their callee may-sets | Accepted |
+| [0059](0059-inliner-recursion-guard-is-intrinsic-to-the-lambda.md) | The inliner's recursion guard is intrinsic to the lambda | Accepted |

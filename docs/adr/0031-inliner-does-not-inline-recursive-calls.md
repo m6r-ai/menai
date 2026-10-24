@@ -1,7 +1,14 @@
 # ADR-0031: The IR inliner does not inline recursive or mutually-recursive calls
 
 Date: 2026-09-27  
-Status: Accepted
+Status: Superseded by ADR-0059 (2026-10-24)
+
+The requirement that the inliner must not inline a recursive call remains in
+force. The mechanism chosen here is superseded: keying the guard on the
+enclosing group's binding names makes it a property of the walk position, so a
+self-call inside a freshly inlined body is not recognised when the call site is
+re-walked, and the call would be inlined again without bound. ADR-0059 replaces
+it with a test intrinsic to the lambda.
 
 ## Context
 

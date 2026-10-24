@@ -189,16 +189,16 @@ def _count_bindings_named(ir, prefix: str) -> int:
 
 
 class _RecordingInliner(MenaiIRInliner):
-    """An inliner that records the letrec names in scope at each call candidate."""
+    """An inliner that records every lambda it considers as a call target."""
 
-    def __init__(self, seen_letrec_names: list[set[str]]) -> None:
+    def __init__(self, candidates: list[MenaiIRLambda]) -> None:
         super().__init__()
-        self._seen_letrec_names = seen_letrec_names
+        self._candidates = candidates
 
-    def _is_inlineable(self, target, func_plan, letrec_names, arg_plans):
-        """Record the letrec names in scope, then delegate to the base check."""
-        self._seen_letrec_names.append(set(letrec_names))
-        return super()._is_inlineable(target, func_plan, letrec_names, arg_plans)
+    def _is_inlineable(self, target, func_plan, arg_plans):
+        """Record the candidate, then delegate to the base check."""
+        self._candidates.append(target)
+        return super()._is_inlineable(target, func_plan, arg_plans)
 
 
 class TestLocalLambdaInlining:
@@ -230,26 +230,25 @@ class TestLocalLambdaInlining:
 
         assert not changed
 
-    def test_recursion_check_fires_for_letrec_body_call(self):
+    def test_self_recursive_lambda_is_recognised_as_a_candidate(self):
         """
-        A call to a letrec-bound lambda made from the letrec's body is rejected
-        by the recursion check.
+        A self-recursive lambda reaches the eligibility check, and is rejected
+        there because it names itself in its own sibling captures.
 
-        The lambda captures itself as a sibling, so the captures check would also
-        reject it.  This test asserts that the letrec's binding names are in scope
-        at the call site, which is what makes the recursion check fire, so a
-        regression in the letrec-scope tracking is caught.
+        The rejection is intrinsic to the lambda: it does not depend on which
+        group the call site happens to sit in.  That is what keeps the guard
+        correct when a call site is re-walked after an inline.
         """
         ir = _build_ir("""
             (let ((loop (lambda (n) (if (integer=? n 0) 0 (loop (integer- n 1))))))
               (loop 5))
         """)
-        seen_letrec_names = []
-        recorder = _RecordingInliner(seen_letrec_names)
-        recorder.optimize(ir)
+        candidates = []
+        _RecordingInliner(candidates).optimize(ir)
 
-        assert seen_letrec_names
-        assert all('loop' in names for names in seen_letrec_names)
+        assert candidates
+        self_recursive = [c for c in candidates if c.binding_name in c.sibling_free_vars]
+        assert self_recursive, "the self-recursive lambda should have been considered"
 
     def test_arity_mismatch_not_inlined(self):
         """A lambda called with wrong number of arguments should not be inlined."""

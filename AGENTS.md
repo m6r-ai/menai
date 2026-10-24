@@ -239,17 +239,24 @@ unrelated pass.
 
 ### The IR inliner does not inline recursive or mutually-recursive calls
 
-The IR inliner refuses to inline a call to a `$letrec`-bound function made from within
-that `$letrec` group. This is the recursion guard: a `$letrec` group is a single
-strongly-connected component (ADR-0008), so a same-group call may be recursive, and
-inlining a self-recursive body would not terminate the pass's fixed-point loop.
+The IR inliner refuses to inline a self-recursive lambda: one whose `binding_name`
+appears in its own `sibling_free_vars`. Inlining a self-recursive body would
+reintroduce the call the substitution just removed, and the pass's fixed-point loop
+would not terminate.
 
-The guard is scoped to the enclosing group. The group's binding names are reset when
-descending into a nested `$let` body, so a `$letrec`-bound function is inlinable at call
-sites outside its own group. A direct lambda application (`((lambda ...) arg)`) is
-exempt.
+The guard must be intrinsic to the lambda, never keyed on the walk position. An
+earlier version keyed on the enclosing `$letrec` group's binding names, which are in
+scope only while walking inside that group. A call site is re-walked with the call
+site's group names after a body has been inlined, so a self-call inside a freshly
+inlined body was not recognised and would have been inlined again without bound. That
+version was unsound, and it was unreachable only because the capture rule happened to
+reject every lambda with sibling captures.
 
-See [ADR-0031](docs/adr/0031-inliner-does-not-inline-recursive-calls.md).
+Mutual recursion is covered by the sibling-capture rule instead. A direct lambda
+application (`((lambda ...) arg)`) is exempt.
+
+See [ADR-0059](docs/adr/0059-inliner-recursion-guard-is-intrinsic-to-the-lambda.md),
+which supersedes [ADR-0031](docs/adr/0031-inliner-does-not-inline-recursive-calls.md).
 
 ### Single-binding tail-recursive groups are converted to loops before inlining
 
