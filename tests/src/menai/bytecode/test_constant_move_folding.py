@@ -36,10 +36,31 @@ import pytest
 from menai import Menai
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
 from menai.menai_compiler import MenaiCompiler
+from menai.menai_value import MenaiList
 
 
 def _compile(src: str):
     return MenaiCompiler().compile(src)
+
+
+def _find_inlined_loop(code):
+    """
+    Return the code object that contains an inlined fold-list loop.
+
+    A capture-less wrapper that calls fold-list is inlined into the module, and
+    the loop body itself is inlined into that same code object.  The loop is
+    therefore found in the outermost code object that contains a CALL, which is
+    the module for these programs.
+    """
+    if _count_op(code, Opcode.CALL) > 0:
+        return code
+
+    for co in code.code_objects:
+        r = _find_inlined_loop(co)
+        if r is not None:
+            return r
+
+    return None
 
 
 def _find_lambda(code, name: str):
@@ -88,6 +109,29 @@ def _load_const_destinations(code) -> list[int]:
     return result
 
 
+def _count_non_list_load_consts(code) -> int:
+    """
+    Count LOAD_CONST instructions in `code` and its children that do not load a list.
+
+    A fold-list call site carries the list being folded as a constant.  That
+    list is not part of the loop's own constant usage, so it is excluded when
+    counting the constants the loop needs.
+    """
+    n = 0
+    for word in code.instructions:
+        unpacked = unpack_instruction(word)
+        if unpacked.opcode != Opcode.LOAD_CONST:
+            continue
+
+        if not isinstance(code.constants[unpacked.src0], MenaiList):
+            n += 1
+
+    for nested in code.code_objects:
+        n += _count_non_list_load_consts(nested)
+
+    return n
+
+
 @pytest.fixture
 def menai():
     return Menai()
@@ -110,7 +154,7 @@ class TestConstantMoveFolding:
                             (fold-list (lambda (acc len) (integer-max acc len)) 0 lst))))
           (max-length (list 3 1 4 1 5)))
         """
-        code = _find_lambda(_compile(src), "max-length")
+        code = _find_inlined_loop(_compile(src))
         assert code is not None
         # The lambda is folded into the CALL callee: the CALL has a constant
         # function operand and no MAKE_CLOSURE or function LOAD_CONST remains.
@@ -119,7 +163,11 @@ class TestConstantMoveFolding:
         # The accumulator seed is a loop-carried variable: it is defined once
         # before the loop and once per back-edge, so its load must be retained.
         # Removing it would drop one arm of the phi and corrupt the loop.
-        assert _count_op(code, Opcode.LOAD_CONST) == 2
+        #
+        # The list being folded is a third constant: it used to live in the
+        # wrapper lambda, which is now inlined into the module alongside the
+        # loop.  It is not part of the loop, so it is excluded here.
+        assert _count_non_list_load_consts(code) == 2
 
     def test_lambda_arg_to_inlined_hof_correct_result(self, menai):
         """The optimised fold-list loop computes the correct maximum."""
@@ -146,7 +194,7 @@ class TestConstantMoveFolding:
                               (fold-list combine 0 lst)))))
           (max-length (list 3 1 4 1 5)))
         """
-        code = _find_lambda(_compile(src), "max-length")
+        code = _find_inlined_loop(_compile(src))
         assert code is not None
         assert len(_call_constant_operands(code)) == 1
         assert _count_op(code, Opcode.MAKE_CLOSURE) == 0
@@ -167,16 +215,22 @@ class TestConstantMoveFolding:
         by a branch, the callee register has more than one definition — one
         per branch arm — so no single constant reaches the CALL and the callee
         stays a register.
+
+        The selector is a runtime value, so the branch cannot be resolved and
+        the two arms stay distinct.  A constant selector would let the branch
+        fold and leave a single known callee.
         """
         src = """
-        (let ((pick (lambda (b)
+        (let ((pick (lambda (b lst)
                       (let ((f (if b
                                    (lambda (acc x) (integer+ acc x))
                                    (lambda (acc x) (integer- acc x)))))
-                        (fold-list f 0 (list 1 2 3))))))
-          (list (pick #t) (pick #f)))
+                        (fold-list f 0 lst))))
+              (data (list 1 2 3)))
+          (list (pick (list-member? data 1) data)
+                (pick (list-member? data 9) data)))
         """
-        code = _find_lambda(_compile(src), "pick")
+        code = _find_inlined_loop(_compile(src))
         assert code is not None
         # Neither lambda is folded: the callee register is defined once per
         # branch arm, so it has more than one definition.
@@ -185,12 +239,14 @@ class TestConstantMoveFolding:
     def test_function_selected_by_branch_correct_result(self, menai):
         """A branch-selected function passed to fold-list produces correct results."""
         result = menai.evaluate("""
-            (let ((pick (lambda (b)
+            (let ((pick (lambda (b lst)
                           (let ((f (if b
                                        (lambda (acc x) (integer+ acc x))
                                        (lambda (acc x) (integer- acc x)))))
-                            (fold-list f 0 (list 1 2 3))))))
-              (list (pick #t) (pick #f)))
+                            (fold-list f 0 lst))))
+                  (data (list 1 2 3)))
+              (list (pick (list-member? data 1) data)
+                    (pick (list-member? data 9) data)))
         """)
         assert result == [6, -6]
 
@@ -219,12 +275,13 @@ class TestConstantMoveBecomesLoadConst:
                        (fold-list (lambda (acc x) (integer+ acc x)) 0 lst))))
           (total (list 1 2 3)))
         """
-        code = _find_lambda(_compile(src), "total")
+        code = _find_inlined_loop(_compile(src))
         assert code is not None
         # The function holds two constant loads: the lambda, and the
         # accumulator seed.  The seed is a loop-carried variable, so its load
-        # is retained rather than folded into the loop body.
-        assert len(_load_const_destinations(code)) == 2
+        # is retained rather than folded into the loop body.  The list being
+        # folded is a third constant and is not part of the loop.
+        assert _count_non_list_load_consts(code) == 2
         # The function opens by loading the constant straight into the
         # accumulator slot.  Before the rewrite this was a LOAD_CONST into a
         # scratch register followed by a MOVE into the accumulator.
@@ -232,7 +289,7 @@ class TestConstantMoveBecomesLoadConst:
         assert first.opcode == Opcode.LOAD_CONST
         # The scratch register is gone, so the function needs one slot fewer
         # than a load-then-copy would.
-        assert code.local_count == 6
+        assert code.local_count == 5
 
     def test_seed_of_loop_carried_variable_correct_result(self, menai):
         """A loop-carried accumulator seeded by a LOAD_CONST sums correctly."""
@@ -259,7 +316,7 @@ class TestConstantMoveBecomesLoadConst:
                          (fold-list step 0 lst)))))
           (total (list 1 2 3)))
         """
-        code = _find_lambda(_compile(src), "total")
+        code = _find_inlined_loop(_compile(src))
         assert code is not None
         # The constant reaches the CALL callee through the move chain, so the
         # callee is a constant operand and no closure is materialised.

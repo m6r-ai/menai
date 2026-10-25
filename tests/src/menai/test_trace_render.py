@@ -169,11 +169,21 @@ class TestRenderAnnotated:
         assert "Total instructions executed:" in text
 
 
+# `g` is deliberately padded past MAX_INLINE_NODES so that it survives as a
+# closure.  A small `g` is inlined into the module, and the Inputs and Captured
+# sections these tests look for disappear with it.  The padding is two nested
+# list literals, since a shorter expression folds to a constant and a single
+# list is one IR node however many elements it holds.  `f` is left small: its
+# match survives in the module, which keeps the Jump Tables section populated.
 _METADATA_SOURCE = """
 (let ((offset 10))
   (let ((f (lambda (n) (match n (0 "zero") (1 "one") (_ "many")))))
-    (let ((g (lambda (x) (integer+ x offset))))
-      (integer+ (g 5) (list-length (list (f 0) (f 1) (f 2)))))))
+    (let ((g (lambda (x)
+               (let ((a (list-length (list x offset 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20))))
+                 (let ((b (list-length (list a x offset 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35))))
+                   (integer+ x (integer+ offset (integer+ a b))))))))
+      (let ((data (list 5 1 2)))
+        (integer+ (g (list-first data)) (list-length (list (f 0) (f 1) (f 2))))))))
 """
 
 

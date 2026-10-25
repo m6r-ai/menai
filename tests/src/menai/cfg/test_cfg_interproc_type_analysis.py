@@ -119,6 +119,18 @@ def _indexed_get_functions(cfg) -> set[str]:
     return result
 
 
+def _indexed_get_count(cfg) -> int:
+    """Count index-based struct-get instructions across the module."""
+    n = 0
+    for func in collect_functions(cfg):
+        for block in func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+                    n += 1
+
+    return n
+
+
 def _symbol_const_count(cfg) -> int:
     """Count constant instructions defining a quoted symbol across the module."""
     n = 0
@@ -759,11 +771,19 @@ class TestAmbiguousInnerParameter:
 
     `a` is called only from outside the component, with a Point, so its own
     field read is resolved; only `b` and `c` are ambiguous.
+
+    `a` is inlined into the module, so its resolved field read is found in the
+    module function rather than in a function named `a`.  The names reported are
+    therefore the functions the reads ended up in: the module for `a`, and none
+    for `b` and `c`.
     """
 
     def test_ambiguous_inner_parameters_stay_symbol_based(self):
         cfg = _build_cfg(AMBIGUOUS_INNER_PARAM_SRC)
-        assert _indexed_get_functions(cfg) == {"a"}
+        # Exactly one field read is resolved, and it is the one from `a`; the
+        # reads in `b` and `c` stay symbol-based.
+        assert _indexed_get_count(cfg) == 1
+        assert _indexed_get_functions(cfg) == {None}
 
     def test_ambiguous_inner_parameter_result_correct(self, menai):
         assert menai.evaluate_and_format(AMBIGUOUS_INNER_PARAM_SRC) == "888"

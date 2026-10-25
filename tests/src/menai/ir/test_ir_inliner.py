@@ -287,6 +287,135 @@ class TestLocalLambdaInlining:
         assert not changed
 
 
+def _all_lambda_captures(ir) -> set[str]:
+    """Collect every capture name declared by any lambda in the tree."""
+    names: set[str] = set()
+    if isinstance(ir, MenaiIRLambda):
+        names |= set(ir.sibling_free_vars) | set(ir.outer_free_vars)
+        names |= _all_lambda_captures(ir.body_plan)
+        return names
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        for _, value in ir.bindings:
+            names |= _all_lambda_captures(value)
+
+        return names | _all_lambda_captures(ir.body_plan)
+
+    if isinstance(ir, MenaiIRCall):
+        names |= _all_lambda_captures(ir.func_plan)
+        for arg in ir.arg_plans:
+            names |= _all_lambda_captures(arg)
+
+        return names
+
+    if isinstance(ir, MenaiIRIf):
+        return (_all_lambda_captures(ir.condition_plan)
+                | _all_lambda_captures(ir.then_plan)
+                | _all_lambda_captures(ir.else_plan))
+
+    if isinstance(ir, MenaiIRReturn):
+        return _all_lambda_captures(ir.value_plan)
+
+    return names
+
+
+def _find_lambda(ir, binding_name: str):
+    """Return the lambda bound to *binding_name*, or None."""
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        for name, value in ir.bindings:
+            if name == binding_name and isinstance(value, MenaiIRLambda):
+                return value
+
+            found = _find_lambda(value, binding_name)
+            if found is not None:
+                return found
+
+        return _find_lambda(ir.body_plan, binding_name)
+
+    if isinstance(ir, MenaiIRLambda):
+        return _find_lambda(ir.body_plan, binding_name)
+
+    if isinstance(ir, MenaiIRCall):
+        found = _find_lambda(ir.func_plan, binding_name)
+        if found is not None:
+            return found
+
+        for arg in ir.arg_plans:
+            found = _find_lambda(arg, binding_name)
+            if found is not None:
+                return found
+
+        return None
+
+    if isinstance(ir, MenaiIRIf):
+        for branch in (ir.condition_plan, ir.then_plan, ir.else_plan):
+            found = _find_lambda(branch, binding_name)
+            if found is not None:
+                return found
+
+        return None
+
+    if isinstance(ir, MenaiIRReturn):
+        return _find_lambda(ir.value_plan, binding_name)
+
+    return None
+
+
+class TestCaptureRecomputation:
+    """Tests for bringing a lambda's capture lists back in step with its body."""
+
+    def test_lambda_capturing_an_outer_binding_is_inlined(self):
+        """
+        A lambda that captures an outer binding is inlined into a caller that
+        does not already capture that binding.
+
+        The caller gains the capture, so the inlined body's reference to the
+        captured name still resolves.
+        """
+        ir = _build_ir("""
+            (let ((k 10))
+              (let ((f (lambda (x) (integer+ x k))))
+                (let ((g (lambda (y) (f y))))
+                  (g 5))))
+        """)
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_calls_to(new_ir, 'f') == 0
+
+    def test_caller_gains_the_capture_of_an_inlined_callee(self):
+        """
+        After inlining a capturing callee, the caller's capture list includes
+        the name the inlined body reads.
+
+        The downstream closure conversion binds a lambda's names only from its
+        capture lists, so a name the body reads but the list omits would be
+        unresolvable.
+        """
+        ir = _build_ir("""
+            (let ((k 10))
+              (let ((f (lambda (x) (integer+ x k))))
+                (let ((g (lambda (y) (f y))))
+                  (g 5))))
+        """)
+        new_ir, _ = _inline(ir)
+
+        g = _find_lambda(new_ir, 'g')
+        assert g is not None, "g should still be bound"
+        assert 'k' in g.outer_free_vars, "g should capture k after f is inlined into it"
+
+    def test_builtin_names_are_not_captured(self):
+        """
+        A builtin call's function position names an opcode, not a binding, so
+        it is never recorded as a capture.
+        """
+        ir = _build_ir("(let ((f (lambda (x) (integer+ x 1)))) (f 5))")
+        new_ir, _ = _inline(ir)
+
+        for name in _all_lambda_captures(new_ir):
+            assert not name.startswith('$'), f"builtin {name!r} should not be a capture"
+
+
 class TestDirectLambdaApplicationInlining:
     """Tests for inlining calls whose function position is itself a lambda."""
 

@@ -404,8 +404,9 @@ UNKNOWN_RECEIVER_SRC = """
   (let ((get-x (lambda (p)
                     (match p
                            ((: point a b) (integer+ a b))
-                           (_ 0)))))
-    (list (get-x (point 1 2)) (get-x (dict "x" 1)))))
+                           (_ 0))))
+        (items (list (point 1 2) (dict "x" 1))))
+    (list (get-x (list-first items)) (get-x (list-last items)))))
 """
 
 JOINED_STRUCT_SRC = """
@@ -452,6 +453,9 @@ class TestEndToEnd:
         """
         The function is called with both a struct and a dict, so the receiver's
         type is unknown and the test is load-bearing.
+
+        The two receivers come from a list holding values of different types, so
+        neither call site can be specialised and the test cannot be folded.
         """
         code = MenaiCompiler().compile(UNKNOWN_RECEIVER_SRC)
         assert _instance_op_count(code) >= 1

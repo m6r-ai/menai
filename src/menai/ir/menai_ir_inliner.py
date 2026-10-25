@@ -136,62 +136,64 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRExpr,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
+        enclosing_group_names: frozenset[str] = frozenset(),
     ) -> MenaiIRExpr:
         """Recursively walk the IR tree and inline eligible call sites."""
         if isinstance(ir, MenaiIRLet):
-            return self._opt_let(ir, scope_stack)
+            return self._opt_let(ir, scope_stack, enclosing_group_names)
 
         if isinstance(ir, MenaiIRLetrec):
-            return self._opt_letrec(ir, scope_stack)
+            return self._opt_letrec(ir, scope_stack, enclosing_group_names)
 
         if isinstance(ir, MenaiIRIf):
-            return self._opt_if(ir, scope_stack)
+            return self._opt_if(ir, scope_stack, enclosing_group_names)
 
         if isinstance(ir, MenaiIRLambda):
-            return self._opt_lambda(ir, scope_stack)
+            return self._opt_lambda(ir, scope_stack, enclosing_group_names)
 
         if isinstance(ir, MenaiIRCall):
-            return self._opt_call(ir, scope_stack)
+            return self._opt_call(ir, scope_stack, enclosing_group_names)
 
         if isinstance(ir, MenaiIRLoop):
-            return self._opt_loop(ir, scope_stack)
+            return self._opt_loop(ir, scope_stack, enclosing_group_names)
 
         if isinstance(ir, MenaiIRRecur):
             return MenaiIRRecur(
-                arg_plans=tuple(self._opt(a, scope_stack) for a in ir.arg_plans),
+                arg_plans=tuple(self._opt(a, scope_stack, enclosing_group_names) for a in ir.arg_plans),
                 is_tail_call=ir.is_tail_call,
             )
 
         if isinstance(ir, MenaiIRReturn):
             return MenaiIRReturn(
-                value_plan=self._opt(ir.value_plan, scope_stack),
+                value_plan=self._opt(ir.value_plan, scope_stack, enclosing_group_names),
             )
 
         if isinstance(ir, MenaiIRBuildList):
             return MenaiIRBuildList(
-                element_plans=tuple(self._opt(e, scope_stack) for e in ir.element_plans),
+                element_plans=tuple(self._opt(e, scope_stack, enclosing_group_names) for e in ir.element_plans),
             )
 
         if isinstance(ir, MenaiIRBuildDict):
             return MenaiIRBuildDict(
-                pair_plans=tuple((self._opt(k, scope_stack), self._opt(v, scope_stack))
+                pair_plans=tuple((self._opt(k, scope_stack, enclosing_group_names),
+                                  self._opt(v, scope_stack, enclosing_group_names))
                                  for k, v in ir.pair_plans),
             )
 
         if isinstance(ir, MenaiIRBuildSet):
             return MenaiIRBuildSet(
-                element_plans=tuple(self._opt(e, scope_stack) for e in ir.element_plans),
+                element_plans=tuple(self._opt(e, scope_stack, enclosing_group_names) for e in ir.element_plans),
             )
 
         if isinstance(ir, MenaiIRBuildVector):
             return MenaiIRBuildVector(
-                element_plans=tuple(self._opt(e, scope_stack) for e in ir.element_plans),
+                element_plans=tuple(self._opt(e, scope_stack, enclosing_group_names) for e in ir.element_plans),
             )
 
         if isinstance(ir, MenaiIRBuildStruct):
             return MenaiIRBuildStruct(
                 struct_type=ir.struct_type,
-                field_plans=tuple(self._opt(f, scope_stack) for f in ir.field_plans),
+                field_plans=tuple(self._opt(f, scope_stack, enclosing_group_names) for f in ir.field_plans),
             )
 
         if isinstance(ir, MenaiIRBuildEnum):
@@ -206,6 +208,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRLet,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
+        enclosing_group_names: frozenset[str],
     ) -> MenaiIRExpr:
         """
         Walk a let, adding its bindings to the scope for the body.
@@ -219,13 +222,13 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         new_scope: dict[str, MenaiIRLambda | None] = {}
 
         for name, value_plan in ir.bindings:
-            opt_value = self._opt(value_plan, scope_stack)
+            opt_value = self._opt(value_plan, scope_stack, enclosing_group_names)
             new_scope[name] = opt_value if isinstance(opt_value, MenaiIRLambda) else None
 
             opt_bindings.append((name, opt_value))
 
         child_stack = scope_stack + [new_scope]
-        opt_body = self._opt(ir.body_plan, child_stack)
+        opt_body = self._opt(ir.body_plan, child_stack, enclosing_group_names)
 
         return MenaiIRLet(
             bindings=tuple(opt_bindings),
@@ -237,6 +240,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRLetrec,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
+        enclosing_group_names: frozenset[str],
     ) -> MenaiIRExpr:
         """
         Walk a $letrec, adding its bindings to the scope for the body.
@@ -245,18 +249,23 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         outer binding of the same name.  A binding whose value is a lambda maps
         to that lambda; any other value maps to None, meaning the name is bound
         but is not a statically-known lambda and so resolves to no target.
+
+        A binding value's enclosing group is this group, so its own names are
+        passed down as the group names.  The body is walked with the enclosing
+        group names restored, since the body is not inside this group.
         """
+        group_names = frozenset(name for name, _ in ir.bindings)
         opt_bindings: list[tuple[str, MenaiIRExpr]] = []
         new_scope: dict[str, MenaiIRLambda | None] = {}
 
         for name, value_plan in ir.bindings:
-            opt_value = self._opt(value_plan, scope_stack)
+            opt_value = self._opt(value_plan, scope_stack, group_names)
             new_scope[name] = opt_value if isinstance(opt_value, MenaiIRLambda) else None
 
             opt_bindings.append((name, opt_value))
 
         child_stack = scope_stack + [new_scope]
-        opt_body = self._opt(ir.body_plan, child_stack)
+        opt_body = self._opt(ir.body_plan, child_stack, enclosing_group_names)
 
         return MenaiIRLetrec(
             bindings=tuple(opt_bindings),
@@ -268,12 +277,13 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRIf,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
+        enclosing_group_names: frozenset[str],
     ) -> MenaiIRExpr:
         """Optimize the branches of an if-expression."""
         return MenaiIRIf(
-            condition_plan=self._opt(ir.condition_plan, scope_stack),
-            then_plan=self._opt(ir.then_plan, scope_stack),
-            else_plan=self._opt(ir.else_plan, scope_stack),
+            condition_plan=self._opt(ir.condition_plan, scope_stack, enclosing_group_names),
+            then_plan=self._opt(ir.then_plan, scope_stack, enclosing_group_names),
+            else_plan=self._opt(ir.else_plan, scope_stack, enclosing_group_names),
             in_tail_position=ir.in_tail_position,
         )
 
@@ -281,6 +291,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRLambda,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
+        enclosing_group_names: frozenset[str],
     ) -> MenaiIRLambda:
         """
         Walk a lambda body in a fresh scope (params shadow outer bindings).
@@ -290,16 +301,31 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         whose function position is a parameter must not resolve to anything.
         Entering the name with a None value makes it shadow any outer binding of
         the same name while resolving to no target.
+
+        The capture lists are recomputed from the optimised body.  Inlining a
+        body that reads a captured name into this lambda makes that name free
+        here, and the downstream closure conversion binds a lambda's names only
+        from the capture lists.  A name the body reads but the lists omit would
+        be unresolvable, so the lists are brought back in step with the body.
+
+        enclosing_group_names holds the binding names of the $letrec group this
+        lambda is a member of, if any.  A free name in that set is a sibling
+        capture; any other free name is an outer capture.
         """
         param_scope: dict[str, MenaiIRLambda | None] = {name: None for name in ir.params}
         child_stack = scope_stack + [param_scope]
+        body_plan = self._opt(ir.body_plan, child_stack, frozenset())
+        sibling_free_vars, outer_free_vars = _recompute_captures(
+            body_plan, ir.params, enclosing_group_names
+        )
+
         return MenaiIRLambda(
             params=ir.params,
-            body_plan=self._opt(ir.body_plan, child_stack),
-            sibling_free_vars=ir.sibling_free_vars,
-            sibling_free_var_plans=ir.sibling_free_var_plans,
-            outer_free_vars=ir.outer_free_vars,
-            outer_free_var_plans=ir.outer_free_var_plans,
+            body_plan=body_plan,
+            sibling_free_vars=sibling_free_vars,
+            sibling_free_var_plans=tuple(MenaiIRVariable(name=fv) for fv in sibling_free_vars),
+            outer_free_vars=outer_free_vars,
+            outer_free_var_plans=tuple(MenaiIRVariable(name=fv) for fv in outer_free_vars),
             param_count=ir.param_count,
             is_variadic=ir.is_variadic,
             binding_name=ir.binding_name,
@@ -311,6 +337,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRCall,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
+        enclosing_group_names: frozenset[str],
     ) -> MenaiIRExpr:
         """Try to inline a call site; fall back to optimizing arguments."""
         target = None if ir.is_builtin else self._resolve_target(ir.func_plan, scope_stack)
@@ -320,11 +347,11 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         ):
             inlined = self._inline(target, ir.arg_plans, ir.is_tail_call)
             self._inlined += 1
-            return self._opt(inlined, scope_stack)
+            return self._opt(inlined, scope_stack, enclosing_group_names)
 
         return MenaiIRCall(
-            func_plan=self._opt(ir.func_plan, scope_stack),
-            arg_plans=tuple(self._opt(a, scope_stack) for a in ir.arg_plans),
+            func_plan=self._opt(ir.func_plan, scope_stack, enclosing_group_names),
+            arg_plans=tuple(self._opt(a, scope_stack, enclosing_group_names) for a in ir.arg_plans),
             is_tail_call=ir.is_tail_call,
             is_builtin=ir.is_builtin,
             builtin_name=ir.builtin_name,
@@ -334,6 +361,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         self,
         ir: MenaiIRLoop,
         scope_stack: list[dict[str, MenaiIRLambda | None]],
+        enclosing_group_names: frozenset[str],
     ) -> MenaiIRExpr:
         """
         Walk a loop, optimising its init plans and body.
@@ -343,8 +371,8 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         position is a loop param must not resolve to an inlinable target.  A
         call to a lambda bound outside the loop still resolves normally.
         """
-        opt_init = tuple(self._opt(init, scope_stack) for init in ir.init_plans)
-        opt_body = self._opt(ir.body_plan, scope_stack)
+        opt_init = tuple(self._opt(init, scope_stack, enclosing_group_names) for init in ir.init_plans)
+        opt_body = self._opt(ir.body_plan, scope_stack, enclosing_group_names)
         return MenaiIRLoop(
             params=ir.params,
             init_plans=opt_init,
@@ -405,12 +433,16 @@ class MenaiIRInliner(MenaiIROptimizationPass):
                 return False
 
         # A lambda bound elsewhere is inlined at a call site that may be in a
-        # different scope from where it was defined, so a capture could become
-        # stale after substitution; reject those.  A direct lambda application
-        # is inlined at its own definition site, so its captures stay in scope
-        # and the check does not apply.
+        # different scope from where it was defined.  Its outer captures are
+        # names the inlined body will still reference, so the enclosing function
+        # must declare them as captures too; _repair_captures adds any that are
+        # missing.  A sibling capture cannot be repaired that way, because it
+        # names a binding in the lambda's own $letrec group, which does not
+        # exist at the call site; reject those.  A direct lambda application is
+        # inlined at its own definition site, where every capture is already in
+        # scope, so neither concern applies.
         if not isinstance(func_plan, MenaiIRLambda):
-            if target.sibling_free_vars or target.outer_free_vars:
+            if target.sibling_free_vars:
                 return False
 
         if isinstance(func_plan, MenaiIRVariable):
@@ -495,18 +527,17 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         body = _substitute(target.body_plan, param_map, set())
 
         result: MenaiIRExpr
-        if isinstance(body, MenaiIRReturn):
-            if is_tail_call:
-                result = body
-
-            else:
-                result = body.value_plan
-
-        elif is_tail_call:
-            result = MenaiIRReturn(value_plan=body)
+        if is_tail_call:
+            # The call site is in tail position, so the body's own tail return
+            # is exactly what the call site needs.  A body that does not end in
+            # a return is wrapped so it returns.
+            result = body if _ends_in_return(body) else MenaiIRReturn(value_plan=body)
 
         else:
-            result = body
+            # The call site is not in tail position, so a return anywhere on the
+            # body's expression spine would terminate the enclosing function
+            # early.  Strip it and let the value flow on.
+            result = _strip_tail_return(body)
 
         if captured_bindings:
             return MenaiIRLet(
@@ -541,6 +572,115 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         temp_name = self._gen_temp()
         captured_bindings.append((temp_name, arg_plan))
         return MenaiIRVariable(name=temp_name)
+
+
+def _ends_in_return(ir: MenaiIRExpr) -> bool:
+    """
+    Return True when *ir* ends in a return along its expression spine.
+
+    The spine is the chain of binding-form bodies: a $let or $letrec ends
+    wherever its body ends, and every other form ends in itself.  The IR builder
+    puts a return at the end of a lambda body, but it sits inside the binding
+    forms that body is made of rather than at the top, so a check on the top
+    node alone misses it.
+
+    A tail call counts as a return: it terminates the enclosing function in the
+    same way, and the CFG builder emits it as a tail-call terminator.
+    """
+    if isinstance(ir, MenaiIRReturn):
+        return True
+
+    if isinstance(ir, MenaiIRCall):
+        return ir.is_tail_call
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        return _ends_in_return(ir.body_plan)
+
+    return False
+
+
+def _strip_tail_return(ir: MenaiIRExpr) -> MenaiIRExpr:
+    """
+    Make *ir* usable in a position that is not a tail position.
+
+    A callee body is built as the body of a function, so its last expression is
+    in tail position: the IR builder wraps it in a MenaiIRReturn, and a call
+    there carries is_tail_call.  Both mean "return from the enclosing function".
+    Substituting such a body into a call site that is not in tail position would
+    therefore return from the *caller* early and discard the value the call site
+    was computing.
+
+    So the return is removed and the tail-call flag is cleared along the same
+    spine.  The value then flows on as an ordinary expression result.
+
+    The spine is rebuilt as it is walked, so a return nested inside binding
+    forms is handled in place.
+    """
+    if isinstance(ir, MenaiIRReturn):
+        return ir.value_plan
+
+    if isinstance(ir, MenaiIRCall):
+        if not ir.is_tail_call:
+            return ir
+
+        return MenaiIRCall(
+            func_plan=ir.func_plan,
+            arg_plans=ir.arg_plans,
+            is_tail_call=False,
+            is_builtin=ir.is_builtin,
+            builtin_name=ir.builtin_name,
+        )
+
+    if isinstance(ir, MenaiIRIf):
+        return MenaiIRIf(
+            condition_plan=ir.condition_plan,
+            then_plan=_strip_tail_return(ir.then_plan),
+            else_plan=_strip_tail_return(ir.else_plan),
+            in_tail_position=False,
+        )
+
+    if isinstance(ir, MenaiIRLet):
+        return MenaiIRLet(
+            bindings=ir.bindings,
+            body_plan=_strip_tail_return(ir.body_plan),
+            in_tail_position=False,
+        )
+
+    if isinstance(ir, MenaiIRLetrec):
+        return MenaiIRLetrec(
+            bindings=ir.bindings,
+            body_plan=_strip_tail_return(ir.body_plan),
+            in_tail_position=False,
+        )
+
+    return ir
+
+
+def _recompute_captures(
+    body_plan: MenaiIRExpr,
+    params: tuple[str, ...],
+    enclosing_group_names: frozenset[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """
+    Derive a lambda's capture lists from its body.
+
+    Returns (sibling_free_vars, outer_free_vars).  A free name that is a binding
+    of the lambda's own $letrec group is a sibling capture; every other free
+    name is an outer capture.
+
+    This is the same split the IR builder makes when it first builds the lambda.
+    Recomputing it after the body has been rewritten is what keeps the capture
+    lists in step with the body: inlining a body that reads a captured name
+    makes that name free here, and the downstream closure conversion binds a
+    lambda's names only from these lists.
+
+    The result is sorted, so a lambda whose body is unchanged produces the same
+    lists on every fixed-point iteration and the pass converges.
+    """
+    free = _free_vars(body_plan) - set(params)
+    sibling_free_vars = tuple(sorted(free & enclosing_group_names))
+    outer_free_vars = tuple(sorted(free - enclosing_group_names))
+    return sibling_free_vars, outer_free_vars
 
 
 def _is_self_recursive(target: MenaiIRLambda) -> bool:
@@ -669,11 +809,10 @@ def _free_vars(ir: MenaiIRExpr) -> set[str]:
     """
     Collect the names an expression references that it does not itself bind.
 
-    Only the cases that can appear as an inlining argument are handled: a
-    lambda (whose captures are already recorded), a variable, and the
-    composite forms that can contain them.  Anything else contributes no free
-    variables, which is conservative for the capture check below because the
-    check only ever rejects inlining.
+    A nested lambda contributes its outer_free_vars: those names must be in
+    scope wherever the lambda is built.  Names in its sibling_free_vars refer
+    to its own $letrec group, which travels with the lambda, so they are not
+    free here.
     """
     if isinstance(ir, MenaiIRVariable):
         return {ir.name}
@@ -703,7 +842,14 @@ def _free_vars(ir: MenaiIRExpr) -> set[str]:
         return (free | _free_vars(ir.body_plan)) - bound
 
     if isinstance(ir, MenaiIRCall):
-        free = _free_vars(ir.func_plan)
+        # A builtin call's function position is a MenaiIRVariable naming an
+        # opcode (e.g. '$integer+'), not a binding.  It is not a free variable
+        # and must not be recorded as a capture.
+        if ir.is_builtin:
+            free = set()
+
+        else:
+            free = _free_vars(ir.func_plan)
 
         for arg in ir.arg_plans:
             free |= _free_vars(arg)
