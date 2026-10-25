@@ -421,6 +421,29 @@ dominate every back-edge block of the loop.
 
 See [ADR-0049](docs/adr/0049-hoisting-must-not-introduce-a-raise.md).
 
+### Reordering a block must respect guards and closure patches
+
+A pass that reorders instructions within a basic block cannot treat the block as
+an ordinary data-dependency graph. Two instruction kinds carry ordering
+constraints that no data edge expresses, and violating either is a miscompile.
+
+**A guard must precede every other reader of the value it guards.** A guard
+defines no result: it validates a value in place, and the operations that follow
+it skip their own type checks. Running one of those operations before its guard
+reads a value of the wrong type. On the VM this does not merely give a wrong
+answer — it corrupts memory, because the unchecked opcode interprets the value's
+payload as the type the guard would have established.
+
+**Every patch-closure instruction for a `$letrec` group must execute before any
+closure in that group is called.** A patch installs a sibling capture; a call
+that runs first observes an unset capture slot and fails with "cannot call
+non-function value".
+
+`MenaiCFGSchedule` therefore tests both explicitly, and leaves a block
+containing patch-closure instructions entirely unscheduled. The general rule for
+any future reordering pass: an instruction that defines no result is not
+automatically position-free.
+
 ### `$letrec` reaching the IR builder is always a genuine mutually-recursive group
 
 The desugarer guarantees that by the time `$letrec` reaches the IR builder, every

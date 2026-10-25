@@ -203,30 +203,13 @@ duplicate must have fallen through the first load.  Since SSA guarantees
 each register is defined exactly once, the first register's slot retains
 the correct value at all use sites.
 
-schedule_self_loop_moves runs *before* slot allocation.  It reorders
-independent instructions immediately before a self-loop move group so that
-temp definitions move past reads of the param registers they will be moved
-into.  This shortens the temp's live range, enabling the allocator's Phase 3b
-to assign the temp directly to the param slot, which makes the MOVE a no-op
-that the post-allocation redundant-move pass then eliminates.
 
-The pattern (common in variadic prelude functions):
-
-    t  = OP(... p ...)       ; defines temp t, reads param p
-    p2 = OP(... p ...)       ; reads p (last use)
-    p  = MOVE t              ; self-loop move
-    JUMP __entry__
-
-After reordering:
-
-    p2 = OP(... p ...)       ; reads p (last use)
-    t  = OP(... p ...)       ; defines t (p is now dead)
-    p  = MOVE t              ; t can be assigned p's slot → no-op
-    JUMP __entry__
-
-The swap is safe because the two instructions are data-independent: neither
-reads the other's def.  Menai purity guarantees there are no side-effect
-ordering constraints.
+The instruction order the allocator sees is established earlier, by the CFG
+pass MenaiCFGSchedule, which schedules each block into its latest legal order.
+That pass is what places a loop-carried update immediately before the back-edge
+move group, which is the shape the allocator's Phase 3b and 3c coalescing
+accepts.  This module therefore does no reordering of its own: it eliminates
+the same-slot moves that the coalescing produces.
 """
 
 
@@ -604,133 +587,6 @@ def coalesce_constants(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
         source_line=func.source_line,
         source_file=func.source_file,
     )
-
-
-def schedule_self_loop_moves(func: MenaiVCodeFunction) -> MenaiVCodeFunction:
-    """
-    Reorder independent instructions before self-loop move groups.
-
-    This is a pre-allocation pass.  It identifies the contiguous group of
-    MenaiVCodeMove instructions that precede each JUMP __entry__ (self-loop
-    back-edge) and reorders the instructions immediately before the move
-    group so that definitions of move-source temps occur after the last read
-    of the corresponding move-destination param.
-
-    This enables the slot allocator's Phase 3b to assign the temp directly
-    to the param slot, making the MOVE a same-slot no-op that the
-    post-allocation peephole eliminates.
-
-    Args:
-        func: The VCode function to optimise (before slot allocation).
-
-    Returns:
-        A new MenaiVCodeFunction with instructions reordered.
-        Returns func unchanged if no reordering applies.
-    """
-    instrs = list(func.instrs)
-    any_changed = False
-    changed = True
-    while changed:
-        changed = False
-        for jump_idx, jump_instr in enumerate(instrs):
-            if not isinstance(jump_instr, MenaiVCodeJump):
-                continue
-
-            if not jump_instr.is_self_loop:
-                continue
-
-            move_start = jump_idx - 1
-            while move_start >= 0 and isinstance(instrs[move_start], MenaiVCodeMove):
-                move_start -= 1
-
-            move_start += 1
-            if move_start == jump_idx:
-                continue
-
-            # Build move source → dest param map.
-            move_src_to_dst: dict[int, int] = {}
-            for idx in range(move_start, jump_idx):
-                move = instrs[idx]
-                assert isinstance(move, MenaiVCodeMove)
-                move_src_to_dst[move.src.id] = move.dst.id
-
-            # Scan backwards from move_start, looking for adjacent pairs
-            # (A, B) where A defines a move source and B reads the
-            # corresponding move dest.  Swap them if independent.
-            scan_end = move_start
-            for i in range(scan_end - 1, -1, -1):
-                a = instrs[i]
-                b = instrs[i + 1]
-
-                if isinstance(a, _BARRIER_TYPES) or isinstance(b, _BARRIER_TYPES):
-                    break
-
-                a_defs, a_uses = _defs_uses(a)
-                b_defs, b_uses = _defs_uses(b)
-
-                # A must define a register that is a move source.
-                swap_src = None
-                for d in a_defs:
-                    if d in move_src_to_dst:
-                        swap_src = d
-                        break
-
-                if swap_src is None:
-                    continue
-
-                swap_dst = move_src_to_dst[swap_src]
-
-                # B must read the corresponding move dest (param).
-                if swap_dst not in b_uses:
-                    continue
-
-                # B must not read A's defs (no RAW).
-                if any(d in b_uses for d in a_defs):
-                    continue
-
-                # A must not read B's defs (no WAR).
-                if any(d in a_uses for d in b_defs):
-                    continue
-
-                # A and B must not write the same register (no WAW).
-                if any(d in b_defs for d in a_defs):
-                    continue
-
-                # Safe to swap.
-                instrs[i] = b
-                instrs[i + 1] = a
-                any_changed = True
-                changed = True
-
-    if not any_changed:
-        return func
-
-    return MenaiVCodeFunction(
-        instrs=tuple(instrs),
-        params=func.params,
-        free_vars=func.free_vars,
-        param_reg_ids=func.param_reg_ids,
-        free_var_reg_ids=func.free_var_reg_ids,
-        loop_param_reg_ids=func.loop_param_reg_ids,
-        hoisted_reg_ids=func.hoisted_reg_ids,
-        is_variadic=func.is_variadic,
-        binding_name=func.binding_name,
-        reg_count=func.reg_count,
-        source_line=func.source_line,
-        source_file=func.source_file,
-    )
-
-
-# Instruction types that cannot be reordered.
-_BARRIER_TYPES = (
-    MenaiVCodeLabel,
-    MenaiVCodeJump,
-    MenaiVCodeJumpIfTrue,
-    MenaiVCodeJumpIfFalse,
-    MenaiVCodeReturn,
-    MenaiVCodeReturnIf,
-    MenaiVCodeRaise,
-)
 
 
 # Instruction types that unconditionally transfer control and do not

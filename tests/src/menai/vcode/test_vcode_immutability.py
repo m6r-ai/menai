@@ -39,7 +39,6 @@ from menai.vcode.menai_vcode_builder import MenaiVCodeBuilder
 from menai.vcode.menai_vcode_peephole import (
     coalesce_constants,
     peephole,
-    schedule_self_loop_moves,
 )
 
 
@@ -155,14 +154,12 @@ class TestPassesDoNotMutateInput:
     @pytest.mark.parametrize(
         "name,run,source_key",
         [
-            ("ScheduleSelfLoopMoves", lambda f: schedule_self_loop_moves(f), "tail-loop"),
             ("CoalesceConstants", lambda f: coalesce_constants(f), "repeated-const"),
             ("Peephole", lambda f: peephole(f, allocate_slots(f)), "const-branch"),
             ("Peephole-switch", lambda f: peephole(f, allocate_slots(f)), "match-switch"),
             ("AllocateSlots", lambda f: allocate_slots(f), "two-loops"),
         ],
         ids=[
-            "ScheduleSelfLoopMoves",
             "CoalesceConstants",
             "Peephole",
             "Peephole-switch",

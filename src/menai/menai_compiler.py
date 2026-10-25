@@ -33,7 +33,7 @@ from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
 from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlocks
 from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
-from menai.cfg.menai_cfg_sink_late import MenaiCFGSinkLate
+from menai.cfg.menai_cfg_schedule import MenaiCFGSchedule
 from menai.cfg.menai_cfg_struct_instance_fold import MenaiCFGStructInstanceFold
 from menai.cfg.menai_cfg_enum_instance_fold import MenaiCFGEnumInstanceFold
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
@@ -117,7 +117,7 @@ class MenaiCompiler:
             MenaiCFGCSE(),
             MenaiCFGLICM(),
             MenaiCFGLoopRotation(),
-            MenaiCFGSinkLate(),
+            MenaiCFGSchedule(),
             MenaiCFGDeadCaptures(),
             MenaiCFGOrderExceptionBlocks(),
         ]
