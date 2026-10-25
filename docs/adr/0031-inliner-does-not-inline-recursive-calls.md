@@ -4,11 +4,17 @@ Date: 2026-09-27
 Status: Superseded by ADR-0059 (2026-10-24)
 
 The requirement that the inliner must not inline a recursive call remains in
-force. The mechanism chosen here is superseded: keying the guard on the
-enclosing group's binding names makes it a property of the walk position, so a
-self-call inside a freshly inlined body is not recognised when the call site is
-re-walked, and the call would be inlined again without bound. ADR-0059 replaces
-it with a test intrinsic to the lambda.
+force. Two things chosen here are superseded.
+
+The recursion mechanism: keying the guard on the enclosing group's binding names
+makes it a property of the walk position, so a self-call inside a freshly inlined
+body is not recognised when the call site is re-walked, and the call would be
+inlined again without bound. ADR-0059 replaces it with a test intrinsic to the
+lambda.
+
+The capture rule that accompanied it: refusing to inline any lambda bound
+elsewhere that had captures. ADR-0059 replaces it with recomputing each lambda's
+capture lists from its rewritten body, which permits outer captures.
 
 ## Context
 

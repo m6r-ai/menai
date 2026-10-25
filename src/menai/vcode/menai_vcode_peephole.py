@@ -170,10 +170,16 @@ Sub-passes
    loaded and branched on every time the loop is entered, for a direction
    that is already decided.
 
-   The load and the branch must be adjacent apart from labels, and the branch
-   must read the register the load defined.  The load is removed only when the
-   branch was the register's sole remaining use, so a register read elsewhere
-   keeps its definition.
+   The load and the branch must be in the same block, and the branch must read
+   the register the load defined.  The load is removed only when the branch was
+   the register's sole remaining use, so a register read elsewhere keeps its
+   definition.
+
+   Only labels that no jump targets may lie between the load and the branch.  A
+   targeted label begins a block that control can enter without executing the
+   load, so a load on one side of it does not determine a branch on the other.
+   Folding across such a label would delete a load from a block that still
+   needs it.
 
    Does not require a SlotMap — operates entirely on labels and registers.
 
@@ -1162,10 +1168,16 @@ def _fold_branch_on_constant(
     the condition is known.  `LOAD_FALSE r` / `JUMP_IF_TRUE r label` never
     jumps, so both instructions are removed and control falls through.
 
-    The load and the branch must be adjacent apart from labels, and the branch
-    must read the register the load defined.  The load is removed only when the
-    branch is the register's sole remaining use, so a register read elsewhere
-    keeps its definition.
+    The load and the branch must be in the same block, and the branch must read
+    the register the load defined.  The load is removed only when the branch is
+    the register's sole remaining use, so a register read elsewhere keeps its
+    definition.
+
+    Only labels that no jump targets may lie between the load and the branch.
+    A targeted label begins a block that control can enter without executing
+    the load, so a load on one side of it does not determine a branch on the
+    other: the two are unrelated, and folding would delete the load from a
+    block that still needs it.
 
     This is the branch counterpart of _fold_branch_load_return: that pass folds
     a branch whose fall-through returns the complement of its condition, while
@@ -1174,6 +1186,7 @@ def _fold_branch_on_constant(
     result: list[MenaiVCodeInstr] = []
     changed = False
     i = 0
+    targets = _jump_targets(instrs)
 
     while i < len(instrs):
         instr = instrs[i]
@@ -1188,12 +1201,8 @@ def _fold_branch_on_constant(
             i += 1
             continue
 
-        # Scan ahead past labels to the next instruction.
-        j = i + 1
-        while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
-            j += 1
-
-        if j >= len(instrs):
+        j = _next_instr_in_block(instrs, i, targets)
+        if j is None:
             result.append(instr)
             i += 1
             continue
@@ -1243,10 +1252,16 @@ def _fold_branch_on_loaded_constant(
     never jumps, so both instructions are removed and control falls through.
     JUMP_IF_FALSE is handled by inverting the polarity.
 
-    The load and the branch must be adjacent apart from labels, and the branch
-    must read the register the load defined.  The load is removed only when the
-    branch is the register's sole remaining use, so a register read elsewhere
-    keeps its definition.
+    The load and the branch must be in the same block, and the branch must read
+    the register the load defined.  The load is removed only when the branch is
+    the register's sole remaining use, so a register read elsewhere keeps its
+    definition.
+
+    Only labels that no jump targets may lie between the load and the branch.
+    A targeted label begins a block that control can enter without executing
+    the load, so a load on one side of it does not determine a branch on the
+    other: the two are unrelated, and folding would delete the load from a
+    block that still needs it.
 
     This is the loaded-literal counterpart of _fold_branch_on_constant, which
     folds a branch whose condition is a literal operand.  A branch condition is
@@ -1258,6 +1273,7 @@ def _fold_branch_on_loaded_constant(
     result: list[MenaiVCodeInstr] = []
     changed = False
     i = 0
+    targets = _jump_targets(instrs)
 
     while i < len(instrs):
         instr = instrs[i]
@@ -1272,12 +1288,8 @@ def _fold_branch_on_loaded_constant(
             i += 1
             continue
 
-        # Scan ahead past labels to the next instruction.
-        j = i + 1
-        while j < len(instrs) and isinstance(instrs[j], MenaiVCodeLabel):
-            j += 1
-
-        if j >= len(instrs):
+        j = _next_instr_in_block(instrs, i, targets)
+        if j is None:
             result.append(instr)
             i += 1
             continue
@@ -1313,6 +1325,59 @@ def _fold_branch_on_loaded_constant(
         changed = True
 
     return result, changed
+
+
+def _jump_targets(instrs: list[MenaiVCodeInstr]) -> set[str]:
+    """
+    Return the names of every label that an instruction in instrs can jump to.
+
+    This covers the targets of unconditional and conditional jumps and both
+    arms of a switch.  The "__entry__" sentinel is not included: it is resolved
+    by the bytecode emitter rather than appearing as a label in the stream, so
+    it can never be an intervening label here.
+    """
+    targets: set[str] = set()
+    for instr in instrs:
+        if isinstance(instr, (MenaiVCodeJump, MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
+            targets.add(instr.label)
+
+        elif isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
+            targets.add(instr.default_label)
+            targets.update(instr.labels)
+
+    return targets
+
+
+def _next_instr_in_block(
+    instrs: list[MenaiVCodeInstr],
+    index: int,
+    targets: set[str],
+) -> int | None:
+    """
+    Return the index of the instruction that follows instrs[index] in its block.
+
+    Labels carry no runtime effect, so the scan steps over them.  It stops,
+    returning None, at a label that a jump targets: such a label begins a block
+    that control can enter without executing instrs[index], so the instruction
+    beyond it is not reached from here.  It also returns None if the scan runs
+    off the end of the list.
+
+    Callers that pair an instruction with a later one use this to require that
+    both are in the same block.  Treating a targeted label as transparent would
+    let an instruction be paired with one in an unrelated block.
+    """
+    j = index + 1
+    while j < len(instrs):
+        instr = instrs[j]
+        if not isinstance(instr, MenaiVCodeLabel):
+            return j
+
+        if instr.name in targets:
+            return None
+
+        j += 1
+
+    return None
 
 
 def _count_uses(instrs: list[MenaiVCodeInstr], reg_id: int) -> int:

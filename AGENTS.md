@@ -249,14 +249,49 @@ earlier version keyed on the enclosing `$letrec` group's binding names, which ar
 scope only while walking inside that group. A call site is re-walked with the call
 site's group names after a body has been inlined, so a self-call inside a freshly
 inlined body was not recognised and would have been inlined again without bound. That
-version was unsound, and it was unreachable only because the capture rule happened to
-reject every lambda with sibling captures.
+version was unsound, and it was unreachable only because the capture rule of the time
+happened to reject every lambda with sibling captures.
 
 Mutual recursion is covered by the sibling-capture rule instead. A direct lambda
 application (`((lambda ...) arg)`) is exempt.
 
-See [ADR-0059](docs/adr/0059-inliner-recursion-guard-is-intrinsic-to-the-lambda.md),
+See [ADR-0059](docs/adr/0059-inliner-guards-are-intrinsic-to-the-lambda.md),
 which supersedes [ADR-0031](docs/adr/0031-inliner-does-not-inline-recursive-calls.md).
+
+### The inliner recomputes capture lists from the rewritten body
+
+The inliner may substitute a lambda body that reads names captured from outside
+it. Inlining such a body into a caller makes those names free in the caller too,
+and the downstream closure conversion binds a lambda's names *only* from its
+capture lists. A name the body reads but the lists omit is unresolvable, so the
+inliner rebuilds each lambda's `sibling_free_vars` and `outer_free_vars` from its
+optimised body rather than copying the originals.
+
+The sibling/outer split is decided by the `$letrec` group the lambda belongs to,
+so the walk must thread that group's binding names down to its binding values.
+Every lambda body resets them to empty, because a lambda body is not inside the
+lambda's own group.
+
+This is what makes it sound to inline a lambda that has outer captures. An
+earlier rule rejected any lambda bound elsewhere that had *any* captures. It
+could not simply be relaxed to "reject only captures that do not resolve to the
+same binding at the call site", because the inliner's `scope_stack` is a
+name-based view of the IR tree while the CFG builder gives each lambda a
+function whose only bindings are its parameters plus the free variables it
+*declares*. A name the inliner can see is therefore not necessarily a name the
+enclosing function captures, and inlining a body that reads it produced an
+unresolved variable in the CFG builder. Recomputing the lists is what closes
+that gap; do not revisit the identity-based rule without first addressing
+closure conversion.
+
+`_free_vars` is load-bearing for this and must stay exact. It was written for a
+check that only ever caused a rejection, where an over-approximation cost a
+missed optimisation. It now drives capture lists, so a name it wrongly reports
+becomes a spurious capture, and a name it misses becomes an unresolvable one.
+In particular a builtin call's function position names an opcode, not a binding,
+and must not be reported.
+
+See [ADR-0059](docs/adr/0059-inliner-guards-are-intrinsic-to-the-lambda.md).
 
 ### Single-binding tail-recursive groups are converted to loops before inlining
 

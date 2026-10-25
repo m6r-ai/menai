@@ -38,8 +38,12 @@ A lambda is only inlined when:
   binding capture the argument's variable, silently rebinding it to the
   callee's local instead of the caller's.
 - The argument count matches the parameter count (arity must be exact).
-- A lambda bound elsewhere has no captures.  A direct lambda application is
-  exempt from this: it is inlined at its own definition site, so its captures
+- A lambda bound elsewhere has no sibling captures.  A sibling capture names a
+  binding in the lambda's own $letrec group, which does not exist at the call
+  site, so it cannot be reproduced there.  Outer captures are permitted: the
+  caller's capture lists are recomputed from its rewritten body, so a name the
+  inlined body reads is added to them.  A direct lambda application is exempt
+  from both concerns: it is inlined at its own definition site, so its captures
   remain in scope after substitution.
 
 The pass iterates to a fixed point: after each round of inlining, the
@@ -435,7 +439,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         # A lambda bound elsewhere is inlined at a call site that may be in a
         # different scope from where it was defined.  Its outer captures are
         # names the inlined body will still reference, so the enclosing function
-        # must declare them as captures too; _repair_captures adds any that are
+        # must declare them as captures too; _recompute_captures adds any that are
         # missing.  A sibling capture cannot be repaired that way, because it
         # names a binding in the lambda's own $letrec group, which does not
         # exist at the call site; reject those.  A direct lambda application is
@@ -578,10 +582,11 @@ def _ends_in_return(ir: MenaiIRExpr) -> bool:
     """
     Return True when *ir* ends in a return along its expression spine.
 
-    The spine is the chain of binding-form bodies: a $let or $letrec ends
-    wherever its body ends, and every other form ends in itself.  The IR builder
-    puts a return at the end of a lambda body, but it sits inside the binding
-    forms that body is made of rather than at the top, so a check on the top
+    The spine is the chain of forms whose result is the result of a trailing
+    sub-expression: a $let or $letrec ends wherever its body ends, a loop ends
+    wherever its body ends, and an if ends in a return only when both arms do.
+    The IR builder puts a return at the end of a lambda body, but it sits inside
+    the forms that body is made of rather than at the top, so a check on the top
     node alone misses it.
 
     A tail call counts as a return: it terminates the enclosing function in the
@@ -593,7 +598,13 @@ def _ends_in_return(ir: MenaiIRExpr) -> bool:
     if isinstance(ir, MenaiIRCall):
         return ir.is_tail_call
 
+    if isinstance(ir, MenaiIRIf):
+        return _ends_in_return(ir.then_plan) and _ends_in_return(ir.else_plan)
+
     if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        return _ends_in_return(ir.body_plan)
+
+    if isinstance(ir, MenaiIRLoop):
         return _ends_in_return(ir.body_plan)
 
     return False
@@ -614,7 +625,7 @@ def _strip_tail_return(ir: MenaiIRExpr) -> MenaiIRExpr:
     spine.  The value then flows on as an ordinary expression result.
 
     The spine is rebuilt as it is walked, so a return nested inside binding
-    forms is handled in place.
+    forms, an if arm, or a loop body is handled in place.
     """
     if isinstance(ir, MenaiIRReturn):
         return ir.value_plan
@@ -636,6 +647,14 @@ def _strip_tail_return(ir: MenaiIRExpr) -> MenaiIRExpr:
             condition_plan=ir.condition_plan,
             then_plan=_strip_tail_return(ir.then_plan),
             else_plan=_strip_tail_return(ir.else_plan),
+            in_tail_position=False,
+        )
+
+    if isinstance(ir, MenaiIRLoop):
+        return MenaiIRLoop(
+            params=ir.params,
+            init_plans=ir.init_plans,
+            body_plan=_strip_tail_return(ir.body_plan),
             in_tail_position=False,
         )
 
