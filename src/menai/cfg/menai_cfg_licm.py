@@ -166,6 +166,7 @@ from menai.cfg.menai_cfg import (
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
     MenaiCFGPerFunctionPass,
+    compute_dominators,
     compute_dominators_in_subgraph,
 )
 from menai.menai_value import (
@@ -282,6 +283,10 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         # dominates it and the back-edge already skips it.  Hoisting goes into
         # that pre-header and the self-loop target is left unchanged.  Splitting
         # the entry block in this case would orphan the header's phi nodes.
+        #
+        # When no such block exists, the loop cannot be hoisted out of: the
+        # preamble is the only place an invariant instruction may go, and there
+        # is no block that dominates the header to put it in.
         pre_header: MenaiCFGBlock | None = None
         if header is not entry:
             pre_header = self._pre_header(func, header, self_loops)
@@ -319,9 +324,35 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             func, header, self_loops, loop_block_ids,
         )
 
+        # The block each hoisted instruction will be moved into.  For a
+        # MenaiIRLoop that is the pre-header; for a function-level loop the
+        # entry block is split, so the target is the entry block itself (the
+        # hoisted instructions go into the new preamble, which is that block).
+        hoist_target_id = pre_header.id if pre_header is not None else entry.id
+
+        # Guards on loop-carried phis are rewritten rather than moved: see
+        # _rewrite_phi_guards.  The rewritten guards go in the same preamble.
+        rewritten_guards = self._rewrite_phi_guards(
+            func, header, self_loops, back_edge_types, def_map, loop_block_ids,
+        )
+
+        # Dominators of the whole function, and the block that defines each SSA
+        # value.  A guard may be hoisted only to a point its operand's defining
+        # block dominates.
+        dom = compute_dominators(func)
+        def_block_ids = self._defining_block_ids(func)
+
         # Collect hoistable instructions from blocks inside the loop.
-        preamble_instrs: list[MenaiCFGInstr] = []
+        preamble_instrs: list[MenaiCFGInstr] = list(rewritten_guards)
         seen_guards: set[tuple[int, str]] = set()
+
+        # The phi values whose guard the preamble now covers.  The guard on
+        # such a phi is dropped from its block: the preamble guard checks the
+        # value the phi carries on the first iteration, and the back-edge
+        # preserves the type on every later one.
+        covered_phi_ids = self._rewritten_phi_ids(
+            func, self_loops, back_edge_types, def_map, loop_block_ids,
+        )
 
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
@@ -331,7 +362,16 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
             remaining: list[MenaiCFGInstr] = []
             for instr in block.instrs:
-                if self._is_hoistable(instr, invariant_ids, block.id, every_iteration_ids):
+                if (
+                    isinstance(instr, MenaiCFGGuardInstr)
+                    and instr.value.id in covered_phi_ids
+                ):
+                    continue
+
+                if self._is_hoistable(
+                    instr, invariant_ids, block.id, every_iteration_ids,
+                    hoist_target_id, dom, def_block_ids,
+                ):
                     if isinstance(instr, MenaiCFGGuardInstr):
                         key = (instr.value.id, instr.expected_type)
                         if key in seen_guards:
@@ -541,12 +581,29 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         invariant_ids: set[int],
         block_id: int,
         every_iteration_ids: set[int],
+        hoist_target_id: int,
+        dom: dict[int, set[int]],
+        def_block_ids: dict[int, int],
     ) -> bool:
         """
         Return True if an instruction should be hoisted into the preamble.
 
         A hoistable instruction type whose result is loop-invariant is
         hoisted.  Guards are hoisted when their operand is invariant.
+
+        A guard is additionally hoisted only when its operand is already
+        available at the hoist target, which requires the operand's defining
+        block to dominate the target.  The defining block then executes on
+        every path into the target, so the value has been assigned before the
+        guard runs.
+
+        A loop-carried phi is defined in the loop header, and the header does
+        not dominate the pre-header the guard would be hoisted into.  A guard
+        on such a phi is therefore never hoisted, even though the phi's type
+        is preserved across the back-edge: hoisting it would read the phi's
+        register before the first iteration has assigned it.  The guard stays
+        in the loop body, where the phi has already been assigned by the time
+        it runs.
 
         An instruction that can raise is hoisted only from a block that
         executes on every iteration of the loop.  Hoisting moves it to the
@@ -563,7 +620,14 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             return False
 
         if isinstance(instr, MenaiCFGGuardInstr):
-            return instr.value.id in invariant_ids
+            if instr.value.id not in invariant_ids:
+                return False
+
+            def_block_id = def_block_ids.get(instr.value.id)
+            if def_block_id is None:
+                return False
+
+            return def_block_id in dom[hoist_target_id]
 
         result = getattr(instr, 'result', None)
         if result is None:
@@ -605,6 +669,143 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         return result
 
+    def _rewritable_phi_initial(
+        self,
+        value_id: int,
+        expected_type: str,
+        back_edge_types: dict[int, str | None],
+        def_map: dict[int, MenaiCFGInstr],
+        back_edge_block_ids: set[int],
+    ) -> MenaiCFGValue | None:
+        """
+        Return the phi's initial incoming value if a guard on it can be
+        rewritten, else None.
+
+        A guard on a loop-carried phi is rewritable when the phi's back-edge
+        value already has the guarded type (so only the first iteration needs
+        checking) and the phi has exactly one non-back-edge incoming value (so
+        the preamble dominates the value it would check).
+        """
+        phi = def_map.get(value_id)
+        if not isinstance(phi, MenaiCFGPhiInstr):
+            return None
+
+        if back_edge_types.get(value_id) != expected_type:
+            return None
+
+        initial = [
+            value for value, pred_id in phi.incoming
+            if pred_id not in back_edge_block_ids
+        ]
+        if len(initial) != 1:
+            return None
+
+        return initial[0]
+
+    def _rewritten_phi_ids(
+        self,
+        func: MenaiCFGFunction,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+        back_edge_types: dict[int, str | None],
+        def_map: dict[int, MenaiCFGInstr],
+        loop_block_ids: set[int],
+    ) -> set[int]:
+        """Return the ids of phi values whose guard the preamble covers."""
+        back_edge_block_ids = self._self_loop_block_ids(func, self_loops)
+        result: set[int] = set()
+        for block in func.blocks:
+            if block.id not in loop_block_ids:
+                continue
+
+            for instr in block.instrs:
+                if not isinstance(instr, MenaiCFGGuardInstr):
+                    continue
+
+                if self._rewritable_phi_initial(
+                    instr.value.id, instr.expected_type,
+                    back_edge_types, def_map, back_edge_block_ids,
+                ) is not None:
+                    result.add(instr.value.id)
+
+        return result
+
+    def _rewrite_phi_guards(
+        self,
+        func: MenaiCFGFunction,
+        header: MenaiCFGBlock,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+        back_edge_types: dict[int, str | None],
+        def_map: dict[int, MenaiCFGInstr],
+        loop_block_ids: set[int],
+    ) -> list[MenaiCFGInstr]:
+        """
+        Return guards to place in the preamble in place of guards on
+        loop-carried phis.
+
+        A guard on a loop-carried phi cannot be hoisted: the phi is assigned
+        in the loop header, so any block the guard could move to precedes the
+        assignment and would read the phi's register before it is written.
+
+        The guard is redundant instead, and can be eliminated.  A phi's value
+        is the initial incoming value on the first iteration and the back-edge
+        value on every later one.  When the back-edge value's type matches the
+        guard's expected type, every iteration after the first satisfies the
+        guard by construction, so only the first iteration needs checking.
+        Guarding the phi's initial incoming value in the preamble checks
+        exactly that, once, and the guard on the phi itself is dropped.
+
+        Returns the guards to append to the preamble, in no particular order.
+        The caller removes the original guards from their blocks.
+        """
+        back_edge_block_ids = self._self_loop_block_ids(func, self_loops)
+        result: list[MenaiCFGInstr] = []
+        seen: set[tuple[int, str]] = set()
+
+        for block in func.blocks:
+            if block.id not in loop_block_ids:
+                continue
+
+            for instr in block.instrs:
+                if not isinstance(instr, MenaiCFGGuardInstr):
+                    continue
+
+                initial = self._rewritable_phi_initial(
+                    instr.value.id, instr.expected_type,
+                    back_edge_types, def_map, back_edge_block_ids,
+                )
+                if initial is None:
+                    continue
+
+                key = (initial.id, instr.expected_type)
+                if key in seen:
+                    continue
+
+                seen.add(key)
+                result.append(MenaiCFGGuardInstr(
+                    value=initial,
+                    expected_type=instr.expected_type,
+                ))
+
+        return result
+
+    def _defining_block_ids(
+        self, func: MenaiCFGFunction,
+    ) -> dict[int, int]:
+        """
+        Map SSA value id -> the id of the block that defines it.
+
+        Used to check that a value is available at a hoist point: a guard may
+        be hoisted only to a block dominated by its operand's defining block.
+        """
+        result: dict[int, int] = {}
+        for block in func.blocks:
+            for instr in block.instrs:
+                r = getattr(instr, 'result', None)
+                if r is not None:
+                    result[r.id] = block.id
+
+        return result
+
     def _back_edge_types(
         self,
         self_loops: list[MenaiCFGSelfLoopTerm],
@@ -612,35 +813,70 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         def_map: dict[int, MenaiCFGInstr],
     ) -> dict[int, str | None]:
         """
-        Map param SSA value id -> type at the self-loop back-edge.
+        Map loop-carried SSA value id -> type at the self-loop back-edge.
 
-        For each param, the back-edge type is the type of the corresponding
-        SelfLoopTerm arg (the new value assigned to that param on the
-        back-edge).  When a loop has several back-edges, the param's type is
+        For each loop-carried value, the back-edge type is the type of the
+        corresponding SelfLoopTerm arg (the new value assigned to it on the
+        back-edge).  When a loop has several back-edges, the value's type is
         the join of the args from all of them: the common type when every
         back-edge agrees, otherwise unknown (None).  The arg's type is
         determined by examining the instruction that defines its SSA value.
+
+        Which values a back-edge carries depends on how the loop was lowered.
+        A function-level self-loop (a tail-recursive function) reassigns the
+        function's params, so the carried values are the params.  A
+        MenaiIRLoop (`param_vals` is not None) reassigns the loop's phi
+        values instead, so the carried values are those phis and the function's
+        params are never touched.  Keying the result by the carried value in
+        both cases is what lets the guard-invariance check in
+        `_compute_invariant_values` find the back-edge type of a loop-carried
+        phi: keying by param would leave every phi unlisted, and the guard on
+        it would be treated as loop-variant and re-executed on every iteration.
         """
         result: dict[int, str | None] = {}
-        for param_index, param_id in param_ids.items():
+        for index, carried_id in self._carried_values(self_loops, param_ids).items():
             types: list[str | None] = []
             arity_ok = True
             for self_loop in self_loops:
-                if param_index >= len(self_loop.args):
+                if index >= len(self_loop.args):
                     arity_ok = False
                     break
 
-                types.append(self._type_of_value(self_loop.args[param_index], def_map))
+                types.append(self._type_of_value(self_loop.args[index], def_map))
 
             if not arity_ok or not types:
-                result[param_id] = None
+                result[carried_id] = None
                 continue
 
             first = types[0]
             agrees = first is not None and all(t == first for t in types[1:])
-            result[param_id] = first if agrees else None
+            result[carried_id] = first if agrees else None
 
         return result
+
+    def _carried_values(
+        self,
+        self_loops: list[MenaiCFGSelfLoopTerm],
+        param_ids: dict[int, int],
+    ) -> dict[int, int]:
+        """
+        Map back-edge arg index -> the SSA value id that index updates.
+
+        A function-level self-loop updates the function's params, so the
+        carried values are the params.  A MenaiIRLoop back-edge carries
+        `param_vals` instead: `args[i]` is the new value of `param_vals[i]`,
+        and the function's params are not reassigned by it.
+
+        All self-loops of one loop pass the same number of args, so the first
+        self-loop's shape is representative.
+        """
+        if self_loops[0].param_vals is not None:
+            return {
+                index: value.id
+                for index, value in enumerate(self_loops[0].param_vals)
+            }
+
+        return dict(param_ids)
 
     def _type_of_value(
         self, value: MenaiCFGValue, def_map: dict[int, MenaiCFGInstr],
@@ -694,28 +930,36 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
     ) -> bool:
         """
         Check whether the self-loop back-edge preserves a hypothetical type
-        for a reassigned param.
+        for a reassigned loop-carried value.
 
         Given the assumption that `param_id` has `expected_type`, compute
-        the type of the back-edge value (the SelfLoopTerm arg for that param)
+        the type of the back-edge value (the SelfLoopTerm arg that updates it)
         under the assumption.  If the back-edge value also has
         `expected_type`, the type is preserved across iterations and the
         guard is loop-invariant.
 
         This handles the case where the back-edge value is a phi node with
-        the param itself as one incoming value (a skip path).  The param's
+        the carried value itself as one incoming value (a skip path).  Its
         type is unknown in the normal `_type_of_value` lookup, but under
         the hypothesis it has `expected_type`, which may make the phi's
         type known and matching.
 
+        `param_id` is the loop-carried value, which is a function param for a
+        function-level self-loop and a loop phi for a MenaiIRLoop.  The index
+        it occupies among the back-edge args comes from `_carried_values`, so
+        both loop shapes resolve to the arg that actually updates it.
+
         Every back-edge must preserve the type: a loop with several
         back-edges is only invariant if all of them do.
         """
-        param_index = None
-        for idx, pid in param_ids.items():
-            if pid == param_id:
-                param_index = idx
-                break
+        param_index = next(
+            (
+                index
+                for index, carried_id in self._carried_values(self_loops, param_ids).items()
+                if carried_id == param_id
+            ),
+            None,
+        )
 
         if param_index is None:
             return False
@@ -1059,12 +1303,28 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
     ) -> MenaiCFGBlock | None:
         """
         Return the loop header's pre-header block, or None if there is not
-        exactly one.
+        exactly one that dominates the header.
 
         The pre-header is the unique predecessor of the header that is not a
         back-edge block (a block whose terminator is one of the loop's
         self-loops).  For a MenaiIRLoop the header has exactly one such
         predecessor: the block that computes the loop's initial values.
+
+        Being the only non-back-edge predecessor is not on its own enough to
+        make a block a valid hoisting target.  Hoisting an instruction into a
+        block moves it to a point where it executes on every path through that
+        block, so the block must dominate the header: otherwise the hoisted
+        instruction executes on paths that never reached the loop, and a guard
+        hoisted there can read a value the loop header defines (its phis) on a
+        path where that value has not been assigned yet.  A header reached from
+        only one non-back-edge predecessor can still fail this: when the
+        predecessor is one arm of a branch whose other arm raises or returns,
+        it does not dominate the header, and hoisting into it would run the
+        instruction on a path that never entered the loop.
+
+        A block with several successors also cannot host a hoisted instruction:
+        the instruction would execute on every path leaving that block,
+        including paths that branch away from the loop.
         """
         back_edge_ids = {
             block.id for block in func.blocks
@@ -1079,7 +1339,17 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         if len(candidates) != 1:
             return None
 
-        return candidates[0]
+        candidate = candidates[0]
+        if len(self._successor_ids(candidate)) != 1:
+            return None
+
+        # The candidate must dominate the header: every path from the function
+        # entry to the header must pass through it.
+        dom = compute_dominators(func)
+        if candidate.id not in dom[header.id]:
+            return None
+
+        return candidate
 
     def _param_ids_by_index(
         self, entry: MenaiCFGBlock,

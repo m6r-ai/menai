@@ -726,3 +726,115 @@ class TestRaisingInstructionHoisting:
             (loop 3 0)))
         """)
         assert result == 300
+
+
+class TestLoopCarriedValueGuardHoisting:
+    """
+    A guard on a loop-carried value is rewritten, not moved.
+
+    A MenaiIRLoop carries its variables in phi nodes in the loop header, not in
+    the function's params.  A guard on such a phi cannot be hoisted: the phi is
+    assigned in the header, so any block the guard could move to precedes that
+    assignment and would read the phi's register before it is written.
+
+    The guard is redundant instead.  The phi holds its initial value on the
+    first iteration and the back-edge value on every later one, so when the
+    back-edge value already has the guarded type, only the first iteration
+    needs checking.  Guarding the phi's initial value in the preamble does
+    that once, and the guard on the phi is dropped.
+    """
+
+    def test_guard_on_loop_carried_phi_rewritten_into_preamble(self):
+        """
+        The guard on the loop-carried `pos` is replaced by a guard on `start`,
+        the value `pos` holds on the first iteration, placed in the preamble.
+
+        `start` is fed by `struct-get`, whose result type is not provable, so
+        the parameter's type is unknown and the ASSERT_INTEGER guard is
+        inserted.
+        """
+        src = """
+        (let ((scan
+                  (lambda (s start)
+                    (let ((loop
+                           (lambda (pos acc)
+                             (if (integer>=? pos (string-length s))
+                                 acc
+                                 (loop (integer+ pos 1)
+                                       (integer+ acc 1))))))
+                      (loop start 0))))
+              (result-type (struct (value)))
+              (make-result (lambda (v) (result-type v))))
+          (scan "abc" (struct-get (make-result 0) 'value)))
+        """
+        code = _compile(src)
+        scan = _loop_function(code, "scan")
+        target = _self_loop_target(scan)
+        assert target is not None
+        guard_indices = [
+            i for i, instr in enumerate(scan.instructions)
+            if unpack_instruction(instr).opcode == int(Opcode.ASSERT_INTEGER)
+        ]
+        assert len(guard_indices) == 1, (
+            "the guard on the loop-carried value must be replaced by a single "
+            "guard in the preamble"
+        )
+        assert guard_indices[0] < target, (
+            "the rewritten guard must sit in the preamble, before the loop "
+            "entry, so the back-edge skips it"
+        )
+
+    def test_guard_on_loop_carried_phi_correct_results(self):
+        """End-to-end: rewriting the guard must not change the result."""
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (let ((scan
+                  (lambda (s start)
+                    (let ((loop
+                           (lambda (pos acc)
+                             (if (integer>=? pos (string-length s))
+                                 acc
+                                 (loop (integer+ pos 1)
+                                       (integer+ acc 1))))))
+                      (loop start 0))))
+              (result-type (struct (value)))
+              (make-result (lambda (v) (result-type v))))
+          (scan "abc" (struct-get (make-result 0) 'value)))
+        """)
+        assert result == 3
+
+    def test_guard_in_header_not_hoisted_above_phi(self):
+        """
+        A guard whose value's back-edge type is unknown is neither hoisted nor
+        rewritten, so it stays in the loop and is re-checked each iteration.
+
+        `bound` is reassigned by the back-edge to the result of a `struct-get`,
+        whose type is not provable.  The back-edge therefore does not preserve
+        the guarded type, so the guard cannot be reduced to a single check on
+        the first iteration.
+        """
+        src = """
+        (let ((search-loop
+                  (lambda (bound)
+                    (if (integer>? bound 100)
+                        (list 1)
+                        (search-loop (struct-get (make-result bound) 'value)))))
+              (result-type (struct (value)))
+              (make-result (lambda (v) (result-type v))))
+          (search-loop 0))
+        """
+        code = _compile(src)
+        sl = _loop_function(code, "search-loop")
+        target = _self_loop_target(sl)
+        assert target is not None
+        guard_indices = [
+            i for i, instr in enumerate(sl.instructions)
+            if unpack_instruction(instr).opcode == int(Opcode.ASSERT_INTEGER)
+        ]
+        assert guard_indices, "the ASSERT_INTEGER guard must be present"
+        assert any(gi >= target for gi in guard_indices), (
+            "a guard on a value the loop header defines must not be hoisted "
+            "above its definition"
+        )
