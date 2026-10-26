@@ -100,6 +100,14 @@ def _find_assert_opcode(code, opcode) -> int | None:
     return None
 
 
+def _find_all_asserts(code, opcode) -> list[int]:
+    """Return the instruction indices of every occurrence of an ASSERT_* opcode."""
+    return [
+        i for i, instr in enumerate(code.instructions)
+        if unpack_instruction(instr).opcode == int(opcode)
+    ]
+
+
 class TestLoopInvariantGuardHoisting:
     """Loop-invariant guards in self-loop functions should be hoisted."""
 
@@ -114,9 +122,11 @@ class TestLoopInvariantGuardHoisting:
                  (apply-move (lambda (cube move) move)))
           (apply-moves 0 (list 1 2 3)))
 
-        The 'moves' param is reassigned via list-rest (list -> list), so the
-        ASSERT_LIST guard is loop-invariant.  It should be hoisted to the
-        preamble, and the self-loop should skip it.
+        'moves' is reassigned via list-rest (list -> list).  The back-edge
+        type proves the guard holds from the second iteration onwards, but the
+        first iteration's value is whatever the caller passed, so the guard
+        cannot be dropped.  It stays in the loop entry, where it checks the
+        first iteration before the loop body runs.
 
         'moves' is fed by 'flip', whose return type is ambiguous, so the
         parameter's type is not provable and the guard is inserted.
@@ -135,12 +145,15 @@ class TestLoopInvariantGuardHoisting:
         """
         code = _compile(src)
         am = _loop_function(code, "apply-moves")
-        assert _count_op(am, Opcode.ASSERT_LIST) == 1
         target = _self_loop_target(am)
         assert target is not None
-        guard_idx = _find_assert(am, Opcode.ASSERT_LIST, 1)
-        assert guard_idx is not None
-        assert target > guard_idx, "self-loop must skip the hoisted ASSERT_LIST guard"
+        guard_indices = _find_all_asserts(am, Opcode.ASSERT_LIST)
+        assert guard_indices, "the ASSERT_LIST guard must be present"
+        assert any(gi >= target for gi in guard_indices), (
+            "a guard on a reassigned param must be re-checked inside the "
+            "loop, because the back-edge says nothing about the first "
+            "iteration's value"
+        )
 
     def test_free_var_guard_hoisted(self):
         """
@@ -151,9 +164,12 @@ class TestLoopInvariantGuardHoisting:
                         (search-loop (integer+ bound 1))))))
           (search-loop 0 100))
 
-        'max-depth' is a param not reassigned by the self-loop (the self-loop
-        only provides one arg for 'bound').  Its ASSERT_INTEGER guard is
-        loop-invariant and should be hoisted.
+        'max-depth' is passed through unchanged by the self-loop (the
+        back-edge hands it back to itself), so its ASSERT_INTEGER guard is
+        loop-invariant and is hoisted into the preamble.
+
+        'bound' is reassigned, so its guard cannot be hoisted and stays in the
+        loop, where it is re-checked each iteration.
 
         Both params are fed by 'flip', whose return type is ambiguous, so
         their types are not provable and the guards are inserted.
@@ -170,15 +186,16 @@ class TestLoopInvariantGuardHoisting:
         """
         code = _compile(src)
         sl = _loop_function(code, "search-loop")
-        assert _count_op(sl, Opcode.ASSERT_INTEGER) == 2
         target = _self_loop_target(sl)
         assert target is not None
-        guard0 = _find_assert(sl, Opcode.ASSERT_INTEGER, 0)
-        guard1 = _find_assert(sl, Opcode.ASSERT_INTEGER, 1)
-        assert guard0 is not None
-        assert guard1 is not None
-        assert target > guard0, "self-loop must skip the bound guard"
-        assert target > guard1, "self-loop must skip the max-depth guard"
+        guard_indices = _find_all_asserts(sl, Opcode.ASSERT_INTEGER)
+        hoisted = [gi for gi in guard_indices if gi < target]
+        in_loop = [gi for gi in guard_indices if gi >= target]
+        assert hoisted, "the max-depth guard must be hoisted into the preamble"
+        assert in_loop, (
+            "the bound guard must stay inside the loop, because the "
+            "back-edge says nothing about the first iteration's value"
+        )
 
     def test_non_type_preserving_param_guard_kept_in_loop(self):
         """

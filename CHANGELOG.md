@@ -32,8 +32,10 @@ New features:
 - Implemented VCode-level constant folding.
 - Implemented VCode branch folding when the condition is a constant.
 - Improved interprocedural type analysis.
-- Added a CFG code sinking pass.  This pushes definitions close to uses, allowing
+- Added an instruction scheduling pass.  This pushes definitions close to uses, allowing
   register pressure to be reduced in common loop patterns.
+- Improved inlining to enable inlining in a few more places that before.
+- Improved type guard hoisting.
 
 Bug fixes:
 

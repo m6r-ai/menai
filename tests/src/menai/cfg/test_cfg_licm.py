@@ -365,8 +365,12 @@ class TestGuardHoisting:
 
     def test_type_preserving_param_guard_hoisted(self):
         """
-        A guard on a param whose back-edge type matches is loop-invariant
-        and should be hoisted.
+        A guard on a param reassigned by the back-edge is not hoisted.
+
+        The back-edge type proves the guard holds from the second iteration
+        onwards, but the first iteration's value is whatever the caller
+        passed, which the back-edge says nothing about.  The guard therefore
+        stays in the loop entry, where it checks the first iteration.
 
         'moves' is fed by 'flip', whose return type is ambiguous (it can
         return an integer or a list), so the parameter's type is not provable
@@ -386,14 +390,18 @@ class TestGuardHoisting:
         """
         code = _compile(src)
         am = _loop_function(code, "apply-moves")
-        assert _count_op(am, Opcode.ASSERT_LIST) == 1
         target = _self_loop_target(am)
         assert target is not None
-        guard_idx = next(
+        guard_indices = [
             i for i, instr in enumerate(am.instructions)
             if unpack_instruction(instr).opcode == int(Opcode.ASSERT_LIST)
+        ]
+        assert guard_indices, "the ASSERT_LIST guard must be present"
+        assert any(gi >= target for gi in guard_indices), (
+            "a guard on a reassigned param must be re-checked inside the "
+            "loop, because the back-edge says nothing about the first "
+            "iteration's value"
         )
-        assert target > guard_idx, "self-loop must skip the hoisted ASSERT_LIST guard"
 
     def test_non_type_preserving_param_guard_kept_in_loop(self):
         """
@@ -430,7 +438,12 @@ class TestGuardHoisting:
 
     def test_free_var_guard_hoisted(self):
         """
-        A guard on a free var (never reassigned) is always loop-invariant.
+        A guard on a param the self-loop passes through unchanged is
+        loop-invariant and is hoisted into the preamble.
+
+        'max-depth' is handed back to itself on the back-edge, so its value
+        never changes.  'bound' is reassigned, so its guard cannot be hoisted
+        and stays in the loop.
 
         Both params are fed by 'flip', whose return type is ambiguous, so
         their types are not provable and the ASSERT_INTEGER guards are
@@ -448,15 +461,19 @@ class TestGuardHoisting:
         """
         code = _compile(src)
         sl = _loop_function(code, "search-loop")
-        assert _count_op(sl, Opcode.ASSERT_INTEGER) == 2
         target = _self_loop_target(sl)
         assert target is not None
         guard_indices = [
             i for i, instr in enumerate(sl.instructions)
             if unpack_instruction(instr).opcode == int(Opcode.ASSERT_INTEGER)
         ]
-        for gi in guard_indices:
-            assert target > gi, "self-loop must skip all hoisted ASSERT_INTEGER guards"
+        hoisted = [gi for gi in guard_indices if gi < target]
+        in_loop = [gi for gi in guard_indices if gi >= target]
+        assert hoisted, "the max-depth guard must be hoisted into the preamble"
+        assert in_loop, (
+            "the bound guard must stay inside the loop, because the "
+            "back-edge says nothing about the first iteration's value"
+        )
 
     def test_correct_results_after_guard_hoisting(self):
         """End-to-end: guard hoisting should not break correctness."""
