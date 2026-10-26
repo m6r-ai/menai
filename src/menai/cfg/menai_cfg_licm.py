@@ -141,6 +141,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
     MenaiCFGMakeDictInstr,
+    MenaiCFGMakeEnumInstr,
     MenaiCFGMakeListInstr,
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeStructInstr,
@@ -148,6 +149,8 @@ from menai.cfg.menai_cfg import (
     MenaiCFGParamInstr,
     MenaiCFGPhiInstr,
     MenaiCFGSelfLoopTerm,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
     MenaiCFGSwitchIntegerTerm,
     MenaiCFGSwitchEnumTerm,
     MenaiCFGValue,
@@ -183,6 +186,13 @@ from menai.menai_value import (
 # MenaiCFGPhiInstr is excluded — phi nodes are join points tied to their block.
 # MenaiCFGPatchClosureInstr is excluded — it has no result and is a side-effecting
 # mutation (closure initialisation), stored in patch_instrs not instrs.
+#
+# The indexed struct instructions and the enum constructor are emitted by the
+# interprocedural type analysis, not by the CFG builder, so a function compiled
+# with the analysis enabled contains instruction types that never appear in a
+# function compiled without it.  Every pure instruction that defines a result
+# must be listed here, or invariance stops propagating through it and every
+# value downstream of it is treated as loop-variant.
 _HOISTABLE_TYPES = (
     MenaiCFGConstInstr,
     MenaiCFGBuiltinInstr,
@@ -194,6 +204,9 @@ _HOISTABLE_TYPES = (
     MenaiCFGMakeSetInstr,
     MenaiCFGMakeDictInstr,
     MenaiCFGMakeStructInstr,
+    MenaiCFGMakeEnumInstr,
+    MenaiCFGStructGetIndexedInstr,
+    MenaiCFGStructWithIndexedInstr,
     MenaiCFGGuardInstr,
 )
 
@@ -959,6 +972,12 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         if isinstance(instr, MenaiCFGMakeStructInstr):
             return 'struct'
+
+        if isinstance(instr, MenaiCFGStructWithIndexedInstr):
+            return 'struct'
+
+        if isinstance(instr, MenaiCFGMakeEnumInstr):
+            return 'enum'
 
         # Parameters, free vars, globals, calls, apply, closures: unknown.
         return None

@@ -855,3 +855,64 @@ class TestLoopCarriedValueGuardHoisting:
             "a guard on a value the loop header defines must not be hoisted "
             "above its definition"
         )
+
+
+class TestInvarianceThroughIndexedStructGet:
+    """
+    Invariance must propagate through `struct-get` lowered to an indexed read.
+
+    The interprocedural type analysis rewrites a name-based `struct-get` whose
+    field index it has resolved into `MenaiCFGStructGetIndexedInstr`.  That
+    instruction is emitted by the analysis rather than by the CFG builder, so
+    it appears only in functions compiled with the analysis enabled.
+
+    If it is missing from the hoistable set, invariance stops at it: the
+    struct-get is treated as loop-variant, so every value computed from it is
+    loop-variant too, and a guard on such a value is left in the loop even
+    though the value it guards is loop-invariant.  The guard then re-executes
+    on every iteration.
+    """
+
+    def test_guard_on_value_derived_from_indexed_struct_get_hoisted(self):
+        """
+        A guard on a value read out of a struct field is hoisted.
+
+        The rubiks-cube benchmark reads a face out of the cube struct and then
+        reads the face's centre sticker.  Both reads are loop-invariant, so the
+        guard on the centre sticker belongs in the preamble, above the loop
+        entry, and must not re-execute on every iteration.
+
+        The benchmark module is used rather than a hand-written equivalent
+        because the rewrite to an indexed read only fires when the analysis can
+        prove the struct's type at the call site, which a synthetic program
+        does not reproduce reliably.
+        """
+        from pathlib import Path
+
+        from menai import Menai
+
+        suite_dir = (
+            Path(__file__).resolve().parents[4]
+            / "src" / "menai_benchmark" / "suites" / "rubiks_vector"
+        )
+        menai = Menai(module_path=[str(suite_dir)])
+        code = menai.compile(
+            '(let ((rubiks (import "rubiks-cube-vector")))'
+            '  (let ((solved-cube-fn (:: rubiks solved-cube))'
+            '        (ida-star-fn (:: rubiks ida-star)))'
+            '    (ida-star-fn (solved-cube-fn) 3)))'
+        )
+
+        solved = _loop_function(code, "cube-solved?")
+        target = _self_loop_target(solved)
+        assert target is not None
+
+        guard_indices = [
+            i for i, instr in enumerate(solved.instructions)
+            if unpack_instruction(instr).opcode == int(Opcode.ASSERT_INTEGER)
+        ]
+        assert guard_indices, "the ASSERT_INTEGER guard must be present"
+        assert any(gi < target for gi in guard_indices), (
+            "a guard on a value derived from a loop-invariant struct field "
+            "must be hoisted into the preamble"
+        )

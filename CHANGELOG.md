@@ -1,5 +1,11 @@
 # Change log for Menai
 
+## v0.10.0 (2026-xx-xx)
+
+New features:
+
+- Improved the LICM guard hoisting to cover more scenarios.
+
 ## v0.9.0 (2026-10-26)
 
 New features:
