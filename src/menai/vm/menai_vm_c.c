@@ -3948,17 +3948,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 }
             }
 
-            if (exp_l > INT_MAX || exp_l < INT_MIN) {
-                vm_err = MENAI_ERR_FLOAT_OVERFLOW;
-                goto error;
-            }
-
-            errno = 0;
-            double result = ldexp(a->value, (int)exp_l);
-            if (errno == ERANGE && isinf(result)) {
-                vm_err = MENAI_ERR_FLOAT_OVERFLOW;
-                goto error;
-            }
+            /*
+             * An exponent outside the int range is saturated rather than
+             * rejected, so that it overflows to infinity or underflows to zero
+             * like any other out-of-range exponent.  Saturating also keeps the
+             * cast to int well defined.  ldexp's overflow to infinity is a
+             * normal result here, so errno is deliberately not consulted: glibc
+             * sets ERANGE for it while macOS's libm does not.
+             */
+            int exp = exp_l > INT_MAX ? INT_MAX : (exp_l < INT_MIN ? INT_MIN : (int)exp_l);
+            double result = ldexp(a->value, exp);
 
             MenaiFloat *r = alloc_menai_float(vs, result);
             if (r == NULL) {
