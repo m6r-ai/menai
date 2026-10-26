@@ -24,6 +24,36 @@ from menai.vm.menai_vm_c import fold_trim_left as _c_fold_trim_left  # type: ign
 from menai.vm.menai_vm_c import fold_trim_right as _c_fold_trim_right  # type: ignore[import-not-found]
 
 
+def _float_exp2(value: float) -> float:
+    """
+    Return 2 raised to value, matching the VM's exp2.
+
+    math.exp2 was added in Python 3.11 and this package supports 3.10, so the
+    fallback keeps the fold available on every supported interpreter.
+    """
+    exp2 = getattr(math, 'exp2', None)
+    if exp2 is not None:
+        return exp2(value)
+
+    return 2.0 ** value
+
+
+def _float_cbrt(value: float) -> float:
+    """
+    Return the cube root of value, matching the VM's cbrt.
+
+    math.cbrt was added in Python 3.11 and this package supports 3.10, so the
+    fallback keeps the fold available on every supported interpreter.  The cube
+    root of a negative number is the negated cube root of its magnitude.
+    """
+    cbrt = getattr(math, 'cbrt', None)
+    if cbrt is not None:
+        return cbrt(value)
+
+    magnitude = abs(value) ** (1.0 / 3.0)
+    return -magnitude if value < 0.0 else magnitude
+
+
 class MenaiASTConstantFolder(MenaiASTOptimizationPass):
     """
     Fold constant expressions at compile time.
@@ -1047,7 +1077,14 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         return MenaiASTFloat(math.exp(args[0].value))
 
     def _fold_float_expn(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
-        """Fold float-expn: all args must be floats, left-associative reduction, returns float."""
+        """
+        Fold float-expn: all args must be floats, left-associative reduction, returns float.
+
+        A result that overflows the double range folds to infinity, matching the
+        VM's pow, which saturates rather than raising.  Python's ** raises
+        OverflowError instead, so the fold would otherwise escape as an internal
+        compiler error.
+        """
         if len(args) < 2:
             return None
 
@@ -1059,7 +1096,11 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
             if not isinstance(a, MenaiASTFloat):
                 return None
 
-            result = result ** a.value
+            try:
+                result = result ** a.value
+
+            except OverflowError:
+                result = math.inf
 
         return MenaiASTFloat(result)
 
@@ -1528,14 +1569,14 @@ class MenaiASTConstantFolder(MenaiASTOptimizationPass):
         if not isinstance(args[0], MenaiASTFloat):
             return None
 
-        return MenaiASTFloat(math.exp2(args[0].value))
+        return MenaiASTFloat(_float_exp2(args[0].value))
 
     def _fold_float_cbrt(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
         """Fold float-cbrt: arg must be float, returns float."""
         if not isinstance(args[0], MenaiASTFloat):
             return None
 
-        return MenaiASTFloat(math.cbrt(args[0].value))
+        return MenaiASTFloat(_float_cbrt(args[0].value))
 
     def _fold_float_expm1(self, args: list[MenaiASTNode]) -> MenaiASTNode | None:
         """Fold float-expm1: arg must be float, returns float."""

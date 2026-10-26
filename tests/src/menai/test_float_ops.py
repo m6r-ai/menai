@@ -240,3 +240,9 @@ class TestFloatOpsConstantFolding:
     def test_fold_copysign(self, menai):
         """float-copysign with constant args folds to a constant."""
         assert menai.evaluate("(float-copysign 3.0 -1.0)") == -3.0
+
+    def test_fold_expn_overflow_to_infinity(self, menai):
+        """float-expn whose result exceeds the double range folds to infinity."""
+        result = menai.evaluate("(float-expn 10.0 1000.0)")
+        assert math.isinf(result)
+        assert result > 0.0

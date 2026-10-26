@@ -604,6 +604,12 @@ def _evaluate_builtin(op: str, args: tuple[MenaiValue, ...]) -> MenaiValue | Non
     constant during inlining or operand folding has never been considered by
     the folder, and evaluating it would turn a runtime error into a silently
     folded value.
+
+    Only ValueError is caught.  An ArithmeticError is not a runtime error the
+    folder declines to fold: it is a fold function failing to reproduce the
+    VM's floating-point result, and swallowing it would leave the expression
+    to be evaluated at run time where it should have been folded.  Letting it
+    propagate reports the fault instead of hiding it.
     """
     if f'${op}' not in MenaiASTConstantFolder.FOLDABLE_BUILTINS:
         return None
@@ -627,7 +633,7 @@ def _evaluate_builtin(op: str, args: tuple[MenaiValue, ...]) -> MenaiValue | Non
     try:
         result = fold(ast_args)
 
-    except (ArithmeticError, ValueError):
+    except ValueError:
         return None
 
     if result is None:
