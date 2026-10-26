@@ -64,30 +64,22 @@ operands are all loop-invariant.  The base cases are:
   - Constants (MenaiCFGConstInstr) — always invariant.
   - Free vars (MenaiCFGFreeVarInstr) — always invariant (captures don't change).
   - Params (MenaiCFGParamInstr) — invariant when the param is not reassigned
-    by the self-loop (its index is beyond the length of SelfLoopTerm.args).
+    by the self-loop: either its index is beyond the length of
+    SelfLoopTerm.args, or every back-edge passes the param itself.
 
-Guard-specific invariance
--------------------------
-A MenaiCFGGuardInstr on a param that is reassigned by the self-loop is still
-loop-invariant when the back-edge type (the type of the value assigned to
-that param by the SelfLoopTerm) matches the guard's expected type.  In that
-case the guard will succeed on every iteration just as it did on the first.
+Guards on loop-carried values
+-----------------------------
+A guard on a value that the self-loop reassigns is never treated as
+loop-invariant.  The back-edge type describes the value from the second
+iteration onwards; the first iteration's value is whatever the caller passed,
+which the back-edge says nothing about.  Hoisting or dropping such a guard on
+the strength of the back-edge type would rely on a fact that only holds after
+the first iteration.
 
-When the back-edge value is a phi node (e.g. from an inner `if` that
-produces different values on different branches), the back-edge type may be
-unknown even though the type is semantically preserved.  This happens when
-one phi incoming value is the param itself (passed through unchanged on a
-skip path).  Its type is unknown because the guard that would establish it
-is on a different branch.  In this case a type preservation check is
-used: if we assume the param has the guard's expected type, and under that
-assumption the back-edge value also has that type, then the guard is
-loop-invariant.  The guard checks the type on the first iteration (in the
-preamble) and the back-edge preserves it on every subsequent iteration.
-
-This type-aware guard invariance check requires type information from the
-type propagation pass, which is why LICM runs after type propagation.  The
-type preservation check additionally requires the def map and self-loop args
-to recursively compute phi types under a hypothetical param type.
+Such a guard is rewritten instead: a guard on the value's initial incoming
+value is placed in the preamble, which checks the first iteration once, and
+the original guard is dropped.  The back-edge preserves the type on every
+later iteration, so nothing is left unchecked.
 
 Block splitting
 ---------------
@@ -304,8 +296,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         # Compute the set of loop-invariant SSA value ids.
         invariant_ids = self._compute_invariant_values(
-            func, unchanged_param_ids, back_edge_types,
-            self_loops, param_ids, def_map,
+            func, unchanged_param_ids,
         )
 
         # Only instructions inside the loop may be hoisted.  The region is the
@@ -333,7 +324,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         # Guards on loop-carried phis are rewritten rather than moved: see
         # _rewrite_phi_guards.  The rewritten guards go in the same preamble.
         rewritten_guards = self._rewrite_phi_guards(
-            func, header, self_loops, back_edge_types, def_map, loop_block_ids,
+            func, self_loops, back_edge_types, def_map, loop_block_ids,
         )
 
         # Dominators of the whole function, and the block that defines each SSA
@@ -509,10 +500,6 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         self,
         func: MenaiCFGFunction,
         unchanged_param_ids: set[int],
-        back_edge_types: dict[int, str | None],
-        self_loops: list[MenaiCFGSelfLoopTerm],
-        param_ids: dict[int, int],
-        def_map: dict[int, MenaiCFGInstr],
     ) -> set[int]:
         """
         Compute the set of SSA value ids that are loop-invariant.
@@ -521,13 +508,6 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         are all loop-invariant.  Base cases:
           - Constants, globals, free vars — always invariant.
           - Params not reassigned by the self-loop — invariant.
-
-        Guards on reassigned params are invariant when the back-edge type
-        matches the guard's expected type.  When the back-edge type is
-        unknown (e.g. a phi node with an unknown incoming), a type
-        preservation check is used: if assuming the param has the guard's
-        expected type makes the back-edge value also have that type, the
-        guard is invariant.
 
         Iterates to a fixed point: a value produced by a hoistable
         instruction becomes invariant once all its operands are invariant,
@@ -796,12 +776,11 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
     def _rewrite_phi_guards(
         self,
         func: MenaiCFGFunction,
-        header: MenaiCFGBlock,
         self_loops: list[MenaiCFGSelfLoopTerm],
         back_edge_types: dict[int, str | None],
         def_map: dict[int, MenaiCFGInstr],
         loop_block_ids: set[int],
-    ) -> list[MenaiCFGInstr]:
+    ) -> list[MenaiCFGGuardInstr]:
         """
         Return guards to place in the preamble in place of guards on
         loop-carried phis.
@@ -822,7 +801,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         The caller removes the original guards from their blocks.
         """
         back_edge_block_ids = self._self_loop_block_ids(func, self_loops)
-        result: list[MenaiCFGInstr] = []
+        result: list[MenaiCFGGuardInstr] = []
         seen: set[tuple[int, str]] = set()
 
         for block in func.blocks:
@@ -983,117 +962,6 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         # Parameters, free vars, globals, calls, apply, closures: unknown.
         return None
-
-    def _back_edge_preserves_type(
-        self,
-        param_id: int,
-        expected_type: str,
-        self_loops: list[MenaiCFGSelfLoopTerm],
-        param_ids: dict[int, int],
-        def_map: dict[int, MenaiCFGInstr],
-    ) -> bool:
-        """
-        Check whether the self-loop back-edge preserves a hypothetical type
-        for a reassigned loop-carried value.
-
-        Given the assumption that `param_id` has `expected_type`, compute
-        the type of the back-edge value (the SelfLoopTerm arg that updates it)
-        under the assumption.  If the back-edge value also has
-        `expected_type`, the type is preserved across iterations and the
-        guard is loop-invariant.
-
-        This handles the case where the back-edge value is a phi node with
-        the carried value itself as one incoming value (a skip path).  Its
-        type is unknown in the normal `_type_of_value` lookup, but under
-        the hypothesis it has `expected_type`, which may make the phi's
-        type known and matching.
-
-        `param_id` is the loop-carried value, which is a function param for a
-        function-level self-loop and a loop phi for a MenaiIRLoop.  The index
-        it occupies among the back-edge args comes from `_carried_values`, so
-        both loop shapes resolve to the arg that actually updates it.
-
-        Every back-edge must preserve the type: a loop with several
-        back-edges is only invariant if all of them do.
-        """
-        param_index = next(
-            (
-                index
-                for index, carried_id in self._carried_values(self_loops, param_ids).items()
-                if carried_id == param_id
-            ),
-            None,
-        )
-
-        if param_index is None:
-            return False
-
-        hypothesis: dict[int, str | None] = {param_id: expected_type}
-        for self_loop in self_loops:
-            if param_index >= len(self_loop.args):
-                return False
-
-            back_edge_val = self_loop.args[param_index]
-            computed = self._type_of_value_with_hypothesis(
-                back_edge_val, def_map, hypothesis, set(),
-            )
-            if computed != expected_type:
-                return False
-
-        return True
-
-    def _type_of_value_with_hypothesis(
-        self,
-        value: MenaiCFGValue,
-        def_map: dict[int, MenaiCFGInstr],
-        hypothesis: dict[int, str | None],
-        visited: set[int],
-    ) -> str | None:
-        """
-        Determine the type of an SSA value, using a hypothesis for specific
-        param ids and handling phi nodes recursively.
-
-        `hypothesis` maps param SSA value ids to assumed types.  When
-        encountering a param in the hypothesis, its assumed type is used
-        instead of unknown.  When encountering a phi node, the types of all
-        incoming values are computed recursively (with the hypothesis) and
-        joined: if all incoming values share the same known type, that is
-        the phi's type; otherwise it is unknown.
-
-        `visited` prevents infinite recursion on cyclic phi references
-        (e.g. a phi whose incoming value is the param being hypothesised
-        about, which in turn depends on the phi).
-        """
-        if value.id in visited:
-            return None
-
-        if value.id in hypothesis:
-            return hypothesis[value.id]
-
-        instr = def_map.get(value.id)
-        if instr is None:
-            return None
-
-        if isinstance(instr, MenaiCFGPhiInstr):
-            visited = visited | {value.id}
-            result_type: str | None = None
-            for incoming_val, _ in instr.incoming:
-                incoming_type = self._type_of_value_with_hypothesis(
-                    incoming_val, def_map, hypothesis, visited,
-                )
-                if incoming_type is None:
-                    return None
-
-                if result_type is None:
-                    result_type = incoming_type
-
-                elif result_type != incoming_type:
-                    return None
-
-            return result_type
-
-        # For non-phi instructions, delegate to the normal type lookup.
-        return self._type_of_value(value, def_map)
 
     def _next_block_id(self, func: MenaiCFGFunction) -> int:
         """Return the next available block id in func."""
