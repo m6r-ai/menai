@@ -1,11 +1,5 @@
 # Change log for Menai
 
-## v0.10.0 (2026-xx-xx)
-
-New features:
-
-- Improved the LICM guard hoisting to cover more scenarios.
-
 ## v0.9.0 (2026-10-26)
 
 New features:
@@ -42,6 +36,9 @@ New features:
   register pressure to be reduced in common loop patterns.
 - Improved inlining to enable inlining in a few more places that before.
 - Improved type guard hoisting.
+- Improved the LICM guard hoisting to cover more scenarios.
+- Added an option to reuse VMs in `menai-test`.
+- Reduced overall test times by 3x.
 
 Bug fixes:
 
@@ -52,6 +49,7 @@ Bug fixes:
   capture a variable that was free in the argument, silently producing a wrong
   result.
 - Fixed namespace names not being shadowable by an inner `let` binding.
+- Fixed a problem that prevented VMs from being reused.
 
 ## v0.8.0 (2026-10-10)
 

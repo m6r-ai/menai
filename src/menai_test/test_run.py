@@ -2,6 +2,7 @@
 """Menai test runner — discovers and executes *.test.menai test suites."""
 
 import argparse
+import dataclasses
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,9 +11,15 @@ from menai import Menai, MenaiError
 from menai.menai_value import (
     MenaiBoolean, MenaiDict, MenaiFunction, MenaiList, MenaiString, MenaiValue,
 )
+from menai.bytecode.menai_bytecode import CodeObject
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _RUNNER_DIR = str(Path(__file__).resolve().parent)
+
+# Name of the binding that carries the leaf path into a pre-compiled program.
+# It must not start with '$', be a reserved word, or collide with a prelude
+# name; see MenaiASTBindingInjector for the rules.
+_PATH_BINDING = "__path__"
 
 
 @dataclass
@@ -190,6 +197,68 @@ def _menai_path_literal(path: list[str]) -> str:
     return f"(list {quoted})"
 
 
+def _path_value(path: list[str]) -> MenaiList:
+    """Build the Menai list value for a leaf path."""
+    return MenaiList(elements=tuple(MenaiString(value=segment) for segment in path))
+
+
+def _compile_leaf_program(menai: Menai, module_name: str) -> tuple[CodeObject, int]:
+    """
+    Compile the leaf program once, with the path read from an injected binding.
+
+    The program is:
+
+        (let ((t (import "menai-test")))
+          (let ((m (import "module")))
+            (let ((thunk ((:: t test-find) (:: m tests) __path__)))
+              (thunk))))
+
+    The path is bound to `_PATH_BINDING` at compile time and rebound before each
+    execution by `_with_path`, so one compilation serves every leaf of a file.
+
+    The injected value is a one-segment sentinel rather than an empty list: an
+    empty list is indistinguishable from "no path" and may be folded away, which
+    would leave no constant to rebind.
+
+    Returns:
+        The compiled program and the index of the constant slot that holds the
+        injected path.  The index is found by identity, because the module under
+        test contributes its own list constants to the same pool and those must
+        not be touched.
+    """
+    expression = (
+        f'(let ((t (import "menai-test")))'
+        f'    (let ((m (import "{module_name}")))'
+        f'      (let ((thunk ((:: t test-find) (:: m tests) {_PATH_BINDING})))'
+        f'        (thunk))))'
+    )
+    placeholder = _path_value(["__placeholder__"])
+    code = menai.compile(expression, inject=(_PATH_BINDING, placeholder))
+
+    for index, constant in enumerate(code.constants):
+        if constant is placeholder:
+            return code, index
+
+    raise ValueError(
+        "The injected path binding is not present in the compiled program's "
+        "constant pool; the leaf program cannot be rebound"
+    )
+
+
+def _with_path(code: CodeObject, path_index: int, path: list[str]) -> CodeObject:
+    """
+    Return a copy of a compiled leaf program with the path binding replaced.
+
+    Only the constant at `path_index` is replaced; every other constant belongs
+    to the module under test and must be left untouched.  The VM converts the
+    whole code object to native on each `execute`, so replacing the constant
+    here is what rebinds the path for the next leaf.
+    """
+    constants = list(code.constants)
+    constants[path_index] = _path_value(path)
+    return dataclasses.replace(code, constants=tuple(constants))
+
+
 def _run_leaf(
     module_name: str,
     test_file_dir: str,
@@ -198,6 +267,8 @@ def _run_leaf(
     expect_error_contains: str | None,
     explicit: list[str],
     menai: Menai | None,
+    compiled: CodeObject | None,
+    path_index: int,
 ) -> TestResult:
     """
     Execute a single leaf thunk.
@@ -208,24 +279,32 @@ def _run_leaf(
     When menai is None the leaf runs on a fresh Menai instance of its own;
     otherwise it runs on the supplied instance, which is shared across leaves.
 
+    When compiled is given it is a pre-compiled leaf program produced by
+    `_compile_leaf_program`; the leaf's path is rebound into it and executed,
+    so no per-leaf compilation happens.  When it is None the expression is
+    compiled and executed per leaf, which is the behaviour under --isolate.
+
     For a normal leaf, a clean return (any value) is a pass and any
     MenaiError is a failure.  For an expect-error leaf the outcome is
     inverted: a MenaiError is a pass (provided it contains
     expect_error_contains when that is given) and a clean return is a failure.
     """
-    path_literal = _menai_path_literal(path)
-    expression = (
-        f'(let ((t (import "menai-test")))'
-        f'    (let ((m (import "{module_name}")))'
-        f'      (let ((thunk ((:: t test-find) (:: m tests) {path_literal})))'
-        f'        (thunk))))'
-    )
-
     if menai is None:
         menai = _make_menai(test_file_dir, explicit)
 
     try:
-        menai.evaluate_raw(expression)
+        if compiled is not None:
+            menai.execute_raw(_with_path(compiled, path_index, path))
+
+        else:
+            path_literal = _menai_path_literal(path)
+            expression = (
+                f'(let ((t (import "menai-test")))'
+                f'    (let ((m (import "{module_name}")))'
+                f'      (let ((thunk ((:: t test-find) (:: m tests) {path_literal})))'
+                f'        (thunk))))'
+            )
+            menai.evaluate_raw(expression)
 
     except MenaiError as exc:
         if not expect_error:
@@ -261,6 +340,8 @@ def _run_tree(
     results: list[TestResult],
     explicit: list[str],
     menai: Menai | None,
+    compiled: CodeObject | None,
+    path_index: int,
 ) -> None:
     """Recursively walk the node tree, executing all matching leaves."""
     for node in nodes:
@@ -277,11 +358,16 @@ def _run_tree(
                 node.expect_error_contains,
                 explicit,
                 menai,
+                compiled,
+                path_index,
             )
             results.append(result)
 
         else:
-            _run_tree(node.children, module_name, test_file_dir, name_filter, results, explicit, menai)
+            _run_tree(
+                node.children, module_name, test_file_dir, name_filter,
+                results, explicit, menai, compiled, path_index,
+            )
 
 
 def _print_results(
@@ -325,6 +411,11 @@ def run_file(
     whole file exercises the VM's behaviour under reuse.  Pass isolate=True to
     run each leaf on a fresh Menai instance instead.
 
+    In the default (reuse) mode the leaf program is compiled once for the whole
+    file and executed once per leaf with the path rebound, so the file pays one
+    compilation rather than one per leaf.  In isolate mode each leaf compiles its
+    own program on its own instance, which is the behaviour that mode exists for.
+
     Args:
         test_file: Path to the *.test.menai file to run
         name_filter: Only run tests whose full path contains this text
@@ -347,7 +438,17 @@ def run_file(
 
     results: list[TestResult] = []
     shared = None if isolate else menai
-    _run_tree(nodes, module_name, test_file_dir, name_filter, results, explicit or [], shared)
+    if isolate:
+        compiled = None
+        path_index = -1
+
+    else:
+        compiled, path_index = _compile_leaf_program(menai, module_name)
+
+    _run_tree(
+        nodes, module_name, test_file_dir, name_filter,
+        results, explicit or [], shared, compiled, path_index,
+    )
     return results
 
 
