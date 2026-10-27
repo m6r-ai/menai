@@ -1611,15 +1611,24 @@ menai_function_final(MenaiVMState *vs, MenaiFunction *self)
      * is in progress — during Phase 4 the registry has already been compacted
      * and the finalizer must not touch it.  Removal is O(1) via
      * registry_index: swap the last entry into this slot and fix its index.
+     *
+     * When self is already the last entry there is nothing to swap in: the
+     * decrement alone removes it.  Skipping the swap in that case is
+     * load-bearing, not an optimisation.  Writing the last entry back into
+     * its own slot would store self into the slot being vacated, leaving a
+     * freed closure in the registry with a valid-looking registry_index; the
+     * next collection would then trace freed memory.
      */
     if (!vs->_gc_in_progress) {
         ssize_t idx = self->registry_index;
         if (idx >= 0 && idx < vs->_closure_registry_count &&
             vs->_closure_registry[idx] == self) {
             ssize_t last = --vs->_closure_registry_count;
-            MenaiFunction *moved = vs->_closure_registry[last];
-            vs->_closure_registry[idx] = moved;
-            moved->registry_index = idx;
+            if (idx != last) {
+                MenaiFunction *moved = vs->_closure_registry[last];
+                vs->_closure_registry[idx] = moved;
+                moved->registry_index = idx;
+            }
         }
     }
 
