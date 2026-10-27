@@ -197,12 +197,16 @@ def _run_leaf(
     expect_error: bool,
     expect_error_contains: str | None,
     explicit: list[str],
+    menai: Menai | None,
 ) -> TestResult:
     """
-    Execute a single leaf thunk in a fresh Menai VM.
+    Execute a single leaf thunk.
 
     The expression evaluated is:
         ((test-find (import "module") (list "seg1" "seg2" ...)))
+
+    When menai is None the leaf runs on a fresh Menai instance of its own;
+    otherwise it runs on the supplied instance, which is shared across leaves.
 
     For a normal leaf, a clean return (any value) is a pass and any
     MenaiError is a failure.  For an expect-error leaf the outcome is
@@ -217,7 +221,9 @@ def _run_leaf(
         f'        (thunk))))'
     )
 
-    menai = _make_menai(test_file_dir, explicit)
+    if menai is None:
+        menai = _make_menai(test_file_dir, explicit)
+
     try:
         menai.evaluate_raw(expression)
 
@@ -254,6 +260,7 @@ def _run_tree(
     name_filter: str | None,
     results: list[TestResult],
     explicit: list[str],
+    menai: Menai | None,
 ) -> None:
     """Recursively walk the node tree, executing all matching leaves."""
     for node in nodes:
@@ -269,11 +276,12 @@ def _run_tree(
                 node.expect_error,
                 node.expect_error_contains,
                 explicit,
+                menai,
             )
             results.append(result)
 
         else:
-            _run_tree(node.children, module_name, test_file_dir, name_filter, results, explicit)
+            _run_tree(node.children, module_name, test_file_dir, name_filter, results, explicit, menai)
 
 
 def _print_results(
@@ -305,6 +313,7 @@ def run_file(
     test_file: Path,
     name_filter: str | None,
     explicit: list[str] | None = None,
+    isolate: bool = False,
 ) -> list[TestResult]:
     """
     Execute all tests in a single *.test.menai file and return their results.
@@ -312,11 +321,16 @@ def run_file(
     This is the programmatic entry point used by callers that want the raw
     outcomes (for example a pytest driver) rather than printed output.
 
+    By default every leaf in the file runs on one shared Menai instance, so the
+    whole file exercises the VM's behaviour under reuse.  Pass isolate=True to
+    run each leaf on a fresh Menai instance instead.
+
     Args:
         test_file: Path to the *.test.menai file to run
         name_filter: Only run tests whose full path contains this text
             (case-insensitive), or None to run everything
         explicit: Directories to prepend to the module search path, or None
+        isolate: Run each leaf on a fresh Menai instance rather than reusing one
 
     Returns:
         A list of TestResult, one per leaf test executed.
@@ -332,7 +346,8 @@ def run_file(
     nodes = _load_test_module(menai, module_name)
 
     results: list[TestResult] = []
-    _run_tree(nodes, module_name, test_file_dir, name_filter, results, explicit or [])
+    shared = None if isolate else menai
+    _run_tree(nodes, module_name, test_file_dir, name_filter, results, explicit or [], shared)
     return results
 
 
@@ -341,12 +356,13 @@ def _run_file(
     name_filter: str | None,
     verbose: bool,
     explicit: list[str],
+    isolate: bool,
 ) -> RunStats:
     """Discover, execute, and report all tests in a single test file."""
     print(f"\n{test_file}")
 
     try:
-        results = run_file(test_file, name_filter, explicit)
+        results = run_file(test_file, name_filter, explicit, isolate)
 
     except (MenaiError, ValueError) as exc:
         print(f"  ERROR loading module: {exc}")
@@ -395,6 +411,7 @@ Examples:
   %(prog)s src/menai/stdlib/json-decode.test.menai  # run a single file
   %(prog)s src/menai/stdlib/ --filter "parse-string"  # filter by name
   %(prog)s src/menai/stdlib/ --verbose  # show passing tests too
+  %(prog)s src/menai/stdlib/ --isolate  # run each leaf on a fresh instance
 """,
     )
     parser.add_argument(
@@ -416,6 +433,14 @@ Examples:
         help="Show passing tests as well as failures",
     )
     parser.add_argument(
+        "--isolate",
+        action="store_true",
+        help=(
+            "Run each leaf on a fresh Menai instance instead of reusing one "
+            "instance across the whole file"
+        ),
+    )
+    parser.add_argument(
         "--module-path",
         action="append",
         default=[],
@@ -434,7 +459,7 @@ Examples:
 
     total_stats = RunStats()
     for test_file in test_files:
-        stats = _run_file(test_file, args.name_filter, args.verbose, args.module_path)
+        stats = _run_file(test_file, args.name_filter, args.verbose, args.module_path, args.isolate)
         total_stats.add(stats)
 
     print(f"\n{'='*60}")

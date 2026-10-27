@@ -101,5 +101,30 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
         assert(0);
     }
 
+#ifdef MENAI_DEBUG_GC
+    /*
+     * Post-finalizer registry invariant: after menai_function_final has run, a
+     * closure must no longer be present in the cycle-collector registry.  This
+     * must hold whether or not a collection is in progress.  A closure that
+     * reaches refcnt 0 during Phase 4 as a side effect of another finalizer is
+     * a live survivor that Phase 2 kept in the registry; if it were left there
+     * the registry would hold a dangling pointer to a block about to be
+     * returned to the pool, and the next collection would trace freed memory
+     * and free it a second time.  A hit here means the removal in
+     * menai_function_final has regressed.
+     */
+    if (ph->ob_type == MENAITYPE_FUNCTION) {
+        for (ssize_t i = 0; i < vs->_closure_registry_count; i++) {
+            if ((MenaiValue *)vs->_closure_registry[i] == v) {
+                MENAI_GC_LOG(
+                    "DANGLING-REGISTRY closure %p freed but still in registry "
+                    "at idx=%zd count=%zd\n",
+                    (void *)v, i, vs->_closure_registry_count);
+                break;
+            }
+        }
+    }
+#endif
+
     menai_value_free_cell(vs, v);
 }

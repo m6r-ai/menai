@@ -8750,13 +8750,25 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code)
     num_regs = vs->num_regs;
     vs->regs = NULL;
 
+    MENAI_GC_LOG(
+        "TEARDOWN after execute_loop registry_count=%zd threshold=%zd num_regs=%zu\n",
+        vs->_closure_registry_count, vs->_gc_threshold, num_regs);
+
     for (size_t i = 0; i < num_regs; i++) {
         menai_value_release(vs, regs[i]);
     }
 
     menai_pool_free(vs, regs);
 
+    MENAI_GC_LOG(
+        "TEARDOWN after reg release registry_count=%zd (pre final GC)\n",
+        vs->_closure_registry_count);
+
     menai_closure_gc_collect(vs, result);
+
+    MENAI_GC_LOG(
+        "TEARDOWN after final GC registry_count=%zd\n",
+        vs->_closure_registry_count);
 
     return result;
 }

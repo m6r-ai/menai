@@ -2326,6 +2326,10 @@ menai_vm_c_execute(PyObject *self, PyObject *args)
 
     menai_code_object_release(vs, native_code);
 
+    MENAI_GC_LOG(
+        "BRIDGE after code_object_release registry_count=%zd\n",
+        vs->_closure_registry_count);
+
     if (result == NULL) {
         if (!PyErr_Occurred()) {
             bridge_translate_error(vs, &vs->error);

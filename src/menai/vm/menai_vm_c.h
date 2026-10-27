@@ -396,6 +396,22 @@ typedef struct {
 #define MENAI_MAGIC_FIELD
 #endif
 
+/*
+ * GC / teardown tracing.
+ *
+ * MENAI_DEBUG_GC logs the closure collector's entry state, every value it
+ * frees in Phase 4, and the register-release/collection ordering in the
+ * per-execution teardown.  It exists to diagnose lifetime bugs that only
+ * surface when a MenaiVMState is reused across many execute() calls, where
+ * the registry and _gc_threshold persist between executions and the
+ * mid-execution collector fires on a code path the fresh-VM tests never take.
+ */
+#ifdef MENAI_DEBUG_GC
+#define MENAI_GC_LOG(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define MENAI_GC_LOG(...) ((void)0)
+#endif
+
 #ifdef MENAI_DEBUG_LEAKS
 /*
  * Leak detector — chained hash set of all live MenaiValue * pointers.
@@ -1607,10 +1623,19 @@ static inline void
 menai_function_final(MenaiVMState *vs, MenaiFunction *self)
 {
     /*
-     * Remove from the closure registry (swap-with-last) unless a GC sweep
-     * is in progress — during Phase 4 the registry has already been compacted
-     * and the finalizer must not touch it.  Removal is O(1) via
+     * Remove from the closure registry (swap-with-last).  Removal is O(1) via
      * registry_index: swap the last entry into this slot and fix its index.
+     *
+     * The membership test — registry[idx] == self — is what makes this safe to
+     * run during a collection.  Phase 2 compacts the registry and gives every
+     * dead closure registry_index == -1, so a closure being freed by the sweep
+     * from the dead array fails the test and the compacted registry is left
+     * untouched.  A closure that reaches refcnt 0 during Phase 4 as a side
+     * effect of another finalizer, however, is a *live* survivor that Phase 2
+     * kept in the registry with a valid index; it must be removed here or it
+     * remains as a dangling entry that the next collection traces and frees a
+     * second time.  Guarding on _gc_in_progress instead of on membership would
+     * skip exactly that case and leave the dangling survivor behind.
      *
      * When self is already the last entry there is nothing to swap in: the
      * decrement alone removes it.  Skipping the swap in that case is
@@ -1619,16 +1644,14 @@ menai_function_final(MenaiVMState *vs, MenaiFunction *self)
      * freed closure in the registry with a valid-looking registry_index; the
      * next collection would then trace freed memory.
      */
-    if (!vs->_gc_in_progress) {
-        ssize_t idx = self->registry_index;
-        if (idx >= 0 && idx < vs->_closure_registry_count &&
-            vs->_closure_registry[idx] == self) {
-            ssize_t last = --vs->_closure_registry_count;
-            if (idx != last) {
-                MenaiFunction *moved = vs->_closure_registry[last];
-                vs->_closure_registry[idx] = moved;
-                moved->registry_index = idx;
-            }
+    ssize_t idx = self->registry_index;
+    if (idx >= 0 && idx < vs->_closure_registry_count &&
+        vs->_closure_registry[idx] == self) {
+        ssize_t last = --vs->_closure_registry_count;
+        if (idx != last) {
+            MenaiFunction *moved = vs->_closure_registry[last];
+            vs->_closure_registry[idx] = moved;
+            moved->registry_index = idx;
         }
     }
 

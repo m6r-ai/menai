@@ -82,6 +82,20 @@ build-debug: $(GEN_OPCODE_HEADER)
 	@rm -rf build/temp.* build/lib.*
 	MENAI_DEBUG_LEAKS=1 MENAI_DEBUG_MAGIC=1 $(PYTHON) setup.py build_ext --inplace
 	@mkdir -p build && touch $(SO_FILES)
+
+#
+# Build with magic detection and closure-collector / teardown tracing
+# (MENAI_DEBUG_GC).  Used to diagnose lifetime bugs that surface only when a
+# MenaiVMState is reused across many execute() calls.
+#
+.PHONY: build-gc
+
+build-gc: $(GEN_OPCODE_HEADER)
+	@rm -f $(SO_FILES)
+	@rm -rf build/temp.* build/lib.*
+	MENAI_DEBUG_MAGIC=1 MENAI_DEBUG_GC=1 $(PYTHON) setup.py build_ext --inplace
+	@mkdir -p build && touch $(SO_FILES)
+
 #
 # Run the full test suite.
 #

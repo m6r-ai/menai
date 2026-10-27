@@ -384,6 +384,59 @@ menai_pool_free(MenaiVMState *vs, void *ptr)
     }
 
     BucketEntry *pool_bucket = &vs->pool[bucket];
+
+#ifdef MENAI_DEBUG_GC
+#ifdef MENAI_DEBUG_MAGIC
+    /*
+     * Free-while-live detector: menai_value_free_cell clears a value's magic
+     * before returning its cell to the pool, so a block arriving here with
+     * valid MENAI_MAGIC_ALIVE still set is being freed while it is a live
+     * value.  That is a premature free: some other owner still believes it
+     * holds the block.
+     */
+    {
+        uint32_t magic = *(uint32_t *)ptr;
+        if (magic == MENAI_MAGIC_ALIVE) {
+            MENAI_GC_LOG(
+                "POOL FREE-WHILE-LIVE block %p bucket=%d still has MENA magic\n",
+                ptr, (int)bucket);
+        }
+    }
+#endif
+
+    /*
+     * Double-free detector: walk the target bucket's free-list and report if
+     * ptr is already on it.  A double-free pushes the same block twice, and
+     * the second push overwrites the block's first eight bytes (its free-list
+     * link) with a stale pointer, which a later menai_pool_alloc follows into
+     * unmapped memory.  Logging here names the block at the moment the
+     * corruption is introduced rather than when it is later read.
+     *
+     * The walk is bounded by the recorded depth plus one.  A well-formed
+     * free-list holds at most `depth` entries, so exceeding that bound means
+     * the list is cyclic — which is what a double-free produces, since pushing
+     * the same block twice makes some link point back to an earlier block.
+     * Bounding the walk keeps this detector from hanging on the very
+     * corruption it is meant to report.
+     */
+    int steps = 0;
+    for (void *scan = pool_bucket->head; scan != NULL; scan = *(void **)scan) {
+        if (scan == ptr) {
+            MENAI_GC_LOG(
+                "POOL DOUBLE-FREE block %p bucket=%d depth=%d\n",
+                ptr, (int)bucket, pool_bucket->depth);
+            break;
+        }
+
+        if (++steps > pool_bucket->depth) {
+            MENAI_GC_LOG(
+                "POOL FREE-LIST CYCLE bucket=%d depth=%d steps=%d\n",
+                (int)bucket, pool_bucket->depth, steps);
+            break;
+        }
+    }
+#endif
+
     if (pool_bucket->depth < MENAI_POOL_MAX_DEPTH) {
         *(void **)ptr = pool_bucket->head;
         pool_bucket->head = ptr;

@@ -271,6 +271,32 @@ _gc_detach_dead_from_vector(MenaiVector *v)
     }
 }
 
+#ifdef MENAI_DEBUG_GC
+/*
+ * _gc_reg_count — count how many slots of the live register file point at val.
+ *
+ * Used by the MENAI_DEBUG_GC trace to detect a value being freed while a
+ * register still references it.  A non-zero result at a Phase 4/5 free is a
+ * use-after-free in the making: the register is a live root that the mark
+ * phase failed to trace, or the value was placed in the register without a
+ * retain.
+ */
+static int
+_gc_reg_count(MenaiVMState *vs, MenaiValue *val)
+{
+    int count = 0;
+    if (vs->regs != NULL) {
+        for (size_t i = 0; i < vs->num_regs; i++) {
+            if (vs->regs[i] == val) {
+                count++;
+            }
+        }
+    }
+
+    return count;
+}
+#endif
+
 /*
  * _gc_sweep — shared sweep logic for the closure cycle collector.
  *
@@ -433,6 +459,10 @@ _gc_sweep(MenaiVMState *vs)
         fn->gc_mark = MENAI_GC_MARK_UNMARKED;
         MenaiPoolHeader *ph = menai_get_pool_header(fn);
         if (ph->ob_refcnt == 0) {
+            MENAI_GC_LOG(
+                "GC-P4 free closure %p refcnt=0 regs=%d registry_count=%zd\n",
+                (void *)fn, _gc_reg_count(vs, (MenaiValue *)fn),
+                vs->_closure_registry_count);
             menai_value_free(vs, (MenaiValue *)fn);
         } else {
             /*
@@ -440,6 +470,11 @@ _gc_sweep(MenaiVMState *vs)
              * This closure is not part of a pure cycle; it will be
              * reclaimed when the external reference is released.
              */
+            MENAI_GC_LOG(
+                "GC-P4 SURVIVOR closure %p refcnt=%u name=%s regs=%d\n",
+                (void *)fn, (unsigned)ph->ob_refcnt,
+                (fn->bytecode && fn->bytecode->name) ? fn->bytecode->name : "?",
+                _gc_reg_count(vs, (MenaiValue *)fn));
             fn->registry_index = vs->_closure_registry_count;
             vs->_closure_registry[vs->_closure_registry_count++] = fn;
         }
@@ -459,6 +494,9 @@ _gc_sweep(MenaiVMState *vs)
      * would not be in the orphans array.
      */
     for (ssize_t i = 0; i < orphan_count; i++) {
+        MENAI_GC_LOG(
+            "GC-P5 free orphan %p regs=%d\n",
+            (void *)orphans[i], _gc_reg_count(vs, orphans[i]));
         menai_value_free(vs, orphans[i]);
     }
 
@@ -501,6 +539,10 @@ menai_closure_gc_collect(MenaiVMState *vs, MenaiValue *extra_root)
 void
 menai_closure_gc_collect_during(MenaiVMState *vs)
 {
+    MENAI_GC_LOG(
+        "GC-DURING enter registry_count=%zd threshold=%zd num_regs=%zu\n",
+        vs->_closure_registry_count, vs->_gc_threshold, vs->num_regs);
+
     /*
      * Phase 1 — Mark from live registers.
      */

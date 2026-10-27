@@ -67,6 +67,8 @@ extensions = [
             [("MENAI_DEBUG_LEAKS", "1")] if os.environ.get("MENAI_DEBUG_LEAKS") else []
         ) + (
             [("MENAI_DEBUG_MAGIC", "1")] if os.environ.get("MENAI_DEBUG_MAGIC") else []
+        ) + (
+            [("MENAI_DEBUG_GC", "1")] if os.environ.get("MENAI_DEBUG_GC") else []
         ),
     ),
 ]

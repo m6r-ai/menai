@@ -1069,6 +1069,20 @@ The C VM supports compile-time debug features via preprocessor defines:
   match, catching use-after-free and double-free at the point of access.  Build
   with `make build-magic`, or `make build-debug` to combine both debug flags.
 
+- `MENAI_DEBUG_GC` — Traces the closure cycle collector and the pool allocator
+  to stderr.  It reports the collector's entry state, every closure and orphan
+  it frees or returns to the registry, the register-release/collection ordering
+  in the per-execution teardown, and three pool invariants: a block returned to
+  a free-list twice (`DOUBLE-FREE`), a free-list whose links form a cycle
+  (`FREE-LIST CYCLE`), and a closure freed while still in the collector registry
+  or still on a free-list (`DANGLING-REGISTRY`, `FREE-WHILE-LIVE`).  Build with
+  `make build-gc`.  These are the signals that distinguish a lifetime bug from a
+  functional one when a `MenaiVMState` is reused across many `execute()` calls,
+  which is the configuration that exposes registry and pool corruption that a
+  fresh VM per run never reaches.  `menai-test` reuses one instance across every
+  leaf of a file by default, so running it against this build exercises that path
+  (pass `--isolate` to run each leaf on a fresh instance instead).
+
 ### C formatting
 
 Do NOT use lines of characters in comments. E.g. never use something like:
