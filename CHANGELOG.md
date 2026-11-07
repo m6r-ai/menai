@@ -2,6 +2,10 @@
 
 ## v0.10.0 (2026-xx-xx)
 
+Bug fixes:
+
+- Fixed a Unicode parsing error in the JSON decoder library.
+
 ## v0.9.0 (2026-10-27)
 
 New features:

@@ -25,6 +25,48 @@
          (and (string>=? ch "0")
               (string<=? ch "9"))))
 
+      ; parse-unicode-escape — decodes the \uXXXX escape whose backslash is at
+      ; position i, returning (list character next-position).
+      ;
+      ; JSON encodes a character above U+FFFF as a UTF-16 surrogate pair: a high
+      ; surrogate (U+D800-U+DBFF) escape immediately followed by a low surrogate
+      ; (U+DC00-U+DFFF) escape.  Neither half is a Unicode scalar value, so the
+      ; pair is combined into one character before conversion.  A lone surrogate
+      ; of either kind is malformed and raises.
+      (parse-unicode-escape
+       (lambda (s i len)
+         (let ((read-unit
+                (lambda (at)
+                  (if (integer>? (integer+ at 6) len)
+                      (error "Unterminated \\u escape sequence")
+                      (let ((unit (string->integer (string-slice s (integer+ at 2) (integer+ at 6)) 16)))
+                        (if (none? unit)
+                            (error "Invalid hex digits in \\u escape sequence")
+                            unit)))))
+               (high (read-unit i))
+               (pair-start (integer+ i 6)))
+           (if (and (integer>=? high #xd800)
+                    (integer<=? high #xdbff))
+               (if (or (integer>? (integer+ pair-start 6) len)
+                       (string!=? (string-nth s pair-start) "\\")
+                       (string!=? (string-nth s (integer+ pair-start 1)) "u"))
+                   (error "Unpaired high surrogate in \\u escape sequence")
+                   (let ((low (read-unit pair-start)))
+                     (if (or (integer<? low #xdc00)
+                             (integer>? low #xdfff))
+                         (error "Unpaired high surrogate in \\u escape sequence")
+                         (list
+                           (integer-codepoint->string
+                             (integer+
+                               #x10000
+                               (integer-bit-shift-left (integer- high #xd800) 10)
+                               (integer- low #xdc00)))
+                           (integer+ pair-start 6)))))
+               (if (and (integer>=? high #xdc00)
+                        (integer<=? high #xdfff))
+                   (error "Unpaired low surrogate in \\u escape sequence")
+                   (list (integer-codepoint->string high) pair-start))))))
+
       ; parse-string-chars — scans a JSON string body (after the opening quote).
       ; Accumulates chunks: literal runs are captured via string-slice, escape
       ; results are individual strings.  Chunks are joined at the end with
@@ -67,18 +109,11 @@
                                                (_ #none))))
                                         (if (none? unescaped)
                                             (if (string=? esc "u")
-                                                (if (integer>? (integer+ i 6) len)
-                                                    (error "Unterminated \\u escape sequence")
-                                                    (let ((hex (string-slice s (integer+ i 2) (integer+ i 6)))
-                                                          (codepoint (string->integer hex 16)))
-                                                      (if (none? codepoint)
-                                                          (error "Invalid hex digits in \\u escape sequence")
-                                                          (loop
-                                                            (integer+ i 6)
-                                                            (integer+ i 6)
-                                                            (list-prepend
-                                                              chunks2
-                                                              (integer-codepoint->string codepoint))))))
+                                                (let ((decoded (parse-unicode-escape s i len)))
+                                                  (loop
+                                                    (list-nth decoded 1)
+                                                    (list-nth decoded 1)
+                                                    (list-prepend chunks2 (list-first decoded))))
                                                 (error "Unknown escape sequence in string"))
                                             (loop (integer+ i 2) (integer+ i 2) (list-prepend chunks2 unescaped)))))
                                   (loop (integer+ i 1) run-start chunks))))))))

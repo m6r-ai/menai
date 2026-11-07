@@ -5,6 +5,7 @@
       (decode (:: json decode))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
       ; An empty object decodes to an empty dict.
       (test-empty-object
@@ -60,6 +61,29 @@
       (test-escape-unicode
        (lambda ()
          (assert-equal (decode "\"\\u0041\"") "A")))
+
+      ; A surrogate pair of unicode escapes decodes to the single character
+      ; above U+FFFF that the pair encodes.
+      (test-escape-surrogate-pair
+       (lambda ()
+         (assert-equal (decode "\"\\ud83d\\ude00\"") (integer-codepoint->string 128512))))
+
+      ; A high surrogate that is not followed by a low surrogate escape is
+      ; malformed and raises.
+      (test-escape-unpaired-high-surrogate
+       (lambda ()
+         (decode "\"\\ud83d\"")))
+
+      ; A high surrogate followed by a non-surrogate escape is malformed and raises.
+      (test-escape-high-surrogate-then-bmp
+       (lambda ()
+         (decode "\"\\ud83d\\u0041\"")))
+
+      ; A low surrogate that is not preceded by a high surrogate is malformed
+      ; and raises.
+      (test-escape-unpaired-low-surrogate
+       (lambda ()
+         (decode "\"\\ude00\"")))
 
       ; An integer decodes to an integer.
       (test-integer
@@ -117,7 +141,20 @@
                (list
                  (expect-pass "newline" test-escape-newline)
                  (expect-pass "tab" test-escape-tab)
-                 (expect-pass "unicode" test-escape-unicode)))))
+                 (expect-pass "unicode" test-escape-unicode)
+                 (expect-pass "surrogate pair" test-escape-surrogate-pair)
+                 (expect-fail
+                   "unpaired high surrogate"
+                   test-escape-unpaired-high-surrogate
+                   "Unpaired high surrogate")
+                 (expect-fail
+                   "high surrogate then bmp escape"
+                   test-escape-high-surrogate-then-bmp
+                   "Unpaired high surrogate")
+                 (expect-fail
+                   "unpaired low surrogate"
+                   test-escape-unpaired-low-surrogate
+                   "Unpaired low surrogate")))))
 
          (list
            "numbers"
