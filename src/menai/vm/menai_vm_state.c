@@ -1,11 +1,11 @@
 /*
  * menai_vm_state.c — MenaiVMState lifecycle management.
  *
- * menai_vm_state_alloc creates and initialises a fresh MenaiVMState: the
- * none/boolean/empty-list singletons are stored inline and initialised
- * directly, while the integer cache and empty dict/set are allocated from
- * this instance's pool so they participate in the same allocator lifecycle
- * as every other value.
+ * menai_vm_state_alloc creates and initialises a fresh MenaiVMState.  The
+ * integer cache and the empty list/dict/set/vector singletons are allocated
+ * from this instance's pool so they participate in the same allocator
+ * lifecycle as every other value.  None and the booleans are immediates, so
+ * they have no per-instance state at all.
  *
  * menai_vm_state_free drains the pool free-lists and frees the struct itself.
  */
@@ -31,32 +31,6 @@ menai_vm_state_alloc(void)
 #ifdef MENAI_DEBUG_LEAKS
     menai_leak_set_init(&vs->_leak_set);
 #endif
-
-    vs->none = menai_value_alloc(vs, MENAITYPE_NONE, sizeof(MenaiNone));
-    if (!vs->none) {
-        menai_vm_state_free(vs);
-        return NULL;
-    }
-
-    MENAI_SET_MAGIC(vs->none);
-
-    vs->boolean_true = menai_value_alloc(vs, MENAITYPE_BOOLEAN, sizeof(MenaiBoolean));
-    if (!vs->boolean_true) {
-        menai_vm_state_free(vs);
-        return NULL;
-    }
-
-    vs->boolean_true->value = 1;
-    MENAI_SET_MAGIC(vs->boolean_true);
-
-    vs->boolean_false = menai_value_alloc(vs, MENAITYPE_BOOLEAN, sizeof(MenaiBoolean));
-    if (!vs->boolean_false) {
-        menai_vm_state_free(vs);
-        return NULL;
-    }
-
-    vs->boolean_false->value = 0;
-    MENAI_SET_MAGIC(vs->boolean_false);
 
     for (long v = MENAI_INT_CACHE_MIN; v <= MENAI_INT_CACHE_MAX; v++) {
         MenaiInteger *obj = (MenaiInteger *)menai_value_alloc(vs, MENAITYPE_INTEGER, sizeof(MenaiInteger));
@@ -137,18 +111,6 @@ menai_vm_state_free(MenaiVMState *vs)
         if (cached_int) {
             menai_value_free(vs, (MenaiValue *)cached_int);
         }
-    }
-
-    if (vs->boolean_false) {
-        menai_value_free(vs, (MenaiValue *)vs->boolean_false);
-    }
-
-    if (vs->boolean_true) {
-        menai_value_free(vs, (MenaiValue *)vs->boolean_true);
-    }
-
-    if (vs->none) {
-        menai_value_free(vs, (MenaiValue *)vs->none);
     }
 
 #ifdef MENAI_DEBUG_LEAKS

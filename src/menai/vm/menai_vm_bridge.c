@@ -618,9 +618,7 @@ menai_code_object_from_python(MenaiVMState *vs, PyObject *py_code)
 static inline MenaiValue *
 slow_none_to_fast(MenaiVMState *vs, PyObject *src)
 {
-    MenaiNone *s = menai_none(vs);
-    menai_value_retain((MenaiValue *)s);
-    return (MenaiValue *)s;
+    return menai_none();
 }
 
 static inline MenaiValue *
@@ -637,9 +635,7 @@ slow_boolean_to_fast(MenaiVMState *vs, PyObject *src)
         return NULL;
     }
 
-    MenaiBoolean *r = b ? menai_boolean_true(vs) : menai_boolean_false(vs);
-    menai_value_retain((MenaiValue *)r);
-    return (MenaiValue *)r;
+    return b ? menai_boolean_true() : menai_boolean_false();
 }
 
 static inline MenaiValue *
@@ -1459,7 +1455,7 @@ fast_none_to_slow(MenaiVMState *vs, MenaiValue *val)
 static inline PyObject *
 fast_boolean_to_slow(MenaiVMState *vs, MenaiValue *val)
 {
-    int b = ((MenaiBoolean *)val)->value;
+    int b = menai_is_true(val);
     return PyObject_CallOneArg((PyObject *)Slow_BooleanType, b ? Py_True : Py_False);
 }
 
@@ -1889,16 +1885,23 @@ fast_function_to_slow(MenaiVMState *vs, MenaiValue *val)
 static PyObject *
 menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
 {
+    switch (menai_tag(val)) {
+    case MENAI_TAG_POINTER:
+        break;
+
+    case MENAI_TAG_NONE:
+        return fast_none_to_slow(vs, val);
+
+    case MENAI_TAG_TRUE:
+    case MENAI_TAG_FALSE:
+        return fast_boolean_to_slow(vs, val);
+
+    default:
+        assert(0);
+    }
+
     MenaiPoolHeader *ph = menai_get_pool_header(val);
     MenaiType t = ph->ob_type;
-
-    if (t == MENAITYPE_NONE) {
-        return fast_none_to_slow(vs, val);
-    }
-
-    if (t == MENAITYPE_BOOLEAN) {
-        return fast_boolean_to_slow(vs, val);
-    }
 
     if (t == MENAITYPE_INTEGER) {
         return fast_integer_to_slow(vs, val);

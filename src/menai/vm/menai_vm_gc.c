@@ -33,10 +33,12 @@ gc_mark_value(MenaiValue *val)
         return;
     }
 
+    if (menai_is_immediate(val)) {
+        return;
+    }
+
     MenaiPoolHeader *ph = menai_get_pool_header(val);
     switch (ph->ob_type) {
-    case MENAITYPE_NONE:
-    case MENAITYPE_BOOLEAN:
     case MENAITYPE_INTEGER:
     case MENAITYPE_FLOAT:
     case MENAITYPE_COMPLEX:
@@ -152,11 +154,17 @@ gc_mark_value(MenaiValue *val)
 /*
  * _gc_is_dead — check if a MenaiValue * is a dead closure in the dead array.
  * Uses gc_mark == 2 as the "dead" marker (set in Phase 2 for dead closures).
+ *
+ * An immediate is never a closure, so it is never dead.
  */
 static int
 _gc_is_dead(MenaiValue *val)
 {
     if (val == NULL) {
+        return 0;
+    }
+
+    if (menai_is_immediate(val)) {
         return 0;
     }
 
@@ -367,6 +375,15 @@ _gc_sweep(MenaiVMState *vs)
         for (ssize_t j = 0; j < fn->ncap; j++) {
             MenaiValue *cap = fn->captures[j];
             if (cap) {
+                if (menai_is_immediate(cap)) {
+                    /*
+                     * An immediate capture holds no reference, so there is no
+                     * count to drop; clearing the slot is the whole job.
+                     */
+                    fn->captures[j] = NULL;
+                    continue;
+                }
+
                 MenaiPoolHeader *ph = menai_get_pool_header(cap);
                 ph->ob_refcnt--;
                 fn->captures[j] = NULL;

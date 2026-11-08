@@ -128,3 +128,4 @@ What costs, risks, or constraints does this decision impose?
 | [0057](0057-typed-destructuring-patterns.md) | Typed destructuring patterns | Accepted |
 | [0058](0058-parameter-callee-sets.md) | Function-valued parameters resolve to their callee may-sets | Accepted |
 | [0059](0059-inliner-guards-are-intrinsic-to-the-lambda.md) | The inliner's guards are intrinsic to the lambda | Accepted |
+| [0060](0060-immediate-values-in-tagged-words.md) | Values that fit in a word are immediates, not heap objects | Accepted |

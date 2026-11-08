@@ -39,10 +39,8 @@ alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co)
     menai_code_object_retain(co);
     self->bytecode = co;
 
-    MenaiValue *none_val = (MenaiValue *)menai_none(vs);
     for (ssize_t i = 0; i < ncap; i++) {
-        menai_value_retain((MenaiValue *)none_val);
-        self->captures[i] = (MenaiValue *)none_val;
+        self->captures[i] = menai_none();
     }
 
     /* Register in the closure cycle collector registry. */

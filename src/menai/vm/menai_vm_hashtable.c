@@ -17,13 +17,25 @@
 hash_t
 menai_value_hash(MenaiValue *val)
 {
+    switch (menai_tag(val)) {
+    case MENAI_TAG_POINTER:
+        break;
+
+    case MENAI_TAG_NONE:
+        return menai_none_hash();
+
+    case MENAI_TAG_TRUE:
+    case MENAI_TAG_FALSE:
+        return menai_boolean_hash(val);
+
+    default:
+        assert(0);
+    }
+
     MenaiPoolHeader *ph = menai_get_pool_header(val);
     MenaiType t = ph->ob_type;
 
     switch (t) {
-    case MENAITYPE_BOOLEAN:
-        return menai_boolean_hash((MenaiBoolean *)val);
-
     case MENAITYPE_BYTES:
         return menai_bytes_hash((MenaiBytes *)val);
 
@@ -41,9 +53,6 @@ menai_value_hash(MenaiValue *val)
 
     case MENAITYPE_INTEGER:
         return menai_integer_hash((MenaiInteger *)val);
-
-    case MENAITYPE_NONE:
-        return menai_none_hash();
 
     case MENAITYPE_STRING:
         return menai_string_hash((MenaiString *)val);
@@ -64,6 +73,19 @@ menai_value_hash(MenaiValue *val)
 int
 menai_value_equal(MenaiValue *a, MenaiValue *b)
 {
+    uintptr_t ua = (uintptr_t)a;
+    uintptr_t ub = (uintptr_t)b;
+
+    if ((ua & MENAI_TAG_MASK) != MENAI_TAG_POINTER ||
+            (ub & MENAI_TAG_MASK) != MENAI_TAG_POINTER) {
+        /*
+         * At least one operand is an immediate.  Each immediate value has
+         * exactly one encoding, so comparing the words compares the values;
+         * an immediate is never equal to a heap object.
+         */
+        return ua == ub;
+    }
+
     if (a == b) {
         return 1;
     }
@@ -78,9 +100,6 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
     }
 
     switch (ta) {
-    case MENAITYPE_BOOLEAN:
-        return menai_boolean_equal((MenaiBoolean *)a, (MenaiBoolean *)b);
-
     case MENAITYPE_BYTES:
         return menai_bytes_equal((MenaiBytes *)a, (MenaiBytes *)b);
 

@@ -724,6 +724,35 @@ never translated does not leave a stale pointer.
 
 See [ADR-0048](docs/adr/0048-vm-errors-carry-structured-diagnostic-context.md).
 
+### A `MenaiValue` must be tag-tested before it is dereferenced
+
+`#none` and the booleans are immediates: the value lives in the word itself and
+the low bits carry a tag, with tag zero meaning "pointer to a pool object".  A
+tagged word is not an address.  Reading a pool header, testing `ob_type`, touching
+`ob_refcnt`, or casting to a `MenaiFoo *` will fault rather than return a wrong
+answer, and it will fault a long way from the code that caused it.
+
+Every place that turns a value into a type or a header therefore carries the test
+first.  When adding an opcode, a builtin, a value type or a new helper that walks
+values, check each of these:
+
+- `menai_value_retain` / `menai_value_release` — already tag-aware; do not inline
+  a bare `ob_refcnt` adjustment anywhere else.
+- The `IS_MENAI_*` macros — already tag-aware.  Never write a bare
+  `menai_get_pool_header(v)->ob_type == ...` comparison outside them.
+- `menai_value_free`, `menai_value_hash`, `menai_value_equal` and the bridge's
+  `menai_value_to_slow_value` — each dispatches on the tag before the header.
+- The cycle collector: `gc_mark_value`, `_gc_is_dead` and the Phase 3 capture
+  edge-breaking.  An immediate needs no count adjustment.
+
+`menai_value_retain` and `menai_value_release` are the only correct way to manage
+an owned value, and copying an immediate into a slot needs neither.  Immediates
+also have one canonical encoding each, which is why word identity is value
+equality for them — but that is a property of the immediate types only, not a
+general licence to compare values by address.
+
+See [ADR-0060](docs/adr/0060-immediate-values-in-tagged-words.md).
+
 ### The closure cycle collector only frees closures with refcnt == 0
 
 The GC runs at the end of every `menai_vm_execute_native` call and at VM

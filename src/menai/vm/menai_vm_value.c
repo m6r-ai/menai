@@ -21,10 +21,6 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
     MenaiPoolHeader *ph = menai_get_pool_header((void *)v);
 
     switch (ph->ob_type) {
-    case MENAITYPE_BOOLEAN:
-        menai_boolean_final(vs, (MenaiBoolean *)v);
-        break;
-
     case MENAITYPE_BYTES:
         menai_bytes_final(vs, (MenaiBytes *)v);
         break;
@@ -64,10 +60,6 @@ menai_value_free(MenaiVMState *vs, MenaiValue *v)
     case MENAITYPE_LIST:
         menai_list_final(vs, (MenaiList *)v);
         return;
-
-    case MENAITYPE_NONE:
-        menai_none_final(vs, (MenaiNone *)v);
-        break;
 
     case MENAITYPE_SET:
         menai_set_final(vs, (MenaiSet *)v);

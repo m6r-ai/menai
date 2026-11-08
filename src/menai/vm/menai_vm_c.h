@@ -456,8 +456,34 @@ typedef struct {
 #define MENAITYPE_ENUM 0x0012
 #define MENAITYPE_ENUMTYPE 0x0013
 
+/*
+ * Immediate value tags.
+ *
+ * A MenaiValue * is a machine word that is either a pointer to a pool block or
+ * an immediate.  A pool pointer always has its low three bits clear: the pool
+ * prepends sizeof(MenaiPoolHeader) (8 bytes) to a block of at least
+ * MENAI_POOL_MIN_SIZE bytes, and malloc returns storage aligned for any type,
+ * so the user-visible pointer is 8-byte aligned.  Those three bits carry the
+ * tag.  Tag zero means "heap object"; every other tag means the word is an
+ * immediate whose entire meaning is the word itself.
+ *
+ * Immediates are pure data.  They are never allocated, never owned, and never
+ * reference counted, so storing one in a register slot needs no retain and
+ * overwriting one needs no release.  Each immediate value has exactly one
+ * encoding, which makes word identity value equality for the immediate types.
+ *
+ * The tag describes the representation, so it is not a MENAITYPE_* type id.
+ * MENAITYPE_NONE and MENAITYPE_BOOLEAN name language types that have no heap
+ * representation at all: no object of either type is ever allocated.
+ */
+#define MENAI_TAG_MASK ((uintptr_t)0x0007)
+
+#define MENAI_TAG_POINTER ((uintptr_t)0x0000)
+#define MENAI_TAG_NONE ((uintptr_t)0x0001)
+#define MENAI_TAG_FALSE ((uintptr_t)0x0002)
+#define MENAI_TAG_TRUE ((uintptr_t)0x0003)
+
 typedef struct MenaiBigInt MenaiBigInt;
-typedef struct MenaiBoolean MenaiBoolean;
 typedef struct MenaiBytes MenaiBytes;
 typedef struct MenaiCodeObject MenaiCodeObject;
 typedef struct MenaiJumpTable MenaiJumpTable;
@@ -482,7 +508,6 @@ typedef struct MenaiFloat MenaiFloat;
 typedef struct MenaiFunction MenaiFunction;
 typedef struct MenaiInteger MenaiInteger;
 typedef struct MenaiList MenaiList;
-typedef struct MenaiNone MenaiNone;
 typedef struct MenaiSet MenaiSet;
 typedef struct MenaiSetElement MenaiSetElement;
 typedef struct MenaiString MenaiString;
@@ -491,6 +516,44 @@ typedef struct MenaiStructType MenaiStructType;
 typedef struct MenaiSymbol MenaiSymbol;
 typedef struct MenaiValue MenaiValue;
 typedef struct MenaiVector MenaiVector;
+
+/*
+ * Immediate value constructors and accessors.  See the MENAI_TAG_* comment.
+ *
+ * The macros rather than functions are deliberate: they are compile-time
+ * constants, and every use site is a hot path that must not pay a call.
+ */
+#define MENAI_IMM_NONE ((MenaiValue *)(uintptr_t)MENAI_TAG_NONE)
+#define MENAI_IMM_FALSE ((MenaiValue *)(uintptr_t)MENAI_TAG_FALSE)
+#define MENAI_IMM_TRUE ((MenaiValue *)(uintptr_t)MENAI_TAG_TRUE)
+
+static inline uintptr_t
+menai_tag(MenaiValue *val)
+{
+    return (uintptr_t)val & MENAI_TAG_MASK;
+}
+
+static inline int
+menai_is_immediate(MenaiValue *val)
+{
+    return menai_tag(val) != MENAI_TAG_POINTER;
+}
+
+/*
+ * Boolean predicates.  Each returns 1 exactly when val is that boolean, and 0
+ * for the other boolean or for any non-boolean value.
+ */
+static inline int
+menai_is_true(MenaiValue *val)
+{
+    return (uintptr_t)val == MENAI_TAG_TRUE;
+}
+
+static inline int
+menai_is_false(MenaiValue *val)
+{
+    return (uintptr_t)val == MENAI_TAG_FALSE;
+}
 
 typedef int64_t hash_t;
 typedef uint64_t uhash_t;
@@ -575,11 +638,6 @@ typedef struct {
     MenaiString *name;
     int index;
 } MenaiFieldEntry;
-
-struct MenaiBoolean {
-    MENAI_MAGIC_FIELD
-    int value;                          /* 0 or 1 */
-};
 
 /*
  * MenaiBytes — immutable sequence of bytes (octets, 0–255).
@@ -682,14 +740,6 @@ struct MenaiList {
     ssize_t length;                     /* cached length for O(1) list-length; 0 for empty sentinel */
 };
 
-struct MenaiNone {
-    MENAI_MAGIC_FIELD
-
-#ifndef MENAI_DEBUG_MAGIC
-    uint8_t _placeholder;               /* We can't have an empty structure */
-#endif
-};
-
 struct MenaiSet {
     MENAI_MAGIC_FIELD
     MenaiSetElement **elements;         /* array of shared, ref-counted entries */
@@ -748,7 +798,11 @@ struct MenaiSymbol {
 };
 
 /*
- * MenaiValue — the minimal struct that every MenaiValue pointer can be safely cast to
+ * MenaiValue — the minimal struct that every heap object can be safely cast to.
+ *
+ * A MenaiValue * is a tagged word, not necessarily an address: see the
+ * MENAI_TAG_* comment.  Casting a value to this or any other Menai struct is
+ * only valid once the tag has been tested and found to be MENAI_TAG_POINTER.
  */
 struct MenaiValue {
     MENAI_MAGIC_FIELD
@@ -965,25 +1019,30 @@ typedef struct {
 int menai_validate(MenaiCodeObject *co, MenaiValidationError *out_err);
 
 /*
- * Fast type-check macros
+ * Fast type-check macros.
+ *
+ * None and the booleans are immediates, so testing them is a tag comparison and
+ * never touches memory.  Every other type is a heap object, and the tag test
+ * has to come first: an immediate must not be passed to menai_get_pool_header,
+ * because the eight bytes below it are not a pool header.
  */
-#define IS_MENAI_NONE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_NONE)
-#define IS_MENAI_BOOLEAN(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_BOOLEAN)
-#define IS_MENAI_INTEGER(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_INTEGER)
-#define IS_MENAI_FLOAT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_FLOAT)
-#define IS_MENAI_COMPLEX(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_COMPLEX)
-#define IS_MENAI_STRING(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRING)
-#define IS_MENAI_SYMBOL(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_SYMBOL)
-#define IS_MENAI_LIST(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_LIST)
-#define IS_MENAI_DICT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_DICT)
-#define IS_MENAI_SET(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_SET)
-#define IS_MENAI_FUNCTION(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_FUNCTION)
-#define IS_MENAI_STRUCTTYPE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCTTYPE)
-#define IS_MENAI_STRUCT(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCT)
-#define IS_MENAI_BYTES(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_BYTES)
-#define IS_MENAI_VECTOR(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_VECTOR)
-#define IS_MENAI_ENUM(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_ENUM)
-#define IS_MENAI_ENUMTYPE(o) ((menai_get_pool_header(o))->ob_type == MENAITYPE_ENUMTYPE)
+#define IS_MENAI_NONE(o) (menai_tag(o) == MENAI_TAG_NONE)
+#define IS_MENAI_BOOLEAN(o) (menai_tag(o) == MENAI_TAG_TRUE || menai_tag(o) == MENAI_TAG_FALSE)
+#define IS_MENAI_INTEGER(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_INTEGER)
+#define IS_MENAI_FLOAT(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_FLOAT)
+#define IS_MENAI_COMPLEX(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_COMPLEX)
+#define IS_MENAI_STRING(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_STRING)
+#define IS_MENAI_SYMBOL(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_SYMBOL)
+#define IS_MENAI_LIST(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_LIST)
+#define IS_MENAI_DICT(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_DICT)
+#define IS_MENAI_SET(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_SET)
+#define IS_MENAI_FUNCTION(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_FUNCTION)
+#define IS_MENAI_STRUCTTYPE(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCTTYPE)
+#define IS_MENAI_STRUCT(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_STRUCT)
+#define IS_MENAI_BYTES(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_BYTES)
+#define IS_MENAI_VECTOR(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_VECTOR)
+#define IS_MENAI_ENUM(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_ENUM)
+#define IS_MENAI_ENUMTYPE(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_ENUMTYPE)
 
 /*
  * Pool allocator constants.
@@ -1112,9 +1171,6 @@ typedef struct MenaiVMState {
     /*
      * Singletons — per-instance
      */
-    MenaiNone *none;
-    MenaiBoolean *boolean_true;
-    MenaiBoolean *boolean_false;
     MenaiInteger *integer_cache[MENAI_INT_CACHE_SIZE];
     MenaiList *empty_list;
     MenaiDict *empty_dict;
@@ -1257,10 +1313,19 @@ menai_value_free_cell(MenaiVMState *vs, MenaiValue *v)
 
 /*
  * menai_value_retain — claim an interest in val.
+ *
+ * Retaining an immediate is a no-op: an immediate has no refcount, no owner,
+ * and nothing to free.  The tag test is one predictable branch and replaces a
+ * header load, so the pair below is cheaper than it was for the immediate
+ * types and unchanged for everything else.
  */
 static inline void
 menai_value_retain(MenaiValue *val)
 {
+    if (menai_is_immediate(val)) {
+        return;
+    }
+
     MENAI_CHECK_MAGIC(val);
     MenaiPoolHeader *ph = menai_get_pool_header(val);
     ph->ob_refcnt++;
@@ -1274,6 +1339,10 @@ menai_value_retain(MenaiValue *val)
 static inline void
 menai_value_release(MenaiVMState *vs, MenaiValue *val)
 {
+    if (menai_is_immediate(val)) {
+        return;
+    }
+
     MENAI_CHECK_MAGIC(val);
     MenaiPoolHeader *ph = menai_get_pool_header(val);
     if (--ph->ob_refcnt == 0) {
@@ -1464,37 +1533,37 @@ int menai_bigint_gt(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_le(const MenaiBigInt *a, const MenaiBigInt *b);
 int menai_bigint_ge(const MenaiBigInt *a, const MenaiBigInt *b);
 
-static inline MenaiBoolean *
-menai_boolean_true(MenaiVMState *vs)
+/*
+ * Boolean accessors.  Booleans are immediates, so these are constants rather
+ * than per-instance singletons: there is nothing to allocate, nothing to
+ * retain, and no VM state to consult.
+ */
+static inline MenaiValue *
+menai_boolean_true(void)
 {
-    return vs->boolean_true;
+    return MENAI_IMM_TRUE;
 }
 
-static inline MenaiBoolean *
-menai_boolean_false(MenaiVMState *vs)
+static inline MenaiValue *
+menai_boolean_false(void)
 {
-    return vs->boolean_false;
+    return MENAI_IMM_FALSE;
 }
 
-static inline void
-menai_boolean_final(MenaiVMState *vs, MenaiBoolean *self)
-{
-}
-
+/*
+ * Both operands must be booleans.  Each boolean has exactly one immediate
+ * encoding, so comparing the words compares the values.
+ */
 static inline hash_t
-menai_boolean_hash(MenaiBoolean *b)
+menai_boolean_hash(MenaiValue *b)
 {
-    return (hash_t)b->value;
+    return menai_tag(b) == MENAI_TAG_TRUE ? 1 : 0;
 }
 
 static inline int
-menai_boolean_equal(MenaiBoolean *a, MenaiBoolean *b)
+menai_boolean_equal(MenaiValue *a, MenaiValue *b)
 {
-    /*
-     * We have two singletons so we don't need to actually check the values here,
-     * just see if we have the same singleton objects.
-     */
-    return a == b;
+    return (uintptr_t)a == (uintptr_t)b;
 }
 
 MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
@@ -1803,15 +1872,13 @@ menai_list_equal(MenaiList *a, MenaiList *b)
     return 1;
 }
 
-static inline MenaiNone *
-menai_none(MenaiVMState *vs)
+/*
+ * None is an immediate: there is no none object, only the none word.
+ */
+static inline MenaiValue *
+menai_none(void)
 {
-    return vs->none;
-}
-
-static inline void
-menai_none_final(MenaiVMState *vs, MenaiNone *self)
-{
+    return MENAI_IMM_NONE;
 }
 
 static inline hash_t

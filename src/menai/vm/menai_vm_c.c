@@ -390,10 +390,9 @@ menai_integer_to_ssize_t(MenaiInteger *val, ssize_t *out)
 
 static inline void bool_store(MenaiVMState *vs, MenaiValue **regs, int slot, int cond)
 {
-    MenaiBoolean *b = cond ? menai_boolean_true(vs) : menai_boolean_false(vs);
-    menai_value_retain((MenaiValue *)b);
+    MenaiValue *b = cond ? menai_boolean_true() : menai_boolean_false();
     menai_value_release(vs, regs[slot]);
-    regs[slot] = (MenaiValue *)b;
+    regs[slot] = b;
 }
 
 /*
@@ -638,10 +637,8 @@ ensure_reg_capacity(MenaiVMState *vs, size_t needed_regs, Frame *frames, int fra
     menai_pool_free(vs, vs->regs);
 
     /* Initialise the newly allocated slots to menai_none. */
-    MenaiValue *none_val = (MenaiValue *)menai_none(vs);
     for (size_t i = vs->num_regs; i < new_num_regs; i++) {
-        menai_value_retain(none_val);
-        new_regs[i] = none_val;
+        new_regs[i] = menai_none();
     }
 
     vs->regs = new_regs;
@@ -839,26 +836,20 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
         switch (opcode) {
         case OP_LOAD_NONE: {
-            MenaiValue *val = (MenaiValue *)menai_none(vs);
-            menai_value_retain(val);
             menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = val;
+            frame_regs[dest] = menai_none();
             break;
         }
 
         case OP_LOAD_TRUE: {
-            MenaiValue *val = (MenaiValue *)menai_boolean_true(vs);
-            menai_value_retain(val);
             menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = val;
+            frame_regs[dest] = menai_boolean_true();
             break;
         }
 
         case OP_LOAD_FALSE: {
-            MenaiValue *val = (MenaiValue *)menai_boolean_false(vs);
-            menai_value_retain(val);
             menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = val;
+            frame_regs[dest] = menai_boolean_false();
             break;
         }
 
@@ -908,8 +899,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_JUMP_IF_FALSE: {
-            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
-            if (!cond->value) {
+            if (menai_is_false(frame_regs[src0])) {
                 int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
                 frame->ip = src1;
             }
@@ -918,8 +908,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_JUMP_IF_TRUE: {
-            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
-            if (cond->value) {
+            if (menai_is_true(frame_regs[src0])) {
                 int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
                 frame->ip = src1;
             }
@@ -999,8 +988,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_RETURN_IF_FALSE: {
-            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
-            if (!cond->value) {
+            if (menai_is_false(frame_regs[src0])) {
                 int val_reg = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
                 MenaiValue *retval = operand(constants_items, frame_regs, val_reg, tag & 2);
                 menai_value_retain(retval);
@@ -1028,8 +1016,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_RETURN_IF_TRUE: {
-            MenaiBoolean *cond = (MenaiBoolean *)frame_regs[src0];
-            if (cond->value) {
+            if (menai_is_true(frame_regs[src0])) {
                 int val_reg = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
                 MenaiValue *retval = operand(constants_items, frame_regs, val_reg, tag & 2);
                 menai_value_retain(retval);
@@ -1688,24 +1675,23 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_BOOLEAN_EQ_P: {
-            MenaiBoolean *a = (MenaiBoolean *)frame_regs[src0];
+            MenaiValue *a = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBoolean *b = (MenaiBoolean *)frame_regs[src1];
+            MenaiValue *b = frame_regs[src1];
             bool_store(vs, frame_regs, dest, menai_boolean_equal(a, b));
             break;
         }
 
         case OP_BOOLEAN_NEQ_P: {
-            MenaiBoolean *a = (MenaiBoolean *)frame_regs[src0];
+            MenaiValue *a = frame_regs[src0];
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiBoolean *b = (MenaiBoolean *)frame_regs[src1];
+            MenaiValue *b = frame_regs[src1];
             bool_store(vs, frame_regs, dest, !menai_boolean_equal(a, b));
             break;
         }
 
         case OP_BOOLEAN_NOT: {
-            MenaiBoolean *a = (MenaiBoolean *)frame_regs[src0];
-            bool_store(vs, frame_regs, dest, !a->value);
+            bool_store(vs, frame_regs, dest, menai_is_false(frame_regs[src0]));
             break;
         }
 
@@ -4683,8 +4669,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiString *b = (MenaiString *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t idx = menai_string_find(a, b);
             if (idx == -1) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -4747,8 +4732,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
             if (!ok) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -4758,8 +4742,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             menai_bigint_init(&sti_tmp);
             int sti_ok = menai_bigint_from_string(vs, buf, (int)radix, &sti_tmp);
             if (sti_ok < 0) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -4786,8 +4769,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
             if (!ok) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -4796,8 +4778,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             char *end = NULL;
             double dv = strtod(buf, &end);
             if (end == buf || *end != '\0') {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -4824,8 +4805,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
             if (!ok) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -4833,8 +4813,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
             double re, im;
             if (!parse_complex_string(buf, &re, &im)) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -5496,8 +5475,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (nlen > hlen) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -5515,8 +5493,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (found == -1) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -5560,8 +5537,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (found == -1) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -6553,8 +6529,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (found == -1) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -6936,8 +6911,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (found == -1) {
-                MenaiValue *val = (MenaiValue *)menai_none(vs);
-                menai_value_retain(val);
+                MenaiValue *val = menai_none();
                 menai_value_release(vs, frame_regs[dest]);
                 frame_regs[dest] = val;
                 break;
@@ -8730,10 +8704,8 @@ menai_vm_execute_native(MenaiVMState *vs, MenaiCodeObject *code)
         return NULL;
     }
 
-    MenaiValue *none_val = (MenaiValue *)menai_none(vs);
     for (size_t i = 0; i < num_regs; i++) {
-        menai_value_retain(none_val);
-        regs[i] = none_val;
+        regs[i] = menai_none();
     }
 
     /*

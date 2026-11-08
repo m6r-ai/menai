@@ -6,6 +6,14 @@ Bug fixes:
 
 - Fixed a Unicode parsing error in the JSON decoder library.
 
+Internal structure changes:
+
+- `#none` and the booleans are now immediates rather than pool objects.  A
+  `MenaiValue` word carries a tag in its low three bits, zero meaning "pointer to
+  a pool object", so these values are never allocated and never reference counted.
+  Performance is neutral to positive across the benchmarks, with gains up to 6–7%
+  on the suites dominated by control flow and collection misses.
+
 ## v0.9.0 (2026-10-27)
 
 New features:
