@@ -208,24 +208,6 @@ _type_name(MenaiType t)
     }
 }
 
-static int
-_is_singleton(MenaiVMState *vs, void *ptr)
-{
-    for (int i = 0; i < MENAI_INT_CACHE_SIZE; i++) {
-        if ((void *)vs->integer_cache[i] == ptr) {
-            return 1;
-        }
-    }
-
-    if ((void *)vs->empty_list == ptr ||
-            (void *)vs->empty_dict == ptr ||
-            (void *)vs->empty_set == ptr) {
-        return 1;
-    }
-
-    return 0;
-}
-
 void
 menai_leak_set_report(MenaiVMState *vs)
 {
@@ -235,10 +217,6 @@ menai_leak_set_report(MenaiVMState *vs)
     for (ssize_t i = 0; i < ls->bucket_count; i++) {
         for (MenaiLeakNode *node = ls->buckets[i]; node != NULL; node = node->next) {
             void *entry = node->ptr;
-
-            if (_is_singleton(vs, entry)) {
-                continue;
-            }
 
             MenaiValue *v = (MenaiValue *)entry;
             MenaiPoolHeader *ph = menai_get_pool_header(v);

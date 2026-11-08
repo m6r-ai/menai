@@ -661,7 +661,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
         }
 
         Py_DECREF(v);
-        return (MenaiValue *)alloc_menai_integer_from_long(vs, lv);
+        return alloc_menai_integer_from_long(vs, lv);
     }
 
     int sign = 0;
@@ -742,7 +742,7 @@ slow_integer_to_fast(MenaiVMState *vs, PyObject *src)
     big.length = ndigits;
     big.sign = is_neg ? -1 : 1;
     menai_bigint_normalize(vs, &big);
-    return (MenaiValue *)alloc_menai_integer_from_bigint(vs, big);
+    return alloc_menai_integer_from_bigint(vs, big);
 }
 
 static inline MenaiValue *
@@ -1462,6 +1462,11 @@ fast_boolean_to_slow(MenaiVMState *vs, MenaiValue *val)
 static inline PyObject *
 fast_integer_to_slow(MenaiVMState *vs, MenaiValue *val)
 {
+    if (menai_is_fixnum(val)) {
+        return PyObject_CallOneArg(
+            (PyObject *)Slow_IntegerType, PyLong_FromLong(menai_fixnum_value(val)));
+    }
+
     MenaiInteger *obj = (MenaiInteger *)val;
     PyObject *py_int;
 
@@ -1888,6 +1893,9 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
     switch (menai_tag(val)) {
     case MENAI_TAG_POINTER:
         break;
+
+    case MENAI_TAG_FIXNUM:
+        return fast_integer_to_slow(vs, val);
 
     case MENAI_TAG_NONE:
         return fast_none_to_slow(vs, val);

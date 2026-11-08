@@ -30,10 +30,23 @@ pool block always has those bits clear, because the pool prepends its header to 
 block aligned for any type, so the tag costs nothing and needs no separate word.
 Tag zero means "heap object"; the remaining tags name the immediate kinds.
 
-The scheme starts with `#none` and the booleans. Integers are the intended next
-step — the same tag space covers a fixnum range with larger integers falling back
-to the existing boxed representation — but that is a separate decision with a much
-larger audit surface.
+Three kinds are immediates: `#none`, `#true`, `#false`, and a fixnum — an integer
+whose value fits in the payload. An integer outside that range is a boxed
+`MenaiInteger`, holding either an inline `long` or a `MenaiBigInt`. The fixnum range
+is deliberately smaller than the payload allows: it is bounded to what a `long`
+holds on the narrowest supported host, so that every int-valued operation — a
+length, an index, an offset, a codepoint — produces a fixnum, and the boxed path is
+reached only by arithmetic that genuinely leaves the range. Spending the extra
+payload bits on a wider range would turn those operations into branches in order to
+avoid a box for values nothing computes.
+
+The constructor is the single point that chooses a representation, and it chooses
+from the value alone. So no integer exists in two forms at once, and an integer that
+leaves the range and comes back is indistinguishable from one that never left. That
+canonicalisation is not a nicety: hashing and equality treat the fixnum and boxed
+paths separately, and they agree only because a given value can only take one of
+them. Anything that creates an integer outside the constructor would break dict and
+set behaviour.
 
 An immediate is not allocation-free in the sense of being cached: it is not an
 object at all. Nothing owns it, nothing counts it, and no destructor runs for it,
@@ -89,8 +102,15 @@ is the decision to revisit, and it supersedes this one rather than extending it.
   operations no longer touch the allocator or a reference count. Benchmarks are
   neutral to positive, with gains up to 6–7% on the suites that are dominated by
   control flow and collection misses.
+- Fixnums extend that to arithmetic. Integer-heavy work gains far more, because a
+  computed integer used to allocate and free a pool block on every operation once it
+  left the old small-integer cache: the compression, archive and image suites
+  improved by 10–34%.
 - The per-instance `#none` and boolean singletons, and their lifecycle in the VM
   state, disappear entirely.
+- The small-integer cache and its per-instance singleton array disappear too: the
+  fixnum range subsumes them, and a computed value outside the cache used to be the
+  common case rather than the exception.
 - Type checks for the immediate types get cheaper and simpler: they are a tag
   comparison on a value that is already in a register, where they used to be a load
   from a header eight bytes below a possibly cold pointer.

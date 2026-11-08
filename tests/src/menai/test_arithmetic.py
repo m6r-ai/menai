@@ -550,9 +550,9 @@ class TestArithmetic:
 class TestBigintArithmetic:
     """Test arithmetic operations that exercise the MenaiBigInt (bignum) code paths.
 
-    Values at and beyond 2^63 force promotion from the inline-long fast path to
-    the arbitrary-precision bigint path, covering addition, subtraction,
-    multiplication, division, and modulo with both positive and negative results.
+    Values at and beyond 2^63 are past every inline representation, so these cover
+    addition, subtraction, multiplication, division, and modulo on
+    arbitrary-precision operands with both positive and negative results.
     """
 
     BIG = 9223372036854775808  # 2^63 — first value that does not fit in a C long
@@ -792,3 +792,78 @@ class TestSmallIntegerBitOperations:
             menai.evaluate(expr)
 
         assert exc_info.value.error_code == VMErrorCode.SHIFT_TOO_LARGE
+
+
+class TestIntegerRepresentation:
+    """Test that an integer's representation never changes its value.
+
+    An integer is a fixnum immediate while it is within +/-2^30, and a boxed value
+    outside that range.  The representation is chosen from the value alone, so an
+    integer that leaves the range and comes back must be indistinguishable from one
+    that never left: equality, hashing and set membership all have to agree.  These
+    tests pin that, because it is what lets a dict or set keyed on a computed value
+    be looked up with an equivalent literal.
+    """
+
+    FIXNUM_MAX = 1073741823  # 2^30 - 1 — largest fixnum immediate
+    FIXNUM_MIN = -1073741824  # -2^30 — smallest fixnum immediate
+
+    @pytest.mark.parametrize("expression,expected", [
+        (f"(integer+ {FIXNUM_MAX} 1)", "1073741824"),
+        (f"(integer- {FIXNUM_MIN} 1)", "-1073741825"),
+        (f"(integer- (integer+ {FIXNUM_MAX} 1) 1)", str(FIXNUM_MAX)),
+        (f"(integer+ (integer- {FIXNUM_MIN} 1) 1)", str(FIXNUM_MIN)),
+        ("(integer* 2000000000 2000000000)", "4000000000000000000"),
+        ("(integer- (integer* 2000000000 2000000000) (integer* 2000000000 2000000000))", "0"),
+        ("(integer-neg (integer-neg (integer+ 1073741824 1)))", "1073741825"),
+    ])
+    def test_arithmetic_crossing_the_fixnum_boundary(self, menai, expression, expected):
+        """Arithmetic that leaves and re-enters the fixnum range keeps its value."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression", [
+        # A value computed out of range and back is equal to the plain literal.
+        "(integer=? (integer- (integer* 2000000000 2000000000)"
+        " (integer* 2000000000 2000000000)) 0)",
+        f"(integer=? (integer- (integer+ {FIXNUM_MAX} 1) 1) {FIXNUM_MAX})",
+        f"(integer=? (integer+ (integer- {FIXNUM_MIN} 1) 1) {FIXNUM_MIN})",
+        "(integer<? (integer- (integer* 2000000000 2000000000)"
+        " (integer* 2000000000 2000000000)) 1)",
+        "(integer>=? (integer- (integer* 2000000000 2000000000)"
+        " (integer* 2000000000 2000000000)) 0)",
+    ])
+    def test_crossed_values_compare_as_their_value(self, menai, expression):
+        """Comparison ignores how a value was computed."""
+        assert menai.evaluate(expression) is True
+
+    def test_computed_key_matches_literal_dict_key(self, menai):
+        """A dict keyed on a value computed out of range is found by its literal.
+
+        Hashing and equality must agree across the two representations, so a key
+        that arrived as a bignum and was demoted still matches the literal key of
+        the same value.
+        """
+        expression = (
+            '(dict-get (dict (integer- (integer* 2000000000 2000000000)'
+            ' (integer* 2000000000 2000000000)) "zero") 0)'
+        )
+        assert menai.evaluate_and_format(expression) == '"zero"'
+
+    def test_computed_element_matches_literal_set_member(self, menai):
+        """Set membership agrees across representations, including the boundary."""
+        assert menai.evaluate(
+            '(set-member? (set (integer- (integer* 2000000000 2000000000)'
+            ' (integer* 2000000000 2000000000))) 0)'
+        ) is True
+        assert menai.evaluate(
+            f'(set-member? (set (integer- (integer+ {self.FIXNUM_MAX} 1) 1)) {self.FIXNUM_MAX})'
+        ) is True
+
+    def test_boundary_values_survive_conversion(self, menai):
+        """Both representations convert to and from text without loss."""
+        assert menai.evaluate_and_format(
+            f'(string->integer (integer->string {self.FIXNUM_MAX}))'
+        ) == str(self.FIXNUM_MAX)
+        assert menai.evaluate_and_format(
+            '(integer->string (integer+ 1073741824 1073741824))'
+        ) == '"2147483648"'

@@ -726,11 +726,12 @@ See [ADR-0048](docs/adr/0048-vm-errors-carry-structured-diagnostic-context.md).
 
 ### A `MenaiValue` must be tag-tested before it is dereferenced
 
-`#none` and the booleans are immediates: the value lives in the word itself and
-the low bits carry a tag, with tag zero meaning "pointer to a pool object".  A
-tagged word is not an address.  Reading a pool header, testing `ob_type`, touching
-`ob_refcnt`, or casting to a `MenaiFoo *` will fault rather than return a wrong
-answer, and it will fault a long way from the code that caused it.
+`#none`, the booleans and integers in the fixnum range are immediates: the value
+lives in the word itself and the low bits carry a tag, with tag zero meaning
+"pointer to a pool object".  A tagged word is not an address.  Reading a pool
+header, testing `ob_type`, touching `ob_refcnt`, or casting to a `MenaiFoo *` will
+fault rather than return a wrong answer, and it will fault a long way from the code
+that caused it.
 
 Every place that turns a value into a type or a header therefore carries the test
 first.  When adding an opcode, a builtin, a value type or a new helper that walks
@@ -750,6 +751,29 @@ an owned value, and copying an immediate into a slot needs neither.  Immediates
 also have one canonical encoding each, which is why word identity is value
 equality for them — but that is a property of the immediate types only, not a
 general licence to compare values by address.
+
+#### Integers are the awkward case
+
+An integer is one of three things and the opcodes have to keep all three straight.
+Do not test `is_fixnum` when you mean "not a bignum", and do not dereference a value
+you have only proven to be an integer:
+
+- `menai_is_fixnum(v)` — an immediate.  Use it for the fast path.
+- `menai_integer_is_small(v)` — the value is held inline, as a fixnum or in a boxed
+  integer's inline `long`.  This is what the arithmetic fast paths branch on.
+- `menai_integer_is_big(v)` — the value is a bignum.  Narrow with
+  `menai_integer_boxed(v)` and use `->big`; do not repeat a cast at every use.
+- `menai_integer_extract_long(v, &out)` — any representation as a `long`, returning
+  `MENAI_ERR_OVERFLOW` when a bignum does not fit.  Prefer it when that is all the
+  handler needs, which removes the representation question from the handler
+  entirely.  Its callers keep their own error code, because "too large" is a
+  different diagnosis for a shift count, an index and a radix.
+
+`alloc_menai_integer_from_*` returns a `MenaiValue *`, not a `MenaiInteger *`,
+because the result is usually a fixnum.  They are the only place that chooses a
+representation, and they choose from the value alone; a second path that built an
+integer would produce two forms of one value and break hashing, equality and every
+dict keyed on it.
 
 See [ADR-0060](docs/adr/0060-immediate-values-in-tagged-words.md).
 

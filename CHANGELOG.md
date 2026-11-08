@@ -8,11 +8,10 @@ Bug fixes:
 
 Internal structure changes:
 
-- `#none` and the booleans are now immediates rather than pool objects.  A
-  `MenaiValue` word carries a tag in its low three bits, zero meaning "pointer to
-  a pool object", so these values are never allocated and never reference counted.
-  Performance is neutral to positive across the benchmarks, with gains up to 6–7%
-  on the suites dominated by control flow and collection misses.
+- `#none`, the booleans and fixnum integers are now immediate values held in the
+  `MenaiValue` word rather than pool objects.  They are never allocated or reference
+  counted, and the small-integer cache is gone.  Compression, archive and image
+  benchmarks improved by 10–34%.
 
 ## v0.9.0 (2026-10-27)
 
