@@ -2,16 +2,16 @@
 
 ## v0.10.0 (2026-xx-xx)
 
-Bug fixes:
-
-- Fixed a Unicode parsing error in the JSON decoder library.
-
-Internal structure changes:
+New features:
 
 - `#none`, the booleans and fixnum integers are now immediate values held in the
   `MenaiValue` word rather than pool objects.  They are never allocated or reference
-  counted, and the small-integer cache is gone.  Compression, archive and image
-  benchmarks improved by 10–34%.
+  counted, and the small-integer cache is gone.  Mean performance gain of about 4.7%.
+
+Bug fixes:
+
+- Fixed a Unicode parsing error in the JSON decoder library.
+- Resolved a problem with opcode type signatures being incorrect.
 
 ## v0.9.0 (2026-10-27)
 

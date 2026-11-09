@@ -896,6 +896,18 @@ class TestStructErrors:
             menai.evaluate("(struct-with 42 'x 1)")
         assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
 
+    def test_struct_get_with_non_symbol_field_name_raises_error(self, menai):
+        """struct-get raises an error when the field name is not a symbol."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("(let ((Point (struct (x y))) (p (Point 1 2))) (struct-get p 0))")
+        assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
+
+    def test_struct_with_with_non_symbol_field_name_raises_error(self, menai):
+        """struct-with raises an error when the field name is not a symbol."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("(let ((Point (struct (x y))) (p (Point 1 2))) (struct-with p 0 99))")
+        assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
+
     def test_struct_get_unknown_field_raises_error(self, menai):
         """struct-get raises an error for an unknown field name."""
         with pytest.raises(MenaiEvalError) as exc_info:

@@ -327,6 +327,29 @@ class TestArithmetic:
         """Test rounding functions (round, floor, ceil)."""
         assert menai.evaluate_and_format(expression) == expected
 
+    @pytest.mark.parametrize("name,expected", [
+        ("float-round", '"2.0"'),
+        ("float-floor", '"2.0"'),
+        ("float-ceil", '"3.0"'),
+        ("float-trunc", '"2.0"'),
+    ])
+    def test_rounding_result_converts_to_its_float_text(self, menai, name, expected):
+        """A rounding result computed at run time converts to the text of its value."""
+        expression = f"((lambda (x) (number->string ({name} x))) 2.5)"
+        assert menai.evaluate_and_format(expression) == expected
+
+    def test_rounding_result_is_a_float_not_an_integer(self, menai):
+        """A rounding result computed at run time is a float."""
+        for name in ("float-round", "float-floor", "float-ceil", "float-trunc"):
+            assert menai.evaluate(f"((lambda (x) (integer? ({name} x))) 2.5)") is False
+            assert menai.evaluate(f"((lambda (x) (float? ({name} x))) 2.5)") is True
+
+    def test_rounding_result_is_rejected_where_an_integer_is_required(self, menai):
+        """A rounding result cannot be passed to an integer-only operation."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate("((lambda (x) (integer+ (float-round x) 1)) 2.5)")
+        assert exc_info.value.error_code == VMErrorCode.TYPE_MISMATCH
+
     def test_rounding_functions_reject_complex(self, menai):
         """Test that rounding functions reject complex numbers."""
         with pytest.raises(MenaiEvalError):

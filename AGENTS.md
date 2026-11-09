@@ -393,6 +393,29 @@ the invariant above.
 
 See [ADR-0036](docs/adr/0036-predicate-fold-may-consume-interprocedural-facts.md).
 
+### The type-signature table is the builtins' operand and result contract
+
+`BUILTIN_TYPE_SIGNATURES` is the only place the compiler learns a builtin's
+argument types and its result type, and both are consumed as proven facts.
+
+Guard insertion emits an argument guard only for an argument whose declared type
+is specific; an argument declared `any` reaches the opcode unchecked. An opcode
+that reads an operand as a particular type is therefore relying on the table
+having declared that type, not merely on the value being right: `struct-get`
+reads its field name as a symbol, and while the entry declared the field name
+`any` a non-symbol field name reached the opcode and faulted. An operand an
+opcode assumes must be declared, and the guard it buys is the check.
+
+The result type is consumed just as directly: it becomes the call's proven fact,
+from which predicate folding may rewrite a test and against which guard
+insertion may treat a later use as already checked. An entry that disagrees with
+the builtin — `float-round` was once declared to return an `integer` — is a
+miscompile, not a missed optimisation.
+
+Every declared result type is checked against the type the builtin actually
+produces, so an entry that drifts fails a test rather than silently
+miscompiling.
+
 ### Menai is pure — dead code elimination is always safe
 
 Because Menai has no side effects, any expression whose result is never used can be
