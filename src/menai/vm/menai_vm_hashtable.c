@@ -76,21 +76,19 @@ menai_value_hash(MenaiValue *val)
 int
 menai_value_equal(MenaiValue *a, MenaiValue *b)
 {
-    uintptr_t ua = (uintptr_t)a;
-    uintptr_t ub = (uintptr_t)b;
-
-    if ((ua & MENAI_TAG_MASK) != MENAI_TAG_POINTER ||
-            (ub & MENAI_TAG_MASK) != MENAI_TAG_POINTER) {
-        /*
-         * At least one operand is an immediate.  Each immediate value has
-         * exactly one encoding, so comparing the words compares the values;
-         * an immediate is never equal to a heap object.
-         */
-        return ua == ub;
-    }
-
     if (a == b) {
         return 1;
+    }
+
+    /*
+     * Different words.  Each immediate value has exactly one encoding, so if
+     * either side is an immediate the two are different values and nothing below
+     * can make them equal.  Identity is checked first because it is the common
+     * answer for a key that is already in the table.
+     */
+    if (((uintptr_t)a & MENAI_TAG_MASK) != MENAI_TAG_POINTER ||
+            ((uintptr_t)b & MENAI_TAG_MASK) != MENAI_TAG_POINTER) {
+        return 0;
     }
 
     MenaiPoolHeader *pha = menai_get_pool_header(a);
