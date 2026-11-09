@@ -489,24 +489,20 @@ typedef struct {
  *
  * The payload is stored as a signed value shifted up by MENAI_FIXNUM_SHIFT, so
  * extracting it is an arithmetic right shift and building it is a left shift.
- * An integer outside the range is a boxed MenaiInteger instead, and no value is
- * ever representable both ways: the allocator checks the range before deciding,
- * so representation is a function of value.  That is what keeps hashing and
- * equality consistent across the two representations.
+ * An integer outside the range is a boxed MenaiInteger holding a MenaiBigInt, and
+ * no value is ever representable both ways: the allocator checks the range before
+ * deciding, so representation is a function of value.  That is what keeps hashing
+ * and equality consistent across the two representations.
  *
- * The range is deliberately not the full 61-bit span.  Keeping it to the range of
- * a C long on a 32-bit host means that every int-valued operation - lengths,
- * indices, offsets, codepoints - produces a fixnum, so the boxed path is only
- * reached by arithmetic that genuinely leaves the range and by values the host
- * supplied as a bignum.  Widening the range on a 64-bit host would make those
- * operations branch instead, to save a box for values nobody computes.
+ * The range uses the whole payload on every target.  A tagged word is
+ * pointer-sized and every supported platform has 64-bit pointers, so the range is
+ * the same everywhere and does not depend on the width of a C long.  Bounding it
+ * by a 32-bit long would box values the word can already represent.
  */
 #define MENAI_FIXNUM_SHIFT 3
-#define MENAI_FIXNUM_MIN ((long)-0x40000000)
-#define MENAI_FIXNUM_MAX ((long)0x3fffffff)
 
-#define MENAI_FIXNUM_MIN_AS_LONG_LONG ((long long)MENAI_FIXNUM_MIN)
-#define MENAI_FIXNUM_MAX_AS_LONG_LONG ((long long)MENAI_FIXNUM_MAX)
+#define MENAI_FIXNUM_MIN (-(((int64_t)1) << 60))
+#define MENAI_FIXNUM_MAX ((((int64_t)1) << 60) - 1)
 
 typedef struct MenaiBigInt MenaiBigInt;
 typedef struct MenaiBytes MenaiBytes;
@@ -583,7 +579,8 @@ menai_is_false(MenaiValue *val)
 /*
  * Fixnum accessors.  menai_is_fixnum is the test the arithmetic paths use; the
  * boxed fallback is any other integer, so `!menai_is_fixnum(v)` is only "boxed"
- * for a value already known to be an integer.
+ * for a value already known to be an integer.  The payload is int64_t because it is
+ * 61 bits wide on every target, not a C long.
  */
 static inline int
 menai_is_fixnum(MenaiValue *val)
@@ -591,22 +588,22 @@ menai_is_fixnum(MenaiValue *val)
     return menai_tag(val) == MENAI_TAG_FIXNUM;
 }
 
-static inline long
+static inline int64_t
 menai_fixnum_value(MenaiValue *val)
 {
-    return (long)((intptr_t)val) >> MENAI_FIXNUM_SHIFT;
+    return ((int64_t)((intptr_t)val)) >> MENAI_FIXNUM_SHIFT;
 }
 
 static inline MenaiValue *
-menai_make_fixnum(long n)
+menai_make_fixnum(int64_t n)
 {
     return (MenaiValue *)(((uintptr_t)(intptr_t)n << MENAI_FIXNUM_SHIFT) | MENAI_TAG_FIXNUM);
 }
 
 static inline int
-menai_fixnum_in_range(long long n)
+menai_fixnum_in_range(int64_t n)
 {
-    return n >= MENAI_FIXNUM_MIN_AS_LONG_LONG && n <= MENAI_FIXNUM_MAX_AS_LONG_LONG;
+    return n >= MENAI_FIXNUM_MIN && n <= MENAI_FIXNUM_MAX;
 }
 
 typedef int64_t hash_t;
@@ -770,27 +767,18 @@ struct MenaiFunction {
 /*
  * MenaiInteger — the boxed integer, used only outside the fixnum range.
  *
- * An integer in [MENAI_FIXNUM_MIN, MENAI_FIXNUM_MAX] is a fixnum immediate and
- * never reaches this struct, so every instance is either a value that a C long
- * cannot hold at all or one outside the fixnum range.  Both cases are rare
- * enough that the extra indirection does not matter; the arithmetic paths test
- * for a fixnum first and only fall back here when the range forces it.
- *
- *   is_big == 0: the value is stored inline as a C long in the small field.  This
- *                can only happen on a host whose long is wider than the fixnum
- *                range, for a value the host supplied or arithmetic produced
- *                before it was demoted.
- *
- *   is_big == 1: the value is stored as a MenaiBigInt bignum in the big field.
- *                The MenaiBigInt owns its digit array.
+ * Every integer in [MENAI_FIXNUM_MIN, MENAI_FIXNUM_MAX] is a fixnum immediate and
+ * never reaches this struct, and every integer outside that range is a bignum.  So
+ * a MenaiInteger is exactly a wrapper around a MenaiBigInt, which owns its digit
+ * array.  There is no second boxed form: an inline wider integer would only add a
+ * representation to test for, for values the fixnum range already covers almost
+ * entirely.
  *
  * The ob_type is always &MenaiInteger_Type.
  */
 struct MenaiInteger {
     MENAI_MAGIC_FIELD
-    int is_big;
-    long fixed;                         /* valid when is_big == 0 */
-    MenaiBigInt big;                    /* valid when is_big == 1 */
+    MenaiBigInt big;
 };
 
 struct MenaiList {
@@ -1803,54 +1791,54 @@ menai_function_equal(MenaiValue *a, MenaiValue *b)
  * Integer construction.
  *
  * These return a MenaiValue * because the result is a fixnum whenever the value
- * is in range; only an out-of-range value becomes a boxed MenaiInteger.  A caller
- * that needs a typed MenaiInteger * is therefore a caller doing something wrong,
- * because it can only be right for a value already known to be out of range.
+ * is in range; only an out-of-range value becomes a boxed MenaiInteger, and that
+ * box is a bignum.  A caller that needs a typed MenaiInteger * is therefore a
+ * caller doing something wrong, because it can only be right for a value already
+ * known to be out of range.
  *
  * The constructor is the single point that decides representation, so no value
  * ever exists in both forms.  Hashing, equality and the type predicates all rely
  * on that.
  */
-MenaiValue *alloc_menai_integer_from_long(MenaiVMState *vs, long n);
+MenaiValue *alloc_menai_integer_from_long(MenaiVMState *vs, int64_t n);
 
 /*
  * menai_integer_extract_long - the value as a long, whether fixnum or boxed.
  *
- * Returns 0 on success and -1 if a boxed integer does not fit in a long, which
- * the caller reports as a range or index error.  A fixnum always fits.
+ * Returns 0 on success and MENAI_ERR_OVERFLOW if the value does not fit in a long,
+ * which the caller reports as a range or index error.  The fixnum payload is wider
+ * than a long on a 32-bit host, so a fixnum is range-checked too rather than
+ * truncated.
  */
 static inline int
 menai_integer_extract_long(MenaiValue *val, long *out)
 {
     if (menai_is_fixnum(val)) {
-        *out = menai_fixnum_value(val);
+        int64_t v = menai_fixnum_value(val);
+        if (v < LONG_MIN || v > LONG_MAX) {
+            return MENAI_ERR_OVERFLOW;
+        }
+
+        *out = (long)v;
         return 0;
     }
 
-    MenaiInteger *obj = (MenaiInteger *)val;
-    if (!obj->is_big) {
-        *out = obj->fixed;
-        return 0;
-    }
-
-    return menai_bigint_to_long(&obj->big, out);
+    return menai_bigint_to_long(&((MenaiInteger *)val)->big, out);
 }
 
 static inline void
 menai_integer_final(MenaiVMState *vs, MenaiInteger *self)
 {
-    if (self->is_big) {
-        menai_bigint_final(vs, &self->big);
-    }
+    menai_bigint_final(vs, &self->big);
 }
 
-MenaiValue *alloc_menai_integer_from_long_long(MenaiVMState *vs, long long n);
+MenaiValue *alloc_menai_integer_from_long_long(MenaiVMState *vs, int64_t n);
 MenaiValue *alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src);
 
 static inline MenaiValue *
 alloc_menai_integer_from_ssize_t(MenaiVMState *vs, ssize_t n)
 {
-    return alloc_menai_integer_from_long(vs, (long)n);
+    return alloc_menai_integer_from_long(vs, (int64_t)n);
 }
 
 static inline hash_t
@@ -1861,13 +1849,7 @@ menai_integer_hash(MenaiValue *val)
         return h == -1 ? -2 : h;
     }
 
-    MenaiInteger *obj = (MenaiInteger *)val;
-    if (!obj->is_big) {
-        hash_t h = (hash_t)obj->fixed;
-        return h == -1 ? -2 : h;
-    }
-
-    return menai_bigint_hash(&obj->big);
+    return menai_bigint_hash(&((MenaiInteger *)val)->big);
 }
 
 static inline int
@@ -1885,17 +1867,7 @@ menai_integer_equal(MenaiValue *a, MenaiValue *b)
         return a_fix && b_fix && (uintptr_t)a == (uintptr_t)b;
     }
 
-    MenaiInteger *ax = (MenaiInteger *)a;
-    MenaiInteger *bx = (MenaiInteger *)b;
-    if (!ax->is_big && !bx->is_big) {
-        return ax->fixed == bx->fixed;
-    }
-
-    if (ax->is_big != bx->is_big) {
-        return 0;
-    }
-
-    return menai_bigint_eq(&ax->big, &bx->big);
+    return menai_bigint_eq(&((MenaiInteger *)a)->big, &((MenaiInteger *)b)->big);
 }
 
 MenaiList *alloc_menai_list(MenaiVMState *vs);

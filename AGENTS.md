@@ -777,26 +777,28 @@ general licence to compare values by address.
 
 #### Integers are the awkward case
 
-An integer is one of three things and the opcodes have to keep all three straight.
-Do not test `is_fixnum` when you mean "not a bignum", and do not dereference a value
-you have only proven to be an integer:
+An integer is one of exactly two things: a fixnum immediate, or a boxed bignum.
+There is no third form, and the two are mutually exclusive by construction.  Do not
+dereference a value you have only proven to be an integer:
 
-- `menai_is_fixnum(v)` — an immediate.  Use it for the fast path.
-- `menai_integer_is_small(v)` — the value is held inline, as a fixnum or in a boxed
-  integer's inline `long`.  This is what the arithmetic fast paths branch on.
-- `menai_integer_is_big(v)` — the value is a bignum.  Narrow with
-  `menai_integer_boxed(v)` and use `->big`; do not repeat a cast at every use.
-- `menai_integer_extract_long(v, &out)` — any representation as a `long`, returning
-  `MENAI_ERR_OVERFLOW` when a bignum does not fit.  Prefer it when that is all the
-  handler needs, which removes the representation question from the handler
-  entirely.  Its callers keep their own error code, because "too large" is a
-  different diagnosis for a shift count, an index and a radix.
+- `menai_is_fixnum(v)` — an immediate, in `[MENAI_FIXNUM_MIN, MENAI_FIXNUM_MAX]`.
+  The arithmetic fast paths branch on this and never touch memory.
+- `menai_integer_is_big(v)` — a bignum.  For a value already known to be an integer
+  this is just `!menai_is_fixnum`.  Narrow with `menai_integer_boxed(v)` and use
+  `->big`; do not repeat a cast at every use.
+- `menai_integer_extract_long(v, &out)` — either form as a `long`, returning
+  `MENAI_ERR_OVERFLOW` when it does not fit.  Prefer it when that is all the handler
+  needs, which removes the representation question entirely.  Callers keep their own
+  error code, because "too large" is a different diagnosis for a shift count, an
+  index and a radix.
 
 `alloc_menai_integer_from_*` returns a `MenaiValue *`, not a `MenaiInteger *`,
 because the result is usually a fixnum.  They are the only place that chooses a
-representation, and they choose from the value alone; a second path that built an
+representation, and they choose from the value alone.  A second path that built an
 integer would produce two forms of one value and break hashing, equality and every
-dict keyed on it.
+dict keyed on it — `alloc_menai_integer_from_bigint` must therefore test the fixnum
+range, not "fits a long", because those differ and demoting to a long would loop
+back through the promoting constructor.
 
 See [ADR-0060](docs/adr/0060-immediate-values-in-tagged-words.md).
 

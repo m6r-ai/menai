@@ -820,25 +820,30 @@ class TestSmallIntegerBitOperations:
 class TestIntegerRepresentation:
     """Test that an integer's representation never changes its value.
 
-    An integer is a fixnum immediate while it is within +/-2^30, and a boxed value
-    outside that range.  The representation is chosen from the value alone, so an
-    integer that leaves the range and comes back must be indistinguishable from one
-    that never left: equality, hashing and set membership all have to agree.  These
-    tests pin that, because it is what lets a dict or set keyed on a computed value
-    be looked up with an equivalent literal.
+    An integer is a fixnum immediate while its value fits in the value word, and a
+    boxed value outside that range.  The representation is chosen from the value
+    alone, so an integer that leaves the range and comes back must be
+    indistinguishable from one that never left: equality, hashing and set membership
+    all have to agree.  These tests pin that, because it is what lets a dict or set
+    keyed on a computed value be looked up with an equivalent literal.
+
+    The boundary is the payload of the tagged word, so it is the same on every
+    supported target, and the cases below straddle it in both directions.
     """
 
-    FIXNUM_MAX = 1073741823  # 2^30 - 1 — largest fixnum immediate
-    FIXNUM_MIN = -1073741824  # -2^30 — smallest fixnum immediate
+    FIXNUM_MAX = 1152921504606846975  # 2^60 - 1 — largest fixnum immediate
+    FIXNUM_MIN = -1152921504606846976  # -2^60 — smallest fixnum immediate
 
     @pytest.mark.parametrize("expression,expected", [
-        (f"(integer+ {FIXNUM_MAX} 1)", "1073741824"),
-        (f"(integer- {FIXNUM_MIN} 1)", "-1073741825"),
+        (f"(integer+ {FIXNUM_MAX} 1)", "1152921504606846976"),
+        (f"(integer- {FIXNUM_MIN} 1)", "-1152921504606846977"),
         (f"(integer- (integer+ {FIXNUM_MAX} 1) 1)", str(FIXNUM_MAX)),
         (f"(integer+ (integer- {FIXNUM_MIN} 1) 1)", str(FIXNUM_MIN)),
         ("(integer* 2000000000 2000000000)", "4000000000000000000"),
         ("(integer- (integer* 2000000000 2000000000) (integer* 2000000000 2000000000))", "0"),
-        ("(integer-neg (integer-neg (integer+ 1073741824 1)))", "1073741825"),
+        (f"(integer-neg (integer-neg (integer+ {FIXNUM_MAX} 1)))", "1152921504606846976"),
+        # A value one past the payload needs the bignum path and comes back whole.
+        (f"(integer* (integer+ {FIXNUM_MAX} 1) 2)", "2305843009213693952"),
     ])
     def test_arithmetic_crossing_the_fixnum_boundary(self, menai, expression, expected):
         """Arithmetic that leaves and re-enters the fixnum range keeps its value."""

@@ -1464,45 +1464,41 @@ fast_integer_to_slow(MenaiVMState *vs, MenaiValue *val)
 {
     if (menai_is_fixnum(val)) {
         return PyObject_CallOneArg(
-            (PyObject *)Slow_IntegerType, PyLong_FromLong(menai_fixnum_value(val)));
+            (PyObject *)Slow_IntegerType, PyLong_FromLongLong(menai_fixnum_value(val)));
     }
 
     MenaiInteger *obj = (MenaiInteger *)val;
     PyObject *py_int;
 
-    if (!obj->is_big) {
-        py_int = PyLong_FromLong(obj->fixed);
+    MenaiBigInt *a = &obj->big;
+    if (a->length == 0) {
+        py_int = PyLong_FromLong(0);
     } else {
-        MenaiBigInt *a = &obj->big;
-        if (a->length == 0) {
-            py_int = PyLong_FromLong(0);
-        } else {
-            size_t nbytes = (size_t)a->length * 4;
-            unsigned char *buf = (unsigned char *)menai_pool_alloc(vs, nbytes);
-            if (buf == NULL) {
-                PyErr_NoMemory();
-                return NULL;
-            }
+        size_t nbytes = (size_t)a->length * 4;
+        unsigned char *buf = (unsigned char *)menai_pool_alloc(vs, nbytes);
+        if (buf == NULL) {
+            PyErr_NoMemory();
+            return NULL;
+        }
 
-            for (ssize_t i = 0; i < a->length; i++) {
-                uint32_t d = a->digits[i];
-                buf[i * 4 + 0] = (unsigned char)(d & 0xFF);
-                buf[i * 4 + 1] = (unsigned char)((d >> 8) & 0xFF);
-                buf[i * 4 + 2] = (unsigned char)((d >> 16) & 0xFF);
-                buf[i * 4 + 3] = (unsigned char)((d >> 24) & 0xFF);
-            }
+        for (ssize_t i = 0; i < a->length; i++) {
+            uint32_t d = a->digits[i];
+            buf[i * 4 + 0] = (unsigned char)(d & 0xFF);
+            buf[i * 4 + 1] = (unsigned char)((d >> 8) & 0xFF);
+            buf[i * 4 + 2] = (unsigned char)((d >> 16) & 0xFF);
+            buf[i * 4 + 3] = (unsigned char)((d >> 24) & 0xFF);
+        }
 
-            py_int = _PyLong_FromByteArray(buf, nbytes, 1, 0);
-            menai_pool_free(vs, buf);
-            if (py_int == NULL) {
-                return NULL;
-            }
+        py_int = _PyLong_FromByteArray(buf, nbytes, 1, 0);
+        menai_pool_free(vs, buf);
+        if (py_int == NULL) {
+            return NULL;
+        }
 
-            if (a->sign == -1) {
-                PyObject *neg = PyNumber_Negative(py_int);
-                Py_DECREF(py_int);
-                py_int = neg;
-            }
+        if (a->sign == -1) {
+            PyObject *neg = PyNumber_Negative(py_int);
+            Py_DECREF(py_int);
+            py_int = neg;
         }
     }
 

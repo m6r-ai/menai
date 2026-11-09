@@ -30,15 +30,20 @@ pool block always has those bits clear, because the pool prepends its header to 
 block aligned for any type, so the tag costs nothing and needs no separate word.
 Tag zero means "heap object"; the remaining tags name the immediate kinds.
 
-Three kinds are immediates: `#none`, `#true`, `#false`, and a fixnum — an integer
+Four kinds are immediates: `#none`, `#true`, `#false`, and a fixnum — an integer
 whose value fits in the payload. An integer outside that range is a boxed
-`MenaiInteger`, holding either an inline `long` or a `MenaiBigInt`. The fixnum range
-is deliberately smaller than the payload allows: it is bounded to what a `long`
-holds on the narrowest supported host, so that every int-valued operation — a
-length, an index, an offset, a codepoint — produces a fixnum, and the boxed path is
-reached only by arithmetic that genuinely leaves the range. Spending the extra
-payload bits on a wider range would turn those operations into branches in order to
-avoid a box for values nothing computes.
+`MenaiInteger`, and that box holds a `MenaiBigInt` and nothing else.
+
+Integers therefore have exactly two representations, and the fixnum range uses the
+whole payload. This is a tagged word, so it is pointer-sized: every supported target
+has 64-bit pointers and the same 61-bit payload, and the range does not vary with the
+width of a C long. Bounding it by a 32-bit `long` would box values the word can
+already hold.
+
+An earlier revision kept a third form — a boxed integer with an inline `long` — to
+cover the range above the fixnum maximum. Widening the fixnum range to the payload
+removed the reason for it: it held only a sliver of values, and it forced every
+arithmetic path to decide between three representations rather than two.
 
 The constructor is the single point that chooses a representation, and it chooses
 from the value alone. So no integer exists in two forms at once, and an integer that
