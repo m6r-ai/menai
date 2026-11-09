@@ -30,15 +30,24 @@ pool block always has those bits clear, because the pool prepends its header to 
 block aligned for any type, so the tag costs nothing and needs no separate word.
 Tag zero means "heap object"; the remaining tags name the immediate kinds.
 
-Four kinds are immediates: `#none`, `#true`, `#false`, and a fixnum — an integer
-whose value fits in the payload. An integer outside that range is a boxed
-`MenaiInteger`, and that box holds a `MenaiBigInt` and nothing else.
+Five kinds are immediates: `#none`, `#true`, `#false`, a fixnum, and a float whose
+exponent falls in a window the payload can hold. An integer outside the fixnum
+range is a boxed `MenaiInteger`, and that box holds a `MenaiBigInt` and nothing
+else.
 
 Integers therefore have exactly two representations, and the fixnum range uses the
 whole payload. This is a tagged word, so it is pointer-sized: every supported target
 has 64-bit pointers and the same 61-bit payload, and the range does not vary with the
 width of a C long. Bounding it by a 32-bit `long` would box values the word can
 already hold.
+
+The float window is a different compromise. A double needs sign, 11 exponent bits
+and 52 mantissa bits; 61 bits leaves 9 for sign and exponent, one short of a full
+exponent. So the inline form keeps the whole mantissa and covers 256 consecutive
+exponents at full double precision — the width of the binary32 exponent range,
+without giving up a mantissa bit. Zero, denormals, NaN, the infinities and anything
+outside the window stay boxed. The window is offset rather than being an aligned
+block of 256, because an aligned block cannot cover both 1.5 and 3.0.
 
 An earlier revision kept a third form — a boxed integer with an inline `long` — to
 cover the range above the fixnum maximum. Widening the fixnum range to the payload
@@ -91,13 +100,13 @@ word that is already in a register.
 Store every value in one double: floats as themselves, pointers and immediates in
 the payload space of a quiet NaN.
 
-Rejected for now. It is the only scheme that also unboxes `float`, and it would
-fold the fixnum step into the same change, so it is the more ambitious answer. But
-it makes every value word a double and depends on pointer-width assumptions holding
-on every platform a wheel is built for, and the payoff for Menai's demonstrated
-workloads — binary format parsing, text processing, integer-heavy algorithms — is
-small compared with the audit it demands. If floats become a target workload this
-is the decision to revisit, and it supersedes this one rather than extending it.
+Rejected. It is the only scheme that unboxes *every* float, including the zero,
+denormal, NaN and out-of-window values the tagged form still boxes, and it also
+folds the fixnum step into the same change. But it makes every value word a double,
+depends on pointers fitting in the 48–51 bit NaN payload on every platform a wheel
+is built for, and requires canonicalising the NaN payload that arithmetic produces.
+The tagged form gets most of the benefit for a fraction of that risk, and it pays it
+per type rather than all at once. NaN boxing would supersede this ADR, not extend it.
 
 ## Consequences
 
@@ -116,6 +125,11 @@ is the decision to revisit, and it supersedes this one rather than extending it.
 - The small-integer cache and its per-instance singleton array disappear too: the
   fixnum range subsumes them, and a computed value outside the cache used to be the
   common case rather than the exception.
+- Inline floats remove the box from most float arithmetic. The measured gain is
+  modest — low single digits on the statistics suite — because that suite is
+  dominated by comparator calls and guards rather than by allocation, but the guards
+  themselves got cheaper, since a type check on an inline float is a tag comparison
+  rather than two header loads.
 - Type checks for the immediate types get cheaper and simpler: they are a tag
   comparison on a value that is already in a register, where they used to be a load
   from a header eight bytes below a possibly cold pointer.

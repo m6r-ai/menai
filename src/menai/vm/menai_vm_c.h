@@ -483,6 +483,7 @@ typedef struct {
 #define MENAI_TAG_FALSE ((uintptr_t)0x0002)
 #define MENAI_TAG_TRUE ((uintptr_t)0x0003)
 #define MENAI_TAG_FIXNUM ((uintptr_t)0x0004)
+#define MENAI_TAG_FLOAT ((uintptr_t)0x0005)
 
 /*
  * Fixnums — integers whose value fits in the 61 bits above the tag.
@@ -729,6 +730,15 @@ struct MenaiDictElement {
     hash_t hash;
 };
 
+/*
+ * MenaiFloat — the boxed float, used only outside the inline window.
+ *
+ * A float whose exponent is in [MENAI_FLOAT_EXP_BASE, MENAI_FLOAT_EXP_MAX] is an
+ * inline immediate and never reaches this struct.  Zero, denormals, NaN, the
+ * infinities and magnitudes outside the window are boxed here instead.  Read a
+ * float through menai_float_value either way; the struct is only for the boxed
+ * case.
+ */
 struct MenaiFloat {
     MENAI_MAGIC_FIELD
     double value;
@@ -1077,7 +1087,7 @@ int menai_validate(MenaiCodeObject *co, MenaiValidationError *out_err);
 #define IS_MENAI_NONE(o) (menai_tag(o) == MENAI_TAG_NONE)
 #define IS_MENAI_BOOLEAN(o) (menai_tag(o) == MENAI_TAG_TRUE || menai_tag(o) == MENAI_TAG_FALSE)
 #define IS_MENAI_INTEGER(o) (menai_tag(o) == MENAI_TAG_FIXNUM || (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_INTEGER))
-#define IS_MENAI_FLOAT(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_FLOAT)
+#define IS_MENAI_FLOAT(o) (menai_tag(o) == MENAI_TAG_FLOAT || (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_FLOAT))
 #define IS_MENAI_COMPLEX(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_COMPLEX)
 #define IS_MENAI_STRING(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_STRING)
 #define IS_MENAI_SYMBOL(o) (!menai_is_immediate(o) && (menai_get_pool_header(o))->ob_type == MENAITYPE_SYMBOL)
@@ -1394,9 +1404,18 @@ menai_value_release(MenaiVMState *vs, MenaiValue *val)
  *
  * Reinterprets the IEEE 754 bit pattern as a uint64_t via memcpy (safe
  * under strict aliasing rules) then applies a finalisation mix so that
- * nearby values produce well-distributed hashes.  NaN is normalised to a
- * fixed bit pattern before mixing so all NaN values hash identically.
- * The result is mapped away from -1 (the CPython "error" sentinel).
+ * nearby values produce well-distributed hashes.  The result is mapped away
+ * from -1 (the CPython "error" sentinel).
+ *
+ * Two normalisations make the hash agree with the equality predicate rather
+ * than with the bit pattern:
+ *
+ *   - every NaN hashes to one pattern, because NaN is unequal to everything
+ *     including itself, so no two NaNs can require different buckets;
+ *   - both zeros hash to +0.0, because IEEE equality says 0.0 == -0.0 and a
+ *     hash that disagreed would make a dict or set miss a key that compares
+ *     equal.  The sign of zero is preserved in the value itself, so
+ *     float-copysign, division and printing still observe it.
  *
  * This is a Menai-internal hash — it does not need to match Python's
  * float hash, because Menai floats and integers are never equal and are
@@ -1408,6 +1427,8 @@ menai_hash_double(double v)
     uint64_t bits;
     if (v != v) {
         bits = 0x7FF8000000000000ULL;
+    } else if (v == 0.0) {
+        bits = 0;
     } else {
         memcpy(&bits, &v, sizeof(bits));
     }
@@ -1707,7 +1728,96 @@ menai_dict_equal(MenaiDict *a, MenaiDict *b)
     return 1;
 }
 
-MenaiFloat *alloc_menai_float(MenaiVMState *vs, double value);
+MenaiValue *alloc_menai_float(MenaiVMState *vs, double value);
+
+/*
+ * Inline floats.
+ *
+ * A double is sign(1) + exponent(11) + mantissa(52).  A value word has 61 bits
+ * above the tag, so keeping the full 52-bit mantissa leaves 9 bits for sign and
+ * exponent — one short of a full exponent.  The inline form therefore covers 256
+ * consecutive exponents, at full double precision: the same width as the binary32
+ * exponent range, without giving up a mantissa bit.
+ *
+ * Layout is sign | (exponent - MENAI_FLOAT_EXP_BASE) | mantissa, shifted up by the
+ * tag.  The base is chosen so the window is the binary32 normal range, roughly
+ * [2^-126, 2^129).  Zero, denormals, NaN, infinities and anything outside the
+ * window stay boxed MenaiFloat values.
+ *
+ * The window is deliberately not an aligned 256-exponent block.  Storing the low
+ * eight exponent bits would only allow windows starting at a multiple of 256, and
+ * then no single window holds both 1.5 and 3.0.  The base offset costs the same
+ * bits and one subtraction.
+ */
+#define MENAI_FLOAT_EXP_BITS 8
+#define MENAI_FLOAT_MANT_BITS 52
+#define MENAI_FLOAT_EXP_BASE 897
+#define MENAI_FLOAT_EXP_MAX (MENAI_FLOAT_EXP_BASE + 255)
+#define MENAI_FLOAT_EXP_FIELD 0x7ff
+#define MENAI_FLOAT_MANT_MASK ((((uint64_t)1) << MENAI_FLOAT_MANT_BITS) - 1)
+
+/* The raw IEEE 754 bit pattern of a double, via memcpy for strict aliasing. */
+static inline uint64_t
+menai_double_bits(double value)
+{
+    uint64_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+static inline int
+menai_float_is_inline(double value)
+{
+    uint64_t exp = (menai_double_bits(value) >> MENAI_FLOAT_MANT_BITS) & MENAI_FLOAT_EXP_FIELD;
+
+    /*
+     * exp == 0x7ff is NaN or infinity, which no 256-exponent window can hold;
+     * exp == 0 is zero or a denormal, which the window starts above.
+     */
+    return exp >= MENAI_FLOAT_EXP_BASE && exp <= MENAI_FLOAT_EXP_MAX;
+}
+
+static inline MenaiValue *
+menai_make_inline_float(double value)
+{
+    uint64_t bits = menai_double_bits(value);
+    uint64_t sign = (bits >> 63) & 1;
+    uint64_t exp = (bits >> MENAI_FLOAT_MANT_BITS) & MENAI_FLOAT_EXP_FIELD;
+    uint64_t mant = bits & MENAI_FLOAT_MANT_MASK;
+
+    uint64_t payload = (sign << (MENAI_FLOAT_EXP_BITS + MENAI_FLOAT_MANT_BITS))
+        | ((exp - MENAI_FLOAT_EXP_BASE) << MENAI_FLOAT_MANT_BITS)
+        | mant;
+
+    return (MenaiValue *)((payload << MENAI_FIXNUM_SHIFT) | MENAI_TAG_FLOAT);
+}
+
+static inline double
+menai_inline_float_value(MenaiValue *val)
+{
+    uint64_t payload = ((uint64_t)(uintptr_t)val) >> MENAI_FIXNUM_SHIFT;
+
+    uint64_t sign = (payload >> (MENAI_FLOAT_EXP_BITS + MENAI_FLOAT_MANT_BITS)) & 1;
+    uint64_t exp = ((payload >> MENAI_FLOAT_MANT_BITS) & 0xff) + MENAI_FLOAT_EXP_BASE;
+    uint64_t mant = payload & MENAI_FLOAT_MANT_MASK;
+
+    uint64_t bits = (sign << 63) | (exp << MENAI_FLOAT_MANT_BITS) | mant;
+
+    double value;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+/* Either representation as a double.  A caller must know the value is a float. */
+static inline double
+menai_float_value(MenaiValue *val)
+{
+    if (menai_tag(val) == MENAI_TAG_FLOAT) {
+        return menai_inline_float_value(val);
+    }
+
+    return ((MenaiFloat *)val)->value;
+}
 
 static inline void
 menai_float_final(MenaiVMState *vs, MenaiFloat *self)
@@ -1715,15 +1825,15 @@ menai_float_final(MenaiVMState *vs, MenaiFloat *self)
 }
 
 static inline hash_t
-menai_float_hash(MenaiFloat *f)
+menai_float_hash(MenaiValue *f)
 {
-    return menai_hash_double(f->value);
+    return menai_hash_double(menai_float_value(f));
 }
 
 static inline int
-menai_float_equal(MenaiFloat *a, MenaiFloat *b)
+menai_float_equal(MenaiValue *a, MenaiValue *b)
 {
-    return a->value == b->value;
+    return menai_float_value(a) == menai_float_value(b);
 }
 
 MenaiFunction *alloc_menai_function(MenaiVMState *vs, MenaiCodeObject *co);

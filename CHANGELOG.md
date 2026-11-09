@@ -4,9 +4,10 @@
 
 New features:
 
-- `#none`, the booleans and fixnum integers are now immediate values held in the
-  `MenaiValue` word rather than pool objects.  They are never allocated or reference
-  counted, and the small-integer cache is gone.  Mean performance gain of about 4.7%.
+- `#none`, the booleans, fixnum integers and most floats are now immediate values
+  held in the `MenaiValue` word rather than pool objects.  They are never allocated
+  or reference counted, and the small-integer cache is gone.  Mean performance gain
+  of about 6%.
 
 Bug fixes:
 

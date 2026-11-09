@@ -3071,7 +3071,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 }
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, d);
+            MenaiValue *r = alloc_menai_float(vs, d);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3190,56 +3190,56 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_EQ_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             bool_store(vs, frame_regs, dest, menai_float_equal(a, b));
             break;
         }
 
         case OP_FLOAT_NEQ_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             bool_store(vs, frame_regs, dest, !menai_float_equal(a, b));
             break;
         }
 
         case OP_FLOAT_LT_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            bool_store(vs, frame_regs, dest, a->value < b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, menai_float_value(a) < menai_float_value(b));
             break;
         }
 
         case OP_FLOAT_GT_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            bool_store(vs, frame_regs, dest, a->value > b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, menai_float_value(a) > menai_float_value(b));
             break;
         }
 
         case OP_FLOAT_LTE_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            bool_store(vs, frame_regs, dest, a->value <= b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, menai_float_value(a) <= menai_float_value(b));
             break;
         }
 
         case OP_FLOAT_GTE_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            bool_store(vs, frame_regs, dest, a->value >= b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            bool_store(vs, frame_regs, dest, menai_float_value(a) >= menai_float_value(b));
             break;
         }
 
         case OP_FLOAT_NEG: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, -a->value);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, -menai_float_value(a));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3251,8 +3251,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_ABS: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, fabs(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, fabs(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3264,10 +3264,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_ADD: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiFloat *r = alloc_menai_float(vs, a->value + b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *r = alloc_menai_float(vs, menai_float_value(a) + menai_float_value(b));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3279,10 +3279,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_SUB: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiFloat *r = alloc_menai_float(vs, a->value - b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *r = alloc_menai_float(vs, menai_float_value(a) - menai_float_value(b));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3294,10 +3294,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_MUL: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiFloat *r = alloc_menai_float(vs, a->value * b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *r = alloc_menai_float(vs, menai_float_value(a) * menai_float_value(b));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3309,16 +3309,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_DIV: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            double bv = b->value;
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            double bv = menai_float_value(b);
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, a->value / bv);
+            MenaiValue *r = alloc_menai_float(vs, menai_float_value(a) / bv);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3330,16 +3330,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_FLOOR_DIV: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            double bv = b->value;
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            double bv = menai_float_value(b);
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_DIVISION_BY_ZERO;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, floor(a->value / bv));
+            MenaiValue *r = alloc_menai_float(vs, floor(menai_float_value(a) / bv));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3351,16 +3351,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_MOD: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            double bv = b->value;
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            double bv = menai_float_value(b);
             if (bv == 0.0) {
                 vm_err = MENAI_ERR_MODULO_BY_ZERO;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, fmod(a->value, bv));
+            MenaiValue *r = alloc_menai_float(vs, fmod(menai_float_value(a), bv));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3372,8 +3372,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_EXP: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, exp(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, exp(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3385,10 +3385,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_EXPN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiFloat *r = alloc_menai_float(vs, pow(a->value, b->value));
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *r = alloc_menai_float(vs, pow(menai_float_value(a), menai_float_value(b)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3400,14 +3400,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_LOG: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            double v = a->value;
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            double v = menai_float_value(a);
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, v == 0.0 ? -INFINITY : log(v));
+            MenaiValue *r = alloc_menai_float(vs, v == 0.0 ? -INFINITY : log(v));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3419,14 +3419,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_LOG10: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            double v = a->value;
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            double v = menai_float_value(a);
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, v == 0.0 ? -INFINITY : log10(v));
+            MenaiValue *r = alloc_menai_float(vs, v == 0.0 ? -INFINITY : log10(v));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3438,14 +3438,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_LOG2: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            double v = a->value;
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            double v = menai_float_value(a);
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, v == 0.0 ? -INFINITY : log2(v));
+            MenaiValue *r = alloc_menai_float(vs, v == 0.0 ? -INFINITY : log2(v));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3457,11 +3457,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_LOGN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            double av = a->value;
-            double bv = b->value;
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            double av = menai_float_value(a);
+            double bv = menai_float_value(b);
             if (bv <= 0.0 || bv == 1.0) {
                 vm_err = MENAI_ERR_INVALID_LOG_BASE;
                 goto error;
@@ -3472,7 +3472,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, av == 0.0 ? -INFINITY : log(av) / log(bv));
+            MenaiValue *r = alloc_menai_float(vs, av == 0.0 ? -INFINITY : log(av) / log(bv));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3484,8 +3484,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_SIN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, sin(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, sin(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3497,8 +3497,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_COS: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, cos(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, cos(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3510,8 +3510,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_TAN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, tan(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, tan(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3523,14 +3523,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_SQRT: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            double v = a->value;
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            double v = menai_float_value(a);
             if (v < 0.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, sqrt(v));
+            MenaiValue *r = alloc_menai_float(vs, sqrt(v));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3542,8 +3542,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_FLOOR: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, floor(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, floor(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3555,8 +3555,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_CEIL: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, ceil(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, ceil(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3568,8 +3568,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_ROUND: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, round(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, round(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3581,12 +3581,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_MIN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            double av = a->value;
-            double bv = b->value;
-            MenaiFloat *r = alloc_menai_float(vs, av <= bv ? av : bv);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            double av = menai_float_value(a);
+            double bv = menai_float_value(b);
+            MenaiValue *r = alloc_menai_float(vs, av <= bv ? av : bv);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3598,12 +3598,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_MAX: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            double av = a->value;
-            double bv = b->value;
-            MenaiFloat *r = alloc_menai_float(vs, av >= bv ? av : bv);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            double av = menai_float_value(a);
+            double bv = menai_float_value(b);
+            MenaiValue *r = alloc_menai_float(vs, av >= bv ? av : bv);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3615,10 +3615,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_ATAN2: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiFloat *r = alloc_menai_float(vs, atan2(a->value, b->value));
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *r = alloc_menai_float(vs, atan2(menai_float_value(a), menai_float_value(b)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3630,8 +3630,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_COSH: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, cosh(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, cosh(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3643,8 +3643,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_SINH: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, sinh(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, sinh(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3656,8 +3656,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_TANH: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, tanh(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, tanh(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3669,14 +3669,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_ASIN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            double v = a->value;
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            double v = menai_float_value(a);
             if (v < -1.0 || v > 1.0) {
                 vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, asin(v));
+            MenaiValue *r = alloc_menai_float(vs, asin(v));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3688,14 +3688,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_ACOS: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            double v = a->value;
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            double v = menai_float_value(a);
             if (v < -1.0 || v > 1.0) {
                 vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, acos(v));
+            MenaiValue *r = alloc_menai_float(vs, acos(v));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3707,8 +3707,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_ATAN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, atan(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, atan(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3720,10 +3720,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_HYPOT: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiFloat *r = alloc_menai_float(vs, hypot(a->value, b->value));
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *r = alloc_menai_float(vs, hypot(menai_float_value(a), menai_float_value(b)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3735,8 +3735,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_EXP2: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, exp2(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, exp2(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3748,8 +3748,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_CBRT: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, cbrt(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, cbrt(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3761,8 +3761,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_EXPM1: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, expm1(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, expm1(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3774,14 +3774,14 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_LOG1P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            double v = a->value;
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            double v = menai_float_value(a);
             if (v < -1.0) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, v == -1.0 ? -INFINITY : log1p(v));
+            MenaiValue *r = alloc_menai_float(vs, v == -1.0 ? -INFINITY : log1p(v));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3793,8 +3793,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_TRUNC: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, trunc(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *r = alloc_menai_float(vs, trunc(menai_float_value(a)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3806,10 +3806,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_COPYSIGN: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiFloat *r = alloc_menai_float(vs, copysign(a->value, b->value));
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiValue *r = alloc_menai_float(vs, copysign(menai_float_value(a), menai_float_value(b)));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3821,35 +3821,35 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_NAN_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            bool_store(vs, frame_regs, dest, isnan(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            bool_store(vs, frame_regs, dest, isnan(menai_float_value(a)));
             break;
         }
 
         case OP_FLOAT_INF_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            bool_store(vs, frame_regs, dest, isinf(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            bool_store(vs, frame_regs, dest, isinf(menai_float_value(a)));
             break;
         }
 
         case OP_FLOAT_FINITE_P: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            bool_store(vs, frame_regs, dest, isfinite(a->value));
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            bool_store(vs, frame_regs, dest, isfinite(menai_float_value(a)));
             break;
         }
 
         case OP_FLOAT_MODF: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             double whole;
-            double frac = modf(a->value, &whole);
+            double frac = modf(menai_float_value(a), &whole);
 
-            MenaiFloat *r_frac = alloc_menai_float(vs, frac);
+            MenaiValue *r_frac = alloc_menai_float(vs, frac);
             if (r_frac == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            MenaiFloat *r_whole = alloc_menai_float(vs, whole);
+            MenaiValue *r_whole = alloc_menai_float(vs, whole);
             if (r_whole == NULL) {
                 menai_value_release(vs, (MenaiValue *)r_frac);
                 vm_err = MENAI_ERR_NOMEM;
@@ -3889,11 +3889,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_FREXP: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int exponent = 0;
-            double mantissa = frexp(a->value, &exponent);
+            double mantissa = frexp(menai_float_value(a), &exponent);
 
-            MenaiFloat *r_mantissa = alloc_menai_float(vs, mantissa);
+            MenaiValue *r_mantissa = alloc_menai_float(vs, mantissa);
             if (r_mantissa == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3939,7 +3939,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_LDEXP: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
@@ -3958,9 +3958,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
              * sets ERANGE for it while macOS's libm does not.
              */
             int exp = exp_l > INT_MAX ? INT_MAX : (exp_l < INT_MIN ? INT_MIN : (int)exp_l);
-            double result = ldexp(a->value, exp);
+            double result = ldexp(menai_float_value(a), exp);
 
-            MenaiFloat *r = alloc_menai_float(vs, result);
+            MenaiValue *r = alloc_menai_float(vs, result);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -3972,11 +3972,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_TO_INTEGER: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
 
             MenaiBigInt res;
             menai_bigint_init(&res);
-            vm_err = menai_bigint_from_double(vs, trunc(a->value), &res);
+            vm_err = menai_bigint_from_double(vs, trunc(menai_float_value(a)), &res);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
@@ -3993,10 +3993,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_TO_COMPLEX: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiFloat *b = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiComplex *r = alloc_menai_complex(vs, a->value, b->value);
+            MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            MenaiComplex *r = alloc_menai_complex(vs, menai_float_value(a), menai_float_value(b));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -4008,8 +4008,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         }
 
         case OP_FLOAT_TO_STRING: {
-            MenaiFloat *a = (MenaiFloat *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiString *r = alloc_menai_string_from_float(vs, a->value);
+            MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
+            MenaiString *r = alloc_menai_string_from_float(vs, menai_float_value(a));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -4089,7 +4089,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
         case OP_COMPLEX_REAL: {
             MenaiComplex *a = (MenaiComplex *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, a->real);
+            MenaiValue *r = alloc_menai_float(vs, a->real);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -4102,7 +4102,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
         case OP_COMPLEX_IMAG: {
             MenaiComplex *a = (MenaiComplex *)operand(constants_items, frame_regs, src0, tag & 1);
-            MenaiFloat *r = alloc_menai_float(vs, a->imag);
+            MenaiValue *r = alloc_menai_float(vs, a->imag);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -4117,7 +4117,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiComplex *a = (MenaiComplex *)operand(constants_items, frame_regs, src0, tag & 1);
             double re = a->real;
             double im = a->imag;
-            MenaiFloat *r = alloc_menai_float(vs, sqrt(re * re + im * im));
+            MenaiValue *r = alloc_menai_float(vs, sqrt(re * re + im * im));
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -4791,7 +4791,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 break;
             }
 
-            MenaiFloat *r = alloc_menai_float(vs, dv);
+            MenaiValue *r = alloc_menai_float(vs, dv);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -5775,7 +5775,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 \
             ctype fval; \
             memcpy(&fval, &bits, sizeof(ctype)); \
-            MenaiFloat *r = alloc_menai_float(vs, (double)fval); \
+            MenaiValue *r = alloc_menai_float(vs, (double)fval); \
             if (r == NULL) { \
                 vm_err = MENAI_ERR_NOMEM; \
                 goto error; \
@@ -5880,8 +5880,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         case opcode_name: { \
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1); \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
-            MenaiFloat *v = (MenaiFloat *)operand(constants_items, frame_regs, src1, tag & 2); \
-            ctype fval = (ctype)v->value; \
+            MenaiValue *v = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2); \
+            ctype fval = (ctype)menai_float_value(v); \
             uint_bits_t bits = 0; \
             memcpy(&bits, &fval, sizeof(ctype)); \
 \
@@ -5998,7 +5998,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2); \
             int src2 = (int)(word & FIELD_MASK); \
-            MenaiFloat *v = (MenaiFloat *)operand(constants_items, frame_regs, src2, tag & 4); \
+            MenaiValue *v = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4); \
             ssize_t offset; \
             if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
@@ -6011,7 +6011,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error; \
             } \
 \
-            ctype fval = (ctype)v->value; \
+            ctype fval = (ctype)menai_float_value(v); \
             uint_bits_t bits = 0; \
             memcpy(&bits, &fval, sizeof(ctype)); \
 \

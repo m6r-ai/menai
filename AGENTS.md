@@ -749,9 +749,9 @@ See [ADR-0048](docs/adr/0048-vm-errors-carry-structured-diagnostic-context.md).
 
 ### A `MenaiValue` must be tag-tested before it is dereferenced
 
-`#none`, the booleans and integers in the fixnum range are immediates: the value
-lives in the word itself and the low bits carry a tag, with tag zero meaning
-"pointer to a pool object".  A tagged word is not an address.  Reading a pool
+`#none`, the booleans, integers in the fixnum range and floats in the inline window
+are immediates: the value lives in the word itself and the low bits carry a tag,
+with tag zero meaning "pointer to a pool object".  A tagged word is not an address.  Reading a pool
 header, testing `ob_type`, touching `ob_refcnt`, or casting to a `MenaiFoo *` will
 fault rather than return a wrong answer, and it will fault a long way from the code
 that caused it.
@@ -799,6 +799,23 @@ integer would produce two forms of one value and break hashing, equality and eve
 dict keyed on it — `alloc_menai_integer_from_bigint` must therefore test the fixnum
 range, not "fits a long", because those differ and demoting to a long would loop
 back through the promoting constructor.
+
+#### Floats follow the same pattern with a different window
+
+A float has two forms too: inline when its exponent is inside
+`[MENAI_FLOAT_EXP_BASE, MENAI_FLOAT_EXP_MAX]`, boxed otherwise.  Zero, denormals,
+NaN, the infinities and magnitudes outside the window are the boxed cases.
+
+- Read a float through `menai_float_value(v)`, never `((MenaiFloat *)v)->value`.
+- `menai_float_is_inline(v)` is the range test; `alloc_menai_float` is the only
+  constructor, and it is the only thing that may choose the form.
+- The inline encoding keeps the full 52-bit mantissa and uses an *offset* exponent
+  window, because an aligned 256-exponent block could not cover both 1.5 and 3.0.
+
+`menai_hash_double` collapses both zeros to one bucket, because IEEE equality says
+`0.0 == -0.0` and a dict or set must not miss a key that compares equal.  The sign
+survives in the value, so `float-copysign` and division still observe it.  It also
+normalises every NaN to one pattern for the same reason.
 
 See [ADR-0060](docs/adr/0060-immediate-values-in-tagged-words.md).
 

@@ -246,3 +246,168 @@ class TestFloatOpsConstantFolding:
         result = menai.evaluate("(float-expn 10.0 1000.0)")
         assert math.isinf(result)
         assert result > 0.0
+
+
+class TestFloatZeroSign:
+    """Test that negative zero keeps its sign while hashing as zero.
+
+    IEEE equality says 0.0 == -0.0, so a dict or set has to treat them as one key:
+    equal values must hash alike.  The sign itself is still part of the value, and
+    operations that inspect it must see it.
+    """
+
+    def test_positive_and_negative_zero_compare_equal(self, menai):
+        """IEEE equality is what float=? reports."""
+        assert menai.evaluate("(float=? 0.0 -0.0)") is True
+        assert menai.evaluate("(float=? -0.0 0.0)") is True
+        assert menai.evaluate("(float!=? 0.0 -0.0)") is False
+
+    def test_negative_zero_sign_is_observable(self, menai):
+        """The sign of zero survives, so operations that read it still see it."""
+        assert math.copysign(1.0, menai.evaluate("(float-copysign 1.0 -0.0)")) == -1.0
+        assert math.copysign(1.0, menai.evaluate("(float-copysign 1.0 0.0)")) == 1.0
+
+    @pytest.mark.parametrize("expression,expected", [
+        ('(dict-get (dict 0.0 "a") -0.0)', '"a"'),
+        ('(dict-get (dict -0.0 "a") 0.0)', '"a"'),
+        ('(dict-get (dict (float- -0.0 0.0) "b") 0.0)', '"b"'),
+        ('(dict-get (dict (float* -1.0 0.0) "c") 0.0)', '"c"'),
+    ])
+    def test_zero_is_one_dict_key(self, menai, expression, expected):
+        """A key written with either sign is found by the other."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression", [
+        "(set-member? (set -0.0) 0.0)",
+        "(set-member? (set 0.0) -0.0)",
+        "(set-member? (set (float- -0.0 0.0)) 0.0)",
+    ])
+    def test_zero_is_one_set_element(self, menai, expression):
+        """Set membership agrees with float=? for either sign of zero."""
+        assert menai.evaluate(expression) is True
+
+    def test_both_zeros_collapse_to_one_element(self, menai):
+        """A set holding both signs has one element, and a dict one entry."""
+        assert menai.evaluate("(set-length (set 0.0 -0.0))") == 1
+        # A literal with both signs is rejected as a duplicate key at compile
+        # time; the runtime update path has to reach the same conclusion.
+        assert menai.evaluate("(dict-length (dict-with (dict 0.0 1) -0.0 2))") == 1
+        assert menai.evaluate_and_format("(dict-get (dict-with (dict 0.0 1) -0.0 2) 0.0)") == "2"
+
+    def test_nan_is_never_equal_but_does_not_confuse_a_collection(self, menai):
+        """NaN is unequal to itself, so a NaN key never matches a NaN lookup."""
+        nan = "(float- (float-log 0.0) (float-log 0.0))"
+        assert menai.evaluate(f"(float-nan? {nan})") is True
+        assert menai.evaluate(f"(float=? {nan} {nan})") is False
+        assert menai.evaluate_and_format(f"(dict-get (dict {nan} 1) {nan})") == "#none"
+        assert menai.evaluate(f"(set-length (set {nan} {nan}))") == 2
+
+
+class TestFloatInlineRepresentation:
+    """Test that a float's representation never changes its value.
+
+    A float is an inline immediate while its exponent falls in the window the value
+    word can hold, and a boxed value otherwise.  The representation is chosen from
+    the value alone, so an inline float and a boxed one must be indistinguishable
+    wherever a program can observe them: equality, comparison, hashing, dictionary
+    keys and set membership.  These cases straddle both ends of the window.
+    """
+
+    # The window is [2^-126, 2^129); these sit just inside and just outside it.
+    WINDOW_MIN = "1.1754943508222875e-38"    # 2^-126, smallest inline magnitude
+    BELOW_MIN = "5.877471754111438e-39"      # 2^-127, boxed
+    WINDOW_MAX = "3.3895313892515355e38"     # just under 2^129
+    ABOVE_MAX = "6.8056473384188e38"         # 2^129, boxed
+
+    @pytest.mark.parametrize("literal", [
+        "1.0",
+        "-1.0",
+        "0.5",
+        "3.141592653589793",
+        "-2.718281828459045",
+        "1.0e100",
+        "-1.0e-100",
+        "1.1754943508222875e-38",
+        "3.4028236692093e38",
+    ])
+    def test_inline_round_trip_is_exact(self, menai, literal):
+        """A value written as a literal survives as an equal value."""
+        value = float(literal)
+        assert menai.evaluate(f"(float=? {literal} {literal})") is True
+        assert menai.evaluate(f"(float+ {literal} 0.0)") == value
+        assert menai.evaluate(f"(float* {literal} 1.0)") == value
+        assert menai.evaluate(f"(float-neg (float-neg {literal}))") == value
+
+    @pytest.mark.parametrize("literal", [
+        "1e300",
+        "-1e300",
+        "1e-300",
+        "5.877471754111438e-39",
+        "6.8056473384188e38",
+        "0.0",
+        "-0.0",
+    ])
+    def test_out_of_window_values_are_correct(self, menai, literal):
+        """Values outside the window still behave as ordinary floats."""
+        assert menai.evaluate(f"(float=? {literal} {literal})") is True
+        assert menai.evaluate(f"(float+ {literal} 0.0)") == float(literal)
+
+    def test_nan_and_infinity_are_boxed_and_classified(self, menai):
+        """NaN and the infinities need the boxed form and keep their identities."""
+        inf = "(float-neg (float-log 0.0))"
+        nan = "(float- (float-log 0.0) (float-log 0.0))"
+        assert menai.evaluate(f"(float-inf? {inf})") is True
+        assert menai.evaluate(f"(float-nan? {nan})") is True
+        assert menai.evaluate(f"(float-nan? {inf})") is False
+        assert menai.evaluate(f"(float-finite? {inf})") is False
+        assert math.isinf(menai.evaluate(inf))
+
+    @pytest.mark.parametrize("literal", ["1.5", "-1.5", "1e100", "1e-100"])
+    def test_arithmetic_keeps_its_value_across_the_window(self, menai, literal):
+        """Arithmetic on an inline value gives the same answer as on a boxed one."""
+        value = float(literal)
+        assert menai.evaluate(f"(float* {literal} 2.0)") == value * 2.0
+        assert menai.evaluate(f"(float+ {literal} {literal})") == value + value
+        assert menai.evaluate(f"(float-neg {literal})") == -value
+        assert menai.evaluate(f"(float-abs {literal})") == abs(value)
+
+    def test_overflow_leaves_the_window_and_stays_correct(self, menai):
+        """A result that overflows the window is still the right double."""
+        result = menai.evaluate(f"(float* {self.WINDOW_MAX} 1e300)")
+        assert math.isinf(result)
+        # Squaring the smallest inline magnitude leaves the window and stays exact.
+        result = menai.evaluate(f"(float* {self.WINDOW_MIN} {self.WINDOW_MIN})")
+        assert result == float(self.WINDOW_MIN) * float(self.WINDOW_MIN)
+        assert menai.evaluate(f"(float* {self.BELOW_MIN} 1.0)") == float(self.BELOW_MIN)
+        assert menai.evaluate(f"(float* {self.ABOVE_MAX} 1.0)") == float(self.ABOVE_MAX)
+
+    @pytest.mark.parametrize("expression,expected", [
+        ('(dict-get (dict 1.5 "a") 1.5)', '"a"'),
+        ('(dict-get (dict (float+ 1.0 0.5) "b") 1.5)', '"b"'),
+        ('(dict-get (dict 1e300 "c") 1e300)', '"c"'),
+        ('(dict-get (dict 1e-300 "d") 1e-300)', '"d"'),
+    ])
+    def test_float_is_one_dict_key(self, menai, expression, expected):
+        """Inline and boxed values hash and compare alike as dict keys."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    @pytest.mark.parametrize("expression", [
+        "(set-member? (set 1.5) (float+ 1.0 0.5))",
+        "(set-member? (set (float+ 1.0 0.5)) 1.5)",
+        "(set-member? (set 1e300) 1e300)",
+        "(set-length (set 1.5 (float+ 1.0 0.5)))",
+    ])
+    def test_float_is_one_set_element(self, menai, expression):
+        """Set membership agrees for inline and boxed forms."""
+        if expression.startswith("(set-length"):
+            assert menai.evaluate(expression) == 1
+        else:
+            assert menai.evaluate(expression) is True
+
+    def test_float_never_equals_integer(self, menai):
+        """An inline float is still a float, not an integer, and is not equal to one."""
+        assert menai.evaluate("(float=? 1.0 1.0)") is True
+        assert menai.evaluate("(integer? 1.0)") is False
+        assert menai.evaluate("(float? 1)") is False
+        assert menai.evaluate_and_format("(dict-get (dict 1.0 \"f\" 1 \"i\") 1)") == '"i"'
+        assert menai.evaluate_and_format("(dict-get (dict 1.0 \"f\" 1 \"i\") 1.0)") == '"f"'

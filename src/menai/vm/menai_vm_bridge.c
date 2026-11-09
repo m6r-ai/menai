@@ -1514,7 +1514,7 @@ fast_integer_to_slow(MenaiVMState *vs, MenaiValue *val)
 static inline PyObject *
 fast_float_to_slow(MenaiVMState *vs, MenaiValue *val)
 {
-    PyObject *py_float = PyFloat_FromDouble(((MenaiFloat *)val)->value);
+    PyObject *py_float = PyFloat_FromDouble(menai_float_value(val));
     if (!py_float) {
         return NULL;
     }
@@ -1889,6 +1889,9 @@ menai_value_to_slow_value(MenaiVMState *vs, MenaiValue *val)
     switch (menai_tag(val)) {
     case MENAI_TAG_POINTER:
         break;
+
+    case MENAI_TAG_FLOAT:
+        return fast_float_to_slow(vs, val);
 
     case MENAI_TAG_FIXNUM:
         return fast_integer_to_slow(vs, val);

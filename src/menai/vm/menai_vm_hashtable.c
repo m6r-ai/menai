@@ -24,6 +24,9 @@ menai_value_hash(MenaiValue *val)
     case MENAI_TAG_FIXNUM:
         return menai_integer_hash(val);
 
+    case MENAI_TAG_FLOAT:
+        return menai_float_hash(val);
+
     case MENAI_TAG_NONE:
         return menai_none_hash();
 
@@ -52,7 +55,7 @@ menai_value_hash(MenaiValue *val)
         return menai_enumtype_hash((MenaiEnumType *)val);
 
     case MENAITYPE_FLOAT:
-        return menai_float_hash((MenaiFloat *)val);
+        return menai_float_hash(val);
 
     case MENAITYPE_INTEGER:
         return menai_integer_hash(val);
@@ -111,7 +114,7 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
         return menai_dict_equal((MenaiDict *)a, (MenaiDict *)b);
 
     case MENAITYPE_FLOAT:
-        return menai_float_equal((MenaiFloat *)a, (MenaiFloat *)b);
+        return menai_float_equal(a, b);
 
     case MENAITYPE_INTEGER:
         return menai_integer_equal(a, b);
