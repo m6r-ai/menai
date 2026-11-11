@@ -28,6 +28,16 @@ available and may be combined:
                view for reading hot regions in context, and is the
                instruction-level counterpart to --profile.
 
+  --coverage   Bytecode instruction coverage.  Reports how many instructions
+               executed at least once, how many never executed, and the
+               coverage of each code object, with the unexecuted instruction
+               indices listed per function.  Unlike --profile, this answers
+               "what did the program never reach".
+
+  --width N    Clip report output to N columns.  By default report lines are
+               not clipped, so long function names and constants are shown in
+               full; pass this when the output needs to fit a terminal.
+
 The two modes are complementary: cProfile covers the compiler (which is
 pure Python) but sees VM execution as a single opaque C frame, while opcode
 profiling covers the VM runtime but not the compiler.
@@ -47,6 +57,8 @@ Usage:
     menai-eval <file.menai> --profile --opcodes
     menai-eval <file.menai> --annotate
     menai-eval <file.menai> --opcodes --annotate
+    menai-eval <file.menai> --coverage
+    menai-eval <file.menai> --coverage --width 120
     menai-eval <file.menai> --cprofile --opcodes
     menai-eval <file.menai> --profile --top 50
     menai-eval <file.menai> --cprofile --sort time
@@ -66,8 +78,10 @@ from pathlib import Path
 from menai import Menai, MenaiError, MenaiString, MenaiValue
 from menai.bytecode.menai_bytecode import CodeObject
 from menai.menai_compiler import MenaiCompiler
+from menai_render.menai_render_width import clip
+from menai_trace.menai_trace_coverage import coverage_from_trace
 from menai_trace.menai_trace_data import resolve_trace
-from menai_trace.menai_trace_render import render_annotated, render_function_summary
+from menai_trace.menai_trace_render import render_annotated, render_coverage, render_function_summary
 
 _ANSI_GREY = "\033[90m"
 _ANSI_RESET = "\033[0m"
@@ -261,6 +275,8 @@ def instrument_vm(
     opcodes: bool,
     profile: bool,
     annotate: bool,
+    coverage: bool,
+    width: int | None,
 ) -> MenaiValue:
     """
     Execute the compiled code once with VM instrumentation enabled.
@@ -278,6 +294,8 @@ def instrument_vm(
         opcodes: Whether to report the opcode histogram.
         profile: Whether to report the instruction and call trace.
         annotate: Whether to report the annotated per-function disassembly.
+        coverage: Whether to report bytecode instruction coverage.
+        width:    Maximum output line width, or None for no clipping.
 
     Returns:
         The evaluation result (raw MenaiValue).
@@ -305,26 +323,38 @@ def instrument_vm(
     elapsed_s = time.perf_counter() - start
 
     if opcodes:
-        _print_opcode_profile(menai, top_n, elapsed_s, color)
+        _print_opcode_profile(menai, top_n, elapsed_s, color, width)
 
-    if profile or annotate:
+    if profile or annotate or coverage:
         instr_counts, call_counts = menai.vm.get_trace_data()
         trace_result = resolve_trace(code, instr_counts, call_counts)
 
         if profile:
             print()
             for line in render_function_summary(trace_result, color=color, top_n=top_n):
-                print(line)
+                print(clip(line, width))
 
         if annotate:
             print()
             for line in render_annotated(trace_result, color=color):
-                print(line)
+                print(clip(line, width))
+
+        if coverage:
+            print()
+            coverage_result = coverage_from_trace(trace_result)
+            for line in render_coverage(coverage_result, color=color):
+                print(clip(line, width))
 
     return result
 
 
-def _print_opcode_profile(menai: Menai, top_n: int, elapsed_s: float, color: bool) -> None:
+def _print_opcode_profile(
+    menai: Menai,
+    top_n: int,
+    elapsed_s: float,
+    color: bool,
+    width: int | None,
+) -> None:
     """Print the per-opcode frequency histogram collected from the last run."""
     profile_data = menai.vm.get_profile_data()
 
@@ -347,19 +377,19 @@ def _print_opcode_profile(menai: Menai, top_n: int, elapsed_s: float, color: boo
     ]
     entries.sort(key=lambda e: e[1], reverse=True)
 
-    print(f"{'Opcode':<{_OPCODE_COL}} {'Count':>{_COUNT_COL}} {'% of total':>{_PCT_COL}}")
-    print(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
+    print(clip(f"{'Opcode':<{_OPCODE_COL}} {'Count':>{_COUNT_COL}} {'% of total':>{_PCT_COL}}", width))
+    print(clip(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}", width))
 
     for name, count in entries[:top_n]:
         pct = (count / total_instr * 100.0) if total_instr > 0 else 0.0
-        print(f"{name:<{_OPCODE_COL}} {count:>{_COUNT_COL},} {pct:>{_PCT_COL - 1}.1f}%")
+        print(clip(f"{name:<{_OPCODE_COL}} {count:>{_COUNT_COL},} {pct:>{_PCT_COL - 1}.1f}%", width))
 
-    print(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
-    print(f"{'TOTAL':<{_OPCODE_COL}} {total_instr:>{_COUNT_COL},}")
+    print(clip(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}", width))
+    print(clip(f"{'TOTAL':<{_OPCODE_COL}} {total_instr:>{_COUNT_COL},}", width))
     print()
-    print(f"Wall-clock time:      {elapsed_s * 1000.0:.3f} ms")
-    print(f"Instructions/sec:     {instr_per_sec:,.0f}")
-    print(f"Avg time/instruction: {avg_ns_per_instr:.1f} ns")
+    print(clip(f"Wall-clock time:      {elapsed_s * 1000.0:.3f} ms", width))
+    print(clip(f"Instructions/sec:     {instr_per_sec:,.0f}", width))
+    print(clip(f"Avg time/instruction: {avg_ns_per_instr:.1f} ns", width))
 
 
 def _report_execution_error(exc: Exception) -> None:
@@ -418,6 +448,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--annotate",
         action="store_true",
         help="Annotate the disassembly of every function with per-instruction execution shares",
+    )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="Report bytecode instruction coverage: executed, unexecuted, and per-function shares",
+    )
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Clip report output to N columns (default: no clipping)",
     )
     parser.add_argument(
         "--output", "-o",
@@ -495,10 +537,11 @@ def main() -> int:
     else:
         code, _ = compile_source(source, name, menai)
 
-    if args.profile or args.opcodes or args.annotate:
+    if args.profile or args.opcodes or args.annotate or args.coverage:
         result = instrument_vm(
             menai, code, args.top, color,
             opcodes=args.opcodes, profile=args.profile, annotate=args.annotate,
+            coverage=args.coverage, width=args.width,
         )
 
     else:
@@ -513,10 +556,15 @@ def main() -> int:
     print_section("EVALUATION", color)
     rendered = render_result(result, args.raw)
     if args.raw and isinstance(result, MenaiString):
-        print(rendered, end="" if rendered.endswith("\n") else "\n")
+        if args.width is None:
+            print(rendered, end="" if rendered.endswith("\n") else "\n")
+
+        else:
+            for line in rendered.splitlines():
+                print(clip(line, args.width))
 
     else:
-        print(f"Result: {rendered}")
+        print(clip(f"Result: {rendered}", args.width))
 
     return 0
 

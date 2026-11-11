@@ -2,6 +2,7 @@
 """Command-line interface for the pipeline engine."""
 
 import argparse
+import builtins
 from collections.abc import Callable
 import cProfile
 import io
@@ -9,11 +10,13 @@ from pathlib import Path
 import pstats
 import sys
 import time
+from typing import TextIO
 
 from menai_pipeline.pipeline_engine import PipelineResult, StepResult, execute_pipeline
 from menai_pipeline.pipeline_optimizer import optimize_pipeline
 from menai_pipeline.pipeline_parser import PipelineParseError, load_pipeline
 from menai_pipeline.pipeline_step import MenaiStep, Pipeline, ToolStep
+from menai_render.menai_render_width import clip
 from menai_trace.menai_trace_render import render_annotated, render_function_summary
 
 
@@ -27,6 +30,23 @@ _SEPARATOR_WIDTH = 70
 _OPCODE_COL = 40
 _COUNT_COL = 15
 _PCT_COL = 12
+
+class _OutputConfig:
+    """Mutable output settings for one CLI run."""
+
+    width: int | None = None
+
+
+_OUTPUT = _OutputConfig()
+
+
+def _emit(text: str = "", *, end: str | None = None, file: TextIO | None = None) -> None:
+    """Print one line, clipping stdout lines to the configured width."""
+    if file is not None:
+        builtins.print(text, end=end, file=file)
+        return
+
+    builtins.print(clip(text, _OUTPUT.width), end=end)
 
 
 def _use_color(no_color: bool, color: bool) -> bool:
@@ -56,7 +76,7 @@ def _make_step_callbacks(
     on_step_start prints a separator followed by the full status block: all previously
     completed steps with their final status, and the current step marked as Running.
     on_step_done records the completed result so it appears in the next status block,
-    and at verbosity >= 2 appends the truncated debug value beneath the status block.
+    and at verbosity >= 2 appends the step's debug value beneath the status block.
     print_final_block prints the closing separator and final status block after the
     last step completes.
     """
@@ -89,42 +109,38 @@ def _make_step_callbacks(
 
         if not prev.success:
             error_text = f"{_ANSI_RED}{prev.error}{_ANSI_RESET}" if color else prev.error
-            print(error_text)
-            print(separator)
+            _emit(error_text)
+            _emit(separator)
 
         elif verbosity >= 2 and prev.value:
             if prev.step_id in console_step_ids:
-                print(separator)
+                _emit(separator)
 
-            truncated = prev.value
-            if len(truncated) > 120:
-                truncated = truncated[:117] + "..."
-
-            value_text = f"{_ANSI_GREEN}{truncated}{_ANSI_RESET}" if color else truncated
-            print(value_text)
-            print(separator)
+            value_text = f"{_ANSI_GREEN}{prev.value}{_ANSI_RESET}" if color else prev.value
+            _emit(value_text)
+            _emit(separator)
 
         elif prev.step_id in console_step_ids:
-            print(separator)
+            _emit(separator)
 
-        print(f"{i + 1:{num_width}}. {prev.step_id} <- {status}{timing_str}")
+        _emit(f"{i + 1:{num_width}}. {prev.step_id} <- {status}{timing_str}")
 
         pending[0] = None
 
     def on_step_start(step_id: str) -> None:
         _flush_pending()
-        print(separator)
+        _emit(separator)
         i = step_index[step_id]
         running = f"{_ANSI_CYAN}Running{_ANSI_RESET}" if color else "Running"
-        print(f"{i + 1:{num_width}}. {step_id} <- {running}")
-        print(separator)
+        _emit(f"{i + 1:{num_width}}. {step_id} <- {running}")
+        _emit(separator)
 
     def on_step_done(step_result: StepResult) -> None:
         pending[0] = step_result
 
     def print_final_block() -> None:
         _flush_pending()
-        print(separator)
+        _emit(separator)
 
     return on_step_start, on_step_done, print_final_block
 
@@ -138,13 +154,13 @@ def _print_timings_bar(result: PipelineResult) -> None:
     bar_width = 40
     id_width = max((len(r.step_id) for r in result.step_results), default=8)
 
-    print("Timing breakdown:")
+    _emit("Timing breakdown:")
     for step_result in result.step_results:
         proportion = step_result.elapsed_s / total
         filled = round(proportion * bar_width)
         text_bar = "█" * filled + "░" * (bar_width - filled)
         pct = proportion * 100
-        print(
+        _emit(
             f"  {step_result.step_id:<{id_width}}  [{text_bar}]  "
             f"{_format_elapsed(step_result.elapsed_s):>8}  ({pct:4.1f}%)"
         )
@@ -157,13 +173,13 @@ def _print_pipeline_summary(
     step_count_after: int
 ) -> None:
     """Print a summary of the pipeline structure."""
-    print(f"Pipeline: {pipeline_path}")
-    print(f"Steps: {step_count_before}", end="")
+    _emit(f"Pipeline: {pipeline_path}")
+    _emit(f"Steps: {step_count_before}", end="")
     if optimized and step_count_after < step_count_before:
         collapsed = step_count_before - step_count_after
-        print(f" -> {step_count_after} ({collapsed} Menai step(s) collapsed)", end="")
+        _emit(f" -> {step_count_after} ({collapsed} Menai step(s) collapsed)", end="")
 
-    print()
+    _emit()
 
 
 def _run_with_profile(
@@ -235,35 +251,35 @@ def _print_opcode_profile(result: PipelineResult, top_n: int, color: bool) -> No
 
     total_instr = aggregate.pop("__total__", 0)
 
-    print()
-    print(_separator(color))
-    print(f"VM OPCODE PROFILE  (top {top_n} by count)")
-    print(_separator(color))
+    _emit()
+    _emit(_separator(color))
+    _emit(f"VM OPCODE PROFILE  (top {top_n} by count)")
+    _emit(_separator(color))
 
     if total_instr == 0:
-        print("No opcode profiling data collected.")
-        print("The C VM may not have been built with profiling support.")
+        _emit("No opcode profiling data collected.")
+        _emit("The C VM may not have been built with profiling support.")
         return
 
     entries = [(name, count) for name, count in aggregate.items() if count > 0]
     entries.sort(key=lambda e: e[1], reverse=True)
 
-    print(f"{'Opcode':<{_OPCODE_COL}} {'Count':>{_COUNT_COL}} {'% of total':>{_PCT_COL}}")
-    print(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
+    _emit(f"{'Opcode':<{_OPCODE_COL}} {'Count':>{_COUNT_COL}} {'% of total':>{_PCT_COL}}")
+    _emit(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
 
     for name, count in entries[:top_n]:
         pct = (count / total_instr * 100.0) if total_instr > 0 else 0.0
-        print(f"{name:<{_OPCODE_COL}} {count:>{_COUNT_COL},} {pct:>{_PCT_COL - 1}.1f}%")
+        _emit(f"{name:<{_OPCODE_COL}} {count:>{_COUNT_COL},} {pct:>{_PCT_COL - 1}.1f}%")
 
-    print(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
-    print(f"{'TOTAL':<{_OPCODE_COL}} {total_instr:>{_COUNT_COL},}")
+    _emit(f"{'-' * _OPCODE_COL} {'-' * _COUNT_COL} {'-' * _PCT_COL}")
+    _emit(f"{'TOTAL':<{_OPCODE_COL}} {total_instr:>{_COUNT_COL},}")
 
     if len(profiles) > 1:
-        print()
-        print("Per step:")
+        _emit()
+        _emit("Per step:")
         for profile in profiles:
             step_total = profile.opcode_counts.get("__total__", 0)
-            print(f"  {profile.step_id:<24} {step_total:>{_COUNT_COL},}")
+            _emit(f"  {profile.step_id:<24} {step_total:>{_COUNT_COL},}")
 
 
 def _print_function_profiles(result: PipelineResult, top_n: int, color: bool) -> None:
@@ -272,17 +288,17 @@ def _print_function_profiles(result: PipelineResult, top_n: int, color: bool) ->
     if not profiles:
         return
 
-    print()
-    print(_separator(color))
-    print(f"VM FUNCTION PROFILE  (top {top_n} per step)")
-    print(_separator(color))
+    _emit()
+    _emit(_separator(color))
+    _emit(f"VM FUNCTION PROFILE  (top {top_n} per step)")
+    _emit(_separator(color))
 
     for profile in profiles:
         assert profile.trace is not None
-        print()
-        print(f"  {profile.step_id}")
+        _emit()
+        _emit(f"  {profile.step_id}")
         for line in render_function_summary(profile.trace, color=color, top_n=top_n):
-            print(f"  {line}")
+            _emit(f"  {line}")
 
 
 def _print_annotated(result: PipelineResult, color: bool) -> None:
@@ -291,17 +307,17 @@ def _print_annotated(result: PipelineResult, color: bool) -> None:
     if not profiles:
         return
 
-    print()
-    print(_separator(color))
-    print("VM ANNOTATED TRACE")
-    print(_separator(color))
+    _emit()
+    _emit(_separator(color))
+    _emit("VM ANNOTATED TRACE")
+    _emit(_separator(color))
 
     for profile in profiles:
         assert profile.trace is not None
-        print()
-        print(f"  {profile.step_id}")
+        _emit()
+        _emit(f"  {profile.step_id}")
         for line in render_annotated(profile.trace, color=color):
-            print(f"  {line}")
+            _emit(f"  {line}")
 
 
 def main() -> int:
@@ -321,6 +337,7 @@ Examples:
   python -m menai_pipeline.run -v examples/file-transform/pipeline.json
   python -m menai_pipeline.run -v --timings examples/clock-and-file/pipeline.json
   python -m menai_pipeline.run --cprofile examples/file-transform/pipeline.json
+  python -m menai_pipeline.run -v --width 120 examples/file-transform/pipeline.json
         """
     )
 
@@ -341,7 +358,7 @@ Examples:
         action="count",
         default=0,
         dest="verbosity",
-        help="Increase verbosity: -v shows live step status, -vv also shows truncated step output"
+        help="Increase verbosity: -v shows live step status, -vv also shows step output"
     )
 
     parser.add_argument(
@@ -417,6 +434,15 @@ Examples:
     )
 
     parser.add_argument(
+        "--width",
+        type=int,
+        default=None,
+        metavar="N",
+        dest="width",
+        help="Clip output lines to N columns (default: no clipping)"
+    )
+
+    parser.add_argument(
         "--no-color",
         action="store_true",
         help="Disable ANSI colour output"
@@ -440,6 +466,8 @@ Examples:
 
     args = parser.parse_args()
 
+    _OUTPUT.width = args.width
+
     color = _use_color(args.no_color, args.color)
 
     pipeline_path: Path = args.pipeline
@@ -448,7 +476,7 @@ Examples:
         pipeline = load_pipeline(pipeline_path)
 
     except PipelineParseError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        _emit(f"Error: {e}", file=sys.stderr)
         return 1
 
     step_count_before = len(pipeline.steps)
@@ -461,31 +489,31 @@ Examples:
 
     if args.dry_run:
         _print_pipeline_summary(pipeline_path, optimized, step_count_before, step_count_after)
-        print()
+        _emit()
         for step in pipeline.steps:
             if isinstance(step, MenaiStep):
-                print(f"  menai    {step.step_id}")
+                _emit(f"  menai    {step.step_id}")
                 if step.module:
-                    print(f"             module: {step.module}")
+                    _emit(f"             module: {step.module}")
 
                 for name, src in step.inputs.items():
-                    print(f"             input:  {name} <- {src}")
+                    _emit(f"             input:  {name} <- {src}")
 
                 for key, target in step.outputs.items():
-                    print(f"             output: {key} -> {target}")
+                    _emit(f"             output: {key} -> {target}")
 
             elif isinstance(step, ToolStep):
-                print(f"  {step.tool:<8} {step.step_id}  ({step.operation})")
+                _emit(f"  {step.tool:<8} {step.step_id}  ({step.operation})")
                 if step.value_from:
-                    print(f"             value_from: {step.value_from}")
+                    _emit(f"             value_from: {step.value_from}")
 
-        print()
-        print("Pipeline is valid.")
+        _emit()
+        _emit("Pipeline is valid.")
         return 0
 
     if args.verbosity >= 1:
         _print_pipeline_summary(pipeline_path, optimized, step_count_before, step_count_after)
-        print()
+        _emit()
 
     profile_output = None
     start = time.monotonic()
@@ -526,14 +554,14 @@ Examples:
         print_final_block()
 
     if args.timings and result.step_results:
-        print()
+        _emit()
         _print_timings_bar(result)
 
     if profile_output:
-        print()
-        print(f"cProfile (top {args.cprofile_lines} by {args.cprofile_sort}):")
+        _emit()
+        _emit(f"cProfile (top {args.cprofile_lines} by {args.cprofile_sort}):")
         for line in profile_output.splitlines():
-            print(line)
+            _emit(line)
 
     if args.opcodes:
         _print_opcode_profile(result, args.top, color)
@@ -546,12 +574,12 @@ Examples:
 
     if result.success:
         if args.verbosity >= 1:
-            print()
-            print(f"Pipeline completed successfully in {_format_elapsed(elapsed)}")
+            _emit()
+            _emit(f"Pipeline completed successfully in {_format_elapsed(elapsed)}")
 
         return 0
 
-    print(f"Pipeline failed: {result.error}", file=sys.stderr)
+    _emit(f"Pipeline failed: {result.error}", file=sys.stderr)
     return 1
 
 

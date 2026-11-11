@@ -19,6 +19,8 @@ python -m menai_eval.eval <file.menai> --opcodes             # VM opcode profile
 python -m menai_eval.eval <file.menai> --profile --opcodes   # both VM reports
 python -m menai_eval.eval <file.menai> --annotate            # annotated disassembly
 python -m menai_eval.eval <file.menai> --opcodes --annotate  # both VM reports
+python -m menai_eval.eval <file.menai> --coverage            # bytecode coverage
+python -m menai_eval.eval <file.menai> --coverage --width 120 # clip reports to 120 columns
 python -m menai_eval.eval <file.menai> --cprofile --opcodes  # both
 python -m menai_eval.eval <file.menai> --profile --top 50    # show top 50 entries
 python -m menai_eval.eval <file.menai> --cprofile --sort time
@@ -30,6 +32,10 @@ python -m menai_eval.eval <file.menai> --annotate --color      # force colour wh
 Reports are coloured when stdout is a terminal.  `--no-color` disables colour;
 `--color` / `-c` forces it on even when stdout is not a terminal (for example
 when piping into `less -R`).
+
+Report lines are not clipped by default, so long function names and constant
+values are shown in full.  `--width N` clips report output to N columns when the
+output needs to fit a fixed width.
 
 ## Profiling and tracing modes
 
@@ -93,6 +99,27 @@ of executed instructions is the meaningful signal.
 
 `--annotate` is a separate presentation from `--profile` and may be combined with
 `--opcodes`; all are collected from a single instrumented run.
+
+### `--coverage` — bytecode instruction coverage
+
+Reports how much of the compiled bytecode executed.  The summary gives the total
+instruction count, how many instructions executed at least once, how many never
+executed, and how many code objects were entered.  A per-function table follows,
+ordered with the least covered functions first, and the unexecuted instruction
+indices are listed per function as compact ranges.
+
+This is the coverage view, not the profile view.  `--profile` and `--annotate`
+answer "where did the work happen" by ranking execution counts; `--coverage`
+answers "what did the program never reach" by treating every zero count as a
+gap.  Because the VM trace has an entry for every instruction in the compiled
+tree, functions that were compiled but never called appear with 0% coverage
+rather than being absent.
+
+Coverage is measured over the bytecode that was compiled.  Code removed by an
+optimisation pass before bytecode emission (an unreachable binding, an inlined
+function) has no instructions in the tree and is neither covered nor counted in
+the total.  `--coverage` may be combined with the other VM reports; all are
+collected from a single instrumented run.
 
 ## Rendering string results
 

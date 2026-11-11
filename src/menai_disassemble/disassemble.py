@@ -16,6 +16,7 @@ Usage:
     menai-disassemble <file.menai> --trace  # Also show function call trace
     menai-disassemble --prelude              # Disassemble the prelude only
     menai-disassemble <file.menai> --prelude # Disassemble prelude then the file
+    menai-disassemble <file.menai> --width 120  # Clip output lines to 120 columns
 """
 
 import argparse
@@ -34,6 +35,7 @@ from menai_render.menai_render_instruction import (
     render_code_metadata,
     render_instruction_lines,
 )
+from menai_render.menai_render_width import clip_lines
 
 
 def disassemble(code: CodeObject) -> str:
@@ -193,6 +195,10 @@ def main() -> int:
         '--module-path', action='append', default=[], metavar='DIR', dest='module_path',
         help='Prepend DIR to the module search path (repeatable)',
     )
+    parser.add_argument(
+        '--width', type=int, default=None, metavar='N',
+        help='Clip output lines to N columns (default: no clipping)',
+    )
 
     args = parser.parse_args()
     color = (not args.no_color and not args.output and sys.stdout.isatty()) or args.color
@@ -278,7 +284,7 @@ def main() -> int:
             output_lines.extend(trace_lines)
 
     # Output
-    output_text = '\n'.join(output_lines)
+    output_text = '\n'.join(clip_lines(output_lines, args.width))
 
     if args.output:
         output_path = Path(args.output)

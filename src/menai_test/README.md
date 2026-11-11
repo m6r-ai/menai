@@ -18,9 +18,19 @@ menai-test src/menai/stdlib/ --verbose
 
 # Filter by name (case-insensitive substring match on full path)
 menai-test src/menai/stdlib/ --filter "parse-string"
+
+# Report bytecode instruction coverage after each file's results
+menai-test src/menai/stdlib/ --coverage
+
+# Clip output lines to 120 columns (default: no clipping)
+menai-test src/menai/stdlib/ --width 120
 ```
 
 The runner exits with code 0 if all tests pass, non-zero if any fail.
+
+Output lines are not clipped by default, so long test names, errors, and
+coverage function labels are shown in full.  `--width N` clips every output line
+to N columns.
 
 ## Writing tests
 
@@ -107,6 +117,33 @@ Each leaf thunk runs in a **fresh VM invocation**. A runtime error (type error,
 assertion failure, etc.) in one test does not affect any other. This is the
 mechanism that makes `assert-equal` safe to use — the VM terminates on the
 first failure and the runner catches it at the Python level.
+
+### Coverage
+
+`--coverage` collects per-instruction execution counts from the VM across every
+leaf in every selected test file and reports one cumulative bytecode coverage
+report at the end of the run.  Counts from all leaves and all files are merged,
+so a function exercised by any test is covered even if other tests do not reach
+it.
+
+The report shows the total distinct instructions across the merged functions,
+how many executed at least once, and a per-function table ordered with the least
+covered functions first.  It ends with the instruction indices that never
+executed, grouped by function.  A function that was compiled into a program but
+never called appears with 0% coverage.
+
+Functions are merged by source identity (file, line, and short name), so a
+library function compiled into several test programs is counted once rather than
+once per program.  Module-root code objects have no stable source identity across
+programs and are excluded.
+
+Coverage is measured over the bytecode that was compiled.  Code removed by an
+optimisation pass before bytecode emission has no instructions in the tree and
+is not counted, so the report answers what the VM did with the program it was
+given rather than what the source contained before optimisation.
+
+`--coverage` and `--isolate` cannot be combined: isolated leaves compile
+independent code trees whose instruction ordinals are not comparable.
 
 ### assert-equal
 

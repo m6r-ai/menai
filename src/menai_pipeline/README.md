@@ -162,7 +162,7 @@ Options:
 | `--no-optimize` | Disable adjacent Menai step collapsing |
 | `--dry-run` | Validate and display the pipeline without executing it |
 | `-v` / `--verbose` | Show pipeline summary and per-step status |
-| `-vv` | Also show truncated output values for each step |
+| `-vv` | Also show output values for each step |
 | `--timings` / `-t` | Show per-step elapsed time and timing bar (implies `-v`) |
 | `--cprofile` | Run the pipeline under Python's cProfile and print the top hotspots |
 | `--cprofile-lines N` | Number of functions to show in cProfile output (default: 30) |
@@ -171,8 +171,13 @@ Options:
 | `--opcodes` | Profile VM execution per Menai step with per-opcode frequency counting |
 | `--annotate` | Annotate the disassembly of every function in each Menai step with per-instruction execution shares |
 | `--top N` | Show top N entries in VM profile output (default: 40) |
+| `--width N` | Clip output lines to N columns (default: no clipping) |
 | `--no-color` | Disable ANSI colour output |
 | `--color` / `-c` | Force ANSI colour output even when stdout is not a terminal |
+
+Output lines are not clipped by default, so long step output values, function
+labels, and constants are shown in full.  `--width N` clips stdout lines to N
+columns.
 
 ## Profiling
 

@@ -6,9 +6,11 @@ from typing import Any
 
 from menai import Menai, MenaiBytes, MenaiDict, MenaiString
 from menai.bytecode.menai_bytecode import CodeObject
+from menai_render.menai_render_width import clip
+from menai_trace.menai_trace_coverage import CoverageAccumulator, CoverageResult as ResolvedCoverage
 from menai_trace.menai_trace_data import TraceResult as ResolvedTrace
 from menai_trace.menai_trace_data import resolve_trace
-from menai_trace.menai_trace_render import render_annotated, render_function_summary
+from menai_trace.menai_trace_render import render_annotated, render_coverage, render_function_summary
 
 
 @dataclass
@@ -114,6 +116,15 @@ class TraceResult:
     error: str | None = None
 
 
+@dataclass
+class CoverageCaseResult:
+    """Bytecode coverage data for one case, summed across its timed iterations."""
+
+    case: BenchmarkCase
+    coverage: ResolvedCoverage | None = None
+    error: str | None = None
+
+
 class BenchmarkSuite(ABC):
     """
     Abstract base class for a family of related benchmarks.
@@ -158,6 +169,11 @@ class BenchmarkRunner:
     timed iteration of each case and resolved against the compiled code
     object.  Tracing requires the prepared value to be a CodeObject, so it
     only applies to the Menai implementation.
+
+    When *coverage* is True, instruction and call tracing is enabled and the
+    per-instruction counts are summed across every timed iteration of a case.
+    Coverage requires the prepared value to be a CodeObject, so it only applies
+    to the Menai implementation.
     """
 
     def __init__(
@@ -167,6 +183,7 @@ class BenchmarkRunner:
         menai: Menai,
         opcodes: bool = False,
         profile: bool = False,
+        coverage: bool = False,
     ) -> None:
         """Initialise the runner with a suite, the cases to run, a warmed-up Menai instance, and optional instrumentation."""
         self._suite = suite
@@ -174,20 +191,23 @@ class BenchmarkRunner:
         self._menai = menai
         self._opcodes = opcodes
         self._profile = profile
+        self._coverage = coverage
 
-    def run(self) -> tuple[list[CaseResult], list[ProfileResult], list[TraceResult]]:
-        """Execute the selected cases and return timing, profile, and trace results."""
+    def run(self) -> tuple[list[CaseResult], list[ProfileResult], list[TraceResult], list[CoverageCaseResult]]:
+        """Execute the selected cases and return timing, profile, trace, and coverage results."""
         suite = self._suite
         impl = build_menai_implementation(self._menai, suite.menai_program())
         results: list[CaseResult] = []
         profile_results: list[ProfileResult] = []
         trace_results: list[TraceResult] = []
+        coverage_results: list[CoverageCaseResult] = []
 
         for case in self._cases:
             times: list[float] = []
             error: str | None = None
             opcode_data: dict[str, int] = {}
             raw_trace: tuple[list[int], list[int]] | None = None
+            coverage_accumulator: CoverageAccumulator | None = None
 
             # Pre-timing setup: build strings, compile, etc.
             if impl.prepare is not None:
@@ -196,7 +216,11 @@ class BenchmarkRunner:
             else:
                 prepared = case.input
 
-            if self._opcodes or self._profile:
+            if self._coverage and isinstance(prepared, CodeObject):
+                coverage_accumulator = CoverageAccumulator()
+                coverage_accumulator.begin(prepared)
+
+            if self._opcodes or self._profile or self._coverage:
                 self._menai.vm.enable_profiling()
 
             try:
@@ -204,6 +228,11 @@ class BenchmarkRunner:
                     impl.run(prepared)
                     vm_timing = self._menai.vm.get_timing_data()
                     times.append(vm_timing.get("execute_ns", 0) / 1_000_000_000.0)
+
+                    if coverage_accumulator is not None:
+                        instr_counts, call_counts = self._menai.vm.get_trace_data()
+                        if instr_counts:
+                            coverage_accumulator.add(instr_counts, call_counts)
 
                     # Collect instrumentation data from the last iteration.
                     if iteration == case.iterations - 1:
@@ -253,7 +282,20 @@ class BenchmarkRunner:
                     )
                 )
 
-        return results, profile_results, trace_results
+            if self._coverage:
+                coverage_results.append(
+                    CoverageCaseResult(
+                        case=case,
+                        coverage=(
+                            coverage_accumulator.result()
+                            if error is None and coverage_accumulator is not None and case.iterations > 0
+                            else None
+                        ),
+                        error=error,
+                    )
+                )
+
+        return results, profile_results, trace_results, coverage_results
 
 
 def _resolve_case_trace(
@@ -285,29 +327,35 @@ class BenchmarkReporter:
     _COL_COUNT = 15
     _COL_PCT = 12
 
-    def __init__(self, color: bool = False) -> None:
+    def __init__(self, color: bool = False, width: int | None = None) -> None:
         """
         Create a reporter.
 
         Args:
             color: Whether the per-function and annotated trace renderers should
                    emit ANSI colour codes.
+            width: Maximum output line width, or None for no clipping.
         """
         self._color = color
+        self._width = width
+
+    def _emit(self, text: str = "") -> None:
+        """Print one line, clipped to the configured width."""
+        print(clip(text, self._width))
 
     def report(self, suite_name: str, results: list[CaseResult]) -> None:
         """Print a formatted timing table to stdout."""
         col_case = max(self._MIN_COL_CASE, max((len(r.case.name) for r in results), default=0))
         separator = "─" * (col_case + 3 + self._COL_MEAN + 3 + self._COL_MIN)
-        print()
-        print(suite_name.upper())
-        print(separator)
-        print(
+        self._emit()
+        self._emit(suite_name.upper())
+        self._emit(separator)
+        self._emit(
             f"{'Case':<{col_case}}   "
             f"{'mean (ms)':>{self._COL_MEAN}}   "
             f"{'min (ms)':>{self._COL_MIN}}"
         )
-        print(separator)
+        self._emit(separator)
 
         for result in results:
             if result.error is not None:
@@ -318,14 +366,14 @@ class BenchmarkReporter:
                 mean_str = f"{result.mean_s * self._MS:.3f}"
                 min_str = f"{result.min_s * self._MS:.3f}"
 
-            print(
+            self._emit(
                 f"{result.case.name:<{col_case}}   "
                 f"{mean_str:>{self._COL_MEAN}}   "
                 f"{min_str:>{self._COL_MIN}}"
             )
 
-        print(separator)
-        print()
+        self._emit(separator)
+        self._emit()
 
     def report_profile(
         self,
@@ -345,9 +393,9 @@ class BenchmarkReporter:
             ),
         )
         separator = "─" * (2 + col_opcode + 1 + self._COL_COUNT + 1 + self._COL_PCT)
-        print()
-        print(f"{suite_name.upper()} — OPCODE PROFILES")
-        print(separator)
+        self._emit()
+        self._emit(f"{suite_name.upper()} — OPCODE PROFILES")
+        self._emit(separator)
 
         for pr in profile_results:
             if pr.error is not None:
@@ -356,8 +404,8 @@ class BenchmarkReporter:
             if not pr.opcode_counts or pr.total_instructions == 0:
                 continue
 
-            print(f"\n  {pr.case.name}")
-            print(f"  {'─' * (col_opcode + 1 + self._COL_COUNT + 1 + self._COL_PCT)}")
+            self._emit(f"\n  {pr.case.name}")
+            self._emit(f"  {'─' * (col_opcode + 1 + self._COL_COUNT + 1 + self._COL_PCT)}")
 
             entries = [
                 (op, count)
@@ -368,19 +416,19 @@ class BenchmarkReporter:
 
             shown = entries[:top_n]
 
-            print(f"  {'Opcode':<{col_opcode}} {'Count':>{self._COL_COUNT}} {'% of total':>{self._COL_PCT}}")
-            print(f"  {'-' * col_opcode} {'-' * self._COL_COUNT} {'-' * self._COL_PCT}")
+            self._emit(f"  {'Opcode':<{col_opcode}} {'Count':>{self._COL_COUNT}} {'% of total':>{self._COL_PCT}}")
+            self._emit(f"  {'-' * col_opcode} {'-' * self._COL_COUNT} {'-' * self._COL_PCT}")
 
             for op, count in shown:
                 pct = (count / pr.total_instructions * 100.0) if pr.total_instructions > 0 else 0.0
-                print(f"  {op:<{col_opcode}} {count:>{self._COL_COUNT},} {pct:>{self._COL_PCT - 1}.1f}%")
+                self._emit(f"  {op:<{col_opcode}} {count:>{self._COL_COUNT},} {pct:>{self._COL_PCT - 1}.1f}%")
 
-            print(f"  {'-' * col_opcode} {'-' * self._COL_COUNT} {'-' * self._COL_PCT}")
-            print(f"  {'TOTAL':<{col_opcode}} {pr.total_instructions:>{self._COL_COUNT},}")
+            self._emit(f"  {'-' * col_opcode} {'-' * self._COL_COUNT} {'-' * self._COL_PCT}")
+            self._emit(f"  {'TOTAL':<{col_opcode}} {pr.total_instructions:>{self._COL_COUNT},}")
 
-        print()
-        print(separator)
-        print()
+        self._emit()
+        self._emit(separator)
+        self._emit()
 
     def report_trace(
         self,
@@ -419,6 +467,31 @@ class BenchmarkReporter:
             lambda trace: render_annotated(trace, color=self._color),
         )
 
+    def report_coverage(
+        self,
+        suite_name: str,
+        coverage_results: list[CoverageCaseResult],
+        top_n: int | None = None,
+    ) -> None:
+        """
+        Print bytecode coverage for each case.
+
+        Only cases whose prepared value was a CodeObject produce coverage, so
+        cases from non-Menai implementations are skipped.
+        """
+        self._emit()
+        self._emit(f"{suite_name.upper()} \u2014 COVERAGE")
+
+        for result in coverage_results:
+            coverage = result.coverage
+            if coverage is None:
+                continue
+
+            self._emit()
+            self._emit(f"  {result.case.name}")
+            for line in render_coverage(coverage, color=self._color, top_n=top_n):
+                self._emit(f"  {line}")
+
     def _report_traces(
         self,
         suite_name: str,
@@ -427,15 +500,15 @@ class BenchmarkReporter:
         render: Callable[[ResolvedTrace], list[str]],
     ) -> None:
         """Print a per-case trace section using the given renderer."""
-        print()
-        print(f"{suite_name.upper()} \u2014 {heading}")
+        self._emit()
+        self._emit(f"{suite_name.upper()} \u2014 {heading}")
 
         for tr in trace_results:
             trace = tr.trace
             if trace is None:
                 continue
 
-            print()
-            print(f"  {tr.case.name}")
+            self._emit()
+            self._emit(f"  {tr.case.name}")
             for line in render(trace):
-                print(f"  {line}")
+                self._emit(f"  {line}")

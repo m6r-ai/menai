@@ -104,10 +104,12 @@ class TestNonMenaiConstants:
     def test_python_string_is_quoted(self):
         assert format_constant("solved-cube") == '"solved-cube"'
 
-    def test_long_python_string_is_truncated(self):
+    def test_long_python_string_is_not_truncated(self):
         formatted = format_constant("x" * 100)
-        assert formatted == '"' + "x" * 61 + '..."'
+        assert formatted == '"' + "x" * 100 + '"'
 
-    def test_long_menai_value_is_truncated(self):
+    def test_long_menai_value_is_not_truncated(self):
         st = MenaiStructType("a-very-long-struct-type-name-here", 1, ("field-one", "field-two"))
-        assert format_constant(st).endswith("...")
+        assert format_constant(st) == (
+            "structtype <structtype a-very-long-struct-type-name-here (field-one field-two)>"
+        )

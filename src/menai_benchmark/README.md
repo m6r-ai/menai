@@ -24,6 +24,9 @@ python run.py --profile --profile-top 10  # limit profile output
 python run.py --annotate             # annotated disassembly (Menai only)
 python run.py --annotate --no-color  # disable colour in the reports
 python run.py --annotate --color     # force colour when piping
+python run.py --coverage             # bytecode coverage (Menai only)
+python run.py --coverage --coverage-top 10  # limit coverage table output
+python run.py --width 120            # clip report lines to 120 columns
 ```
 
 `--suite` selects a single suite by exact name (case-insensitive); omit it to
@@ -31,10 +34,15 @@ run every suite.  `--case` selects a single case within that suite by exact
 name (case-insensitive) and requires `--suite`.  A name that matches nothing
 is an error listing the available names.
 
-The per-function and annotated reports are coloured when stdout is a terminal.
+The per-function, annotated, and coverage reports are coloured when stdout is a
+terminal.
 Pass `--no-color` to disable it (for example when redirecting to a file), or
 `--color` / `-c` to force it on even when stdout is not a terminal (for example
 when piping into `less -R`).
+
+Report lines are not clipped by default, so long case names, function labels,
+and constants are shown in full.  `--width N` clips every report line to N
+columns.
 
 ## Structure
 
@@ -150,6 +158,29 @@ function's share of the total.  This is the instruction-level counterpart to
 `--profile`.
 
 Percentages are of instruction count, not time.
+
+## Coverage
+
+The `--coverage` flag enables instruction tracing and reports one cumulative
+bytecode coverage report for the whole run, merged across every selected suite
+and every case.  Counts are summed across a case's timed iterations and merged
+across cases and suites, so a function reached by any scenario is covered.
+
+The report shows the total distinct instructions across the merged functions,
+how many executed at least once, a per-function table ordered with the least
+covered functions first, and the instruction indices that never executed.
+Functions are merged by source identity (file, line, and short name), so a
+library function compiled into several benchmark programs is counted once rather
+than once per program.  Module-root code objects have no stable source identity
+across programs and are excluded.
+
+`--coverage-top N` limits the per-function table; the unexecuted instruction list
+always covers every function.
+
+Coverage is measured over the bytecode that was compiled.  Code removed by an
+optimisation pass before bytecode emission has no instructions in the tree and
+is not counted.  Profiling overhead is included in the measured times, as with
+the other VM instrumentation modes.
 
 ## Suites
 

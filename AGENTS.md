@@ -78,7 +78,9 @@ available on the PATH once the venv is active. Do not guess their names or invok
 underlying modules with `python -m`; use the console scripts.
 
 - `menai-test <path>...` — discovers and runs `*.test.menai` suites. Takes files or
-  directories. `--filter TEXT` selects tests by name; `--verbose` shows passing tests too.
+  directories. `--filter TEXT` selects tests by name; `--verbose` shows passing tests too;
+  `--coverage` reports cumulative bytecode instruction coverage across all selected files;
+  `--width N` clips output lines to N columns.
   This is the tool for running the standard library module tests:
   ```bash
   menai-test src/menai/stdlib/                          # all module tests
@@ -87,15 +89,18 @@ underlying modules with `python -m`; use the console scripts.
 - `menai-eval <file>` — compiles and evaluates a `.menai` file (or an expression from
   stdin) and prints the result. `--cprofile` profiles the compiler; `--profile`,
   `--opcodes`, and `--annotate` profile VM execution (per-function, per-opcode, and
-  annotated disassembly respectively).
+  annotated disassembly respectively). `--coverage` reports bytecode instruction coverage;
+  `--width N` clips report lines to N columns.
 - `menai-format <file>...` — formats Menai source. `--check` exits non-zero if a
   file does not match the canonical style.
 - `menai-disassemble <file>` — compiles and prints annotated bytecode disassembly.
+  `--width N` clips output lines to N columns.
 - `menai-benchmark` — runs the performance benchmark suites. `--profile`, `--opcodes`,
-  and `--annotate` profile VM execution.
+  `--annotate`, and `--coverage` profile VM execution; `--coverage` reports cumulative
+  bytecode coverage across suites and cases. `--width N` clips report lines to N columns.
 - `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps. `--cprofile`
   profiles the pipeline engine with Python's cProfile; `--profile`, `--opcodes`, and
-  `--annotate` profile VM execution.
+  `--annotate` profile VM execution. `--width N` clips output lines to N columns.
 
 ## Code quality
 

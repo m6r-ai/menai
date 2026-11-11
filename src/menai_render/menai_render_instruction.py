@@ -13,7 +13,6 @@ from menai.menai_value import MenaiFunction, MenaiValue
 from menai.bytecode.menai_bytecode import CodeObject, Instruction, Opcode, reg_name, unpack_instruction
 from menai_render.menai_render_colour import cyan, green, grey
 
-_MAX_CONSTANT_LENGTH = 64
 _SECTION_WIDTH = 70
 
 
@@ -61,21 +60,14 @@ def format_constant(const: object) -> str:
     Menai values are shown as their Menai type name followed by the value's
     canonical Menai display form (its describe() form).  This keeps every
     constant self-identifying: a symbol is shown as a symbol rather than as a
-    bare name, and a struct type is shown with its name and fields.  Long values
-    are truncated.
+    bare name, and a struct type is shown with its name and fields.  Values are
+    returned in full; a caller that needs a line width clips the rendered line.
     """
     if isinstance(const, str):
-        if len(const) > _MAX_CONSTANT_LENGTH:
-            return f'"{const[:_MAX_CONSTANT_LENGTH - 3]}..."'
-
         return f'"{const}"'
 
     if isinstance(const, MenaiValue):
-        val_str = f"{const.type_name()} {const.describe()}"
-        if len(val_str) > _MAX_CONSTANT_LENGTH:
-            return f'{val_str[:_MAX_CONSTANT_LENGTH - 3]}...'
-
-        return val_str
+        return f"{const.type_name()} {const.describe()}"
 
     return str(const)
 
@@ -162,9 +154,6 @@ def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
         if src0 < len(code.constants):
             const = code.constants[src0]
             const_str = format_constant(const)
-            if len(const_str) > 40:
-                const_str = const_str[:37] + "..."
-
             annotation = f"  ; {const_str}"
 
     elif opcode == Opcode.LOAD_NONE:
@@ -228,7 +217,7 @@ def annotate_instruction(instr: Instruction, code: CodeObject) -> str:
     elif opcode == Opcode.RAISE_ERROR:
         if (instr.tag & 1) and src0 < len(code.constants):
             msg = code.constants[src0]
-            annotation = f"  ; Raise error: {format_constant(msg)[:40]}"
+            annotation = f"  ; Raise error: {format_constant(msg)}"
 
     elif opcode == Opcode.SWITCH_INTEGER:
         if instr.src1 < len(code.jump_tables):

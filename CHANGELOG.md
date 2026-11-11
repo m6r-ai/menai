@@ -4,6 +4,17 @@
 
 New features:
 
+- Added a `--width N` option to `menai-eval`, `menai-test`, `menai-benchmark`,
+  `menai-pipeline`, and `menai-disassemble`.  Output is no longer clipped by
+  default; when a width is given, lines longer than that width are clipped.  This
+  keeps long function names and constants visible unless the caller asks for a
+  fixed width.
+- Added bytecode instruction coverage.  `menai-eval --coverage` reports how much
+  of a program's compiled bytecode executed.  `menai-test --coverage` and
+  `menai-benchmark --coverage` merge coverage across all selected test files or
+  benchmark suites and cases, counting each function once by source identity, so
+  the report shows how much of the library was exercised across all scenarios.
+  Unexercised functions are reported with 0% coverage.
 - `#none`, the booleans, fixnum integers and most floats are now immediate values
   held in the `MenaiValue` word rather than pool objects.  They are never allocated
   or reference counted, and the small-integer cache is gone.  Mean performance gain

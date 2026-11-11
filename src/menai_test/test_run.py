@@ -12,6 +12,9 @@ from menai.menai_value import (
     MenaiBoolean, MenaiDict, MenaiFunction, MenaiList, MenaiString, MenaiValue,
 )
 from menai.bytecode.menai_bytecode import CodeObject
+from menai_render.menai_render_width import clip
+from menai_trace.menai_trace_coverage import CoverageAccumulator, CumulativeCoverage
+from menai_trace.menai_trace_render import render_cumulative_coverage
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _RUNNER_DIR = str(Path(__file__).resolve().parent)
@@ -269,6 +272,7 @@ def _run_leaf(
     menai: Menai | None,
     compiled: CodeObject | None,
     path_index: int,
+    coverage: CoverageAccumulator | None,
 ) -> TestResult:
     """
     Execute a single leaf thunk.
@@ -288,6 +292,10 @@ def _run_leaf(
     MenaiError is a failure.  For an expect-error leaf the outcome is
     inverted: a MenaiError is a pass (provided it contains
     expect_error_contains when that is given) and a clean return is a failure.
+
+    When coverage is given, the leaf's instruction and call counts are added to
+    it.  The counts are read in a finally block so that a failing leaf still
+    contributes the instructions it executed before the failure.
     """
     if menai is None:
         menai = _make_menai(test_file_dir, explicit)
@@ -322,6 +330,12 @@ def _run_leaf(
 
         return TestResult(path=path, passed=True)
 
+    finally:
+        if coverage is not None and menai is not None:
+            instr_counts, call_counts = menai.vm.get_trace_data()
+            if instr_counts:
+                coverage.add(instr_counts, call_counts)
+
     if expect_error:
         return TestResult(
             path=path,
@@ -342,6 +356,7 @@ def _run_tree(
     menai: Menai | None,
     compiled: CodeObject | None,
     path_index: int,
+    coverage: CoverageAccumulator | None,
 ) -> None:
     """Recursively walk the node tree, executing all matching leaves."""
     for node in nodes:
@@ -360,19 +375,21 @@ def _run_tree(
                 menai,
                 compiled,
                 path_index,
+                coverage,
             )
             results.append(result)
 
         else:
             _run_tree(
                 node.children, module_name, test_file_dir, name_filter,
-                results, explicit, menai, compiled, path_index,
+                results, explicit, menai, compiled, path_index, coverage,
             )
 
 
 def _print_results(
     results: list[TestResult],
     verbose: bool,
+    width: int | None,
 ) -> RunStats:
     """Print per-test results and return summary stats."""
     stats = RunStats()
@@ -382,15 +399,15 @@ def _print_results(
         if result.passed:
             stats.passed += 1
             if verbose:
-                print(f"  ✓  {path_str}")
+                print(clip(f"  ✓  {path_str}", width))
 
         else:
             stats.failed += 1
-            print(f"  ✗  {path_str}")
+            print(clip(f"  ✗  {path_str}", width))
             if result.error:
                 # Indent error lines for readability
                 for line in result.error.splitlines():
-                    print(f"       {line}")
+                    print(clip(f"       {line}", width))
 
     return stats
 
@@ -400,6 +417,7 @@ def run_file(
     name_filter: str | None,
     explicit: list[str] | None = None,
     isolate: bool = False,
+    coverage: CoverageAccumulator | None = None,
 ) -> list[TestResult]:
     """
     Execute all tests in a single *.test.menai file and return their results.
@@ -422,16 +440,24 @@ def run_file(
             (case-insensitive), or None to run everything
         explicit: Directories to prepend to the module search path, or None
         isolate: Run each leaf on a fresh Menai instance rather than reusing one
+        coverage: Optional accumulator that receives per-instruction and call
+            counts summed across every leaf in the file.  Cannot be combined with
+            isolate, because isolated leaves compile independent code trees whose
+            instruction ordinals are not comparable.
 
     Returns:
         A list of TestResult, one per leaf test executed.
 
     Raises:
         MenaiError: If the test module fails to load.
-        ValueError: If the test module structure is invalid.
+        ValueError: If the test module structure is invalid, or if coverage is
+            requested together with isolate.
     """
     module_name = test_file.stem
     test_file_dir = str(test_file.parent.resolve())
+
+    if coverage is not None and isolate:
+        raise ValueError("coverage cannot be collected in isolate mode")
 
     menai = _make_menai(test_file_dir, explicit or [])
     nodes = _load_test_module(menai, module_name)
@@ -445,9 +471,14 @@ def run_file(
     else:
         compiled, path_index = _compile_leaf_program(menai, module_name)
 
+    if coverage is not None:
+        menai.vm.enable_profiling()
+        assert compiled is not None
+        coverage.begin(compiled)
+
     _run_tree(
         nodes, module_name, test_file_dir, name_filter,
-        results, explicit or [], shared, compiled, path_index,
+        results, explicit or [], shared, compiled, path_index, coverage,
     )
     return results
 
@@ -458,24 +489,34 @@ def _run_file(
     verbose: bool,
     explicit: list[str],
     isolate: bool,
+    coverage: bool,
+    cumulative: CumulativeCoverage | None,
+    width: int | None,
 ) -> RunStats:
     """Discover, execute, and report all tests in a single test file."""
-    print(f"\n{test_file}")
+    print(clip(f"\n{test_file}", width))
+
+    accumulator = CoverageAccumulator() if coverage else None
 
     try:
-        results = run_file(test_file, name_filter, explicit, isolate)
+        results = run_file(test_file, name_filter, explicit, isolate, accumulator)
 
     except (MenaiError, ValueError) as exc:
-        print(f"  ERROR loading module: {exc}")
+        print(clip(f"  ERROR loading module: {exc}", width))
         return RunStats(failed=1)
 
     if not results:
-        print("  (no tests matched)")
+        print(clip("  (no tests matched)", width))
         return RunStats()
 
-    stats = _print_results(results, verbose)
+    stats = _print_results(results, verbose, width)
     status = "passed" if stats.failed == 0 else "FAILED"
-    print(f"  {stats.passed}/{stats.total()} {status}")
+    print(clip(f"  {stats.passed}/{stats.total()} {status}", width))
+
+    if accumulator is not None:
+        assert cumulative is not None
+        cumulative.add(accumulator.result())
+
     return stats
 
 
@@ -513,6 +554,7 @@ Examples:
   %(prog)s src/menai/stdlib/ --filter "parse-string"  # filter by name
   %(prog)s src/menai/stdlib/ --verbose  # show passing tests too
   %(prog)s src/menai/stdlib/ --isolate  # run each leaf on a fresh instance
+  %(prog)s src/menai/stdlib/ --coverage  # report bytecode instruction coverage
 """,
     )
     parser.add_argument(
@@ -542,6 +584,14 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help=(
+            "Collect bytecode instruction coverage across every leaf in every "
+            "selected file and report one cumulative result at the end"
+        ),
+    )
+    parser.add_argument(
         "--module-path",
         action="append",
         default=[],
@@ -549,8 +599,18 @@ Examples:
         dest="module_path",
         help="Prepend DIR to the module search path (repeatable)",
     )
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Clip output lines to N columns (default: no clipping)",
+    )
 
     args = parser.parse_args()
+
+    if args.coverage and args.isolate:
+        parser.error("--coverage cannot be combined with --isolate")
 
     test_files = _discover_test_files([Path(p) for p in args.paths])
 
@@ -559,17 +619,25 @@ Examples:
         sys.exit(0)
 
     total_stats = RunStats()
+    cumulative = CumulativeCoverage() if args.coverage else None
     for test_file in test_files:
-        stats = _run_file(test_file, args.name_filter, args.verbose, args.module_path, args.isolate)
+        stats = _run_file(
+            test_file, args.name_filter, args.verbose,
+            args.module_path, args.isolate, args.coverage, cumulative, args.width,
+        )
         total_stats.add(stats)
 
-    print(f"\n{'='*60}")
-    print(f"Total: {total_stats.passed}/{total_stats.total()} passed", end="")
+    print(clip(f"\n{'='*60}", args.width))
+    total_line = f"Total: {total_stats.passed}/{total_stats.total()} passed"
     if total_stats.failed:
-        print(f", {total_stats.failed} FAILED")
+        total_line += f", {total_stats.failed} FAILED"
 
-    else:
+    print(clip(total_line, args.width))
+
+    if cumulative is not None:
         print()
+        for line in render_cumulative_coverage(cumulative):
+            print(clip(line, args.width))
 
     sys.exit(1 if total_stats.failed else 0)
 

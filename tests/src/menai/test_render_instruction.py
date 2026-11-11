@@ -335,3 +335,31 @@ class TestCalleeAnnotations:
         assert annotate_instruction(
             Instruction(opcode=Opcode.CALL, dest=0, src0=0, src1=1), code,
         ) == ""
+
+
+class TestNoDefaultTruncation:
+    """Rendering helpers return complete values; width clipping is a caller concern."""
+
+    def test_long_string_constant_is_not_truncated_in_metadata(self):
+        value = "x" * 200
+        code = _code(constants=(MenaiString(value),))
+        lines = render_code_metadata(code)
+        assert any(value in line for line in lines)
+        assert not any("..." in line for line in lines)
+
+    def test_long_load_const_annotation_is_not_truncated(self):
+        value = "y" * 200
+        code = _code(constants=(MenaiString(value),))
+        annotation = annotate_instruction(Instruction(opcode=Opcode.LOAD_CONST, src0=0), code)
+        assert value in annotation
+        assert "..." not in annotation
+
+    def test_long_raise_error_annotation_is_not_truncated(self):
+        value = "z" * 200
+        code = _code(constants=(MenaiString(value),))
+        annotation = annotate_instruction(
+            Instruction(opcode=Opcode.RAISE_ERROR, src0=0, tag=1),
+            code,
+        )
+        assert value in annotation
+        assert "..." not in annotation

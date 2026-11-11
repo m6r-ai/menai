@@ -14,6 +14,9 @@ from menai_benchmark import (
     BenchmarkRunner,
     BenchmarkSuite,
 )
+from menai_render.menai_render_width import clip
+from menai_trace.menai_trace_coverage import CumulativeCoverage
+from menai_trace.menai_trace_render import render_cumulative_coverage
 
 _BENCHMARK_DIR = Path(__file__).resolve().parent
 
@@ -123,7 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
             "python run.py --profile --profile-top 10  # limit profile output\n"
             "python run.py --annotate                  # annotated disassembly (Menai only)\n"
             "python run.py --annotate --no-color       # disable colour in the reports\n"
-            "python run.py --annotate --color          # force colour when piping"
+            "python run.py --annotate --color          # force colour when piping\n"
+            "python run.py --coverage                  # bytecode coverage (Menai only)"
         ),
     )
     parser.add_argument(
@@ -203,10 +207,37 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--coverage",
+        action="store_true",
+        dest="coverage",
+        help=(
+            "Enable VM instruction tracing and print one cumulative bytecode "
+            "coverage report for the run, merged across all cases and suites "
+            "with counts summed across each case's timed iterations.  Only "
+            "applies to the Menai implementation."
+        ),
+    )
+    parser.add_argument(
+        "--coverage-top",
+        metavar="N",
+        type=int,
+        default=40,
+        dest="coverage_top",
+        help="Show top N functions in the cumulative coverage output (default: 40).",
+    )
+    parser.add_argument(
+        "--width",
+        metavar="N",
+        type=int,
+        default=None,
+        dest="width",
+        help="Clip report output to N columns (default: no clipping).",
+    )
+    parser.add_argument(
         "--no-color",
         action="store_true",
         dest="no_color",
-        help="Disable ANSI colour output in the profile and annotated reports.",
+        help="Disable ANSI colour output in the profile, annotated, and coverage reports.",
     )
     parser.add_argument(
         "--color",
@@ -236,7 +267,10 @@ def run_suite(
     profile: bool,
     profile_top: int,
     annotate: bool,
+    coverage: bool,
+    cumulative: CumulativeCoverage | None,
     color: bool,
+    width: int | None,
     module_path: list[str],
 ) -> None:
     """
@@ -255,7 +289,10 @@ def run_suite(
         profile:      If `True`, enable per-function profiling during timed runs.
         profile_top:  Number of top functions to show per case in the profile output.
         annotate:     If `True`, print the annotated disassembly per case.
+        coverage:     If `True`, collect bytecode coverage and merge it into `cumulative`.
+        cumulative:   Accumulator for coverage merged across suites and cases.
         color:        Whether the profile and annotated reports emit ANSI colour.
+        width:        Maximum report line width, or None for no clipping.
         module_path:  Directories to prepend to the module search path, ahead of
                       the suite directory and the standard library.
     """
@@ -286,10 +323,11 @@ def run_suite(
 
     menai = Menai(module_path=search_path)
 
-    runner = BenchmarkRunner(suite, cases, menai, opcodes=opcodes, profile=profile or annotate)
-    results, profile_results, trace_results = runner.run()
+    tracing = profile or annotate or coverage
+    runner = BenchmarkRunner(suite, cases, menai, opcodes=opcodes, profile=tracing, coverage=coverage)
+    results, profile_results, trace_results, coverage_results = runner.run()
 
-    reporter = BenchmarkReporter(color=color)
+    reporter = BenchmarkReporter(color=color, width=width)
     reporter.report(suite.name, results)
 
     if opcodes:
@@ -311,6 +349,12 @@ def run_suite(
             suite.name,
             trace_results,
         )
+
+    if coverage:
+        assert cumulative is not None
+        for coverage_result in coverage_results:
+            if coverage_result.coverage is not None:
+                cumulative.add(coverage_result.coverage)
 
 
 def main() -> None:
@@ -344,6 +388,8 @@ def main() -> None:
     else:
         selected = all_suites
 
+    cumulative = CumulativeCoverage() if args.coverage else None
+
     for suite_dir, suite_class in selected:
         run_suite(
             suite_dir=suite_dir,
@@ -355,12 +401,20 @@ def main() -> None:
             profile=args.profile,
             profile_top=args.profile_top,
             annotate=args.annotate,
+            coverage=args.coverage,
+            cumulative=cumulative,
             color=color,
+            width=args.width,
             module_path=args.module_path,
         )
 
     if len(selected) > 1:
-        print(f"\n{len(selected)} suite(s) completed.")
+        print(clip(f"\n{len(selected)} suite(s) completed.", args.width))
+
+    if cumulative is not None:
+        print()
+        for line in render_cumulative_coverage(cumulative, top_n=args.coverage_top):
+            print(clip(line, args.width))
 
 
 if __name__ == "__main__":
