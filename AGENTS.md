@@ -80,6 +80,9 @@ underlying modules with `python -m`; use the console scripts.
 - `menai-test <path>...` — discovers and runs `*.test.menai` suites. Takes files or
   directories. `--filter TEXT` selects tests by name; `--verbose` shows passing tests too;
   `--coverage` reports cumulative bytecode instruction coverage across all selected files;
+  `--function-coverage` reports, per file, the coverage of the module that file tests,
+  separating reachable instructions the tests missed from dead bytecode, and ends a
+  multi-file run with a cumulative report of every module and the worst gap functions;
   `--width N` clips output lines to N columns.
   This is the tool for running the standard library module tests:
   ```bash

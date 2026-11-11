@@ -22,6 +22,9 @@ menai-test src/menai/stdlib/ --filter "parse-string"
 # Report bytecode instruction coverage after each file's results
 menai-test src/menai/stdlib/ --coverage
 
+# Report each module's function coverage
+menai-test src/menai/stdlib/ --function-coverage
+
 # Clip output lines to 120 columns (default: no clipping)
 menai-test src/menai/stdlib/ --width 120
 ```
@@ -144,6 +147,53 @@ given rather than what the source contained before optimisation.
 
 `--coverage` and `--isolate` cannot be combined: isolated leaves compile
 independent code trees whose instruction ordinals are not comparable.
+
+### Function coverage
+
+`--function-coverage` reports coverage for the module each test file tests, and
+for nothing else.  `foo.test.menai` is taken to test `foo.menai` in the same
+directory; a suite with no single subject, such as
+`json-round-trip.test.menai`, is reported as skipped.
+
+The report covers every function the compiler produced from that source file.
+Functions reached only from other files are excluded, as are the test module,
+the prelude and the runner's support module.
+
+Each function has one of three outcomes:
+
+| Outcome              | Meaning                                                          |
+|----------------------|------------------------------------------------------------------|
+| `full`               | every instruction executed                                       |
+| `reachable-complete` | every reachable instruction executed; the remainder is dead code |
+| `gap`                | a reachable instruction never executed                           |
+
+The split between the last two comes from a reachability walk over the
+bytecode, following the control flow the VM follows: the target of a jump, both
+edges of a conditional branch, every arm and the default of a switch table, and
+no edge out of a return, raise or tail call.  An unexecuted instruction is
+therefore reported either as a **gap**, which a test can close, or as **dead
+bytecode**, which no test can close and which the compiler should not have
+emitted.  The two are listed in separate sections, and a single unexecuted
+instruction is named by its opcode so a `RAISE_ERROR` can be told from a
+`RETURN`.
+
+Reachability is syntactic: a branch is reachable on both sides even when its
+condition is constant, because the bytecode that remains after optimisation is
+the program the VM was given.
+
+Coverage is measured over the compiled code, so a function the optimiser inlined
+into its callers, or converted into a loop, has no code object of its own.  Its
+instructions are counted in its caller, where its gaps appear.
+
+`--function-coverage` and `--isolate` cannot be combined, for the same reason as
+`--coverage`.  The report describes a whole file, so a `--filter` narrows what it
+measures and the report says so.
+
+When more than one file is measured, the run ends with a cumulative report: the
+totals across every module, a table of modules ordered by coverage, and the
+least covered functions, capped at the 20 worst.  That is the report to read
+when running a directory, since the per-file blocks above it are exhaustive but
+unranked.  Running a single file produces only that file's report.
 
 ### assert-equal
 

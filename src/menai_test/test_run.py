@@ -15,6 +15,15 @@ from menai.bytecode.menai_bytecode import CodeObject
 from menai_render.menai_render_width import clip
 from menai_trace.menai_trace_coverage import CoverageAccumulator, CumulativeCoverage
 from menai_trace.menai_trace_render import render_cumulative_coverage
+from menai_trace.menai_trace_render_source import (
+    render_cumulative_source_coverage,
+    render_source_coverage,
+)
+from menai_trace.menai_trace_source_coverage import (
+    CumulativeSourceCoverage,
+    SourceFileCoverage,
+    coverage_for_source,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _RUNNER_DIR = str(Path(__file__).resolve().parent)
@@ -483,6 +492,52 @@ def run_file(
     return results
 
 
+def _coverage_source(test_file: Path) -> str | None:
+    """
+    Return the module under test for a test file, or None when there is no single one.
+
+    The convention is that `foo.test.menai` tests `foo.menai` in the same
+    directory.  Round-trip suites such as `json-round-trip.test.menai` name no
+    module of their own, so they have no single subject and are skipped.
+    """
+    suffix = ".test.menai"
+    if not test_file.name.endswith(suffix):
+        return None
+
+    subject = test_file.name[:-len(suffix)]
+    if not (test_file.parent / f"{subject}.menai").is_file():
+        return None
+
+    return f"{subject}.menai"
+
+
+def _print_function_coverage(
+    test_file: Path,
+    accumulator: CoverageAccumulator,
+    name_filter: str | None,
+    width: int | None,
+) -> SourceFileCoverage | None:
+    """
+    Print the coverage of the module under test, splitting test gaps from dead bytecode.
+
+    Returns:
+        The module's coverage, or None when the suite has no single subject.
+    """
+    source_file = _coverage_source(test_file)
+    if source_file is None:
+        print(clip("  Function coverage: no single module under test; skipped.", width))
+        return None
+
+    if name_filter:
+        print(clip("  Function coverage reflects only the tests matching the filter.", width))
+
+    report = coverage_for_source(accumulator.result(), source_file)
+    for line in render_source_coverage(report):
+        print(clip(line, width))
+
+    return report
+
+
 def _run_file(
     test_file: Path,
     name_filter: str | None,
@@ -490,13 +545,15 @@ def _run_file(
     explicit: list[str],
     isolate: bool,
     coverage: bool,
+    function_coverage: bool,
     cumulative: CumulativeCoverage | None,
+    sources: CumulativeSourceCoverage | None,
     width: int | None,
 ) -> RunStats:
     """Discover, execute, and report all tests in a single test file."""
     print(clip(f"\n{test_file}", width))
 
-    accumulator = CoverageAccumulator() if coverage else None
+    accumulator = CoverageAccumulator() if coverage or function_coverage else None
 
     try:
         results = run_file(test_file, name_filter, explicit, isolate, accumulator)
@@ -514,8 +571,15 @@ def _run_file(
     print(clip(f"  {stats.passed}/{stats.total()} {status}", width))
 
     if accumulator is not None:
-        assert cumulative is not None
-        cumulative.add(accumulator.result())
+        if function_coverage:
+            print()
+            report = _print_function_coverage(test_file, accumulator, name_filter, width)
+            if report is not None and sources is not None:
+                sources.add(report)
+
+        if coverage:
+            assert cumulative is not None
+            cumulative.add(accumulator.result())
 
     return stats
 
@@ -555,6 +619,7 @@ Examples:
   %(prog)s src/menai/stdlib/ --verbose  # show passing tests too
   %(prog)s src/menai/stdlib/ --isolate  # run each leaf on a fresh instance
   %(prog)s src/menai/stdlib/ --coverage  # report bytecode instruction coverage
+  %(prog)s src/menai/stdlib/ --function-coverage  # report per-module function coverage
 """,
     )
     parser.add_argument(
@@ -592,6 +657,15 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--function-coverage",
+        action="store_true",
+        help=(
+            "Report function coverage for the module each selected test file "
+            "tests, separating reachable instructions the tests missed from "
+            "dead bytecode"
+        ),
+    )
+    parser.add_argument(
         "--module-path",
         action="append",
         default=[],
@@ -609,8 +683,8 @@ Examples:
 
     args = parser.parse_args()
 
-    if args.coverage and args.isolate:
-        parser.error("--coverage cannot be combined with --isolate")
+    if args.isolate and (args.coverage or args.function_coverage):
+        parser.error("coverage cannot be collected in isolate mode")
 
     test_files = _discover_test_files([Path(p) for p in args.paths])
 
@@ -620,10 +694,12 @@ Examples:
 
     total_stats = RunStats()
     cumulative = CumulativeCoverage() if args.coverage else None
+    sources = CumulativeSourceCoverage() if args.function_coverage else None
     for test_file in test_files:
         stats = _run_file(
             test_file, args.name_filter, args.verbose,
-            args.module_path, args.isolate, args.coverage, cumulative, args.width,
+            args.module_path, args.isolate, args.coverage, args.function_coverage,
+            cumulative, sources, args.width,
         )
         total_stats.add(stats)
 
@@ -637,6 +713,11 @@ Examples:
     if cumulative is not None:
         print()
         for line in render_cumulative_coverage(cumulative):
+            print(clip(line, args.width))
+
+    if sources is not None and sources.report_count() > 1:
+        print()
+        for line in render_cumulative_source_coverage(sources):
             print(clip(line, args.width))
 
     sys.exit(1 if total_stats.failed else 0)

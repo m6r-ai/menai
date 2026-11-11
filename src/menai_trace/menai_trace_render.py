@@ -264,7 +264,7 @@ def render_coverage(result: CoverageResult, color: bool = False, top_n: int | No
             continue
 
         any_uncovered = True
-        indices = _format_index_ranges([instruction.index for instruction in uncovered])
+        indices = format_index_ranges([instruction.index for instruction in uncovered])
         lines.append(f"  {function_label(function)}  {indices}")
 
     if not any_uncovered:
@@ -273,7 +273,7 @@ def render_coverage(result: CoverageResult, color: bool = False, top_n: int | No
     return lines
 
 
-def _format_index_ranges(indices: list[int]) -> str:
+def format_index_ranges(indices: list[int]) -> str:
     """Format instruction indices as a compact comma-separated range list."""
     if not indices:
         return "none"
@@ -372,7 +372,7 @@ def render_cumulative_coverage(
             continue
 
         any_uncovered = True
-        lines.append(f"  {function.label()}  {_format_index_ranges(list(uncovered))}")
+        lines.append(f"  {function.label()}  {format_index_ranges(list(uncovered))}")
 
     if not any_uncovered:
         lines.append("  None.")
