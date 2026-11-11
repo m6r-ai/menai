@@ -19,6 +19,7 @@ New features:
   held in the `MenaiValue` word rather than pool objects.  They are never allocated
   or reference counted, and the small-integer cache is gone.  Mean performance gain
   of about 6%.
+- Added a new branch fact CFG optimization to eliminate more dead code.
 
 Bug fixes:
 

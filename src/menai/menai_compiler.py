@@ -23,6 +23,7 @@ from menai.bytecode.menai_bytecode import CodeObject
 from menai.bytecode.menai_bytecode_builder import MenaiBytecodeBuilder
 from menai.cfg.menai_cfg_builder import MenaiCFGBuilder
 from menai.cfg.menai_cfg_branch_const_prop import MenaiCFGBranchConstProp
+from menai.cfg.menai_cfg_branch_fact_prop import MenaiCFGBranchFactProp
 from menai.cfg.menai_cfg_collapse_phi_chains import MenaiCFGCollapsePhiChains
 from menai.cfg.menai_cfg_dead_captures import MenaiCFGDeadCaptures
 from menai.cfg.menai_cfg_guard_insertion import MenaiCFGGuardInsertion
@@ -115,6 +116,7 @@ class MenaiCompiler:
             MenaiCFGPredicateFold(),
             MenaiCFGGuardInsertion(),
             MenaiCFGCSE(),
+            MenaiCFGBranchFactProp(),
             MenaiCFGLICM(),
             MenaiCFGLoopRotation(),
             MenaiCFGSchedule(),
