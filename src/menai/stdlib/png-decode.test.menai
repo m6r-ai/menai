@@ -27,6 +27,44 @@
        (string-hex->bytes
          "89504e470d0a1a0a0000000d49484452000000020000000208030000004568fd160000000c504c5445ff000000ff000000fffffffffb0060f60000000274524e53ff80080fb36a0000000e49444154789c6360606460620600001100079ea22a120000000049454e44ae426082"))
 
+      ; A 2x2 8-bit truecolour (RGB) file.
+      (truecolour
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a73000000124944415478da63f8cfc0c000c20cff8100001fee05fbf1abba770000000049454e44ae426082"))
+
+      ; A 2x2 8-bit truecolour file with an alpha channel (RGBA).
+      (truecolour-alpha
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000144944415478da63f8cfc0f01f081b18803418000044d209786653c4700000000049454e44ae426082"))
+
+      ; A 2x2 8-bit greyscale file whose first scanline declares filter type 5,
+      ; which PNG does not define.
+      (bad-filter
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e4944415478da63e53ac160f41f0004d90209e8e823e40000000049454e44ae426082"))
+
+      ; The pixel grid that every 2x2 greyscale fixture below encodes.
+      (greyscale-pixels
+       (vector (vector (vector 10 10 10) (vector 200 200 200)) (vector (vector 50 50 50) (vector 255 255 255))))
+
+      ; The same 2x2 greyscale image with both scanlines filtered, one fixture
+      ; per PNG filter type: 1 (Sub), 2 (Up), 3 (Average) and 4 (Paeth).
+      (greyscale-sub
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e4944415478da63e4dac768741600046a01caff3aa8d00000000049454e44ae426082"))
+
+      (greyscale-up
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e4944415478da63e23ac1a4610e0003f101367c87a6100000000049454e44ae426082"))
+
+      (greyscale-average
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e4944415478da63e63accacdb0400043b0183718e76d40000000049454e44ae426082"))
+
+      (greyscale-paeth
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e4944415478da63e1dac7a2610e0003db0130bb4bdb6e0000000049454e44ae426082"))
+
       ; The header fields are decoded.
       (test-header-fields
        (lambda ()
@@ -51,11 +89,58 @@
       (test-greyscale-to-rgb
        (lambda ()
          (let ((r (decode greyscale)))
-           (assert-equal
-             (dict-get r "pixels")
-             (vector
-               (vector (vector 10 10 10) (vector 200 200 200))
-               (vector (vector 50 50 50) (vector 255 255 255)))))))
+           (assert-equal (dict-get r "pixels") greyscale-pixels))))
+
+      ; Sub filtering adds the byte one pixel to the left.
+      (test-filter-sub
+       (lambda ()
+         (assert-equal (dict-get (decode greyscale-sub) "pixels") greyscale-pixels)))
+
+      ; Up filtering adds the byte one scanline above.
+      (test-filter-up
+       (lambda ()
+         (assert-equal (dict-get (decode greyscale-up) "pixels") greyscale-pixels)))
+
+      ; Average filtering adds the mean of the left and above bytes, rounded down.
+      (test-filter-average
+       (lambda ()
+         (assert-equal (dict-get (decode greyscale-average) "pixels") greyscale-pixels)))
+
+      ; Paeth filtering adds the neighbour closest to left + above - upper left.
+      (test-filter-paeth
+       (lambda ()
+         (assert-equal (dict-get (decode greyscale-paeth) "pixels") greyscale-pixels)))
+
+      ; Truecolour pixels are returned as RGB, without conversion.
+      (test-truecolour-pixels
+       (lambda ()
+         (assert-equal
+           (dict-get (decode truecolour) "pixels")
+           (vector (vector (vector 255 0 0) (vector 0 255 0)) (vector (vector 0 0 255) (vector 255 255 255))))))
+
+      ; Truecolour pixels with an alpha channel are returned as RGBA.
+      (test-truecolour-alpha-pixels
+       (lambda ()
+         (assert-equal
+           (dict-get (decode truecolour-alpha) "pixels")
+           (vector
+             (vector (vector 255 0 0 255) (vector 0 255 0 128))
+             (vector (vector 0 0 255 255) (vector 255 255 255 255))))))
+
+      ; Input too short to hold the PNG signature is rejected.
+      (test-rejects-too-short
+       (lambda ()
+         (decode (string-hex->bytes "89504e47"))))
+
+      ; A file whose first eight bytes are not the PNG signature is rejected.
+      (test-rejects-missing-signature
+       (lambda ()
+         (decode (string-hex->bytes "000000000000000000000000"))))
+
+      ; A scanline filter type outside 0-4 is rejected.
+      (test-rejects-unknown-filter-type
+       (lambda ()
+         (decode bad-filter)))
 
       ; Greyscale-with-alpha pixels are normalised to RGBA.
       (test-greyscale-alpha-to-rgba
@@ -152,12 +237,21 @@
              (expect-pass "greyscale pixels normalise to RGB" test-greyscale-to-rgb)
              (expect-pass "greyscale with alpha normalises to RGBA" test-greyscale-alpha-to-rgba)
              (expect-pass "palette pixels resolve through PLTE" test-palette-resolved)
-             (expect-pass "palette with tRNS adds alpha" test-palette-trns-alpha)))
+             (expect-pass "palette with tRNS adds alpha" test-palette-trns-alpha)
+             (expect-pass "sub-filtered scanlines" test-filter-sub)
+             (expect-pass "up-filtered scanlines" test-filter-up)
+             (expect-pass "average-filtered scanlines" test-filter-average)
+             (expect-pass "paeth-filtered scanlines" test-filter-paeth)
+             (expect-pass "truecolour pixels stay RGB" test-truecolour-pixels)
+             (expect-pass "truecolour with alpha stays RGBA" test-truecolour-alpha-pixels)))
 
          (list
            "errors"
            (list
              (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
+             (expect-fail "rejects input too short for a signature" test-rejects-too-short "too short")
+             (expect-fail "rejects a missing PNG signature" test-rejects-missing-signature "missing PNG signature")
+             (expect-fail "rejects an unknown filter type" test-rejects-unknown-filter-type "filter type 5")
              (expect-fail "rejects unsupported bit depth" test-rejects-unsupported-bit-depth "bit depth 16")
              (expect-fail "rejects interlaced images" test-rejects-interlaced "interlaced")
              (expect-fail "rejects unsupported colour type" test-rejects-unsupported-colour-type "colour type 7")

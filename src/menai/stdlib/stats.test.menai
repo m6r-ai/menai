@@ -54,8 +54,9 @@
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
 
-      (approx (lambda (expected actual)
-                (assert-equal #t (float<? (float-abs (float- expected actual)) 1.0e-9))))
+      (approx
+       (lambda (expected actual)
+         (assert-equal #t (float<? (float-abs (float- expected actual)) 1.0e-9))))
 
       (test-vector-mean
        (lambda ()
@@ -207,8 +208,7 @@
 
       (test-vector-quantile-agrees-with-median
        (lambda ()
-         (approx (vector-median (vector 1.0 2.0 3.0 4.0 5.0))
-                 (vector-quantile (vector 1.0 2.0 3.0 4.0 5.0) 0.5))))
+         (approx (vector-median (vector 1.0 2.0 3.0 4.0 5.0)) (vector-quantile (vector 1.0 2.0 3.0 4.0 5.0) 0.5))))
 
       (test-vector-quantile-sorted
        (lambda ()
@@ -252,13 +252,11 @@
 
       (test-vector-histogram
        (lambda ()
-         (assert-equal (vector (vector 1.0 2.5 2) (vector 2.5 4.0 2))
-                       (vector-histogram (vector 1.0 2.0 3.0 4.0) 2))))
+         (assert-equal (vector (vector 1.0 2.5 2) (vector 2.5 4.0 2)) (vector-histogram (vector 1.0 2.0 3.0 4.0) 2))))
 
       (test-list-histogram
        (lambda ()
-         (assert-equal (vector (vector 1.0 2.5 2) (vector 2.5 4.0 2))
-                       (list-histogram (list 1.0 2.0 3.0 4.0) 2))))
+         (assert-equal (vector (vector 1.0 2.5 2) (vector 2.5 4.0 2)) (list-histogram (list 1.0 2.0 3.0 4.0) 2))))
 
       (test-vector-histogram-top-edge-in-last-bin
        (lambda ()
@@ -271,13 +269,15 @@
 
       (test-vector-histogram-edges
        (lambda ()
-         (assert-equal (vector (vector 0.0 2.0 1) (vector 2.0 4.0 3))
-                       (vector-histogram-edges (vector 1.0 2.0 3.0 4.0) (vector 0.0 2.0 4.0)))))
+         (assert-equal
+           (vector (vector 0.0 2.0 1) (vector 2.0 4.0 3))
+           (vector-histogram-edges (vector 1.0 2.0 3.0 4.0) (vector 0.0 2.0 4.0)))))
 
       (test-list-histogram-edges
        (lambda ()
-         (assert-equal (vector (vector 0.0 2.0 1) (vector 2.0 4.0 3))
-                       (list-histogram-edges (list 1.0 2.0 3.0 4.0) (vector 0.0 2.0 4.0)))))
+         (assert-equal
+           (vector (vector 0.0 2.0 1) (vector 2.0 4.0 3))
+           (list-histogram-edges (list 1.0 2.0 3.0 4.0) (vector 0.0 2.0 4.0)))))
 
       (test-vector-histogram-edges-too-few
        (lambda ()
@@ -377,12 +377,14 @@
       (test-vector-summary-quartiles
        (lambda ()
          (let ((stats (vector-summary (vector 1.0 2.0 3.0 4.0 5.0))))
-           (assert-equal (list 1.0 2.0 3.0 4.0 5.0)
-                         (list (dict-get stats "min")
-                               (dict-get stats "q1")
-                               (dict-get stats "median")
-                               (dict-get stats "q3")
-                               (dict-get stats "max"))))))
+           (assert-equal
+             (list 1.0 2.0 3.0 4.0 5.0)
+             (list
+               (dict-get stats "min")
+               (dict-get stats "q1")
+               (dict-get stats "median")
+               (dict-get stats "q3")
+               (dict-get stats "max"))))))
 
       (test-list-summary
        (lambda ()
@@ -397,6 +399,10 @@
        (lambda ()
          (assert-equal (vector 1.0 2.0 3.0) (vector->floats (vector 1 2 3)))))
 
+      (test-vector->floats-from-floats
+       (lambda ()
+         (assert-equal (vector 1.0 2.0 3.0) (vector->floats (vector 1.0 2.0 3.0)))))
+
       (test-list->floats-from-integers
        (lambda ()
          (assert-equal (list 1.0 2.0) (list->floats (list 1 2)))))
@@ -405,122 +411,546 @@
        (lambda ()
          (vector->floats (vector "a"))))
 
+      (test-vector->floats-rejects-non-finite
+       (lambda ()
+         (vector->floats (vector (float-log 0.0)))))
+
       (test-list->floats-rejects-non-number
        (lambda ()
          (list->floats (list "a"))))
 
+      (test-list->floats-rejects-non-finite
+       (lambda ()
+         (list->floats (list (float-log 0.0)))))
+
+      ; The same column as integers and as floats, plus bin edges for the
+      ; histogram tests.  A column of integers must behave as the equivalent
+      ; column of floats at every entry point, so the two calls are compared
+      ; rather than the result being restated.
+      (ints (vector 1 2 3 4))
+      (floats (vector 1.0 2.0 3.0 4.0))
+      (edges (vector 1.0 2.5 5.0))
+
+      (test-vector-functions-accept-integers
+       (lambda ()
+         (assert-equal
+           (list
+             (vector-mean ints)
+             (vector-median ints)
+             (vector-median-sorted ints)
+             (vector-mode ints)
+             (vector-variance ints)
+             (vector-variance-population ints)
+             (vector-stdev ints)
+             (vector-stdev-population ints)
+             (vector-sum ints)
+             (vector-mean-absolute-deviation ints)
+             (vector-quantile ints 0.5)
+             (vector-quantile-sorted ints 0.5)
+             (vector-percentile ints 50.0)
+             (vector-iqr ints)
+             (vector-histogram ints 2)
+             (vector-histogram-edges ints edges)
+             (vector-frequency ints)
+             (vector-z-scores ints)
+             (vector-normalise ints)
+             (vector-summary ints))
+           (list
+             (vector-mean floats)
+             (vector-median floats)
+             (vector-median-sorted floats)
+             (vector-mode floats)
+             (vector-variance floats)
+             (vector-variance-population floats)
+             (vector-stdev floats)
+             (vector-stdev-population floats)
+             (vector-sum floats)
+             (vector-mean-absolute-deviation floats)
+             (vector-quantile floats 0.5)
+             (vector-quantile-sorted floats 0.5)
+             (vector-percentile floats 50.0)
+             (vector-iqr floats)
+             (vector-histogram floats 2)
+             (vector-histogram-edges floats edges)
+             (vector-frequency floats)
+             (vector-z-scores floats)
+             (vector-normalise floats)
+             (vector-summary floats)))))
+
+      (test-vector-functions-accept-integer-pairs
+       (lambda ()
+         (assert-equal
+           (list
+             (vector-correlate ints (vector 2 4 6 8))
+             (vector-covariance ints (vector 2 4 6 8))
+             (vector-linear-fit ints (vector 2 4 6 8)))
+           (list
+             (vector-correlate floats (vector 2.0 4.0 6.0 8.0))
+             (vector-covariance floats (vector 2.0 4.0 6.0 8.0))
+             (vector-linear-fit floats (vector 2.0 4.0 6.0 8.0))))))
+
+      ; A sample too small or malformed for the statistic is reported as #none
+      ; rather than raising.
+      (test-degenerate-samples-are-none
+       (lambda ()
+         (assert-equal
+           (list
+             (vector-covariance (vector 1.0) (vector 2.0))
+             (vector-covariance (vector 1.0 2.0) (vector 2.0))
+             (vector-linear-fit (vector 1.0) (vector 2.0))
+             (vector-linear-fit (vector 1.0 2.0) (vector 2.0))
+             (vector-z-scores (vector 1.0))
+             (vector-normalise (vector))
+             (vector-histogram (vector) 2)
+             (vector-histogram (vector 1.0 2.0) 0)
+             (vector-iqr (vector)))
+           (list #none #none #none #none #none #none #none #none #none))))
+
+      ; Every entry point validates its column before doing any work, so a
+      ; non-number and a non-finite value are both rejected wherever the column
+      ; is accepted.
+      (test-vector-mean-rejects-non-number
+       (lambda ()
+         (vector-mean (vector "a"))))
+
+      (test-vector-mean-rejects-non-finite
+       (lambda ()
+         (vector-mean (vector (float-log 0.0)))))
+
+      (test-vector-median-rejects-non-number
+       (lambda ()
+         (vector-median (vector "a"))))
+
+      (test-vector-median-rejects-non-finite
+       (lambda ()
+         (vector-median (vector (float-log 0.0)))))
+
+      (test-vector-median-sorted-rejects-non-number
+       (lambda ()
+         (vector-median-sorted (vector "a"))))
+
+      (test-vector-median-sorted-rejects-non-finite
+       (lambda ()
+         (vector-median-sorted (vector (float-log 0.0)))))
+
+      (test-vector-mode-rejects-non-number
+       (lambda ()
+         (vector-mode (vector "a"))))
+
+      (test-vector-mode-rejects-non-finite
+       (lambda ()
+         (vector-mode (vector (float-log 0.0)))))
+
+      (test-vector-variance-rejects-non-number
+       (lambda ()
+         (vector-variance (vector "a"))))
+
+      (test-vector-variance-rejects-non-finite
+       (lambda ()
+         (vector-variance (vector (float-log 0.0)))))
+
+      (test-vector-variance-population-rejects-non-number
+       (lambda ()
+         (vector-variance-population (vector "a"))))
+
+      (test-vector-variance-population-rejects-non-finite
+       (lambda ()
+         (vector-variance-population (vector (float-log 0.0)))))
+
+      (test-vector-stdev-rejects-non-number
+       (lambda ()
+         (vector-stdev (vector "a"))))
+
+      (test-vector-stdev-rejects-non-finite
+       (lambda ()
+         (vector-stdev (vector (float-log 0.0)))))
+
+      (test-vector-stdev-population-rejects-non-number
+       (lambda ()
+         (vector-stdev-population (vector "a"))))
+
+      (test-vector-stdev-population-rejects-non-finite
+       (lambda ()
+         (vector-stdev-population (vector (float-log 0.0)))))
+
+      (test-vector-sum-rejects-non-number
+       (lambda ()
+         (vector-sum (vector "a"))))
+
+      (test-vector-sum-rejects-non-finite
+       (lambda ()
+         (vector-sum (vector (float-log 0.0)))))
+
+      (test-vector-mean-absolute-deviation-rejects-non-number
+       (lambda ()
+         (vector-mean-absolute-deviation (vector "a"))))
+
+      (test-vector-mean-absolute-deviation-rejects-non-finite
+       (lambda ()
+         (vector-mean-absolute-deviation (vector (float-log 0.0)))))
+
+      (test-vector-quantile-rejects-non-number
+       (lambda ()
+         (vector-quantile (vector "a") 0.5)))
+
+      (test-vector-quantile-rejects-non-finite
+       (lambda ()
+         (vector-quantile (vector (float-log 0.0)) 0.5)))
+
+      (test-vector-quantile-sorted-rejects-non-number
+       (lambda ()
+         (vector-quantile-sorted (vector "a") 0.5)))
+
+      (test-vector-quantile-sorted-rejects-non-finite
+       (lambda ()
+         (vector-quantile-sorted (vector (float-log 0.0)) 0.5)))
+
+      (test-vector-percentile-rejects-non-number
+       (lambda ()
+         (vector-percentile (vector "a") 50.0)))
+
+      (test-vector-percentile-rejects-non-finite
+       (lambda ()
+         (vector-percentile (vector (float-log 0.0)) 50.0)))
+
+      (test-vector-iqr-rejects-non-number
+       (lambda ()
+         (vector-iqr (vector "a"))))
+
+      (test-vector-iqr-rejects-non-finite
+       (lambda ()
+         (vector-iqr (vector (float-log 0.0)))))
+
+      (test-vector-histogram-rejects-non-number
+       (lambda ()
+         (vector-histogram (vector "a") 2)))
+
+      (test-vector-histogram-rejects-non-finite
+       (lambda ()
+         (vector-histogram (vector (float-log 0.0)) 2)))
+
+      (test-vector-histogram-edges-rejects-non-number
+       (lambda ()
+         (vector-histogram-edges (vector "a") (vector 1.0 2.0))))
+
+      (test-vector-histogram-edges-rejects-non-finite
+       (lambda ()
+         (vector-histogram-edges (vector (float-log 0.0)) (vector 1.0 2.0))))
+
+      ; A value outside every bin is not counted.
+      (test-vector-histogram-edges-outside-bins
+       (lambda ()
+         (assert-equal
+           (vector-histogram-edges (vector 1.0 1.5 9.0) (vector 1.0 2.0 3.0))
+           (vector (vector 1.0 2.0 2) (vector 2.0 3.0 0)))))
+
+      (test-vector-frequency-rejects-non-number
+       (lambda ()
+         (vector-frequency (vector "a"))))
+
+      (test-vector-frequency-rejects-non-finite
+       (lambda ()
+         (vector-frequency (vector (float-log 0.0)))))
+
+      (test-vector-z-scores-rejects-non-number
+       (lambda ()
+         (vector-z-scores (vector "a"))))
+
+      (test-vector-z-scores-rejects-non-finite
+       (lambda ()
+         (vector-z-scores (vector (float-log 0.0)))))
+
+      (test-vector-normalise-rejects-non-number
+       (lambda ()
+         (vector-normalise (vector "a"))))
+
+      (test-vector-normalise-rejects-non-finite
+       (lambda ()
+         (vector-normalise (vector (float-log 0.0)))))
+
+      (test-vector-summary-rejects-non-number
+       (lambda ()
+         (vector-summary (vector "a"))))
+
+      (test-vector-summary-rejects-non-finite
+       (lambda ()
+         (vector-summary (vector (float-log 0.0)))))
+
+      (test-vector-correlate-rejects-non-number
+       (lambda ()
+         (vector-correlate (vector "a") (vector 1.0))))
+
+      (test-vector-correlate-rejects-non-finite
+       (lambda ()
+         (vector-correlate (vector (float-log 0.0)) (vector 1.0))))
+
+      (test-vector-covariance-rejects-non-number
+       (lambda ()
+         (vector-covariance (vector "a") (vector 1.0))))
+
+      (test-vector-covariance-rejects-non-finite
+       (lambda ()
+         (vector-covariance (vector (float-log 0.0)) (vector 1.0))))
+
+      (test-vector-linear-fit-rejects-non-number
+       (lambda ()
+         (vector-linear-fit (vector "a") (vector 1.0))))
+
+      (test-vector-linear-fit-rejects-non-finite
+       (lambda ()
+         (vector-linear-fit (vector (float-log 0.0)) (vector 1.0))))
+
       (tests
        (list
-         (list "central tendency"
-               (list
-                 (expect-pass "vector mean" test-vector-mean)
-                 (expect-pass "list mean" test-list-mean)
-                 (expect-pass "mean of an empty sample is none" test-vector-mean-empty)
-                 (expect-pass "mean of a single value" test-vector-mean-single)
-                 (expect-pass "median of an even sample" test-vector-median-even)
-                 (expect-pass "median of an odd sample" test-vector-median-odd)
-                 (expect-pass "median sorts its input" test-vector-median-unsorted)
-                 (expect-pass "list median" test-list-median)
-                 (expect-pass "median of an already-sorted vector" test-vector-median-sorted)
-                 (expect-pass "median of an already-sorted list" test-list-median-sorted)
-                 (expect-pass "median of an empty sample is none" test-vector-median-empty)
-                 (expect-pass "vector mode" test-vector-mode)
-                 (expect-pass "list mode" test-list-mode)
-                 (expect-pass "bimodal sample returns every tied value" test-vector-mode-bimodal)
-                 (expect-pass "no repeats gives an empty mode" test-vector-mode-no-repeats)
-                 (expect-pass "mode of an empty sample is empty" test-vector-mode-empty)))
-         (list "dispersion"
-               (list
-                 (expect-pass "vector sample variance" test-vector-variance)
-                 (expect-pass "list sample variance" test-list-variance)
-                 (expect-pass "sample variance of one value is none" test-vector-variance-single)
-                 (expect-pass "sample variance of an empty sample is none" test-vector-variance-empty)
-                 (expect-pass "vector population variance" test-vector-variance-population)
-                 (expect-pass "list population variance" test-list-variance-population)
-                 (expect-pass "variance is stable for a large mean" test-vector-variance-large-mean)
-                 (expect-pass "vector sample stdev" test-vector-stdev)
-                 (expect-pass "list sample stdev" test-list-stdev)
-                 (expect-pass "vector population stdev" test-vector-stdev-population)
-                 (expect-pass "list population stdev" test-list-stdev-population)
-                 (expect-pass "sample stdev of one value is none" test-vector-stdev-single)
-                 (expect-pass "vector sum" test-vector-sum)
-                 (expect-pass "list sum" test-list-sum)
-                 (expect-pass "sum of an empty sample is zero" test-vector-sum-empty)
-                 (expect-pass "vector mean absolute deviation" test-vector-mean-absolute-deviation)
-                 (expect-pass "list mean absolute deviation" test-list-mean-absolute-deviation)))
-         (list "quantiles"
-               (list
-                 (expect-pass "quantile at zero" test-vector-quantile-min)
-                 (expect-pass "quantile at one" test-vector-quantile-max)
-                 (expect-pass "quantile at one half" test-vector-quantile-median)
-                 (expect-pass "quantile interpolates linearly" test-vector-quantile-interpolates)
-                 (expect-pass "quantile agrees with median" test-vector-quantile-agrees-with-median)
-                 (expect-pass "quantile of an already-sorted vector" test-vector-quantile-sorted)
-                 (expect-pass "list quantile" test-list-quantile)
-                 (expect-pass "quantile of an already-sorted list" test-list-quantile-sorted)
-                 (expect-pass "quantile of an empty sample is none" test-vector-quantile-empty)
-                 (expect-fail "quantile rejects q outside [0, 1]"
-                              test-vector-quantile-out-of-range
-                              "quantile q must be in")
-                 (expect-pass "vector percentile" test-vector-percentile)
-                 (expect-pass "list percentile" test-list-percentile)
-                 (expect-pass "vector interquartile range" test-vector-iqr)
-                 (expect-pass "list interquartile range" test-list-iqr)
-                 (expect-pass "interquartile range of an empty sample is none" test-vector-iqr-empty)))
-         (list "shape"
-               (list
-                 (expect-pass "vector histogram" test-vector-histogram)
-                 (expect-pass "list histogram" test-list-histogram)
-                 (expect-pass "the top edge belongs to the last bin" test-vector-histogram-top-edge-in-last-bin)
-                 (expect-pass "histogram of an empty sample is none" test-vector-histogram-empty)
-                 (expect-pass "vector histogram with explicit edges" test-vector-histogram-edges)
-                 (expect-pass "list histogram with explicit edges" test-list-histogram-edges)
-                 (expect-fail "edges must have at least two elements"
-                              test-vector-histogram-edges-too-few
-                              "at least two")
-                 (expect-pass "vector frequency" test-vector-frequency)
-                 (expect-pass "list frequency" test-list-frequency)
-                 (expect-pass "frequency of distinct values" test-vector-frequency-distinct)))
-         (list "relationship"
-               (list
-                 (expect-pass "vector correlate is one for a positive linear relation"
-                              test-vector-correlate-perfect)
-                 (expect-pass "list correlate is one for a positive linear relation"
-                              test-list-correlate-perfect)
-                 (expect-pass "correlate is minus one for a negative linear relation"
-                              test-vector-correlate-negative)
-                 (expect-pass "correlate of a constant column is none" test-vector-correlate-constant)
-                 (expect-pass "correlate of mismatched lengths is none" test-vector-correlate-mismatched)
-                 (expect-pass "vector covariance" test-vector-covariance)
-                 (expect-pass "list covariance" test-list-covariance)
-                 (expect-pass "vector linear fit slope" test-vector-linear-fit-slope)
-                 (expect-pass "vector linear fit intercept" test-vector-linear-fit-intercept)
-                 (expect-pass "vector linear fit r squared" test-vector-linear-fit-r2)
-                 (expect-pass "list linear fit" test-list-linear-fit)
-                 (expect-pass "linear fit of a constant x is none" test-vector-linear-fit-constant-x)))
-         (list "normalisation"
-               (list
-                 (expect-pass "vector z-scores have zero mean" test-vector-z-scores)
-                 (expect-pass "list z-scores have zero mean" test-list-z-scores)
-                 (expect-pass "z-scores of a constant sample is none" test-vector-z-scores-constant)
-                 (expect-pass "vector min-max normalisation" test-vector-normalise)
-                 (expect-pass "list min-max normalisation" test-list-normalise)
-                 (expect-pass "normalising a constant sample is none" test-vector-normalise-constant)))
-         (list "summary"
-               (list
-                 (expect-pass "vector summary count" test-vector-summary)
-                 (expect-pass "vector summary five-number values" test-vector-summary-quartiles)
-                 (expect-pass "list summary count" test-list-summary)
-                 (expect-pass "summary of an empty sample is none" test-vector-summary-empty)))
-         (list "converters"
-               (list
-                 (expect-pass "vector->floats converts integers" test-vector->floats-from-integers)
-                 (expect-pass "list->floats converts integers" test-list->floats-from-integers)
-                 (expect-fail "vector->floats rejects a non-number"
-                              test-vector->floats-rejects-non-number
-                              "must be a number")
-                 (expect-fail "list->floats rejects a non-number"
-                              test-list->floats-rejects-non-number
-                              "must be a number"))))))
+         (list
+           "central tendency"
+           (list
+             (expect-pass "vector mean" test-vector-mean)
+             (expect-pass "list mean" test-list-mean)
+             (expect-pass "mean of an empty sample is none" test-vector-mean-empty)
+             (expect-pass "mean of a single value" test-vector-mean-single)
+             (expect-pass "median of an even sample" test-vector-median-even)
+             (expect-pass "median of an odd sample" test-vector-median-odd)
+             (expect-pass "median sorts its input" test-vector-median-unsorted)
+             (expect-pass "list median" test-list-median)
+             (expect-pass "median of an already-sorted vector" test-vector-median-sorted)
+             (expect-pass "median of an already-sorted list" test-list-median-sorted)
+             (expect-pass "median of an empty sample is none" test-vector-median-empty)
+             (expect-pass "vector mode" test-vector-mode)
+             (expect-pass "list mode" test-list-mode)
+             (expect-pass "bimodal sample returns every tied value" test-vector-mode-bimodal)
+             (expect-pass "no repeats gives an empty mode" test-vector-mode-no-repeats)
+             (expect-pass "mode of an empty sample is empty" test-vector-mode-empty)))
+         (list
+           "dispersion"
+           (list
+             (expect-pass "vector sample variance" test-vector-variance)
+             (expect-pass "list sample variance" test-list-variance)
+             (expect-pass "sample variance of one value is none" test-vector-variance-single)
+             (expect-pass "sample variance of an empty sample is none" test-vector-variance-empty)
+             (expect-pass "vector population variance" test-vector-variance-population)
+             (expect-pass "list population variance" test-list-variance-population)
+             (expect-pass "variance is stable for a large mean" test-vector-variance-large-mean)
+             (expect-pass "vector sample stdev" test-vector-stdev)
+             (expect-pass "list sample stdev" test-list-stdev)
+             (expect-pass "vector population stdev" test-vector-stdev-population)
+             (expect-pass "list population stdev" test-list-stdev-population)
+             (expect-pass "sample stdev of one value is none" test-vector-stdev-single)
+             (expect-pass "vector sum" test-vector-sum)
+             (expect-pass "list sum" test-list-sum)
+             (expect-pass "sum of an empty sample is zero" test-vector-sum-empty)
+             (expect-pass "vector mean absolute deviation" test-vector-mean-absolute-deviation)
+             (expect-pass "list mean absolute deviation" test-list-mean-absolute-deviation)))
+         (list
+           "quantiles"
+           (list
+             (expect-pass "quantile at zero" test-vector-quantile-min)
+             (expect-pass "quantile at one" test-vector-quantile-max)
+             (expect-pass "quantile at one half" test-vector-quantile-median)
+             (expect-pass "quantile interpolates linearly" test-vector-quantile-interpolates)
+             (expect-pass "quantile agrees with median" test-vector-quantile-agrees-with-median)
+             (expect-pass "quantile of an already-sorted vector" test-vector-quantile-sorted)
+             (expect-pass "list quantile" test-list-quantile)
+             (expect-pass "quantile of an already-sorted list" test-list-quantile-sorted)
+             (expect-pass "quantile of an empty sample is none" test-vector-quantile-empty)
+             (expect-fail "quantile rejects q outside [0, 1]" test-vector-quantile-out-of-range "quantile q must be in")
+             (expect-pass "vector percentile" test-vector-percentile)
+             (expect-pass "list percentile" test-list-percentile)
+             (expect-pass "vector interquartile range" test-vector-iqr)
+             (expect-pass "list interquartile range" test-list-iqr)
+             (expect-pass "interquartile range of an empty sample is none" test-vector-iqr-empty)))
+         (list
+           "shape"
+           (list
+             (expect-pass "vector histogram" test-vector-histogram)
+             (expect-pass "list histogram" test-list-histogram)
+             (expect-pass "the top edge belongs to the last bin" test-vector-histogram-top-edge-in-last-bin)
+             (expect-pass "histogram of an empty sample is none" test-vector-histogram-empty)
+             (expect-pass "vector histogram with explicit edges" test-vector-histogram-edges)
+             (expect-pass "list histogram with explicit edges" test-list-histogram-edges)
+             (expect-fail "edges must have at least two elements" test-vector-histogram-edges-too-few "at least two")
+             (expect-pass "a value outside every bin is not counted" test-vector-histogram-edges-outside-bins)
+             (expect-pass "vector frequency" test-vector-frequency)
+             (expect-pass "list frequency" test-list-frequency)
+             (expect-pass "frequency of distinct values" test-vector-frequency-distinct)))
+         (list
+           "relationship"
+           (list
+             (expect-pass "vector correlate is one for a positive linear relation" test-vector-correlate-perfect)
+             (expect-pass "list correlate is one for a positive linear relation" test-list-correlate-perfect)
+             (expect-pass "correlate is minus one for a negative linear relation" test-vector-correlate-negative)
+             (expect-pass "correlate of a constant column is none" test-vector-correlate-constant)
+             (expect-pass "correlate of mismatched lengths is none" test-vector-correlate-mismatched)
+             (expect-pass "vector covariance" test-vector-covariance)
+             (expect-pass "list covariance" test-list-covariance)
+             (expect-pass "vector linear fit slope" test-vector-linear-fit-slope)
+             (expect-pass "vector linear fit intercept" test-vector-linear-fit-intercept)
+             (expect-pass "vector linear fit r squared" test-vector-linear-fit-r2)
+             (expect-pass "list linear fit" test-list-linear-fit)
+             (expect-pass "linear fit of a constant x is none" test-vector-linear-fit-constant-x)))
+         (list
+           "normalisation"
+           (list
+             (expect-pass "vector z-scores have zero mean" test-vector-z-scores)
+             (expect-pass "list z-scores have zero mean" test-list-z-scores)
+             (expect-pass "z-scores of a constant sample is none" test-vector-z-scores-constant)
+             (expect-pass "vector min-max normalisation" test-vector-normalise)
+             (expect-pass "list min-max normalisation" test-list-normalise)
+             (expect-pass "normalising a constant sample is none" test-vector-normalise-constant)))
+         (list
+           "summary"
+           (list
+             (expect-pass "vector summary count" test-vector-summary)
+             (expect-pass "vector summary five-number values" test-vector-summary-quartiles)
+             (expect-pass "list summary count" test-list-summary)
+             (expect-pass "summary of an empty sample is none" test-vector-summary-empty)))
+         (list
+           "degenerate samples"
+           (list (expect-pass "a malformed or too-small sample is none" test-degenerate-samples-are-none)))
+         (list
+           "integer columns"
+           (list
+             (expect-pass "every univariate function accepts an integer column" test-vector-functions-accept-integers)
+             (expect-pass "every relationship function accepts integer columns"
+                          test-vector-functions-accept-integer-pairs)))
+         (list
+           "argument validation"
+           (list
+             (expect-fail "vector-mean rejects a non-number" test-vector-mean-rejects-non-number "must be a number")
+             (expect-fail "vector-mean rejects a non-finite value" test-vector-mean-rejects-non-finite "must be finite")
+             (expect-fail "vector-median rejects a non-number" test-vector-median-rejects-non-number "must be a number")
+             (expect-fail "vector-median rejects a non-finite value"
+                          test-vector-median-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-median-sorted rejects a non-number"
+                          test-vector-median-sorted-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-median-sorted rejects a non-finite value"
+                          test-vector-median-sorted-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-mode rejects a non-number" test-vector-mode-rejects-non-number "must be a number")
+             (expect-fail "vector-mode rejects a non-finite value" test-vector-mode-rejects-non-finite "must be finite")
+             (expect-fail "vector-variance rejects a non-number"
+                          test-vector-variance-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-variance rejects a non-finite value"
+                          test-vector-variance-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-variance-population rejects a non-number"
+                          test-vector-variance-population-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-variance-population rejects a non-finite value"
+                          test-vector-variance-population-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-stdev rejects a non-number" test-vector-stdev-rejects-non-number "must be a number")
+             (expect-fail "vector-stdev rejects a non-finite value"
+                          test-vector-stdev-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-stdev-population rejects a non-number"
+                          test-vector-stdev-population-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-stdev-population rejects a non-finite value"
+                          test-vector-stdev-population-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-sum rejects a non-number" test-vector-sum-rejects-non-number "must be a number")
+             (expect-fail "vector-sum rejects a non-finite value" test-vector-sum-rejects-non-finite "must be finite")
+             (expect-fail "vector-mean-absolute-deviation rejects a non-number"
+                          test-vector-mean-absolute-deviation-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-mean-absolute-deviation rejects a non-finite value"
+                          test-vector-mean-absolute-deviation-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-quantile rejects a non-number"
+                          test-vector-quantile-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-quantile rejects a non-finite value"
+                          test-vector-quantile-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-quantile-sorted rejects a non-number"
+                          test-vector-quantile-sorted-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-quantile-sorted rejects a non-finite value"
+                          test-vector-quantile-sorted-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-percentile rejects a non-number"
+                          test-vector-percentile-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-percentile rejects a non-finite value"
+                          test-vector-percentile-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-iqr rejects a non-number" test-vector-iqr-rejects-non-number "must be a number")
+             (expect-fail "vector-iqr rejects a non-finite value" test-vector-iqr-rejects-non-finite "must be finite")
+             (expect-fail "vector-histogram rejects a non-number"
+                          test-vector-histogram-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-histogram rejects a non-finite value"
+                          test-vector-histogram-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-histogram-edges rejects a non-number"
+                          test-vector-histogram-edges-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-histogram-edges rejects a non-finite value"
+                          test-vector-histogram-edges-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-frequency rejects a non-number"
+                          test-vector-frequency-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-frequency rejects a non-finite value"
+                          test-vector-frequency-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-z-scores rejects a non-number"
+                          test-vector-z-scores-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-z-scores rejects a non-finite value"
+                          test-vector-z-scores-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-normalise rejects a non-number"
+                          test-vector-normalise-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-normalise rejects a non-finite value"
+                          test-vector-normalise-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-summary rejects a non-number"
+                          test-vector-summary-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-summary rejects a non-finite value"
+                          test-vector-summary-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-correlate rejects a non-number"
+                          test-vector-correlate-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-correlate rejects a non-finite value"
+                          test-vector-correlate-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-covariance rejects a non-number"
+                          test-vector-covariance-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-covariance rejects a non-finite value"
+                          test-vector-covariance-rejects-non-finite
+                          "must be finite")
+             (expect-fail "vector-linear-fit rejects a non-number"
+                          test-vector-linear-fit-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector-linear-fit rejects a non-finite value"
+                          test-vector-linear-fit-rejects-non-finite
+                          "must be finite")))
+         (list
+           "converters"
+           (list
+             (expect-pass "vector->floats converts integers" test-vector->floats-from-integers)
+             (expect-pass "vector->floats leaves floats unchanged" test-vector->floats-from-floats)
+             (expect-pass "list->floats converts integers" test-list->floats-from-integers)
+             (expect-fail "vector->floats rejects a non-number"
+                          test-vector->floats-rejects-non-number
+                          "must be a number")
+             (expect-fail "vector->floats rejects a non-finite value"
+                          test-vector->floats-rejects-non-finite
+                          "must be finite")
+             (expect-fail "list->floats rejects a non-finite value"
+                          test-list->floats-rejects-non-finite
+                          "must be finite")
+             (expect-fail "list->floats rejects a non-number"
+                          test-list->floats-rejects-non-number
+                          "must be a number"))))))
 
   (export tests))
