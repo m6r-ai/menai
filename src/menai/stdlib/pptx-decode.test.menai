@@ -122,6 +122,57 @@
                               "\" Target=\"slides/slide1.xml\" TargetMode=\"External\"/></Relationships>")))
            (list "ppt/slides/slide1.xml" slide-xml))))
 
+      ; A presentation whose <p:sldIdLst> is followed by another child, as a real
+      ; presentation's <p:sldSz> is.
+      (with-trailing-presentation-child
+       (package-of
+         (list
+           (list
+             "ppt/presentation.xml"
+             (string->bytes
+               (string-concat "<p:presentation xmlns:p=\""
+                              main-ns
+                              "\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                              "<p:sldIdLst><p:sldId id=\"256\" r:id=\"rId2\"/></p:sldIdLst>"
+                              "<p:sldSz cx=\"9144000\" cy=\"6858000\"/></p:presentation>")))
+           (list
+             "ppt/_rels/presentation.xml.rels"
+             (string->bytes
+               (string-concat "<Relationships xmlns=\""
+                              rels-ns
+                              "\"><Relationship Id=\"rId2\" Type=\""
+                              slide-rel
+                              "\" Target=\"slides/slide1.xml\"/></Relationships>")))
+           (list "ppt/slides/slide1.xml" slide-xml))))
+
+      ; A package whose slide relationship resolves to a slide part the package
+      ; does not contain.
+      (with-missing-slide-part
+       (package-of
+         (list
+           (list "ppt/presentation.xml" presentation-one-slide-xml)
+           (list
+             "ppt/_rels/presentation.xml.rels"
+             (string->bytes
+               (string-concat "<Relationships xmlns=\""
+                              rels-ns
+                              "\"><Relationship Id=\"rId2\" Type=\""
+                              slide-rel
+                              "\" Target=\"slides/slide9.xml\"/></Relationships>"))))))
+
+      ; A presentation whose only slide names a relationship id that no
+      ; relationship carries.
+      (with-unresolved-slide-relationship
+       (package-of
+         (list
+           (list
+             "ppt/presentation.xml"
+             (string->bytes
+               (string-concat "<p:presentation xmlns:p=\""
+                              main-ns
+                              "\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                              "<p:sldIdLst><p:sldId id=\"256\" r:id=\"rId9\"/></p:sldIdLst></p:presentation>"))))))
+
       ; The presentation part is decoded as the xml-decode element tree of ppt/presentation.xml.
       (test-presentation-part
        (lambda ()
@@ -245,6 +296,26 @@
        (lambda ()
          (decode "not a package")))
 
+      ; A presentation child that is not a slide list is ignored.
+      (test-ignores-other-presentation-children
+       (lambda ()
+         (assert-equal
+           (map-list
+             (lambda (s)
+               (dict-get s "part"))
+             (dict-get (decode with-trailing-presentation-child) "slides"))
+           (list "ppt/slides/slide1.xml"))))
+
+      ; A slide naming a relationship id that does not resolve is rejected.
+      (test-rejects-unresolved-slide-relationship
+       (lambda ()
+         (decode with-unresolved-slide-relationship)))
+
+      ; A slide whose slide part is missing is rejected.
+      (test-rejects-missing-slide-part
+       (lambda ()
+         (decode with-missing-slide-part)))
+
       ; A package with no presentation part is rejected.
       (test-rejects-no-presentation
        (lambda ()
@@ -275,7 +346,9 @@
              (expect-pass "a slide carries its decoded element" test-slide-carries-element)
              (expect-pass "a slide carries its own relationships" test-slide-carries-relationships)
              (expect-pass "a slide with no relationships part has an empty map" test-slide-without-relationships)
-             (expect-pass "slide order follows the slide list, not the part names" test-slide-order-follows-list)))
+             (expect-pass "slide order follows the slide list, not the part names" test-slide-order-follows-list)
+             (expect-pass "a presentation child that is not a slide list is ignored"
+                          test-ignores-other-presentation-children)))
 
          (list
            "optional-parts"
@@ -300,6 +373,12 @@
                           "package has no ppt/presentation.xml")
              (expect-fail "rejects a package whose presentation is not XML"
                           test-rejects-non-xml-presentation
-                          "xml-decode"))))))
+                          "xml-decode")
+             (expect-fail "rejects a slide with an unresolvable relationship"
+                          test-rejects-unresolved-slide-relationship
+                          "a slide has no resolvable relationship")
+             (expect-fail "rejects a slide whose slide part is missing"
+                          test-rejects-missing-slide-part
+                          "package has no ppt/slides/slide9.xml"))))))
 
   (export tests))
