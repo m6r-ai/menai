@@ -219,12 +219,14 @@
              (let ((v
                     (if (list-null? rest)
                         (variant 'standard)
-                        (list-first rest)))
-
-                   (alphabet (alphabet-for v)))
-               (if (padded? v)
-                   (decode-padded s alphabet)
-                   (decode-unpadded s alphabet)))
+                        (list-first rest))))
+               (if (and (enum? v)
+                        (enum-is-instance? v variant))
+                   (let ((alphabet (alphabet-for v)))
+                     (if (padded? v)
+                         (decode-padded s alphabet)
+                         (decode-unpadded s alphabet)))
+                   (error "base64-decode: variant must be a base64 variant")))
              (error "base64-decode: decode expects a string")))))
 
   (export decode variant))

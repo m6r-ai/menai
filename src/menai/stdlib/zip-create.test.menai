@@ -77,6 +77,38 @@
          (let ((r (entries (create (dict "entries" (list) "meta" (dict "comment" #none))))))
            (assert-equal (dict-get (dict-get r "meta") "comment") #none))))
 
+      ; A container with no "meta" field yields an archive with no comment.
+      (test-no-meta-field
+       (lambda ()
+         (let ((r (entries (create (dict "entries" (list))))))
+           (assert-equal (dict-get (dict-get r "meta") "comment") #none))))
+
+      ; A directory entry has no content and is marked as a directory.
+      (test-directory-entry
+       (lambda ()
+         (let ((r (entries (create (dict "entries" (list (dict "name" "dir/")))))))
+           (assert-equal
+             (list
+               (dict-get (list-first (dict-get r "entries")) "is-directory")
+               (dict-get (list-first (dict-get r "entries")) "uncompressed-size"))
+             (list #t 0)))))
+
+      ; An entry compressed with deflate round-trips through the reader.
+      (test-deflate-compression
+       (lambda ()
+         (let ((r
+                (entries
+                  (create
+                    (dict "entries" (list
+                                      (dict "name" "d.txt"
+                                            "compression" 8
+                                            "content" (string->bytes "hello hello hello"))))))))
+           (assert-equal
+             (list
+               (dict-get (list-first (dict-get r "entries")) "compression")
+               (dict-get (list-first (dict-get r "entries")) "uncompressed-size"))
+             (list 8 17)))))
+
       ; A non-dict argument is rejected.
       (test-rejects-non-dict
        (lambda ()
@@ -104,14 +136,17 @@
            (list
              (expect-pass "crc-32 is recomputed" test-crc32-recomputed)
              (expect-pass "uncompressed size is recomputed" test-uncompressed-size-recomputed)
-             (expect-pass "compressed size is recomputed" test-compressed-size-recomputed)))
+             (expect-pass "compressed size is recomputed" test-compressed-size-recomputed)
+             (expect-pass "a directory entry has no content" test-directory-entry)
+             (expect-pass "an entry may request deflate" test-deflate-compression)))
 
          (list
            "meta"
            (list
              (expect-pass "entry count is reported" test-entry-count)
              (expect-pass "comment is preserved" test-comment-preserved)
-             (expect-pass "absent comment reads back as none" test-comment-absent)))
+             (expect-pass "absent comment reads back as none" test-comment-absent)
+             (expect-pass "a container with no meta field has no comment" test-no-meta-field)))
 
          (list
            "errors"

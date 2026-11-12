@@ -83,6 +83,35 @@
                  "pixels" (vector (vector (vector 1 2)))
                  "meta" (dict "channels" 3)))))
 
+      ; A pixel that is not a vector is rejected.
+      (test-rejects-non-vector-pixel
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1)
+                 "pixels" (vector (vector "not a pixel"))
+                 "meta" (dict "channels" 3)))))
+
+      ; A row that is not a vector is rejected.
+      (test-rejects-non-vector-row
+       (lambda ()
+         (encode (dict "header" (dict "width" 1 "height" 1) "pixels" (vector "not a row") "meta" (dict "channels" 3)))))
+
+      ; A row whose length differs from the width is rejected.
+      (test-rejects-row-width-mismatch
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 2 "height" 1)
+                 "pixels" (vector (vector (vector 1 2 3)))
+                 "meta" (dict "channels" 3)))))
+
+      ; With no meta field the channel count defaults to three.
+      (test-default-channel-count
+       (lambda ()
+         (let ((v
+                (decode
+                  (encode (dict "header" (dict "width" 1 "height" 1) "pixels" (vector (vector (vector 1 2 3))))))))
+           (assert-equal (dict-get (dict-get v "header") "colour-type") 2))))
+
       (tests
        (list
          (list
@@ -90,6 +119,7 @@
            (list
              (expect-pass "starts with the PNG signature" test-signature)
              (expect-pass "colour type matches the channel count" test-colour-type-matches-channels)
+             (expect-pass "the channel count defaults to three" test-default-channel-count)
              (expect-pass "dimensions are preserved" test-dimensions-preserved)
              (expect-pass "bit depth, compression, filter, and interlace are the supported values"
                           test-header-constants)))
@@ -107,6 +137,13 @@
                           "\"pixels\" must be a vector of rows")
              (expect-fail "rejects a pixel with the wrong channel count"
                           test-rejects-wrong-channel-count
-                          "must have 3 channels"))))))
+                          "must have 3 channels")
+             (expect-fail "rejects a pixel that is not a vector"
+                          test-rejects-non-vector-pixel
+                          "must be a vector of channels")
+             (expect-fail "rejects a row that is not a vector" test-rejects-non-vector-row "must be a vector of pixels")
+             (expect-fail "rejects a row whose length is not the width"
+                          test-rejects-row-width-mismatch
+                          "must have \"width\" pixels"))))))
 
   (export tests))

@@ -7,6 +7,7 @@
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
+      (foreign (enum (x y)))
 
       ; The empty input decodes to the empty bytes value.
       (test-empty-input
@@ -148,10 +149,70 @@
        (lambda ()
          (decode "Zm9vY" (dv 'standard-unpadded))))
 
+      ; An unpadded input with a three-character remainder decodes to two bytes.
+      (test-variant-unpadded-three-remainder
+       (lambda ()
+         (assert-equal (bytes->string (decode "Zm9" (dv 'standard-unpadded))) "fo")))
+
+      ; An invalid character in the second position of a full group is rejected.
+      (test-rejects-invalid-character-second
+       (lambda ()
+         (decode "Z!9v")))
+
+      ; An invalid character in the fourth position of a full group is rejected.
+      (test-rejects-invalid-character-fourth
+       (lambda ()
+         (decode "Zm9!")))
+
+      ; An invalid character where a "==" group's first byte is decoded is rejected.
+      (test-rejects-invalid-final-one-first
+       (lambda ()
+         (decode "!A==")))
+
+      ; An invalid character where a "==" group's second byte is decoded is rejected.
+      (test-rejects-invalid-final-one-second
+       (lambda ()
+         (decode "A!==")))
+
+      ; An invalid character in an unpadded final group's first position is rejected.
+      (test-rejects-invalid-final-two-first
+       (lambda ()
+         (decode "!m9" (dv 'standard-unpadded))))
+
+      ; An invalid character in an unpadded final group's third position is rejected.
+      (test-rejects-invalid-final-two-third
+       (lambda ()
+         (decode "Zm!" (dv 'standard-unpadded))))
+
+      ; An invalid character in the second position of an unpadded pair is rejected.
+      (test-rejects-invalid-pair-second
+       (lambda ()
+         (decode "A!" (dv 'standard-unpadded))))
+
+      ; An invalid character in the first position of an unpadded pair is rejected.
+      (test-rejects-invalid-pair-first
+       (lambda ()
+         (decode "!A" (dv 'standard-unpadded))))
+
+      ; An invalid character in an unpadded final group's second position is rejected.
+      (test-rejects-invalid-final-two-second
+       (lambda ()
+         (decode "Z!9" (dv 'standard-unpadded))))
+
       ; A non-string argument is rejected.
       (test-rejects-non-string
        (lambda ()
          (decode 42)))
+
+      ; A second argument that is not a base64 variant is rejected.
+      (test-rejects-non-variant-argument
+       (lambda ()
+         (decode "Zm9v" 42)))
+
+      ; A variant of another enum type is rejected.
+      (test-rejects-foreign-variant
+       (lambda ()
+         (decode "Zm9v" (foreign 'x))))
 
       (tests
        (list
@@ -181,8 +242,8 @@
              (expect-pass "url decodes - and _" test-variant-url-alphabet)
              (expect-pass "standard-unpadded decodes without padding" test-variant-standard-unpadded)
              (expect-pass "url-unpadded decodes without padding" test-variant-url-unpadded)
-             (expect-pass "unpadded accepts a length that is a multiple of four"
-                          test-variant-unpadded-multiple-of-four)))
+             (expect-pass "unpadded accepts a length that is a multiple of four" test-variant-unpadded-multiple-of-four)
+             (expect-pass "unpadded three-character remainder yields two bytes" test-variant-unpadded-three-remainder)))
 
          (list
            "errors"
@@ -211,6 +272,39 @@
              (expect-fail "unpadded variant rejects a length of one mod four"
                           test-rejects-unpadded-length-one
                           "invalid for unpadded Base64")
-             (expect-fail "rejects a non-string argument" test-rejects-non-string "expects a string"))))))
+             (expect-fail "invalid character in the second position"
+                          test-rejects-invalid-character-second
+                          "invalid character")
+             (expect-fail "invalid character in the fourth position"
+                          test-rejects-invalid-character-fourth
+                          "invalid character")
+             (expect-fail "invalid character in a == group, first byte"
+                          test-rejects-invalid-final-one-first
+                          "invalid character")
+             (expect-fail "invalid character in a == group, second byte"
+                          test-rejects-invalid-final-one-second
+                          "invalid character")
+             (expect-fail "invalid character in an unpadded final group, first position"
+                          test-rejects-invalid-final-two-first
+                          "invalid character")
+             (expect-fail "invalid character in an unpadded final group, third position"
+                          test-rejects-invalid-final-two-third
+                          "invalid character")
+             (expect-fail "invalid character in an unpadded pair, second position"
+                          test-rejects-invalid-pair-second
+                          "invalid character")
+             (expect-fail "invalid character in an unpadded pair, first position"
+                          test-rejects-invalid-pair-first
+                          "invalid character")
+             (expect-fail "invalid character in an unpadded final group, second position"
+                          test-rejects-invalid-final-two-second
+                          "invalid character")
+             (expect-fail "rejects a non-string argument" test-rejects-non-string "expects a string")
+             (expect-fail "rejects a non-variant second argument"
+                          test-rejects-non-variant-argument
+                          "must be a base64 variant")
+             (expect-fail "rejects a variant of another type"
+                          test-rejects-foreign-variant
+                          "must be a base64 variant"))))))
 
   (export tests))
