@@ -26,6 +26,20 @@
        (lambda (unit count)
          (list->string (map-list (lambda (i) unit) (range 0 count)))))
 
+      ; `count` bytes from the high bits of a linear congruential generator.
+      ; The sequence has a long period and no local structure, so DEFLATE cannot
+      ; compress it: a stored block is then the shortest encoding, which is what
+      ; auto mode selects.
+      (lcg-bytes
+       (lambda (count seed)
+         (let ((loop
+                (lambda (n state acc)
+                  (if (integer>=? n count)
+                      (list->bytes (list-reverse acc))
+                      (let ((next (integer% (integer+ (integer* state 1103515245) 12345) 2147483648)))
+                        (loop (integer+ n 1) next (list-prepend acc (integer% (integer/ next 65536) 256))))))))
+           (loop 0 seed (list)))))
+
       ; The empty input round-trips in every mode.
       (test-empty-all-modes
        (lambda ()
@@ -176,11 +190,7 @@
       ; the search stops at the first out-of-window position.
       (test-candidate-beyond-window
        (lambda ()
-         (let ((text
-                (string-concat
-                  "abc"
-                  (repeat "x" 40000)
-                  "abc")))
+         (let ((text (string-concat "abc" (repeat "x" 40000) "abc")))
            (and (assert-equal (round-trip text (mode 'fixed)) text)
                 (assert-equal (round-trip text (mode 'auto)) text)))))
 
@@ -190,6 +200,7 @@
       (test-dense-candidate-collisions
        (lambda ()
          (let ((symbols (vector "a" "b" "c"))
+
                (texts
                 (map-list
                   (lambda (seed)
@@ -223,7 +234,10 @@
                           (integer-codepoint->string (integer+ 97 (integer% i 3))))
                         (range 0 n))))
                   (range 1 65))))
-           (all-list? (lambda (text) (assert-equal (round-trip text (mode 'auto)) text)) texts))))
+           (all-list?
+             (lambda (text)
+               (assert-equal (round-trip text (mode 'auto)) text))
+             texts))))
 
       ; Auto mode round-trips runs of varying length, which reaches fixed Huffman
       ; blocks of many different bit lengths as they are computed for comparison.
@@ -232,12 +246,12 @@
          (let ((texts
                 (map-list
                   (lambda (k)
-                    (string-concat
-                      (repeat "a" (integer* 7 k))
-                      (repeat "b" (integer* 5 k))
-                      "z"))
+                    (string-concat (repeat "a" (integer* 7 k)) (repeat "b" (integer* 5 k)) "z"))
                   (range 1 40))))
-           (all-list? (lambda (text) (assert-equal (round-trip text (mode 'auto)) text)) texts))))
+           (all-list?
+             (lambda (text)
+               (assert-equal (round-trip text (mode 'auto)) text))
+             texts))))
 
       ; A candidate that shares the current position's three-byte key and matches at
       ; the best length so far, yet diverges before it, cannot improve the match.
@@ -248,6 +262,29 @@
          (let ((text "abczeabcdabcdef"))
            (and (assert-equal (round-trip text (mode 'fixed)) text)
                 (assert-equal (round-trip text (mode 'dynamic)) text)))))
+
+      ; A stored block carries its length in sixteen bits, so an input larger than
+      ; 65535 bytes needs more than one block.  At the limit exactly one block
+      ; suffices.
+      (test-stored-block-limit
+       (lambda ()
+         (let ((input (lcg-bytes 65535 1)))
+           (assert-equal (round-trip-bytes input (mode 'stored)) #t))))
+
+      ; One byte past the limit.  A single stored block cannot encode this, so it
+      ; must be split.
+      (test-stored-just-over-block-limit
+       (lambda ()
+         (let ((input (lcg-bytes 65536 1)))
+           (assert-equal (round-trip-bytes input (mode 'stored)) #t))))
+
+      ; Incompressible data far past the limit: auto mode picks the stored block
+      ; because it is the shortest, so it must split too.
+      (test-auto-incompressible-large
+       (lambda ()
+         (let ((input (lcg-bytes 66000 2)))
+           (and (assert-equal (round-trip-bytes input (mode 'stored)) #t)
+                (assert-equal (round-trip-bytes input (mode 'auto)) #t)))))
 
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes
@@ -282,14 +319,17 @@
            "compression"
            (list
              (expect-pass "repetitive input compresses below its original size" test-repetitive-compresses)
-            (expect-pass "stored output carries the original bytes verbatim" test-stored-verbatim)
-            (expect-pass "the mode defaults to auto" test-default-mode-is-auto)
-            (expect-pass "several candidates for one key are compared" test-many-candidates-for-one-key)
-            (expect-pass "a candidate beyond the window ends the search" test-candidate-beyond-window)
-            (expect-pass "dense candidate collisions are resolved" test-dense-candidate-collisions)
-            (expect-pass "auto round-trips every length up to 64" test-auto-length-sweep)
-            (expect-pass "auto round-trips runs of varying length" test-auto-run-length-sweep)
-            (expect-pass "a weaker candidate cannot improve the match" test-candidate-diverges-before-best)))
+             (expect-pass "stored output carries the original bytes verbatim" test-stored-verbatim)
+             (expect-pass "the mode defaults to auto" test-default-mode-is-auto)
+             (expect-pass "several candidates for one key are compared" test-many-candidates-for-one-key)
+             (expect-pass "a candidate beyond the window ends the search" test-candidate-beyond-window)
+             (expect-pass "dense candidate collisions are resolved" test-dense-candidate-collisions)
+             (expect-pass "auto round-trips every length up to 64" test-auto-length-sweep)
+             (expect-pass "auto round-trips runs of varying length" test-auto-run-length-sweep)
+             (expect-pass "a weaker candidate cannot improve the match" test-candidate-diverges-before-best)
+             (expect-pass "a stored block holds exactly 65535 bytes" test-stored-block-limit)
+             (expect-pass "a stored stream splits past 65535 bytes" test-stored-just-over-block-limit)
+             (expect-pass "auto splits an incompressible input past 65535 bytes" test-auto-incompressible-large)))
 
          (list
            "errors"

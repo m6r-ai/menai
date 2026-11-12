@@ -735,10 +735,23 @@
              (write-tokens w6 tokens (canonical-codes lit-lengths) (canonical-codes dist-lengths))))))
 
       ; --- Top-level entry point -----------------------------------------------
-      ; Encode the whole input as a single stored (BTYPE = 00) block.
+      ; Encode the whole input as stored (BTYPE = 00) blocks.  A stored block's
+      ; LEN field is sixteen bits, so a block holds at most 65535 bytes and a
+      ; longer input has to be split; only the last block is marked final.
       (encode-stored
        (lambda (b)
-         (writer->bytes (write-stored-block (make-writer) b 0 (bytes-length b) #t))))
+         (let ((size (bytes-length b)))
+           (let ((loop
+                  (lambda (start w)
+                    (if (integer>=? start size)
+                        (writer->bytes w)
+                        (let ((end (integer-min size (integer+ start 65535))))
+                          (loop end (write-stored-block w b start end (integer=? end size))))))))
+
+             ; An empty input still needs one final block to terminate the stream.
+             (if (integer=? size 0)
+                 (writer->bytes (write-stored-block (make-writer) b 0 0 #t))
+                 (loop 0 (make-writer)))))))
 
       ; Encode a token stream as a single fixed Huffman (BTYPE = 01) block.
       (encode-fixed
