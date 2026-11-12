@@ -32,7 +32,7 @@ _FULLY_COVERED = frozenset({
     "bmp-encode", "csv-encode", "deflate-decompress", "docx-decode",
     "docx-encode", "gzip-compress", "html-decode", "json-encode", "json-decode",
     "png-encode", "pptx-encode", "tar-entries", "xlsx-encode", "xml-decode",
-    "xml-encode", "zlib-compress",
+    "xml-encode", "zip-entries", "zlib-compress",
 })
 
 
