@@ -59,10 +59,12 @@
                       (if (integer>=? x width)
                           acc
                           (loop (integer+ x 1) (encode-pixel acc (vector-nth row x) bpp)))))
-                   (pad (lambda (n acc)
-                          (if (integer>=? n (row-padding width bpp))
-                              acc
-                              (pad (integer+ n 1) (bytes-append-u8 acc 0))))))
+
+                   (pad
+                    (lambda (n acc)
+                      (if (integer>=? n (row-padding width bpp))
+                          acc
+                          (pad (integer+ n 1) (bytes-append-u8 acc 0))))))
                (pad 0 (loop 0 b)))
              (error "bmp-encode: each row must be a vector of pixels"))))
 

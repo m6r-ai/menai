@@ -43,6 +43,7 @@
                         (if (none? unit)
                             (error "Invalid hex digits in \\u escape sequence")
                             unit)))))
+
                (high (read-unit i))
                (pair-start (integer+ i 6)))
            (if (and (integer>=? high #xd800)

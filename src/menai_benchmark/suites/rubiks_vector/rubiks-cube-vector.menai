@@ -404,18 +404,17 @@
       (count-mismatched
        (lambda (face)
          (let ((count-mismatch-loop
-               (lambda (face center i acc)
-                 (if (integer>=? i 9)
-                     acc
-                     (count-mismatch-loop
-                       face
-                       center
-                       (integer+ i 1)
-                       (if (integer!=? (vector-nth face i) center)
-                           (integer+ acc 1)
-                           acc))))))
+                (lambda (face center i acc)
+                  (if (integer>=? i 9)
+                      acc
+                      (count-mismatch-loop
+                        face
+                        center
+                        (integer+ i 1)
+                        (if (integer!=? (vector-nth face i) center)
+                            (integer+ acc 1)
+                            acc))))))
            (count-mismatch-loop face (vector-nth face 4) 0 0))))
-
 
       (heuristic
        (lambda (cube)
