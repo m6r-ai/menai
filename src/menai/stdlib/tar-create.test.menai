@@ -1,11 +1,18 @@
 ; Tests for tar-create.menai
 
 (let ((tar-create (import "tar-create"))
+      (tar-entries (import "tar-entries"))
       (t (import "menai-test"))
       (create (:: tar-create create))
+      (read-entries (:: tar-entries entries))
       (assert-equal (:: t assert-equal))
       (expect-pass (:: t expect-pass))
       (expect-fail (:: t expect-fail))
+
+      ; The first entry of the archive `create` builds from `entries`.
+      (first-entry
+       (lambda (entries)
+         (list-first (dict-get (read-entries (create (dict "entries" entries))) "entries"))))
 
       ; The archive length is a multiple of 512 bytes.
       (test-length-multiple-of-512
@@ -52,6 +59,84 @@
                                             (list->string (map-list (lambda (i) "a") (range 0 300)))
                                             "/file")))))))
 
+      ; An absolute path whose remainder is too long to split is rejected: every
+      ; slash is too early to leave a name that fits, so the search runs out of
+      ; slashes to try.
+      (test-rejects-unsplittable-absolute-path
+       (lambda ()
+         (create
+           (dict "entries" (list
+                             (dict "name" (string-concat
+                                            "/usr/local/"
+                                            (list->string (map-list (lambda (i) "x") (range 0 200))))))))))
+
+      ; A name ending in "/" is written as a directory entry with the directory
+      ; default mode.
+      (test-directory-entry
+       (lambda ()
+         (let ((entry (first-entry (list (dict "name" "dir/")))))
+           (assert-equal
+             (list
+               (dict-get entry "name")
+               (dict-get entry "typeflag")
+               (dict-get entry "mode")
+               (dict-get entry "size")
+               (dict-get entry "is-directory"))
+             (list "dir/" "5" #o755 0 #t)))))
+
+      ; An explicit typeflag of "2" is written as a symlink carrying its target.
+      (test-symlink-entry
+       (lambda ()
+         (let ((entry (first-entry (list (dict "name" "link" "typeflag" "2" "linkname" "target")))))
+           (assert-equal
+             (list (dict-get entry "typeflag") (dict-get entry "linkname") (dict-get entry "size"))
+             (list "2" "target" 0)))))
+
+      ; Explicit ownership, permission, and timestamp fields are written and read
+      ; back.
+      (test-explicit-ownership-and-mtime
+       (lambda ()
+         (let ((entry
+                (first-entry
+                  (list
+                    (dict "name" "x"
+                          "content" (string->bytes "hi")
+                          "mode" #o600
+                          "uid" 1000
+                          "gid" 1001
+                          "mtime" 1700000000
+                          "uname" "alice"
+                          "gname" "staff")))))
+           (assert-equal
+             (list
+               (dict-get entry "mode")
+               (dict-get entry "uid")
+               (dict-get entry "gid")
+               (dict-get entry "mtime")
+               (dict-get entry "uname")
+               (dict-get entry "gname"))
+             (list #o600 1000 1001 1700000000 "alice" "staff")))))
+
+      ; A supplied device minor field is written as an octal ASCII field: five
+      ; octal digits for the value 5, then the field's terminating NUL.
+      (test-devminor-field
+       (lambda ()
+         (let ((archive (create (dict "entries" (list (dict "name" "x" "content" (string->bytes "hi") "devminor" 5))))))
+           (assert-equal (bytes->string-hex (bytes-slice archive 337 345)) "3030303030303500"))))
+
+      ; A path longer than the 100-byte name field is split across the name and
+      ; prefix fields, and reads back as one path.
+      (test-nested-path-split
+       (lambda ()
+         (let ((path
+                (string-concat
+                  (list->string (map-list (lambda (i) "a") (range 0 60)))
+                  "/"
+                  (list->string (map-list (lambda (i) "b") (range 0 60))))))
+           (assert-equal
+             (dict-get (first-entry (list (dict "name" path "content" (string->bytes "hi")))) "name")
+             path))))
+
       (tests
        (list
          (list
@@ -62,11 +147,24 @@
              (expect-pass "header carries the ustar magic" test-ustar-magic)))
 
          (list
+           "entry-fields"
+           (list
+             (expect-pass "a directory entry carries the directory defaults" test-directory-entry)
+             (expect-pass "a symlink entry carries its target" test-symlink-entry)
+             (expect-pass "explicit ownership and mtime are written" test-explicit-ownership-and-mtime)
+             (expect-pass "a supplied device minor is written in octal" test-devminor-field)))
+
+         (list "paths" (list (expect-pass "a long path is split across name and prefix" test-nested-path-split)))
+
+         (list
            "errors"
            (list
              (expect-fail "rejects a non-dict argument" test-rejects-non-dict "expects a dict")
              (expect-fail "rejects a non-list entries field" test-rejects-non-list-entries "must be a list")
              (expect-fail "rejects an unsupported typeflag" test-rejects-unsupported-typeflag "unsupported typeflag")
-             (expect-fail "rejects a path too long for ustar" test-rejects-long-path "too long for ustar"))))))
+             (expect-fail "rejects a path too long for ustar" test-rejects-long-path "too long for ustar")
+             (expect-fail "rejects an absolute path with no usable split"
+                          test-rejects-unsplittable-absolute-path
+                          "too long for ustar"))))))
 
   (export tests))

@@ -31,8 +31,8 @@ _MODULE_SUFFIX = ".menai"
 _FULLY_COVERED = frozenset({
     "bmp-encode", "csv-encode", "deflate-decompress", "docx-decode",
     "docx-encode", "gzip-compress", "html-decode", "json-encode", "json-decode",
-    "png-encode", "pptx-encode", "tar-entries", "xlsx-decode", "xlsx-encode",
-    "xml-decode", "xml-encode", "zip-entries", "zlib-compress",
+    "png-encode", "pptx-encode", "tar-create", "tar-entries", "xlsx-decode",
+    "xlsx-encode", "xml-decode", "xml-encode", "zip-entries", "zlib-compress",
 })
 
 
