@@ -111,6 +111,36 @@
                  "pixels" (vector (vector (vector 1 2)))
                  "meta" (dict "bottom-up" #t)))))
 
+      ; A pixel that is not a vector is rejected.
+      (test-rejects-non-vector-pixel
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1 "bpp" 24)
+                 "pixels" (vector (vector "not a pixel"))
+                 "meta" (dict "bottom-up" #t)))))
+
+      ; A row that is not a vector is rejected.
+      (test-rejects-non-vector-row
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1 "bpp" 24)
+                 "pixels" (vector "not a row")
+                 "meta" (dict "bottom-up" #t)))))
+
+      ; A 32-bit pixel with three channels is rejected.
+      (test-rejects-wrong-channel-count-32
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1 "bpp" 32)
+                 "pixels" (vector (vector (vector 1 2 3)))
+                 "meta" (dict "bottom-up" #t)))))
+
+      ; With no meta field the image defaults to bottom-up orientation.
+      (test-default-bottom-up
+       (lambda ()
+         (let ((v (encode (dict-without (decode single-pixel) "meta"))))
+           (assert-equal (bytes->list (bytes-slice v 22 26)) (list 1 0 0 0)))))
+
       (tests
        (list
          (list
@@ -126,7 +156,8 @@
            (list
              (expect-pass "bottom-up orientation is preserved" test-bottom-up-preserved)
              (expect-pass "top-down orientation is preserved" test-top-down-preserved)
-             (expect-pass "row padding is recomputed" test-row-padding-recomputed)))
+             (expect-pass "row padding is recomputed" test-row-padding-recomputed)
+             (expect-pass "the orientation defaults to bottom-up" test-default-bottom-up)))
 
          (list
            "errors"
@@ -139,6 +170,13 @@
                           "\"pixels\" must be a vector of rows")
              (expect-fail "rejects a pixel with the wrong channel count"
                           test-rejects-wrong-channel-count
-                          "must have 3 channels"))))))
+                          "must have 3 channels")
+             (expect-fail "rejects a pixel that is not a vector"
+                          test-rejects-non-vector-pixel
+                          "must be a vector of channels")
+             (expect-fail "rejects a row that is not a vector" test-rejects-non-vector-row "must be a vector of pixels")
+             (expect-fail "rejects a 32-bit pixel with three channels"
+                          test-rejects-wrong-channel-count-32
+                          "32-bit pixel must have 4 channels"))))))
 
   (export tests))
