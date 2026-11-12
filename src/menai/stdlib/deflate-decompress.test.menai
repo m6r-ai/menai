@@ -162,6 +162,35 @@
        (lambda ()
          (decompress (string-hex->bytes "030200"))))
 
+      ; A dynamic header whose last code-length run is a 16-repeat (three extra
+      ; copies of the preceding length).  The block holds only an end-of-block.
+      (test-dynamic-repeat-sixteen
+       (lambda ()
+         (assert-equal (decompress (string-hex->bytes "1dc005010000000090ffaf1500")) (string->bytes ""))))
+
+      ; A dynamic header whose last code-length run is a 17-repeat (3-10 zeros).
+      (test-dynamic-repeat-seventeen
+       (lambda ()
+         (assert-equal (decompress (string-hex->bytes "05c721010000000090ffaf5500")) (string->bytes ""))))
+
+      ; A dynamic header whose last code-length run is an 18-repeat (11-138 zeros).
+      (test-dynamic-repeat-eighteen
+       (lambda ()
+         (assert-equal (decompress (string-hex->bytes "05cf81000000000090ff6b0b00")) (string->bytes ""))))
+
+      ; A fixed block that ends at bit 5 (mod 8) leaves the next stored block
+      ; byte-aligned, so it needs no padding.
+      (test-stored-block-after-unaligned-block
+       (lambda ()
+         (let ((out (decompress (string-hex->bytes "3a71e204200500faff68656c6c6f"))))
+           (assert-equal (bytes->list out) (list 200 200 200 104 101 108 108 111)))))
+
+      ; A Huffman code that is incomplete rejects a run of bits that matches
+      ; nothing within the 15-bit limit.
+      (test-rejects-incomplete-code
+       (lambda ()
+         (decompress (string-hex->bytes "0580010500000080febfceffffffff3f"))))
+
       (tests
        (list
          (list
@@ -190,7 +219,11 @@
              (expect-pass "skewed alphabet" test-dynamic-skewed-alphabet)
              (expect-pass "zero runs exercise repeat codes" test-dynamic-zero-runs)
              (expect-pass "many short matches commit the fragment list" test-dynamic-many-matches)
-             (expect-pass "output beyond the window cap" test-long-run-beyond-window)))
+             (expect-pass "output beyond the window cap" test-long-run-beyond-window)
+             (expect-pass "last code-length run is a 16-repeat" test-dynamic-repeat-sixteen)
+             (expect-pass "last code-length run is a 17-repeat" test-dynamic-repeat-seventeen)
+             (expect-pass "last code-length run is an 18-repeat" test-dynamic-repeat-eighteen)
+             (expect-pass "stored block after an unaligned block" test-stored-block-after-unaligned-block)))
 
          (list
            "errors"
@@ -210,6 +243,7 @@
                           "unexpected end of input")
              (expect-fail "rejects a back-reference before any output"
                           test-rejects-back-reference-before-output
-                          "back-reference distance exceeds"))))))
+                          "back-reference distance exceeds")
+             (expect-fail "rejects an incomplete Huffman code" test-rejects-incomplete-code "invalid Huffman code"))))))
 
   (export tests))
