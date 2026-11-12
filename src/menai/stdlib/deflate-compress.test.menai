@@ -156,6 +156,99 @@
            (let ((stream (compress input (mode 'stored))))
              (assert-equal (bytes-index stream input) 5)))))
 
+      ; Omitting the mode selects auto, so the result equals an explicit auto
+      ; compression.
+      (test-default-mode-is-auto
+       (lambda ()
+         (let ((input (string->bytes "hello hello hello")))
+           (assert-equal (compress input) (compress input (mode 'auto))))))
+
+      ; Repeated three-byte keys with differing continuations make the matcher
+      ; compare several candidates for one key, and most of them cannot improve
+      ; on the best match already found.
+      (test-many-candidates-for-one-key
+       (lambda ()
+         (let ((text "abcXabcYabcZabcWabcVabcU"))
+           (and (assert-equal (round-trip text (mode 'fixed)) text)
+                (assert-equal (round-trip text (mode 'dynamic)) text)))))
+
+      ; A key repeated further back than the match window is not a candidate, and
+      ; the search stops at the first out-of-window position.
+      (test-candidate-beyond-window
+       (lambda ()
+         (let ((text
+                (string-concat
+                  "abc"
+                  (repeat "x" 40000)
+                  "abc")))
+           (and (assert-equal (round-trip text (mode 'fixed)) text)
+                (assert-equal (round-trip text (mode 'auto)) text)))))
+
+      ; A pseudo-random text over a three-symbol alphabet has many three-byte keys
+      ; with several candidates each, and candidates that share a shorter prefix
+      ; with the current position than the best match so far.
+      (test-dense-candidate-collisions
+       (lambda ()
+         (let ((symbols (vector "a" "b" "c"))
+               (texts
+                (map-list
+                  (lambda (seed)
+                    (let ((loop
+                           (lambda (n state acc)
+                             (if (integer>=? n 40)
+                                 (list->string (list-reverse acc))
+                                 (loop
+                                   (integer+ n 1)
+                                   (integer% (integer+ (integer* state 37) 11) 3)
+                                   (list-prepend acc (vector-nth symbols state)))))))
+                      (loop 0 (integer% seed 3) (list))))
+                  (range 0 24))))
+           (all-list?
+             (lambda (text)
+               (and (assert-equal (round-trip text (mode 'fixed)) text)
+                    (assert-equal (round-trip text (mode 'dynamic)) text)))
+             texts))))
+
+      ; Auto mode round-trips inputs of every length up to 64, which reaches fixed
+      ; Huffman blocks whose bit length is a whole number of bytes as well as ones
+      ; that end mid-byte.
+      (test-auto-length-sweep
+       (lambda ()
+         (let ((texts
+                (map-list
+                  (lambda (n)
+                    (list->string
+                      (map-list
+                        (lambda (i)
+                          (integer-codepoint->string (integer+ 97 (integer% i 3))))
+                        (range 0 n))))
+                  (range 1 65))))
+           (all-list? (lambda (text) (assert-equal (round-trip text (mode 'auto)) text)) texts))))
+
+      ; Auto mode round-trips runs of varying length, which reaches fixed Huffman
+      ; blocks of many different bit lengths as they are computed for comparison.
+      (test-auto-run-length-sweep
+       (lambda ()
+         (let ((texts
+                (map-list
+                  (lambda (k)
+                    (string-concat
+                      (repeat "a" (integer* 7 k))
+                      (repeat "b" (integer* 5 k))
+                      "z"))
+                  (range 1 40))))
+           (all-list? (lambda (text) (assert-equal (round-trip text (mode 'auto)) text)) texts))))
+
+      ; A candidate that shares the current position's three-byte key and matches at
+      ; the best length so far, yet diverges before it, cannot improve the match.
+      ; The text puts an old "abcze" behind a newer "abcd" so the weaker candidate is
+      ; examined after the stronger one.
+      (test-candidate-diverges-before-best
+       (lambda ()
+         (let ((text "abczeabcdabcdef"))
+           (and (assert-equal (round-trip text (mode 'fixed)) text)
+                (assert-equal (round-trip text (mode 'dynamic)) text)))))
+
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes
        (lambda ()
@@ -189,7 +282,14 @@
            "compression"
            (list
              (expect-pass "repetitive input compresses below its original size" test-repetitive-compresses)
-             (expect-pass "stored output carries the original bytes verbatim" test-stored-verbatim)))
+            (expect-pass "stored output carries the original bytes verbatim" test-stored-verbatim)
+            (expect-pass "the mode defaults to auto" test-default-mode-is-auto)
+            (expect-pass "several candidates for one key are compared" test-many-candidates-for-one-key)
+            (expect-pass "a candidate beyond the window ends the search" test-candidate-beyond-window)
+            (expect-pass "dense candidate collisions are resolved" test-dense-candidate-collisions)
+            (expect-pass "auto round-trips every length up to 64" test-auto-length-sweep)
+            (expect-pass "auto round-trips runs of varying length" test-auto-run-length-sweep)
+            (expect-pass "a weaker candidate cannot improve the match" test-candidate-diverges-before-best)))
 
          (list
            "errors"
