@@ -38,6 +38,16 @@
          (let ((r (extract stored-archive)))
            (assert-equal (bytes->string (dict-get (list-first (dict-get r "entries")) "content")) "AAAA"))))
 
+      ; An archive whose entry declares an unsupported compression method.  The
+      ; method is the central directory entry's field at offset 10.
+      (unsupported-method-archive
+       (bytes-write-u16-le stored-archive (integer+ (bytes-index stored-archive (string-hex->bytes "504b0102")) 10) 12))
+
+      ; An entry using an unsupported compression method is rejected.
+      (test-rejects-unsupported-method
+       (lambda ()
+         (extract unsupported-method-archive)))
+
       ; A directory entry has no content.
       (test-directory-no-content
        (lambda ()
@@ -172,6 +182,9 @@
            (list
              (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value")
              (expect-fail "rejects an entry with a bad CRC" test-rejects-bad-crc "checksum mismatch")
+             (expect-fail "rejects an unsupported compression method"
+                          test-rejects-unsupported-method
+                          "compression method 12 is not supported")
              (expect-fail "extract-entry rejects a missing name" test-extract-entry-missing "no entry named")
              (expect-fail "extract-entry rejects an ambiguous name" test-extract-entry-ambiguous "is ambiguous")
              (expect-fail "extract-entry rejects a non-string name"
