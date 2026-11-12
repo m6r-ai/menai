@@ -25,6 +25,26 @@
          (let ((r (decompress (string-hex->bytes "1f8b08000000000000ff010800f7ff6162636465666768502aefae08000000"))))
            (assert-equal (bytes->string r) "abcdefgh"))))
 
+      ; The ten fixed header bytes of a valid stream, so that a test can set the
+      ; FLG byte and append optional fields.
+      (fixed-header (string-hex->bytes "1f8b08000000000000ff"))
+
+      ; A stream whose FEXTRA length claims 65535 bytes of data that are absent.
+      (test-rejects-truncated-fextra-data
+       (lambda ()
+         (decompress (bytes-concat (bytes-write-u8 fixed-header 3 #x04) (list->bytes (list #xff #xff 0 0 0 0 0 0))))))
+
+      ; A stream whose FNAME field is not NUL-terminated before the end of input.
+      (test-rejects-unterminated-fname
+       (lambda ()
+         (decompress (bytes-concat (bytes-write-u8 fixed-header 3 #x08) (string->bytes "abcdefgh")))))
+
+      ; A stream that sets FHCRC but ends before the two checksum bytes.
+      (test-rejects-truncated-fhcrc
+       (lambda ()
+         (decompress
+           (bytes-concat (bytes-write-u8 fixed-header 3 #x0a) (string->bytes "abcdefg") (list->bytes (list 0))))))
+
       ; An FNAME field is parsed and skipped.
       (test-skips-fname
        (lambda ()
@@ -129,6 +149,11 @@
              (expect-fail "rejects non-DEFLATE compression method" test-rejects-non-deflate "not DEFLATE")
              (expect-fail "rejects a bad FHCRC" test-rejects-bad-fhcrc "header checksum mismatch")
              (expect-fail "rejects a checksum mismatch" test-rejects-checksum-mismatch "checksum mismatch")
-             (expect-fail "rejects a size mismatch" test-rejects-size-mismatch "size mismatch"))))))
+             (expect-fail "rejects a size mismatch" test-rejects-size-mismatch "size mismatch")
+             (expect-fail "rejects truncated FEXTRA data" test-rejects-truncated-fextra-data "truncated FEXTRA data")
+             (expect-fail "rejects an unterminated FNAME"
+                          test-rejects-unterminated-fname
+                          "unterminated string in header")
+             (expect-fail "rejects a truncated FHCRC" test-rejects-truncated-fhcrc "truncated FHCRC"))))))
 
   (export tests))
