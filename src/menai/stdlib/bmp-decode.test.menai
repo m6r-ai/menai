@@ -125,6 +125,26 @@
            (string-hex->bytes
              "424d460000000000000036000000280000000200000002000000010018000100000010000000130b0000130b00000000000000000000ff0000ffffff00000000ff00ff000000"))))
 
+      ; A DIB header smaller than BITMAPINFOHEADER is rejected.
+      (test-rejects-short-dib-header
+       (lambda ()
+         (decode (bytes-write-u32-le bottom-up-24 14 39))))
+
+      ; A width of zero is rejected.
+      (test-rejects-zero-width
+       (lambda ()
+         (decode (bytes-write-i32-le bottom-up-24 18 0))))
+
+      ; A negative width is rejected.
+      (test-rejects-negative-width
+       (lambda ()
+         (decode (bytes-write-i32-le bottom-up-24 18 -2))))
+
+      ; A height of zero is rejected.
+      (test-rejects-zero-height
+       (lambda ()
+         (decode (bytes-write-i32-le bottom-up-24 22 0))))
+
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes
        (lambda ()
@@ -156,6 +176,12 @@
              (expect-fail "rejects truncated header" test-rejects-truncated-header "too short")
              (expect-fail "rejects unsupported bit depth" test-rejects-unsupported-bit-depth "8 bits per pixel")
              (expect-fail "rejects compressed files" test-rejects-compressed "compression 1")
+             (expect-fail "rejects a DIB header smaller than 40 bytes"
+                          test-rejects-short-dib-header
+                          "is smaller than BITMAPINFOHEADER (40)")
+             (expect-fail "rejects a zero width" test-rejects-zero-width "width must be positive")
+             (expect-fail "rejects a negative width" test-rejects-negative-width "width must be positive")
+             (expect-fail "rejects a zero height" test-rejects-zero-height "height must be non-zero")
              (expect-fail "rejects non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
 
   (export tests))

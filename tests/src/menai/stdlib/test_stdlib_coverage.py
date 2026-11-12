@@ -29,11 +29,11 @@ _MODULE_SUFFIX = ".menai"
 # Modules whose own suite exercises every function in full.  A module leaves
 # this set only when a test is removed or a path stops being taken.
 _FULLY_COVERED = frozenset({
-    "bmp-encode", "csv-encode", "deflate-decompress", "docx-decode",
-    "docx-encode", "gzip-compress", "html-decode", "json-encode", "json-decode",
-    "png-encode", "pptx-encode", "tar-create", "tar-entries", "tar-extract",
-    "xlsx-decode", "xlsx-encode", "xml-decode", "xml-encode", "zip-entries",
-    "zlib-compress",
+    "bmp-decode", "bmp-encode", "csv-encode", "deflate-decompress",
+    "docx-decode", "docx-encode", "gzip-compress", "html-decode", "json-encode",
+    "json-decode", "png-encode", "pptx-encode", "tar-create", "tar-entries",
+    "tar-extract", "xlsx-decode", "xlsx-encode", "xml-decode", "xml-encode",
+    "zip-entries", "zlib-compress",
 })
 
 
