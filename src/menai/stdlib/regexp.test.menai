@@ -55,6 +55,21 @@
        (lambda ()
          (compile "[abc")))
 
+      ; A ")" that closes no group raises: the parse stops before the end.
+      (test-compile-unbalanced-close
+       (lambda ()
+         (compile "a)")))
+
+      ; A "[" as the last character raises.
+      (test-compile-lone-open-bracket
+       (lambda ()
+         (compile "[")))
+
+      ; A class that ends immediately after a range raises.
+      (test-compile-unterminated-range-class
+       (lambda ()
+         (compile "[a-z")))
+
       ; A repetition count over the limit raises.
       (test-compile-repetition-over-limit
        (lambda ()
@@ -165,6 +180,21 @@
        (lambda ()
          (assert-equal (search (compile "\\D+") "123abc") (list 3 6))))
 
+      ; The negated shorthand word class matches non-word characters.
+      (test-class-shorthand-non-word
+       (lambda ()
+         (assert-equal (search (compile "\\W+") "abc!?") (list 3 5))))
+
+      ; The negated shorthand space class matches non-whitespace.
+      (test-class-shorthand-non-space
+       (lambda ()
+         (assert-equal (search (compile "\\S+") "  abc") (list 2 5))))
+
+      ; An escaped character is a literal, so "\\." matches a dot.
+      (test-class-escaped-literal
+       (lambda ()
+         (assert-equal (search (compile "a\\.c") "axa.c") (list 2 5))))
+
       ; The any-character dot matches a single character.
       (test-class-any-character
        (lambda ()
@@ -179,6 +209,11 @@
       (test-quantifier-star-many
        (lambda ()
          (assert-equal (search (compile "a*b") "aaab") (list 0 4))))
+
+      ; A star whose every extent fails the rest of the pattern fails entirely.
+      (test-quantifier-star-fails
+       (lambda ()
+         (assert-equal (search (compile "a*b") "aaa") #none)))
 
       ; Plus matches one or more occurrences.
       (test-quantifier-plus-many
@@ -307,6 +342,11 @@
        (lambda ()
          (assert-equal (search (compile "abc|abd") "abd") (list 0 3))))
 
+      ; A third alternative accumulates onto an alternation already built.
+      (test-alternation-three-branches
+       (lambda ()
+         (assert-equal (search (compile "a|b|cc") "xcc") (list 1 3))))
+
       ; search? returns true when there is a match.
       (test-search-predicate-match
        (lambda ()
@@ -342,6 +382,16 @@
        (lambda ()
          (assert-equal (search-all (compile "[0-9]") "a1b2c3") (list (list 1 2) (list 3 4) (list 5 6)))))
 
+      ; search-all accepts a pattern that declares a capturing group.
+      (test-search-all-with-group
+       (lambda ()
+         (assert-equal (search-all (compile "(a)b") "ab ab") (list (list 0 2) (list 3 5)))))
+
+      ; search-all stops at a zero-length match.
+      (test-search-all-zero-length
+       (lambda ()
+         (assert-equal (search-all (compile "a*") "ab") (list (list 0 1)))))
+
       ; search-all requires a string.
       (test-search-all-non-string
        (lambda ()
@@ -367,6 +417,16 @@
        (lambda ()
          (assert-equal (split (compile ",") "") (list ""))))
 
+      ; split accepts a pattern that declares a capturing group.
+      (test-split-with-group
+       (lambda ()
+         (assert-equal (split (compile "(,)") "a,b") (list "a" "b"))))
+
+      ; split stops at a zero-length match, keeping the rest as one field.
+      (test-split-zero-length-match
+       (lambda ()
+         (assert-equal (split (compile "a*") "bab") (list "bab"))))
+
       ; split requires a string.
       (test-split-non-string
        (lambda ()
@@ -391,6 +451,11 @@
       (test-replace-ends
        (lambda ()
          (assert-equal (replace (compile "a") "aba" "X") "XbX")))
+
+      ; replace stops at a zero-length match and appends the rest.
+      (test-replace-zero-length-match
+       (lambda ()
+         (assert-equal (replace (compile "a*") "ab" "X") "Xb")))
 
       ; replace requires a string.
       (test-replace-non-string
@@ -469,6 +534,11 @@
        (lambda ()
          (assert-equal (search-all-groups (compile "([0-9]+)") "abc") (list))))
 
+      ; search-all-groups stops at a zero-length match.
+      (test-search-all-groups-zero-length
+       (lambda ()
+         (assert-equal (search-all-groups (compile "a*") "ab") (list (list 0 1)))))
+
       ; search-all-groups requires a string.
       (test-search-all-groups-non-string
        (lambda ()
@@ -530,7 +600,12 @@
              (expect-fail "repetition count over the limit raises"
                           test-compile-repetition-over-limit
                           "exceeds the limit")
-             (expect-fail "inverted repetition range raises" test-compile-inverted-range "is inverted")))
+             (expect-fail "inverted repetition range raises" test-compile-inverted-range "is inverted")
+             (expect-fail "a close parenthesis with no group raises" test-compile-unbalanced-close "invalid pattern")
+             (expect-fail "a lone open bracket raises" test-compile-lone-open-bracket "Unterminated character class")
+             (expect-fail "a class ending after a range raises"
+                          test-compile-unterminated-range-class
+                          "Unterminated character class")))
 
          (list
            "literal"
@@ -563,6 +638,9 @@
              (expect-pass "shorthand word class" test-class-shorthand-word)
              (expect-pass "shorthand space class" test-class-shorthand-space)
              (expect-pass "negated shorthand digit class" test-class-shorthand-non-digit)
+             (expect-pass "negated shorthand word class" test-class-shorthand-non-word)
+             (expect-pass "negated shorthand space class" test-class-shorthand-non-space)
+             (expect-pass "an escaped character is a literal" test-class-escaped-literal)
              (expect-pass "any character matches one character" test-class-any-character)))
 
          (list
@@ -590,7 +668,8 @@
              (expect-pass "a star gives back many characters" test-quantifier-star-backtracks-many)
              (expect-pass "a bounded repeat gives back characters" test-quantifier-bounded-backtracks)
              (expect-pass "a repetition over a long run" test-quantifier-long-run)
-             (expect-pass "a star over a long run" test-quantifier-long-run-star)))
+             (expect-pass "a star over a long run" test-quantifier-long-run-star)
+             (expect-pass "a star that cannot finish the pattern fails" test-quantifier-star-fails)))
 
          (list
            "grouping"
@@ -598,7 +677,8 @@
              (expect-pass "a quantifier applies to the whole group" test-group-quantifier)
              (expect-pass "alternation matches the second branch" test-alternation-second-branch)
              (expect-pass "alternation matches the first branch" test-alternation-first-branch)
-             (expect-pass "alternation backtracks into the second branch" test-alternation-backtrack)))
+             (expect-pass "alternation backtracks into the second branch" test-alternation-backtrack)
+             (expect-pass "a third alternative is appended" test-alternation-three-branches)))
 
          (list
            "search-predicate"
@@ -614,6 +694,8 @@
              (expect-pass "no matches returns an empty list" test-search-all-empty)
              (expect-pass "a single match returns a one-element list" test-search-all-single)
              (expect-pass "adjacent matches are all reported" test-search-all-adjacent)
+             (expect-pass "a grouped pattern is accepted" test-search-all-with-group)
+             (expect-pass "a zero-length match stops the walk" test-search-all-zero-length)
              (expect-fail "requires a string" test-search-all-non-string "must be a string")))
 
          (list
@@ -633,6 +715,7 @@
              (expect-pass "every match with its groups" test-search-all-groups-matches)
              (expect-pass "no groups yields (start end) pairs" test-search-all-groups-no-groups)
              (expect-pass "no matches returns an empty list" test-search-all-groups-empty)
+             (expect-pass "a zero-length match stops the walk" test-search-all-groups-zero-length)
              (expect-fail "requires a string" test-search-all-groups-non-string "must be a string")))
 
          (list
@@ -642,6 +725,8 @@
              (expect-pass "a run of whitespace is one separator" test-split-whitespace-run)
              (expect-pass "no match returns the input as one element" test-split-no-match)
              (expect-pass "empty input returns one empty field" test-split-empty-input)
+             (expect-pass "a grouped pattern is accepted" test-split-with-group)
+             (expect-pass "a zero-length match ends the split" test-split-zero-length-match)
              (expect-fail "requires a string" test-split-non-string "must be a string")))
 
          (list
@@ -651,6 +736,7 @@
              (expect-pass "replaces a run of digits as one match" test-replace-digit-run)
              (expect-pass "no match leaves the input unchanged" test-replace-no-match)
              (expect-pass "matches at the start and end are both replaced" test-replace-ends)
+             (expect-pass "a zero-length match ends the walk" test-replace-zero-length-match)
              (expect-pass "a group reference substitutes the captured text" test-replace-group-reference)
              (expect-pass "a whole-match reference substitutes the match" test-replace-whole-match-reference)
              (expect-pass "group references can reorder text" test-replace-reorders-groups)

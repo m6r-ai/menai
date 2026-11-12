@@ -128,6 +128,11 @@
        (lambda ()
          (encode (dict "tag" "a" "attrs" (dict "x" 42) "children" (list)))))
 
+      ; A non-string attribute name is rejected.
+      (test-rejects-non-string-attribute-name
+       (lambda ()
+         (encode (dict "tag" "a" "attrs" (dict 1 "x") "children" (list)))))
+
       ; A non-list children value is rejected.
       (test-rejects-non-list-children
        (lambda ()
@@ -179,6 +184,9 @@
              (expect-fail "rejects a non-string attribute value"
                           test-rejects-non-string-attribute-value
                           "value must be a string")
+             (expect-fail "rejects a non-string attribute name"
+                          test-rejects-non-string-attribute-name
+                          "name must be a string")
              (expect-fail "rejects a non-list children" test-rejects-non-list-children "must be a list")
              (expect-fail "rejects a child that is neither string nor element"
                           test-rejects-bad-child
