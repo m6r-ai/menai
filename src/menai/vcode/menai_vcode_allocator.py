@@ -408,6 +408,20 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
     if max_outgoing_index >= 0:
         slot_count = local_count + max_outgoing_index + 1
 
+    # Block structure of the flat instruction list, used by the coalescing
+    # passes below.  A coalescing decision is only safe when the destination
+    # slot cannot be read on a path that bypasses the consuming move, so the
+    # passes need to know which block each instruction belongs to and how the
+    # blocks are connected.
+    block_of, successors = _block_graph(func.instrs)
+
+    def _slot_read_on_bypassing_path(def_idx: int, move_idx: int, slot: int) -> bool:
+        """Return True if `slot` can be read without passing through move_idx."""
+        return _reads_slot_without_passing(
+            block_of, successors, instr_uses, slots,
+            def_idx, move_idx, slot,
+        )
+
     # Phase 3b: back-propagate param slot assignments for self-loop moves.
     # A self-loop is emitted as a group of MenaiVCodeMove instructions
     # (one per param) immediately followed by a self-loop jump.  For each move
@@ -452,6 +466,9 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             # writing its result there (a MAKE_CLOSURE reads its captures after
             # writing the closure slot).
             if _def_reads_slot_after_write(func.instrs[reg_def], param_slot, slots):
+                continue
+
+            if _slot_read_on_bypassing_path(reg_def, move_idx, param_slot):
                 continue
 
             barrier = False
@@ -538,6 +555,9 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
             if reads_param:
                 continue
 
+            if _slot_read_on_bypassing_path(reg_def, move_idx, param_slot):
+                continue
+
             slots[reg_id] = param_slot
 
     # Phase 4: coalesce single-use sources of phi-elimination moves.
@@ -598,9 +618,111 @@ def allocate_slots(func: MenaiVCodeFunction) -> SlotMap:
         if barrier:
             continue
 
+        if _slot_read_on_bypassing_path(reg_def, move_idx, dst_slot):
+            continue
+
         slots[reg_id] = dst_slot
 
     return SlotMap(slots=slots, slot_count=slot_count, local_count=local_count)
+
+
+def _block_graph(
+    instrs: tuple[MenaiVCodeInstr, ...],
+) -> tuple[list[int], dict[int, set[int]]]:
+    """
+    Return (block_of, successors) for a flat VCode instruction list.
+
+    `block_of[i]` is the block index of instruction i.  A block starts at each
+    label and at instruction 0.  `successors[b]` is the set of block indices
+    reachable by a single edge from block b.
+    """
+    block_of: list[int] = []
+    label_block: dict[str, int] = {}
+    block = 0
+    for index, instr in enumerate(instrs):
+        if isinstance(instr, MenaiVCodeLabel) and index > 0:
+            block += 1
+
+        if isinstance(instr, MenaiVCodeLabel):
+            label_block[instr.name] = block
+
+        block_of.append(block)
+
+    successors: dict[int, set[int]] = {b: set() for b in range(block + 1)}
+
+    def _target(label: str) -> int:
+        # The "__entry__" sentinel names the function entry, which has no label.
+        return label_block.get(label, 0)
+
+    for index, instr in enumerate(instrs):
+        here = block_of[index]
+        next_block = block_of[index + 1] if index + 1 < len(instrs) else None
+
+        if isinstance(instr, MenaiVCodeJump):
+            successors[here].add(_target(instr.label))
+
+        elif isinstance(instr, (MenaiVCodeJumpIfTrue, MenaiVCodeJumpIfFalse)):
+            successors[here].add(_target(instr.label))
+            if next_block is not None and next_block != here:
+                successors[here].add(next_block)
+
+        elif isinstance(instr, (MenaiVCodeSwitchInteger, MenaiVCodeSwitchEnum)):
+            for label in instr.labels:
+                successors[here].add(_target(label))
+
+            successors[here].add(_target(instr.default_label))
+
+    return block_of, successors
+
+
+def _reads_slot_without_passing(
+    block_of: list[int],
+    successors: dict[int, set[int]],
+    instr_uses: list[list[int]],
+    slots: dict[int, int],
+    def_idx: int,
+    move_idx: int,
+    slot: int,
+) -> bool:
+    """
+    Return True if `slot` can be read on a path from `def_idx` that does not
+    pass through `move_idx`.
+
+    Coalescing makes the definition at `def_idx` write `slot`.  That is only
+    safe when every read of `slot` that can follow the definition is reached
+    through `move_idx`, which rewrites the slot with the value the loop (or
+    phi) actually wants.  A read reached by a path that bypasses the move would
+    observe the temporary instead.
+
+    Reads between `def_idx` and `move_idx` within the same block are the
+    caller's existing barrier scan; this walk covers the rest of the graph.
+    """
+    def_block = block_of[def_idx]
+    move_block = block_of[move_idx]
+
+    if def_block == move_block:
+        return False
+
+    pending = [def_block]
+    seen: set[int] = {def_block}
+    while pending:
+        block = pending.pop()
+        if block == move_block:
+            continue
+
+        for index, owner in enumerate(block_of):
+            if owner != block:
+                continue
+
+            if index > def_idx and any(slots.get(u, -1) == slot for u in instr_uses[index]):
+                return True
+
+        for succ in successors.get(block, ()):
+            if succ not in seen:
+                seen.add(succ)
+                pending.append(succ)
+
+    return False
 
 
 def _def_reads_slot_after_write(

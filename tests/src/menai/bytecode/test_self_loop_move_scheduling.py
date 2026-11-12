@@ -340,3 +340,79 @@ class TestPhiArgumentCoalescing:
         # slot and the loop-carried update is written straight into the index
         # slot, so no back-edge MOVE remains.
         assert _count_op(loop, Opcode.MOVE) == 0
+
+
+class TestLoopCarriedValueNotClobberedBySiblingArm:
+    """
+    A loop-carried value must keep its own slot when a sibling arm of the same
+    branch passes it through unchanged.
+
+    Coalescing a temporary into a loop-carried slot is only safe when the
+    temporary's definition cannot be observed by a read that reaches the slot
+    without passing through the consuming back-edge move.  In the loop below,
+    the distance temporary is defined in the block that tests the candidate,
+    and the back-edge move that consumes it is two blocks further down.  The
+    other arm of that branch forwards the previous best distance, and it reads
+    the slot *after* the temporary has been written, so the two values must not
+    share a slot.
+    """
+
+    _SOURCE = """
+    (let ((prefix-key
+           (lambda (b i)
+             (if ($integer>? ($integer+ i 3) ($bytes-length b))
+                 #none
+                 ($bytes-read-u24-be b i))))
+
+          (common-prefix
+           (lambda (b c i limit)
+             (if ($bytes=? ($bytes-slice b c ($integer+ c limit))
+                           ($bytes-slice b i ($integer+ i limit)))
+                 limit
+                 (let ((search
+                        (lambda (lo hi)
+                          (if ($integer<=? ($integer- hi lo) 1)
+                              lo
+                              (let ((mid ($integer+ lo ($integer/ ($integer- hi lo) 2))))
+                                (if ($bytes=? ($bytes-slice b c ($integer+ c mid))
+                                              ($bytes-slice b i ($integer+ i mid)))
+                                    (search mid hi)
+                                    (search lo mid)))))))
+                   (search 0 limit)))))
+
+          (find-match
+           (lambda (b i candidates)
+             (let ((key (prefix-key b i)))
+               (if ($none? key)
+                   (list 0 0)
+                   (let ((limit ($integer-min 258 ($integer- ($bytes-length b) i))))
+                     (let ((loop
+                            (lambda (cands best-len best-dist chain)
+                              (if (or ($list-null? cands)
+                                      ($integer>=? best-len limit)
+                                      ($integer>=? chain 128))
+                                  (list best-len best-dist)
+                                  (let ((c ($list-first cands)))
+                                    (if ($integer>? ($integer- i c) 32768)
+                                        (list best-len best-dist)
+                                        (if ($integer=? ($bytes-nth b ($integer+ c best-len))
+                                                        ($bytes-nth b ($integer+ i best-len)))
+                                            (let ((len (common-prefix b c i limit)))
+                                              (if ($integer>? len best-len)
+                                                  (loop ($list-rest cands) len ($integer- i c) ($integer+ chain 1))
+                                                  (loop ($list-rest cands) best-len best-dist ($integer+ chain 1))))
+                                            (loop ($list-rest cands) best-len best-dist ($integer+ chain 1)))))))))
+                       (loop candidates 0 0 0))))))))
+
+      (find-match ($string->bytes "abcabcdabcdf") 7 (list 3 0)))
+    """
+
+    def test_sibling_arm_forwards_previous_value(self):
+        """
+        The candidate at position 3 gives a match of length 4 at distance 4;
+        the candidate at position 0 can only reach length 3, so it must leave
+        the distance at 4.  A shared slot reports distance 7.
+        """
+        from menai import Menai
+
+        assert Menai().evaluate(self._SOURCE) == [4, 4]
