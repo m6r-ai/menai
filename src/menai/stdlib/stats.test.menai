@@ -358,10 +358,7 @@
          (let ((fit (vector-linear-fit (vector 1.0 2.0 3.0) (vector 5.0 5.0 5.0))))
            (assert-equal
              (list 0.0 5.0 1.0)
-             (list
-               (dict-get fit "slope")
-               (dict-get fit "intercept")
-               (dict-get fit "r2"))))))
+             (list (dict-get fit "slope") (dict-get fit "intercept") (dict-get fit "r2"))))))
 
       (test-vector-z-scores
        (lambda ()
