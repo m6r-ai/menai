@@ -164,6 +164,31 @@
                  (dict-get types "children")))
              (list "rels" "xml" "png")))))
 
+      ; Duplicate media extensions are listed once, and a name without a dot
+      ; contributes its whole lowercased name.
+      (test-media-edge-extensions
+       (lambda ()
+         (let ((value
+                (dict "presentation" presentation
+                      "slides" (list)
+                      "slide-masters" (list)
+                      "slide-layouts" (list)
+                      "theme" #none
+                      "relationships" (dict)
+                      "media" (dict "ppt/media/a.png" (string-hex->bytes "89504e47")
+                                    "ppt/media/c.png" (string-hex->bytes "89504e47")
+                                    "ppt/media/noext" (string-hex->bytes "00")))))
+           (let ((types (decode-part value "[Content_Types].xml")))
+             (assert-equal
+               (map-list
+                 (lambda (c)
+                   (dict-get (dict-get c "attrs") "Extension"))
+                 (filter-list
+                   (lambda (c)
+                     (string=? (dict-get c "tag") "Default"))
+                   (dict-get types "children")))
+               (list "rels" "xml" "png" "ppt/media/noext"))))))
+
       ; Content types overrides the presentation part.
       (test-content-types-override
        (lambda ()
@@ -215,6 +240,20 @@
                  "slide-layouts" (list)
                  "relationships" (dict)))))
 
+      ; A relationship's target mode is emitted when present.
+      (test-relationship-mode-emitted
+       (lambda ()
+         (let ((value
+                (dict "presentation" presentation
+                      "slides" (list)
+                      "slide-masters" (list)
+                      "slide-layouts" (list)
+                      "relationships" (dict "rId1" (dict "type" image-rel "target" "media/a.png" "mode" "External")))))
+           (let ((rels (decode-part value "ppt/_rels/presentation.xml.rels")))
+             (assert-equal
+               (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "TargetMode")
+               "External")))))
+
       ; A non-dict relationships value is rejected.
       (test-rejects-non-dict-relationships
        (lambda ()
@@ -245,6 +284,86 @@
                  "slide-layouts" (list)
                  "relationships" (dict "rId1" (dict "target" "x"))))))
 
+      ; A relationship with no target is rejected.
+      (test-rejects-relationship-without-target
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list)
+                 "slide-masters" (list)
+                 "slide-layouts" (list)
+                 "relationships" (dict "rId1" (dict "type" image-rel))))))
+
+      ; A slide part that is not a string is rejected.
+      (test-rejects-slide-part-not-string
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list (dict "part" 42 "element" slide1 "relationships" (dict)))
+                 "slide-masters" (list)
+                 "slide-layouts" (list)
+                 "relationships" (dict)))))
+
+      ; A slide element that is not a dict is rejected.
+      (test-rejects-slide-element-not-dict
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list (dict "part" "ppt/slides/slide1.xml" "element" "nope" "relationships" (dict)))
+                 "slide-masters" (list)
+                 "slide-layouts" (list)
+                 "relationships" (dict)))))
+
+      ; A slide relationships value that is not a dict is rejected.
+      (test-rejects-slide-relationships-not-dict
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list (dict "part" "ppt/slides/slide1.xml" "element" slide1 "relationships" "nope"))
+                 "slide-masters" (list)
+                 "slide-layouts" (list)
+                 "relationships" (dict)))))
+
+      ; A non-list masters value is rejected.
+      (test-rejects-non-list-masters
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list)
+                 "slide-masters" "nope"
+                 "slide-layouts" (list)
+                 "relationships" (dict)))))
+
+      ; A non-list layouts value is rejected.
+      (test-rejects-non-list-layouts
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list)
+                 "slide-masters" (list)
+                 "slide-layouts" "nope"
+                 "relationships" (dict)))))
+
+      ; A master that is not an element dict is rejected.
+      (test-rejects-non-dict-master-element
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list)
+                 "slide-masters" (list "nope")
+                 "slide-layouts" (list)
+                 "relationships" (dict)))))
+
+      ; A layout that is not an element dict is rejected.
+      (test-rejects-non-dict-layout-element
+       (lambda ()
+         (encode
+           (dict "presentation" presentation
+                 "slides" (list)
+                 "slide-masters" (list)
+                 "slide-layouts" (list "nope")
+                 "relationships" (dict)))))
+
       ; A media part that is not bytes is rejected.
       (test-rejects-non-bytes-media
        (lambda ()
@@ -271,6 +390,7 @@
            (list
              (expect-pass "content types declares the rels and xml defaults" test-content-types-defaults)
              (expect-pass "content types declares a default per media extension" test-content-types-media-default)
+             (expect-pass "media extensions are deduplicated and may have no dot" test-media-edge-extensions)
              (expect-pass "content types overrides the presentation part" test-content-types-override)
              (expect-pass "root rels points at ppt/presentation.xml" test-root-rels-target)))
 
@@ -291,6 +411,7 @@
              (expect-fail "rejects a slide that is not a dict"
                           test-rejects-non-dict-slide
                           "a slide \"part\" must be a string")
+             (expect-pass "target mode is emitted when present" test-relationship-mode-emitted)
              (expect-fail "rejects a non-dict relationships"
                           test-rejects-non-dict-relationships
                           "\"relationships\" must be a dict")
@@ -300,6 +421,26 @@
              (expect-fail "rejects a relationship with no type"
                           test-rejects-relationship-without-type
                           "\"type\" must be a string")
+             (expect-fail "rejects a relationship without a target"
+                          test-rejects-relationship-without-target
+                          "\"target\" must be a string")
+             (expect-fail "rejects a non-string slide part"
+                          test-rejects-slide-part-not-string
+                          "a slide \"part\" must be a string")
+             (expect-fail "rejects a non-dict slide element"
+                          test-rejects-slide-element-not-dict
+                          "a slide \"element\" must be an element dict")
+             (expect-fail "rejects a non-dict slide relationships"
+                          test-rejects-slide-relationships-not-dict
+                          "a slide \"relationships\" must be a dict")
+             (expect-fail "rejects a non-list masters" test-rejects-non-list-masters "\"slide-masters\" must be a list")
+             (expect-fail "rejects a non-list layouts" test-rejects-non-list-layouts "\"slide-layouts\" must be a list")
+             (expect-fail "rejects a non-dict master element"
+                          test-rejects-non-dict-master-element
+                          "xml-encode: encode expects an element dict")
+             (expect-fail "rejects a non-dict layout element"
+                          test-rejects-non-dict-layout-element
+                          "xml-encode: encode expects an element dict")
              (expect-fail "rejects a non-bytes media part" test-rejects-non-bytes-media "must be bytes"))))))
 
   (export tests))

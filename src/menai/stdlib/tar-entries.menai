@@ -27,31 +27,38 @@
 
       ; Convert a numeric header field (a slice of `width` bytes) to an integer.
       ; The field holds octal ASCII terminated by NUL or space; trailing NUL and
-      ; space bytes are stripped before parsing.  When the high bit of the first
-      ; byte is set the field is GNU base-256: big-endian, two's complement.
+      ; space bytes are stripped before parsing.  A first byte of 0x80 marks a
+      ; non-negative GNU base-256 value whose remaining bytes are big-endian; a
+      ; first byte of 0xff marks the two's-complement negative form.
       (read-numeric
        (lambda (b start width)
-         (if (integer=? (integer-bit-and (bytes-nth b start) #x80) #x80)
-             (let ((loop
-                    (lambda (i acc)
-                      (if (integer>=? i (integer+ start width))
-                          acc
-                          (loop (integer+ i 1) (integer+ (integer* acc 256) (bytes-nth b i)))))))
-               (let ((unsigned (loop start 0)))
-                 (integer- unsigned (integer* 256 (integer-expn 256 (integer- width 1))))))
-             (let ((trim
-                    (lambda (end)
-                      (if (integer<=? end start)
-                          start
-                          (let ((ch (bytes-nth b (integer- end 1))))
-                            (if (or (integer=? ch 0)
-                                    (integer=? ch 32))
-                                (trim (integer- end 1))
-                                end))))))
-               (let ((end (trim (integer+ start width))))
-                 (if (integer=? end start)
-                     0
-                     (string->integer (bytes->string (bytes-slice b start end)) 8)))))))
+         (let ((first (bytes-nth b start))
+
+               (loop
+                (lambda (i acc)
+                  (if (integer>=? i (integer+ start width))
+                      acc
+                      (loop (integer+ i 1) (integer+ (integer* acc 256) (bytes-nth b i)))))))
+           (if (integer=? first #x80)
+               ; Positive base-256: the flag byte is not part of the value.
+               (loop (integer+ start 1) 0)
+               (if (integer=? first #xff)
+                   ; Negative base-256: two's complement over all width bytes.
+                   (let ((unsigned (loop start 0)))
+                     (integer- unsigned (integer* 256 (integer-expn 256 (integer- width 1)))))
+                   (let ((trim
+                          (lambda (end)
+                            (if (integer<=? end start)
+                                start
+                                (let ((ch (bytes-nth b (integer- end 1))))
+                                  (if (or (integer=? ch 0)
+                                          (integer=? ch 32))
+                                      (trim (integer- end 1))
+                                      end))))))
+                     (let ((end (trim (integer+ start width))))
+                       (if (integer=? end start)
+                           0
+                           (string->integer (bytes->string (bytes-slice b start end)) 8)))))))))
 
       ; The string value of a NUL-terminated header field of `width` bytes.
       (read-string

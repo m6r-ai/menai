@@ -131,6 +131,27 @@
                  (dict-get types "children")))
              (list "rels" "xml" "png" "jpg")))))
 
+      ; Duplicate media extensions are listed once, and a name without a dot
+      ; contributes its whole lowercased name.
+      (test-media-edge-extensions
+       (lambda ()
+         (let ((value
+                (dict "document" document
+                      "relationships" (dict)
+                      "media" (dict "word/media/a.png" (string-hex->bytes "89504e47")
+                                    "word/media/c.png" (string-hex->bytes "89504e47")
+                                    "word/media/noext" (string-hex->bytes "00")))))
+           (let ((types (decode-part value "[Content_Types].xml")))
+             (assert-equal
+               (map-list
+                 (lambda (c)
+                   (dict-get (dict-get c "attrs") "Extension"))
+                 (filter-list
+                   (lambda (c)
+                     (string=? (dict-get c "tag") "Default"))
+                   (dict-get types "children")))
+               (list "rels" "xml" "png" "word/media/noext"))))))
+
       ; The root rels part points at word/document.xml.
       (test-root-rels-target
        (lambda ()
@@ -208,6 +229,7 @@
            (list
              (expect-pass "content types declares the rels and xml defaults" test-content-types-defaults)
              (expect-pass "content types declares a default per media extension" test-content-types-media-default)
+             (expect-pass "media extensions are deduplicated and may have no dot" test-media-edge-extensions)
              (expect-pass "root rels points at word/document.xml" test-root-rels-target)))
 
          (list

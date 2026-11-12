@@ -295,7 +295,8 @@
       ; relationships map is non-empty.
       (slide-entries
        (lambda (s)
-         (let ((part (slide-part-of s))
+         ; part-overrides has already validated every slide's part.
+         (let ((part (dict-get s "part"))
                (slide-element (dict-get s "element"))
                (rels (dict-get s "relationships")))
            (if (dict? slide-element)

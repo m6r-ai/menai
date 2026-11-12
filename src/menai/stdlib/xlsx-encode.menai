@@ -278,7 +278,8 @@
       ; relationships map is non-empty.
       (sheet-entries
        (lambda (s)
-         (let ((part (sheet-part-of s))
+         ; part-overrides has already validated every sheet's part.
+         (let ((part (dict-get s "part"))
                (sheet-element (dict-get s "element"))
                (rels (dict-get s "relationships")))
            (if (dict? sheet-element)

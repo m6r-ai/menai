@@ -28,7 +28,10 @@ _MODULE_SUFFIX = ".menai"
 
 # Modules whose own suite exercises every function in full.  A module leaves
 # this set only when a test is removed or a path stops being taken.
-_FULLY_COVERED = frozenset({"csv-encode", "docx-decode", "json-encode"})
+_FULLY_COVERED = frozenset({
+    "csv-encode", "docx-decode", "docx-encode", "gzip-compress", "json-encode",
+    "json-decode", "pptx-encode", "tar-entries", "xlsx-encode", "zlib-compress",
+})
 
 
 def _subject(test_file: Path) -> str | None:

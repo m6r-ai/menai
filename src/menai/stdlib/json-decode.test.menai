@@ -115,6 +115,149 @@
        (lambda ()
          (assert-equal (decode "null") #none)))
 
+      ; An escape after literal text preserves both parts.
+      (test-literal-then-escape
+       (lambda ()
+         (assert-equal (decode "\"abc\\n\"") "abc\n")))
+
+      ; The single-character escapes other than newline, tab, and unicode.
+      (test-escapes-simple
+       (lambda ()
+         (assert-equal
+           (list
+             (decode "\"\\\"\"")
+             (decode "\"\\\\\"")
+             (decode "\"\\/\"")
+             (decode "\"\\b\"")
+             (decode "\"\\f\"")
+             (decode "\"\\r\""))
+           (list "\"" "\\" "/" (integer-codepoint->string 8) (integer-codepoint->string 12) "\r"))))
+
+      ; A string that ends before its closing quote is malformed.
+      (test-unterminated-string
+       (lambda ()
+         (decode "\"abc")))
+
+      ; A string that ends immediately after a unicode escape is malformed.
+      (test-unterminated-after-unicode
+       (lambda ()
+         (decode (string-concat "\"" (integer-codepoint->string 92) "u0041"))))
+
+      ; A string that ends immediately after a simple escape is malformed.
+      (test-unterminated-after-escape
+       (lambda ()
+         (decode "\"abc\\n")))
+
+      ; A string ending with a lone backslash is malformed.
+      (test-unterminated-escape
+       (lambda ()
+         (decode "\"abc\\")))
+
+      ; An unknown escape is malformed.
+      (test-unknown-escape
+       (lambda ()
+         (decode "\"\\q\"")))
+
+      ; Non-hex digits in a unicode escape are malformed.
+      (test-invalid-unicode-hex
+       (lambda ()
+         (decode "\"\\u00zz\"")))
+
+      ; A truncated unicode escape is malformed.
+      (test-unterminated-unicode
+       (lambda ()
+         (decode "\"\\u00\"")))
+
+      ; An object may have more than one key.
+      (test-multi-key-object
+       (lambda ()
+         (assert-equal (decode "{\"a\": 1, \"b\": 2}") (dict "a" 1 "b" 2))))
+
+      ; Whitespace around object keys, colons, commas, and braces is skipped.
+      (test-object-whitespace
+       (lambda ()
+         (assert-equal (decode "{ \"a\" : 1 , \"b\" : 2 }") (dict "a" 1 "b" 2))))
+
+      ; Whitespace around array elements, commas, and brackets is skipped.
+      (test-array-whitespace
+       (lambda ()
+         (assert-equal (decode "[ 1 , 2 ]") (list 1 2))))
+
+      ; Leading and trailing whitespace around a scalar is skipped.
+      (test-scalar-whitespace
+       (lambda ()
+         (assert-equal (decode " \n 42 \t") 42)))
+
+      ; A missing comma between object members is malformed.
+      (test-object-missing-comma
+       (lambda ()
+         (decode "{\"a\": 1 \"b\": 2}")))
+
+      ; An object that ends before its closing brace is malformed.
+      (test-unterminated-object
+       (lambda ()
+         (decode "{\"a\": 1")))
+
+      ; A trailing comma leaves an unterminated object.
+      (test-object-trailing-comma
+       (lambda ()
+         (decode "{\"a\": 1,")))
+
+      ; A key that is not followed by a colon is malformed.
+      (test-object-key-without-colon
+       (lambda ()
+         (decode "{\"a\" 1}")))
+
+      ; A key that is not a string is malformed.
+      (test-object-non-string-key
+       (lambda ()
+         (decode "{1: 2}")))
+
+      ; An array that ends before its closing bracket is malformed.
+      (test-unterminated-array
+       (lambda ()
+         (decode "[1")))
+
+      ; A missing comma between array elements is malformed.
+      (test-array-missing-comma
+       (lambda ()
+         (decode "[1 2]")))
+
+      ; An invalid character is malformed.
+      (test-unexpected-character
+       (lambda ()
+         (decode "@")))
+
+      ; A number literal that does not parse is malformed.
+      (test-invalid-number
+       (lambda ()
+         (decode "1.2.3")))
+
+      ; A truncated keyword is malformed.
+      (test-truncated-keyword
+       (lambda ()
+         (decode "tru")))
+
+      ; A keyword with a wrong suffix is malformed.
+      (test-wrong-keyword
+       (lambda ()
+         (decode "trux")))
+
+      ; An array opened at the end of input is malformed.
+      (test-open-array
+       (lambda ()
+         (decode "[")))
+
+      ; An object opened at the end of input is malformed.
+      (test-open-object
+       (lambda ()
+         (decode "{")))
+
+      ; An empty input is malformed.
+      (test-empty-input
+       (lambda ()
+         (decode "")))
+
       (tests
        (list
          (list
@@ -143,18 +286,11 @@
                  (expect-pass "tab" test-escape-tab)
                  (expect-pass "unicode" test-escape-unicode)
                  (expect-pass "surrogate pair" test-escape-surrogate-pair)
-                 (expect-fail
-                   "unpaired high surrogate"
-                   test-escape-unpaired-high-surrogate
-                   "Unpaired high surrogate")
-                 (expect-fail
-                   "high surrogate then bmp escape"
-                   test-escape-high-surrogate-then-bmp
-                   "Unpaired high surrogate")
-                 (expect-fail
-                   "unpaired low surrogate"
-                   test-escape-unpaired-low-surrogate
-                   "Unpaired low surrogate")))))
+                 (expect-fail "unpaired high surrogate" test-escape-unpaired-high-surrogate "Unpaired high surrogate")
+                 (expect-fail "high surrogate then bmp escape"
+                              test-escape-high-surrogate-then-bmp
+                              "Unpaired high surrogate")
+                 (expect-fail "unpaired low surrogate" test-escape-unpaired-low-surrogate "Unpaired low surrogate")))))
 
          (list
            "numbers"
@@ -165,6 +301,37 @@
 
          (list
            "literals"
-           (list (expect-pass "true" test-true) (expect-pass "false" test-false) (expect-pass "null" test-null))))))
+           (list (expect-pass "true" test-true) (expect-pass "false" test-false) (expect-pass "null" test-null)))
+
+         (list
+           "edge cases"
+           (list
+             (expect-pass "literal text before an escape" test-literal-then-escape)
+             (expect-pass "single-character escapes" test-escapes-simple)
+             (expect-pass "multiple object keys" test-multi-key-object)
+             (expect-pass "object whitespace" test-object-whitespace)
+             (expect-pass "array whitespace" test-array-whitespace)
+             (expect-pass "scalar whitespace" test-scalar-whitespace)
+             (expect-fail "unterminated string" test-unterminated-string "Unterminated string literal")
+             (expect-fail "unterminated after unicode" test-unterminated-after-unicode "Unterminated string literal")
+             (expect-fail "unterminated after escape" test-unterminated-after-escape "Unterminated string literal")
+             (expect-fail "unterminated escape" test-unterminated-escape "Unterminated escape sequence")
+             (expect-fail "unknown escape" test-unknown-escape "Unknown escape sequence")
+             (expect-fail "invalid unicode hex" test-invalid-unicode-hex "Invalid hex digits")
+             (expect-fail "unterminated unicode" test-unterminated-unicode "Unterminated \\u escape sequence")
+             (expect-fail "object missing comma" test-object-missing-comma "Expected , or } in object")
+             (expect-fail "unterminated object" test-unterminated-object "Unterminated object")
+             (expect-fail "object trailing comma" test-object-trailing-comma "Unterminated object")
+             (expect-fail "object key without colon" test-object-key-without-colon "Expected : after object key")
+             (expect-fail "object non-string key" test-object-non-string-key "Expected string key in object")
+             (expect-fail "unterminated array" test-unterminated-array "Unterminated array")
+             (expect-fail "array missing comma" test-array-missing-comma "Expected , or ] in array")
+             (expect-fail "unexpected character" test-unexpected-character "Unexpected character in JSON")
+             (expect-fail "invalid number" test-invalid-number "Invalid number literal in JSON")
+             (expect-fail "truncated keyword" test-truncated-keyword "Unexpected end of input reading keyword")
+             (expect-fail "wrong keyword" test-wrong-keyword "Unrecognized keyword in JSON")
+             (expect-fail "open array" test-open-array "Unterminated array")
+             (expect-fail "open object" test-open-object "Unterminated object")
+             (expect-fail "empty input" test-empty-input "Unexpected end of JSON input"))))))
 
   (export tests))

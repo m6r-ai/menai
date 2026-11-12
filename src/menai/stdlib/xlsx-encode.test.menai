@@ -176,6 +176,31 @@
                  (dict-get types "children")))
              (list "rels" "xml" "png")))))
 
+      ; Duplicate media extensions are listed once, and a name without a dot
+      ; contributes its whole lowercased name.
+      (test-media-edge-extensions
+       (lambda ()
+         (let ((value
+                (dict "workbook" workbook
+                      "relationships" (dict)
+                      "shared-strings" #none
+                      "styles" #none
+                      "theme" #none
+                      "sheets" (list)
+                      "media" (dict "xl/media/a.png" (string-hex->bytes "89504e47")
+                                    "xl/media/c.png" (string-hex->bytes "89504e47")
+                                    "xl/media/noext" (string-hex->bytes "00")))))
+           (let ((types (decode-part value "[Content_Types].xml")))
+             (assert-equal
+               (map-list
+                 (lambda (c)
+                   (dict-get (dict-get c "attrs") "Extension"))
+                 (filter-list
+                   (lambda (c)
+                     (string=? (dict-get c "tag") "Default"))
+                   (dict-get types "children")))
+               (list "rels" "xml" "png" "xl/media/noext"))))))
+
       ; Content types overrides the workbook part.
       (test-content-types-override
        (lambda ()
@@ -245,6 +270,44 @@
                  "theme" #none
                  "media" #none))))
 
+      ; A sheet part that is not a string is rejected.
+      (test-rejects-sheet-part-not-string
+       (lambda ()
+         (encode
+           (dict "workbook" workbook
+                 "relationships" (dict)
+                 "sheets" (list (dict "name" "S" "part" 42 "element" sheet1 "relationships" (dict)))
+                 "shared-strings" #none
+                 "styles" #none
+                 "theme" #none
+                 "media" #none))))
+
+      ; A sheet element that is not a dict is rejected.
+      (test-rejects-sheet-element-not-dict
+       (lambda ()
+         (encode
+           (dict "workbook" workbook
+                 "relationships" (dict)
+                 "sheets" (list
+                            (dict "name" "S" "part" "xl/worksheets/sheet1.xml" "element" "nope" "relationships" (dict)))
+                 "shared-strings" #none
+                 "styles" #none
+                 "theme" #none
+                 "media" #none))))
+
+      ; A sheet relationships value that is not a dict is rejected.
+      (test-rejects-sheet-relationships-not-dict
+       (lambda ()
+         (encode
+           (dict "workbook" workbook
+                 "relationships" (dict)
+                 "sheets" (list
+                            (dict "name" "S" "part" "xl/worksheets/sheet1.xml" "element" sheet1 "relationships" "nope"))
+                 "shared-strings" #none
+                 "styles" #none
+                 "theme" #none
+                 "media" #none))))
+
       ; A non-dict relationships value is rejected.
       (test-rejects-non-dict-relationships
        (lambda ()
@@ -257,6 +320,22 @@
                  "theme" #none
                  "media" #none))))
 
+      ; A relationship's target mode is emitted when present.
+      (test-relationship-mode-emitted
+       (lambda ()
+         (let ((value
+                (dict "workbook" workbook
+                      "relationships" (dict "rId1" (dict "type" image-rel "target" "media/a.png" "mode" "External"))
+                      "sheets" (list)
+                      "shared-strings" #none
+                      "styles" #none
+                      "theme" #none
+                      "media" #none)))
+           (let ((rels (decode-part value "xl/_rels/workbook.xml.rels")))
+             (assert-equal
+               (dict-get (dict-get (list-first (dict-get rels "children")) "attrs") "TargetMode")
+               "External")))))
+
       ; A relationship that is not a dict is rejected.
       (test-rejects-non-dict-relationship
        (lambda ()
@@ -264,6 +343,22 @@
            (dict "workbook" workbook
                  "relationships" (dict "rId1" "nope")
                  "sheets" (list)
+                 "shared-strings" #none
+                 "styles" #none
+                 "theme" #none
+                 "media" #none))))
+
+      ; A sheet relationship with no target is rejected.
+      (test-rejects-sheet-relationship-without-target
+       (lambda ()
+         (encode
+           (dict "workbook" workbook
+                 "relationships" (dict)
+                 "sheets" (list
+                            (dict "name" "S"
+                                  "part" "xl/worksheets/sheet1.xml"
+                                  "element" sheet1
+                                  "relationships" (dict "rId1" (dict "type" image-rel))))
                  "shared-strings" #none
                  "styles" #none
                  "theme" #none
@@ -332,6 +427,7 @@
            (list
              (expect-pass "content types declares the rels and xml defaults" test-content-types-defaults)
              (expect-pass "content types declares a default per media extension" test-content-types-media-default)
+             (expect-pass "media extensions are deduplicated and may have no dot" test-media-edge-extensions)
              (expect-pass "content types overrides the workbook part" test-content-types-override)
              (expect-pass "root rels points at xl/workbook.xml" test-root-rels-target)))
 
@@ -339,7 +435,8 @@
            "relationships"
            (list
              (expect-pass "workbook relationships are emitted verbatim" test-workbook-relationships-verbatim)
-             (expect-pass "a sheet's own relationships are emitted" test-sheet-relationships-emitted)))
+             (expect-pass "a sheet's own relationships are emitted" test-sheet-relationships-emitted)
+             (expect-pass "target mode is emitted when present" test-relationship-mode-emitted)))
 
          (list
            "shared-strings"
@@ -358,12 +455,24 @@
              (expect-fail "rejects a sheet that is not a dict"
                           test-rejects-non-dict-sheet
                           "a sheet \"part\" must be a string")
+             (expect-fail "rejects a non-string sheet part"
+                          test-rejects-sheet-part-not-string
+                          "a sheet \"part\" must be a string")
+             (expect-fail "rejects a non-dict sheet element"
+                          test-rejects-sheet-element-not-dict
+                          "a sheet \"element\" must be an element dict")
+             (expect-fail "rejects a non-dict sheet relationships"
+                          test-rejects-sheet-relationships-not-dict
+                          "a sheet \"relationships\" must be a dict")
              (expect-fail "rejects a non-dict relationships"
                           test-rejects-non-dict-relationships
                           "\"relationships\" must be a dict")
              (expect-fail "rejects a relationship that is not a dict"
                           test-rejects-non-dict-relationship
                           "must be a dict")
+             (expect-fail "rejects a sheet relationship without a target"
+                          test-rejects-sheet-relationship-without-target
+                          "\"target\" must be a string")
              (expect-fail "rejects a relationship with no type"
                           test-rejects-relationship-without-type
                           "\"type\" must be a string")

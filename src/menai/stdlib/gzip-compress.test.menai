@@ -67,6 +67,11 @@
        (lambda ()
          (compress "not bytes")))
 
+      ; A second argument that is not a mode value is rejected.
+      (test-rejects-invalid-mode
+       (lambda ()
+         (compress (string->bytes "payload") 42)))
+
       (tests
        (list
          (list "header" (list (expect-pass "starts with the fixed 10-byte header" test-fixed-header)))
@@ -90,6 +95,8 @@
 
          (list
            "errors"
-           (list (expect-fail "rejects a non-bytes argument" test-rejects-non-bytes "expects a bytes value"))))))
+           (list
+             (expect-fail "rejects a non-bytes argument" test-rejects-non-bytes "expects a bytes value")
+             (expect-fail "rejects an invalid mode argument" test-rejects-invalid-mode "No patterns matched"))))))
 
   (export tests))
