@@ -35,6 +35,13 @@
        (lambda ()
          (assert-equal (list-length (dict-get (extract archive) "entries")) 4)))
 
+      ; An archive holding two entries with the same name, which tar permits.
+      (ambiguous-archive
+       (create
+         (dict "entries" (list
+                           (dict "name" "dup.txt" "content" (string->bytes "one"))
+                           (dict "name" "dup.txt" "content" (string->bytes "two"))))))
+
       ; extract fills in a file's content.
       (test-extracts-file-content
        (lambda ()
@@ -94,6 +101,11 @@
        (lambda ()
          (assert-equal (list-length (extract-matching archive "a.txt")) 1)))
 
+      ; extract-matching returns both entries when the name is duplicated.
+      (test-extract-matching-duplicates
+       (lambda ()
+         (assert-equal (list-length (extract-matching ambiguous-archive "dup.txt")) 2)))
+
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes
        (lambda ()
@@ -108,6 +120,11 @@
       (test-extract-entry-non-string-name
        (lambda ()
          (extract-entry archive 42)))
+
+      ; extract-entry rejects a name carried by more than one entry.
+      (test-extract-entry-ambiguous
+       (lambda ()
+         (extract-entry ambiguous-archive "dup.txt")))
 
       (tests
        (list
@@ -127,7 +144,8 @@
            "extract-matching"
            (list
              (expect-pass "returns an empty list when nothing matches" test-extract-matching-empty)
-             (expect-pass "returns every entry with the name" test-extract-matching-named)))
+             (expect-pass "returns every entry with the name" test-extract-matching-named)
+             (expect-pass "returns both entries for a duplicated name" test-extract-matching-duplicates)))
 
          (list
            "errors"
@@ -136,6 +154,9 @@
              (expect-fail "extract-entry rejects a missing name" test-extract-entry-missing "no entry named")
              (expect-fail "extract-entry rejects a non-string name"
                           test-extract-entry-non-string-name
-                          "expects a string entry name"))))))
+                          "expects a string entry name")
+             (expect-fail "extract-entry rejects an ambiguous name"
+                          test-extract-entry-ambiguous
+                          "is ambiguous: 2 entries match"))))))
 
   (export tests))
