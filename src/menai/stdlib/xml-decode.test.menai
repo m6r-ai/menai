@@ -177,6 +177,76 @@
        (lambda ()
          (decode "<a x=1/>")))
 
+      ; A start tag with no ">" is rejected.
+      (test-rejects-unterminated-start-tag
+       (lambda ()
+         (decode "<a")))
+
+      ; A start tag whose name is empty is rejected.
+      (test-rejects-empty-tag-name
+       (lambda ()
+         (decode "<>")))
+
+      ; An attribute name with no "=" is rejected.
+      (test-rejects-attribute-missing-equals
+       (lambda ()
+         (decode "<a x>")))
+
+      ; A quoted attribute value with no closing quote is rejected.
+      (test-rejects-unterminated-attribute-value
+       (lambda ()
+         (decode "<a x=\"1>")))
+
+      ; An entity with no semicolon is rejected.
+      (test-rejects-unterminated-entity
+       (lambda ()
+         (decode "<a>&amp</a>")))
+
+      ; A comment in the prolog with no "-->" is rejected.
+      (test-rejects-unterminated-prolog-comment
+       (lambda ()
+         (decode "<!--x")))
+
+      ; A processing instruction in the prolog with no "?>" is rejected.
+      (test-rejects-unterminated-prolog-instruction
+       (lambda ()
+         (decode "<?xml")))
+
+      ; An end tag with no ">" is rejected.
+      (test-rejects-unterminated-end-tag
+       (lambda ()
+         (decode "<a></a")))
+
+      ; Text that runs to the end of input leaves the element unclosed.
+      (test-rejects-text-at-end-of-input
+       (lambda ()
+         (decode "<a>text")))
+
+      ; An entity that runs to the end of input leaves the element unclosed.
+      (test-rejects-entity-at-end-of-input
+       (lambda ()
+         (decode "<a>&amp;")))
+
+      ; A child element at the end of input leaves the parent unclosed.
+      (test-rejects-child-at-end-of-input
+       (lambda ()
+         (decode "<a><b/>")))
+
+      ; A processing instruction at the end of input leaves the element unclosed.
+      (test-rejects-instruction-at-end-of-input
+       (lambda ()
+         (decode "<a><?p?>")))
+
+      ; CDATA at the end of input leaves the element unclosed.
+      (test-rejects-cdata-at-end-of-input
+       (lambda ()
+         (decode "<a><![CDATA[x]]>")))
+
+      ; A comment at the end of input leaves the element unclosed.
+      (test-rejects-comment-at-end-of-input
+       (lambda ()
+         (decode "<a><!--c-->")))
+
       ; A non-string argument is rejected.
       (test-rejects-non-string
        (lambda ()
@@ -241,6 +311,26 @@
              (expect-fail "DOCTYPE is not supported" test-rejects-doctype "document type definitions are not supported")
              (expect-fail "unsupported entity" test-rejects-unsupported-entity "unsupported entity")
              (expect-fail "unquoted attribute value" test-rejects-unquoted-attribute "must be quoted")
+             (expect-fail "unterminated start tag" test-rejects-unterminated-start-tag "unterminated start tag")
+             (expect-fail "empty tag name" test-rejects-empty-tag-name "empty tag name")
+             (expect-fail "attribute name with no equals" test-rejects-attribute-missing-equals "expected \"=\"")
+             (expect-fail "attribute value with no closing quote"
+                          test-rejects-unterminated-attribute-value
+                          "expected \"\"")
+             (expect-fail "entity with no semicolon" test-rejects-unterminated-entity "expected \";\"")
+             (expect-fail "prolog comment with no terminator"
+                          test-rejects-unterminated-prolog-comment
+                          "expected \"-->\"")
+             (expect-fail "prolog instruction with no terminator"
+                          test-rejects-unterminated-prolog-instruction
+                          "expected \"?>\"")
+             (expect-fail "end tag with no terminator" test-rejects-unterminated-end-tag "expected \">\"")
+             (expect-fail "text at end of input" test-rejects-text-at-end-of-input "missing end tag")
+             (expect-fail "entity at end of input" test-rejects-entity-at-end-of-input "missing end tag")
+             (expect-fail "child element at end of input" test-rejects-child-at-end-of-input "missing end tag")
+             (expect-fail "instruction at end of input" test-rejects-instruction-at-end-of-input "missing end tag")
+             (expect-fail "CDATA at end of input" test-rejects-cdata-at-end-of-input "missing end tag")
+             (expect-fail "comment at end of input" test-rejects-comment-at-end-of-input "missing end tag")
              (expect-fail "rejects a non-string argument" test-rejects-non-string "expects a string"))))))
 
   (export tests))

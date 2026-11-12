@@ -99,6 +99,29 @@
            (string-hex->bytes
              "02092203060b00060e190000001a12002625100d0000070000000003011d060f0510020027271c130000000017001d00251d000021032600000e18000000251700000000190009010015000f00000000251a002000001d0f0027000018000000000b000c000225040a1e0000211b0000162300241f0c000000250013001b0c0000140000091d0d0022000000010000000a0000202610120b000000211325000e0415002700081521151319220012211f00191e0a0e000b0d000f271f1500150b011c0016000c040013050d2200000011000021100120001000001a221f000b0000051c1d14240000020000000e05001c260200001f00130a0019000002001c0000000e010e101a251200030000031400000013060d1700192100231400020e21000a1f1924020f00141b0f14"))))
 
+      ; A stream with many short matches produces more fragments than the
+      ; fragment limit, so the list is committed to a block mid-stream.
+      (test-dynamic-many-matches
+       (lambda ()
+         (assert-equal
+           (decompress
+             (string-hex->bytes
+               "05c1450280200000b0b759804d5878b313151b5fefa669ba6e18a66959004088906d3b8eeb7a9eef074118624c08a58c45511c27499a6619e7795e1465595575dd346ddb757d3f0ce3384df32cc4b2acebb649b9efc7719ed775dfcff3be4a7ddf0f"))
+           (string->bytes
+             "AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPPQQRRSSTTUUVVWWXXYYZZaabbccddeeffgghhiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz"))))
+
+      ; A stream whose output exceeds the window cap keeps only the most recent
+      ; 32 KiB; the discarded prefix must not change the result.
+      (test-long-run-beyond-window
+       (lambda ()
+         (let ((out
+                (decompress
+                  (string-hex->bytes
+                    "edc13101000000c2a0aceb5fc2cb164001000000000000000000000000000000000000000000000000000000000000000000000000000037"))))
+           (assert-equal
+             (list (bytes-length out) (bytes-nth out 0) (bytes-nth out 20000) (bytes-nth out 39999))
+             (list 40000 97 97 97)))))
+
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes
        (lambda ()
@@ -118,6 +141,26 @@
       (test-rejects-invalid-block-type
        (lambda ()
          (decompress (string-hex->bytes "07"))))
+
+      ; An empty input ends before the first block header.
+      (test-rejects-empty-input
+       (lambda ()
+         (decompress (string-hex->bytes ""))))
+
+      ; A stream that ends inside a Huffman symbol is rejected.
+      (test-rejects-truncated-symbol
+       (lambda ()
+         (decompress (string-hex->bytes "7304"))))
+
+      ; A stream that ends inside the dynamic block header is rejected.
+      (test-rejects-truncated-header
+       (lambda ()
+         (decompress (string-hex->bytes "edc13101"))))
+
+      ; A back-reference before any output has been produced is rejected.
+      (test-rejects-back-reference-before-output
+       (lambda ()
+         (decompress (string-hex->bytes "030200"))))
 
       (tests
        (list
@@ -145,7 +188,9 @@
            "dynamic Huffman blocks"
            (list
              (expect-pass "skewed alphabet" test-dynamic-skewed-alphabet)
-             (expect-pass "zero runs exercise repeat codes" test-dynamic-zero-runs)))
+             (expect-pass "zero runs exercise repeat codes" test-dynamic-zero-runs)
+             (expect-pass "many short matches commit the fragment list" test-dynamic-many-matches)
+             (expect-pass "output beyond the window cap" test-long-run-beyond-window)))
 
          (list
            "errors"
@@ -155,6 +200,16 @@
              (expect-fail "rejects stored block with mismatched LEN and NLEN"
                           test-rejects-len-mismatch
                           "LEN does not match NLEN")
-             (expect-fail "rejects invalid block type" test-rejects-invalid-block-type "invalid block type"))))))
+             (expect-fail "rejects invalid block type" test-rejects-invalid-block-type "invalid block type")
+             (expect-fail "rejects empty input" test-rejects-empty-input "unexpected end of input")
+             (expect-fail "rejects a stream truncated inside a symbol"
+                          test-rejects-truncated-symbol
+                          "unexpected end of input")
+             (expect-fail "rejects a stream truncated inside the block header"
+                          test-rejects-truncated-header
+                          "unexpected end of input")
+             (expect-fail "rejects a back-reference before any output"
+                          test-rejects-back-reference-before-output
+                          "back-reference distance exceeds"))))))
 
   (export tests))
