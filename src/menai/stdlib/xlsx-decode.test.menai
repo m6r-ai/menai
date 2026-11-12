@@ -135,6 +135,76 @@
                               "\" Target=\"worksheets/sheet1.xml\" TargetMode=\"External\"/></Relationships>")))
            (list "xl/worksheets/sheet1.xml" sheet-xml))))
 
+      ; A workbook whose <sheets> list is followed by another child, as a real
+      ; workbook's <calcPr> is.
+      (with-trailing-workbook-child
+       (package-of
+         (list
+           (list
+             "xl/workbook.xml"
+             (string->bytes
+               (string-concat "<workbook xmlns=\""
+                              main-ns
+                              "\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                              "<sheets><sheet name=\"Only\" sheetId=\"1\" r:id=\"rId1\"/></sheets>"
+                              "<calcPr calcId=\"191029\"/></workbook>")))
+           (list
+             "xl/_rels/workbook.xml.rels"
+             (string->bytes
+               (string-concat "<Relationships xmlns=\""
+                              rels-ns
+                              "\"><Relationship Id=\"rId1\" Type=\""
+                              worksheet-rel
+                              "\" Target=\"worksheets/sheet1.xml\"/></Relationships>")))
+           (list "xl/worksheets/sheet1.xml" sheet-xml))))
+
+      ; A package whose shared string table is followed by an <extLst> child, as a
+      ; real table may carry.
+      (with-shared-string-extension
+       (package-of
+         (list
+           (list "xl/workbook.xml" workbook-empty-xml)
+           (list
+             "xl/sharedStrings.xml"
+             (string->bytes
+               (string-concat "<sst xmlns=\""
+                              main-ns
+                              "\" count=\"1\" uniqueCount=\"1\"><si><t>Hello</t></si><extLst/></sst>"))))))
+
+      ; A package whose only sheet names a relationship id that no relationship
+      ; carries.
+      (with-unresolved-sheet-relationship
+       (package-of
+         (list
+           (list
+             "xl/workbook.xml"
+             (string->bytes
+               (string-concat "<workbook xmlns=\""
+                              main-ns
+                              "\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                              "<sheets><sheet name=\"Ghost\" sheetId=\"1\" r:id=\"rId9\"/></sheets></workbook>"))))))
+
+      ; A package whose sheet relationship resolves to a worksheet part the package
+      ; does not contain.
+      (with-missing-sheet-part
+       (package-of
+         (list
+           (list
+             "xl/workbook.xml"
+             (string->bytes
+               (string-concat "<workbook xmlns=\""
+                              main-ns
+                              "\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                              "<sheets><sheet name=\"Only\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>")))
+           (list
+             "xl/_rels/workbook.xml.rels"
+             (string->bytes
+               (string-concat "<Relationships xmlns=\""
+                              rels-ns
+                              "\"><Relationship Id=\"rId1\" Type=\""
+                              worksheet-rel
+                              "\" Target=\"worksheets/sheet9.xml\"/></Relationships>"))))))
+
       ; The workbook part is decoded as the xml-decode element tree of xl/workbook.xml.
       (test-workbook-part
        (lambda ()
@@ -257,6 +327,36 @@
            (dict-get (dict-get (list-first (dict-get (decode full) "sheets")) "element") "tag")
            "worksheet")))
 
+      ; A workbook child that is not a sheets list is ignored.
+      (test-ignores-other-workbook-children
+       (lambda ()
+         (assert-equal
+           (map-list
+             (lambda (s)
+               (dict-get s "name"))
+             (dict-get (decode with-trailing-workbook-child) "sheets"))
+           (list "Only"))))
+
+      ; A shared string table child that is not a string item is ignored.
+      (test-ignores-other-shared-string-children
+       (lambda ()
+         (assert-equal
+           (map-list
+             (lambda (si)
+               (dict-get si "tag"))
+             (dict-get (decode with-shared-string-extension) "shared-strings"))
+           (list "si"))))
+
+      ; A sheet naming a relationship id that does not resolve is rejected.
+      (test-rejects-unresolved-sheet-relationship
+       (lambda ()
+         (decode with-unresolved-sheet-relationship)))
+
+      ; A sheet whose worksheet part is missing is rejected.
+      (test-rejects-missing-sheet-part
+       (lambda ()
+         (decode with-missing-sheet-part)))
+
       ; styles is decoded as an element tree when present.
       (test-styles-decoded
        (lambda ()
@@ -320,14 +420,17 @@
              (expect-pass "a sheet carries its decoded element" test-sheet-carries-element)
              (expect-pass "a sheet carries its own relationships" test-sheet-carries-relationships)
              (expect-pass "a sheet with no relationships part has an empty map" test-sheet-without-relationships)
-             (expect-pass "sheet order follows the sheet list, not the part names" test-sheet-order-follows-list)))
+             (expect-pass "sheet order follows the sheet list, not the part names" test-sheet-order-follows-list)
+             (expect-pass "a workbook child that is not a sheet list is ignored" test-ignores-other-workbook-children)))
 
          (list
            "shared-strings"
            (list
              (expect-pass "shared strings are decoded in order" test-shared-strings-in-order)
              (expect-pass "a shared string carries its decoded text" test-shared-string-carries-text)
-             (expect-pass "a cell's shared-string value is not resolved" test-cell-shared-string-unresolved)))
+             (expect-pass "a cell's shared-string value is not resolved" test-cell-shared-string-unresolved)
+             (expect-pass "a table child that is not a string item is ignored"
+                          test-ignores-other-shared-string-children)))
 
          (list
            "optional-parts"
@@ -349,6 +452,12 @@
              (expect-fail "rejects a package with no workbook part"
                           test-rejects-no-workbook
                           "package has no xl/workbook.xml")
-             (expect-fail "rejects a package whose workbook is not XML" test-rejects-non-xml-workbook "xml-decode"))))))
+             (expect-fail "rejects a package whose workbook is not XML" test-rejects-non-xml-workbook "xml-decode")
+             (expect-fail "rejects a sheet with an unresolvable relationship"
+                          test-rejects-unresolved-sheet-relationship
+                          "a sheet has no resolvable relationship")
+             (expect-fail "rejects a sheet whose worksheet part is missing"
+                          test-rejects-missing-sheet-part
+                          "package has no xl/worksheets/sheet9.xml"))))))
 
   (export tests))
