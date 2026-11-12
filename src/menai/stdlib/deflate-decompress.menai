@@ -195,16 +195,19 @@
 
                ; Compute the first canonical code for each length 1..maxlen.
                ; bl_count[len] = number of codes of that length.
-               ; Returns a dict mapping length to the first code assigned to it.
+               ; Returns a vector whose element i is the next code to hand out at
+               ; length i+1.  `assign` advances an element as it assigns codes, so
+               ; the vector is indexed by the lengths the length list contains and
+               ; no lookup can miss.
                (first-codes
                 (lambda (bl-count maxlen)
                   (let ((loop
                          (lambda (len code acc)
                            (if (integer>? len maxlen)
-                               acc
+                               (list->vector (list-reverse acc))
                                (let ((next (integer-bit-shift-left (integer+ code (dict-get bl-count len 0)) 1)))
-                                 (loop (integer+ len 1) next (dict-with acc len code)))))))
-                    (loop 1 0 (dict)))))
+                                 (loop (integer+ len 1) next (list-prepend acc code)))))))
+                    (loop 1 0 (list)))))
 
                ; Walk symbols in order, assigning each its canonical code.  The
                ; symbol index is carried as an integer rather than read from a
@@ -216,15 +219,13 @@
                       (let ((len (list-first lens)))
                         (if (integer=? len 0)
                             (assign (list-rest lens) (integer+ sym 1) codes table)
-                            (let ((code (dict-get codes len)))
-                              (if (none? code)
-                                  (error "deflate-decompress: internal error building Huffman table")
-                                  (let ((key (integer+ (integer-bit-shift-left 1 len) code)))
-                                    (assign
-                                      (list-rest lens)
-                                      (integer+ sym 1)
-                                      (dict-with codes len (integer+ code 1))
-                                      (dict-with table key sym))))))))))
+                            (let ((index (integer- len 1))
+                                  (code (vector-nth codes (integer- len 1))))
+                              (assign
+                                (list-rest lens)
+                                (integer+ sym 1)
+                                (vector-with codes index (integer+ code 1))
+                                (dict-with table (integer+ (integer-bit-shift-left 1 len) code) sym))))))))
 
                (counted (count-lengths lengths (dict) 0)))
            (assign lengths 0 (first-codes (list-first counted) (list-nth counted 1)) (dict)))))
