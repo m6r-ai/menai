@@ -161,7 +161,7 @@ class TestRenderCoverage:
     def test_reports_no_unexecuted_instructions_when_fully_covered(self):
         coverage = _coverage("(integer+ 1 2)")
         text = "\n".join(render_coverage(coverage, color=False))
-        assert "  None." in text
+        assert "  None" in text
 
     def test_top_n_limits_the_function_table(self):
         coverage = _coverage(_UNENTERED_SOURCE)

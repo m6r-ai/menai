@@ -268,7 +268,7 @@ def render_coverage(result: CoverageResult, color: bool = False, top_n: int | No
         lines.append(f"  {function_label(function)}  {indices}")
 
     if not any_uncovered:
-        lines.append("  None.")
+        lines.append("  None")
 
     return lines
 
@@ -375,6 +375,6 @@ def render_cumulative_coverage(
         lines.append(f"  {function.label()}  {format_index_ranges(list(uncovered))}")
 
     if not any_uncovered:
-        lines.append("  None.")
+        lines.append("  None")
 
     return lines

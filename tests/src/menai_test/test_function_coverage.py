@@ -112,7 +112,7 @@ class TestReportOutput:
 
         assert "Reachable instructions not executed" in text
         assert "Dead bytecode (unreachable from entry)" in text
-        assert "  None." in text
+        assert "  None" in text
 
     def test_skips_suites_with_no_single_subject(self, probe_dir: Path, capsys: pytest.CaptureFixture):
         suite = probe_dir / "probe-round-trip.test.menai"

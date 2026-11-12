@@ -218,7 +218,7 @@ def _render_missed(result: SourceFileCoverage, color: bool) -> list[str]:
         lines.append(f"  {_label(outcome.function):<{_LABEL_COL + 8}} {_describe(outcome.function.code, missed)}")
 
     if not any_missed:
-        lines.append("  None.")
+        lines.append("  None")
 
     return lines
 
@@ -238,7 +238,7 @@ def _render_unreachable(result: SourceFileCoverage, color: bool) -> list[str]:
         lines.append(f"  {_label(outcome.function):<{_LABEL_COL + 8}} {_describe(outcome.function.code, unreachable)}")
 
     if not any_unreachable:
-        lines.append("  None.")
+        lines.append("  None")
 
     return lines
 
