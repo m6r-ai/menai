@@ -117,12 +117,20 @@
                (dict-get entry "gname"))
              (list #o600 1000 1001 1700000000 "alice" "staff")))))
 
-      ; A supplied device minor field is written as an octal ASCII field: five
-      ; octal digits for the value 5, then the field's terminating NUL.
-      (test-devminor-field
+      ; Supplied device major and minor fields are written as octal ASCII fields,
+      ; each seven octal digits followed by the field's terminating NUL.
+      (test-device-fields
        (lambda ()
-         (let ((archive (create (dict "entries" (list (dict "name" "x" "content" (string->bytes "hi") "devminor" 5))))))
-           (assert-equal (bytes->string-hex (bytes-slice archive 337 345)) "3030303030303500"))))
+         (let ((archive
+                (create
+                  (dict "entries" (list (dict "name" "x"
+                                              "content" (string->bytes "hi")
+                                              "devmajor" 3
+                                              "devminor" 5))))))
+           (assert-equal
+             (list (bytes->string-hex (bytes-slice archive 329 337))
+                   (bytes->string-hex (bytes-slice archive 337 345)))
+             (list "3030303030303300" "3030303030303500")))))
 
       ; A path longer than the 100-byte name field is split across the name and
       ; prefix fields, and reads back as one path.
@@ -152,7 +160,7 @@
              (expect-pass "a directory entry carries the directory defaults" test-directory-entry)
              (expect-pass "a symlink entry carries its target" test-symlink-entry)
              (expect-pass "explicit ownership and mtime are written" test-explicit-ownership-and-mtime)
-             (expect-pass "a supplied device minor is written in octal" test-devminor-field)))
+             (expect-pass "supplied device numbers are written in octal" test-device-fields)))
 
          (list "paths" (list (expect-pass "a long path is split across name and prefix" test-nested-path-split)))
 
