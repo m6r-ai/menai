@@ -65,6 +65,25 @@
        (string-hex->bytes
          "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e4944415478da63e1dac7a2610e0003db0130bb4bdb6e0000000049454e44ae426082"))
 
+      ; A 2x2 8-bit greyscale file whose scanlines are [5 10] and [0 0], both
+      ; Paeth-filtered.  Un-filtering the second pixel of the second scanline has
+      ; |p - a|, |p - b| and |p - c| ordered so that the upper-left byte is the
+      ; closest predictor, which is the predictor's third arm.
+      (paeth-upper-left
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f80000000e49444154789c63616565f9fd1b00034802099c2f67cb0000000049454e44ae426082"))
+
+      ; The greyscale image above, carrying an ancillary tEXt chunk the decoder
+      ; does not know and must skip.
+      (with-unknown-chunk
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d494844520000000200000002080000000057dd52f800000003744558746b0076cb04f3900000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))
+
+      ; An IHDR declaring colour type 1, which PNG does not define.
+      (bad-colour-type
+       (string-hex->bytes
+         "89504e470d0a1a0a0000000d4948445200000002000000020801000000ef61359d0000000e49444154789c63e03ac160f41f0004bb0204b135a2230000000049454e44ae426082"))
+
       ; The header fields are decoded.
       (test-header-fields
        (lambda ()
@@ -174,6 +193,26 @@
          (decode "not bytes")))
 
       ; An unsupported bit depth is rejected.
+      ; The Paeth predictor picks the upper-left byte when it is the closest of
+      ; the three candidates, and the row un-filters to [5 10] and [0 0].
+      (test-paeth-upper-left
+       (lambda ()
+         (assert-equal
+           (dict-get (decode paeth-upper-left) "pixels")
+           (vector (vector (vector 5 5 5) (vector 10 10 10)) (vector (vector 0 0 0) (vector 0 0 0))))))
+
+      ; An ancillary chunk the decoder does not recognise is skipped, and the
+      ; image below it decodes normally.
+      (test-skips-unknown-chunk
+       (lambda ()
+         (assert-equal (dict-get (decode with-unknown-chunk) "pixels") greyscale-pixels)))
+
+      ; A colour type PNG does not define is rejected.
+      (test-rejects-bad-colour-type
+       (lambda ()
+         (decode bad-colour-type)))
+
+      ; An unsupported bit depth is rejected.
       (test-rejects-unsupported-bit-depth
        (lambda ()
          (decode
@@ -242,8 +281,10 @@
              (expect-pass "up-filtered scanlines" test-filter-up)
              (expect-pass "average-filtered scanlines" test-filter-average)
              (expect-pass "paeth-filtered scanlines" test-filter-paeth)
+             (expect-pass "paeth picks the upper-left predictor" test-paeth-upper-left)
              (expect-pass "truecolour pixels stay RGB" test-truecolour-pixels)
-             (expect-pass "truecolour with alpha stays RGBA" test-truecolour-alpha-pixels)))
+             (expect-pass "truecolour with alpha stays RGBA" test-truecolour-alpha-pixels)
+             (expect-pass "an unknown ancillary chunk is skipped" test-skips-unknown-chunk)))
 
          (list
            "errors"
@@ -255,6 +296,7 @@
              (expect-fail "rejects unsupported bit depth" test-rejects-unsupported-bit-depth "bit depth 16")
              (expect-fail "rejects interlaced images" test-rejects-interlaced "interlaced")
              (expect-fail "rejects unsupported colour type" test-rejects-unsupported-colour-type "colour type 7")
+             (expect-fail "rejects a colour type of 1" test-rejects-bad-colour-type "colour type 1 is not supported")
              (expect-fail "rejects palette image without PLTE" test-rejects-missing-plte "missing its PLTE")
              (expect-fail "rejects out-of-range palette index"
                           test-rejects-out-of-range-index
