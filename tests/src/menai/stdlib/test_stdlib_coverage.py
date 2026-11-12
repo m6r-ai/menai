@@ -30,10 +30,10 @@ _MODULE_SUFFIX = ".menai"
 # this set only when a test is removed or a path stops being taken.
 _FULLY_COVERED = frozenset({
     "bmp-decode", "bmp-encode", "csv-encode", "deflate-decompress",
-    "docx-decode", "docx-encode", "gzip-compress", "html-decode", "json-encode",
-    "json-decode", "png-encode", "pptx-decode", "pptx-encode", "tar-create",
-    "tar-entries", "tar-extract", "xlsx-decode", "xlsx-encode", "xml-decode",
-    "xml-encode", "zip-entries", "zip-extract", "zlib-compress",
+    "docx-decode", "docx-encode", "gzip-compress", "html-decode", "html-encode",
+    "json-encode", "json-decode", "png-encode", "pptx-decode", "pptx-encode",
+    "tar-create", "tar-entries", "tar-extract", "xlsx-decode", "xlsx-encode",
+    "xml-decode", "xml-encode", "zip-entries", "zip-extract", "zlib-compress",
 })
 
 

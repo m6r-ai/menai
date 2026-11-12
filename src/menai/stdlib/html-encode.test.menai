@@ -127,6 +127,16 @@
        (lambda ()
          (encode (list (dict "tag" "p" "attrs" (dict "x" 42) "children" (list))))))
 
+      ; A non-string attribute name is rejected.
+      (test-rejects-non-string-attribute-name
+       (lambda ()
+         (encode (list (dict "tag" "p" "attrs" (dict 1 "x") "children" (list))))))
+
+      ; A comment whose children are not a list is rejected.
+      (test-rejects-non-list-comment-children
+       (lambda ()
+         (encode (list (dict "tag" "!--" "attrs" (dict) "children" 42)))))
+
       ; A non-string comment child is rejected.
       (test-rejects-non-string-comment-child
        (lambda ()
@@ -175,6 +185,12 @@
              (expect-fail "rejects a non-string attribute value"
                           test-rejects-non-string-attribute
                           "value must be a string")
+             (expect-fail "rejects a non-string attribute name"
+                          test-rejects-non-string-attribute-name
+                          "attribute name must be a string")
+             (expect-fail "rejects a comment whose children are not a list"
+                          test-rejects-non-list-comment-children
+                          "\"children\" must be a list")
              (expect-fail "rejects a non-string comment child"
                           test-rejects-non-string-comment-child
                           "must be a string"))))))
