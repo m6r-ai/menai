@@ -88,6 +88,23 @@
        (lambda ()
          (assert-equal (encode (string->bytes "foob") (ev 'url-unpadded)) "Zm9vYg")))
 
+      ; A single trailing byte is encoded without padding by the unpadded
+      ; variants.
+      (test-variant-single-byte-unpadded
+       (lambda ()
+         (assert-equal
+           (list (encode (string->bytes "f") (ev 'standard-unpadded)) (encode (string->bytes "f") (ev 'url-unpadded)))
+           (list "Zg" "Zg"))))
+
+      ; A two-byte tail is encoded without padding by the unpadded variants.
+      (test-variant-two-byte-unpadded
+       (lambda ()
+         (assert-equal
+           (list
+             (encode (string->bytes "fooba") (ev 'standard-unpadded))
+             (encode (string->bytes "fooba") (ev 'url-unpadded)))
+           (list "Zm9vYmE" "Zm9vYmE"))))
+
       ; The standard and url variants agree when no special character occurs.
       (test-variant-standard-url-agree
        (lambda ()
@@ -144,7 +161,9 @@
              (expect-pass "url-unpadded omits padding" test-variant-url-unpadded)
              (expect-pass "standard and url agree when no special character occurs" test-variant-standard-url-agree)
              (expect-pass "standard uses + and /" test-variant-standard-special)
-             (expect-pass "url uses - and _" test-variant-url-special)))
+             (expect-pass "url uses - and _" test-variant-url-special)
+             (expect-pass "unpadded variants omit padding on a single byte" test-variant-single-byte-unpadded)
+             (expect-pass "unpadded variants omit padding on two bytes" test-variant-two-byte-unpadded)))
 
          (list
            "errors"
