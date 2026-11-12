@@ -263,6 +263,14 @@
          (let ((bins (vector-histogram (vector 0.0 10.0) 2)))
            (assert-equal 1 (vector-nth (vector-nth bins 1) 2)))))
 
+      ; A constant sample has zero bin width, so every value lands in bin 0
+      ; rather than being divided by zero.
+      (test-vector-histogram-constant-sample
+       (lambda ()
+         (assert-equal
+           (vector (vector 1.0 1.0 3) (vector 1.0 1.0 0) (vector 1.0 1.0 0))
+           (vector-histogram (vector 1.0 1.0 1.0) 3))))
+
       (test-vector-histogram-empty
        (lambda ()
          (assert-equal #none (vector-histogram (vector) 2))))
@@ -343,6 +351,18 @@
        (lambda ()
          (assert-equal #none (vector-linear-fit (vector 1.0 1.0 1.0) (vector 1.0 2.0 3.0)))))
 
+      ; A constant ys has zero variance, so the fit is flat and r2 is defined to
+      ; be 1.0 rather than dividing by zero.
+      (test-vector-linear-fit-constant-y
+       (lambda ()
+         (let ((fit (vector-linear-fit (vector 1.0 2.0 3.0) (vector 5.0 5.0 5.0))))
+           (assert-equal
+             (list 0.0 5.0 1.0)
+             (list
+               (dict-get fit "slope")
+               (dict-get fit "intercept")
+               (dict-get fit "r2"))))))
+
       (test-vector-z-scores
        (lambda ()
          (let ((z (vector-z-scores (vector 1.0 2.0 3.0))))
@@ -356,6 +376,11 @@
       (test-vector-z-scores-constant
        (lambda ()
          (assert-equal #none (vector-z-scores (vector 1.0 1.0 1.0)))))
+
+      ; An empty sample has no mean, so z-scores is #none rather than raising.
+      (test-vector-z-scores-empty
+       (lambda ()
+         (assert-equal #none (vector-z-scores (vector)))))
 
       (test-vector-normalise
        (lambda ()
@@ -394,6 +419,13 @@
       (test-vector-summary-empty
        (lambda ()
          (assert-equal #none (vector-summary (vector)))))
+
+      ; A one-element sample has no sample variance, so stdev is #none while the
+      ; other fields are all defined.
+      (test-vector-summary-single-value
+       (lambda ()
+         (let ((stats (vector-summary (vector 1.0))))
+           (assert-equal #none (dict-get stats "stdev")))))
 
       (test-vector->floats-from-integers
        (lambda ()
@@ -765,6 +797,7 @@
              (expect-pass "vector histogram" test-vector-histogram)
              (expect-pass "list histogram" test-list-histogram)
              (expect-pass "the top edge belongs to the last bin" test-vector-histogram-top-edge-in-last-bin)
+             (expect-pass "a constant sample is counted in the first bin" test-vector-histogram-constant-sample)
              (expect-pass "histogram of an empty sample is none" test-vector-histogram-empty)
              (expect-pass "vector histogram with explicit edges" test-vector-histogram-edges)
              (expect-pass "list histogram with explicit edges" test-list-histogram-edges)
@@ -787,13 +820,15 @@
              (expect-pass "vector linear fit intercept" test-vector-linear-fit-intercept)
              (expect-pass "vector linear fit r squared" test-vector-linear-fit-r2)
              (expect-pass "list linear fit" test-list-linear-fit)
-             (expect-pass "linear fit of a constant x is none" test-vector-linear-fit-constant-x)))
+             (expect-pass "linear fit of a constant x is none" test-vector-linear-fit-constant-x)
+             (expect-pass "linear fit of a constant y is flat with r2 of one" test-vector-linear-fit-constant-y)))
          (list
            "normalisation"
            (list
              (expect-pass "vector z-scores have zero mean" test-vector-z-scores)
              (expect-pass "list z-scores have zero mean" test-list-z-scores)
              (expect-pass "z-scores of a constant sample is none" test-vector-z-scores-constant)
+             (expect-pass "z-scores of an empty sample is none" test-vector-z-scores-empty)
              (expect-pass "vector min-max normalisation" test-vector-normalise)
              (expect-pass "list min-max normalisation" test-list-normalise)
              (expect-pass "normalising a constant sample is none" test-vector-normalise-constant)))
@@ -803,7 +838,8 @@
              (expect-pass "vector summary count" test-vector-summary)
              (expect-pass "vector summary five-number values" test-vector-summary-quartiles)
              (expect-pass "list summary count" test-list-summary)
-             (expect-pass "summary of an empty sample is none" test-vector-summary-empty)))
+             (expect-pass "summary of an empty sample is none" test-vector-summary-empty)
+             (expect-pass "summary of a single value has no stdev" test-vector-summary-single-value)))
          (list
            "degenerate samples"
            (list (expect-pass "a malformed or too-small sample is none" test-degenerate-samples-are-none)))
