@@ -103,6 +103,21 @@
        (lambda ()
          (assert-equal (decode "<style>a>b{}</style>") (list (el "style" (dict) (list "a>b{}"))))))
 
+      ; A script left open at the end of input is raw text to the last character.
+      (test-unterminated-script
+       (lambda ()
+         (assert-equal (decode "<script>a<b") (list (el "script" (dict) (list "a<b"))))))
+
+      ; A script that is never closed and has no content has no children.
+      (test-script-at-end
+       (lambda ()
+         (assert-equal (decode "<script>") (list (el "script" (dict) (list))))))
+
+      ; A script with no content has no children.
+      (test-empty-script
+       (lambda ()
+         (assert-equal (decode "<script></script>") (list (el "script" (dict) (list))))))
+
       ; The five predefined entities are decoded.
       (test-predefined-entities
        (lambda ()
@@ -125,10 +140,25 @@
        (lambda ()
          (assert-equal (decode "<p>&#x26;</p>") (list (el "p" (dict) (list "&"))))))
 
+      ; A hexadecimal reference may use the letters A-F and a-f.
+      (test-hex-reference-letters
+       (lambda ()
+         (assert-equal (decode "<p>&#x4A;&#x6a;</p>") (list (el "p" (dict) (list "Jj"))))))
+
       ; An unknown named reference is left as literal text.
       (test-unknown-entity
        (lambda ()
          (assert-equal (decode "<p>&bogus;</p>") (list (el "p" (dict) (list "&bogus;"))))))
+
+      ; A decimal reference whose digits are not all digits is literal text.
+      (test-invalid-decimal-reference
+       (lambda ()
+         (assert-equal (decode "<p>&#1a;</p>") (list (el "p" (dict) (list "&#1a;"))))))
+
+      ; A hexadecimal reference whose digits are not all hex digits is literal text.
+      (test-invalid-hex-reference
+       (lambda ()
+         (assert-equal (decode "<p>&#xzz;</p>") (list (el "p" (dict) (list "&#xzz;"))))))
 
       ; A stray "&" that does not begin a reference is literal text.
       (test-bare-ampersand
@@ -152,6 +182,16 @@
            (decode "<p><!-- c --></p>")
            (list (el "p" (dict) (list (dict "tag" "!--" "attrs" (dict) "children" (list " c "))))))))
 
+      ; A comment that ends immediately has no children.
+      (test-empty-comment
+       (lambda ()
+         (assert-equal (decode "<!-->") (list (dict "tag" "!--" "attrs" (dict) "children" (list))))))
+
+      ; An unterminated comment runs to the end of the input.
+      (test-unterminated-comment
+       (lambda ()
+         (assert-equal (decode "<!-- abc") (list (dict "tag" "!--" "attrs" (dict) "children" (list " abc"))))))
+
       ; A doctype is carried as a node with the reserved tag.
       (test-doctype
        (lambda ()
@@ -159,10 +199,122 @@
            (decode "<!DOCTYPE html><p>x</p>")
            (list (dict "tag" "!doctype" "attrs" (dict) "children" (list "html")) (el "p" (dict) (list "x"))))))
 
+      ; A doctype may be the last node in a document.
+      (test-doctype-at-end
+       (lambda ()
+         (assert-equal
+           (decode "<!DOCTYPE html>")
+           (list (dict "tag" "!doctype" "attrs" (dict) "children" (list "html"))))))
+
       ; A "<" that does not begin a tag is text.
       (test-stray-less-than
        (lambda ()
          (assert-equal (decode "<p>a < b</p>") (list (el "p" (dict) (list "a < b"))))))
+
+      ; A declaration inside an element is skipped to its ">".
+      (test-declaration-inside-element
+       (lambda ()
+         (assert-equal (decode "<p><!ENTITY x>y</p>") (list (el "p" (dict) (list "y"))))))
+
+      ; "<>" inside an element begins no tag and is skipped.
+      (test-empty-tag-inside-element
+       (lambda ()
+         (assert-equal (decode "<p><>x</p>") (list (el "p" (dict) (list "x"))))))
+
+      ; A "<" that begins no tag is text even when it starts the content.
+      (test-stray-less-than-first
+       (lambda ()
+         (assert-equal (decode "<p>< b</p>") (list (el "p" (dict) (list "< b"))))))
+
+      ; A self-closing tag may carry attributes.
+      (test-self-closing-with-attributes
+       (lambda ()
+         (assert-equal (decode "<div x=\"1\"/>") (list (el "div" (dict "x" "1") (list))))))
+
+      ; A "<" at top level that does not begin a tag is text, and adjacent text is one node.
+      (test-top-level-stray-less-than
+       (lambda ()
+         (assert-equal (decode "a < b") (list "a < b"))))
+
+      ; A lone "<" at top level is text.
+      (test-top-level-lone-less-than
+       (lambda ()
+         (assert-equal (decode "< x") (list "< x"))))
+
+      ; "<>" at top level begins no tag and is skipped.
+      (test-top-level-empty-tag
+       (lambda ()
+         (assert-equal (decode "<>x") (list "x"))))
+
+      ; An end tag at top level closes nothing and is skipped.
+      (test-top-level-stray-end-tag
+       (lambda ()
+         (assert-equal (decode "</b>x") (list "x"))))
+
+      ; A declaration at top level that is not a doctype is skipped to its ">".
+      (test-top-level-declaration
+       (lambda ()
+         (assert-equal (decode "<!ENTITY x>y") (list "y"))))
+
+      ; A construct at the end of input adds no node.
+      (test-top-level-construct-at-end
+       (lambda ()
+         (assert-equal
+           (list (decode "<") (decode "<>") (decode "</b") (decode "<!ENTITY x>"))
+           (list (list "<") (list) (list) (list)))))
+
+      ; A stray end tag that runs to the end of input is ignored.
+      (test-stray-end-tag-unterminated
+       (lambda ()
+         (assert-equal (decode "<p>x</b") (list (el "p" (dict) (list "x"))))))
+
+      ; A child element may be the last thing in its parent.
+      (test-child-element-last
+       (lambda ()
+         (assert-equal (decode "<div><b>y</b>") (list (el "div" (dict) (list (el "b" (dict) (list "y"))))))))
+
+      ; An attribute list that runs to the end of input ends the tag.
+      (test-attributes-at-end
+       (lambda ()
+         (assert-equal (decode "<p class=\"x\"") (list (el "p" (dict "class" "x") (list))))))
+
+      ; An unquoted attribute value runs to the end of input.
+      (test-unquoted-value-at-end
+       (lambda ()
+         (assert-equal (decode "<a x=1") (list (el "a" (dict "x" "1") (list))))))
+
+      ; A tag name that runs to the end of input is still a tag.
+      (test-unterminated-tag
+       (lambda ()
+         (assert-equal (decode "<p") (list (el "p" (dict) (list))))))
+
+      ; A "<", "<>", or declaration that ends an element's content adds no child.
+      (test-content-construct-at-end
+       (lambda ()
+         (assert-equal
+           (list (decode "<p><") (decode "<p><>") (decode "<p><!ENTITY x>"))
+           (list (list (el "p" (dict) (list "<"))) (list (el "p" (dict) (list))) (list (el "p" (dict) (list)))))))
+
+      ; An attribute name with a "=" and no value at the end of input gets "".
+      (test-attribute-value-missing-at-end
+       (lambda ()
+         (assert-equal (decode "<p x=") (list (el "p" (dict "x" "") (list))))))
+
+      ; A character that cannot begin a name is skipped, not taken as the end of the tag.
+      (test-name-less-character-skipped
+       (lambda ()
+         (assert-equal (decode "<p =x>") (list (el "p" (dict "x" "") (list))))))
+
+      ; A self-closing tag may be followed by text.
+      (test-self-closing-followed-by-text
+       (lambda ()
+         (assert-equal (decode "<div/>x") (list (el "div" (dict) (list)) "x"))))
+
+      ; A "/" that does not close the tag ends the attributes and the tag is
+      ; scanned to a later ">".
+      (test-slash-then-space
+       (lambda ()
+         (assert-equal (decode "<div/ x>") (list (el "div" (dict) (list))))))
 
       ; An empty document decodes to no nodes.
       (test-empty-document
@@ -184,7 +336,11 @@
              (expect-pass "tag is lowercased" test-tag-lowercased)
              (expect-pass "nested elements" test-nested-elements)
              (expect-pass "empty document" test-empty-document)
-             (expect-pass "stray less-than is text" test-stray-less-than)))
+             (expect-pass "stray less-than is text" test-stray-less-than)
+             (expect-pass "declaration inside an element is skipped" test-declaration-inside-element)
+             (expect-pass "empty tag inside an element is skipped" test-empty-tag-inside-element)
+             (expect-pass "less-than starting content is text" test-stray-less-than-first)
+             (expect-pass "self-closing tag with attributes" test-self-closing-with-attributes)))
 
          (list
            "attributes"
@@ -193,6 +349,8 @@
              (expect-pass "single-quoted value" test-single-quoted-attribute)
              (expect-pass "unquoted value" test-unquoted-attribute)
              (expect-pass "valueless attribute" test-valueless-attribute)
+             (expect-pass "attribute value missing at end" test-attribute-value-missing-at-end)
+             (expect-pass "stray name character is skipped" test-name-less-character-skipped)
              (expect-pass "reference in a value" test-attribute-reference)))
 
          (list
@@ -205,13 +363,30 @@
              (expect-pass "omitted end tag" test-omitted-end-tag)
              (expect-pass "unclosed element" test-unclosed-element)
              (expect-pass "end tag closes an ancestor" test-end-tag-closes-ancestor)
-             (expect-pass "stray end tag" test-stray-end-tag)))
+             (expect-pass "stray end tag" test-stray-end-tag)
+             (expect-pass "top-level literal less-than is text" test-top-level-stray-less-than)
+             (expect-pass "top-level lone less-than is text" test-top-level-lone-less-than)
+             (expect-pass "top-level empty tag is skipped" test-top-level-empty-tag)
+             (expect-pass "top-level stray end tag is skipped" test-top-level-stray-end-tag)
+             (expect-pass "top-level declaration is skipped" test-top-level-declaration)
+             (expect-pass "top-level construct at end adds no node" test-top-level-construct-at-end)
+             (expect-pass "stray end tag at end of input is ignored" test-stray-end-tag-unterminated)
+             (expect-pass "child element may end its parent" test-child-element-last)
+             (expect-pass "attribute list at end of input" test-attributes-at-end)
+             (expect-pass "unquoted value at end of input" test-unquoted-value-at-end)
+             (expect-pass "unterminated tag is still a tag" test-unterminated-tag)
+             (expect-pass "content construct at end adds no child" test-content-construct-at-end)
+             (expect-pass "self-closing tag followed by text" test-self-closing-followed-by-text)
+             (expect-pass "slash then space ends the attributes" test-slash-then-space)))
 
          (list
            "raw-text"
            (list
              (expect-pass "script content is raw text" test-script-raw-text)
-             (expect-pass "style content is raw text" test-style-raw-text)))
+             (expect-pass "style content is raw text" test-style-raw-text)
+             (expect-pass "unterminated script is raw text" test-unterminated-script)
+             (expect-pass "empty script has no children" test-empty-script)
+             (expect-pass "unterminated empty script has no children" test-script-at-end)))
 
          (list
            "character-references"
@@ -220,7 +395,10 @@
              (expect-pass "named entity" test-named-entity)
              (expect-pass "decimal reference" test-decimal-reference)
              (expect-pass "hex reference" test-hex-reference)
+             (expect-pass "hex reference with letters" test-hex-reference-letters)
              (expect-pass "unknown entity is literal" test-unknown-entity)
+             (expect-pass "invalid decimal reference is literal" test-invalid-decimal-reference)
+             (expect-pass "invalid hex reference is literal" test-invalid-hex-reference)
              (expect-pass "bare ampersand is literal" test-bare-ampersand)))
 
          (list
@@ -228,7 +406,10 @@
            (list
              (expect-pass "comment" test-comment)
              (expect-pass "comment inside an element" test-comment-inside-element)
-             (expect-pass "doctype" test-doctype)))
+             (expect-pass "doctype" test-doctype)
+             (expect-pass "doctype at end of document" test-doctype-at-end)
+             (expect-pass "empty comment" test-empty-comment)
+             (expect-pass "unterminated comment" test-unterminated-comment)))
 
          (list
            "errors"
