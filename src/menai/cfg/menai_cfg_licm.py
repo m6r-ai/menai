@@ -386,6 +386,8 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             func, self_loops, back_edge_types, def_map, loop_block_ids,
         )
 
+        guards_by_value = self._guard_blocks_by_value(func)
+
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             if block.id not in loop_block_ids:
@@ -403,7 +405,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
                 if self._is_hoistable(
                     instr, invariant_ids, block.id, every_iteration_ids,
-                    hoist_target_id, dom, def_block_ids,
+                    hoist_target_id, dom, def_block_ids, guards_by_value,
                 ):
                     if isinstance(instr, MenaiCFGGuardInstr):
                         key = (instr.value.id, instr.expected_type)
@@ -590,6 +592,7 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         hoist_target_id: int,
         dom: dict[int, set[int]],
         def_block_ids: dict[int, int],
+        guards_by_value: dict[int, list[int]],
     ) -> bool:
         """
         Return True if an instruction should be hoisted into the preamble.
@@ -622,7 +625,10 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         if not isinstance(instr, _HOISTABLE_TYPES):
             return False
 
-        if self._instruction_may_raise(instr) and block_id not in every_iteration_ids:
+        if (
+            self._instruction_may_raise(instr, guards_by_value, dom, hoist_target_id)
+            and block_id not in every_iteration_ids
+        ):
             return False
 
         if isinstance(instr, MenaiCFGGuardInstr):
@@ -641,13 +647,23 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
 
         return result.id in invariant_ids
 
-    def _instruction_may_raise(self, instr: MenaiCFGInstr) -> bool:
+    def _instruction_may_raise(
+        self,
+        instr: MenaiCFGInstr,
+        guards_by_value: dict[int, list[int]],
+        dom: dict[int, set[int]],
+        hoist_target_id: int,
+    ) -> bool:
         """
         Return True if an instruction can raise a runtime error.
 
         A guard raises on a type mismatch.  A call or apply can raise
         unconditionally: it can reach `error`, or recurse into a function that
         raises.  A builtin raises when the registry classifies it as raising.
+        A builtin also raises when an operand's type guard sits in a block that
+        does not dominate the hoist target, since the guard would then no longer
+        precede the reader and the unchecked opcode would interpret the operand
+        as the guarded type.
         The remaining hoistable instructions (constants, and the container and
         closure constructors) are total.
         """
@@ -658,9 +674,33 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
             return True
 
         if isinstance(instr, MenaiCFGBuiltinInstr):
-            return MenaiBuiltinRegistry.builtin_may_raise(instr.op)
+            if MenaiBuiltinRegistry.builtin_may_raise(instr.op):
+                return True
+
+            for operand_id in value_ids_in_instr(instr):
+                for guard_block_id in guards_by_value.get(operand_id, ()):
+                    if guard_block_id not in dom[hoist_target_id]:
+                        return True
 
         return False
+
+    @staticmethod
+    def _guard_blocks_by_value(func: MenaiCFGFunction) -> dict[int, list[int]]:
+        """
+        Map each guarded value id to the blocks that hold a guard on it.
+
+        A guard establishes the operand's type for the readers that follow it,
+        and operational opcodes do not check their operand types, so a reader may
+        only be moved to a point that the guard still dominates.  The map lets
+        the hoist decision ask that question per operand.
+        """
+        result: dict[int, list[int]] = {}
+        for block in func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGGuardInstr):
+                    result.setdefault(instr.value.id, []).append(block.id)
+
+        return result
 
     def _build_def_map(
         self, func: MenaiCFGFunction,
