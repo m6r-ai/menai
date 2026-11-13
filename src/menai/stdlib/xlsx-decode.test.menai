@@ -80,6 +80,16 @@
       (minimal
        (create (dict "entries" (list (dict "name" "xl/workbook.xml" "content" workbook-empty-xml)) "meta" (dict))))
 
+      (without-sheets
+       (create
+         (dict "entries" (list
+                           (dict "name" "xl/workbook.xml"
+                                 "content" (string->bytes
+                                             (string-concat "<workbook xmlns=\""
+                                                            main-ns
+                                                            "\"><calcPr calcId=\"191029\"/></workbook>"))))
+               "meta" (dict))))
+
       (full
        (create
          (dict "entries" (list
@@ -228,6 +238,12 @@
       (test-sheets-empty
        (lambda ()
          (assert-equal (dict-get (decode minimal) "sheets") (list))))
+
+      ; A workbook that carries no <sheets> element at all yields an empty sheets
+      ; list, rather than a decode failure.
+      (test-sheets-element-absent
+       (lambda ()
+         (assert-equal (dict-get (decode without-sheets) "sheets") (list))))
 
       ; shared-strings is #none when the package has no sharedStrings part.
       (test-shared-strings-absent
@@ -406,6 +422,7 @@
            (list
              (expect-pass "workbook part is decoded" test-workbook-part)
              (expect-pass "sheets is empty when there is no sheet list" test-sheets-empty)
+             (expect-pass "sheets is empty when there is no sheets element" test-sheets-element-absent)
              (expect-pass "shared-strings is #none when absent" test-shared-strings-absent)
              (expect-pass "styles is #none when absent" test-styles-absent)
              (expect-pass "theme is #none when absent" test-theme-absent)
