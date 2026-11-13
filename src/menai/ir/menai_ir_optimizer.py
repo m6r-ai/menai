@@ -49,6 +49,32 @@ def _same_sequence(new: tuple, old: tuple) -> bool:
     return len(new) == len(old) and all(a is b for a, b in zip(new, old))
 
 
+def _fold_literal_test(
+    ir: MenaiIRCall,
+    arg_plans: tuple[MenaiIRExpr, ...],
+) -> MenaiIRExpr | None:
+    """
+    Fold a test whose answer its argument's shape decides, or return None.
+
+    `list-null?` is the case that matters here: the inliner binds a variadic rest
+    parameter to a list literal, so a body that branches on "were there extra
+    arguments" carries a test the AST constant folder never sees, because the
+    literal only appears once inlining has run.  Folding it here lets the branch
+    collapse and takes the untaken arm with it.
+    """
+    if not ir.is_builtin or ir.builtin_name != 'list-null?' or len(arg_plans) != 1:
+        return None
+
+    argument = arg_plans[0]
+    if isinstance(argument, MenaiIREmptyList):
+        return MenaiIRConstant(value=MenaiBoolean(value=True))
+
+    if isinstance(argument, MenaiIRBuildList):
+        return MenaiIRConstant(value=MenaiBoolean(value=not argument.element_plans))
+
+    return None
+
+
 class MenaiIROptimizer(MenaiIROptimizationPass):
     """
     IR-level optimization pass.
@@ -487,10 +513,15 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
 
         return refs
 
-    def _opt_call(self, ir: MenaiIRCall, frame_stack: list[int]) -> MenaiIRCall:
-        """Optimize the function and argument plans of a call."""
+    def _opt_call(self, ir: MenaiIRCall, frame_stack: list[int]) -> MenaiIRExpr:
+        """Optimize the function and argument plans of a call, folding a literal test."""
         func_plan = self._opt(ir.func_plan, frame_stack)
         arg_plans = tuple(self._opt(a, frame_stack) for a in ir.arg_plans)
+        folded = _fold_literal_test(ir, arg_plans)
+        if folded is not None:
+            self._eliminations += 1
+            return folded
+
         if func_plan is ir.func_plan and _same_sequence(arg_plans, ir.arg_plans):
             return ir
 

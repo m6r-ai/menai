@@ -521,6 +521,21 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
         return True
 
+    @staticmethod
+    def _rest_plan(rest_args: tuple[MenaiIRExpr, ...]) -> MenaiIRExpr:
+        """
+        Return the plan binding a variadic rest parameter, or a literal empty list.
+
+        A call that supplies no extra arguments packs an empty list, and the empty
+        list literal is what lets a test on the rest parameter fold: `list-null?`
+        applied to it is decided at compile time, so a body that branches on "were
+        there extra arguments" loses the branch it cannot take.
+        """
+        if not rest_args:
+            return MenaiIREmptyList()
+
+        return MenaiIRBuildList(element_plans=rest_args)
+
     def _inline(
         self,
         target: MenaiIRLambda,
@@ -553,7 +568,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             rest_args = arg_plans[min_arity:]
             param_map[target.params[min_arity]] = self._bind_argument(
                 target.params[min_arity],
-                MenaiIRBuildList(element_plans=tuple(rest_args)),
+                self._rest_plan(rest_args),
                 target.body_plan,
                 captured_bindings,
             )
@@ -604,7 +619,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         plan is a reference to that binding.  Any other argument is returned
         unchanged.
         """
-        if isinstance(arg_plan, (MenaiIRVariable, MenaiIRConstant)):
+        if isinstance(arg_plan, (MenaiIRVariable, MenaiIRConstant, MenaiIREmptyList)):
             return arg_plan
 
         if _count_param_uses(body_plan, param, set()) <= 1:
