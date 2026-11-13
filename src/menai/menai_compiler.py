@@ -31,6 +31,7 @@ from menai.cfg.menai_cfg_interproc_type_analysis import MenaiCFGInterprocTypeAna
 from menai.cfg.menai_cfg_cse import MenaiCFGCSE
 from menai.cfg.menai_cfg_licm import MenaiCFGLICM
 from menai.cfg.menai_cfg_loop_rotation import MenaiCFGLoopRotation
+from menai.cfg.menai_cfg_merge_exit_blocks import MenaiCFGMergeExitBlocks
 from menai.cfg.menai_cfg_order_exception_blocks import MenaiCFGOrderExceptionBlocks
 from menai.cfg.menai_cfg_predicate_fold import MenaiCFGPredicateFold
 from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
@@ -122,6 +123,7 @@ class MenaiCompiler:
             MenaiCFGSchedule(),
             MenaiCFGDeadCaptures(),
             MenaiCFGOrderExceptionBlocks(),
+            MenaiCFGMergeExitBlocks(),
         ]
         self._vcode_builder = MenaiVCodeBuilder()
         self._bytecode_builder = MenaiBytecodeBuilder()
