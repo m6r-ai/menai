@@ -195,10 +195,10 @@ class _RecordingInliner(MenaiIRInliner):
         super().__init__()
         self._candidates = candidates
 
-    def _is_inlineable(self, target, func_plan, arg_plans):
+    def _is_inlineable(self, target, func_plan, arg_plans, allow_large=False):
         """Record the candidate, then delegate to the base check."""
         self._candidates.append(target)
-        return super()._is_inlineable(target, func_plan, arg_plans)
+        return super()._is_inlineable(target, func_plan, arg_plans, allow_large=allow_large)
 
 
 class TestLocalLambdaInlining:
@@ -257,10 +257,38 @@ class TestLocalLambdaInlining:
 
         assert not changed
 
-    def test_large_lambda_not_inlined(self):
-        """A lambda with a body exceeding the node threshold should not be inlined."""
+    def test_large_single_use_lambda_inlined(self):
+        """
+        A large lambda read at one call site with a trivial argument is inlined.
+
+        One reader means one copy, and a parameter bound to a register read costs
+        nothing to duplicate, so the size budget buys nothing here.
+        """
         deep = "(integer+ x " * 25 + "0" + ")" * 25
         ir = _build_ir(f"(let ((f (lambda (x) {deep}))) (f 5))")
+        new_ir, changed = _inline(ir)
+
+        assert changed
+        assert _count_calls_to(new_ir, 'f') == 0
+
+    def test_large_lambda_with_computed_argument_not_inlined(self):
+        """
+        A large lambda called with a computed argument is left alone.
+
+        The body reads its parameter more than once, so substituting a computed
+        argument would recompute it at every use.  That is the trade the size
+        budget exists to refuse.
+        """
+        deep = "(integer+ x " * 25 + "0" + ")" * 25
+        ir = _build_ir(f"(lambda (y) (let ((f (lambda (x) {deep}))) (f (integer+ 1 y))))")
+        new_ir, changed = _inline(ir)
+
+        assert not changed
+
+    def test_large_multi_use_lambda_not_inlined(self):
+        """A large lambda read at two call sites is not inlined: it would be copied."""
+        deep = "(integer+ x " * 25 + "0" + ")" * 25
+        ir = _build_ir(f"(let ((f (lambda (x) {deep}))) (integer+ (f 5) (f 6)))")
         new_ir, changed = _inline(ir)
 
         assert not changed

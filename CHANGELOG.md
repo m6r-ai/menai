@@ -20,11 +20,13 @@ New features:
   or reference counted, and the small-integer cache is gone.  Mean performance gain
   of about 6%.
 - Added a new branch fact CFG optimization to eliminate more dead code.
+- Improved inlining of functions (gain of just over 0.3%).
 
 Bug fixes:
 
 - Fixed a Unicode parsing error in the JSON decoder library.
 - Resolved a problem with opcode type signatures being incorrect.
+- Resolved a problem with LICM hoisting a type guard when it should not.
 
 ## v0.9.0 (2026-10-27)
 

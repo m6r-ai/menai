@@ -911,8 +911,12 @@ class TestInvarianceThroughIndexedStructGet:
             i for i, instr in enumerate(solved.instructions)
             if unpack_instruction(instr).opcode == int(Opcode.ASSERT_INTEGER)
         ]
-        assert guard_indices, "the ASSERT_INTEGER guard must be present"
-        assert any(gi < target for gi in guard_indices), (
+        # A guard on a loop-invariant struct field must not re-execute on every
+        # iteration, so no guard may sit at or after the loop entry.  The guard may
+        # also be absent: when inlining makes the struct's type known, guard
+        # insertion suppresses it, which satisfies the property more cheaply than
+        # hoisting it.
+        assert all(gi < target for gi in guard_indices), (
             "a guard on a value derived from a loop-invariant struct field "
-            "must be hoisted into the preamble"
+            "must be hoisted into the preamble, or not needed at all"
         )

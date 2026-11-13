@@ -23,7 +23,13 @@ The pass resolves two kinds of call target:
 
 A lambda is only inlined when:
 
-- Its body node count is at or below MAX_INLINE_NODES.
+- Its body node count is at or below MAX_INLINE_NODES, unless the binding is read
+  exactly once in the program and every argument is a variable or a constant.  One
+  reader means one copy, so the budget buys nothing; and a parameter bound to a
+  register read or constant costs nothing to duplicate, so the substitution cannot
+  recompute work.  Where either condition fails the budget applies, because a
+  large body copied into several call sites is a size regression and an expression
+  substituted for a parameter used repeatedly is recomputed at every use.
 - It is not self-recursive.  A lambda whose binding name appears in its own
   sibling captures is rejected: inlining it would reintroduce the call the
   substitution just removed, and the pass would not terminate.  The test is
@@ -111,6 +117,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def __init__(self) -> None:
         self._inlined = 0
         self._temp_counter = 0
+        self._single_use_names: frozenset[str] = frozenset()
 
     def _gen_temp(self) -> str:
         """
@@ -130,6 +137,13 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         new_ir = ir
         while True:
             prev = self._inlined
+            # Recomputed each round: inlining removes the reference it replaced, so
+            # a binding that was single-use can disappear, and a binding inside a
+            # newly inlined body has to be counted before it is considered.
+            self._single_use_names = frozenset(
+                name for name, count in _variable_use_counts(new_ir).items() if count == 1
+            )
+
             new_ir = self._opt(new_ir, scope_stack=[{}])
             if self._inlined == prev:
                 break
@@ -346,8 +360,24 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         """Try to inline a call site; fall back to optimizing arguments."""
         target = None if ir.is_builtin else self._resolve_target(ir.func_plan, scope_stack)
 
+        single_use = (
+            isinstance(ir.func_plan, MenaiIRVariable)
+            and ir.func_plan.name in self._single_use_names
+            # Only waive the size budget when substituting the arguments cannot
+            # duplicate work.  A parameter used more than once in the body becomes
+            # one copy of its argument per use, so an argument that is not a plain
+            # register read or constant would be recomputed at every use.  That is
+            # the trade the size budget exists to refuse: bmp-decode and
+            # zlib-decompress each paid roughly twenty thousand extra arithmetic
+            # instructions per call site for it.
+            and all(
+                isinstance(arg, (MenaiIRVariable, MenaiIRConstant))
+                for arg in ir.arg_plans
+            )
+        )
+
         if target is not None and self._is_inlineable(
-            target, ir.func_plan, ir.arg_plans
+            target, ir.func_plan, ir.arg_plans, allow_large=single_use
         ):
             inlined = self._inline(target, ir.arg_plans, ir.is_tail_call)
             self._inlined += 1
@@ -421,8 +451,15 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         target: MenaiIRLambda,
         func_plan: MenaiIRExpr,
         arg_plans: tuple[MenaiIRExpr, ...],
+        allow_large: bool = False,
     ) -> bool:
-        """Check whether a lambda is eligible for inlining."""
+        """
+        Check whether a lambda is eligible for inlining.
+
+        `allow_large` waives the body-size budget.  The caller sets it only for a
+        binding read once whose arguments are all register reads or constants, where
+        inlining duplicates neither code nor work.
+        """
         arg_count = len(arg_plans)
 
         # Cheap field checks first, so a candidate that fails one of them is
@@ -461,7 +498,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         except RecursionError:
             return False
 
-        if node_count > MAX_INLINE_NODES:
+        if node_count > MAX_INLINE_NODES and not allow_large:
             return False
 
         if _has_captures_of_params(target.body_plan, set(target.params)):
@@ -1086,6 +1123,7 @@ def _count_param_uses(ir: MenaiIRExpr, param: str, shadowed: set[str]) -> int:
     raise TypeError(f"_count_param_uses: unhandled IR node type {type(ir).__name__}")
 
 
+
 def _count_nodes(ir: MenaiIRExpr) -> int:
     """Count the number of IR nodes in a tree."""
     if isinstance(ir, MenaiIRConstant):
@@ -1292,3 +1330,92 @@ def _substitute_let(
         body_plan=opt_body,
         in_tail_position=ir.in_tail_position,
     )
+
+
+def _variable_use_counts(ir: MenaiIRExpr) -> dict[str, int]:
+    """
+    Count how many times each name is referenced by a variable node in `ir`.
+
+    Every variable node counts, including those inside nested lambdas and body
+    bindings, and no shadowing is resolved, so the count is an upper bound on how
+    often a binding is read.  Overcounting only makes the caller more
+    conservative: a name whose count is one is genuinely referenced once.
+    """
+    counts: dict[str, int] = {}
+
+    def walk(node: MenaiIRExpr) -> None:
+        if isinstance(node, MenaiIRVariable):
+            counts[node.name] = counts.get(node.name, 0) + 1
+            return
+
+        if isinstance(node, (MenaiIRConstant, MenaiIRQuote, MenaiIREmptyList, MenaiIRBuildEnum)):
+            return
+
+        if isinstance(node, MenaiIRError):
+            walk(node.message)
+            return
+
+        if isinstance(node, MenaiIRIf):
+            walk(node.condition_plan)
+            walk(node.then_plan)
+            walk(node.else_plan)
+            return
+
+        if isinstance(node, (MenaiIRLet, MenaiIRLetrec)):
+            for _, value in node.bindings:
+                walk(value)
+
+            walk(node.body_plan)
+            return
+
+        if isinstance(node, MenaiIRLambda):
+            walk(node.body_plan)
+            return
+
+        if isinstance(node, MenaiIRCall):
+            walk(node.func_plan)
+            for arg in node.arg_plans:
+                walk(arg)
+
+            return
+
+        if isinstance(node, MenaiIRReturn):
+            walk(node.value_plan)
+            return
+
+        if isinstance(node, (MenaiIRBuildList, MenaiIRBuildVector, MenaiIRBuildSet)):
+            for element in node.element_plans:
+                walk(element)
+
+            return
+
+        if isinstance(node, MenaiIRBuildDict):
+            for key, value in node.pair_plans:
+                walk(key)
+                walk(value)
+
+            return
+
+        if isinstance(node, MenaiIRBuildStruct):
+            for field in node.field_plans:
+                walk(field)
+
+            return
+
+        if isinstance(node, MenaiIRLoop):
+            for init in node.init_plans:
+                walk(init)
+
+            walk(node.body_plan)
+            return
+
+        if isinstance(node, MenaiIRRecur):
+            for arg in node.arg_plans:
+                walk(arg)
+
+            return
+
+        raise TypeError(f"MenaiIRInliner: unhandled IR node type {type(node).__name__}")
+
+    walk(ir)
+    return counts
