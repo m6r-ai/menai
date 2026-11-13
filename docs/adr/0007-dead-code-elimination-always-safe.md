@@ -37,9 +37,10 @@ complexity and in runtime.
 
 ### Negative
 
-- This invariant is a direct consequence of Menai's purity (see blueprint.md,
-  "Purity — no side effects"). If Menai were ever to gain side effects, this
-  invariant would break and all optimisation passes relying on it would need to
-  be revisited.
+- This invariant is a direct consequence of Menai's purity: the language has no
+  I/O, no mutation and no state, so evaluation cannot observably do anything
+  except produce a value. If Menai were ever to gain side effects, this invariant
+  would break and all optimisation passes relying on it would need to be
+  revisited.
 - This invariant spans all optimisation passes, making it easy to violate
   accidentally if the language's purity guarantee is weakened.

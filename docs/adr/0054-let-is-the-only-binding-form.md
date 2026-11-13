@@ -303,9 +303,9 @@ correct model.
   order the analyser computes.
 - The scoping and the evaluation strategy pull in different directions, and the
   form is easy to describe wrongly. `let` is `letrec`-scoped but not
-  `letrec`-ordered, and both the help text and AGENTS.md initially described it
-  as parallel — the opposite of the truth. Documentation for this form needs to
-  state the scoping rule and the ordering rule separately.
+  `letrec`-ordered, and both the help text and the agent guidance initially
+  described it as parallel — the opposite of the truth. Documentation for this
+  form needs to state the scoping rule and the ordering rule separately.
 - The `$let`/`$letrec` distinction is a compiler-internal concept that every pass
   touching binding nodes must respect. Passes that inspect a binding node must
   handle both, and the desugarer must emit the correct one for each group it

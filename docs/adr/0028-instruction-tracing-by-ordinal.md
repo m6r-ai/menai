@@ -114,8 +114,9 @@ would dominate the cost of execution.
 
 - The Python walk and the C ordinal assignment are two implementations of the
   same ordering and must agree exactly. If they drift, counts are silently
-  attributed to the wrong instructions. The agreement is covered by tests and
-  recorded as an architectural invariant in AGENTS.md.
+  attributed to the wrong instructions. A change to the traversal order on one
+  side must be mirrored on the other, and the agreement is covered by tests
+  rather than by the type system.
 - The trace buffer is sized to one converted tree at a time, so a single VM
   instance traces one program at a time. This matches the existing opcode
   profiler's behaviour.

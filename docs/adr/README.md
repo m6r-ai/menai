@@ -6,8 +6,11 @@ were considered, and the consequences.
 
 ## Relationship to other documents
 
-- **AGENTS.md** — contains short summaries of each decision as guardrails for
-  contributors. Each summary links to the full ADR here.
+- **AGENTS.md** — the root file, and the `AGENTS.md` files under `src/`, contain
+  short summaries of each decision as guardrails for contributors. The summaries
+  are split by area so that only the relevant ones are loaded when working in a
+  directory, and each links to the full ADR here. The link is one-way: the
+  guidance quotes the ADR, never the reverse.
 - **blueprint.md** — captures the project's purpose and core principles. ADRs
   record specific decisions that follow from those principles.
 - **CONTRIBUTING.md** — points contributors here for design context before
@@ -59,6 +62,11 @@ What costs, risks, or constraints does this decision impose?
 - An ADR records **context, alternatives, and reasoning** — the things that are
   not in the code. Do not reproduce implementation details that can be read from
   the source.
+- An ADR must be **self-contained**. It may cite another ADR, the source, or an
+  external specification, but never an `AGENTS.md` file or any other document
+  that is expected to change: the ADR outlives them. If a rule needs to be
+  restated in guidance, restate it there and link to the ADR, rather than
+  pointing the ADR at the guidance.
 - An ADR is written when the decision is **settled**, not while it is still under
   discussion. Use a working document for proposals, then create the ADR once the
   approach is confirmed.
@@ -129,3 +137,5 @@ What costs, risks, or constraints does this decision impose?
 | [0058](0058-parameter-callee-sets.md) | Function-valued parameters resolve to their callee may-sets | Accepted |
 | [0059](0059-inliner-guards-are-intrinsic-to-the-lambda.md) | The inliner's guards are intrinsic to the lambda | Accepted |
 | [0060](0060-immediate-values-in-tagged-words.md) | Values that fit in a word are immediates, not heap objects | Accepted |
+| [0061](0061-type-signature-table-is-the-builtin-contract.md) | The type-signature table is the builtins' operand and result contract | Accepted |
+| [0062](0062-name-resolution-respects-lexical-shadowing.md) | Name-based lowering and validation must respect lexical shadowing | Accepted |

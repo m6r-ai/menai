@@ -140,8 +140,11 @@ per type rather than all at once. NaN boxing would supersede this ADR, not exten
   tag-tested before it is dereferenced.** Reading a header, testing `ob_type`,
   incrementing `ob_refcnt`, or casting to a `MenaiFoo *` on an immediate is not a
   wrong answer, it is a fault. This is easy to overlook in a new opcode or a new
-  builtin, and the resulting crash is far from the code that caused it. The
-  choke points that must each carry the test are documented in `AGENTS.md`.
+  builtin, and the resulting crash is far from the code that caused it. Every
+  place that turns a value into a type or a header must carry the test: the
+  retain/release pair, the `IS_MENAI_*` tests, the value free/hash/equal
+  dispatch, the bridge conversion to a Python value, and the collector's marking
+  and edge-breaking.
 - The tag is part of the interface between the C VM and its embedding bridge.
   Tagged words must never be handed out as pointers, so every conversion across
   that boundary has to go through the tag-aware dispatch rather than the header.

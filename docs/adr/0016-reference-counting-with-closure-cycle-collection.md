@@ -47,8 +47,8 @@ and the execute result, then sweeps unreachable closures in four strictly
 separated phases: mark, partition, break internal edges (bare refcount
 decrements only), and free (destruction only). Closures with external
 references that survive edge-breaking (refcnt > 0) are returned to the registry
-rather than freed. See the architectural invariant in `AGENTS.md` for the
-refcnt guard constraint.
+rather than freed, because the free phase destroys only a closure whose refcount
+reached zero after edge-breaking.
 
 ## Alternatives considered
 

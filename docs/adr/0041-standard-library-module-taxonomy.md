@@ -166,8 +166,8 @@ operation.
 A module's own bindings shadow same-named builtins and prelude functions throughout its
 body, so a module and export name must avoid the names of the builtins and prelude
 functions the module itself uses. This is a general constraint on the whole vocabulary,
-not a special case. See
-[ADR-0026](0026-single-builtin-table.md) and the corresponding invariant in `AGENTS.md`.
+not a special case. See [ADR-0026](0026-single-builtin-table.md) for the registry the
+shadowed names come from.
 
 This constraint is why the container read operation is `entries` and not `list`: `list`
 is the natural word, but it is a prelude function the ZIP reader needs, so it is unusable

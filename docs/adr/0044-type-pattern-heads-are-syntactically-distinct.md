@@ -51,25 +51,21 @@ quoted symbol is not a valid list sub-pattern, so that shape can only be an enum
 pattern — but when the head does not resolve to an enum type in scope the desugarer
 silently falls back to treating the pattern as a list pattern, which cannot match an
 enum value. Every arm then falls through to `_`, and the program compiles and runs and
-produces wrong results with no diagnostic. This is the failure mode AGENTS.md already
-records under "Modules export named bindings; namespaces are second-class":
+produces wrong results with no diagnostic.
 
-> If a type pattern head is not renamed, the desugarer can no longer resolve it to the
-> type binding and silently falls back to treating the pattern as a list destructuring
-> pattern. That is not a local failure: a list pattern compiles to a
-> `list?`/`list-length`/`list-nth` test chain, so a `match` over an enum degrades from a
-> jump table into a long comparison chain.
-
-The invariant is documented, but the failure it describes is silently accepted rather
-than rejected.
+The same degradation follows a type pattern head that is not renamed along with the
+module's bindings, which is the renamer's constraint; see
+[ADR-0023](0023-second-class-module-namespaces.md). The desugarer can no longer resolve
+the head, so it falls back to a list destructuring pattern. That is not a local failure
+either — the pattern compiles to a `list?`/`list-length`/`list-nth` test chain, so a
+`match` over an enum degrades from a jump table into a long comparison chain. In both
+cases the failure is silent rather than rejected.
 
 The common cause is that a type pattern head is written as a bare symbol and is
-resolved by name. Menai already applies the opposite principle elsewhere. AGENTS.md
-records, of member access:
-
-> Member access is a disjoint form: the shape of the form decides its meaning.
-
-Pattern heads are the one place that principle is not applied.
+resolved by name. Menai already applies the opposite principle to member access:
+member access is a disjoint form, so the shape of the form decides its meaning
+(see [ADR-0023](0023-second-class-module-namespaces.md)). Pattern heads are the one
+place that principle is not applied.
 
 ## Decision
 
@@ -178,7 +174,8 @@ in declaration and construction.
 ### Positive
 
 - A pattern's meaning is decided by its form, not by what types are in scope. This is
-  the principle AGENTS.md already states for member access, applied to pattern heads.
+  the principle already applied to member access in
+  [ADR-0023](0023-second-class-module-namespaces.md), applied here to pattern heads.
 - The struct/list ambiguity is removed, including the nested case that currently raises
   a runtime type error.
 - The enum silent fallback is removed: an unresolvable type head is a compile-time error
@@ -192,8 +189,8 @@ in declaration and construction.
 
 - This is a breaking change to every existing struct and enum pattern in the standard
   library, the test suites, the benchmarks, and the documentation. The change is a
-  repo-wide text sweep, not a local edit; see the module-rename invariant in AGENTS.md
-  for the sweep discipline.
+  repo-wide text sweep, not a local edit; see
+  [ADR-0038](0038-standard-library-packaging-and-location.md) for the sweep discipline.
 - A pattern head is now one element longer, and the reader must know that `:` is a
   reserved head symbol.
 - ADR-0043's statement that the surface syntax is forward-compatible with payloads

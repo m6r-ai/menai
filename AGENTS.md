@@ -2,25 +2,30 @@
 
 ## Purpose
 
-This document exists to convey design intent, non-obvious invariants, and architectural
-decisions that cannot be read directly from the code. It is a guide for AI agents
-working on this codebase.
+This document conveys design intent, non-obvious invariants and decisions that cannot be
+read directly from the code. It is a guide for AI agents working on this codebase.
 
 ### What this document is NOT
 
-This document does NOT describe what the code currently does in detail. It does not
-reproduce pipeline diagrams, file-by-file role tables, pass-order lists, or any other
-information that is already expressed clearly in the source. That kind of content becomes
-a maintenance liability: it drifts out of date as the code evolves and then actively
-misleads the next reader.
+Do not add derived technical descriptions here: no pipeline diagrams, file-by-file role
+tables, pass-order lists, or anything else the source already states clearly. That content
+drifts out of date and then actively misleads. If you want to document how something works,
+put it in the source file itself (module, class or function docstring) where it is read
+alongside the code it describes.
 
-If you update the code, DO NOT add derived technical descriptions here. If you feel
-the urge to document how something works, put that documentation in the source file itself
-(module docstring, class docstring, inline comment) where it will be read alongside
-the code it describes and is more likely to be kept correct.
+The guardrails are split by area so that only the relevant part loads when you work in a
+directory:
 
-This document should only grow when there is a genuine design decision, constraint, or
-non-obvious invariant to record that cannot be expressed in the code itself.
+| Area | File |
+|------|------|
+| compiler core: AST, desugaring, IR, CFG, type analysis, builtins, modules | `src/menai/AGENTS.md` |
+| C VM: values, allocation, GC, errors, debug builds | `src/menai/vm/AGENTS.md` |
+| standard library `.menai` modules | `src/menai/stdlib/AGENTS.md` |
+| full reasoning behind each decision | `docs/adr/` |
+
+Add a decision here only when it is a genuine design constraint or non-obvious invariant
+that cannot be expressed in the code. Put it in the nearest directory that contains
+everything it constrains; use this file only for something that holds across packages.
 
 ## Where to start
 
@@ -38,6 +43,10 @@ non-obvious invariant to record that cannot be expressed in the code itself.
   AI-maintained and kept consistent with `menai_help.py`.
 - Individual passes: each source file has a module-level docstring that describes
   what that pass does, its invariants, and its position in the pipeline.
+- Architecture decisions: `docs/adr/README.md` defines the format and the principles. An
+  ADR is a permanent record, so it must be self-contained — it may cite another ADR, the
+  source, or an external specification, but never an `AGENTS.md` file or any other
+  document that is expected to change. The guidance quotes the ADR, never the reverse.
 
 ## APIs
 
@@ -75,35 +84,27 @@ If you need to use an API read the source code to understand it first.
 
 The project installs a set of console scripts (declared in `pyproject.toml`). They are
 available on the PATH once the venv is active. Do not guess their names or invoke the
-underlying modules with `python -m`; use the console scripts.
+underlying modules with `python -m`; use the console scripts, and use `--help` for the
+full flag list rather than assuming what a flag is called.
 
-- `menai-test <path>...` — discovers and runs `*.test.menai` suites. Takes files or
-  directories. `--filter TEXT` selects tests by name; `--verbose` shows passing tests too;
-  `--coverage` reports cumulative bytecode instruction coverage across all selected files;
-  `--function-coverage` reports, per file, the coverage of the module that file tests,
-  separating reachable instructions the tests missed from dead bytecode, and ends a
-  multi-file run with a cumulative report of every module and the worst gap functions;
-  `--width N` clips output lines to N columns.
-  This is the tool for running the standard library module tests:
+- `menai-test <path>...` — discovers and runs `*.test.menai` suites from files or
+  directories. This is the tool for running the standard library module tests:
   ```bash
   menai-test src/menai/stdlib/                          # all module tests
   menai-test src/menai/stdlib/json-decode.test.menai    # a single suite
   ```
 - `menai-eval <file>` — compiles and evaluates a `.menai` file (or an expression from
-  stdin) and prints the result. `--cprofile` profiles the compiler; `--profile`,
-  `--opcodes`, and `--annotate` profile VM execution (per-function, per-opcode, and
-  annotated disassembly respectively). `--coverage` reports bytecode instruction coverage;
-  `--width N` clips report lines to N columns.
-- `menai-format <file>...` — formats Menai source. `--check` exits non-zero if a
-  file does not match the canonical style.
+  stdin) and prints the result.
+- `menai-format <file>...` — formats Menai source. `--check` exits non-zero if a file does
+  not match the canonical style.
 - `menai-disassemble <file>` — compiles and prints annotated bytecode disassembly.
-  `--width N` clips output lines to N columns.
-- `menai-benchmark` — runs the performance benchmark suites. `--profile`, `--opcodes`,
-  `--annotate`, and `--coverage` profile VM execution; `--coverage` reports cumulative
-  bytecode coverage across suites and cases. `--width N` clips report lines to N columns.
-- `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps. `--cprofile`
-  profiles the pipeline engine with Python's cProfile; `--profile`, `--opcodes`, and
-  `--annotate` profile VM execution. `--width N` clips output lines to N columns.
+- `menai-benchmark` — runs the performance benchmark suites.
+- `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps.
+
+`menai-eval`, `menai-benchmark` and `menai-pipeline` share profiling and coverage flags:
+`--profile`, `--opcodes` and `--annotate` profile VM execution per function, per opcode and
+as annotated disassembly, and `--coverage` reports bytecode instruction coverage. Most
+report-producing tools accept `--width N` to clip lines to N columns.
 
 ## Code quality
 
@@ -111,7 +112,9 @@ underlying modules with `python -m`; use the console scripts.
   ```bash
   source venv/bin/activate && python -m tools.code_checker
   ```
-  All checks must pass cleanly before the work is done.
+  All checks must pass cleanly before the work is done. It runs mypy, pylint, and the style
+  checker described under Code generation. Contributors get the same rules from
+  `CONTRIBUTING.md`; keep the two consistent when a rule changes.
 
 ## Code generation
 
@@ -142,37 +145,6 @@ underlying modules with `python -m`; use the console scripts.
 - These and other style rules are enforced by the style checker pylint plugin (`tools/style_checker/`), which runs
   automatically as part of `python -m tools.code_checker`.
 
-### Module header comments
-
-A `.menai` module opens with a single comment block, then the code.  The block
-carries what applies to the module as a whole: a one-line summary, any framing,
-the shape of the values the module produces or consumes, and any module-wide
-constraints (supported inputs, what raises).  Keep it to things a caller or
-maintainer needs and cannot read directly off the code.
-
-The contract for each export belongs next to the export, as a comment immediately
-above its binding, not in the top block.  Documenting an export in two places
-invites the two copies to disagree.  When a module exports data with no enclosing
-lambda (a table, a constant), comment each exported binding individually.
-
-The result looks like this:
-
-```menai
-; module-name — one-line summary.
-;
-; Module-wide framing: what it is, the shape of the values it works with, and
-; any constraints.
-
-(let
-  ((helper ...)
-
-   ; What this export does, its arguments, and what it raises.
-   (exported-thing
-    (lambda ...)))
-
-  (export exported-thing))
-```
-
 ## YAGNI (You Aren't Gonna Need It)
 
 This project strongly follows the YAGNI principle.  If there is no clear reason for a feature, method, or helper to exist,
@@ -188,10 +160,7 @@ it should not be added.
 
 ```text
 menai/
-├── docs/                       # language manual (human + AI readable)
-├── pyproject.toml              # Python package configuration (setuptools backend)
-├── setup.py                    # C VM extension build (platform-specific compile flags)
-├── .github/workflows/          # CI (build+test on push) and release (cibuildwheel on tag)
+├── docs/                       # language manual (human + AI readable) and docs/adr/
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
 │   │   └── stdlib/             # standard library (.menai files)
@@ -203,1038 +172,131 @@ menai/
 │   ├── menai_render/           # shared bytecode rendering and code-object walk
 │   ├── menai_trace/            # VM instruction and call trace resolution and rendering
 │   └── menai_test/             # test runner for *.test.menai files
-└── tests/
-    ├── src/
-    │   ├── menai/              # compiler core tests
-    │   │   └── stdlib/         # standard library module tests
-    │   ├── menai_eval/         # evaluator tests
-    │   ├── menai_format/       # formatter tests
-    │   └── menai_pipeline/     # pipeline runner tests
-    └── tools/
-        └── style_checker/      # style checker tests
+├── tests/                      # mirrors src/
+└── tools/                      # style_checker/
 ```
 
-The `tests/` tree mirrors the source tree: a test for code under `src/<name>/`
-lives under `tests/src/<name>/`, and a test for code under `tools/<name>/` lives
-under `tests/tools/<name>/`. The standard library is package data of the `menai`
-package (`src/menai/stdlib/`), so its tests live under `tests/src/menai/stdlib/`.
-
-A test may keep a private copy of a `.menai` module next to itself rather than
-importing one from `src/`. `test_rubiks_cube_functions.py` does this: its
-`rubiks_cube.menai` is frozen in the original string-move form because that form
-is what exposed the compiler bug the suite guards against, while the benchmark
-suite's copy has since moved to enum moves. The copy is not a duplicate to be
-deduplicated — pointing the test at the benchmark copy would destroy the
-regression it exists to catch. A test that pins a representation for a reason
-must say so in its own header, as that copy does.
-
-## Architectural invariants
-
-These are constraints that must hold across the whole compiler. They are recorded here
-because they span multiple files and are easy to violate accidentally.
-
-### The IR tree is immutable — passes return new trees
-
-No IR optimisation pass may mutate its input tree in place. Each pass receives an IR tree
-and returns a new one, along with a boolean indicating whether anything changed. The
-pass manager uses that flag to drive the fixed-point loop.
-
-See [ADR-0005](docs/adr/0005-ir-tree-immutability.md).
-
-The reason: immutability makes passes composable and makes bugs easier to isolate. A pass
-that mutates its input can corrupt the tree in ways that only manifest later in an
-unrelated pass.
-
-### The IR inliner does not inline recursive or mutually-recursive calls
-
-The IR inliner refuses to inline a self-recursive lambda: one whose `binding_name`
-appears in its own `sibling_free_vars`. Inlining a self-recursive body would
-reintroduce the call the substitution just removed, and the pass's fixed-point loop
-would not terminate.
-
-The guard must be intrinsic to the lambda, never keyed on the walk position. An
-earlier version keyed on the enclosing `$letrec` group's binding names, which are in
-scope only while walking inside that group. A call site is re-walked with the call
-site's group names after a body has been inlined, so a self-call inside a freshly
-inlined body was not recognised and would have been inlined again without bound. That
-version was unsound, and it was unreachable only because the capture rule of the time
-happened to reject every lambda with sibling captures.
-
-Mutual recursion is covered by the sibling-capture rule instead. A direct lambda
-application (`((lambda ...) arg)`) is exempt.
-
-See [ADR-0059](docs/adr/0059-inliner-guards-are-intrinsic-to-the-lambda.md),
-which supersedes [ADR-0031](docs/adr/0031-inliner-does-not-inline-recursive-calls.md).
-
-### The inliner recomputes capture lists from the rewritten body
-
-The inliner may substitute a lambda body that reads names captured from outside
-it. Inlining such a body into a caller makes those names free in the caller too,
-and the downstream closure conversion binds a lambda's names *only* from its
-capture lists. A name the body reads but the lists omit is unresolvable, so the
-inliner rebuilds each lambda's `sibling_free_vars` and `outer_free_vars` from its
-optimised body rather than copying the originals.
-
-The sibling/outer split is decided by the `$letrec` group the lambda belongs to,
-so the walk must thread that group's binding names down to its binding values.
-Every lambda body resets them to empty, because a lambda body is not inside the
-lambda's own group.
-
-This is what makes it sound to inline a lambda that has outer captures. An
-earlier rule rejected any lambda bound elsewhere that had *any* captures. It
-could not simply be relaxed to "reject only captures that do not resolve to the
-same binding at the call site", because the inliner's `scope_stack` is a
-name-based view of the IR tree while the CFG builder gives each lambda a
-function whose only bindings are its parameters plus the free variables it
-*declares*. A name the inliner can see is therefore not necessarily a name the
-enclosing function captures, and inlining a body that reads it produced an
-unresolved variable in the CFG builder. Recomputing the lists is what closes
-that gap; do not revisit the identity-based rule without first addressing
-closure conversion.
-
-`_free_vars` is load-bearing for this and must stay exact. It was written for a
-check that only ever caused a rejection, where an over-approximation cost a
-missed optimisation. It now drives capture lists, so a name it wrongly reports
-becomes a spurious capture, and a name it misses becomes an unresolvable one.
-In particular a builtin call's function position names an opcode, not a binding,
-and must not be reported.
-
-See [ADR-0059](docs/adr/0059-inliner-guards-are-intrinsic-to-the-lambda.md).
-
-### Single-binding tail-recursive groups are converted to loops before inlining
-
-`MenaiIRLetrecToLoop` converts a `$letrec` with a single self-referencing binding whose
-body is a single tail call to that binding into a `MenaiIRLoop`, replacing the
-self-calls with `MenaiIRRecur` back-edges. It runs before the inliner so the inliner
-can see and inline calls inside the loop body.
-
-Only single-binding groups are converted. A self-recursive function that shares a
-`$letrec` group with other bindings is not converted; moving it into its own
-single-binding group makes it eligible.
-
-See [ADR-0032](docs/adr/0032-single-binding-tail-recursive-letrecs-become-loops.md).
-
-### CFG passes declare their scope via their base class
-
-CFG optimisation passes operate at module scope: a pass is handed the root
-`MenaiCFGFunction` and returns the (possibly new) root plus a changed flag. There is
-no separate module object — the module is the root function plus every function
-reachable through `MenaiCFGMakeClosureInstr` instructions, enumerated by
-`collect_functions`.
-
-A pass declares whether it is intraprocedural or whole-program by its base class:
-
-- `MenaiCFGPerFunctionPass` — implement `_optimize_function`; the base class handles
-  traversal of the function tree and write-back of replaced nested functions.
-- `MenaiCFGWholeProgramPass` — implement `_optimize_module`; the pass owns its own
-  traversal and write-back.
-
-Do not write a whole-program pass against the per-function contract (or vice versa).
-The base class is how a pass's scope is made visible at its declaration site.
-
-See [ADR-0020](docs/adr/0020-cfg-pass-scope-contracts.md).
-
-### Type facts distinguish "no information" from "conflicting information"
-
-The interprocedural type analysis (`menai_cfg_interproc_type_analysis.py`) uses a
-three-level fact lattice: BOTTOM (no information), a known kind, and ANY (conflicting
-kinds). These must stay distinct. If both "no information" and "conflicting
-information" mapped to a single unknown element, joining two different known kinds
-would move down the lattice and the parameter-fact fixed point would oscillate instead
-of converging.
-
-BOTTOM is the fixed-point identity, so it is not the same as "unknown". A call site
-whose argument's type is unknown must degrade the parameter it feeds, not be dropped
-by the join. Conflating the two lets a value of one type be reported as proven for a
-parameter that an unknown value can also reach, which is a miscompile, not a missed
-optimisation.
-
-The analysis is a pure optimisation: where a type cannot be proven, the existing
-runtime path is used. It never changes observable behaviour.
-
-See [ADR-0021](docs/adr/0021-interprocedural-type-analysis.md) and
-[ADR-0027](docs/adr/0027-recursion-cycle-parameter-grounding.md).
-
-### Function provenance must follow containers
-
-The interprocedural type analysis resolves which function a call denotes before
-it can attribute a call site to a callee. A function value that reaches a call
-by a route the resolution does not follow is invisible: the call contributes no
-call site, the callee's parameter is never degraded by it, and the reported type
-can be more precise than reality. A fact that is more precise than reality is a
-miscompile, not a missed optimisation, because the struct field rewrite and
-guard insertion both consume it.
-
-Containers are such a route. A function stored in a list, dict, set, vector, or
-struct and fetched back out can be called, so the provenance relation must
-follow values into and out of containers. Every builtin that can move a value
-into or out of a container must be accounted for in `_CONTAINER_FLOW_OPS`; a
-missing entry lets a function that does escape appear not to, which is a
-miscompile.
-
-A function whose value can reach a call site the analysis cannot resolve has its
-parameters left unconstrained. This includes a function returned to the host,
-because the host may call it with a value of any type.
-
-Callee resolution tracks a parameter as denoting the union of the functions
-passed into it at any call site, so a call through a function-valued parameter
-resolves to the functions that actually reach it. That union is a *may*-set and
-must carry an "unknown" flag alongside the known functions: a value that is a
-phi of a known closure and an unnamed value denotes the closure *and possibly
-something else*. The unknown flag must propagate through phis and containers
-exactly as the known set does, and a call through a value that is unknown
-returns ANY. Tracking only the known set would let a phi of a known function
-and an unnamed value resolve to the known function alone, reporting a return
-type more precise than reality — a miscompile.
-
-See [ADR-0035](docs/adr/0035-function-provenance-must-follow-containers.md).
-See [ADR-0058](docs/adr/0058-parameter-callee-sets.md) for the parameter
-callee may-set and its unknown flag.
-
-### Predicate folding may consume any fact the analysis reports
-
-`MenaiCFGPredicateFold` folds a type predicate (`none?`, `integer?`, ...) when
-the analysis proves its argument's type, including facts derived from
-parameters, free variables, and call results. This is sound because the
-analysis leaves the parameters of every escaping function unconstrained; see
-the invariant above.
-
-See [ADR-0036](docs/adr/0036-predicate-fold-may-consume-interprocedural-facts.md).
-
-### The type-signature table is the builtins' operand and result contract
-
-`BUILTIN_TYPE_SIGNATURES` is the only place the compiler learns a builtin's
-argument types and its result type, and both are consumed as proven facts.
-
-Guard insertion emits an argument guard only for an argument whose declared type
-is specific; an argument declared `any` reaches the opcode unchecked. An opcode
-that reads an operand as a particular type is therefore relying on the table
-having declared that type, not merely on the value being right: `struct-get`
-reads its field name as a symbol, and while the entry declared the field name
-`any` a non-symbol field name reached the opcode and faulted. An operand an
-opcode assumes must be declared, and the guard it buys is the check.
-
-The result type is consumed just as directly: it becomes the call's proven fact,
-from which predicate folding may rewrite a test and against which guard
-insertion may treat a later use as already checked. An entry that disagrees with
-the builtin — `float-round` was once declared to return an `integer` — is a
-miscompile, not a missed optimisation.
-
-Every declared result type is checked against the type the builtin actually
-produces, so an entry that drifts fails a test rather than silently
-miscompiling.
-
-### Menai is pure — dead code elimination is always safe
-
-Because Menai has no side effects, any expression whose result is never used can be
-discarded unconditionally. Optimisation passes may rely on this without checking for
-side effects.
-
-See [ADR-0007](docs/adr/0007-dead-code-elimination-always-safe.md).
-
-### Hoisting must not introduce a raise on a path that did not have one
-
-Purity makes *elimination* safe (ADR-0007), but it does not make *motion* safe.
-Menai expressions can raise, a raise is observable (there are no handlers, so it
-terminates the program), and moving an expression to a point where it executes on
-more paths than before can make a program raise where it previously completed.
-
-An optimisation pass may move a potentially-raising expression only to a point
-where it is guaranteed to execute on every path that reached any of its original
-execution points. An expression that cannot raise may be moved freely.
-
-Which builtins can raise is builtin metadata, recorded in the builtin registry
-next to the opcode and arity so it cannot drift from the set of builtins it
-describes. A call, `apply`, and `error` can raise unconditionally.
-
-For loop-invariant code motion the condition is that the instruction's block must
-dominate every back-edge block of the loop.
-
-See [ADR-0049](docs/adr/0049-hoisting-must-not-introduce-a-raise.md).
-
-### Reordering a block must respect guards and closure patches
-
-A pass that reorders instructions within a basic block cannot treat the block as
-an ordinary data-dependency graph. Two instruction kinds carry ordering
-constraints that no data edge expresses, and violating either is a miscompile.
-
-**A guard must precede every other reader of the value it guards.** A guard
-defines no result: it validates a value in place, and the operations that follow
-it skip their own type checks. Running one of those operations before its guard
-reads a value of the wrong type. On the VM this does not merely give a wrong
-answer — it corrupts memory, because the unchecked opcode interprets the value's
-payload as the type the guard would have established.
-
-**Every patch-closure instruction for a `$letrec` group must execute before any
-closure in that group is called.** A patch installs a sibling capture; a call
-that runs first observes an unset capture slot and fails with "cannot call
-non-function value".
-
-`MenaiCFGSchedule` therefore tests both explicitly, and leaves a block
-containing patch-closure instructions entirely unscheduled. The general rule for
-any future reordering pass: an instruction that defines no result is not
-automatically position-free.
-
-### `$letrec` reaching the IR builder is always a genuine mutually-recursive group
-
-The desugarer guarantees that by the time `$letrec` reaches the IR builder, every
-`$letrec` is a single strongly-connected component of mutually-recursive bindings.
-Non-recursive bindings are hoisted to `let` forms.
-
-However, not every binding in a `$letrec` group is necessarily a lambda. A
-non-lambda binding (e.g. `(let ((x (list (lambda () x)))) x)`) can appear in a
-`$letrec` group when its RHS contains a nested lambda that closes over the binding
-name — the dependency analyzer sees a cycle and correctly keeps it in `$letrec`.
-The IR builder and both codegens handle this. The CFG builder handles it via a
-dedicated Phase 2b / Phase 3b in `_build_letrec`: non-lambda binding values are
-evaluated after all sibling lambda closures exist (so nested lambdas can capture
-them), and any nested lambdas with sibling captures are patched afterward.
-
-IR passes downstream of the IR builder may not assume all `$letrec` bindings are lambdas.
-
-See [ADR-0008](docs/adr/0008-letrec-is-genuine-mutual-recursion.md).
-
-### The prelude and the builtin registry must stay consistent
-
-There are two categories of builtin that must not be confused:
-
-- Opcode-backed builtins have an entry in `BUILTINS` in `menai_builtin_registry.py`.
-  Each entry records the opcode, which is the single source of truth for the
-  builtin's existence and its opcode arity. A builtin's surface arity is recorded
-  alongside it.
-- Prelude-only functions (e.g. `map-list`, `filter-list`, `fold-list`) are implemented
-  as Menai lambdas in `prelude.menai`. They MUST NOT be added to `BUILTINS`.
-
-See [ADR-0026](docs/adr/0026-single-builtin-table.md).
-
-### Name-based lowering must respect lexical shadowing
-
-The desugarer lowers a call by name: `(integer+ a b)` becomes `($integer+ a b)`,
-`(list-length x)` becomes `($list-length x)`, and so on. The semantic analyser
-likewise validates call arity against the builtin registry by name. Both
-must first check whether the name is bound by an enclosing lexical binder
-(`let`/`lambda`/`match`); if it is, the call refers to the user's
-binding and neither the rewrite nor the arity check may fire. Both passes track
-this with a scope stack.
-
-The prelude is desugared as an ordinary program, so its own top-level `let`
-bindings shadow the builtins. The prelude must therefore write every call to an
-opcode-backed builtin in explicit `$`-prefixed form; it must not rely on the
-desugarer's name-based rewrites. Prelude-only functions (which have no primitive
-form) are called unprefixed, as normal.
-
-### A builtin type pattern head must not resolve through a shadowing binding
-
-`(: list ...)` and `(: vector ...)` name builtin sequence types that have no type
-binding in scope, so the desugarer resolves them by name against
-`_BUILTIN_SEQUENCE_PATTERN_TYPES`. That lookup must be gated on `_is_shadowed`,
-exactly like the name-based call rewrites above.
-
-`list` and `vector` are ordinary prelude binding names as well as pattern-head
-types, so an enclosing binder can shadow them with a value that is not a type. A
-head that resolves to such a binding names no type at all, and the pattern cannot
-mean anything. Both the semantic analyser and the desugarer reject it. Resolving
-it to the builtin instead would silently ignore the user's binding and match
-against a type the program never mentioned, which is a miscompile rather than a
-missed error.
-
-### Struct type recognition is lexically scoped
-
-Struct recognition in the desugarer (constructor calls `(Point 1 2)` and
-destructuring patterns `(Point x y)`) resolves the type name against the struct
-types declared by the enclosing lexical binders, exactly like any other name.
-A struct type is not visible outside the binder that declares it, and two
-struct types with the same name in different scopes are distinct.
-
-A struct declaration in a `let` is hoisted so that sibling binding values and the
-body can use it as a constructor or pattern head. This is not an exception to how
-`let` binds names — every `let` binding is visible to every sibling value (see
-below) — it is only that a struct type is used in *head* position, where the
-desugarer must resolve it before it can desugar the form at all.
-
-Consequence: a struct type exported from a module and rebound by the importer
-(e.g. bound from a namespace member) *is* recognised as a struct by name, because
-binding it to a local name puts the declaration in the importer's lexical scope.
-An imported struct is used as a constructor and pattern head exactly like a locally
-declared one; the importer binds the member to a local name first (see ADR-0023).
-
-### `let` bindings are mutually visible; evaluation is dependency-ordered
-
-`let` is the only binding form, and it is recursive in scope: every binding name
-is visible to every binding value and to the body, regardless of source order.
-`(let ((y (integer* x 2)) (x 5)) ...)` is valid and evaluates `y` to 10.
-
-Evaluation order is computed, not written. `MenaiASTDependencyAnalyzer` groups the
-bindings into strongly-connected components and the desugarer emits them in
-topological order as nested `$let` (acyclic) and `$letrec` (a genuine cycle)
-forms. A chain of dependent bindings is therefore written as one flat `let`, and
-the desugarer reintroduces the nesting. Do not infer from the presence of nested
-`$let` nodes in the IR that the source had nested `let` forms, and do not
-"simplify" a flat `let` containing dependencies into nested source `let`s — the
-desugarer will re-split it, so the change is cosmetic at best.
-
-The one restriction is that a non-lambda binding may not depend on another
-non-lambda binding in the same group: neither has a value when the other is
-evaluated, so there is no base case. This covers both a direct self-reference and
-a cycle between two computed bindings, and is enforced by the CFG builder
-(`_build_letrec` Phase 2b). A reference shielded by a lambda is fine, because the
-lambda body runs later; that is what makes self-recursion and mutual recursion
-work. A lambda binding may read any sibling.
-
-See [ADR-0054](docs/adr/0054-let-is-the-only-binding-form.md).
-
-### Modules export named bindings; namespaces are second-class
-
-A module's body ends with an `(export name ...)` form naming the bindings it
-exports. `(import "name")` loads a module as a namespace, and `(:: namespace member)`
-resolves at compile time to the declaration that produced the member.
-
-The export form is consumed by the module resolver, and there are two paths. When a
-module is imported, the resolver consumes the export form and builds the namespace.
-When a module file is compiled directly as a program (e.g. by `menai-eval` or
-`menai-disassemble`) there is no importer, so the resolver lowers the export form to a
-dict mapping each export name to its value. Both paths go through the resolver, so the
-desugarer only ever sees a genuinely stray `export` (one that is not a module body) and
-rejects it.
-
-A namespace is second-class: it may only be bound directly by a `let`
-binding and used as the first argument of `::`. It cannot be passed, stored, returned,
-or called as a function. This restriction is what guarantees every member access is
-statically resolvable.
-
-Member access is a disjoint form: the shape of the form decides its meaning, so a
-namespace name used as a call head is an error, not member access. `::` is a reserved
-form head, like `import`/`export`/`struct`.
-
-The module resolver alpha-renames a module's bindings with a per-import prefix so
-that importing two modules that share a private name does not collide. The renamer
-must not rename a namespace member name (it is a key, not a variable reference) nor
-a struct pattern head's member name — see `_ModuleRenamer`.
-
-A pattern head that names a module's *type* — a struct type or an enum type — must be
-renamed, because it is a reference to the module binding. An enum pattern's variant is
-a quoted symbol and must be left alone, and it binds nothing. If a type pattern head is
-not renamed, the desugarer can no longer resolve it to the type binding and silently
-falls back to treating the pattern as a list destructuring pattern. That is not a
-local failure: a list pattern compiles to a `list?`/`list-length`/`list-nth` test chain,
-so a `match` over an enum degrades from a jump table into a long comparison chain and
-can explode the CFG of any function it is inlined into.
-
-See [ADR-0023](docs/adr/0023-second-class-module-namespaces.md).
-
-### A module cannot export a name it also needs as a builtin or prelude function
-
-A module's own bindings shadow same-named builtins and prelude functions throughout
-its body. A module that exports `list` therefore shadows the prelude's `list` inside
-itself and can no longer construct an empty list. There is no escape hatch: the
-`$`-prefixed form only reaches opcode-backed primitives, and `list` is a prelude
-function, not a primitive.
-
-Module and export names must avoid the names of the builtins and prelude functions
-the module itself uses. This is why the ZIP reader exports `entries` rather than the
-naturally-named `list`.
+The `tests/` tree mirrors the source tree: a test for code under `src/<name>/` lives under
+`tests/src/<name>/`, and a test for code under `tools/<name>/` lives under
+`tests/tools/<name>/`. The standard library is package data of the `menai` package, so its
+tests live under `tests/src/menai/stdlib/`.
+
+A test may keep a private copy of a `.menai` module next to itself rather than importing one
+from `src/`. `test_rubiks_cube_functions.py` does this: its `rubiks_cube.menai` is frozen in
+the form that exposed the compiler bug the suite guards against, while the benchmark suite's
+copy has since moved on. The copy is not a duplicate to be deduplicated — pointing the test
+at the benchmark copy would destroy the regression it exists to catch. A test that pins a
+representation for a reason must say so in its own header, as that copy does.
+
+## Language design decisions
+
+These might otherwise look like oversights or invite "improvement". The ADR behind each one
+carries the alternatives that were rejected.
+
+- **No `cond`.** `match` covers every multi-branch conditional and is more expressive. Do not
+  add `cond`.
+  See [ADR-0001](docs/adr/0001-no-cond-form.md).
+- **Symbols are not strings.** Symbols come only from `quote` and exist for homoiconicity.
+  See [ADR-0002](docs/adr/0002-symbols-not-strings.md).
+- **Proper lists only.** No `cons` and no improper lists in the surface language; `(head . tail)`
+  in a match is a pattern convenience, not a cons-cell type. Lists are cons cells internally:
+  O(1) head, tail and prepend, O(n) random access.
+  See [ADR-0017](docs/adr/0017-cons-cell-internal-representation.md), which supersedes
+  [ADR-0003](docs/adr/0003-proper-lists-only.md).
+- **Vectors are a distinct type** with O(1) access, for index-heavy code where a list's O(n)
+  access dominates; not pattern-matchable, not hashable, and no coercion.
+  See [ADR-0018](docs/adr/0018-vector-type.md).
+- **Element access verbs are `-nth`, `-get`, `-with`, `-without`** — position, key, add or
+  replace, remove. `-set`, `-add` and `-remove` connote mutation, which Menai does not have; do
+  not reintroduce them.
+  See [ADR-0037](docs/adr/0037-collection-access-verbs.md).
+- **Strict numeric typing.** No implicit coercion between `integer`, `float` and `complex`;
+  every arithmetic operator is type-specific.
+  See [ADR-0004](docs/adr/0004-strict-numeric-typing.md).
+- **Slices raise.** All four slice operations raise on a negative, out-of-range or
+  start-after-end index rather than clamping.
+  See [ADR-0019](docs/adr/0019-slice-out-of-bounds-raises-error.md).
+- **Bytes hashing and CRC-32 are opcodes**, not prelude functions: they are fixed-spec,
+  integer-heavy, performance-critical kernels.
+  See [ADR-0024](docs/adr/0024-hash-primitives-in-c-vm.md) and
+  [ADR-0025](docs/adr/0025-crc32-primitive-in-c-vm.md).
+- **`regexp` is a standard library capability module**, not an opcode: the pattern dialect is a
+  Menai design decision rather than a fixed specification, and its operations share one
+  compiled-regexp type and dialect.
+  See [ADR-0041](docs/adr/0041-standard-library-module-taxonomy.md) and
+  [ADR-0052](docs/adr/0052-regular-expression-captures.md).
+- **Enums are bare-tag**, and the form must not foreclose payloads. A match is fused into a
+  `SWITCH_ENUM` jump table, so the group's `enum-is-instance?` test is load-bearing: the switch
+  reads the variant index without reading the type. Exhaustiveness checking is not implemented;
+  when added it must be an error, computed as a variant set so that it extends to nested
+  patterns.
+  See [ADR-0043](docs/adr/0043-enum-type.md).
+- **A type pattern head carries `:`** — `(: Point x y)`, `(: state 'idle)`. A bare
+  `(Name p1 ...)` is always a list pattern, so a pattern's meaning never depends on what types
+  happen to be in scope. Declaration and construction are unchanged.
+  See [ADR-0044](docs/adr/0044-type-pattern-heads-are-syntactically-distinct.md).
+- **A match's desugared form is bounded** at `MAX_DESUGARED_MATCH_NODES` (4096) nodes. A
+  list pattern expands super-linearly, and every later pass is super-linear in its input, so
+  the bound turns a hang into a reported error. The largest standard library match is 290
+  nodes.
+  See [ADR-0045](docs/adr/0045-desugared-match-size-is-bounded.md).
+- **`menai-format` implements one fixed style**, 120 columns wide. It specifies rather than
+  describes the corpus: do not adjust the formatter to match a file; change the ADR if the
+  style is wrong.
+  See [ADR-0051](docs/adr/0051-menai-source-formatting-style.md).
+- **Paren diagnostics name the line to change**, not where the symptom appears. A missing and
+  an extra `)` need different evidence, so three techniques are required and must not be
+  merged: the open-form stack, the parser's cursor and shape reconstruction.
+  See [ADR-0053](docs/adr/0053-paren-diagnostics-locate-the-line-to-change.md).
+
+## Cross-package contracts
+
+These hold across package boundaries, so they live here rather than in a directory file.
+
+### The code-object walk order is a contract between Python and C
+
+`menai_render.menai_render_walk.walk_code_objects` defines the canonical ordering of code
+objects and instructions within a compiled program: depth-first, root first, children in
+list order, with a global instruction ordinal assigned contiguously in visit order. The C
+VM's instruction tracer assigns the same ordinals while converting the Python `CodeObject`
+tree, and the two implementations must agree exactly. If they drift, execution counts
+collected in C are attributed to the wrong instructions, silently; a change to the
+traversal order on one side must be mirrored on the other, and a test covers the agreement.
+
+The ordering must remain a pure function of the tree structure. It is what makes a trace
+buffer meaningful across repeated `execute()` calls: the native code objects are ephemeral,
+so ordinals — not pointers — are the only stable key.
+
+See [ADR-0028](docs/adr/0028-instruction-tracing-by-ordinal.md).
 
 ### The module search path is composed by the library, not by each tool
 
 The standard library ships as package data inside the `menai` package, under
-`src/menai/stdlib/`, and is located through `importlib.resources` — the same mechanism
-the prelude uses. It is therefore present in a wheel install, not just a source
-checkout, and an agent can read a module's source (`Menai.stdlib_source`) to understand
-it.
+`src/menai/stdlib/`, and is located through `importlib.resources` — the same mechanism the
+prelude uses. It is therefore present in a wheel install, not just a source checkout, and a
+caller can read a module's source (`Menai.stdlib_source`) to understand it.
 
 The search path is composed in a fixed precedence order by `Menai.build_module_path`:
-explicit directories first, then application library directories (`MENAI_PATH`, then
-the source file's directory), then the standard library. Resolution is
-first-match-wins, so an application library may shadow a standard library module of
-the same name.
+explicit directories first, then application library directories (`MENAI_PATH`, then the
+source file's directory), then the standard library. Resolution is first-match-wins, so an
+application library may shadow a standard library module of the same name.
 
 Tools must not build their own search path. Each tool composes the default through
-`Menai.build_module_path` and prepends its own `--module-path` directories; a tool
-that builds its own list breaks the precedence guarantee and can omit the standard
-library entirely.
+`Menai.build_module_path` and prepends its own `--module-path` directories; a tool that
+builds its own list breaks the precedence guarantee and can omit the standard library
+entirely.
 
 See [ADR-0038](docs/adr/0038-standard-library-packaging-and-location.md) and
 [ADR-0040](docs/adr/0040-module-search-path-and-application-libraries.md).
 
 ### Renaming a module requires a repo-wide text sweep, not just `.menai` files
 
-Module names appear in more places than the module files themselves. In particular
-they appear as string literals inside Python source — benchmark suites and pipeline
-examples build Menai expressions as `'(let ((x (import "module-name"))) ...)'` strings.
-
-A rename is not complete until every occurrence of the old name has been found and
-updated. Search the whole repository (excluding `.git`, `venv`, and build artefacts),
-not just `src/menai/stdlib/` and `docs/`. Both the old module name and the old export
-name must be swept, and the test-file naming convention (`<module>.test.menai`) must
-be applied to any renamed test file.
-
-### The code-object walk order is a contract between Python and C
-
-`menai_render.menai_render_walk.walk_code_objects` defines the canonical ordering of
-code objects and instructions within a compiled program: depth-first, root first,
-children in list order, with a global instruction ordinal assigned contiguously in
-visit order. This ordering is the contract shared with the C VM's instruction tracer,
-which assigns the same ordinals during conversion of the Python `CodeObject` tree.
-
-The two implementations must agree exactly. If they drift, execution counts collected
-in C are attributed to the wrong instructions, silently. Any change to the traversal
-order on one side must be mirrored on the other, and the agreement is covered by a test.
-
-The ordering must remain a pure function of the tree structure. It is what makes a
-trace buffer meaningful across repeated `execute()` calls: the native code objects are
-ephemeral (rebuilt and destroyed per call), so ordinals — not pointers — are the only
-stable key.
-
-The C side stamps ordinals in `menai_code_object_from_python_rec` (the bridge), which
-assigns a code object's ordinal and instruction base *before* recursing into its
-children — that pre-order placement is what makes the C assignment match the Python
-walk. The trace arrays themselves live in `MenaiVMState` and are sized to the tree at
-the start of each `execute()` call by `menai_vm_prepare_trace`.
-
-Each logical `CodeObject` must convert to exactly one native code object. A function
-value is reached through a constant whose `bytecode` is also a child of some parent, so
-the bridge carries a `ConversionContext` mapping Python `CodeObject` to native code
-object and reuses the child rather than converting the bytecode again. Converting it
-twice gives one logical function two native instances; the second is stamped from a
-fresh counter, so its counts land on ordinal 0 and are silently attributed to the
-module.
-
-See [ADR-0028](docs/adr/0028-instruction-tracing-by-ordinal.md).
-
-### Exception blocks are laid out after the normal path
-
-Blocks that end in a raise must be laid out after all normal-path blocks in a
-function. The ordering is stable and the entry block stays first.
-
-Emitted layout is derived from the CFG, not from the CFG's block-list order, so
-reordering the block list does not by itself move anything in the emitted code.
-The exception-last partition must be applied to the layout order explicitly.
-
-See [ADR-0030](docs/adr/0030-exception-blocks-emitted-last.md).
-
-### The C VM has no process-global mutable state
-
-All mutable VM state (pool allocator free-lists, singletons, the closure registry) is
-owned by `MenaiVMState`, a per-instance struct allocated by the Python `MenaiVM`
-wrapper. A `MenaiVMState *` pointer is passed explicitly as the first argument
-to every C function that allocates, frees, or touches singletons. There are no
-file-level mutable statics in the C VM outside the bridge layer (which has only
-read-only Python type references fetched at module init).
-
-`menai_value_retain` is the one exception: it only increments `ob_refcnt` and
-does not need `MenaiVMState *`. Every other refcount or allocation function
-(`menai_value_release`, `menai_value_free`, `menai_alloc`,
-`menai_free`, `menai_pool_alloc`, `menai_pool_free`, all `alloc_menai_*` constructors, `menai_none`, `menai_boolean_true`,
-`menai_boolean_false`) takes `MenaiVMState *vs` as its first parameter.
-
-`MenaiCodeObject` retain/release does NOT take `MenaiVMState *` — C code objects
-are ephemeral (built and destroyed within a single `execute()` call) and never
-shared across VM instances or threads.
-
-See [ADR-0006](docs/adr/0006-no-process-global-mutable-state-in-c-vm.md).
-
-### A VM error code that needs context gets a typed field for it
-
-`MenaiVMError` carries the context an error code needs, set at the raise site in
-`menai_vm_c.c` and threaded to the bridge alongside the code and execution context.
-The C VM records raw values; `menai_vm_errors.translate_vm_error` formats the message.
-Message text must not be composed in C — the Python error table is the single source
-of truth for code-to-message mapping.
-
-`user_value` is the precedent (the raised value for `USER_ERROR`, the variable name for
-`UNDEFINED_VARIABLE`); the arity fields (`arity_expected`, `arity_actual`,
-`arity_callee`) are the second case. A field shaped to its context is preferred over a
-general-purpose formatted-detail string, which would split formatting across two
-languages.
-
-Any field holding a pointer that must outlive the code objects — a name, a string — is a
-`strdup`'d copy owned by the error struct and freed by the bridge after translation,
-because the code objects are released before the bridge runs. The bridge frees it on
-every path, and `menai_vm_execute_native` resets it on entry so a run that errors and is
-never translated does not leave a stale pointer.
-
-See [ADR-0048](docs/adr/0048-vm-errors-carry-structured-diagnostic-context.md).
-
-### A `MenaiValue` must be tag-tested before it is dereferenced
-
-`#none`, the booleans, integers in the fixnum range and floats in the inline window
-are immediates: the value lives in the word itself and the low bits carry a tag,
-with tag zero meaning "pointer to a pool object".  A tagged word is not an address.  Reading a pool
-header, testing `ob_type`, touching `ob_refcnt`, or casting to a `MenaiFoo *` will
-fault rather than return a wrong answer, and it will fault a long way from the code
-that caused it.
-
-Every place that turns a value into a type or a header therefore carries the test
-first.  When adding an opcode, a builtin, a value type or a new helper that walks
-values, check each of these:
-
-- `menai_value_retain` / `menai_value_release` — already tag-aware; do not inline
-  a bare `ob_refcnt` adjustment anywhere else.
-- The `IS_MENAI_*` macros — already tag-aware.  Never write a bare
-  `menai_get_pool_header(v)->ob_type == ...` comparison outside them.
-- `menai_value_free`, `menai_value_hash`, `menai_value_equal` and the bridge's
-  `menai_value_to_slow_value` — each dispatches on the tag before the header.
-- The cycle collector: `gc_mark_value`, `_gc_is_dead` and the Phase 3 capture
-  edge-breaking.  An immediate needs no count adjustment.
-
-`menai_value_retain` and `menai_value_release` are the only correct way to manage
-an owned value, and copying an immediate into a slot needs neither.  Immediates
-also have one canonical encoding each, which is why word identity is value
-equality for them — but that is a property of the immediate types only, not a
-general licence to compare values by address.
-
-#### Integers are the awkward case
-
-An integer is one of exactly two things: a fixnum immediate, or a boxed bignum.
-There is no third form, and the two are mutually exclusive by construction.  Do not
-dereference a value you have only proven to be an integer:
-
-- `menai_is_fixnum(v)` — an immediate, in `[MENAI_FIXNUM_MIN, MENAI_FIXNUM_MAX]`.
-  The arithmetic fast paths branch on this and never touch memory.
-- `menai_integer_is_big(v)` — a bignum.  For a value already known to be an integer
-  this is just `!menai_is_fixnum`.  Narrow with `menai_integer_boxed(v)` and use
-  `->big`; do not repeat a cast at every use.
-- `menai_integer_extract_long(v, &out)` — either form as a `long`, returning
-  `MENAI_ERR_OVERFLOW` when it does not fit.  Prefer it when that is all the handler
-  needs, which removes the representation question entirely.  Callers keep their own
-  error code, because "too large" is a different diagnosis for a shift count, an
-  index and a radix.
-
-`alloc_menai_integer_from_*` returns a `MenaiValue *`, not a `MenaiInteger *`,
-because the result is usually a fixnum.  They are the only place that chooses a
-representation, and they choose from the value alone.  A second path that built an
-integer would produce two forms of one value and break hashing, equality and every
-dict keyed on it — `alloc_menai_integer_from_bigint` must therefore test the fixnum
-range, not "fits a long", because those differ and demoting to a long would loop
-back through the promoting constructor.
-
-#### Floats follow the same pattern with a different window
-
-A float has two forms too: inline when its exponent is inside
-`[MENAI_FLOAT_EXP_BASE, MENAI_FLOAT_EXP_MAX]`, boxed otherwise.  Zero, denormals,
-NaN, the infinities and magnitudes outside the window are the boxed cases.
-
-- Read a float through `menai_float_value(v)`, never `((MenaiFloat *)v)->value`.
-- `menai_float_is_inline(v)` is the range test; `alloc_menai_float` is the only
-  constructor, and it is the only thing that may choose the form.
-- The inline encoding keeps the full 52-bit mantissa and uses an *offset* exponent
-  window, because an aligned 256-exponent block could not cover both 1.5 and 3.0.
-
-`menai_hash_double` collapses both zeros to one bucket, because IEEE equality says
-`0.0 == -0.0` and a dict or set must not miss a key that compares equal.  The sign
-survives in the value, so `float-copysign` and division still observe it.  It also
-normalises every NaN to one pattern for the same reason.
-
-See [ADR-0060](docs/adr/0060-immediate-values-in-tagged-words.md).
-
-### The closure cycle collector only frees closures with refcnt == 0
-
-The GC runs at the end of every `menai_vm_execute_native` call and at VM
-teardown.  It marks all closures reachable from globals and the execute
-result, then sweeps unreachable closures.  Phase 3 breaks internal edges
-(dead-to-dead capture references) with bare refcount decrements.  Phase 4
-must only call `menai_value_free` on closures whose `ob_refcnt` is exactly
-0 after Phase 3.  Closures with `ob_refcnt > 0` have an external reference
-(e.g. from a code object's constant pool, which is released after the GC
-runs) and must be returned to the registry, not freed.
-
-The GC does not trace code object constants as roots.  This is safe because
-closures in constants are non-cyclic (the bridge strips captures during
-round-tripping).  The Phase 4 refcnt guard prevents use-after-free when a
-non-cyclic closure in constants is unreachable from roots but still held
-by the code object.  The `MENAI_DEBUG_LEAKS` build monitors this.
-
-## Design decisions
-
-These are decisions that might otherwise look like oversights or invite "improvement".
-
-### No `cond` form
-
-Deliberate omission. `match` covers all multi-branch conditional use cases and is more
-expressive. Do not add `cond`. See [ADR-0001](docs/adr/0001-no-cond-form.md).
-
-### Symbols are not strings
-
-`symbol` values are produced only by `quote` and exist solely to support homoiconicity
-(code-as-data). See [ADR-0002](docs/adr/0002-symbols-not-strings.md).
-
-### Proper lists only
-
-There are no improper lists and no `cons` operation in the surface language.
-List construction uses `list`, `list-prepend`, and `list-append`, all of which
-produce proper lists. Internally, lists are represented as cons cells (linked
-pairs where the cdr is always a list or nil) — this gives O(1) head/tail
-decomposition and O(1) prepend, which aligns with the recursive traversal
-patterns that dominate Menai list processing. Random access is O(n). The
-dotted pattern `(head . tail)` in `match` is a pattern-matching convenience,
-not a cons-cell type.
-See [ADR-0017](docs/adr/0017-cons-cell-internal-representation.md) (supersedes
-[ADR-0003](docs/adr/0003-proper-lists-only.md)).
-
-### Vector type
-
-Vectors are immutable, contiguous-array-backed sequences with O(1) random
-access — a distinct type from lists, with no coercion. They complement lists
-for index-heavy code where lists' O(n) random access is a bottleneck (e.g.
-Sudoku, Rubik's Cube). Vectors are not pattern-matchable and not hashable.
-There is no literal syntax; vectors are created via `(vector ...)`.
-See [ADR-0018](docs/adr/0018-vector-type.md).
-
-### Element access verbs are `-nth`, `-get`, `-with`, and `-without`
-
-Element access uses `-nth` to read by position in an enumerable sequence
-(`string-nth`, `list-nth`, `bytes-nth`, `vector-nth`) and `-get` to read by key in a
-non-enumerable mapping (`dict-get`, `struct-get`). It uses `-with` to add or replace
-an element and `-without` to remove one, only where a functional single-element
-update exists (`vector-with`, `dict-with`, `struct-with`, `set-with`, `set-without`,
-`dict-without`, `list-without`); there is no `string-with` or `bytes-with`.
-
-`-nth` completes the positional accessor set that `list-first` and `list-last`
-already establish: `first` is position 0, `nth` is position n, `last` is position
-n-1.
-
-`-ref`, `-set`, `-add`, and `-remove` are not part of the element-access vocabulary.
-`-ref` was replaced by `-nth`, which names positional access directly. `-set`,
-`-add`, and `-remove` were dropped because they connote mutation, which Menai does
-not have: these operations return a new container. Do not reintroduce any of them.
-
-Set algebra (`set-union`, `set-intersection`, `set-difference`) and positional list
-construction (`list-prepend`, `list-append`) keep their names: they are nouns or
-positional descriptions, not mutation verbs.
-
-See [ADR-0037](docs/adr/0037-collection-access-verbs.md).
-
-### Strict numeric typing
-
-There is no implicit coercion between `integer`, `float`, and `complex`. All arithmetic
-operators are type-specific (e.g. `integer+`, `float*`). This is intentional.
-See [ADR-0004](docs/adr/0004-strict-numeric-typing.md).
-
-### Slice operations raise errors on out-of-bounds indices
-All four slice operations (`string-slice`, `list-slice`, `vector-slice`,
-`bytes-slice`) raise a runtime error on negative, out-of-range, or
-start-after-end indices. They do not silently clamp.
-See [ADR-0019](docs/adr/0019-slice-out-of-bounds-raises-error.md).
-
-### Hash operations are native VM primitives
-The `bytes` hash operations (`bytes-hash-sha2-256`, `bytes-hash-sha2-512`,
-`bytes-hash-sha2-512-256`, `bytes-hash-sha3-256`) are opcode-backed primitives
-implemented natively in the VM core, not prelude functions. Hashing is a
-performance-critical, fixed-spec, integer-heavy kernel and therefore a language
-primitive.
-See [ADR-0024](docs/adr/0024-hash-primitives-in-c-vm.md).
-
-### CRC-32 is a native VM primitive
-The `bytes-crc32` operation is an opcode-backed primitive implemented natively
-in the VM core, not a prelude function, and returns the checksum as an
-`integer`. It is a performance-critical, fixed-spec, integer-heavy kernel and
-therefore a language primitive.
-See [ADR-0025](docs/adr/0025-crc32-primitive-in-c-vm.md).
-
-### Regular-expression matching is a standard library capability module
-Regular-expression matching is the standard library module `regexp`, not a prelude
-function and not an opcode-backed primitive. The pattern dialect is a Menai design
-decision, not a fixed specification, so it fails the ADR-0024 criterion for
-opcode-hood; and the residual cost is Menai-level call overhead, which a
-literal-prefix prefilter addresses without VM changes.
-
-It is a capability module rather than an operation module: it is a pattern
-compiler, a matcher, and a family of search, split, and replace operations that
-share a compiled-regexp type and a pattern dialect, and none of the parts is
-independently useful. It exports the type `regexp` and the operations `compile`,
-`search`, `search-groups`, `search?`, `search-all`, `search-all-groups`, `split`,
-and `replace` under their bare names, with no `regexp-` prefix — the module name
-supplies the capability.
-
-The compiled regexp is the first argument and the string is the second, following
-the `domain-operation` shape used throughout. See
-[ADR-0041](docs/adr/0041-standard-library-module-taxonomy.md) and
-[ADR-0052](docs/adr/0052-regular-expression-captures.md).
-
-### The DOCX codec is the OOXML capture layer, not a document model
-
-`docx-decode` and `docx-encode` are a symmetric operation-module pair (ADR-0041) that
-decode a `.docx` package to a value tree and encode it back, carrying the value
-round-trip guarantee. The representation is a **faithful capture** of the package's
-parts: the decoded `document`, `styles`, and `numbering` are the `xml-decode` element
-trees of `word/document.xml`, `word/styles.xml`, and `word/numbering.xml`, and
-`relationships` and `media` capture the relationship map and the media parts. Nothing
-is interpreted; namespace prefixes are kept verbatim, as `xml-decode` keeps them.
-
-A **semantic document model** — headings, paragraphs, runs, lists, tables, with styles
-and numbering resolved — is deliberately **not** part of the codec. It is not specific
-to DOCX, so it belongs in a separate higher layer that DOCX, HTML, and Markdown can
-share, rather than duplicated inside each format's codec. Do not fold interpretation
-into `docx-decode`: the codec stays a codec.
-
-A relationships entry keeps the relationship's type and target mode, not only its
-target, because the type is what distinguishes an image from a hyperlink and a
-relationship without it is unusable.
-
-The codec composes `zip-extract`/`xml-decode` to decode and `zip-create`/`xml-encode`
-to encode; it adds only the DOCX-specific structure. The round-trip is a value
-round-trip, not a byte round-trip: `[Content_Types].xml` and `_rels/.rels` are
-generated, not carried.
-
-See [ADR-0046](docs/adr/0046-docx-codec-ooxml-capture-layer.md).
-
-### The XLSX codec is the OOXML capture layer, not a workbook model
-
-`xlsx-decode` and `xlsx-encode` are a symmetric operation-module pair (ADR-0041) that
-decode a `.xlsx` package to a value tree and encode it back, carrying the value
-round-trip guarantee, on the same terms as the DOCX and PPTX codecs. The representation
-is a **faithful capture** of the package's parts, and nothing is interpreted.
-
-Two things are XLSX-specific and must not be "helpfully" resolved in the codec. First,
-`sheets` is an **ordered list** carrying each sheet's `name` and `part`, because neither
-sheet order nor sheet name is recoverable from the worksheet part name. Second,
-`shared-strings` is the decoded `<si>` elements of `xl/sharedStrings.xml`, and a cell's
-`"s"`-typed value is **not** resolved to the string it indexes: resolution is
-interpretation, and the codec stays a codec.
-
-As with the PPTX codec, the workbook and its relationships are carried **verbatim** on
-encode rather than regenerated from `sheets`, which is what makes the round-trip exact.
-
-See [ADR-0050](docs/adr/0050-xlsx-codec-ooxml-capture-layer.md).
-
-### Enums are bare-tag, and the bare-tag form must not foreclose payloads
-
-An `enum` is a nominal, closed set of named variants, compared for identity only.
-It is declared with `(enum (variant ...))` as the RHS of a `let`
-binding, producing an **enumtype** value that mirrors structtype; the enumtype is
-callable, and `(state 'idle)` constructs a value. A `match` names the enumtype as the
-pattern head and the variant as a quoted symbol: `((: state 'idle) ...)`. Variants are
-namespaced by their enumtype, which is what lets many enum types coexist.
-
-Enum values are hashable unconditionally, and support no arithmetic, ordering, or
-bitwise operations. An enum pattern is total: matching a value of another type falls
-through rather than raising. A `match` over an enum is fused into a dense `SWITCH_ENUM`
-jump table by `MenaiCFGEnumSwitchDispatch`, mirroring the integer
-`MenaiCFGSwitchDispatch`.
-
-The enum instance operations mirror the struct ones: `enum-type` is the analogue of
-`struct-type`, and `enum-is-instance?` of `struct-is-instance?`, including their error
-behaviour — both raise on an argument of the wrong kind, so a caller testing an arbitrary
-value must guard with `enum?` first, exactly as the `struct-is-instance?` caller guards
-with `struct?`.
-
-An enum match group's guard is `(and ($enum? tmp) ($enum-is-instance? tmp TypeName))`, and
-the identity test is load-bearing rather than decorative. `SWITCH_ENUM` dispatches on the
-variant index alone and never reads the enum type, and an index is meaningful only
-relative to its type, so without the identity test a value of another enum type whose
-index is in range would jump to the wrong arm. `MenaiCFGEnumInstanceFold` removes the
-test where the interprocedural type analysis proves the scrutinee's type, mirroring
-`MenaiCFGStructInstanceFold`; where the type is not proven the test stays.
-
-This ADR decides the **bare-tag** enum only; a variant carries no payload. Exhaustiveness
-checking is **not implemented**: a `match` over an enum that omits a variant is not
-currently rejected, and the ADR records that when it is added it must be an error
-rather than a warning, and must be computed as a variant set so that it extends to
-nested patterns.
-See [ADR-0043](docs/adr/0043-enum-type.md).
-
-### A type pattern head is written with a leading `:` head symbol
-
-A `match` pattern head that names a struct or enum type is written `(: TypeName ...)`,
-following the shape of the predicate pattern `(? pred var)`. The type name remains an
-ordinary symbol after the `:`; the `:` is a separate head symbol, not part of the name.
-
-```menai
-(match p ((: Point x y) (integer+ x y)) (_ 0))
-(match s ((: state 'idle) "idle") (_ "other"))
-```
-
-A bare `(Name p1 ... pn)` is always a list pattern, whatever `Name` denotes. A
-`(: TypeName ...)` head that does not resolve to a struct or enum type in scope is a
-compile-time error, never a list pattern.
-
-This exists because a bare-symbol type head is resolved by name against the enclosing
-scope, so the meaning of a pattern would otherwise depend on what types happen to be in
-scope. `(Name p1 ... pn)` is both a list pattern and a struct pattern with no shape to
-distinguish them, which silently compiles a list pattern as a struct pattern; in a
-nested pattern that misresolution raises a runtime type error. The same applies to an
-enum head that fails to resolve, which silently degrades to a list pattern and falls
-through every arm. The `:` makes the pattern's form decide its meaning, as it already
-does for member access.
-
-Declaration and construction are unchanged: `(struct (x y))` and `(point 3 4)` are
-written as before. Only the pattern head carries the marker.
-See [ADR-0044](docs/adr/0044-type-pattern-heads-are-syntactically-distinct.md).
-
-### A match's desugared form is bounded
-
-The desugarer rejects a `match` whose desugared form exceeds `MAX_DESUGARED_MATCH_NODES`
-(4096) AST nodes, as a compile-time error. The bound is on the desugared size of one
-match, not on the size of the source pattern.
-
-A list pattern expands to a `list?`/`list-length`/`list-nth` test chain, and the
-expansion grows super-linearly (roughly cubically) with the number of arms and the
-nesting depth of the patterns. The expansion is unbounded, and the cost of every pass
-after the desugarer is super-linear in the size of the tree it is handed, so a large
-expansion makes the compiler unusable rather than merely slow. A ten-arm match over
-enum variants desugars to 258 nodes when fused into a jump table, but to 81,759 nodes
-when the same arms are list patterns — a 317× increase that does not compile in
-practical time.
-
-This is the consequence ADR-0043 warns about when it records that an enum match which
-degrades to a list pattern "can explode the CFG of any function it is inlined into".
-The bound exists so that explosion is a reported error rather than an apparent hang.
-
-The largest match in the standard library desugars to 290 nodes, so the limit leaves
-ample room for hand-written code. The expansion itself is still super-linear; improving
-it is worthwhile and is not foreclosed by the bound.
-See [ADR-0045](docs/adr/0045-desugared-match-size-is-bounded.md).
-
-### Menai source formatting is defined by a fixed style
-
-`menai-format` implements one style, recorded in ADR-0051. The width is 120
-columns, measured as the column a form's compact rendering would end at; a form is
-compact when it ends at or before column 120 and multi-line otherwise. Every form
-follows the general-list rule — `head` and the first argument on the first line,
-each remaining argument on its own line aligned under the first argument — except a
-list with two or more arguments of which any is a nested form, which instead breaks
-after the head and indents every argument by two (so a single nested argument does
-not leave the rest aligned under a wide head), and except the five special forms
-(`lambda`, `let`, `match`), which indent their trailing elements
-by two, and bindings, which put the value on the next line
-at the name's column. A multi-line binding is separated from the next binding by a
-blank line (before any comment that precedes it) and from the previous binding by
-one too; single-line bindings are not separated.
-A multi-line `dict` is the general-list rule with arguments grouped in pairs:
-each key/value pair goes on its own line, aligned under the first key.
-
-A compound form (`if`, `let`) with a nested body is multi-line
-wherever it appears, including as a binding's value, so the same form never renders
-compact in one position and expanded in another.
-
-`and` and `or` are variadic and are written flat (`(or a b c d)`), never as a
-right-nested cascade. The nesting carries no meaning and drives the formatter's
-indentation one level right per condition. An `and`/`or` with two or more operands
-is always laid out multi-line, one operand per line, even when it would fit; a
-chain of conditions is the one case where the compact form is less readable.
-
-The style is a specification, not a description of the corpus: the hand-written
-standard library contains local inconsistencies that no rule reproduces, and
-reformatting normalises them. Do not "fix" the formatter to match an individual
-file; change the ADR if the style itself is wrong.
-See [ADR-0051](docs/adr/0051-menai-source-formatting-style.md).
-
-### Paren diagnostics locate the line to change, not the symptom
-
-A parenthesis error's symptom is many lines from the mistake, so a diagnostic
-must name the line the reader has to edit, derived from the token stream. There
-are two ways a file can be unbalanced and they are duals: a missing `)` leaves a
-form open, and an extra `)` has already closed one. The evidence differs in kind,
-so **three techniques are required and must not be merged**:
-
-- The **open-form stack** locates a missing `)`. It is computed from the token
-  stream, not the parser's in-progress stack, which diverges once the parser
-  recovers.
-- The **parser's cursor** locates an unclosed binding value: the end of the last
-  token consumed is where the `)` belongs.
-- **Shape reconstruction** locates a bindings list closed one binding too early.
-  This is the one case not recoverable from the token stream: whether a `)`
-  closes a binding or the bindings list is invisible at the token, and only
-  becomes decidable when the parser sees the forms that follow.
-
-A named form that closed before its body is located by element count, which
-cannot see a bindings list (a bare `(` has no minimum element count) — which is
-why shape reconstruction exists separately. A unified depth-based rule was
-investigated and found impossible: at an early close's symptom the depth profile
-is identical to a correct program's.
-
-See [ADR-0053](docs/adr/0053-paren-diagnostics-locate-the-line-to-change.md).
-
-## VM implementation
-
-The C VM (`menai_vm_c`) is the execution engine, compiled from C source and
-loaded at runtime. `vm/menai_vm.py` is a thin Python wrapper that exposes the C
-VM's `execute` and `cancel` functions to the rest of the codebase. The C extension
-is compiled into platform-specific wheels via cibuildwheel and published to PyPI
-on version tags (see `.github/workflows/release.yml`).
-
-The C VM only uses Python runtime library functionality within the bridge layer
-between C and Python. All other C code is free of Python dependencies.
-
-### Debug build flags
-
-The C VM supports compile-time debug features via preprocessor defines:
-
-- `MENAI_DEBUG_LEAKS` — Tracks every `MenaiValue` allocation in a per-instance
-  hash set.  At VM teardown, any value still tracked (excluding known
-  singletons) is reported as a leak to stderr.  Build with `make build-leaks`.
-  Used to verify that the reference counting scheme (see ADR-0016) correctly
-  reclaims all values, including cyclic closures that require cycle collection.
-
-- `MENAI_DEBUG_MAGIC` — Every `MenaiValue` and `MenaiCodeObject` carries a
-  `ob_magic` field set at allocation and cleared before the block is freed or
-  returned to the pool.  `MENAI_CHECK_MAGIC` aborts if the field does not
-  match, catching use-after-free and double-free at the point of access.  Build
-  with `make build-magic`, or `make build-debug` to combine both debug flags.
-
-- `MENAI_DEBUG_GC` — Traces the closure cycle collector and the pool allocator
-  to stderr.  It reports the collector's entry state, every closure and orphan
-  it frees or returns to the registry, the register-release/collection ordering
-  in the per-execution teardown, and three pool invariants: a block returned to
-  a free-list twice (`DOUBLE-FREE`), a free-list whose links form a cycle
-  (`FREE-LIST CYCLE`), and a closure freed while still in the collector registry
-  or still on a free-list (`DANGLING-REGISTRY`, `FREE-WHILE-LIVE`).  Build with
-  `make build-gc`.  These are the signals that distinguish a lifetime bug from a
-  functional one when a `MenaiVMState` is reused across many `execute()` calls,
-  which is the configuration that exposes registry and pool corruption that a
-  fresh VM per run never reaches.  `menai-test` reuses one instance across every
-  leaf of a file by default, so running it against this build exercises that path
-  (pass `--isolate` to run each leaf on a fresh instance instead).
-
-### C formatting
-
-Do NOT use lines of characters in comments. E.g. never use something like:
-
-```c
-/* --------------------------------
- * This is a bad comment - don't do this!
- * -------------------------------- */
-```
-
-For single line comments put the open and close of the comment on the same line:
-
-```c
-/* This is a good single line comment */
-```
-
-For multi-line comments the open and close go on their own lines:
-
-```c
-/*
- * This is a great multiline comment.
- * Where we have more than one line of text.
- */
-```
-
-Do NOT use excess whitespace to line up things on adjacent lines. E.g. never do:
-
-```c
-int x_with_long_name = 0;
-iny y                = 1;
-```
-
-Instead do:
-
-```c
-int x_with_long_name = 0;
-int y = 1;
-```
-
-Do NOT put code on the same line after an opening brace. E.g. never do:
-
-```c
-if (foo) { something(); }
-```
-
-Instead do:
-
-```c
-if (foo) {
-    something();
-}
-```
+Module names appear in more places than the module files themselves. In particular they
+appear as string literals inside Python source — benchmark suites and pipeline examples
+build Menai expressions as `'(let ((x (import "module-name"))) ...)'` strings.
+
+A rename is not complete until every occurrence of the old name has been found and updated.
+Search the whole repository (excluding `.git`, `venv`, and build artefacts), not just
+`src/menai/stdlib/` and `docs/`. Both the old module name and the old export name must be
+swept, and the test-file naming convention (`<module>.test.menai`) must be applied to any
+renamed test file.

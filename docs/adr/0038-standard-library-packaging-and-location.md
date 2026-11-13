@@ -130,8 +130,8 @@ accessor is the primitive and the path is the convenience, not the reverse.
 
 - The repository-root `menai_modules/` directory disappears, so every reference to
   it must be swept: the tools, the tests, the benchmark and pipeline string
-  literals, the documentation, and `AGENTS.md`. This is a repository-wide rename,
-  not a file move.
+  literals, and the documentation. This is a repository-wide rename, not a file
+  move.
 - The evaluator's behaviour changes as a side effect: once the standard library is
   on the default search path it can import standard library modules, which it
   cannot do today. This is a fix, but it is a behaviour change and must be tested.
