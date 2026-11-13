@@ -119,6 +119,22 @@ gc_mark_value(MenaiValue *val)
         break;
     }
 
+    case MENAITYPE_ENUM: {
+        MenaiEnum *e = (MenaiEnum *)val;
+        gc_mark_value((MenaiValue *)e->enum_type);
+        break;
+    }
+
+    case MENAITYPE_ENUMTYPE: {
+        MenaiEnumType *et = (MenaiEnumType *)val;
+        gc_mark_value((MenaiValue *)et->name);
+        for (int i = 0; i < et->nvariants; i++) {
+            gc_mark_value((MenaiValue *)et->variants[i].name);
+        }
+
+        break;
+    }
+
     case MENAITYPE_SYMBOL: {
         MenaiSymbol *sym = (MenaiSymbol *)val;
         gc_mark_value((MenaiValue *)sym->name);
