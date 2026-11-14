@@ -44,6 +44,19 @@ For each block, the incoming type knowledge is determined by its predecessors:
 Within a single block, guards still suppress redundant guards for later
 instructions in that block.
 
+Guards for a value used in several blocks are placed once, in the block that
+dominates every use, whenever that block is itself one of the uses.  A value
+read in a loop header and again in the loop's rotated test would otherwise
+carry a guard in each, and the copy in the loop-continue block executes once
+per iteration.  Placing the guard in the header covers the whole loop: the
+header's guard is what the dominated blocks inherit.
+
+The anchor must be a use block itself.  A guard raises when the value's type is
+wrong, so moving it to a block that no use reaches would make a program raise
+on a path that previously completed (ADR-0049).  Requiring the anchor to hold
+one of the uses guarantees every path through it executes a guard that was
+already there.
+
 Type refinement through branch conditions: when a branch tests the result of a
 type predicate (e.g. `integer?`), the true-edge successor inherits the refined
 type of the predicate's argument.  This allows guards to be skipped when a
@@ -63,11 +76,13 @@ from menai.cfg.menai_cfg import (
     MenaiCFGGuardInstr,
     MenaiCFGSwitchIntegerTerm,
     MenaiCFGSwitchEnumTerm,
+    MenaiCFGValue,
     predecessors_by_block,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
     MenaiCFGPerFunctionPass,
+    compute_dominators,
     replace_block_instrs,
     replace_blocks,
 )
@@ -103,16 +118,20 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
             val_id: fact.kind for val_id, fact in context.facts_for(func).items()
         }
 
-        preds_by_block = predecessors_by_block(func)
-        outgoing_types, branch_true_types = self._compute_block_types(func, types, preds_by_block)
+        func, delegated, hoisted = self._hoist_shared_guards(func, types)
 
-        changed = False
+        preds_by_block = predecessors_by_block(func)
+        outgoing_types, branch_true_types = self._compute_block_types(
+            func, types, preds_by_block, delegated,
+        )
+
+        changed = hoisted
         new_blocks: list[MenaiCFGBlock] = []
         for block in func.blocks:
             block_types = self._incoming_types(
                 func, block, preds_by_block, outgoing_types, branch_true_types, types,
             )
-            present = self._existing_guards(block)
+            present = self._existing_guards(block) | delegated.get(block.id, set())
             new_instrs: list[MenaiCFGInstr] = []
             for instr in block.instrs:
                 if isinstance(instr, MenaiCFGBuiltinInstr):
@@ -135,11 +154,126 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
 
         return func, changed
 
+    def _hoist_shared_guards(
+        self,
+        func: MenaiCFGFunction,
+        types: dict[int, str | None],
+    ) -> tuple[MenaiCFGFunction, dict[int, set[tuple[int, str]]], bool]:
+        """
+        Delegate repeated guards to the block that dominates all their uses.
+
+        A value guarded in two blocks is guarded twice, and if one of them is a
+        loop's rotated test the second guard executes once per iteration.  When
+        one of the using blocks dominates every other using block, a guard there
+        executes on every path that reaches any use, so the others can be
+        delegated to it.
+
+        A delegation is recorded rather than emitted: the block treats the pair
+        as already guarded, exactly as it would treat a guard physically present
+        in it.  Any guard already emitted for the pair outside the anchor is
+        removed, and the insertion pass supplies the anchor's own guard, which
+        it places before the anchor's first use as it does for every other
+        guard.
+
+        Returns the (possibly new) function, the per-block delegated pairs, and
+        whether any guard was removed.
+        """
+        uses = self._guardable_uses(func, types)
+        if not uses:
+            return func, {}, False
+
+        dom = compute_dominators(func)
+        delegated: dict[int, set[tuple[int, str]]] = {}
+        for pair, block_ids in uses.items():
+            anchor = self._guard_anchor(block_ids, dom)
+            if anchor is None:
+                continue
+
+            for block_id in block_ids:
+                if block_id != anchor:
+                    delegated.setdefault(block_id, set()).add(pair)
+
+        if not delegated:
+            return func, {}, False
+
+        new_blocks: list[MenaiCFGBlock] = []
+        changed = False
+        for block in func.blocks:
+            pairs = delegated.get(block.id)
+            if not pairs:
+                new_blocks.append(block)
+                continue
+
+            kept = tuple(
+                instr for instr in block.instrs
+                if not (
+                    isinstance(instr, MenaiCFGGuardInstr)
+                    and (instr.value.id, instr.expected_type) in pairs
+                )
+            )
+            if len(kept) != len(block.instrs):
+                block = replace_block_instrs(block, kept)
+                changed = True
+
+            new_blocks.append(block)
+
+        if not changed:
+            return func, delegated, False
+
+        return replace_blocks(func, tuple(new_blocks)), delegated, True
+
+    def _guardable_uses(
+        self,
+        func: MenaiCFGFunction,
+        types: dict[int, str | None],
+    ) -> dict[tuple[int, str], set[int]]:
+        """
+        Map each guardable (value id, expected type) pair to the blocks using it.
+
+        A pair the analysis already proves needs no guard, so it is not a use
+        for placement purposes.
+        """
+        uses: dict[tuple[int, str], set[int]] = {}
+        for block in func.blocks:
+            for instr in block.instrs:
+                if not isinstance(instr, MenaiCFGBuiltinInstr):
+                    continue
+
+                for arg, expected in self._required_operand_types(instr):
+                    if types.get(arg.id) == expected:
+                        continue
+
+                    uses.setdefault((arg.id, expected), set()).add(block.id)
+
+        return uses
+
+    @staticmethod
+    def _guard_anchor(
+        block_ids: set[int],
+        dom: dict[int, set[int]],
+    ) -> int | None:
+        """
+        Return the using block that dominates every other using block, or None.
+
+        A lone use needs no delegation.  `dom[b]` is the set of blocks that
+        dominate `b`, so `candidate` dominates `other` when it is a member of
+        `dom[other]`.
+        """
+        if len(block_ids) < 2:
+            return None
+
+        for candidate in sorted(block_ids):
+            if all(candidate in dom[other] for other in block_ids if other != candidate):
+                return candidate
+
+        return None
+
     def _compute_block_types(
         self,
         func: MenaiCFGFunction,
         types: dict[int, str | None],
         preds_by_block: dict[int, list[MenaiCFGBlock]],
+        delegated: dict[int, set[tuple[int, str]]],
     ) -> tuple[dict[int, dict[int, str | None]], dict[int, dict[int, str | None]]]:
         """
         Compute each block's outgoing known types by iterating to a fixed
@@ -177,7 +311,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
                 block_types = self._incoming_types(
                     func, block, preds_by_block, outgoing_types, branch_true_types, types,
                 )
-                self._apply_transfer(block, block_types)
+                self._apply_transfer(block, block_types, delegated)
                 new_outgoing[block.id] = block_types
                 self._refine_branch_types(block, block_types, new_branch_true)
 
@@ -233,15 +367,18 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         self,
         block: MenaiCFGBlock,
         block_types: dict[int, str | None],
+        delegated: dict[int, set[tuple[int, str]]],
     ) -> None:
         """
         Simulate the guards a block would receive, updating `block_types` in
         place to the block's outgoing types.
 
         The guard helpers append to a scratch instruction list that is
-        discarded: only their effect on `block_types` is wanted here.
+        discarded: only their effect on `block_types` is wanted here.  A
+        delegated pair counts as guarded, so the simulation matches what
+        insertion will emit.
         """
-        present = self._existing_guards(block)
+        present = self._existing_guards(block) | delegated.get(block.id, set())
         scratch: list[MenaiCFGInstr] = []
         for instr in block.instrs:
             if isinstance(instr, MenaiCFGBuiltinInstr):
@@ -328,7 +465,37 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         return result
 
     @staticmethod
+    def _required_operand_types(
+        instr: MenaiCFGBuiltinInstr,
+    ) -> list[tuple[MenaiCFGValue, str]]:
+        """
+        Return the (operand, expected type) pairs a builtin's signature checks.
+
+        Only positions whose declared type is specific are returned: `any` and
+        an undeclared position demand nothing of the operand.  This is the one
+        place that decides which operand positions are guardable, so guard
+        placement and guard insertion cannot disagree about them.
+        """
+        sig = BUILTIN_TYPE_SIGNATURES.get(instr.op)
+        if sig is None:
+            return []
+
+        arg_types, _ = sig
+        result: list[tuple[MenaiCFGValue, str]] = []
+        for i, arg in enumerate(instr.args):
+            if i >= len(arg_types):
+                break
+
+            expected = arg_types[i]
+            if expected is None or expected == 'any':
+                continue
+
+            result.append((arg, expected))
+
+        return result
+
     def _guard_builtin_args(
+        self,
         instr: MenaiCFGBuiltinInstr,
         types: dict[int, str | None],
         new_instrs: list[MenaiCFGInstr],
@@ -343,19 +510,7 @@ class MenaiCFGGuardInsertion(MenaiCFGPerFunctionPass):
         (value id, expected type) pair is already present in the block is not
         inserted again, which is what makes the pass idempotent.
         """
-        sig = BUILTIN_TYPE_SIGNATURES.get(instr.op)
-        if sig is None:
-            return
-
-        arg_types, _ = sig
-        for i, arg in enumerate(instr.args):
-            if i >= len(arg_types):
-                break
-
-            expected = arg_types[i]
-            if expected is None or expected == 'any':
-                continue
-
+        for arg, expected in self._required_operand_types(instr):
             known = types.get(arg.id)
             if known == expected:
                 continue

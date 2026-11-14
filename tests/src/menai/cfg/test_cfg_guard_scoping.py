@@ -260,3 +260,162 @@ class TestLoopHeaderGuardScoping:
         func = self._loop_with_header_use()
         func, _ = MenaiCFGGuardInsertion()._optimize_function(func, MenaiCFGContext())
         assert _count_guards(func) == 5
+
+
+def _guard_blocks(func: MenaiCFGFunction, value_id: int) -> list[int]:
+    """Return the ids of the blocks holding a guard for `value_id`."""
+    return [
+        block.id for block in func.blocks
+        if any(
+            isinstance(instr, MenaiCFGGuardInstr) and instr.value.id == value_id
+            for instr in block.instrs
+        )
+    ]
+
+
+class TestSharedGuardPlacement:
+    """
+    A value used in several blocks is guarded once, in the dominating use block.
+
+    The dominance propagation above suppresses a guard when the type reaches a
+    block along a chain of single-predecessor blocks.  It cannot help when the
+    using blocks meet at a join whose predecessors disagree, or when a loop's
+    rotated test duplicates a use into a continuation block: each use then gets
+    its own guard, and the copy in the continuation block runs once per
+    iteration.  A guard in the using block that dominates the others covers
+    them all, and is the guard that was already being paid there.
+    """
+
+    @staticmethod
+    def _join_with_shared_use() -> MenaiCFGFunction:
+        """
+        Build a CFG where two blocks use %x and the entry block dominates both:
+
+          block 0 (entry): %c = const #t; integer+ %x %x; branch -> 1 / 2
+          block 1 (then):  jump -> 2
+          block 2 (join):  integer- %x %k; branch -> 3 / 4
+          block 3 (then):  jump -> 1      (the join is reached repeatedly)
+          block 4 (exit):  return
+
+        The join has two predecessors whose outgoing types for %x disagree, so
+        the dominance propagation cannot establish %x there and would otherwise
+        insert a second guard.
+        """
+        x = _v(0, "x")
+        k = _v(1, "k")
+        cond = _v(2, "c")
+        y0 = _v(3, "y0")
+        y2 = _v(4, "y2")
+        y3 = _v(5, "y3")
+
+        entry = MenaiCFGBlock(
+            id=0,
+            label="entry",
+            instrs=(
+                MenaiCFGParamInstr(result=x, index=0, param_name="x"),
+                MenaiCFGParamInstr(result=k, index=1, param_name="k"),
+                MenaiCFGBuiltinInstr(result=y0, op="integer+", args=[x, x]),
+                MenaiCFGBuiltinInstr(result=cond, op="integer>?", args=[y0, k]),
+            ),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=1, false_block=2),
+        )
+
+        then_block = MenaiCFGBlock(
+            id=1, label="then", terminator=MenaiCFGJumpTerm(target=2),
+        )
+
+        join = MenaiCFGBlock(
+            id=2,
+            label="join",
+            instrs=(
+                MenaiCFGBuiltinInstr(result=y2, op="integer-", args=[x, k]),
+            ),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=3, false_block=4),
+        )
+
+        back_edge = MenaiCFGBlock(
+            id=3,
+            label="then",
+            instrs=(MenaiCFGBuiltinInstr(result=y3, op="integer+", args=[k, k]),),
+            terminator=MenaiCFGJumpTerm(target=1),
+        )
+
+        exit_block = MenaiCFGBlock(
+            id=4, label="exit", terminator=MenaiCFGReturnTerm(value=y2),
+        )
+
+        return MenaiCFGFunction(
+            blocks=(entry, then_block, join, back_edge, exit_block),
+            params=("x", "k"),
+            binding_name="shared",
+        )
+
+    def test_shared_use_guarded_once_in_dominating_block(self):
+        """
+        %x is used in the entry block and again at the join.  The entry block
+        dominates the join, so its guard covers both and no guard is emitted at
+        the join.
+        """
+        func = self._join_with_shared_use()
+        func, _ = MenaiCFGGuardInsertion()._optimize_function(func, MenaiCFGContext())
+        assert _guard_blocks(func, 0) == [0], (
+            "the guard on %x must be emitted once, in the block that dominates "
+            "every use, not again at the join"
+        )
+
+    def test_guard_stays_in_loop_body_when_header_does_not_use_value(self):
+        """
+        A value used only inside a loop keeps its guard inside the loop.  Moving
+        it to the header would make the program raise on a path that never
+        reached the use, so a block is only a guard anchor if it uses the value
+        itself.
+        """
+        x = _v(10, "x")
+        k = _v(11, "k")
+        cond = _v(12, "c")
+        header_work = _v(13, "h")
+        body_work = _v(14, "b")
+        exit_value = _v(15, "e")
+
+        entry = MenaiCFGBlock(
+            id=0,
+            label="entry",
+            instrs=(
+                MenaiCFGParamInstr(result=x, index=0, param_name="x"),
+                MenaiCFGParamInstr(result=k, index=1, param_name="k"),
+                MenaiCFGBuiltinInstr(result=cond, op="integer>?", args=[k, k]),
+            ),
+            terminator=MenaiCFGJumpTerm(target=1),
+        )
+
+        header = MenaiCFGBlock(
+            id=1,
+            label="loop_entry",
+            instrs=(MenaiCFGBuiltinInstr(result=header_work, op="integer+", args=[k, k]),),
+            terminator=MenaiCFGBranchTerm(cond=header_work, true_block=2, false_block=3),
+        )
+
+        body = MenaiCFGBlock(
+            id=2,
+            label="body",
+            instrs=(
+                MenaiCFGBuiltinInstr(result=body_work, op="integer%", args=[x, x]),
+            ),
+            terminator=MenaiCFGJumpTerm(target=1),
+        )
+
+        exit_block = MenaiCFGBlock(
+            id=3, label="exit", terminator=MenaiCFGReturnTerm(value=exit_value),
+        )
+
+        func = MenaiCFGFunction(
+            blocks=(entry, header, body, exit_block),
+            params=("x", "k"),
+            binding_name="inner-use",
+        )
+
+        func, _ = MenaiCFGGuardInsertion()._optimize_function(func, MenaiCFGContext())
+        assert _guard_blocks(func, 10) == [2], (
+            "the guard on %x must stay in the body that uses it, not move to the "
+            "loop header"
+        )
