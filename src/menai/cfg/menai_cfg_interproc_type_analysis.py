@@ -1062,6 +1062,12 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
             for callee_id, _, _ in self._call_sites(info):
                 callers_of[callee_id].add(id(info.func))
 
+            # An apply contributes no argument flow, but its result is the
+            # callee's return fact, so the caller depends on it just as a direct
+            # call's caller does.
+            for callee_id in self._applied_callees(info):
+                callers_of[callee_id].add(id(info.func))
+
             if info.parent is not None:
                 children_of[id(info.parent.func)].add(id(info.func))
 
@@ -1092,6 +1098,9 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
             if isinstance(term, MenaiCFGReturnTerm):
                 result = join(result, facts.get(term.value.id, BOTTOM))
+
+            elif isinstance(term, MenaiCFGTailApplyTerm):
+                result = join(result, self._apply_result_fact(term.func, info, info_of))
 
             elif isinstance(term, MenaiCFGTailCallTerm):
                 callees = info.callee_of_value.get(term.func.id, set())
@@ -1224,6 +1233,27 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
             elif isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is None:
                 result.append((id(info.func), term.args, True))
+
+        return result
+
+    def _applied_callees(self, info: _FunctionInfo) -> set[int]:
+        """
+        Return the functions an apply or tail apply in `info` may call.
+
+        An apply passes its arguments as a list, so it cannot ground a callee's
+        parameters and is not a call site in the argument-flow sense.  Its
+        *result*, though, is the callee's return fact, so a caller still depends
+        on the callee and must be re-processed when that fact moves.
+        """
+        result: set[int] = set()
+        for block in info.func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGApplyInstr):
+                    result |= info.callee_of_value.get(instr.func.id, set())
+
+            term = block.terminator
+            if isinstance(term, MenaiCFGTailApplyTerm):
+                result |= info.callee_of_value.get(term.func.id, set())
 
         return result
 
@@ -1590,10 +1620,44 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
             return result
 
+        if isinstance(instr, MenaiCFGApplyInstr):
+            return self._apply_result_fact(instr.func, info, info_of)
+
         if isinstance(instr, MenaiCFGBuiltinInstr):
             return self._builtin_fact(instr, facts)
 
         return BOTTOM
+
+    def _apply_result_fact(
+        self,
+        func_value: MenaiCFGValue,
+        info: _FunctionInfo,
+        info_of: dict[int, _FunctionInfo],
+    ) -> TypeFact:
+        """
+        Return the fact of the value an apply produces.
+
+        An apply calls `func_value` with a list of arguments, so its result is
+        whatever that callee returns: the same fact a direct call contributes,
+        read from the callee's return fact.  An apply is not a call site for
+        argument propagation — a list of arguments cannot be mapped onto
+        parameters — but it is one for the result, which is why the callee's
+        return fact is read here rather than through _call_sites.
+
+        An unresolved callee, or one that may also denote a function the
+        analysis cannot see, contributes ANY rather than BOTTOM.  BOTTOM is the
+        join identity, so returning it would let a proven return type from
+        another path survive the join and be reported as proven.
+        """
+        callees = info.callee_of_value.get(func_value.id, set())
+        if not callees or self._callee_may_be_unknown(info, func_value.id):
+            return ANY
+
+        result = BOTTOM
+        for callee_id in callees:
+            result = join(result, info_of[callee_id].return_fact)
+
+        return result
 
     @staticmethod
     def _callee_may_be_unknown(info: _FunctionInfo, callee_value_id: int) -> bool:

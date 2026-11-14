@@ -41,6 +41,9 @@ Covers:
  14. A function-valued parameter fed two functions that return different struct
      types loses the type identity, so a field access on the call result stays
      symbol-based.
+ 15. An apply's result carries the return fact of the functions it may call, in
+     tail and non-tail position alike, and is of any type when the callee cannot
+     be named.
 """
 
 import pytest
@@ -1278,3 +1281,75 @@ class TestHigherOrderUnknownCalleeRaises:
     def test_non_function_callee_raises(self, menai):
         with pytest.raises(MenaiError, match="cannot call non-function"):
             menai.evaluate_and_format(HIGHER_ORDER_WRONG_TYPE_SRC)
+
+
+APPLY_RETURN_TAIL_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (a b) (point a b)))
+      (make-via-apply (lambda (args) (apply make args)))
+      (read-x (lambda (v) (struct-get v 'x))))
+  (read-x (make-via-apply (list 1 2))))
+"""
+
+APPLY_RETURN_NONTAIL_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (a b) (point a b)))
+      (x-via-apply (lambda (args) (struct-get (apply make args) 'x))))
+  (x-via-apply (list 1 2)))
+"""
+
+APPLY_RETURN_UNKNOWN_SRC = """
+(let ((point (struct (x y)))
+      (make (lambda (a b) (point a b))))
+  (apply (lambda (f) (struct-get (apply f (list 1 2)) 'x)) (list make)))
+"""
+
+
+class TestApplyReturnFact:
+    """
+    An apply's result carries the return fact of the functions it may call.
+
+    A function whose only exit is a tail apply must not be reported as
+    returning no value: the apply's result is whatever the callee returns, so
+    the fact follows the callee.  The same holds for an apply in non-tail
+    position.  Where the callee cannot be named, the result is of any type and a
+    field read on it stays symbol-based.
+    """
+
+    def test_tail_apply_result_type_proven(self):
+        """
+        `make-via-apply` returns only through a tail apply of `make`, whose
+        return is a `point`, so the field read on the call result resolves.
+        """
+        cfg = _build_cfg(APPLY_RETURN_TAIL_SRC)
+        assert "struct-indexed-get" in _ops(cfg)
+        assert "struct-get" not in _ops(cfg)
+
+    def test_tail_apply_result_correct(self, menai):
+        assert menai.evaluate_and_format(APPLY_RETURN_TAIL_SRC) == "1"
+
+    def test_non_tail_apply_result_type_proven(self):
+        """
+        An apply in non-tail position also carries its callee's return type, so
+        the field read on the apply result resolves.
+        """
+        cfg = _build_cfg(APPLY_RETURN_NONTAIL_SRC)
+        assert "struct-indexed-get" in _ops(cfg)
+        assert "struct-get" not in _ops(cfg)
+
+    def test_non_tail_apply_result_correct(self, menai):
+        assert menai.evaluate_and_format(APPLY_RETURN_NONTAIL_SRC) == "1"
+
+    def test_unknown_callee_apply_result_not_proven(self):
+        """
+        The applied function arrives as an argument of an apply, which cannot
+        ground a parameter, so the analysis cannot name it and the result may be
+        of any type.  The field read stays symbol-based, and the program still
+        reads the right field.
+        """
+        cfg = _build_cfg(APPLY_RETURN_UNKNOWN_SRC)
+        assert "struct-get" in _ops(cfg)
+        assert "struct-indexed-get" not in _ops(cfg)
+
+    def test_unknown_callee_apply_result_correct(self, menai):
+        assert menai.evaluate_and_format(APPLY_RETURN_UNKNOWN_SRC) == "1"
