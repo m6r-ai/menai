@@ -34,7 +34,11 @@ CHAIN_SRC = """
              ((: State 'stopped) 'c)
              ((: State 'paused) 'd)
              (_ 'other)))))
-  (classify (State 'idle)))
+  ; The scrutinee is a phi of two constructions, so the variant is not known at
+  ; compile time and the switch is not folded away.
+  (classify (if (integer=? (bytes-length (string->bytes "x")) 1)
+                (State 'idle)
+                (State 'running))))
 """
 
 SINGLE_SRC = """

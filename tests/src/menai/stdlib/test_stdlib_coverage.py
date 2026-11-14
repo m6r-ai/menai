@@ -29,10 +29,14 @@ _MODULE_SUFFIX = ".menai"
 # Modules whose own suite exercises every function in full.  A module leaves
 # this set only when a test is removed or a path stops being taken.
 #
-# `deflate-decompress` and `png-encode` are absent because inlining single-use
-# lambdas leaves each with a path its own suite cannot take: a dead defensive arm
-# in `output-refresh-window`, and `zlib-compress`'s non-auto mode arms copied in
-# from another module.  Neither can be closed by a test.
+# `deflate-decompress`, `png-encode` and `zip-create` are absent because inlining
+# a capability module into its caller leaves the caller carrying an arm its own
+# suite cannot take: a dead defensive arm in `output-refresh-window`, and the
+# type-error arm of `compress` in both encoders, which no caller can reach
+# because each hands the compressor a value it has already checked.  `zip-create`
+# is also missing `write-bits`' zero-count arm and the arm of `encode-auto`'s
+# shortest comparison where the stored encoding wins.  None can be closed by a
+# test of the calling module.
 _FULLY_COVERED = frozenset({
     "bmp-decode", "bmp-encode", "csv-encode", "docx-decode", "docx-encode",
     "gzip-compress", "html-decode", "html-encode", "json-encode", "json-decode",

@@ -38,6 +38,7 @@ from menai.cfg.menai_cfg_simplify_blocks import MenaiCFGSimplifyBlocks
 from menai.cfg.menai_cfg_schedule import MenaiCFGSchedule
 from menai.cfg.menai_cfg_struct_instance_fold import MenaiCFGStructInstanceFold
 from menai.cfg.menai_cfg_enum_instance_fold import MenaiCFGEnumInstanceFold
+from menai.cfg.menai_cfg_enum_switch_fold import MenaiCFGEnumSwitchFold
 from menai.cfg.menai_cfg_switch_dispatch import MenaiCFGSwitchDispatch
 from menai.cfg.menai_cfg_enum_switch_dispatch import MenaiCFGEnumSwitchDispatch
 from menai.cfg.menai_cfg import MenaiCFGFunction
@@ -124,6 +125,7 @@ class MenaiCompiler:
             MenaiCFGDeadCaptures(),
             MenaiCFGOrderExceptionBlocks(),
             MenaiCFGMergeExitBlocks(),
+            MenaiCFGEnumSwitchFold(),
         ]
         self._vcode_builder = MenaiVCodeBuilder()
         self._bytecode_builder = MenaiBytecodeBuilder()
