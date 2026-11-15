@@ -75,6 +75,12 @@ All checks must pass cleanly. This runs:
 - **pylint** — linting across `src/`. The codebase is held to a 10.00/10 rating.  Humbug
   has custom style checker rules to enforce the coding standard wherever it can.
 
+If your change is an optimisation, do not judge it by wall-clock timing: benchmark cases are
+millisecond-scale, and the same build measured twice varies by ±5–14% per case. Compare
+executed instruction counts instead — `menai-benchmark --opcodes --iterations 1` prints a
+`TOTAL` row per case — and take the measurement only once the test suite passes, because a
+miscompiled build can post a better number than a correct one.
+
 ## Getting involved
 
 Join the [Discord server](https://discord.gg/GZhJ7ZtgwN) if you want to discuss ideas or

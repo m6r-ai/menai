@@ -106,6 +106,40 @@ full flag list rather than assuming what a flag is called.
 as annotated disassembly, and `--coverage` reports bytecode instruction coverage. Most
 report-producing tools accept `--width N` to clip lines to N columns.
 
+## Measuring an optimisation change
+
+Wall-clock timings cannot resolve a compiler change. Benchmarks are millisecond-scale and
+noisy: an A/A control — the same build benchmarked twice — gives per-case ratios of ±5–14%,
+which is the same magnitude a real change produces. Run the control before trusting any
+timing, and do not use timings to accept or reject an optimisation.
+
+Executed instruction counts are deterministic and are the measurement to use. Compare the
+summed `TOTAL` rows of the opcode profile, taken on the same corpus with one iteration:
+
+```bash
+menai-benchmark --opcodes --iterations 1 --no-color > /tmp/op-after.log
+```
+
+The counts contain thousands separators, so sum them rather than comparing totals by eye.
+Compare against a log taken from the previous commit (or from `git stash`), and report the
+per-case deltas, not only the corpus total: a change that improves the total while some cases
+regress is usually trading one hot path for another, and the regressions are the evidence.
+
+Three rules, each learned from a change that looked good and was not:
+
+- **Measure a green tree.** A build with failing tests can post a better number precisely
+  because it is wrong: a miscompile that reads a stale register may execute fewer
+  instructions. Run the full suite before measuring, and never quote a number taken before it
+  passed.
+- **Count cost in both currencies.** An optimisation can reduce executed instructions while
+  making the compiler much slower, or the reverse. If a change adds work to a pass, measure
+  compile time as well — a few modules compiled to a CFG is enough to see an order-of-magnitude
+  regression.
+- **A pass's benefit is not the work it deletes locally.** Folding or merging removes
+  instructions, but it also removes the shape that later passes were exploiting, and work can
+  reappear multiplied inside a loop. Deleting an instruction executed once per call is worth
+  almost nothing; starving a shared invariant that executes once per element is expensive.
+
 ## Code quality
 
 - Before considering any code change complete, run the full suite of static analysis tools:
