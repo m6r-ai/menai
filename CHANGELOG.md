@@ -20,13 +20,26 @@ New features:
   or reference counted, and the small-integer cache is gone.  Mean performance gain
   of about 6%.
 - Added a new branch fact CFG optimization to eliminate more dead code.
+- Added a CFG pass that folds an enum switch whose scrutinee is a statically-known
+  variant into a jump to the selected arm.  This deletes a mode dispatch that
+  inlining has made static, and the arms it makes unreachable are never emitted.
+- A type guard shared by several blocks is now placed once, in the block that
+  dominates every use, rather than repeated in each; the copy in a loop's
+  continue block no longer executes once per iteration.
+- An `apply`'s result now carries the return type of the functions it may call, so
+  a field read on an applied function's result can resolve to a constant index.
 - Improved inlining of functions (gain of just over 0.3%).
 
 Bug fixes:
 
 - Fixed a Unicode parsing error in the JSON decoder library.
 - Resolved a problem with opcode type signatures being incorrect.
-- Resolved a problem with LICM hoisting a type guard when it should not.
+- Fixed a memory-safety bug in the VM: enum values and enum type descriptors were
+  not marked by the garbage collector, so an enum's type descriptor, and an enum
+  type's name and variant names, could be freed while still reachable.
+- Fixed two LICM hoisting faults: a type guard could be hoisted above the check its
+  operand depended on, and an instruction could be hoisted above the definition of
+  an operand that is only computed inside the loop.
 
 ## v0.9.0 (2026-10-27)
 
