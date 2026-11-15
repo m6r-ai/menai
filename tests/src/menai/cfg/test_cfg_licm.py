@@ -29,6 +29,16 @@ These tests verify that:
 """
 
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
+from menai.cfg.menai_cfg import (
+    MenaiCFGPhiInstr,
+    result_id_in_instr,
+    successor_ids,
+    value_ids_in_instr,
+)
+from menai.cfg.menai_cfg_optimization_pass import (
+    collect_functions,
+    compute_dominators,
+)
 from menai.menai_compiler import MenaiCompiler
 
 
@@ -919,4 +929,100 @@ class TestInvarianceThroughIndexedStructGet:
         assert all(gi < target for gi in guard_indices), (
             "a guard on a value derived from a loop-invariant struct field "
             "must be hoisted into the preamble, or not needed at all"
+        )
+
+
+AVAILABILITY_SRC = """
+(let ((cube (struct (up down front back left right)))
+      (solved (lambda () (cube (vector 0 0 0 0) (vector 1 1 1 1)
+                               (vector 2 2 2 2) (vector 3 3 3 3)
+                               (vector 4 4 4 4) (vector 5 5 5 5))))
+      (read-face (lambda (c)
+                   (let ((loop (lambda (i acc)
+                                 (if (integer>=? i 4)
+                                     acc
+                                     (loop (integer+ i 1)
+                                           (integer+ acc (vector-nth (struct-get c 'up) i)))))))
+                     (loop 0 0)))))
+  (read-face (solved)))
+"""
+
+
+def _operand_is_available(func) -> bool:
+    """
+    Return True if every non-phi operand is defined before it is read.
+
+    An operand is available when its definition is earlier in the same block,
+    or in a block that dominates the reading block.  A phi is skipped: its
+    operands are read where control enters from each predecessor, not at the
+    phi's own position.
+    """
+    live = _reachable_block_ids(func)
+    dom = compute_dominators(func)
+    def_block: dict[int, int] = {}
+    def_position: dict[int, int] = {}
+    for block in func.blocks:
+        for position, instr in enumerate(block.instrs):
+            result_id = result_id_in_instr(instr)
+            if result_id is not None:
+                def_block[result_id] = block.id
+                def_position[result_id] = position
+
+    for block in func.blocks:
+        if block.id not in live:
+            continue
+
+        for position, instr in enumerate(block.instrs):
+            if isinstance(instr, MenaiCFGPhiInstr):
+                continue
+
+            for value_id in value_ids_in_instr(instr):
+                where = def_block.get(value_id)
+                if where is None:
+                    continue
+
+                if where == block.id:
+                    if def_position[value_id] > position:
+                        return False
+
+                elif where not in dom[block.id]:
+                    return False
+
+    return True
+
+
+def _reachable_block_ids(func) -> set[int]:
+    """Return the ids of blocks reachable from the entry."""
+    by_id = {block.id: block for block in func.blocks}
+    seen: set[int] = set()
+    stack = [func.entry().id]
+    while stack:
+        block_id = stack.pop()
+        if block_id in seen or block_id not in by_id:
+            continue
+
+        seen.add(block_id)
+        stack.extend(successor_ids(by_id[block_id].terminator))
+
+    return seen
+
+
+class TestHoistedOperandAvailability:
+    """
+    A hoisted instruction may read only values that exist at the hoist target.
+
+    Loop invariance says a value does not change between iterations; it does
+    not say the value has been computed where the instruction would run.  An
+    instruction whose operand is defined inside the loop stays where it is,
+    because hoisting it would read a register nothing has written.
+    """
+
+    def test_struct_field_read_operands_available(self):
+        """
+        Every non-phi operand is defined before it is read, either earlier in
+        its own block or in a block that dominates the read.
+        """
+        funcs = collect_functions(MenaiCompiler().compile_to_cfg(AVAILABILITY_SRC))
+        assert all(_operand_is_available(func) for func in funcs), (
+            "a hoisted instruction reads an operand that is not yet computed"
         )

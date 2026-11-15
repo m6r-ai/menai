@@ -645,7 +645,22 @@ class MenaiCFGLICM(MenaiCFGPerFunctionPass):
         if result is None:
             return False
 
-        return result.id in invariant_ids
+        if result.id not in invariant_ids:
+            return False
+
+        # Every operand must already be available where the instruction would
+        # run, which is the hoist target.  Invariance says the value does not
+        # change across iterations; it does not say the value exists yet at the
+        # top of the loop.  An operand defined inside the loop — even by
+        # another hoisted instruction — is not in a block that dominates the
+        # target, so the instruction stays where it is rather than reading a
+        # register nothing has written.
+        for operand_id in value_ids_in_instr(instr):
+            def_block_id = def_block_ids.get(operand_id)
+            if def_block_id is None or def_block_id not in dom[hoist_target_id]:
+                return False
+
+        return True
 
     def _instruction_may_raise(
         self,
