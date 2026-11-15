@@ -107,8 +107,6 @@ def _canonical_const_ids(func: MenaiCFGFunction) -> dict[int, int]:
                 canonical[instr.result.id] = instr.result.id
 
     return canonical
-
-
 def _expression_key(
     instr: MenaiCFGInstr,
     canonical: dict[int, int],
@@ -224,6 +222,7 @@ class MenaiCFGCSE(MenaiCFGPerFunctionPass):
         # the available-expression map in scope on entry to it.  A child's map
         # is the parent's map extended by the parent's own definitions, so the
         # map is never mutated in place across siblings.
+
         stack: list[tuple[int, dict[tuple, MenaiCFGValue]]] = [
             (func.entry().id, {})
         ]
@@ -241,7 +240,11 @@ class MenaiCFGCSE(MenaiCFGPerFunctionPass):
                 if existing is not None:
                     replacements[result.id] = existing
 
-                else:
+                elif existing is None:
+                    # The first definition stays the anchor even when a later
+                    # duplicate is not merged into it: it is the one that
+                    # dominates the most, so it is the best target for any
+                    # further duplicate the walk has not reached yet.
                     available[key] = result
 
             for child_id in children[block_id]:
