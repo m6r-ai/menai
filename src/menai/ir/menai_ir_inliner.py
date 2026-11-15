@@ -1138,7 +1138,6 @@ def _count_param_uses(ir: MenaiIRExpr, param: str, shadowed: set[str]) -> int:
     raise TypeError(f"_count_param_uses: unhandled IR node type {type(ir).__name__}")
 
 
-
 def _count_nodes(ir: MenaiIRExpr) -> int:
     """Count the number of IR nodes in a tree."""
     if isinstance(ir, MenaiIRConstant):
@@ -1355,6 +1354,13 @@ def _variable_use_counts(ir: MenaiIRExpr) -> dict[str, int]:
     bindings, and no shadowing is resolved, so the count is an upper bound on how
     often a binding is read.  Overcounting only makes the caller more
     conservative: a name whose count is one is genuinely referenced once.
+
+    The leaf cases below are a claim about each node's fields, not about its
+    name: `MenaiIRQuote` and `MenaiIRBuildEnum` carry no sub-plans (an enum is a
+    bare tag), which is what makes them leaves.  Adding a payload to an enum, or
+    a plan to a quote, means walking it here — and in `_count_nodes`, which has
+    the same leaf set.  A leaf that silently hides a variable undercounts, and
+    this count decides whether a large body may be inlined.
     """
     counts: dict[str, int] = {}
 
