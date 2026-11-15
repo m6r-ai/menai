@@ -12,6 +12,8 @@ These tests verify that:
   - A computation on a path that does not dominate the other is NOT merged.
   - A raising computation is merged only where it is redundant on all paths,
     so merging cannot introduce a raise (ADR-0049).
+  - A duplicate in a later block is shared only when the computation cannot
+    raise, since a raising one cannot be hoisted out of the loop it sits in.
   - Eliminated computations produce correct results end to end.
   - The pass reaches a fixed point.
   - A merged value used as a closure capture is rewritten in the patch
@@ -29,6 +31,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGParamInstr,
     MenaiCFGPatchClosureInstr,
     MenaiCFGReturnTerm,
+    MenaiCFGStructGetIndexedInstr,
     MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_cse import MenaiCFGCSE
@@ -208,6 +211,64 @@ class TestCrossBlockMerging:
             self._two_blocks("bytes-nth"), MenaiCFGContext(),
         )
         assert _count_builtin(func, 'bytes-nth') == 2
+
+    @staticmethod
+    def _two_struct_reads() -> MenaiCFGFunction:
+        """
+        Build entry -> then, where both blocks read field 0 of %s:
+
+          entry: %c = none? %s; %p = struct_get_indexed %s, 0
+                 branch %c -> then / exit
+          then:  %q = struct_get_indexed %s, 0; jump exit
+          exit:  return %q
+        """
+        s = MenaiCFGValue(id=0, hint="s")
+        cond = MenaiCFGValue(id=1, hint="c")
+        first = MenaiCFGValue(id=2, hint="p")
+        second = MenaiCFGValue(id=3, hint="q")
+
+        entry = MenaiCFGBlock(
+            id=0,
+            label="entry",
+            instrs=(
+                MenaiCFGParamInstr(result=s, index=0, param_name="s"),
+                MenaiCFGBuiltinInstr(result=cond, op="none?", args=[s]),
+                MenaiCFGStructGetIndexedInstr(result=first, struct=s, index=0),
+            ),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=1, false_block=2),
+        )
+
+        then_block = MenaiCFGBlock(
+            id=1,
+            label="then",
+            instrs=(MenaiCFGStructGetIndexedInstr(result=second, struct=s, index=0),),
+            terminator=MenaiCFGJumpTerm(target=2),
+        )
+
+        exit_block = MenaiCFGBlock(
+            id=2, label="exit", terminator=MenaiCFGReturnTerm(value=second),
+        )
+
+        return MenaiCFGFunction(
+            blocks=(entry, then_block, exit_block),
+            params=("s",),
+            binding_name="struct-read",
+        )
+
+    def test_struct_field_read_merged_across_blocks(self):
+        """
+        A struct field read at a compile-time index cannot raise, so it is as
+        shareable across blocks as any other non-raising computation.
+        """
+        func, _ = MenaiCFGCSE()._optimize_function(
+            self._two_struct_reads(), MenaiCFGContext(),
+        )
+        assert sum(
+            1
+            for block in func.blocks
+            for instr in block.instrs
+            if isinstance(instr, MenaiCFGStructGetIndexedInstr)
+        ) == 1
 
 
 class TestRaisingComputationMerging:

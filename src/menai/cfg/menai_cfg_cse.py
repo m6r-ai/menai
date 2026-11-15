@@ -134,15 +134,25 @@ def _is_mergeable_across_blocks(instr: MenaiCFGInstr) -> bool:
     block), and a cross-block duplicate merges only when the computation cannot
     raise.  Anything without a raising classification is treated as raising, so
     the pass keeps the duplicate rather than merging it.
+
+    This set must be kept in step with the mergeable types in `_expression_key`:
+    an instruction that is mergeable there and cannot raise belongs here too.
+    Leaving one out is not a soundness problem — the duplicate is simply kept —
+    but it silently removes the sharing for that instruction, and the two
+    definitions of "mergeable" then disagree.
     """
     if isinstance(instr, MenaiCFGBuiltinInstr):
         info = BUILTINS.get(instr.op)
         return info is not None and not info.may_raise
 
+    # A struct field read cannot raise: the type analysis emits it only for a
+    # known struct type with an in-range index, so it is an array load rather
+    # than a checked operation.
     return isinstance(
         instr,
         (MenaiCFGMakeListInstr, MenaiCFGMakeVectorInstr, MenaiCFGMakeSetInstr,
-         MenaiCFGMakeDictInstr, MenaiCFGMakeStructInstr),
+         MenaiCFGMakeDictInstr, MenaiCFGMakeStructInstr,
+         MenaiCFGStructGetIndexedInstr),
     )
 
 
