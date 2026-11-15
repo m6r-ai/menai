@@ -62,6 +62,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGStructGetIndexedInstr,
     MenaiCFGValue,
     blocks_by_id,
+    result_id_in_instr,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
@@ -70,6 +71,7 @@ from menai.cfg.menai_cfg_optimization_pass import (
     prune_dead_definitions,
     substitute_value_in_function,
 )
+from menai.menai_builtin_registry import BUILTINS
 
 
 def _canonical_const_ids(func: MenaiCFGFunction) -> dict[int, int]:
@@ -107,6 +109,43 @@ def _canonical_const_ids(func: MenaiCFGFunction) -> dict[int, int]:
                 canonical[instr.result.id] = instr.result.id
 
     return canonical
+
+
+def _is_mergeable_across_blocks(instr: MenaiCFGInstr) -> bool:
+    """
+    Return True if this instruction should be merged into an earlier block's
+    copy of the same expression.
+
+    Merging is sound whatever the instruction: it stays where it is, and its
+    block dominates the duplicate, so no path gains an execution it did not
+    already have.  This is a *quality* rule, and it is measured rather than
+    derived.
+
+    A computation that cannot raise is hoisted out of any loop it sits in by
+    MenaiCFGLICM, which leaves one copy in the preheader — so an earlier merge
+    merely reaches the same code one pass sooner, and costs nothing.  A
+    computation that *can* raise is the one LICM leaves alone: the duplicate
+    stays in the loop, cheap and local to its block.  Merging that duplicate
+    into a dominating block instead forces its value to stay live from the
+    earlier block to the later one, which is a longer live range, more register
+    pressure, and work LICM could not hoist anyway.
+
+    So: same-block duplicates always merge (the value cannot outlive the
+    block), and a cross-block duplicate merges only when the computation cannot
+    raise.  Anything without a raising classification is treated as raising, so
+    the pass keeps the duplicate rather than merging it.
+    """
+    if isinstance(instr, MenaiCFGBuiltinInstr):
+        info = BUILTINS.get(instr.op)
+        return info is not None and not info.may_raise
+
+    return isinstance(
+        instr,
+        (MenaiCFGMakeListInstr, MenaiCFGMakeVectorInstr, MenaiCFGMakeSetInstr,
+         MenaiCFGMakeDictInstr, MenaiCFGMakeStructInstr),
+    )
+
+
 def _expression_key(
     instr: MenaiCFGInstr,
     canonical: dict[int, int],
@@ -223,6 +262,15 @@ class MenaiCFGCSE(MenaiCFGPerFunctionPass):
         # is the parent's map extended by the parent's own definitions, so the
         # map is never mutated in place across siblings.
 
+        # Where each expression is computed, so a merge that reaches across
+        # blocks can be recognised and judged (see _is_mergeable_across_blocks).
+        block_of: dict[int, int] = {}
+        for block in func.blocks:
+            for instr in block.instrs:
+                result_id = result_id_in_instr(instr)
+                if result_id is not None:
+                    block_of[result_id] = block.id
+
         stack: list[tuple[int, dict[tuple, MenaiCFGValue]]] = [
             (func.entry().id, {})
         ]
@@ -237,7 +285,10 @@ class MenaiCFGCSE(MenaiCFGPerFunctionPass):
 
                 key, result = entry
                 existing = available.get(key)
-                if existing is not None:
+                if existing is not None and (
+                    block_of.get(existing.id) == block_id
+                    or _is_mergeable_across_blocks(instr)
+                ):
                     replacements[result.id] = existing
 
                 elif existing is None:

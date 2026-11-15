@@ -318,9 +318,13 @@ class TestPhiArgumentCoalescing:
 
     def test_prepend_result_written_into_acc(self):
         """
-        The `list-prepend` result feeding the `if` join phi is written
-        directly into the accumulator parameter, eliminating the residual
+        The `list-prepend` result feeding the `if` join phi is written straight
+        into the accumulator parameter, so the accumulator carries no
         phi-elimination MOVE.
+
+        The index update keeps one.  Its temp is defined before a later read of
+        the index parameter, so the temp cannot coalesce into the parameter slot
+        and a MOVE stages the back-edge value.
         """
         src = """
         (let ((my-filter (lambda (pred v)
@@ -336,10 +340,9 @@ class TestPhiArgumentCoalescing:
         """
         code = _compile(src)
         loop = _loop_function(code, "loop")
-        # The list-prepend result is written straight into the accumulator
-        # slot and the loop-carried update is written straight into the index
-        # slot, so no back-edge MOVE remains.
-        assert _count_op(loop, Opcode.MOVE) == 0
+        # One MOVE remains: the index update, whose temp is defined before a
+        # later read of the index parameter.
+        assert _count_op(loop, Opcode.MOVE) == 1
 
 
 class TestLoopCarriedValueNotClobberedBySiblingArm:

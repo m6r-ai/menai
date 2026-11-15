@@ -20,10 +20,16 @@ These tests verify that:
 
 from menai import Menai
 from menai.cfg.menai_cfg import (
+    MenaiCFGBlock,
+    MenaiCFGBranchTerm,
     MenaiCFGBuiltinInstr,
     MenaiCFGFunction,
+    MenaiCFGJumpTerm,
     MenaiCFGMakeClosureInstr,
+    MenaiCFGParamInstr,
     MenaiCFGPatchClosureInstr,
+    MenaiCFGReturnTerm,
+    MenaiCFGValue,
 )
 from menai.cfg.menai_cfg_cse import MenaiCFGCSE
 from menai.cfg.menai_cfg_optimization_pass import (
@@ -128,6 +134,80 @@ class TestRedundantComputationElimination:
           (integer+ (list-length x) (list-length x)))
         """)
         assert result == 6
+
+
+class TestCrossBlockMerging:
+    """
+    A duplicate in a later block merges only when the computation cannot raise.
+
+    A computation that cannot raise is hoisted out of any loop by LICM, so
+    sharing it early costs nothing.  One that can raise is left in place by
+    LICM, and merging it into a dominating block lengthens its value's live
+    range for no gain.
+    """
+
+    @staticmethod
+    def _two_blocks(second_op: str) -> MenaiCFGFunction:
+        """
+        Build entry -> then, where both blocks compute `second_op` on %x:
+
+          entry: %c = none? %x; %p = <second_op> %x; branch %c -> then / exit
+          then:  %q = <second_op> %x; jump exit
+          exit:  return %q
+        """
+        x = MenaiCFGValue(id=0, hint="x")
+        cond = MenaiCFGValue(id=1, hint="c")
+        first = MenaiCFGValue(id=2, hint="p")
+        second = MenaiCFGValue(id=3, hint="q")
+
+        entry = MenaiCFGBlock(
+            id=0,
+            label="entry",
+            instrs=(
+                MenaiCFGParamInstr(result=x, index=0, param_name="x"),
+                MenaiCFGBuiltinInstr(result=cond, op="none?", args=[x]),
+                MenaiCFGBuiltinInstr(result=first, op=second_op, args=[x]),
+            ),
+            terminator=MenaiCFGBranchTerm(cond=cond, true_block=1, false_block=2),
+        )
+
+        then_block = MenaiCFGBlock(
+            id=1,
+            label="then",
+            instrs=(MenaiCFGBuiltinInstr(result=second, op=second_op, args=[x]),),
+            terminator=MenaiCFGJumpTerm(target=2),
+        )
+
+        exit_block = MenaiCFGBlock(
+            id=2, label="exit", terminator=MenaiCFGReturnTerm(value=second),
+        )
+
+        return MenaiCFGFunction(
+            blocks=(entry, then_block, exit_block),
+            params=("x",),
+            binding_name="cross-block",
+        )
+
+    def test_non_raising_duplicate_merged_across_blocks(self):
+        """
+        `bytes-length` cannot raise for a bytes operand, so LICM would hoist it
+        anyway and the duplicate merges.
+        """
+        func, _ = MenaiCFGCSE()._optimize_function(
+            self._two_blocks("bytes-length"), MenaiCFGContext(),
+        )
+        assert _count_builtin(func, 'bytes-length') == 1
+
+    def test_raising_duplicate_kept_across_blocks(self):
+        """
+        `bytes-nth` raises on an out-of-range index, so LICM leaves it where it
+        is; the duplicate stays in its own block rather than having its value
+        kept live across the branch.
+        """
+        func, _ = MenaiCFGCSE()._optimize_function(
+            self._two_blocks("bytes-nth"), MenaiCFGContext(),
+        )
+        assert _count_builtin(func, 'bytes-nth') == 2
 
 
 class TestRaisingComputationMerging:

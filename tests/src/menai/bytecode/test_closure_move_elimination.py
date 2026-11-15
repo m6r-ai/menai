@@ -160,12 +160,12 @@ class TestClosureMoveElimination:
         Mutual recursion forces needs_patching=True: even? and odd? capture
         each other.  even? is passed to filter-list as a call argument.
 
-        Common subexpression elimination reuses the list-first result from the
-        predicate path in the prepend path, which extends that register's live
-        range across the CALL.  A register live across a call cannot be
-        back-propagated into the outgoing zone, because the call clobbers it,
-        so a MOVE stages it.  The closure register itself is still
-        back-propagated.
+        Both incoming values reach the call through phis whose other arm is a
+        load of the call's own result, so each is live across the CALL.  A
+        register live across a call cannot be back-propagated into the outgoing
+        zone, because the call clobbers it, so staging both needs no MOVE: they
+        are each used once, at the call, and the allocator places them where the
+        call reads them.
         """
         src = """
             (let ((even? (lambda (n) (if (integer=? n 0) #t (odd? (integer- n 1)))))
@@ -174,7 +174,7 @@ class TestClosureMoveElimination:
         """
         code = _compile(src)
         assert _count_op(code, Opcode.PATCH_CLOSURE) > 0
-        assert _count_op(code, Opcode.MOVE) == 1
+        assert _count_op(code, Opcode.MOVE) == 0
 
     def test_letrec_closure_correct_result(self, menai):
         """Verify the optimised letrec code produces correct results."""
