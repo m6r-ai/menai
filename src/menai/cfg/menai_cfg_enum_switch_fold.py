@@ -22,6 +22,28 @@ The fold needs no type fact: a MenaiCFGMakeEnumInstr names its enum type and
 variant index directly, and in SSA form its definition dominates every use.  The
 jump is therefore the arm the jump table would select, with no table.
 
+The fold matches on the variant index alone, without checking that the scrutinee's
+enum type is the type the switch's arms test.  It cannot check:
+MenaiCFGSwitchEnumTerm carries a dense variant table and no enum type, and the
+fold exists to need no type fact.  The fold is nevertheless correct because it
+reaches a switch whose scrutinee's type is *already* established, and this is the
+property to preserve:
+
+  - A match's desugaring puts an `enum-is-instance?` test in front of the
+    `enum=?` chain, and MenaiCFGEnumSwitchDispatch fuses only the `enum=?` tests,
+    so the type test never becomes part of the switch.  It stays a branch that
+    dominates the switch.
+  - A variant index is therefore read only on the edge where the scrutinee is an
+    instance of the arms' enum type.  Given the type, the index identifies the
+    arm exactly, and a MenaiCFGMakeEnumInstr's index is known.
+
+So the fold does not need to know the type: on every path that reaches the switch,
+the type is the one the table indexes.  A mismatched enum is not a problem — it is
+routed away by the type test before the switch is reached, and because the fold
+replaces the terminator without adding a path, it cannot make an arm reachable
+that was not.  It would only be unsafe to hoist the switch above its type test, or
+to fold a switch reached without one.
+
 The unselected arms become unreachable, and the VCode builder emits only
 reachable blocks, so they cost nothing.  The enum construction, and anything
 that only fed it, is dead once the switch is gone; prune_dead_definitions sweeps

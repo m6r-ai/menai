@@ -7,6 +7,8 @@ Covers:
   2. A switch whose scrutinee is not a constructed enum is left alone.
   3. End-to-end: a match on an enum the compiler knows the variant of emits no
      SWITCH_ENUM, and still returns the arm the variant selects.
+  4. A value of an enum type the arms do not test takes the fall-through arm,
+     because the fold reads the variant index and no type.
 """
 
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
@@ -227,3 +229,45 @@ class TestEndToEnd:
         code = menai.compile(src)
         assert _count_op(code, Opcode.SWITCH_ENUM) == 0
         assert menai.evaluate_and_format(src) == "1"
+
+    def test_value_of_another_enum_type_takes_the_fall_through(self):
+        """
+        A value of an enum type the arms do not test falls through to the default
+        arm, even though its variant index matches one the arms cover.
+
+        The fold reads only the variant index, so this is the case that would go
+        wrong if the match's `enum-is-instance?` test were ever fused into the
+        switch or hoisted below it: the scrutinee is variant 1 of `other`, the
+        arms test variant 1 of `state`, and the answer must be the fall-through.
+        """
+        src = """
+        (let ((state (enum (idle running)))
+              (other (enum (idle running)))
+              (describe (lambda (s)
+                (match s
+                  ((: state 'idle) 'idle)
+                  ((: state 'running) 'running)
+                  (_ 'unmatched)))))
+          (describe (other 'running)))
+        """
+        menai = Menai()
+        assert menai.evaluate_and_format(src) == "unmatched"
+
+    def test_matching_enum_type_still_selects_its_variant(self):
+        """
+        The same match applied to a value of the type the arms test selects that
+        arm, so the fall-through above is the type test doing its work and not
+        the arms having been lost.
+        """
+        src = """
+        (let ((state (enum (idle running)))
+              (other (enum (idle running)))
+              (describe (lambda (s)
+                (match s
+                  ((: state 'idle) 'idle)
+                  ((: state 'running) 'running)
+                  (_ 'unmatched)))))
+          (describe (state 'running)))
+        """
+        menai = Menai()
+        assert menai.evaluate_and_format(src) == "running"
