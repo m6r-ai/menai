@@ -57,6 +57,16 @@ on a path that previously completed (ADR-0049).  Requiring the anchor to hold
 one of the uses guarantees every path through it executes a guard that was
 already there.
 
+This placement covers guards an *instruction* demands.  A guard that a terminator
+demands — a branch condition, an integer switch or an enum switch — is a use of
+the value too, but it is not a `MenaiCFGBuiltinInstr`, so it is neither
+considered when choosing an anchor nor counted when deciding whether a value is
+used in more than one block.  Such a guard is still emitted where it is needed;
+it is simply never shared or hoisted, so a terminator's guard may still be
+duplicated into a block that executes once per iteration.  Extending placement to
+terminators means teaching _guardable_uses to see terminator operands and
+teaching the guard helpers to take a delegated pair, and nothing else.
+
 Type refinement through branch conditions: when a branch tests the result of a
 type predicate (e.g. `integer?`), the true-edge successor inherits the refined
 type of the predicate's argument.  This allows guards to be skipped when a
