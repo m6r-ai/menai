@@ -123,13 +123,9 @@
        (lambda ()
          (let ((archive
                 (create
-                  (dict "entries" (list (dict "name" "x"
-                                              "content" (string->bytes "hi")
-                                              "devmajor" 3
-                                              "devminor" 5))))))
+                  (dict "entries" (list (dict "name" "x" "content" (string->bytes "hi") "devmajor" 3 "devminor" 5))))))
            (assert-equal
-             (list (bytes->string-hex (bytes-slice archive 329 337))
-                   (bytes->string-hex (bytes-slice archive 337 345)))
+             (list (bytes->string-hex (bytes-slice archive 329 337)) (bytes->string-hex (bytes-slice archive 337 345)))
              (list "3030303030303300" "3030303030303500")))))
 
       ; A path longer than the 100-byte name field is split across the name and
