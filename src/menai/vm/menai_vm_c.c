@@ -118,12 +118,17 @@ mc_logn(mc_t a, mc_t b)
 }
 
 /*
- * Portable overflow-detecting arithmetic for the small-integer fast paths.
+ * Portable overflow-detecting arithmetic for the fixnum fast paths.
  *
- * _menai_add_overflow(a, b, &result) returns 1 if a+b overflows long, 0 otherwise.
+ * The operands and the result are int64_t rather than long because the fixnum
+ * payload is 61 bits wide on every target, while a C long is 32 bits on Windows.
+ * Computing in long would narrow the operands, so a value the payload already
+ * holds would be reported as overflowing.
+ *
+ * _menai_add_overflow(a, b, &result) returns 1 if a+b overflows int64_t, 0 otherwise.
  * _menai_sub_overflow and _menai_mul_overflow follow the same convention.
- * _menai_shl_overflow(a, shift, &result) returns 1 if a<<shift overflows long.
- * The caller must ensure 0 <= shift < (long)(sizeof(long) * 8).
+ * _menai_shl_overflow(a, shift, &result) returns 1 if a<<shift overflows int64_t.
+ * The caller must ensure 0 <= shift < (int64_t)(sizeof(int64_t) * 8).
  */
 #if defined(__GNUC__) || defined(__clang__)
 #define _menai_add_overflow(a, b, rp) __builtin_add_overflow((a), (b), (rp))
@@ -131,27 +136,44 @@ mc_logn(mc_t a, mc_t b)
 #define _menai_mul_overflow(a, b, rp) __builtin_mul_overflow((a), (b), (rp))
 #else
 static inline int
-_menai_add_overflow(long a, long b, long *r) {
-    unsigned long ua = (unsigned long)a, ub = (unsigned long)b;
-    unsigned long ur = ua + ub;
-    *r = (long)ur;
+_menai_add_overflow(int64_t a, int64_t b, int64_t *r) {
+    uint64_t ua = (uint64_t)a, ub = (uint64_t)b;
+    uint64_t ur = ua + ub;
+    *r = (int64_t)ur;
     return (a > 0 && b > 0 && *r < 0) || (a < 0 && b < 0 && *r > 0);
 }
 
 static inline int
-_menai_sub_overflow(long a, long b, long *r) {
-    unsigned long ua = (unsigned long)a, ub = (unsigned long)b;
-    unsigned long ur = ua - ub;
-    *r = (long)ur;
+_menai_sub_overflow(int64_t a, int64_t b, int64_t *r) {
+    uint64_t ua = (uint64_t)a, ub = (uint64_t)b;
+    uint64_t ur = ua - ub;
+    *r = (int64_t)ur;
     return (b < 0 && a > 0 && *r < 0) || (b > 0 && a < 0 && *r > 0);
 }
 
 static inline int
-_menai_mul_overflow(long a, long b, long *r) {
-    /* Conservative: use double to detect overflow. */
-    double d = (double)a * (double)b;
-    *r = (long)((unsigned long)a * (unsigned long)b);
-    return d > (double)LONG_MAX || d < (double)LONG_MIN;
+_menai_mul_overflow(int64_t a, int64_t b, int64_t *r) {
+    /*
+     * Multiply with wrapping unsigned arithmetic, then verify the product by
+     * dividing it back.  A double cannot do this check: the product of two
+     * fixnums needs far more than a double's 53-bit mantissa, so an out-of-range
+     * product rounds to a value that still compares inside the range.
+     */
+    *r = (int64_t)((uint64_t)a * (uint64_t)b);
+    if (a == 0 || b == 0) {
+        return 0;
+    }
+
+    /* These are the only two cases whose quotient is not representable. */
+    if (a == -1) {
+        return b == INT64_MIN;
+    }
+
+    if (b == -1) {
+        return a == INT64_MIN;
+    }
+
+    return *r / a != b;
 }
 
 #endif
@@ -167,10 +189,10 @@ _menai_mul_overflow(long a, long b, long *r) {
  * of sign (which occurs when a non-zero value shifts into the sign bit).
  */
 static inline int
-_menai_shl_overflow(long a, long shift, long *r) {
-    unsigned long ua = (unsigned long)a;
-    unsigned long ur = ua << shift;
-    *r = (long)ur;
+_menai_shl_overflow(int64_t a, int64_t shift, int64_t *r) {
+    uint64_t ua = (uint64_t)a;
+    uint64_t ur = ua << shift;
+    *r = (int64_t)ur;
     if ((ur >> shift) != ua) {
         return 1;
     }
@@ -336,12 +358,36 @@ menai_integer_is_big(MenaiValue *val)
 static inline int
 menai_integer_to_menai_bigint(MenaiVMState *vs, MenaiValue *val, MenaiBigInt *out)
 {
-    long small;
-    if (menai_integer_extract_long(val, &small) == 0) {
-        return menai_bigint_from_long(vs, small, out);
+    if (menai_is_fixnum(val)) {
+        return menai_bigint_from_long_long(vs, menai_fixnum_value(val), out);
     }
 
     return menai_bigint_copy(vs, &menai_integer_boxed(val)->big, out);
+}
+
+/*
+ * menai_integer_to_int64 — the value as an int64_t, whether fixnum or boxed.
+ *
+ * Returns 0 on success and MENAI_ERR_OVERFLOW if the value is a bignum too wide
+ * for an int64_t.  The fixnum payload is exactly the width of an int64_t, so a
+ * fixnum always succeeds: a failure never means "fixnum too wide", which is what
+ * lets the fast paths treat this as the extraction of the whole integer.
+ */
+static inline int
+menai_integer_to_int64(MenaiValue *val, int64_t *out)
+{
+    if (menai_is_fixnum(val)) {
+        *out = menai_fixnum_value(val);
+        return 0;
+    }
+
+    long long wide;
+    if (menai_bigint_to_long_long(&menai_integer_boxed(val)->big, &wide) < 0) {
+        return MENAI_ERR_OVERFLOW;
+    }
+
+    *out = (int64_t)wide;
+    return 0;
 }
 
 /*
@@ -351,7 +397,17 @@ menai_integer_to_menai_bigint(MenaiVMState *vs, MenaiValue *val, MenaiBigInt *ou
 static inline int
 menai_integer_to_long(MenaiValue *val, long *out)
 {
-    return menai_integer_extract_long(val, out);
+    int64_t wide;
+    if (menai_integer_to_int64(val, &wide) < 0) {
+        return -1;
+    }
+
+    if (wide < (int64_t)LONG_MIN || wide > (int64_t)LONG_MAX) {
+        return -1;
+    }
+
+    *out = (long)wide;
+    return 0;
 }
 
 /*
@@ -361,16 +417,12 @@ menai_integer_to_long(MenaiValue *val, long *out)
 static inline int
 menai_integer_to_long_long(MenaiValue *val, long long *out)
 {
-    long small;
-    if (menai_integer_extract_long(val, &small) == 0) {
-        *out = (long long)small;
-        return 0;
-    }
-
-    if (menai_bigint_to_long_long(&menai_integer_boxed(val)->big, out) < 0) {
+    int64_t wide;
+    if (menai_integer_to_int64(val, &wide) < 0) {
         return -1;
     }
 
+    *out = (long long)wide;
     return 0;
 }
 
@@ -381,13 +433,18 @@ menai_integer_to_long_long(MenaiValue *val, long long *out)
 static inline int
 menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
 {
-    long small;
-    if (menai_integer_extract_long(val, &small) == 0) {
-        if (small < 0) {
+    /*
+     * A bignum is used here rather than menai_integer_to_int64 because the
+     * unsigned range reaches past INT64_MAX, and an unsigned 64-bit value above
+     * that is stored as a bignum.
+     */
+    if (menai_is_fixnum(val)) {
+        int64_t wide = menai_fixnum_value(val);
+        if (wide < 0) {
             return -1;
         }
 
-        *out = (unsigned long long)small;
+        *out = (unsigned long long)wide;
         return 0;
     }
 
@@ -401,12 +458,16 @@ menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
 static inline int
 menai_integer_to_ssize_t(MenaiValue *val, ssize_t *out)
 {
-    long tmp;
-    if (menai_integer_to_long(val, &tmp) < 0) {
+    int64_t wide;
+    if (menai_integer_to_int64(val, &wide) < 0) {
         return -1;
     }
 
-    *out = (ssize_t)tmp;
+    if (wide < -(int64_t)SSIZE_MAX - 1 || wide > (int64_t)SSIZE_MAX) {
+        return -1;
+    }
+
+    *out = (ssize_t)wide;
     return 0;
 }
 
@@ -967,9 +1028,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             const MenaiJumpTable *t = &frame->code_obj->jump_tables[src1];
 
-            long index_l;
-            if (menai_integer_extract_long(frame_regs[src0], &index_l) == 0) {
-                long long target = (long long)index_l - t->min;
+            int64_t index;
+            if (menai_integer_to_int64(frame_regs[src0], &index) == 0) {
+                long long target = (long long)index - t->min;
                 if (target >= 0 && target < (long long)t->count) {
                     frame->ip = t->targets[target];
                     break;
@@ -1819,8 +1880,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int pc = f->bytecode->param_count;
             int is_var = f->bytecode->is_variadic;
 
-            long n;
-            vm_err = menai_integer_extract_long(n_obj, &n);
+            int64_t n;
+            vm_err = menai_integer_to_int64(n_obj, &n);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
@@ -2004,13 +2065,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
 
             if (menai_is_fixnum(a)) {
-                long sv = menai_fixnum_value(a);
-                long rv = sv < 0 ? -sv : sv;
-                /* LONG_MIN has no positive counterpart — promote to bigint. */
-                if (sv == LONG_MIN) {
+                int64_t sv = menai_fixnum_value(a);
+                /* INT64_MIN has no positive counterpart — promote to bigint. */
+                if (sv == INT64_MIN) {
                     MenaiBigInt tmp;
                     menai_bigint_init(&tmp);
-                    vm_err = menai_bigint_from_long(vs, sv, &tmp);
+                    vm_err = menai_bigint_from_long_long(vs, sv, &tmp);
                     if (MENAI_UNLIKELY(vm_err < 0)) {
                         goto error;
                     }
@@ -2035,7 +2095,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     break;
                 }
 
-                MenaiValue *r = alloc_menai_integer_from_long(vs, rv);
+                MenaiValue *r = alloc_menai_integer_from_long(vs, sv < 0 ? -sv : sv);
                 if (!r) {
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
@@ -2068,12 +2128,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
 
             if (menai_is_fixnum(a)) {
-                long sv = menai_fixnum_value(a);
-                /* LONG_MIN negation overflows — promote to bigint. */
-                if (sv == LONG_MIN) {
+                int64_t sv = menai_fixnum_value(a);
+                /* INT64_MIN negation overflows — promote to bigint. */
+                if (sv == INT64_MIN) {
                     MenaiBigInt tmp;
                     menai_bigint_init(&tmp);
-                    vm_err = menai_bigint_from_long(vs, sv, &tmp);
+                    vm_err = menai_bigint_from_long_long(vs, sv, &tmp);
                     if (MENAI_UNLIKELY(vm_err < 0)) {
                         goto error;
                     }
@@ -2175,9 +2235,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             if (menai_is_fixnum(a) && menai_is_fixnum(b)) {
-                long la = menai_fixnum_value(a);
-                long lb = menai_fixnum_value(b);
-                long lr;
+                int64_t la = menai_fixnum_value(a);
+                int64_t lb = menai_fixnum_value(b);
+                int64_t lr;
                 if (!_menai_add_overflow(la, lb, &lr)) {
                     MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
                     if (!r) {
@@ -2234,9 +2294,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             if (menai_is_fixnum(a) && menai_is_fixnum(b)) {
-                long la = menai_fixnum_value(a);
-                long lb = menai_fixnum_value(b);
-                long lr;
+                int64_t la = menai_fixnum_value(a);
+                int64_t lb = menai_fixnum_value(b);
+                int64_t lr;
                 if (!_menai_sub_overflow(la, lb, &lr)) {
                     MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
                     if (!r) {
@@ -2293,9 +2353,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             if (menai_is_fixnum(a) && menai_is_fixnum(b)) {
-                long la = menai_fixnum_value(a);
-                long lb = menai_fixnum_value(b);
-                long lr;
+                int64_t la = menai_fixnum_value(a);
+                int64_t lb = menai_fixnum_value(b);
+                int64_t lr;
                 if (!_menai_mul_overflow(la, lb, &lr)) {
                     MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
                     if (!r) {
@@ -2358,12 +2418,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (menai_is_fixnum(a) && menai_is_fixnum(b)) {
-                long la = menai_fixnum_value(a);
-                long lb = menai_fixnum_value(b);
+                int64_t la = menai_fixnum_value(a);
+                int64_t lb = menai_fixnum_value(b);
 
                 /* Floor division: round toward negative infinity. */
-                long lq = la / lb;
-                long lr = la % lb;
+                int64_t lq = la / lb;
+                int64_t lr = la % lb;
                 if (lr != 0 && ((lr < 0) != (lb < 0))) {
                     lq--;
                 }
@@ -2428,11 +2488,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (menai_is_fixnum(a) && menai_is_fixnum(b)) {
-                long la = menai_fixnum_value(a);
-                long lb = menai_fixnum_value(b);
+                int64_t la = menai_fixnum_value(a);
+                int64_t lb = menai_fixnum_value(b);
 
                 /* Floor modulo: result takes sign of divisor. */
-                long lr = la % lb;
+                int64_t lr = la % lb;
                 if (lr != 0 && ((lr < 0) != (lb < 0))) {
                     lr += lb;
                 }
@@ -2698,8 +2758,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            long shift;
-            if (MENAI_UNLIKELY(menai_integer_extract_long(b, &shift) < 0)) {
+            int64_t shift;
+            if (MENAI_UNLIKELY(menai_integer_to_int64(b, &shift) < 0)) {
                 vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
                 goto error;
             }
@@ -2710,8 +2770,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (MENAI_LIKELY(menai_is_fixnum(a) && menai_is_fixnum(b))) {
-                long lr;
-                if (shift < (long)(sizeof(long) * 8) &&
+                int64_t lr;
+                if (shift < (int64_t)(sizeof(int64_t) * 8) &&
                         !_menai_shl_overflow(menai_fixnum_value(a), shift, &lr)) {
                     MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
                     if (!r) {
@@ -2757,8 +2817,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            long shift;
-            if (MENAI_UNLIKELY(menai_integer_extract_long(b, &shift) < 0)) {
+            int64_t shift;
+            if (MENAI_UNLIKELY(menai_integer_to_int64(b, &shift) < 0)) {
                 vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
                 goto error;
             }
@@ -2769,9 +2829,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             if (MENAI_LIKELY(menai_is_fixnum(a) && menai_is_fixnum(b))) {
-                long la = menai_fixnum_value(a);
-                long lr;
-                if (shift >= (long)(sizeof(long) * 8)) {
+                int64_t la = menai_fixnum_value(a);
+                int64_t lr;
+                if (shift >= (int64_t)(sizeof(int64_t) * 8)) {
                     /* Arithmetic shift saturates: 0 for non-negative, -1 for negative. */
                     lr = la < 0 ? -1L : 0L;
                 } else if (la >= 0) {
@@ -2781,7 +2841,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                      * Floor toward negative infinity without relying on the
                      * implementation-defined behaviour of >> on signed values.
                      */
-                    lr = (long)~((~(unsigned long)la) >> shift);
+                    lr = (int64_t)~((~(uint64_t)la) >> shift);
                 }
 
                 MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
@@ -2913,20 +2973,20 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            /* LONG_MIN has no positive counterpart in a long, so its magnitude
-             * is not representable and the fast path must not negate it. */
+            /* INT64_MIN has no positive counterpart in an int64_t, so its
+             * magnitude is not representable and the fast path must not negate it. */
             if (MENAI_LIKELY(menai_is_fixnum(a) && menai_is_fixnum(b) &&
-                             menai_fixnum_value(a) != LONG_MIN && menai_fixnum_value(b) != LONG_MIN)) {
-                unsigned long ua = menai_fixnum_value(a) < 0 ? (unsigned long)(-menai_fixnum_value(a)) : (unsigned long)menai_fixnum_value(a);
-                unsigned long ub = menai_fixnum_value(b) < 0 ? (unsigned long)(-menai_fixnum_value(b)) : (unsigned long)menai_fixnum_value(b);
+                             menai_fixnum_value(a) != INT64_MIN && menai_fixnum_value(b) != INT64_MIN)) {
+                uint64_t ua = menai_fixnum_value(a) < 0 ? (uint64_t)(-menai_fixnum_value(a)) : (uint64_t)menai_fixnum_value(a);
+                uint64_t ub = menai_fixnum_value(b) < 0 ? (uint64_t)(-menai_fixnum_value(b)) : (uint64_t)menai_fixnum_value(b);
 
                 while (ub != 0) {
-                    unsigned long t = ua % ub;
+                    uint64_t t = ua % ub;
                     ua = ub;
                     ub = t;
                 }
 
-                MenaiValue *r = alloc_menai_integer_from_long(vs, (long)ua);
+                MenaiValue *r = alloc_menai_integer_from_long(vs, (int64_t)ua);
                 if (!r) {
                     vm_err = MENAI_ERR_NOMEM;
                     goto error;
@@ -2980,11 +3040,11 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             /* lcm(0, n) is 0 for every n, including the case where the other
-             * argument is LONG_MIN and its magnitude is not representable. */
+             * argument is INT64_MIN and its magnitude is not representable. */
             if (MENAI_LIKELY(menai_is_fixnum(a) && menai_is_fixnum(b) &&
-                             menai_fixnum_value(a) != LONG_MIN && menai_fixnum_value(b) != LONG_MIN)) {
-                unsigned long ua = menai_fixnum_value(a) < 0 ? (unsigned long)(-menai_fixnum_value(a)) : (unsigned long)menai_fixnum_value(a);
-                unsigned long ub = menai_fixnum_value(b) < 0 ? (unsigned long)(-menai_fixnum_value(b)) : (unsigned long)menai_fixnum_value(b);
+                             menai_fixnum_value(a) != INT64_MIN && menai_fixnum_value(b) != INT64_MIN)) {
+                uint64_t ua = menai_fixnum_value(a) < 0 ? (uint64_t)(-menai_fixnum_value(a)) : (uint64_t)menai_fixnum_value(a);
+                uint64_t ub = menai_fixnum_value(b) < 0 ? (uint64_t)(-menai_fixnum_value(b)) : (uint64_t)menai_fixnum_value(b);
 
                 if (ua == 0 || ub == 0) {
                     MenaiValue *r = alloc_menai_integer_from_long(vs, 0L);
@@ -2998,18 +3058,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     break;
                 }
 
-                unsigned long x = ua;
-                unsigned long y = ub;
+                uint64_t x = ua;
+                uint64_t y = ub;
                 while (y != 0) {
-                    unsigned long t = x % y;
+                    uint64_t t = x % y;
                     x = y;
                     y = t;
                 }
 
                 /* Divide before multiplying so the product cannot overflow. */
-                unsigned long lcm = (ua / x) * ub;
-                if (lcm <= (unsigned long)LONG_MAX) {
-                    MenaiValue *r = alloc_menai_integer_from_long(vs, (long)lcm);
+                uint64_t lcm = (ua / x) * ub;
+                if (lcm <= (uint64_t)INT64_MAX) {
+                    MenaiValue *r = alloc_menai_integer_from_long(vs, (int64_t)lcm);
                     if (!r) {
                         vm_err = MENAI_ERR_NOMEM;
                         goto error;
@@ -3123,8 +3183,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            long radix;
-            vm_err = menai_integer_extract_long(b, &radix);
+            int64_t radix;
+            vm_err = menai_integer_to_int64(b, &radix);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
@@ -3156,14 +3216,10 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         case OP_INTEGER_CODEPOINT_TO_STRING: {
             MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
 
-            long cp;
-            if (menai_is_fixnum(a)) {
-                cp = menai_fixnum_value(a);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(a)->big, &cp);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            int64_t cp;
+            vm_err = menai_integer_to_int64(a, &cp);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                goto error;
             }
 
             if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
@@ -3177,7 +3233,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
 
-            r->data[0] = cp;
+            r->data[0] = (uint32_t)cp;
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)r;
             break;
@@ -3943,8 +3999,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            long exp_l;
-            vm_err = menai_integer_extract_long(b, &exp_l);
+            int64_t exp_l;
+            vm_err = menai_integer_to_int64(b, &exp_l);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
@@ -4565,13 +4621,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            long idx_l;
-            vm_err = menai_integer_extract_long(b, &idx_l);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
+            ssize_t idx;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &idx) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
 
-            ssize_t idx = (ssize_t)idx_l;
             ssize_t slen = a->length;
             if (idx < 0 || idx >= slen) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
@@ -4597,27 +4652,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *c = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4);
 
-            long start_l;
-            if (menai_is_fixnum(b)) {
-                start_l = menai_fixnum_value(b);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(b)->big, &start_l);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            ssize_t start;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &start) < 0)) {
+                vm_err = MENAI_ERR_SLICE_START_OUT_OF_RANGE;
+                goto error;
             }
 
-            long end_l;
-            if (menai_is_fixnum(c)) {
-                end_l = menai_fixnum_value(c);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(c)->big, &end_l);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            ssize_t end;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(c, &end) < 0)) {
+                vm_err = MENAI_ERR_SLICE_END_OUT_OF_RANGE;
+                goto error;
             }
 
-            ssize_t start = (ssize_t)start_l, end = (ssize_t)end_l;
             ssize_t slen = a->length;
             if (start < 0) {
                 vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
@@ -4721,8 +4767,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            long radix;
-            vm_err = menai_integer_extract_long(b, &radix);
+            int64_t radix;
+            vm_err = menai_integer_to_int64(b, &radix);
             if (MENAI_UNLIKELY(vm_err < 0)) {
                 goto error;
             }
@@ -6696,13 +6742,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            long idx_l;
-            vm_err = menai_integer_extract_long(b, &idx_l);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
+            ssize_t idx;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &idx) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
 
-            ssize_t idx = (ssize_t)idx_l;
             ssize_t n = a->length;
             if (idx < 0 || idx >= n) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
@@ -6938,28 +6983,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *c = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4);
 
-            long start_l;
-            if (menai_is_fixnum(b)) {
-                start_l = menai_fixnum_value(b);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(b)->big, &start_l);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            ssize_t start;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &start) < 0)) {
+                vm_err = MENAI_ERR_SLICE_START_OUT_OF_RANGE;
+                goto error;
             }
 
-            long end_l;
-            if (menai_is_fixnum(c)) {
-                end_l = menai_fixnum_value(c);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(c)->big, &end_l);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            ssize_t end;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(c, &end) < 0)) {
+                vm_err = MENAI_ERR_SLICE_END_OUT_OF_RANGE;
+                goto error;
             }
 
-            ssize_t start = (ssize_t)start_l;
-            ssize_t end = (ssize_t)end_l;
             ssize_t n = a->length;
             if (start < 0) {
                 vm_err = MENAI_ERR_NEGATIVE_SLICE_INDEX;
@@ -7894,32 +7929,20 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *c = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4);
-            long start, end, step;
-            if (menai_is_fixnum(a)) {
-                start = menai_fixnum_value(a);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(a)->big, &start);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            int64_t start, end, step;
+            vm_err = menai_integer_to_int64(a, &start);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                goto error;
             }
 
-            if (menai_is_fixnum(b)) {
-                end = menai_fixnum_value(b);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(b)->big, &end);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            vm_err = menai_integer_to_int64(b, &end);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                goto error;
             }
 
-            if (menai_is_fixnum(c)) {
-                step = menai_fixnum_value(c);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(c)->big, &step);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            vm_err = menai_integer_to_int64(c, &step);
+            if (MENAI_UNLIKELY(vm_err < 0)) {
+                goto error;
             }
 
             if (step == 0) {
@@ -7937,7 +7960,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
             MenaiList *r = menai_empty_list(vs);
             menai_value_retain((MenaiValue *)r);
-            long val = start + (long)(n - 1) * step;
+            int64_t val = start + (int64_t)(n - 1) * step;
             for (ssize_t i = 0; i < n; i++) {
                 MenaiValue *mi = alloc_menai_integer_from_long(vs, val);
                 if (mi == NULL) {
@@ -8225,18 +8248,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *val = operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *fidx = operand(constants_items, frame_regs, src1, tag & 2);
-            MenaiValue *fi_io = (MenaiValue *)fidx;
-            long fi_l;
-            if (menai_is_fixnum(fi_io)) {
-                fi_l = menai_fixnum_value(fi_io);
-            } else {
-                vm_err = menai_bigint_to_long(&menai_integer_boxed(fi_io)->big, &fi_l);
-                if (MENAI_UNLIKELY(vm_err < 0)) {
-                    goto error;
-                }
+            ssize_t fi;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(fidx, &fi) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
             }
 
-            ssize_t fi = (ssize_t)fi_l;
             ssize_t nf = ((MenaiStruct *)val)->nfields;
             if (fi < 0 || fi >= nf) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
@@ -8280,13 +8297,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         case OP_STRUCT_WITH_INDEXED: {
             MenaiStruct *sval = (MenaiStruct *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            long fi_l;
-            vm_err = menai_integer_extract_long(operand(constants_items, frame_regs, src1, tag & 2), &fi_l);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
+            ssize_t fi;
+            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(operand(constants_items, frame_regs, src1, tag & 2), &fi) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
 
-            ssize_t fi = (ssize_t)fi_l;
             ssize_t nf = sval->nfields;
             if (fi < 0 || fi >= nf) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;

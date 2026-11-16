@@ -56,10 +56,21 @@ are mutually exclusive. Do not dereference a value you have only proven to be an
 - `menai_integer_is_big(v)` — a bignum; for a value known to be an integer this is just
   `!menai_is_fixnum`. Narrow with `menai_integer_boxed(v)` and use `->big` rather than
   repeating a cast at every use.
-- `menai_integer_extract_long(v, &out)` — either form as a `long`, returning
-  `MENAI_ERR_OVERFLOW` when it does not fit. Prefer it when that is all the handler needs,
-  which removes the representation question entirely. Callers keep their own error code,
-  because "too large" is a different diagnosis for a shift count, an index and a radix.
+- `menai_integer_to_int64(v, &out)` — either form as an `int64_t`, returning
+  `MENAI_ERR_OVERFLOW` when a bignum does not fit. A fixnum always fits, so this is the
+  extraction the opcode fast paths use: it settles the representation question without
+  narrowing the value. Callers keep their own error code, because "too large" is a
+  different diagnosis for a shift count, an index and a radix.
+  `menai_integer_to_long` and `menai_integer_to_ssize_t` narrow on purpose, and so report
+  an out-of-range value themselves rather than leaving it to the caller.
+
+An intermediate that holds an integer's value is `int64_t`, never `long`. The fixnum
+payload is 61 bits on every target while a C long is 32 bits on Windows, so a fast path
+written in `long` truncates the operand there and the same expression yields a different
+value per platform: `integer-gcd` of two large fixnums, or a `range` over them, returns a
+wrong answer silently rather than boxing. `long` is only for values that really are C-long
+sized — a byte value, a radix that has been validated, a count compared against a small
+field — and a value on its way into one is range-checked, not cast.
 
 `alloc_menai_integer_from_*` returns a `MenaiValue *`, not a `MenaiInteger *`, because the
 result is usually a fixnum. They are the only place that chooses a representation, and they

@@ -1561,8 +1561,6 @@ int menai_bigint_from_long_long(MenaiVMState *vs, long long v, MenaiBigInt *a);
 int menai_bigint_from_unsigned_long_long(MenaiVMState *vs, unsigned long long v, MenaiBigInt *a);
 int menai_bigint_from_string(MenaiVMState *vs, const char *s, int base, MenaiBigInt *a);
 int menai_bigint_from_double(MenaiVMState *vs, double v, MenaiBigInt *a);
-int menai_bigint_fits_long(const MenaiBigInt *a);
-int menai_bigint_to_long(const MenaiBigInt *a, long *out);
 int menai_bigint_fits_long_long(const MenaiBigInt *a);
 int menai_bigint_to_long_long(const MenaiBigInt *a, long long *out);
 int menai_bigint_to_double(const MenaiBigInt *a, double *out);
@@ -1911,30 +1909,6 @@ menai_function_equal(MenaiValue *a, MenaiValue *b)
  * on that.
  */
 MenaiValue *alloc_menai_integer_from_long(MenaiVMState *vs, int64_t n);
-
-/*
- * menai_integer_extract_long - the value as a long, whether fixnum or boxed.
- *
- * Returns 0 on success and MENAI_ERR_OVERFLOW if the value does not fit in a long,
- * which the caller reports as a range or index error.  The fixnum payload is wider
- * than a long on a 32-bit host, so a fixnum is range-checked too rather than
- * truncated.
- */
-static inline int
-menai_integer_extract_long(MenaiValue *val, long *out)
-{
-    if (menai_is_fixnum(val)) {
-        int64_t v = menai_fixnum_value(val);
-        if (v < LONG_MIN || v > LONG_MAX) {
-            return MENAI_ERR_OVERFLOW;
-        }
-
-        *out = (long)v;
-        return 0;
-    }
-
-    return menai_bigint_to_long(&((MenaiInteger *)val)->big, out);
-}
 
 static inline void
 menai_integer_final(MenaiVMState *vs, MenaiInteger *self)

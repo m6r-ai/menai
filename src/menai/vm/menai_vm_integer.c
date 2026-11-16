@@ -48,8 +48,8 @@ alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src)
      * constructor that re-promotes anything outside the fixnum range.
      */
     if (src.length <= 2) {
-        long v;
-        if (menai_bigint_to_long(&src, &v) == 0 && menai_fixnum_in_range((int64_t)v)) {
+        long long v;
+        if (menai_bigint_to_long_long(&src, &v) == 0 && menai_fixnum_in_range((int64_t)v)) {
             menai_bigint_final(vs, &src);
             return menai_make_fixnum((int64_t)v);
         }
