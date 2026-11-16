@@ -238,8 +238,10 @@ carries the alternatives that were rejected.
   See [ADR-0017](docs/adr/0017-cons-cell-internal-representation.md), which supersedes
   [ADR-0003](docs/adr/0003-proper-lists-only.md).
 - **Vectors are a distinct type** with O(1) access, for index-heavy code where a list's O(n)
-  access dominates; not pattern-matchable, not hashable, and no coercion.
-  See [ADR-0018](docs/adr/0018-vector-type.md).
+  access dominates; destructured with a `:` head like any other fixed-arity structural type
+  (`(: vector a b c)`), not hashable, and no coercion.
+  See [ADR-0018](docs/adr/0018-vector-type.md), amended by
+  [ADR-0057](docs/adr/0057-typed-destructuring-patterns.md).
 - **Element access verbs are `-nth`, `-get`, `-with`, `-without`** — position, key, add or
   replace, remove. `-set`, `-add` and `-remove` connote mutation, which Menai does not have; do
   not reintroduce them.

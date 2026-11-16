@@ -205,6 +205,10 @@ Type predicate:
 (list? ())          → #t
 ```
 
+Lists support fixed-arity destructuring with a `:` type head — `(: list a b c)` — and
+prefix-plus-rest decomposition with `(head . tail)`. A bare `(a b c)` is not a list
+pattern. See [Pattern matching](pattern_matching.md).
+
 See [Builtins — list operations](builtins.md#list-operations) for the full list of
 list functions.
 
@@ -230,9 +234,21 @@ Type predicate:
 (vector? (list 1 2))    → #f
 ```
 
-Vectors are NOT pattern-matchable and NOT hashable (they cannot be set members or
-dict keys). See [Builtins — vector operations](builtins.md#vector-operations) for
-the full list of vector functions.
+Vectors support fixed-arity destructuring with a `:` type head, the same form lists
+use, so a vector of vectors (the shape `csv-decode` returns) can be destructured
+positionally:
+
+```menai
+(match (vector 1 2 3)
+  ((: vector a b c) (integer+ a b c))
+  (_ "not three elements"))
+→ 6
+```
+
+Vectors are NOT hashable (they cannot be set members or dict keys). See
+[Builtins — vector operations](builtins.md#vector-operations) for the full list of
+vector functions, and [Pattern matching](pattern_matching.md) for the destructuring
+rules.
 
 ## dict
 

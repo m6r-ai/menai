@@ -179,10 +179,15 @@ Result: ((8 5 1 7 2 6 3 4 9) ...)
 
 ## Module path resolution
 
-Module imports in the evaluated file are resolved the same way as the
-disassembler: the file's own directory first, then the current working
-directory.  When reading from stdin there is no file directory, so only the
-current working directory is used.
+Module imports are resolved from a search path composed by
+`Menai.build_module_path`, highest precedence first: directories given with
+`--module-path`, then the application library directories (`MENAI_PATH`, then
+the evaluated file's own directory, then the current working directory), then
+the standard library.  Resolution is first-match-wins, so an application library
+may shadow a standard library module of the same name.
+
+When reading from stdin there is no file directory, so only the current working
+directory stands in its place.
 
 ## Structure
 

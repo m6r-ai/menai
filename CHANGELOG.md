@@ -2,6 +2,10 @@
 
 ## v0.11.0 (2026-xx-xx)
 
+Bug fixes:
+
+- Fixed some older document references that had become stale.
+
 ## v0.10.0 (2026-11-16)
 
 New features:

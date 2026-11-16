@@ -48,7 +48,19 @@ Literals of any type work as patterns:
   (_ "something else"))
 ```
 
-## Variable binding patterns
+## Variable patterns
+
+A bare symbol as a pattern matches any value and binds it to that name:
+
+```menai
+(match 1
+  (y y))
+→ 1
+```
+
+Such a pattern matches unconditionally, so an arm that uses one must come last.
+
+## Predicate patterns
 
 A predicate pattern `(? pred var)` tests a value with a predicate and, if it
 matches, binds the value to a variable:
@@ -77,7 +89,7 @@ bind a name.
 
 ## Empty list pattern
 
-`()` matches an empty list:
+`()` matches an empty list, and so does the typed form `(: list)`:
 
 ```menai
 (match (list)
@@ -86,32 +98,66 @@ bind a name.
 → "empty"
 ```
 
-## List destructuring patterns
+## Fixed-arity destructuring patterns
 
-A list pattern `(p1 p2 ...)` matches a list of the same length, binding each element
-to the corresponding sub-pattern:
+Fixed-arity positional binding names the type it decomposes with a `:` head, so a
+pattern's meaning never depends on what types happen to be in scope. The head is the
+same for a builtin structural type and for a user-declared nominal one.
+
+`(: list p1 p2 ...)` matches a list of that length, binding each element to the
+corresponding sub-pattern:
 
 ```menai
 (match (list 1 2 3)
-  ((a b c) (integer+ a b c))
+  ((: list a b c) (integer+ a b c))
   (_ "not three elements"))
 → 6
 ```
 
-A single-element list pattern:
+A bare `(a b c)` is not a list pattern; it is a compile-time error.
+
+An arity mismatch falls through to the next arm rather than raising, so a
+single-element binding is written as its own arm:
 
 ```menai
 (match (list 42)
-  (() "empty")
-  ((x) (string-concat "singleton: " (integer->string x)))
+  ((: list) "empty")
+  ((: list x) (string-concat "singleton: " (integer->string x)))
   (_ "multiple"))
 → "singleton: 42"
 ```
 
+### Vector destructuring patterns
+
+`(: vector p1 p2 ...)` matches a vector of that length. It is fixed-arity only: a
+vector has no O(1) tail, so there is no `.` form, and a caller who wants the rest of a
+vector writes `(vector-slice v 1)`.
+
+```menai
+(match (vector 1 2 3)
+  ((: vector a b c) (integer+ a b c))
+  (_ "not three elements"))
+→ 6
+```
+
+Nested patterns compose, which is what makes a vector of vectors — the shape
+`csv-decode` returns — destructurable:
+
+```menai
+(match (vector (vector 1.0 2.0) (vector 3.0 4.0))
+  ((: vector (: vector a b) (: vector c d)) (float- (float* a d) (float* b c)))
+  (_ (error "expected a 2x2 matrix")))
+→ -2.0
+```
+
+Dicts and sets are unordered and have no positional shape, so they get no structural
+pattern at all. Match them with a predicate pattern: `(? dict? d)`, `(? set? s)`.
+
 ### Dotted patterns (cons-pattern)
 
-A dotted pattern `(head . tail)` matches a list, binding `head` to the first element
-and `tail` to the rest of the list:
+Dotted patterns are prefix-plus-rest decomposition, which is a different operation from
+fixed-arity binding and so takes no type head. `(head . tail)` matches a list, binding
+`head` to the first element and `tail` to the rest of the list:
 
 ```menai
 (match (list 1 2 3)
@@ -120,9 +166,10 @@ and `tail` to the rest of the list:
 → (1 2)
 ```
 
-This is the only context in Menai where a dotted (cons-style) pattern appears.
-There is no `cons` operation or cons-cell type in Menai's surface language —
-this is purely a pattern matching convenience.
+The `.` notation is the same one a lambda parameter list uses for its rest parameter.
+There is no `cons` operation or cons-cell type in Menai's surface language: the dotted
+pattern is decomposition, not construction, and it is the only pattern form that
+expresses recursive traversal.
 
 ## Nested patterns
 
@@ -130,7 +177,7 @@ Patterns can be nested to any depth:
 
 ```menai
 (match (list 42 "hello")
-  (((? integer? x) (? string? y)) (list x y))
+  ((: list (? integer? x) (? string? y)) (list x y))
   (_ "no match"))
 → (42 "hello")
 ```

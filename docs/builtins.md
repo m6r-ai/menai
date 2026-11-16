@@ -890,7 +890,20 @@ xor of 0xFFFFFFFF — the checksum used by zlib, PNG and ZIP.
 → #vector(1 1 3 4 5)
 ```
 
-Vectors are NOT pattern-matchable and NOT hashable (cannot be set members or dict keys).
+### Destructuring
+
+Vectors support fixed-arity destructuring with a `:` type head: `(: vector a b c)`
+binds three elements, and an arity mismatch falls through to the next arm. There is no
+`.` form, because a vector has no O(1) tail — use `(vector-slice v 1)` instead.
+
+```menai
+(match (vector 1 2 3)
+  ((: vector a b c) (integer+ a b c))
+  (_ "not three elements"))
+→ 6
+```
+
+Vectors are NOT hashable (they cannot be set members or dict keys).
 
 ---
 
