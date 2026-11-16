@@ -126,8 +126,6 @@
 
       (encode
        (lambda (v)
-         (if (list? v)
-             (list->string (map-list encode-node v))
-             (error "html-encode: encode expects a list of nodes")))))
+         (list->string (map-list encode-node v)))))
 
   (export encode))

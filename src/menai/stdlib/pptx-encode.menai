@@ -390,8 +390,6 @@
       ; is the inverse of pptx-decode's decode.
       (encode
        (lambda (v)
-         (if (dict? v)
-             ((:: zip-create create) (dict "entries" (package-entries v) "meta" (dict)))
-             (error "pptx-encode: encode expects a dict")))))
+         ((:: zip-create create) (dict "entries" (package-entries v) "meta" (dict))))))
 
   (export encode))

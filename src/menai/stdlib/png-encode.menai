@@ -115,26 +115,24 @@
       ; the IHDR colour type is written to match.
       (encode
        (lambda (container)
-         (if (dict? container)
-             (let ((header (dict-get container "header"))
-                   (pixels (dict-get container "pixels"))
-                   (meta (dict-get container "meta")))
-               (if (dict? header)
-                   (let ((width (dict-get header "width"))
-                         (height (dict-get header "height")))
-                     (let ((channels
-                            (if (dict? meta)
-                                (dict-get meta "channels")
-                                3)))
-                       (let ((colour-type (colour-type-for channels)))
-                         (let ((scanlines (build-scanlines pixels width height channels)))
-                           (let ((compressed ((:: zlib-lib compress) scanlines)))
-                             (bytes-concat
-                               signature
-                               (build-chunk "IHDR" (build-ihdr width height colour-type))
-                               (build-chunk "IDAT" compressed)
-                               (build-chunk "IEND" (bytes-concat))))))))
-                   (error "png-encode: \"header\" must be a dict")))
-             (error "png-encode: encode expects a dict")))))
+         (let ((header (dict-get container "header"))
+               (pixels (dict-get container "pixels"))
+               (meta (dict-get container "meta")))
+           (if (dict? header)
+               (let ((width (dict-get header "width"))
+                     (height (dict-get header "height")))
+                 (let ((channels
+                        (if (dict? meta)
+                            (dict-get meta "channels")
+                            3)))
+                   (let ((colour-type (colour-type-for channels)))
+                     (let ((scanlines (build-scanlines pixels width height channels)))
+                       (let ((compressed ((:: zlib-lib compress) scanlines)))
+                         (bytes-concat
+                           signature
+                           (build-chunk "IHDR" (build-ihdr width height colour-type))
+                           (build-chunk "IDAT" compressed)
+                           (build-chunk "IEND" (bytes-concat))))))))
+               (error "png-encode: \"header\" must be a dict"))))))
 
   (export encode))

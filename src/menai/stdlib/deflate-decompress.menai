@@ -508,8 +508,6 @@
       ; decompressed data.
       (decompress
        (lambda (b)
-         (if (bytes? b)
-             (output-finalize (list-first (decode-blocks b 0 (make-output))))
-             (error "deflate-decompress: decompress expects a bytes value")))))
+         (output-finalize (list-first (decode-blocks b 0 (make-output)))))))
 
   (export decompress))

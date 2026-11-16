@@ -49,23 +49,21 @@
       ; DEFLATE data, 4-byte Adler-32 trailer) and return the decompressed bytes.
       (decompress
        (lambda (b)
-         (if (bytes? b)
-             (if (integer<? (bytes-length b) 6)
-                 (error "Not a zlib stream: too short")
-                 (if (check-header b)
-                     (let ((decompress (:: deflate-lib decompress)))
-                       (let ((data (decompress (bytes-slice b 2 (integer- (bytes-length b) 4)))))
-                         (let ((expected (bytes-read-u32-be b (integer- (bytes-length b) 4)))
-                               (actual (adler32 data)))
-                           (if (integer=? expected actual)
-                               data
-                               (error
-                                 (string-concat
-                                   "zlib stream checksum mismatch: expected "
-                                   (integer->string expected)
-                                   " but computed "
-                                   (integer->string actual)))))))
-                     (error "Malformed zlib stream: header check failed")))
-             (error "zlib-decompress: decompress expects a bytes value")))))
+         (if (integer<? (bytes-length b) 6)
+             (error "Not a zlib stream: too short")
+             (if (check-header b)
+                 (let ((decompress (:: deflate-lib decompress)))
+                   (let ((data (decompress (bytes-slice b 2 (integer- (bytes-length b) 4)))))
+                     (let ((expected (bytes-read-u32-be b (integer- (bytes-length b) 4)))
+                           (actual (adler32 data)))
+                       (if (integer=? expected actual)
+                           data
+                           (error
+                             (string-concat
+                               "zlib stream checksum mismatch: expected "
+                               (integer->string expected)
+                               " but computed "
+                               (integer->string actual)))))))
+                 (error "Malformed zlib stream: header check failed"))))))
 
   (export decompress))

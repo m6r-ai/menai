@@ -134,23 +134,18 @@
       ;     "content" <bytes> or #none)   ; always #none from this module
       (entries
        (lambda (b)
-         (if (bytes? b)
-             (let ((eocd (find-eocd b)))
-               (let ((header (read-eocd b eocd)))
-                 (let ((found
-                        (map-list
-                          (lambda (e)
-                            (with-data-offset b e))
-                          (read-central-directory
-                            b
-                            (dict-get header "central-offset")
-                            (dict-get header "entry-count")))))
-                   (build-result
-                     (map-list
-                       (lambda (e)
-                         (dict-with e "content" #none))
-                       found)
-                     (dict-get header "comment")))))
-             (error "zip-entries: entries expects a bytes value")))))
+         (let ((eocd (find-eocd b)))
+           (let ((header (read-eocd b eocd)))
+             (let ((found
+                    (map-list
+                      (lambda (e)
+                        (with-data-offset b e))
+                      (read-central-directory b (dict-get header "central-offset") (dict-get header "entry-count")))))
+               (build-result
+                 (map-list
+                   (lambda (e)
+                     (dict-with e "content" #none))
+                   found)
+                 (dict-get header "comment"))))))))
 
   (export entries))

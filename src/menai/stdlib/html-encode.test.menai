@@ -177,7 +177,7 @@
          (list
            "errors"
            (list
-             (expect-fail "rejects a non-list argument" test-rejects-non-list "expects a list of nodes")
+             (expect-fail "rejects a non-list argument" test-rejects-non-list "expects a list")
              (expect-fail "rejects a bad child" test-rejects-bad-child "must be a string or an element dict")
              (expect-fail "rejects a non-string tag" test-rejects-non-string-tag "\"tag\" must be a string")
              (expect-fail "rejects a non-dict attrs" test-rejects-non-dict-attrs "\"attrs\" must be a dict")

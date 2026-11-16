@@ -797,12 +797,10 @@
       ;   (mode 'dynamic) — emit a dynamic Huffman (BTYPE = 10) block
       (compress
        (lambda (b . rest)
-         (if (bytes? b)
-             (let ((block-mode
-                    (if (list-null? rest)
-                        (mode 'auto)
-                        (list-first rest))))
-               (encode-block b block-mode))
-             (error "deflate-compress: compress expects a bytes value")))))
+         (let ((block-mode
+                (if (list-null? rest)
+                    (mode 'auto)
+                    (list-first rest))))
+           (encode-block b block-mode)))))
 
   (export compress mode))

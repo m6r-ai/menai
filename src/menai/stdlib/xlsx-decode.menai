@@ -270,16 +270,14 @@
       ; the inverse of xlsx-encode's encode.
       (decode
        (lambda (b)
-         (if (bytes? b)
-             (let ((parts (parts-of b))
-                   (workbook (decode-required-part parts workbook-part)))
-               (dict "workbook" workbook
-                     "relationships" (relationships-of parts)
-                     "shared-strings" (shared-strings-of parts)
-                     "styles" (decode-part parts styles-part)
-                     "theme" (decode-part parts theme-part)
-                     "sheets" (sheets-of parts workbook)
-                     "media" (media-of parts)))
-             (error "xlsx-decode: decode expects a bytes value")))))
+         (let ((parts (parts-of b))
+               (workbook (decode-required-part parts workbook-part)))
+           (dict "workbook" workbook
+                 "relationships" (relationships-of parts)
+                 "shared-strings" (shared-strings-of parts)
+                 "styles" (decode-part parts styles-part)
+                 "theme" (decode-part parts theme-part)
+                 "sheets" (sheets-of parts workbook)
+                 "media" (media-of parts))))))
 
   (export decode))

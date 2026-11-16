@@ -133,13 +133,11 @@
       ; the inverse of docx-encode's encode.
       (decode
        (lambda (b)
-         (if (bytes? b)
-             (let ((parts (parts-of b)))
-               (dict "document" (decode-required-part parts document-part)
-                     "styles" (decode-part parts styles-part)
-                     "numbering" (decode-part parts numbering-part)
-                     "relationships" (relationships-of parts)
-                     "media" (media-of parts)))
-             (error "docx-decode: decode expects a bytes value")))))
+         (let ((parts (parts-of b)))
+           (dict "document" (decode-required-part parts document-part)
+                 "styles" (decode-part parts styles-part)
+                 "numbering" (decode-part parts numbering-part)
+                 "relationships" (relationships-of parts)
+                 "media" (media-of parts))))))
 
   (export decode))

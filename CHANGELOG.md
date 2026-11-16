@@ -6,7 +6,7 @@ New features:
 
 - Added a `--width N` option to `menai-eval`, `menai-test`, `menai-benchmark`,
   `menai-pipeline`, and `menai-disassemble`.  Output is no longer clipped by
-  default; when a width is given, lines longer than that width are clipped.  This
+  default.  When a width is given, lines longer than that width are clipped.  This
   keeps long function names and constants visible unless the caller asks for a
   fixed width.
 - Added bytecode instruction coverage.  `menai-eval --coverage` reports how much
@@ -29,6 +29,8 @@ New features:
 - An `apply`'s result now carries the return type of the functions it may call, so
   a field read on an applied function's result can resolve to a constant index.
 - Improved inlining of functions (gain of just over 0.3%).
+- A type guard now names the type it required, e.g. `type mismatch: expects a
+  bytes value`, rather than a bare `type mismatch`.
 
 Bug fixes:
 

@@ -72,29 +72,25 @@
       ; Read the archive's entries and decompress every one of them.
       (read-entries
        (lambda (b)
-         (if (bytes? b)
-             (let ((listed ((:: entries-lib entries) b)))
-               (let ((decompress (:: deflate-lib decompress)))
-                 (map-list
-                   (lambda (e)
-                     (with-content b e decompress))
-                   (dict-get listed "entries"))))
-             (error "zip-extract: extract expects a bytes value"))))
+         (let ((listed ((:: entries-lib entries) b)))
+           (let ((decompress (:: deflate-lib decompress)))
+             (map-list
+               (lambda (e)
+                 (with-content b e decompress))
+               (dict-get listed "entries"))))))
 
       ; Extract the whole archive.  Returns a dict with "entries" (a list of entry
       ; dicts, in central-directory order, each with its "content" filled in) and
       ; "meta" (the archive's "format", "entry-count", and "comment").
       (extract
        (lambda (b)
-         (if (bytes? b)
-             (let ((listed ((:: entries-lib entries) b)))
-               (let ((decompress (:: deflate-lib decompress)))
-                 (dict "entries" (map-list
-                                   (lambda (e)
-                                     (with-content b e decompress))
-                                   (dict-get listed "entries"))
-                       "meta" (dict-get listed "meta"))))
-             (error "zip-extract: extract expects a bytes value"))))
+         (let ((listed ((:: entries-lib entries) b)))
+           (let ((decompress (:: deflate-lib decompress)))
+             (dict "entries" (map-list
+                               (lambda (e)
+                                 (with-content b e decompress))
+                               (dict-get listed "entries"))
+                   "meta" (dict-get listed "meta"))))))
 
       ; The entries whose name equals `name`, with contents filled in, in
       ; central-directory order.

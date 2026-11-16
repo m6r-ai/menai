@@ -266,6 +266,55 @@ _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
 }
 
 
+# The type each guard opcode asserts, phrased to complete "type mismatch:
+# expects ...".  A guard is the one raise site that knows the type its operand
+# was required to have, so the message names it instead of leaving the caller
+# to work out which operand of which builtin was wrong.
+_GUARD_EXPECTATIONS: dict[Opcode, str] = {
+    Opcode.ASSERT_NONE: "#none",
+    Opcode.ASSERT_BOOLEAN: "a boolean",
+    Opcode.ASSERT_INTEGER: "an integer",
+    Opcode.ASSERT_FLOAT: "a float",
+    Opcode.ASSERT_COMPLEX: "a complex number",
+    Opcode.ASSERT_STRING: "a string",
+    Opcode.ASSERT_SYMBOL: "a symbol",
+    Opcode.ASSERT_LIST: "a list",
+    Opcode.ASSERT_DICT: "a dict",
+    Opcode.ASSERT_SET: "a set",
+    Opcode.ASSERT_FUNCTION: "a function",
+    Opcode.ASSERT_BYTES: "a bytes value",
+    Opcode.ASSERT_STRUCT: "a struct",
+    Opcode.ASSERT_STRUCTTYPE: "a structtype",
+    Opcode.ASSERT_VECTOR: "a vector",
+    Opcode.ASSERT_ENUM: "an enum",
+    Opcode.ASSERT_ENUMTYPE: "an enumtype",
+}
+
+
+def _type_mismatch_message(opcode: int) -> str:
+    """
+    Format a type mismatch, naming the type the failing guard required.
+
+    Args:
+        opcode: The opcode that raised.  It is a guard opcode whenever the
+            failure came from an inserted type guard.
+
+    Returns:
+        The error message.  A mismatch from any other opcode keeps the bare
+        "type mismatch", because that opcode does not say what it expected.
+    """
+    try:
+        expectation = _GUARD_EXPECTATIONS.get(Opcode(opcode))
+
+    except ValueError:
+        expectation = None
+
+    if expectation is None:
+        return "type mismatch"
+
+    return f"type mismatch: expects {expectation}"
+
+
 def translate_vm_error(
     code: int,
     opcode: int = 0,
@@ -356,7 +405,10 @@ def translate_vm_error(
     if user_value is not None and code == VMErrorCode.UNDEFINED_VARIABLE:
         message = f"undefined variable: {user_value.to_python()}"
 
-    if code == VMErrorCode.ARITY_MISMATCH:
+    if code == VMErrorCode.TYPE_MISMATCH:
+        message = _type_mismatch_message(opcode)
+
+    elif code == VMErrorCode.ARITY_MISMATCH:
         callee = f'"{arity_callee}" ' if arity_callee else ""
         message = (
             f"arity mismatch: {callee}expects {arity_expected} "

@@ -187,25 +187,23 @@
       ; ending in "/") are written with no data and a zero CRC.
       (create
        (lambda (container)
-         (if (dict? container)
-             (let ((entries (dict-get container "entries"))
-                   (meta (dict-get container "meta")))
-               (if (list? entries)
-                   (let ((built (build-entries entries)))
-                     (let ((local-bytes (list-first built))
-                           (central-bytes (list-nth built 1))
-                           (count (list-nth built 2)))
-                       (bytes-concat
-                         local-bytes
-                         central-bytes
-                         (build-eocd
-                           count
-                           (bytes-length central-bytes)
-                           (bytes-length local-bytes)
-                           (if (dict? meta)
-                               (dict-get meta "comment")
-                               #none)))))
-                   (error "zip-create: \"entries\" must be a list")))
-             (error "zip-create: create expects a dict")))))
+         (let ((entries (dict-get container "entries"))
+               (meta (dict-get container "meta")))
+           (if (list? entries)
+               (let ((built (build-entries entries)))
+                 (let ((local-bytes (list-first built))
+                       (central-bytes (list-nth built 1))
+                       (count (list-nth built 2)))
+                   (bytes-concat
+                     local-bytes
+                     central-bytes
+                     (build-eocd
+                       count
+                       (bytes-length central-bytes)
+                       (bytes-length local-bytes)
+                       (if (dict? meta)
+                           (dict-get meta "comment")
+                           #none)))))
+               (error "zip-create: \"entries\" must be a list"))))))
 
   (export create))

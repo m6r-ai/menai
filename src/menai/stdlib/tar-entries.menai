@@ -289,12 +289,10 @@
       ;     "content" <bytes> or #none)   ; always #none from this module
       (entries
        (lambda (b)
-         (if (bytes? b)
-             (build-result
-               (map-list
-                 (lambda (e)
-                   (dict-with e "content" #none))
-                 (read-entries b 0 (dict))))
-             (error "tar-entries: entries expects a bytes value")))))
+         (build-result
+           (map-list
+             (lambda (e)
+               (dict-with e "content" #none))
+             (read-entries b 0 (dict)))))))
 
   (export entries))

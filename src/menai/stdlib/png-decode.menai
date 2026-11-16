@@ -255,47 +255,45 @@
       ; The original colour type is preserved in the "header" dict.
       (decode
        (lambda (b)
-         (if (bytes? b)
-             (if (integer<? (bytes-length b) 8)
-                 (error "Not a PNG file: too short")
-                 (if (bytes!=? (bytes-slice b 0 8) signature)
-                     (error "Not a PNG file: missing PNG signature")
-                     (let ((chunks (read-chunks b))
-                           (header (dict-get chunks "header"))
-                           (width (dict-get header "width"))
-                           (height (dict-get header "height"))
-                           (bit-depth (dict-get header "bit-depth"))
-                           (colour-type (dict-get header "colour-type"))
-                           (interlace (dict-get header "interlace"))
-                           (palette (dict-get chunks "palette"))
-                           (transparency (dict-get chunks "transparency")))
-                       (if (integer!=? bit-depth 8)
-                           (error
-                             (string-concat
-                               "Unsupported PNG: bit depth "
-                               (integer->string bit-depth)
-                               " is not supported (only 8)"))
-                           (if (integer!=? interlace 0)
-                               (error "Unsupported PNG: interlaced images are not supported")
-                               (if (and (integer!=? colour-type 3)
-                                        (boolean-not (none? transparency)))
-                                   (error "Unsupported PNG: tRNS transparency is only supported for palette images")
-                                   (if (and (integer=? colour-type 3)
-                                            (none? palette))
-                                       (error "Malformed PNG: palette image is missing its PLTE chunk")
-                                       (let ((channels (channels-for colour-type))
-                                             (inflate (:: zlib-lib decompress))
-                                             (raw (inflate (dict-get chunks "idat")))
-                                             (rows (unfilter-all raw width height channels)))
-                                         (dict "header" header
-                                               "pixels" (list->vector
-                                                          (map-list
-                                                            (lambda (row)
-                                                              (to-pixels row channels colour-type palette transparency))
-                                                            rows))
-                                               "meta" (dict "format" "png"
-                                                            "channels" (output-channels colour-type
-                                                                                        transparency)))))))))))
-             (error "png-decode: decode expects a bytes value")))))
+         (if (integer<? (bytes-length b) 8)
+             (error "Not a PNG file: too short")
+             (if (bytes!=? (bytes-slice b 0 8) signature)
+                 (error "Not a PNG file: missing PNG signature")
+                 (let ((chunks (read-chunks b))
+                       (header (dict-get chunks "header"))
+                       (width (dict-get header "width"))
+                       (height (dict-get header "height"))
+                       (bit-depth (dict-get header "bit-depth"))
+                       (colour-type (dict-get header "colour-type"))
+                       (interlace (dict-get header "interlace"))
+                       (palette (dict-get chunks "palette"))
+                       (transparency (dict-get chunks "transparency")))
+                   (if (integer!=? bit-depth 8)
+                       (error
+                         (string-concat
+                           "Unsupported PNG: bit depth "
+                           (integer->string bit-depth)
+                           " is not supported (only 8)"))
+                       (if (integer!=? interlace 0)
+                           (error "Unsupported PNG: interlaced images are not supported")
+                           (if (and (integer!=? colour-type 3)
+                                    (boolean-not (none? transparency)))
+                               (error "Unsupported PNG: tRNS transparency is only supported for palette images")
+                               (if (and (integer=? colour-type 3)
+                                        (none? palette))
+                                   (error "Malformed PNG: palette image is missing its PLTE chunk")
+                                   (let ((channels (channels-for colour-type))
+                                         (inflate (:: zlib-lib decompress))
+                                         (raw (inflate (dict-get chunks "idat")))
+                                         (rows (unfilter-all raw width height channels)))
+                                     (dict "header" header
+                                           "pixels" (list->vector
+                                                      (map-list
+                                                        (lambda (row)
+                                                          (to-pixels row channels colour-type palette transparency))
+                                                        rows))
+                                           "meta" (dict "format" "png"
+                                                        "channels" (output-channels colour-type
+                                                                                    transparency))))))))))))))
 
   (export decode))

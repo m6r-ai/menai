@@ -250,16 +250,14 @@
       ; the inverse of pptx-encode's encode.
       (decode
        (lambda (b)
-         (if (bytes? b)
-             (let ((parts (parts-of b))
-                   (presentation (decode-required-part parts presentation-part)))
-               (dict "presentation" presentation
-                     "slides" (slides-of parts presentation)
-                     "slide-masters" (decode-parts-under parts slide-masters-prefix)
-                     "slide-layouts" (decode-parts-under parts slide-layouts-prefix)
-                     "theme" (decode-part parts theme-part)
-                     "relationships" (relationships-of parts)
-                     "media" (media-of parts)))
-             (error "pptx-decode: decode expects a bytes value")))))
+         (let ((parts (parts-of b))
+               (presentation (decode-required-part parts presentation-part)))
+           (dict "presentation" presentation
+                 "slides" (slides-of parts presentation)
+                 "slide-masters" (decode-parts-under parts slide-masters-prefix)
+                 "slide-layouts" (decode-parts-under parts slide-layouts-prefix)
+                 "theme" (decode-part parts theme-part)
+                 "relationships" (relationships-of parts)
+                 "media" (media-of parts))))))
 
   (export decode))

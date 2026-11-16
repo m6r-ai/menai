@@ -445,42 +445,40 @@
       ; of html-encode's encode.
       (decode
        (lambda (s)
-         (if (string? s)
-             (let ((loop
-                    (lambda (j acc)
-                      (if (integer>=? j (string-length s))
-                          (list-reverse acc)
-                          (if (string=? (string-nth s j) "<")
-                              (if (starts-at? s j "<!--")
-                                  (let ((parsed (parse-comment s j)))
+         (let ((loop
+                (lambda (j acc)
+                  (if (integer>=? j (string-length s))
+                      (list-reverse acc)
+                      (if (string=? (string-nth s j) "<")
+                          (if (starts-at? s j "<!--")
+                              (let ((parsed (parse-comment s j)))
+                                (loop (list-nth parsed 1) (list-prepend acc (list-first parsed))))
+                              (if (starts-at? s j "<!DOCTYPE")
+                                  (let ((parsed (parse-doctype s j)))
                                     (loop (list-nth parsed 1) (list-prepend acc (list-first parsed))))
-                                  (if (starts-at? s j "<!DOCTYPE")
-                                      (let ((parsed (parse-doctype s j)))
-                                        (loop (list-nth parsed 1) (list-prepend acc (list-first parsed))))
-                                      (if (starts-at? s j "<!")
+                                  (if (starts-at? s j "<!")
+                                      (let ((close (find-char s ">" j)))
+                                        (loop (integer+ close 1) acc))
+                                      (if (starts-at? s j "</")
+                                          ; A stray end tag at top level is
+                                          ; ignored.
                                           (let ((close (find-char s ">" j)))
                                             (loop (integer+ close 1) acc))
-                                          (if (starts-at? s j "</")
-                                              ; A stray end tag at top level is
-                                              ; ignored.
-                                              (let ((close (find-char s ">" j)))
-                                                (loop (integer+ close 1) acc))
-                                              (if (starts-at? s j "<>")
-                                                  (loop (integer+ j 2) acc)
-                                                  (let ((ne (name-end s (integer+ j 1))))
-                                                    (if (integer=? ne (integer+ j 1))
-                                                        ; The "<" is not followed by a name,
-                                                        ; so it does not begin a tag: it is a
-                                                        ; literal character, and the scan
-                                                        ; resumes after it.
-                                                        (loop (integer+ j 1) (append-text acc "<"))
-                                                        (let ((parsed (parse-element s j (list))))
-                                                          (loop
-                                                            (list-nth parsed 1)
-                                                            (list-prepend acc (list-first parsed)))))))))))
-                              (let ((text (decode-text s j)))
-                                (loop (list-nth text 1) (append-text acc (list-first text)))))))))
-               (loop 0 (list)))
-             (error "html-decode: decode expects a string")))))
+                                          (if (starts-at? s j "<>")
+                                              (loop (integer+ j 2) acc)
+                                              (let ((ne (name-end s (integer+ j 1))))
+                                                (if (integer=? ne (integer+ j 1))
+                                                    ; The "<" is not followed by a name,
+                                                    ; so it does not begin a tag: it is a
+                                                    ; literal character, and the scan
+                                                    ; resumes after it.
+                                                    (loop (integer+ j 1) (append-text acc "<"))
+                                                    (let ((parsed (parse-element s j (list))))
+                                                      (loop
+                                                        (list-nth parsed 1)
+                                                        (list-prepend acc (list-first parsed)))))))))))
+                          (let ((text (decode-text s j)))
+                            (loop (list-nth text 1) (append-text acc (list-first text)))))))))
+           (loop 0 (list))))))
 
   (export decode))

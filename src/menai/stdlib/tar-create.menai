@@ -242,11 +242,9 @@
       ; recomputed from the content and ignored if present on input.
       (create
        (lambda (container)
-         (if (dict? container)
-             (let ((entries (dict-get container "entries")))
-               (if (list? entries)
-                   (bytes-concat (build-entries entries) end-marker)
-                   (error "tar-create: \"entries\" must be a list")))
-             (error "tar-create: create expects a dict")))))
+         (let ((entries (dict-get container "entries")))
+           (if (list? entries)
+               (bytes-concat (build-entries entries) end-marker)
+               (error "tar-create: \"entries\" must be a list"))))))
 
   (export create))

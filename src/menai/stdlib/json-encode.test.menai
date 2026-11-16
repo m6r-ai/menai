@@ -212,6 +212,6 @@
              (expect-fail "vector has no JSON representation" test-rejects-vector "no JSON representation")
              (expect-fail "set has no JSON representation" test-rejects-set "no JSON representation")
              (expect-fail "complex has no JSON representation" test-rejects-complex "no JSON representation")
-             (expect-fail "non-string dict key" test-rejects-non-string-key "dict keys must be strings"))))))
+             (expect-fail "non-string dict key" test-rejects-non-string-key "expects a string"))))))
 
   (export tests))

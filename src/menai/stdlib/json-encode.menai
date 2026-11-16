@@ -105,16 +105,14 @@
                   (if (list-null? keys)
                       (list->string (list-reverse (list-prepend acc "}")))
                       (let ((k (list-first keys)))
-                        (if (string? k)
-                            (let ((acc2
-                                   (if first
-                                       acc
-                                       (list-prepend acc ",")))
+                        (let ((acc2
+                               (if first
+                                   acc
+                                   (list-prepend acc ",")))
 
-                                  (acc3 (list-prepend acc2 (encode-string k)))
-                                  (acc4 (list-prepend acc3 ":")))
-                              (loop (list-rest keys) (list-prepend acc4 (encode (dict-get d k))) #f))
-                            (error "json-encode: dict keys must be strings")))))))
+                              (acc3 (list-prepend acc2 (encode-string k)))
+                              (acc4 (list-prepend acc3 ":")))
+                          (loop (list-rest keys) (list-prepend acc4 (encode (dict-get d k))) #f)))))))
            (loop (dict-keys d) (list "{") #t))))
 
       ; Encode a Menai value as a string containing the equivalent JSON.  It is

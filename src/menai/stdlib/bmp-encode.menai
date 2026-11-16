@@ -139,36 +139,34 @@
       ; files with 24 or 32 bits per pixel are supported.
       (encode
        (lambda (container)
-         (if (dict? container)
-             (let ((header (dict-get container "header"))
-                   (pixels (dict-get container "pixels"))
-                   (meta (dict-get container "meta")))
-               (if (dict? header)
-                   (let ((width (dict-get header "width"))
-                         (bpp (dict-get header "bpp")))
-                     (if (or (integer=? bpp 24)
-                             (integer=? bpp 32))
-                         (let ((bottom-up
-                                (if (dict? meta)
-                                    (dict-get meta "bottom-up")
-                                    #t))
+         (let ((header (dict-get container "header"))
+               (pixels (dict-get container "pixels"))
+               (meta (dict-get container "meta")))
+           (if (dict? header)
+               (let ((width (dict-get header "width"))
+                     (bpp (dict-get header "bpp")))
+                 (if (or (integer=? bpp 24)
+                         (integer=? bpp 32))
+                     (let ((bottom-up
+                            (if (dict? meta)
+                                (dict-get meta "bottom-up")
+                                #t))
 
-                               (abs-height (integer-abs (dict-get header "height")))
+                           (abs-height (integer-abs (dict-get header "height")))
 
-                               (file-height
-                                (if bottom-up
-                                    abs-height
-                                    (integer-neg abs-height)))
+                           (file-height
+                            (if bottom-up
+                                abs-height
+                                (integer-neg abs-height)))
 
-                               (image-size (integer* (row-stride width bpp) abs-height))
-                               (data (encode-rows (bytes-concat) pixels width abs-height bpp bottom-up)))
-                           (bytes-concat (encode-header header width file-height bpp image-size) data))
-                         (error
-                           (string-concat
-                             "bmp-encode: unsupported bit depth "
-                             (integer->string bpp)
-                             " (only 24 or 32 are supported)"))))
-                   (error "bmp-encode: \"header\" must be a dict")))
-             (error "bmp-encode: encode expects a dict")))))
+                           (image-size (integer* (row-stride width bpp) abs-height))
+                           (data (encode-rows (bytes-concat) pixels width abs-height bpp bottom-up)))
+                       (bytes-concat (encode-header header width file-height bpp image-size) data))
+                     (error
+                       (string-concat
+                         "bmp-encode: unsupported bit depth "
+                         (integer->string bpp)
+                         " (only 24 or 32 are supported)"))))
+               (error "bmp-encode: \"header\" must be a dict"))))))
 
   (export encode))
