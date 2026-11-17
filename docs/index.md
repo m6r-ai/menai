@@ -50,4 +50,5 @@ and its result, like this:
 4. [Pattern matching](pattern_matching.md) — patterns, destructuring, predicates
 5. [Builtins](builtins.md) — all builtin functions, organised by category
 6. [Modules](modules.md) — the module system, `.menai` files, import semantics
-7. [Examples](examples.md) — complete programs with explanation
+7. [Testing](testing.md) — `.test.menai` suites, node-lists, assertions
+8. [Examples](examples.md) — complete programs with explanation

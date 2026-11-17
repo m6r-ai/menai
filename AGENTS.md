@@ -197,7 +197,8 @@ menai/
 ├── docs/                       # language manual (human + AI readable) and docs/adr/
 ├── src/
 │   ├── menai/                  # compiler core (lexer, parser, IR, CFG, bytecode, VM)
-│   │   └── stdlib/             # standard library (.menai files)
+│   │   ├── stdlib/             # standard library (.menai files)
+│   │   └── testing/            # test support module (.menai package data)
 │   ├── menai_benchmark/        # performance benchmarking tool
 │   ├── menai_disassemble/      # bytecode disassembler
 │   ├── menai_eval/             # evaluator: compile, run, and profile a .menai file

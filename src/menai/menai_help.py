@@ -557,6 +557,44 @@ The standard library modules available in this installation, each with the path 
 
 _HELP_TEXT_AFTER_MODULES = """
 
+## Testing modules
+
+- A test suite is a `.menai` file named `<subject>.test.menai`, conventionally stored beside the `<subject>.menai` module it tests.
+- A test file is an ordinary module: it may import the module under test and `menai-test`, bind values with `let`, and it must end with `(export tests)`.
+- The exported binding `tests` must be a node-list: a list of `(name thing)` nodes, where `name` is a string.
+  - Leaf: `thing` is a zero-argument function (a thunk). The leaf passes if the thunk returns normally and fails if it raises.
+  - Branch: `thing` is another node-list. Branch names appear in the report path separated by ` > `; nesting is arbitrary.
+  - Dict leaf: `thing` is a dict with a `"thunk"` function, an optional `"expect-error"` boolean, and an optional `"expect-error-contains"` string.
+- The helpers exported by `(import "menai-test")` build leaves:
+  - `(assert-equal expected actual)` raises unless the two values are structurally equal. It compares every Menai type, including lists, vectors, dicts, sets, structs and enums.
+  - `(expect-pass name thunk)` builds a positive leaf: it passes if the thunk returns.
+  - `(expect-fail name thunk [contains])` builds a negative leaf: it passes only if the thunk raises. When `contains` is supplied, that substring must appear in the error message, so the intended error fired rather than an unrelated one.
+- Each leaf is executed independently on a fresh VM invocation, so one failure does not stop the run. This is what makes `assert-equal` safe: it signals failure with `(error ...)`.
+- `menai-test` is supplied by the test tool and is not part of the standard library; it is only importable while a suite is running.
+- Example test file `foo.test.menai`:
+  ```menai
+  (let ((foo (import "foo"))
+        (t (import "menai-test"))
+        (inc (:: foo inc))
+        (assert-equal (:: t assert-equal))
+        (expect-pass (:: t expect-pass))
+        (expect-fail (:: t expect-fail))
+
+        (test-increments
+         (lambda () (assert-equal (inc 1) 2)))
+
+        (test-rejects-negative
+         (lambda () (inc -1)))
+
+        (tests
+         (list
+           (list "arithmetic"
+                 (list
+                   (expect-pass "increments" test-increments)
+                   (expect-fail "rejects negative" test-rejects-negative "negative"))))))
+    (export tests))
+  ```
+
 ## Raising errors
 
 - (error value) → raises a runtime error; the value expression is evaluated normally

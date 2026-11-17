@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from menai import Menai, MenaiError
+from menai.testing.support import support_module_dir
 from menai.menai_value import (
     MenaiBoolean, MenaiDict, MenaiFunction, MenaiList, MenaiString, MenaiValue,
 )
@@ -24,9 +25,6 @@ from menai_trace.menai_trace_source_coverage import (
     SourceFileCoverage,
     coverage_for_source,
 )
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_RUNNER_DIR = str(Path(__file__).resolve().parent)
 
 # Name of the binding that carries the leaf path into a pre-compiled program.
 # It must not start with '$', be a reserved word, or collide with a prelude
@@ -73,9 +71,15 @@ class NodeTree:
 
 
 def _make_menai(test_file_dir: str, explicit: list[str]) -> Menai:
-    """Create a Menai instance with the runner's support module on the path."""
+    """Create a Menai instance with the test support module on the path."""
+    support_dir = support_module_dir()
+    if support_dir is None:
+        raise ValueError(
+            "The menai-test support module has no filesystem location in this installation"
+        )
+
     module_path: list[str] = []
-    for directory in [_RUNNER_DIR] + list(explicit) + Menai.build_module_path(test_file_dir):
+    for directory in [str(support_dir)] + list(explicit) + Menai.build_module_path(test_file_dir):
         if directory not in module_path:
             module_path.append(directory)
 

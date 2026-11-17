@@ -31,6 +31,12 @@ from menai.ast.menai_ast_builder import MenaiASTBuilder
 # AI-facing language reference
 from menai.menai_help import get_help
 
+# Test support
+from menai.testing import (
+    SUPPORT_MODULE_NAME, TestOutcome, run_test_suite,
+    support_module_dir, support_module_source,
+)
+
 __all__ = [
     # Main API
     "Menai",
@@ -56,4 +62,8 @@ __all__ = [
 
     # AI-facing language reference
     "get_help",
+
+    # Test support
+    "SUPPORT_MODULE_NAME", "TestOutcome", "run_test_suite",
+    "support_module_dir", "support_module_source",
 ]

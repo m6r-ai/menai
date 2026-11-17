@@ -1,9 +1,9 @@
-; menai-test — test support module injected by the test runner.
+; menai-test — test support module for *.test.menai suites.
 ;
 ; Provides the assertion and node-construction helpers that a *.test.menai
-; suite uses to build its exported "tests" node-list.  The runner prepends
-; its own directory to the module path, so this module is available only
-; under the runner and is not part of the standard library.
+; suite uses to build its exported "tests" node-list.  A test tool puts this
+; module's directory on the module path, so it is available only while a
+; suite is running and is not part of the standard library.
 
 (let (; Polymorphic equality: dispatches on the type of the first argument.
       ; Two values are equal if they have the same type and the same value.

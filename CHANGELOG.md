@@ -2,6 +2,18 @@
 
 ## v0.11.0 (2026-xx-xx)
 
+New features:
+
+- The `menai-test` support module now ships as package data of the `menai`
+  package and is located through `importlib.resources` by
+  `menai.support_module_dir()` and `menai.support_module_source()`, so a host
+  test tool can make it available without depending on a source checkout.
+- Added `menai.run_test_suite()`, a library form of the test runner that
+  returns structured outcomes for a host tool to render, without depending on
+  the `menai-test` console script or its coverage support.
+- The `.test.menai` suite format is now documented in the AI reference and in
+  the language manual.
+
 Bug fixes:
 
 - Fixed some older document references that had become stale.

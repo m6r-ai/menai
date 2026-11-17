@@ -37,31 +37,30 @@ to N columns.
 
 ## Writing tests
 
-A test file is a `.menai` module that imports `menai-test` and exports a dict
-with a `"tests"` key containing a node-list:
+A test file is an ordinary `.menai` module that imports the module under test
+and `menai-test`, binds its tests, and exports a binding named `tests`:
 
 ```menai
 (let ((mymod (import "my_module"))
-      (t (import "menai-test")))
-  (let ((my-fn (dict-get mymod "my-fn"))
-        (assert-equal (dict-get t "assert-equal"))
-        (expect-pass (dict-get t "expect-pass"))
-        (expect-fail (dict-get t "expect-fail")))
-    (dict
-      (list "tests" (list
+      (t (import "menai-test"))
+      (my-fn (:: mymod my-fn))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
 
-        (list "group name" (list
-          (expect-pass "test name" (lambda () (assert-equal (my-fn 1) 2)))
-          (expect-pass "another" (lambda () (assert-equal (my-fn 0) 0)))
-          (expect-fail "rejects 0" (lambda () (my-fn 0)) "must be positive")
-        ))
-
-      )))))
+      (tests
+       (list
+         (list "group name"
+               (list
+                 (expect-pass "test name" (lambda () (assert-equal (my-fn 1) 2)))
+                 (expect-pass "another" (lambda () (assert-equal (my-fn 0) 0)))
+                 (expect-fail "rejects 0" (lambda () (my-fn 0)) "must be positive"))))))
+  (export tests))
 ```
 
 ### Node structure
 
-The `"tests"` value is a **node-list** — a list of nodes, where each node is a
+The `tests` binding's value is a **node-list** — a list of nodes, where each node is a
 two-element list `(name thing)`:
 
 - **Leaf**: `thing` is a zero-argument lambda (the test thunk)
@@ -213,10 +212,16 @@ directly — no special handling is needed.
 
 ## Test support module
 
-The runner prepends its own directory to the Menai module path, making
-`(import "menai-test")` available to all test files. This module is **only**
-available when running under the test runner — it is not part of the standard
-module library.
+The support module ships as package data inside the `menai` package, under
+`menai/testing/menai-test.menai`, and `menai.testing.support_module_dir()`
+locates it through `importlib.resources`. The runner puts that directory on the
+Menai module path, making `(import "menai-test")` available to all test files.
+This module is **only** available when running under a test runner — it is not
+part of the standard module library and is not on the default module path.
+
+The same execution model is available without this console tool as
+`menai.run_test_suite()`, which returns structured outcomes for a host tool to
+render.
 
 Exports:
 
