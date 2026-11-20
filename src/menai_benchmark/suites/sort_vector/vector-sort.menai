@@ -1,0 +1,2 @@
+(lambda (lst)
+  (sort-vector integer<? (list->vector lst)))

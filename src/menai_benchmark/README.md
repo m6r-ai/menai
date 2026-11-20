@@ -14,8 +14,8 @@ Run from this directory with the virtual environment active:
 
 ```
 python run.py                        # run all suites
-python run.py --suite sort           # run only the sort suite
-python run.py --suite sort --case n=1000  # run one case in a suite
+python run.py --suite sort_list      # run only the sort_list suite
+python run.py --suite sort_list --case n=1000  # run one case in a suite
 python run.py --iterations 3         # override iteration count on every case
 python run.py --opcodes              # opcode profiling (Menai only)
 python run.py --opcodes --opcodes-top 20  # limit opcode output
@@ -79,9 +79,12 @@ benchmark/
     ├── rubiks_vector/
     │   ├── suite.py          # Rubik's cube IDA* benchmark suite (vector faces)
     │   └── rubiks-cube-vector.menai
-    ├── sort/
-    │   ├── suite.py          # Sort benchmark suite
+    ├── sort_list/
+    │   ├── suite.py          # List sort benchmark suite
     │   └── list-sort.menai
+    ├── sort_vector/
+    │   ├── suite.py          # Vector sort benchmark suite
+    │   └── vector-sort.menai
     ├── sudoku_list/
     │   ├── suite.py          # Sudoku solver benchmark suite
     │   └── sudoku-solver.menai
@@ -294,9 +297,13 @@ Seven scramble depths from 1 to 7 moves.
 The `rubiks_vector` suite solves the same scrambles with the cube faces stored
 as vectors instead of lists.
 
-### Sort
+### Sort (list)
 Sorts a list of random integers using `sort-list` in Menai.
 Sizes: 10, 50, 100, 250, 500, 1000, 2500, 5000, 10000 elements.
+
+### Sort (vector)
+Sorts the same sizes of random integers using `sort-vector` in Menai, so the
+timings are directly comparable across the two suites.
 
 ### Sudoku (list)
 Solves sudoku puzzles using a backtracking solver. Four difficulty levels:

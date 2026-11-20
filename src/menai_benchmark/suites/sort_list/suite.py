@@ -18,7 +18,7 @@ _SORT_EXPR = (_SUITE_DIR / "list-sort.menai").read_text(encoding="utf-8").strip(
 
 
 def _expr(lst: list[int]) -> str:
-    """Wrap a list of integers in a Menai sort call."""
+    """Wrap a list of integers in a Menai list sort call."""
     items = " ".join(str(n) for n in lst)
     return f"({_SORT_EXPR} (list {items}))"
 
@@ -26,7 +26,7 @@ def _expr(lst: list[int]) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for sorting a list of random integers."""
 
-    name = "sort"
+    name = "sort_list"
     description = "Sort a list of random integers at various sizes."
 
     def cases(self) -> list[BenchmarkCase]:
@@ -41,5 +41,5 @@ class Suite(BenchmarkSuite):
         ]
 
     def menai_program(self) -> MenaiProgram:
-        """Return the sort expression, built from the case input list."""
+        """Return the list sort expression, built from the case input list."""
         return MenaiProgram(expression=_expr)

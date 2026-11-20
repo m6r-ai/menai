@@ -15,6 +15,9 @@ The host reads the file, queries the clock, or writes the result - Menai does th
 computation in between.  This keeps the non-deterministic and stateful parts of a
 system outside the language, where they can be permissioned and reviewed.
 
+Menai code is compiled down to a bytecode that is implemented in C.  The optimizing
+compiler and runtime results in performance levels similar to native Python.
+
 Menai started life inside [Humbug](https://github.com/m6r-ai/humbug), where it is used
 for file and data processing, sorting, parsing, and mathematical reasoning.  It was
 extracted into its own repository because it solves a fundamentally different problem
@@ -112,9 +115,17 @@ The bytecode runs on a register-based C VM with a pool allocator, reference coun
 and a closure cycle collector.  The VM has no process-global mutable state, so
 multiple instances can run independently and safely.
 
+The VM implements many performance optimizations designed to make a functional language
+run fast.  For example all the container classes (sets, dictionaries, vectors, and
+structures) recognize when a source container is not used elsewhere and will switch
+to in-place modifications rather than creating new objects.
+
 Compilation is fast enough to do on demand.  Every optimisation has to justify its
 cost: if a pass costs 10ms it needs to offer close to that as a saving in a single
 runtime use, and if it costs 100ms it is probably not worth having.
+
+The compiler also implements comprehensive diagnostics to enable an AI to rectify any
+coding mistakes.
 
 The pipeline is authoritative in
 [`src/menai/menai_compiler.py`](src/menai/menai_compiler.py) — it is always current

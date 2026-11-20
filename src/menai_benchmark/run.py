@@ -117,8 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "python run.py                             # run all suites\n"
-            "python run.py --suite sort                # run only the sort suite\n"
-            "python run.py --suite sort --case n=1000  # run one case in a suite\n"
+            "python run.py --suite sort_list           # run only the sort_list suite\n"
+            "python run.py --suite sort_list --case n=1000  # run one case in a suite\n"
             "python run.py --iterations 5              # override iteration count\n"
             "python run.py --opcodes                   # opcode profiling (Menai only)\n"
             "python run.py --opcodes --opcodes-top 20  # limit opcode output\n"

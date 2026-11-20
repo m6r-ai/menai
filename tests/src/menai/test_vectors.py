@@ -387,6 +387,7 @@ class TestVectors:
     @pytest.mark.parametrize("expression,expected", [
         ('(sort-vector integer<? (vector 3 1 4 1 5))', '#vector(1 1 3 4 5)'),
         ('(sort-vector integer<? (vector))', '#vector()'),
+        ('(sort-vector integer<? (vector 42))', '#vector(42)'),
         ('(sort-vector integer>? (vector 3 1 4))', '#vector(4 3 1)'),
         ('(sort-vector string<? (vector "b" "a" "c"))', '#vector("a" "b" "c")'),
     ])
@@ -401,6 +402,39 @@ class TestVectors:
             '  (let ((ignored (sort-vector integer<? v)))'
             '    v))'
         ) == '#vector(3 1 2)'
+
+    def test_sort_vector_original_unchanged_across_merge_passes(self, menai):
+        """Test that sorting a vector long enough to merge runs leaves it unchanged."""
+        assert menai.evaluate_and_format(
+            '(let ((v (list->vector (range 0 40))))'
+            '  (let ((ignored (sort-vector integer>? v)))'
+            '    (vector=? v (list->vector (range 0 40)))))'
+        ) == '#t'
+
+    def test_sort_vector_is_stable(self, menai):
+        """Test that elements with equal keys keep their original relative order."""
+        assert menai.evaluate_and_format(
+            '(map-list'
+            '  (lambda (pair) (vector-nth pair 1))'
+            '  (vector->list'
+            '    (sort-vector'
+            '      (lambda (a b) (integer<? (vector-nth a 0) (vector-nth b 0)))'
+            '      (vector (vector 1 0) (vector 0 1) (vector 1 2) (vector 0 3)))))'
+        ) == '(1 3 0 2)'
+
+    def test_sort_vector_all_elements_equal(self, menai):
+        """Test that a vector whose elements all compare equal is unchanged."""
+        assert menai.evaluate_and_format(
+            '(sort-vector integer<? (vector 7 7 7 7 7))'
+        ) == '#vector(7 7 7 7 7)'
+
+    def test_sort_vector_large(self, menai):
+        """Test that sort-vector orders a vector spanning many merge passes."""
+        assert menai.evaluate_and_format(
+            '(let ((v (list->vector'
+            '            (map-list (lambda (i) (integer% (integer* i 7919) 1000)) (range 0 1000)))))'
+            '  (vector=? (sort-vector integer<? v) (list->vector (range 0 1000))))'
+        ) == '#t'
 
     def test_slice_reconstruct(self, menai):
         """Test that slicing apart and concatenating reconstructs the original."""

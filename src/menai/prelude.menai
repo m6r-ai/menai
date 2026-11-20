@@ -2235,9 +2235,88 @@
                           #f)))))
            (loop 0))))
 
+      ; Bottom-up merge sort over two scratch buffers, written as one flat loop.
+      ; The loop state is: w, the width of the sorted runs on entry to the pass;
+      ; src and dst, the buffers being read and written, which swap when the
+      ; pass ends; the current run pair [i, mid) + [j, hi), merged into dst at
+      ; k; and mid and hi, the ends of the two runs.
+      ;
+      ; It must stay a single loop.  vector-with updates in place only when the
+      ; destination register is also the source, which the allocator can do for
+      ; a loop-carried accumulator but never for a helper that receives the
+      ; vector as an argument.  Splitting the merge out into its own function
+      ; would silently turn every element write into a full copy.
       (sort-vector
        (lambda (cmp v)
-         ($list->vector (sort-list cmp ($vector->list v))))))
+         (let ((n ($vector-length v)))
+           (if ($integer<=? n 1)
+               v
+               (let ((a ($vector-concat v ($vector-slice v 0 0)))
+                     (b ($vector-concat v ($vector-slice v 0 0))))
+                 (let ((merge
+                        (lambda (w src dst i mid j hi k)
+                          (if ($integer=? k hi)
+                              (if ($integer>=? hi n)
+                                  (if ($integer>=? ($integer* 2 w) n)
+                                      dst
+                                      (merge
+                                        ($integer* 2 w)
+                                        dst
+                                        src
+                                        0
+                                        ($integer-min ($integer* 2 w) n)
+                                        ($integer-min ($integer* 2 w) n)
+                                        ($integer-min ($integer* 4 w) n)
+                                        0))
+                                  (merge
+                                    w
+                                    src
+                                    dst
+                                    hi
+                                    ($integer-min ($integer+ hi w) n)
+                                    ($integer-min ($integer+ hi w) n)
+                                    ($integer-min ($integer+ hi ($integer* 2 w)) n)
+                                    hi))
+                              (if ($integer<? i mid)
+                                  (if ($integer>=? j hi)
+                                      (merge
+                                        w
+                                        src
+                                        ($vector-with dst k ($vector-nth src i))
+                                        ($integer+ i 1)
+                                        mid
+                                        j
+                                        hi
+                                        ($integer+ k 1))
+                                      (if (cmp ($vector-nth src j) ($vector-nth src i))
+                                          (merge
+                                            w
+                                            src
+                                            ($vector-with dst k ($vector-nth src j))
+                                            i
+                                            mid
+                                            ($integer+ j 1)
+                                            hi
+                                            ($integer+ k 1))
+                                          (merge
+                                            w
+                                            src
+                                            ($vector-with dst k ($vector-nth src i))
+                                            ($integer+ i 1)
+                                            mid
+                                            j
+                                            hi
+                                            ($integer+ k 1))))
+                                  (merge
+                                    w
+                                    src
+                                    ($vector-with dst k ($vector-nth src j))
+                                    i
+                                    mid
+                                    ($integer+ j 1)
+                                    hi
+                                    ($integer+ k 1)))))))
+                   (merge 1 v a 0 ($integer-min 1 n) ($integer-min 1 n) ($integer-min 2 n) 0))))))))
   (dict "function?" function?
         "function=?" function=?
         "function!=?" function!=?

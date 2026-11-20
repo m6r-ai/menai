@@ -136,6 +136,12 @@ closure capture or another collection's element can each hold a second reference
 whose only register is the one being overwritten, which is an ordinary legal program rather
 than a compiler bug, and `/DNDEBUG` is on in the Windows build.
 
+An accumulating loop only stays in place while its accumulator is a loop-carried variable of
+that loop. A helper called with the collection as an argument receives it through a `MOVE` into
+the outgoing slot, which retains, so every write inside the helper copies — and there is no
+diagnostic when a refactor moves the write across that boundary. The prelude's `sort-vector` is
+one flat loop rather than a merge helper plus a pass helper for exactly this reason.
+
 Iterate a dictionary or set with `length`, never with `cap`: slots past `length` are
 uninitialised, and `menai_dict_final` and `menai_set_final` depend on that. The hash table
 borrows its keys from the elements array, so replacing an element must call

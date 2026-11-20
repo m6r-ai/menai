@@ -530,8 +530,11 @@ class TestPreludeInlining:
         assert _count_calls_to(new_ir, 'fold-list') == 0
 
     def test_sort_list_not_inlined(self):
-        """sort-list is not inlined because its body exceeds the node threshold."""
-        ir = _build_ir("(sort-list integer<? (list 3 1 2))", inject_prelude=True)
+        """sort-list is not inlined at several call sites because its body exceeds the node threshold."""
+        ir = _build_ir(
+            "(list (sort-list integer<? (list 3 1 2)) (sort-list integer<? (list 2 1)))",
+            inject_prelude=True,
+        )
         before = _count_calls_to(ir, 'sort-list')
         new_ir, changed = _inline(ir)
 
