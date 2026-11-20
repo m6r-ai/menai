@@ -111,6 +111,53 @@ still held by the code object. The `MENAI_DEBUG_LEAKS` build monitors this.
 
 See [ADR-0016](../../../docs/adr/0016-reference-counting-with-closure-cycle-collection.md).
 
+## An update opcode may write into a uniquely-owned collection, but only on four conditions
+
+Menai values never change, so `vector-with`, `dict-with` and their relatives allocate a
+replacement. They also update in place when nothing else can observe the collection, which is
+what makes an accumulating loop O(n) rather than O(n²). The conditions, all of which must hold,
+are listed at the `OP_VECTOR_WITH` fast path; the two that are easy to get wrong are:
+
+- `dest == src0` is required, not merely `ob_refcnt == 1`. A register that is still live below
+  the instruction holds a reference, so a count of one does not mean the value is unobservable:
+  `(let ((a (vector 1 2 3))) (list a (vector-with a 0 8)))` has one reference and must not
+  mutate. Only the slot allocator knows when a reference is being consumed, and `dest == src0`
+  is the runtime-visible form of that.
+- A slice view can be uniquely owned, so the ownership test is independent of the count:
+  writing through a view's element pointer would corrupt the vector it views.
+- A dictionary records `cap`, which may exceed `length`. A uniquely-owned dictionary that
+  is appended to in place uses the spare slots and is grown geometrically when full, so a
+  sequence of appends is O(n) overall rather than O(n²). A *shared* dictionary is still
+  allocated tight: slack is only requested by the in-place path.
+
+The fallback is always correct — it is what the opcode did before — so this is an optimisation
+that can only cost time. Never express the prediction as an `assert`: a constant-pool entry, a
+closure capture or another collection's element can each hold a second reference to a value
+whose only register is the one being overwritten, which is an ordinary legal program rather
+than a compiler bug, and `/DNDEBUG` is on in the Windows build.
+
+Iterate a dictionary or set with `length`, never with `cap`: slots past `length` are
+uninitialised, and `menai_dict_final` and `menai_set_final` depend on that. The hash table
+borrows its keys from the elements array, so replacing an element must call
+`menai_ht_replace_key` and shifting elements must clear and re-insert the table.
+
+A two-operand operation (`dict-merge`, `set-union`, `set-intersection`, `set-difference`)
+also needs `b != a` in the in-place test: a count of one does not exclude the operands
+being the same object, because both operands may read the same register. Order the work so
+every fallible step comes first — size the table for the worst case up front — because a
+failure after a partial mutation would leave a collection that later passes cannot
+describe.
+
+`struct-with` and `struct-with-indexed` share `menai_struct_set_exclusive` and need no
+capacity: a struct's field count is fixed. They still need the self-reference test, because a
+record may legally hold a record. Structs are hashable, so unlike the collections the
+uniqueness test is also what keeps an enclosing struct's cached hash valid.
+
+The copying happens inside an opcode body, so **executed instruction counts do not change** and
+the opcode profile cannot see this class of change at all.
+
+See [ADR-0063](../../../docs/adr/0063-in-place-update-of-uniquely-owned-collections.md).
+
 ## A VM error code that needs context gets a typed field for it
 
 `MenaiVMError` carries the context an error code needs, set at the raise site in

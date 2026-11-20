@@ -627,7 +627,10 @@ typedef struct {
  *   - slot_count is always a power of 2 (or 0 for an empty table).
  *   - slot_count is sized so that n <= slot_count * MENAI_HT_MAX_LOAD at construction.
  *   - A slot is empty when its key pointer is NULL.
- *   - Deleted slots are not used (tables are immutable after construction).
+ *   - Keys are borrowed from the elements array; a slot whose element is replaced
+ *     must have its index or key updated by the caller (menai_ht_replace_key), and a
+ *     table whose elements shift must be rebuilt (menai_ht_clear then re-insert).
+ *   - There is no deletion: removing an element rebuilds the table.
  */
 typedef struct {
     MenaiHashSlot *slots;
@@ -720,6 +723,7 @@ struct MenaiDict {
     MenaiDictElement **elements;        /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) key lookup */
     ssize_t length;
+    ssize_t cap;                        /* slots available in inline_data, >= length */
     MenaiDictElement *inline_data[];    /* FAM: elements[0..cap-1] */
 };
 
@@ -803,6 +807,7 @@ struct MenaiSet {
     MenaiSetElement **elements;         /* array of shared, ref-counted entries */
     MenaiHashTable ht;                  /* pure-C hash table for O(1) membership; separate allocation */
     ssize_t length;                     /* number of live elements */
+    ssize_t cap;                        /* slots available in inline_data, >= length */
     MenaiSetElement *inline_data[];     /* FAM: elements[0..cap-1] */
 };
 
@@ -1512,6 +1517,8 @@ int menai_value_equal(MenaiValue *a, MenaiValue *b);
 #define MENAI_HT_MAX_LOAD_DEN 3   /* load factor denominator */
 
 int menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n);
+int menai_ht_ensure(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n);
+void menai_ht_clear(MenaiHashTable *ht);
 ssize_t menai_ht_lookup(const MenaiHashTable *ht, MenaiValue *key, hash_t hash);
 void menai_ht_insert(MenaiHashTable *ht, MenaiValue *key, hash_t hash, ssize_t index);
 void menai_ht_replace_key(MenaiHashTable *ht, hash_t hash, ssize_t index, MenaiValue *new_key);
@@ -2138,6 +2145,39 @@ menai_struct_final(MenaiVMState *vs, MenaiStruct *self)
             menai_value_release(vs, self->items[i]);
         }
     }
+}
+
+/*
+ * menai_struct_set_exclusive — replace one field in place when the struct is
+ * uniquely owned.
+ *
+ * A struct has a fixed field count, so unlike a dictionary it needs no capacity:
+ * only the slot changes.  The conditions are the same as the collection updates
+ * (see ADR-0063): the caller establishes that the destination is the source
+ * register, so this write consumes the single reference, and new_val must not be
+ * self, which would build a cycle no reference count could reclaim.
+ *
+ * struct is hashable when its fields are, so the uniqueness test also guarantees
+ * that no enclosing struct already used as a dict key or set member can have its
+ * cached hash invalidated: a container retains the struct, which would put the
+ * count above one.
+ *
+ * index must be within [0, struct->nfields), which the caller has already checked.
+ */
+static inline void
+menai_struct_set_exclusive(MenaiVMState *vs, MenaiStruct *self, int index, MenaiValue *new_val)
+{
+    /*
+     * Retain before release: new_val may be the field being displaced, or another
+     * field of the same struct, and either would be freed by the release below if
+     * its reference were dropped first.
+     */
+    menai_value_retain(new_val);
+    if (self->items[index]) {
+        menai_value_release(vs, self->items[index]);
+    }
+
+    self->items[index] = new_val;
 }
 
 static inline int

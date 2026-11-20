@@ -184,6 +184,64 @@ class TestDictSet:
         keys = list(result.keys())
         assert keys == ["a", "b", "c"]
 
+    def test_dict_with_appends_in_a_loop(self, tool):
+        """Appending in a loop builds every entry, in insertion order."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 50)
+                              d
+                              (loop (integer+ i 1) (dict-with d i (integer* i i)))))))
+              (loop 0 (dict)))
+        ''')
+        assert len(result) == 50
+        assert list(result.keys()) == [str(i) for i in range(50)]
+        assert result["7"] == 49
+
+    def test_dict_with_replaces_in_a_loop(self, tool):
+        """A counter accumulated with dict-with counts every update."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 200)
+                              d
+                              (loop (integer+ i 1)
+                                    (dict-with d "n" (integer+ 1 (dict-get d "n" 0))))))))
+              (dict-get (loop 0 (dict)) "n" 0))
+        ''')
+        assert result == 200
+
+    def test_dict_with_interleaves_append_and_replace(self, tool):
+        """Growing and updating the same dictionary in one loop keeps both correct."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 40)
+                              d
+                              (loop (integer+ i 1)
+                                    (dict-with (dict-with d i i) "total"
+                                               (integer+ i (dict-get d "total" 0))))))))
+              (list (dict-length (loop 0 (dict))) (dict-get (loop 0 (dict)) "total" 0)))
+        ''')
+        assert result == [41, sum(range(40))]
+
+    def test_dict_with_stores_the_dict_as_a_value(self, tool):
+        """A dictionary stored as its own value holds the earlier dictionary."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 3) d (loop (integer+ i 1) (dict-with d i d))))))
+              (dict-length (loop 0 (dict))))
+        ''')
+        assert result == 3
+
+    def test_dict_grown_in_a_loop_leaves_an_earlier_binding_alone(self, tool):
+        """Growing one dictionary does not change another that shared its prefix."""
+        result = tool.evaluate('''
+            (let ((base (dict-with (dict) "a" 1)))
+              (let ((grown (let ((loop (lambda (i d)
+                                         (if (integer=? i 30) d (loop (integer+ i 1) (dict-with d i i))))))
+                             (loop 0 base))))
+                (list (dict-length base) (dict-length grown))))
+        ''')
+        assert result == [1, 31]
+
 
 class TestDictSetErrors:
     """Test dict-with error cases."""
@@ -328,6 +386,44 @@ class TestDictRemove:
         ''')
         assert result == [True, False]
 
+    def test_dict_without_removes_in_a_loop(self, tool):
+        """Removing one key per iteration leaves exactly the keys not removed."""
+        result = tool.evaluate('''
+            (let ((start (let ((loop (lambda (i d)
+                                       (if (integer=? i 40) d (loop (integer+ i 1) (dict-with d i i))))))
+                           (loop 0 (dict)))))
+              (let ((loop (lambda (i d)
+                            (if (integer=? i 40) d (loop (integer+ i 2) (dict-without d i))))))
+                (loop 0 start)))
+        ''')
+        assert list(result.keys()) != []
+        assert set(result.keys()) == {str(i) for i in range(40)} - {str(i) for i in range(0, 40, 2)}
+
+    def test_dict_without_preserves_order_of_remaining_keys(self, tool):
+        """Removing a middle key keeps the other keys in insertion order."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 5) d (loop (integer+ i 1) (dict-with d i i))))))
+              (dict-without (loop 0 (dict)) 2))
+        ''')
+        assert list(result.keys()) == ["0", "1", "3", "4"]
+
+    def test_dict_without_keeps_a_grown_dictionary_usable(self, tool):
+        """A dictionary grown then shrunk in place still looks up and appends correctly."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 30)
+                              d
+                              (loop (integer+ i 1) (dict-with d i i))))))
+              (let ((grown (loop 0 (dict))))
+                (let ((shrunk (dict-without grown 15)))
+                  (list (dict-length shrunk)
+                        (dict-has? shrunk 15)
+                        (dict-get shrunk 14 0)
+                        (dict-length (dict-with shrunk "new" 1))))))
+        ''')
+        assert result == [29, False, 14, 30]
+
 
 class TestDictRemoveErrors:
     """Test dict-without error cases."""
@@ -373,6 +469,39 @@ class TestDictMerge:
         result = tool.evaluate('(dict-merge (dict "z" 1 "a" 2) (dict "m" 3 "b" 4))')
         keys = list(result.keys())
         assert keys == ["z", "a", "m", "b"]
+
+    def test_dict_merge_folds_in_a_loop(self, tool):
+        """Merging one dictionary per iteration accumulates every key, later winning."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 40)
+                              d
+                              (loop (integer+ i 1)
+                                    (dict-merge d (dict i i "last" i)))))))
+              (loop 0 (dict)))
+        ''')
+        assert len(result) == 41
+        assert result["last"] == 39
+        assert result["17"] == 17
+
+    def test_dict_merge_leaves_operands_unchanged(self, tool):
+        """Merging does not change either argument."""
+        result = tool.evaluate('''
+            (let ((a (dict "a" 1 "b" 2)) (b (dict "b" 20 "c" 3)))
+              (let ((m (dict-merge a b)))
+                (list (dict-length a) (dict-get a "b") (dict-length b) (dict-get m "b"))))
+        ''')
+        assert result == [2, 2, 2, 20]
+
+    def test_dict_merge_of_a_dict_with_itself(self, tool):
+        """Merging a dictionary with itself leaves it unchanged."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i d)
+                          (if (integer=? i 10) d (loop (integer+ i 1) (dict-with d i i))))))
+              (let ((d (loop 0 (dict))))
+                (dict-merge d d)))
+        ''')
+        assert result == {str(i): i for i in range(10)}
 
 
 class TestDictMergeErrors:

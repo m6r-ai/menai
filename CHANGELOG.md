@@ -2,6 +2,11 @@
 
 ## v0.12.0 (2026-xx-xx)
 
+New features:
+
+- The VM now implements in-placed modification of containers (vectors, sets, dicts
+  and structs) where a source goes dead during the operation.
+
 ## v0.11.0 (2026-11-18)
 
 New features:

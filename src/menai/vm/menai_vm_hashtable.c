@@ -4,8 +4,13 @@
  * MenaiHashTable is an open-addressing table with power-of-2 slot counts and
  * a 2/3 maximum load factor.  Probing uses the same quadratic-ish sequence
  * CPython uses: slot = (5*slot + 1 + perturb) & mask, perturb >>= 5.
- * Tables are built once and never mutated (Menai collections are immutable),
- * so there is no deletion or rehashing logic.
+ *
+ * There is no deletion: a dictionary or set that loses an element rebuilds its
+ * table (menai_ht_clear, then one insert per surviving entry).  Growth is not
+ * needed while the collection is shared, because a shared update copies into a
+ * table sized for the new entry count, but a uniquely-owned dictionary can be
+ * appended to in place, and that path grows the slot array with
+ * menai_ht_ensure.
  */
 #define _POSIX_C_SOURCE 200809L
 #include <limits.h>
@@ -153,12 +158,14 @@ menai_value_equal(MenaiValue *a, MenaiValue *b)
     return 0;
 }
 
-int
-menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n)
+/*
+ * menai_ht_slots_for — the slot count needed to hold n entries at the maximum
+ * load factor: the smallest power of two at least 4, or 0 for an empty table.
+ */
+static inline ssize_t
+menai_ht_slots_for(ssize_t n)
 {
-    if (n == 0) {
-        ht->slots = NULL;
-        ht->slot_count = 0;
+    if (n <= 0) {
         return 0;
     }
 
@@ -166,6 +173,19 @@ menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n)
     ssize_t sc = 4;
     while (sc < min_slots) {
         sc <<= 1;
+    }
+
+    return sc;
+}
+
+int
+menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n)
+{
+    ssize_t sc = menai_ht_slots_for(n);
+    if (sc == 0) {
+        ht->slots = NULL;
+        ht->slot_count = 0;
+        return 0;
     }
 
     ht->slots = (MenaiHashSlot *)menai_pool_alloc(vs, (size_t)sc * sizeof(MenaiHashSlot));
@@ -183,6 +203,67 @@ menai_ht_init(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n)
     memset(ht->slots, 0, (size_t)sc * sizeof(MenaiHashSlot));
     ht->slot_count = sc;
     return 0;
+}
+
+/*
+ * menai_ht_ensure — grow the slot array if it cannot hold n entries.
+ *
+ * The existing entries are re-probed into a larger array and the old one is
+ * returned to the pool.  Nothing is allocated when the table is already large
+ * enough, so this is cheap to call on every in-place append.
+ *
+ * On allocation failure the table is left exactly as it was, so the caller's
+ * value keeps its invariants and can still be released.
+ */
+int
+menai_ht_ensure(MenaiVMState *vs, MenaiHashTable *ht, ssize_t n)
+{
+    ssize_t sc = menai_ht_slots_for(n);
+    if (sc <= ht->slot_count) {
+        return MENAI_OK;
+    }
+
+    MenaiHashSlot *new_slots = (MenaiHashSlot *)menai_pool_alloc(vs, (size_t)sc * sizeof(MenaiHashSlot));
+    if (!new_slots) {
+        return MENAI_ERR_NOMEM;
+    }
+
+    memset(new_slots, 0, (size_t)sc * sizeof(MenaiHashSlot));
+
+    MenaiHashSlot *old_slots = ht->slots;
+    ssize_t old_count = ht->slot_count;
+
+    ht->slots = new_slots;
+    ht->slot_count = sc;
+
+    for (ssize_t i = 0; i < old_count; i++) {
+        if (old_slots[i].key != NULL) {
+            menai_ht_insert(ht, old_slots[i].key, old_slots[i].hash, old_slots[i].index);
+        }
+    }
+
+    if (old_slots != NULL) {
+        menai_pool_free(vs, old_slots);
+    }
+
+    return MENAI_OK;
+}
+
+/*
+ * menai_ht_clear — empty the table without releasing the slot array.
+ *
+ * Used when a dictionary or set removes an element: entries after the removed
+ * one shift down, so every stored index changes and the table must be rebuilt.
+ * Clearing and re-inserting reuses the existing allocation instead of sizing a
+ * new one, and avoids implementing deletion in an open-addressing table whose
+ * probe sequence is not linear.
+ */
+void
+menai_ht_clear(MenaiHashTable *ht)
+{
+    if (ht->slots != NULL && ht->slot_count > 0) {
+        memset(ht->slots, 0, (size_t)ht->slot_count * sizeof(MenaiHashSlot));
+    }
 }
 
 ssize_t

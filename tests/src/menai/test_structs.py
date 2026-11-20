@@ -159,6 +159,52 @@ class TestStructSet:
         ''')
         assert result == '(1 99)'
 
+    def test_update_accumulates_in_a_loop(self, menai):
+        """Updating a field repeatedly in a loop accumulates every step."""
+        result = menai.evaluate_and_format('''
+        (let ((Counter (struct (n label))))
+          (let ((loop (lambda (i c)
+                        (if (integer=? i 100)
+                            c
+                            (loop (integer+ i 1)
+                                  (struct-with c 'n (integer+ i (struct-get c 'n))))))))
+            (loop 0 (Counter 0 "steps"))))
+        ''')
+        assert result == '(Counter 4950 "steps")'
+
+    def test_update_stores_the_struct_as_a_field(self, menai):
+        """Storing a struct into its own field keeps the earlier struct, not a cycle."""
+        result = menai.evaluate_and_format('''
+        (let ((Node (struct (value next)))
+              (loop (lambda (i node)
+                      (if (integer=? i 3) node (loop (integer+ i 1) (struct-with node 'next node))))))
+          (let ((chain (loop 0 (Node 0 #none))))
+            (list (struct-get chain 'value) (struct-get (struct-get chain 'next) 'value))))
+        ''')
+        assert result == '(0 0)'
+
+    def test_update_leaves_a_field_holding_the_same_value(self, menai):
+        """Replacing a field with the value it already holds leaves the struct unchanged."""
+        result = menai.evaluate_and_format('''
+        (let ((Point (struct (x y)))
+              (loop (lambda (i p)
+                      (if (integer=? i 20) p (loop (integer+ i 1) (struct-with p 'x (struct-get p 'x)))))))
+          (loop 0 (Point 7 8)))
+        ''')
+        assert result == '(Point 7 8)'
+
+    def test_update_preserves_a_captured_struct(self, menai):
+        """A struct held by a closure is not modified by a later struct-with."""
+        result = menai.evaluate_and_format('''
+        (let ((Point (struct (x y))))
+          (let ((p (Point 1 2)))
+            (let ((read-x (lambda () (struct-get p 'x))))
+              (let ((loop (lambda (i q)
+                            (if (integer=? i 20) q (loop (integer+ i 1) (struct-with q 'x i))))))
+                (list (read-x) (struct-get (loop 0 p) 'x))))))
+        ''')
+        assert result == '(1 19)'
+
     def test_set_unknown_field_raises_error(self, menai):
         """struct-with raises an error for an unknown field name."""
         with pytest.raises(MenaiEvalError) as exc_info:

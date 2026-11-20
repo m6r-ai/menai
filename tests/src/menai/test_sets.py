@@ -284,6 +284,26 @@ class TestSetAdd:
         )
         assert result == "#{1 2}"
 
+    def test_add_in_a_loop(self, tool):
+        """Adding one element per iteration collects every element exactly once."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i s)
+                          (if (integer=? i 60)
+                              s
+                              (loop (integer+ i 1) (set-with s i))))))
+              (loop 0 (set)))
+        ''')
+        assert result == set(range(60))
+
+    def test_add_repeated_element_leaves_set_unchanged(self, tool):
+        """Adding an element that is already present returns the same contents."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i s)
+                          (if (integer=? i 50) s (loop (integer+ i 1) (set-with s 7))))))
+              (loop 0 (set)))
+        ''')
+        assert result == {7}
+
     def test_add_wrong_type(self, tool):
         """Test that set-with rejects non-set first argument."""
         with pytest.raises(MenaiEvalError) as exc_info:
@@ -313,6 +333,32 @@ class TestSetRemove:
         """Test removing the only element produces empty set."""
         result = tool.evaluate_and_format("(set-without (set 42) 42)")
         assert result == "#{}"
+
+    def test_remove_in_a_loop(self, tool):
+        """Removing one element per iteration leaves exactly the elements not removed."""
+        result = tool.evaluate('''
+            (let ((start (let ((loop (lambda (i s)
+                                       (if (integer=? i 40) s (loop (integer+ i 1) (set-with s i))))))
+                           (loop 0 (set)))))
+              (let ((loop (lambda (i s)
+                            (if (integer=? i 40) s (loop (integer+ i 2) (set-without s i))))))
+                (loop 0 start)))
+        ''')
+        assert result == set(range(40)) - set(range(0, 40, 2))
+
+    def test_remove_keeps_a_grown_set_usable(self, tool):
+        """A set grown then shrunk in place still tests membership and accepts additions."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i s)
+                          (if (integer=? i 30) s (loop (integer+ i 1) (set-with s i))))))
+              (let ((grown (loop 0 (set))))
+                (let ((shrunk (set-without grown 15)))
+                  (list (set-length shrunk)
+                        (set-member? shrunk 15)
+                        (set-member? shrunk 14)
+                        (set-length (set-with shrunk 99))))))
+        ''')
+        assert result == [29, False, True, 30]
 
     def test_remove_wrong_type(self, tool):
         """Test that set-without rejects non-set first argument."""
@@ -344,6 +390,36 @@ class TestSetAlgebra:
         result = tool.evaluate_and_format("(set-union (set) (set))")
         assert result == "#{}"
 
+    def test_union_accumulates_in_a_loop(self, tool):
+        """Uniting one set per iteration leaves the union of every set, in order."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i acc)
+                          (if (integer=? i 30)
+                              acc
+                              (loop (integer+ i 1) (set-union acc (set i (integer+ i 100))))))))
+              (loop 0 (set)))
+        ''')
+        assert result == set(range(30)) | {i + 100 for i in range(30)}
+
+    def test_union_of_a_set_with_itself(self, tool):
+        """Uniting a set with itself leaves it unchanged."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i s)
+                          (if (integer=? i 10) s (loop (integer+ i 1) (set-with s i))))))
+              (let ((s (loop 0 (set))))
+                (set-union s s)))
+        ''')
+        assert result == set(range(10))
+
+    def test_union_leaves_operands_unchanged(self, tool):
+        """Uniting does not change either argument."""
+        result = tool.evaluate('''
+            (let ((a (set 1 2)) (b (set 2 3)))
+              (let ((u (set-union a b)))
+                (list (set-length a) (set-length b) (set-length u))))
+        ''')
+        assert result == [2, 2, 3]
+
     def test_intersection_overlapping(self, tool):
         """Test intersection of overlapping sets."""
         result = tool.evaluate_and_format("(set->list (set-intersection (set 1 2 3) (set 2 3 4)))")
@@ -364,6 +440,42 @@ class TestSetAlgebra:
         result = tool.evaluate_and_format("(set->list (set-intersection (set 3 1 2) (set 1 2 3)))")
         assert result == "(3 1 2)"
 
+    def test_intersection_repeats_in_a_loop(self, tool):
+        """Intersecting repeatedly with a superset leaves the members unchanged."""
+        result = tool.evaluate('''
+            (let ((universe (let ((build (lambda (i s)
+                                           (if (integer=? i 40) s (build (integer+ i 1) (set-with s i))))))
+                              (build 0 (set)))))
+              (let ((loop (lambda (i acc)
+                            (if (integer=? i 20)
+                                acc
+                                (loop (integer+ i 1) (set-intersection acc universe))))))
+                (loop 0 (set 5 10 15))))
+        ''')
+        assert result == {5, 10, 15}
+
+    def test_intersection_shrinks_in_a_loop(self, tool):
+        """Folding intersection leaves only members present in every set."""
+        result = tool.evaluate('''
+            (let ((sets (vector (set 0 1 2 3) (set 1 2 3 4) (set 2 3 4 5) (set 3 4 5 6))))
+              (let ((loop (lambda (i acc)
+                            (if (integer=? i 4)
+                                acc
+                                (loop (integer+ i 1)
+                                      (set-intersection acc (vector-nth sets i)))))))
+                (loop 0 (set 0 1 2 3 4 5 6))))
+        ''')
+        assert result == {3}
+
+    def test_intersection_leaves_the_filter_unchanged(self, tool):
+        """Intersecting does not change the set being filtered against."""
+        result = tool.evaluate('''
+            (let ((a (set 1 2 3 4)) (b (set 2 4)))
+              (let ((i (set-intersection a b)))
+                (list (set-length a) (set-length b) (set-length i))))
+        ''')
+        assert result == [4, 2, 2]
+
     def test_difference_overlapping(self, tool):
         """Test difference of overlapping sets (a minus b)."""
         result = tool.evaluate_and_format("(set->list (set-difference (set 1 2 3 4) (set 2 4)))")
@@ -378,6 +490,28 @@ class TestSetAlgebra:
         """Test difference with empty set returns original."""
         result = tool.evaluate("(set=? (set-difference (set 1 2 3) (set)) (set 1 2 3))")
         assert result is True
+
+    def test_difference_subtracts_in_a_loop(self, tool):
+        """Subtracting one set per iteration leaves exactly the elements never removed."""
+        result = tool.evaluate('''
+            (let ((start (let ((loop (lambda (i s)
+                                       (if (integer=? i 40) s (loop (integer+ i 1) (set-with s i))))))
+                           (loop 0 (set)))))
+              (let ((loop (lambda (i acc)
+                            (if (integer=? i 40) acc (loop (integer+ i 2) (set-difference acc (set i)))))))
+                (loop 0 start)))
+        ''')
+        assert result == set(range(1, 40, 2))
+
+    def test_difference_of_a_set_with_itself_is_empty(self, tool):
+        """Subtracting a set from itself removes every element."""
+        result = tool.evaluate('''
+            (let ((loop (lambda (i s)
+                          (if (integer=? i 10) s (loop (integer+ i 1) (set-with s i))))))
+              (let ((s (loop 0 (set))))
+                (set-difference s s)))
+        ''')
+        assert result == set()
 
     def test_difference_all_removed(self, tool):
         """Test difference where all elements are removed."""

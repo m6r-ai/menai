@@ -8,6 +8,11 @@
  * ref-counted, they can be shared between different versions of a set —
  * set-with and set-without only create/replace the element that changes,
  * retaining (sharing) all unchanged elements from the source set.
+ *
+ * `cap` records how many element slots the inline array holds and may exceed
+ * `length`.  A set produced by a shared-update path is allocated tight, so slack is
+ * only ever carried by a set that was grown or shrunk in place, and only while it
+ * was uniquely owned.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +31,7 @@ alloc_menai_set(MenaiVMState *vs, ssize_t cap)
     MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->elements = obj->inline_data;
     obj->length = 0;
+    obj->cap = cap;
     obj->ht.slots = NULL;
     obj->ht.slot_count = 0;
 

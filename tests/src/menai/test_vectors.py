@@ -124,6 +124,63 @@ class TestVectors:
         with pytest.raises(MenaiEvalError):
             menai.evaluate('(vector-with (vector 1 2 3) -1 9)')
 
+    def test_vector_with_repeated_update_in_a_loop(self, menai):
+        """Successive updates of an accumulator equal the vector built one element at a time."""
+        assert menai.evaluate_and_format(
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 4)'
+            '                 acc'
+            '                 (loop (integer+ i 1) (vector-with acc i (integer* i 10)))))))'
+            '  (loop 0 (vector 0 0 0 0)))'
+        ) == '#vector(0 10 20 30)'
+
+    def test_vector_with_element_replaced_by_itself(self, menai):
+        """Replacing an element with the value already at that index leaves the vector unchanged."""
+        assert menai.evaluate_and_format(
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 3)'
+            '                 acc'
+            '                 (loop (integer+ i 1) (vector-with acc i (vector-nth acc i)))))))'
+            '  (loop 0 (vector "a" "b" "c")))'
+        ) == '#vector("a" "b" "c")'
+
+    def test_vector_with_element_replaced_by_another_element(self, menai):
+        """An element copied from another index is stored independently of the element it came from."""
+        assert menai.evaluate_and_format(
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 3)'
+            '                 acc'
+            '                 (loop (integer+ i 1) (vector-with acc i (vector-nth acc 0)))))))'
+            '  (loop 0 (vector "a" "b" "c")))'
+        ) == '#vector("a" "a" "a")'
+
+    def test_vector_with_stores_the_vector_as_an_element(self, menai):
+        """A vector stored into its own element holds the earlier value, not itself."""
+        assert menai.evaluate_and_format(
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 1) acc (loop (integer+ i 1) (vector-with acc i acc))))))'
+            '  (loop 0 (vector 1 2)))'
+        ) == '#vector(#vector(1 2) 2)'
+
+    def test_vector_with_through_a_slice_leaves_the_parent_unchanged(self, menai):
+        """Updating a vector slice does not modify the vector the slice views."""
+        assert menai.evaluate_and_format(
+            '(let ((parent (vector 1 2 3 4 5)))'
+            '  (let ((loop (lambda (i slice)'
+            '               (if (integer=? i 2)'
+            '                   slice'
+            '                   (loop (integer+ i 1) (vector-with slice i 99))))))'
+            '    (list parent (loop 0 (vector-slice parent 1 3)))))'
+        ) == '(#vector(1 2 3 4 5) #vector(99 99))'
+
+    def test_vector_with_in_a_loop_leaves_a_literal_unchanged(self, menai):
+        """A vector literal passed through a loop is updated into a new value, not overwritten."""
+        assert menai.evaluate_and_format(
+            '(let ((loop (lambda (i v)'
+            '             (if (integer=? i 3) v (loop (integer+ i 1) (vector-with v i 0))))))'
+            '  (list (vector 9 9 9) (loop 0 (vector 9 9 9))))'
+        ) == '(#vector(9 9 9) #vector(0 0 0))'
+
     @pytest.mark.parametrize("expression,expected", [
         ('(vector-slice (vector 1 2 3 4 5) 0 0)', '#vector()'),
         ('(vector-slice (vector 1 2 3 4 5) 0 1)', '#vector(1)'),

@@ -6451,6 +6451,60 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
 
+            /*
+             * Replacing the element in place is unobservable only when nothing
+             * else can see the vector, which needs all of:
+             *
+             *   - The result goes back into the register the vector came from,
+             *     so that write consumes the single reference.  A count of one
+             *     is not enough on its own.  In
+             *
+             *         (let ((a (vector 1 2 3)))
+             *           (list a (vector-with a 0 8)))
+             *
+             *     a has one reference, held by the register that is still live
+             *     below this instruction, and writing through it would change
+             *     the value the program goes on to read as a.  Only the slot
+             *     allocator knows when a reference is being consumed, and
+             *     dest == src0 is the runtime-visible form of that.
+             *
+             *   - v owns its element array.  Writing through a slice view's data
+             *     pointer would corrupt the vector it views, and a view can be
+             *     uniquely owned.
+             *
+             *   - v has exactly one reference.  Every holder retains it —
+             *     registers, the constant pool, closure captures and container
+             *     elements alike — so a count of one means no other holder.
+             *
+             *   - val is not v itself, which would build a cyclic value that no
+             *     reference count could reclaim.
+             *
+             * The tag test comes first because a constant src0 holds a pool
+             * index, and comparing that index against dest would be meaningless.
+             */
+            if ((tag & 1) == 0 && dest == src0 && v->owner == NULL &&
+                    val != (MenaiValue *)v &&
+                    menai_get_pool_header((void *)v)->ob_refcnt == 1) {
+                /*
+                 * Retain before release: val may be the element being displaced,
+                 * or another element of the same vector, and either would be
+                 * freed by the release below if its reference were dropped first.
+                 */
+                menai_value_retain(val);
+                if (v->data[idx]) {
+                    menai_value_release(vs, v->data[idx]);
+                }
+
+                v->data[idx] = val;
+
+                /*
+                 * The reference stays in the register: this instruction consumed
+                 * it and produced the same object, so there is no destination to
+                 * release and no new value to store.
+                 */
+                break;
+            }
+
             MenaiVector *r = alloc_menai_vector_from_set(vs, v, idx, val);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -7389,6 +7443,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiDict *a = (MenaiDict *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *key = operand(constants_items, frame_regs, src1, tag & 2);
+            int src2 = (int)(word & FIELD_MASK);
+            MenaiValue *val = operand(constants_items, frame_regs, src2, tag & 4);
             hash_t h = menai_value_hash(key);
             if (h == -1) {
                 vm_err = MENAI_ERR_UNHASHABLE_KEY;
@@ -7397,17 +7453,95 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
             ssize_t replace_idx = menai_ht_lookup(&a->ht, key, h);
             ssize_t n = a->length;
+
+            /*
+             * Update in place when nothing else can observe the dictionary.  The
+             * conditions are the same as OP_VECTOR_WITH's, minus the ownership test
+             * (a dictionary has no slice views): dest == src0 so the write consumes
+             * the single reference, and the count is one.  The value must not be the
+             * dictionary itself, which would build a cycle; the key cannot be,
+             * because a dictionary is unhashable and the hash test above rejects it.
+             * See ADR-0063.
+             */
+            int exclusive = (tag & 1) == 0 && dest == src0 &&
+                menai_get_pool_header((void *)a)->ob_refcnt == 1 &&
+                val != (MenaiValue *)a;
+
+            if (exclusive && replace_idx >= 0) {
+                MenaiDictElement *old = a->elements[replace_idx];
+
+                /*
+                 * Elements are shared between dictionary versions, so replace one
+                 * only if this element is unshared too.  Mutating it keeps the hash
+                 * table slot valid without any work: the slot borrows the element's
+                 * key, which is unchanged, and its index does not move.
+                 */
+                if (menai_get_pool_header((void *)old)->ob_refcnt == 1) {
+                    menai_value_retain(val);
+                    menai_value_release(vs, old->value);
+                    old->value = val;
+                    break;
+                }
+
+                menai_value_retain(key);
+                menai_value_retain(val);
+                MenaiDictElement *elem = alloc_menai_dict_element(vs, key, val, h);
+                if (!elem) {
+                    menai_value_release(vs, key);
+                    menai_value_release(vs, val);
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_ht_replace_key(&a->ht, h, replace_idx, key);
+                a->elements[replace_idx] = elem;
+                menai_value_release(vs, (MenaiValue *)old);
+                break;
+            }
+
+            if (exclusive && replace_idx < 0 && n < a->cap) {
+                /*
+                 * Growing the table is fallible, so do it before the dictionary is
+                 * changed.  It either succeeds, or leaves the table untouched and the
+                 * error path releases an unchanged dictionary.
+                 */
+                if (menai_ht_ensure(vs, &a->ht, n + 1) < 0) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_retain(key);
+                menai_value_retain(val);
+                MenaiDictElement *elem = alloc_menai_dict_element(vs, key, val, h);
+                if (!elem) {
+                    menai_value_release(vs, key);
+                    menai_value_release(vs, val);
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                a->elements[n] = elem;
+                a->length = n + 1;
+                menai_ht_insert(&a->ht, elem->key, h, n);
+                break;
+            }
+
             ssize_t new_n = (replace_idx >= 0) ? n : n + 1;
-            MenaiDict *result = alloc_menai_dict(vs, new_n);
+
+            /*
+             * A uniquely-owned dictionary that is out of room is grown geometrically,
+             * so a sequence of appends copies 2n element pointers in total rather than
+             * rebuilding at every step.  A shared dictionary gets a tight copy, so
+             * slack is never carried by a value that will not be mutated again.
+             */
+            ssize_t new_cap = (exclusive && replace_idx < 0) ? new_n * 2 : new_n;
+            MenaiDict *result = alloc_menai_dict(vs, new_cap);
             if (!result) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
             MenaiDictElement **nelems = result->elements;
-
-            int src2 = (int)(word & FIELD_MASK);
-            MenaiValue *val = operand(constants_items, frame_regs, src2, tag & 4);
 
             /* Create the new element for the set/updated entry. */
             menai_value_retain(key);
@@ -7479,6 +7613,39 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
             ssize_t n = a->length;
             ssize_t new_n = n - 1;
+
+            /*
+             * Remove in place when nothing else can observe the dictionary: the
+             * entries after the removed one shift down, so every stored index
+             * changes and the table has to be rebuilt, but that rebuild reuses the
+             * existing slot array and the capacity does not change.
+             */
+            if ((tag & 1) == 0 && dest == src0 &&
+                    menai_get_pool_header((void *)a)->ob_refcnt == 1) {
+                /*
+                 * Take the removed element before shifting, so it is the one
+                 * released rather than whatever ends up in its slot.  The table
+                 * borrows its key, so clear it before the release can run a
+                 * finalizer.
+                 */
+                MenaiDictElement *removed = a->elements[remove_idx];
+                menai_ht_clear(&a->ht);
+
+                for (ssize_t i = remove_idx; i < new_n; i++) {
+                    a->elements[i] = a->elements[i + 1];
+                }
+
+                a->elements[new_n] = NULL;
+                a->length = new_n;
+                menai_value_release(vs, (MenaiValue *)removed);
+
+                for (ssize_t i = 0; i < new_n; i++) {
+                    menai_ht_insert(&a->ht, a->elements[i]->key, a->elements[i]->hash, i);
+                }
+
+                break;
+            }
+
             MenaiDict *r = alloc_menai_dict(vs, new_n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -7522,7 +7689,59 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             ssize_t na = a->length;
             ssize_t nb = b->length;
             ssize_t cap = na + nb;
-            MenaiDict *r = alloc_menai_dict(vs, cap);
+
+            /*
+             * Merge into a when nothing else can observe it and it has room for the
+             * worst case, which is every one of b's entries being new.  b must not be
+             * a itself: a count of one does not exclude that, because both operands
+             * may read the same register.  See ADR-0063.
+             */
+            int exclusive = (tag & 1) == 0 && dest == src0 &&
+                menai_get_pool_header((void *)a)->ob_refcnt == 1 &&
+                b != a;
+
+            if (exclusive && a->cap >= cap) {
+                /*
+                 * Sizing the table for the worst case is the only fallible step, so it
+                 * happens before any entry is touched.  Over-sizing is harmless.
+                 */
+                if (menai_ht_ensure(vs, &a->ht, cap) < 0) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                ssize_t n = na;
+                for (ssize_t i = 0; i < nb; i++) {
+                    MenaiDictElement *elem = b->elements[i];
+                    ssize_t idx = menai_ht_lookup(&a->ht, elem->key, elem->hash);
+                    menai_value_retain((MenaiValue *)elem);
+
+                    if (idx >= 0) {
+                        /*
+                         * b overrides a.  Share b's element and re-point the slot at
+                         * its key before the old element can be freed, because the slot
+                         * borrows that key.
+                         */
+                        MenaiDictElement *old = a->elements[idx];
+                        a->elements[idx] = elem;
+                        menai_ht_replace_key(&a->ht, elem->hash, idx, elem->key);
+                        menai_value_release(vs, (MenaiValue *)old);
+                    } else {
+                        a->elements[n] = elem;
+                        menai_ht_insert(&a->ht, elem->key, elem->hash, n);
+                        n++;
+                    }
+                }
+
+                a->length = n;
+                break;
+            }
+
+            /*
+             * A uniquely-owned dictionary that is out of room is given headroom, so a
+             * fold of merges does not rebuild from scratch at every step.
+             */
+            MenaiDict *r = alloc_menai_dict(vs, exclusive ? cap * 2 : cap);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -7648,7 +7867,42 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             }
 
             ssize_t n = a->length;
-            MenaiSet *r = alloc_menai_set(vs, n + 1);
+
+            /*
+             * Add in place when nothing else can observe the set.  A set has no
+             * element it can hold itself — elements must be hashable and a set is not,
+             * so the hash test above already excludes self-reference.  See ADR-0063.
+             */
+            int exclusive = (tag & 1) == 0 && dest == src0 &&
+                menai_get_pool_header((void *)a)->ob_refcnt == 1;
+
+            if (exclusive && n < a->cap) {
+                if (menai_ht_ensure(vs, &a->ht, n + 1) < 0) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_retain(item);
+                MenaiSetElement *elem = alloc_menai_set_element(vs, item, h);
+                if (!elem) {
+                    menai_value_release(vs, item);
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                a->elements[n] = elem;
+                a->length = n + 1;
+                menai_ht_insert(&a->ht, elem->value, h, n);
+                break;
+            }
+
+            /*
+             * A uniquely-owned set that is out of room is grown geometrically, so a
+             * sequence of additions copies 2n element pointers in total rather than
+             * rebuilding at every step.  A shared set gets a tight copy.
+             */
+            ssize_t new_cap = exclusive ? (n + 1) * 2 : n + 1;
+            MenaiSet *r = alloc_menai_set(vs, new_cap);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -7709,6 +7963,32 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
             ssize_t n = a->length;
             ssize_t new_n = n - 1;
+
+            /*
+             * Remove in place when nothing else can observe the set: the elements
+             * after the removed one shift down, so every stored index changes and the
+             * table is rebuilt in its existing allocation.
+             */
+            if ((tag & 1) == 0 && dest == src0 &&
+                    menai_get_pool_header((void *)a)->ob_refcnt == 1) {
+                MenaiSetElement *removed = a->elements[remove_idx];
+                menai_ht_clear(&a->ht);
+
+                for (ssize_t i = remove_idx; i < new_n; i++) {
+                    a->elements[i] = a->elements[i + 1];
+                }
+
+                a->elements[new_n] = NULL;
+                a->length = new_n;
+                menai_value_release(vs, (MenaiValue *)removed);
+
+                for (ssize_t i = 0; i < new_n; i++) {
+                    menai_ht_insert(&a->ht, a->elements[i]->value, a->elements[i]->hash, i);
+                }
+
+                break;
+            }
+
             MenaiSet *r = alloc_menai_set(vs, new_n);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -7751,7 +8031,38 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             ssize_t na = a->length;
             ssize_t nb = b->length;
             ssize_t cap = na + nb;
-            MenaiSet *r = alloc_menai_set(vs, cap);
+
+            /*
+             * Add b's members into a when nothing else can observe a and it has room
+             * for the worst case.  b must not be a itself, since both operands may
+             * read the same register.  See ADR-0063.
+             */
+            int exclusive = (tag & 1) == 0 && dest == src0 &&
+                menai_get_pool_header((void *)a)->ob_refcnt == 1 &&
+                b != a;
+
+            if (exclusive && a->cap >= cap) {
+                if (menai_ht_ensure(vs, &a->ht, cap) < 0) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                ssize_t n = na;
+                for (ssize_t i = 0; i < nb; i++) {
+                    MenaiSetElement *elem = b->elements[i];
+                    if (menai_ht_lookup(&a->ht, elem->value, elem->hash) < 0) {
+                        menai_value_retain((MenaiValue *)elem);
+                        a->elements[n] = elem;
+                        menai_ht_insert(&a->ht, elem->value, elem->hash, n);
+                        n++;
+                    }
+                }
+
+                a->length = n;
+                break;
+            }
+
+            MenaiSet *r = alloc_menai_set(vs, exclusive ? cap * 2 : cap);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
@@ -7798,6 +8109,44 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSet *b = (MenaiSet *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t na = a->length;
+
+            /*
+             * Intersect into a when nothing else can observe it.  The result is never
+             * larger than a, so this needs no capacity and cannot fail part-way: the
+             * surviving members are compacted down and the table is rebuilt in its
+             * existing allocation, because every stored index changes.
+             */
+            if ((tag & 1) == 0 && dest == src0 && b != a &&
+                    menai_get_pool_header((void *)a)->ob_refcnt == 1) {
+                /*
+                 * Clear before releasing anything: the table borrows the keys of the
+                 * members being dropped.
+                 */
+                menai_ht_clear(&a->ht);
+
+                ssize_t out = 0;
+                for (ssize_t i = 0; i < na; i++) {
+                    MenaiSetElement *elem = a->elements[i];
+                    if (menai_ht_lookup(&b->ht, elem->value, elem->hash) >= 0) {
+                        a->elements[out] = elem;
+                        out++;
+                    } else {
+                        menai_value_release(vs, (MenaiValue *)elem);
+                    }
+                }
+
+                for (ssize_t i = out; i < na; i++) {
+                    a->elements[i] = NULL;
+                }
+
+                a->length = out;
+                for (ssize_t i = 0; i < out; i++) {
+                    menai_ht_insert(&a->ht, a->elements[i]->value, a->elements[i]->hash, i);
+                }
+
+                break;
+            }
+
             MenaiSet *r = alloc_menai_set(vs, na);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -7838,6 +8187,40 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiSet *b = (MenaiSet *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t na = a->length;
+
+            /*
+             * Subtract in place when nothing else can observe a.  Like intersection the
+             * result is never larger than a, so no capacity is needed: the surviving
+             * members are compacted down and the table is rebuilt in its existing
+             * allocation.
+             */
+            if ((tag & 1) == 0 && dest == src0 && b != a &&
+                    menai_get_pool_header((void *)a)->ob_refcnt == 1) {
+                menai_ht_clear(&a->ht);
+
+                ssize_t out = 0;
+                for (ssize_t i = 0; i < na; i++) {
+                    MenaiSetElement *elem = a->elements[i];
+                    if (menai_ht_lookup(&b->ht, elem->value, elem->hash) < 0) {
+                        a->elements[out] = elem;
+                        out++;
+                    } else {
+                        menai_value_release(vs, (MenaiValue *)elem);
+                    }
+                }
+
+                for (ssize_t i = out; i < na; i++) {
+                    a->elements[i] = NULL;
+                }
+
+                a->length = out;
+                for (ssize_t i = 0; i < out; i++) {
+                    menai_ht_insert(&a->ht, a->elements[i]->value, a->elements[i]->hash, i);
+                }
+
+                break;
+            }
+
             MenaiSet *r = alloc_menai_set(vs, na);
             if (!r) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -8283,6 +8666,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *new_val = operand(constants_items, frame_regs, src2, tag & 4);
 
+            /*
+             * Replace the field in place when nothing else can observe the struct: no
+             * field count changes, so no capacity is involved.  See
+             * menai_struct_set_exclusive for the conditions.
+             */
+            if ((tag & 1) == 0 && dest == src0 &&
+                    menai_get_pool_header((void *)sval)->ob_refcnt == 1 &&
+                    new_val != (MenaiValue *)sval) {
+                menai_struct_set_exclusive(vs, sval, fi, new_val);
+                break;
+            }
+
             MenaiStruct *r = alloc_menai_struct_from_set_operation(vs, sval, fi, new_val);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -8311,6 +8706,18 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
 
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *new_val = operand(constants_items, frame_regs, src2, tag & 4);
+
+            /*
+             * Replace the field in place when nothing else can observe the struct: no
+             * field count changes, so no capacity is involved.  See
+             * menai_struct_set_exclusive for the conditions.
+             */
+            if ((tag & 1) == 0 && dest == src0 &&
+                    menai_get_pool_header((void *)sval)->ob_refcnt == 1 &&
+                    new_val != (MenaiValue *)sval) {
+                menai_struct_set_exclusive(vs, sval, (int)fi, new_val);
+                break;
+            }
 
             MenaiStruct *r = alloc_menai_struct_from_set_operation(vs, sval, fi, new_val);
             if (r == NULL) {

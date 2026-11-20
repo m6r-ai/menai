@@ -8,6 +8,11 @@
  * ref-counted, they can be shared between different versions of a dictionary —
  * dict-with and dict-without only create/replace the element that changes,
  * retaining (sharing) all unchanged elements from the source dictionary.
+ *
+ * `cap` records how many element slots the inline array holds and may exceed
+ * `length`.  A dictionary produced by a shared-update path is allocated tight, so
+ * slack is only ever carried by a dictionary that was grown or shrunk in place, and
+ * only while it was uniquely owned.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +33,7 @@ alloc_menai_dict(MenaiVMState *vs, ssize_t cap)
     obj->ht.slots = NULL;
     obj->ht.slot_count = 0;
     obj->length = 0;
+    obj->cap = cap;
 
     return obj;
 }
