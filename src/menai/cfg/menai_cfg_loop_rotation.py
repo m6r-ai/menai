@@ -73,10 +73,10 @@ rest left alone:
     target is unset) ends in a `MenaiCFGBranchTerm`,
   - the header test's operands are all params, free vars, or values defined
     outside the header block (so they are valid at the back-edge), and
-  - the branch's false target is the entry of the loop body and every
-    self-loop block is reachable from it without passing back through the
-    header (the body is a region entered at the false target and exited by
-    the self-loops; it may span several blocks), and
+  - every self-loop block is reachable from the header without passing back
+    through it (so it is a back-edge of this loop; the region it is found in
+    may span several blocks, and may hang off either arm of the header
+    branch — a phase test that loops out of both arms is rotatable too), and
   - no header test result is consumed anywhere in the body region.
 
 Anything else is left unrotated.  The pass is idempotent: an already-rotated
@@ -114,6 +114,7 @@ from menai.cfg.menai_cfg import (
     MenaiCFGValue,
     blocks_by_id,
     value_ids_in_instr,
+    value_ids_in_term,
 )
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
@@ -171,13 +172,18 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         branch = header.terminator
         body = by_id[branch.false_block]
 
-        # Canonical shape: the header branch's false target is the entry of
-        # the loop body, and every self-loop terminates that body.  The body
-        # may span several blocks (e.g. when it contains a nested branch);
-        # what matters is that each self-loop block is reachable from the
-        # body entry without passing back through the header, so the body is
-        # a region entered at `body` and exited by the self-loops.
+        # Every self-loop must be reachable from the header without passing
+        # back through it, so that it is a back-edge of this loop rather than
+        # of some enclosing loop.  Both arms of the header branch are
+        # searched, not just the false one: a loop whose test is a phase test
+        # rather than a termination test can loop out of either arm, and the
+        # merge step of the prelude's sort-vector is exactly that shape
+        # (`(if (= k hi) <advance the pass, or finish> <merge one element>)`).
+        # Rotation is sound for such a loop for the same reason it is sound
+        # for the narrower shape: every back-edge re-evaluates the test, so
+        # it does not matter which arm of the test the back-edge sits under.
         body_region = self._body_region(by_id, body, header)
+        body_region |= self._body_region(by_id, by_id[branch.true_block], header)
         for self_loop in self_loops:
             self_loop_block = self._self_loop_block(func, self_loop)
             if self_loop_block is None or self_loop_block.id not in body_region:
@@ -546,6 +552,13 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         because the body may span several blocks.  Every self-loop's args are
         checked too: a value passed through them is a loop-carried value and
         must be recomputed each iteration.
+
+        A block's terminator is an input site in its own right — a tail call
+        passes its arguments there, not through an instruction — so it is
+        scanned as well as the block's instructions.  Missing it means a
+        `remaining`-style value computed by the header test and passed on by
+        the body's tail call goes unnoticed, and the rotated loop then reads a
+        value that only the peeled entry test ever computed.
         """
         test_result_ids = {
             result.id
@@ -562,6 +575,9 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
 
             for instr in block.instrs:
                 body_uses.update(value_ids_in_instr(instr))
+
+            if block.terminator is not None:
+                body_uses.update(value_ids_in_term(block.terminator))
 
         for self_loop in self_loops:
             body_uses.update(arg.id for arg in self_loop.args)

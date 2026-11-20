@@ -288,6 +288,12 @@
        (lambda ()
          (assert-equal (decode "<p") (list (el "p" (dict) (list))))))
 
+      ; A tag name followed by whitespace that runs to the end of input is still a
+      ; tag.
+      (test-tag-name-then-trailing-space
+       (lambda ()
+         (assert-equal (decode "<p ") (list (el "p" (dict) (list))))))
+
       ; A "<", "<>", or declaration that ends an element's content adds no child.
       (test-content-construct-at-end
        (lambda ()
@@ -375,6 +381,7 @@
              (expect-pass "attribute list at end of input" test-attributes-at-end)
              (expect-pass "unquoted value at end of input" test-unquoted-value-at-end)
              (expect-pass "unterminated tag is still a tag" test-unterminated-tag)
+             (expect-pass "tag name then trailing space" test-tag-name-then-trailing-space)
              (expect-pass "content construct at end adds no child" test-content-construct-at-end)
              (expect-pass "self-closing tag followed by text" test-self-closing-followed-by-text)
              (expect-pass "slash then space ends the attributes" test-slash-then-space)))

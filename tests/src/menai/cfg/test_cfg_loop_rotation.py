@@ -536,6 +536,54 @@ class TestMultipleBackEdgesRotated:
         )
         assert str(empty) == "[]"
 
+    def test_back_edges_in_both_arms_rotated(self):
+        """
+        A phase test whose arms both tail-call the loop function has one
+        back-edge under each arm.  The loop must be rotated, so control reaches
+        the bottom test rather than re-entering the header.
+
+        The test compares a loop-carried value, so the arms cannot be folded
+        away and the shape reaches the rotation pass intact.
+        """
+        src = """
+        (let ((phase
+                  (lambda (limit)
+                    (let ((go
+                              (lambda (i acc)
+                                (if (integer>=? acc limit)
+                                    (if (integer>=? i 10)
+                                        acc
+                                        (go (integer+ i 1) acc))
+                                    (go i (integer+ acc 1))))))
+                      (go 0 0)))))
+          (phase 7))
+        """
+        code = _compile(src)
+        fn = _loop_function(code, "go")
+        assert _has_backward_conditional_jump(fn), (
+            "a loop whose back-edges sit under both arms must be rotated"
+        )
+
+    def test_back_edges_in_both_arms_correct_results(self):
+        """End-to-end: a loop with a back-edge under each arm still terminates."""
+        from menai import Menai
+        menai = Menai()
+
+        result = menai.evaluate("""
+        (let ((phase
+                  (lambda (limit)
+                    (let ((go
+                              (lambda (i acc)
+                                (if (integer>=? acc limit)
+                                    (if (integer>=? i 10)
+                                        acc
+                                        (go (integer+ i 1) acc))
+                                    (go i (integer+ acc 1))))))
+                      (go 0 0)))))
+          (phase 7))
+        """)
+        assert result == 7
+
     def test_merge_shaped_loop_rotated(self):
         """
         A merge helper that consumes one element from whichever of two lists
