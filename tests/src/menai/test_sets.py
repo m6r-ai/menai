@@ -659,6 +659,24 @@ class TestSetHigherOrder:
         )
         assert result == 2
 
+    def test_map_set_original_unchanged(self, tool):
+        """Test that map-set returns a new set and leaves the source unchanged."""
+        result = tool.evaluate(
+            "(let ((s (set 1 2 3)))"
+            "  (let ((mapped (map-set (lambda (x) (integer* x 2)) s)))"
+            "    (set=? s (set 1 2 3))))"
+        )
+        assert result is True
+
+    def test_filter_set_original_unchanged(self, tool):
+        """Test that filter-set returns a new set and leaves the source unchanged."""
+        result = tool.evaluate(
+            "(let ((s (set 1 2 3 4)))"
+            "  (let ((kept (filter-set (lambda (x) (integer>? x 2)) s)))"
+            "    (set=? s (set 1 2 3 4))))"
+        )
+        assert result is True
+
     def test_filter_set(self, tool):
         """Test filtering a set by a predicate."""
         result = tool.evaluate(

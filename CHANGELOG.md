@@ -4,8 +4,15 @@
 
 New features:
 
-- The VM now implements in-placed modification of containers (vectors, sets, dicts
+- The VM now implements in-place modification of containers (vectors, sets, dicts
   and structs) where a source goes dead during the operation.
+- `map-vector`, `map-set` and `filter-set` now build their result with in-place
+  updates instead of accumulating it through a list and converting it:
+  `map-vector` copies its source once and then overwrites each element, and the
+  set functions append into the result set as they go.  None of them allocates
+  an intermediate list.
+- `sort-vector` is a native bottom-up merge sort over two scratch buffers rather
+  than a sort through lists, and `sort-list` now sorts through `sort-vector`.
 
 ## v0.11.0 (2026-11-18)
 

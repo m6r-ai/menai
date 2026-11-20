@@ -340,6 +340,22 @@ class TestVectors:
         """Test map-vector applies f to each element."""
         assert menai.evaluate_and_format(expression) == expected
 
+    def test_map_vector_original_unchanged(self, menai):
+        """Test that map-vector returns a new vector and leaves the source unchanged."""
+        assert menai.evaluate_and_format(
+            '(let ((v (vector 1 2 3)))'
+            '  (let ((mapped (map-vector (lambda (x) (integer* x 10)) v)))'
+            '    (vector=? v (vector 1 2 3))))'
+        ) == '#t'
+
+    def test_map_vector_result_is_independent(self, menai):
+        """Test that the vector map-vector returns does not share storage with its source."""
+        assert menai.evaluate_and_format(
+            '(let ((v (vector 1 2 3)))'
+            '  (let ((mapped (map-vector (lambda (x) (integer* x 10)) v)))'
+            '    (list mapped v)))'
+        ) == '(#vector(10 20 30) #vector(1 2 3))'
+
     @pytest.mark.parametrize("expression,expected", [
         ('(filter-vector (lambda (x) (integer>? x 0)) (vector -1 2 -3 4))', '#vector(2 4)'),
         ('(filter-vector (lambda (x) #t) (vector))', '#vector()'),

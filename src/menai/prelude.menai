@@ -2028,26 +2028,7 @@
 
       (sort-list
        (lambda (cmp lst)
-         (let ((merge
-                (lambda (cmp a b acc)
-                  (if ($list-null? a)
-                      ($list-concat ($list-reverse acc) b)
-                      (if ($list-null? b)
-                          ($list-concat ($list-reverse acc) a)
-                          (if (cmp ($list-first b) ($list-first a))
-                              (merge cmp a ($list-rest b) ($list-prepend acc ($list-first b)))
-                              (merge cmp ($list-rest a) b ($list-prepend acc ($list-first a))))))))
-
-               (sort
-                (lambda (cmp lst)
-                  (let ((n ($list-length lst)))
-                    (if ($integer<=? n 1)
-                        lst
-                        (let ((mid ($integer/ n 2))
-                              (left (sort cmp ($list-slice lst 0 mid)))
-                              (right (sort cmp ($list-slice lst mid n))))
-                          (merge cmp left right (list))))))))
-           (sort cmp lst))))
+         ($vector->list (sort-vector cmp ($list->vector lst)))))
 
       (map-dict
        (lambda (f al)
@@ -2075,11 +2056,26 @@
 
       (map-set
        (lambda (f s)
-         ($list->set (map-list f ($set->list s)))))
+         (let ((loop
+                (lambda (lst acc)
+                  (if ($list-null? lst)
+                      acc
+                      (loop ($list-rest lst) ($set-with acc (f ($list-first lst))))))))
+           (loop ($set->list s) (set)))))
 
       (filter-set
        (lambda (pred s)
-         ($list->set (filter-list pred ($set->list s)))))
+         (let ((loop
+                (lambda (lst acc)
+                  (if ($list-null? lst)
+                      acc
+                      (let ((elem ($list-first lst)))
+                        (loop
+                          ($list-rest lst)
+                          (if (pred elem)
+                              ($set-with acc elem)
+                              acc)))))))
+           (loop ($set->list s) (set)))))
 
       (fold-set
        (lambda (f init s)
@@ -2169,14 +2165,23 @@
        (lambda (lst)
          ($list->vector lst)))
 
+      ; The accumulator starts as a copy of v with the same length, and each
+      ; element is then overwritten in place.  vector-with updates in place only
+      ; when the destination register is also the source, which the allocator
+      ; can do for a loop-carried accumulator but never for a vector received as
+      ; an argument, so this must stay one flat loop.
+      ;
+      ; There is no vector-make, so the copy is made by concatenating v with an
+      ; empty slice of itself: vector-slice yields a view, but vector-concat
+      ; allocates, so the result owns its own element array.
       (map-vector
        (lambda (f v)
          (let ((loop
                 (lambda (i acc)
                   (if ($integer=? i ($vector-length v))
-                      ($list->vector ($list-reverse acc))
-                      (loop ($integer+ i 1) ($list-prepend acc (f ($vector-nth v i))))))))
-           (loop 0 (list)))))
+                      acc
+                      (loop ($integer+ i 1) ($vector-with acc i (f ($vector-nth v i))))))))
+           (loop 0 ($vector-concat v ($vector-slice v 0 0))))))
 
       (filter-vector
        (lambda (pred v)

@@ -521,8 +521,8 @@ class TestMultipleBackEdgesRotated:
 
     def test_prelude_sort_list_correct(self):
         """
-        End-to-end: the prelude's sort-list uses a merge helper whose loop has
-        two back-edges (one per branch arm).  It must sort correctly.
+        End-to-end: the prelude's sort-list must return a sorted list, including
+        for an empty input.
         """
         from menai import Menai
         menai = Menai()
@@ -536,20 +536,32 @@ class TestMultipleBackEdgesRotated:
         )
         assert str(empty) == "[]"
 
-    def test_prelude_sort_list_merge_rotated(self):
+    def test_merge_shaped_loop_rotated(self):
         """
-        The prelude's merge helper has two back-edges.  After rotation neither
-        back-edge is an unconditional jump.
+        A merge helper that consumes one element from whichever of two lists
+        comes first tail-calls itself from both arms, so the loop has one
+        back-edge per arm.  After rotation each back-edge is a conditional
+        branch back into the body, so none of them is an unconditional jump.
         """
-        code = _compile(
-            "(sort-list (lambda (x y) (integer<? x y)) (list 3 1 2 5 4))"
-        )
+        src = """
+        (let ((merge
+                  (lambda (a b acc)
+                    (if (list-null? a)
+                        (list-reverse acc)
+                        (if (list-null? b)
+                            (list-reverse acc)
+                            (if (integer<? (list-first b) (list-first a))
+                                (merge a (list-rest b) (list-prepend acc (list-first b)))
+                                (merge (list-rest a) b (list-prepend acc (list-first a)))))))))
+          (merge (list 1 3) (list 2 4) (list)))
+        """
+        code = _compile(src)
         fn = _loop_function(code, "merge")
         assert _has_backward_conditional_jump(fn), (
-            "merge's loop must be rotated"
+            "a loop with multiple back-edges must be rotated"
         )
         assert not _has_backward_unconditional_jump(fn), (
-            "neither of merge's back-edges may be an unconditional jump"
+            "every back-edge must be a conditional branch back into the body"
         )
 
 
