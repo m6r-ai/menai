@@ -140,6 +140,33 @@ Three rules, each learned from a change that looked good and was not:
   reappear multiplied inside a loop. Deleting an instruction executed once per call is worth
   almost nothing; starving a shared invariant that executes once per element is expensive.
 
+## An in-place update changes the cost model
+
+Collection updates land in place when the accumulator is a loop-carried variable of the loop that
+performs the write, so building a collection an element at a time is amortised O(1) per element
+rather than O(n). The conditions are stated at the update opcodes and in
+[`src/menai/vm/AGENTS.md`](src/menai/vm/AGENTS.md); the reasoning is in
+[ADR-0063](docs/adr/0063-in-place-update-of-uniquely-owned-collections.md) and
+[ADR-0064](docs/adr/0064-bytes-update-in-place.md). What follows from it is a maintenance
+obligation, not a mechanism.
+
+**An idiom that exists only to minimise copying is now a suspect.** A sharded dictionary, an
+extra pass whose purpose was to avoid a copy, a loop split into helpers to keep a collection out
+of the argument list, a list used where a vector would now be cheaper: each of these was the
+right answer under copying and may not be now. Re-deriving such a site is expected work, not the
+speculation that [YAGNI](#yagni-you-arent-gonna-need-it) forbids — the DEFLATE compressor's
+sixteen-way sharded LZ77 table existed only for this reason, and removing it was worth 30–50% on
+the compression benchmarks.
+
+**It is not a licence to flatten loops mechanically.** The copy being removed is often a small
+memcpy that costs less than the loop state needed to keep the accumulator local: flattening
+`bmp-encode`'s per-row loop measured slower than the shape it replaced. Re-derive, then measure.
+
+**The opcode profile cannot see this class of change.** The copying happens inside an opcode
+body, so executed instruction counts are identical before and after and the method above does not
+apply. Use wall-clock at the largest input the suite has, and expect the gain to be asymptotic:
+it appears as the input grows, often beyond the sizes the benchmark cases use.
+
 ## Code quality
 
 - Before considering any code change complete, run the full suite of static analysis tools:
