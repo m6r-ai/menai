@@ -6,6 +6,19 @@ from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
 # bmp_decode suite so the two directions can be compared.  The container is
 # built as a Menai expression rather than parsed from bytes, so the timing
 # measures encoding alone.
+#
+# Two geometries are deliberate rather than illustrative.  `1024x16` and
+# `16x1024` hold the same number of pixels as each other and as `128x128`, so
+# they are a canary for an encoder whose cost depends on the shape rather than
+# the pixel count.  They differ only in how many rows the pixels are divided
+# between, which is what the per-row overhead scales with: `16x1024` is the most
+# expensive of the three and `1024x16` the least, and a change that reverses or
+# widens that spread is a change to the per-row path.  `256x256` covers the
+# direction in which the cost that grows is the image rather than the row.
+#
+# Four times the pixels must cost about four times the time: compare `256x256`
+# with `128x128`, which is what catches work that is quadratic in the image.
+# While append-to-output crossed a call boundary they cost 14x, not 4x.
 
 _ITERATIONS = 5
 
@@ -15,6 +28,9 @@ _PIXELS_PER_METRE = 2835
 _FIXTURES: list[tuple[str, int, int, int, bool]] = [
     ("truecolour-64x64", 64, 64, 24, False),
     ("truecolour-128x128", 128, 128, 24, False),
+    ("truecolour-1024x16", 1024, 16, 24, False),
+    ("truecolour-16x1024", 16, 1024, 24, False),
+    ("truecolour-256x256", 256, 256, 24, False),
     ("truecolour-topdown-128x128", 128, 128, 24, True),
     ("truecolour-alpha-128x128", 128, 128, 32, False),
     ("padded-65x64", 65, 64, 24, False),

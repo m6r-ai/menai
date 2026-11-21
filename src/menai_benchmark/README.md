@@ -193,12 +193,16 @@ top-down row order, 24-bit and 32-bit pixels, and a width that requires row
 padding.  Inputs are generated fixtures (see [Fixtures](#fixtures)).
 
 ### BMP Encode
-Encodes decoded BMP descriptions.  The five cases use the same geometries as
-the BMP Decode suite (bottom-up and top-down row order, 24-bit and 32-bit
-pixels, and a width that requires row padding), so the write and read
-directions can be compared.  The containers are constructed as Menai
-expressions rather than parsed from bytes, so the timing measures encoding
-alone.
+Encodes decoded BMP descriptions.  Five of the eight cases use the same
+geometries as the BMP Decode suite (bottom-up and top-down row order, 24-bit and
+32-bit pixels, and a width that requires row padding), so the write and read
+directions can be compared.  `1024x16` and `16x1024` hold the same number of
+pixels as `128x128` and differ only in how they divide it between rows, which
+makes them a canary for an encoder whose cost depends on the image's shape
+rather than its pixel count.  `256x256` is there for the direction in which the
+cost that grows is the image.  The containers are constructed as Menai
+expressions rather than parsed from bytes; the literals fold to constants, so
+the timing measures encoding alone.
 
 ### Calendar
 Working-day date arithmetic over a 5-day calendar with holidays.  The Menai
