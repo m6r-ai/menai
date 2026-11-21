@@ -48,26 +48,23 @@
            all-digits
            (set-union (row-set board row) (set-union (col-set board col) (box-set board row col))))))
 
-      ; Scan one row's cells left-to-right for the first containing 0.
-      ; Returns (row-idx col), or #none if the row is full.
-      (find-empty-in-row
-       (lambda (row-idx row col)
-         (if (integer>=? col 9)
-             #none
-             (if (integer=? (list-nth row col) 0)
-                 (list row-idx col)
-                 (find-empty-in-row row-idx row (integer+ col 1))))))
-
-      ; Scan top-to-bottom for the first row with an empty cell, fetching each
-      ; row once. Returns (row col), or #none when the board is full.
+      ; The flat index of the first empty cell at or after `start`, or #none.
+      ;
+      ; The search passes the index of the cell it last filled, because placing a
+      ; digit cannot empty a cell before it: the next empty cell is never earlier
+      ; than the one just filled.  Rescanning the board from the top at every node
+      ; was the largest single cost in this solver, and one loop over the flat
+      ; board replaces a call per row plus a scan per call.
       (find-empty
-       (lambda (board row)
-         (if (integer>=? row 9)
-             #none
-             (let ((found (find-empty-in-row row (list-nth board row) 0)))
-               (if (none? found)
-                   (find-empty board (integer+ row 1))
-                   found)))))
+       (lambda (board start)
+         (let ((loop
+                (lambda (i)
+                  (if (integer>=? i 81)
+                      #none
+                      (if (integer=? (list-nth (list-nth board (integer/ i 9)) (integer% i 9)) 0)
+                          i
+                          (loop (integer+ i 1)))))))
+           (loop start))))
 
       ; Return a new board with `num` placed at (row, col).
       (set-cell
@@ -78,29 +75,31 @@
                 (list-concat (list-append (list-slice old-row 0 col) num) (list-slice old-row (integer+ col 1) 9))))
            (list-concat (list-append (list-slice board 0 row) new-row) (list-slice board (integer+ row 1) 9)))))
 
-      ; Try each candidate digit for the cell at (row, col).
+      ; Try each candidate digit for the cell found at flat index `at`.
       ; Returns the solved board on success, or #none if all candidates fail.
       (try-candidates
-       (lambda (board row col nums)
+       (lambda (board at nums)
          (if (list-null? nums)
              #none
              (let ((num (list-first nums)))
-               (let ((result (solve (set-cell board row col num))))
+               (let ((result (solve-from (set-cell board (integer/ at 9) (integer% at 9) num) at)))
                  (if (none? result)
-                     (try-candidates board row col (list-rest nums))
+                     (try-candidates board at (list-rest nums))
                      result))))))
+
+      ; Solve by backtracking from the cell at flat index `start`.
+      ; Returns the solved board or #none.
+      (solve-from
+       (lambda (board start)
+         (let ((at (find-empty board start)))
+           (if (none? at)
+               board
+               (try-candidates board at (set->list (candidates board (integer/ at 9) (integer% at 9))))))))
 
       ; Solve the board by backtracking. Returns the solved board or #none.
       (solve
        (lambda (board)
-         (let ((empty (find-empty board 0)))
-           (if (none? empty)
-               board
-               (try-candidates
-                 board
-                 (list-first empty)
-                 (list-nth empty 1)
-                 (set->list (candidates board (list-first empty) (list-nth empty 1))))))))
+         (solve-from board 0)))
 
       ; Format one cell: digit (or "." for empty) followed by a column separator.
       (format-cell
