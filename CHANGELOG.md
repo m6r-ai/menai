@@ -19,6 +19,11 @@ New features:
 - `png-encode` now builds each scanline in place.
 - Loop rotation now also rotates a loop whose test loops out of both arms,
   removing a jump per merged element in the sort benchmarks.
+- `menai-format` now formats files in place by default and accepts several files at
+  once; `-o -` writes the result to stdout and `-` still reads stdin.  The `--in-place`
+  option is gone because it is now the default.
+- The Sudoku benchmarks were improved to avoid doing unnecessary work, and thus making
+  them more interesting as comparisons with other languages.
 
 Bug fixes:
 

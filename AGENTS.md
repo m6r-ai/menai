@@ -95,8 +95,10 @@ full flag list rather than assuming what a flag is called.
   ```
 - `menai-eval <file>` — compiles and evaluates a `.menai` file (or an expression from
   stdin) and prints the result.
-- `menai-format <file>...` — formats Menai source. `--check` exits non-zero if a file does
-  not match the canonical style.
+- `menai-format <file>...` — formats Menai source in place. It takes several files and
+  rewrites each one that differs from the canonical style; `--check` instead reports which
+  files need formatting and exits non-zero if any do. Use `-o FILE` for a single file (`-o -`
+  for stdout) and `-` to format stdin to stdout.
 - `menai-disassemble <file>` — compiles and prints annotated bytecode disassembly.
 - `menai-benchmark` — runs the performance benchmark suites.
 - `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps.

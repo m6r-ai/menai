@@ -7,24 +7,36 @@ changes whitespace.
 
 ## Usage
 
-```bash
-# Format a file and print to stdout
-menai-format myfile.menai
+Formatting happens **in place**, and the positional argument takes one or more
+files:
 
-# Format and save to a new file
+```bash
+# Format files in place
+menai-format myfile.menai
+menai-format src/menai/prelude.menai src/menai/stdlib/*.menai
+
+# Write the result to a new file
 menai-format myfile.menai -o formatted.menai
 
-# Format in-place
-menai-format myfile.menai --in-place
+# Print the formatted result to stdout
+menai-format myfile.menai -o -
 
 # Format from stdin
 echo "(let ((x 5)(y 10)) (+ x y))" | menai-format -
 ```
 
+A file is only rewritten when its content changes, so an already-formatted file
+keeps its modification time.  Every file is processed even if an earlier one
+fails; the exit code is non-zero if any input could not be read, formatted or
+written.
+
+`-o` requires a single input, and `-` cannot be combined with other inputs.
+
 ## Check mode
 
-`--check` exits 0 if the file already matches the canonical style and 1 if it
-does not.  This is the form to use in CI:
+`--check` reports each input as formatted or needing formatting and exits 0 if
+they all match the canonical style, 1 if any do not.  It changes nothing, so it
+is the form to use in CI:
 
 ```bash
 menai-format --check src/menai/prelude.menai src/menai/stdlib/*.menai
@@ -34,13 +46,12 @@ menai-format --check src/menai/prelude.menai src/menai/stdlib/*.menai
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `input` | - | Input file (use `-` for stdin) |
-| `-o, --output` | stdout | Output file |
-| `-i, --in-place` | false | Format the input file in place |
+| `FILE...` | - | Files to format in place (use `-` for stdin) |
+| `-o, --output` | in place | Write the result to this file (use `-` for stdout) |
+| `--check` | false | Report files needing formatting; exit non-zero if any |
 | `--indent` | 2 | Spaces per indentation level |
 | `--max-width` | 120 | Column at which a form is laid out multi-line |
 | `--comment-spacing` | 2 | Spaces before an end-of-line comment |
-| `--check` | false | Exit non-zero if the file needs formatting |
 
 ## Library usage
 
