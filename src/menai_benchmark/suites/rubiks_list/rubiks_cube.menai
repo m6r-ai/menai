@@ -427,17 +427,26 @@
                    (integer+ acc 1)
                    acc)))))
 
+      ; The number of stickers that do not match their face's centre, over the
+      ; whole cube.
+      ;
+      ; The search needs this both as the heuristic and as the solved test: a
+      ; cube is solved exactly when no sticker mismatches.  Counting once and
+      ; deriving both is what makes it worth computing before the bound check
+      ; rather than scanning the cube twice per node.
+      (mismatches
+       (lambda (cube)
+         (integer+
+           (count-mismatched (struct-get cube 'U))
+           (count-mismatched (struct-get cube 'D))
+           (count-mismatched (struct-get cube 'F))
+           (count-mismatched (struct-get cube 'B))
+           (count-mismatched (struct-get cube 'L))
+           (count-mismatched (struct-get cube 'R)))))
+
       (heuristic
        (lambda (cube)
-         (let ((total
-                (integer+
-                  (count-mismatched (struct-get cube 'U))
-                  (count-mismatched (struct-get cube 'D))
-                  (count-mismatched (struct-get cube 'F))
-                  (count-mismatched (struct-get cube 'B))
-                  (count-mismatched (struct-get cube 'L))
-                  (count-mismatched (struct-get cube 'R)))))
-           (integer/ total 8))))
+         (integer/ (mismatches cube) 8)))
 
       ; Every move, in face-major order (all three turns of U, then D, and so on).
       (all-moves
@@ -465,21 +474,17 @@
        (lambda (m1 m2)
          (enum=? (struct-get m1 'face) (struct-get m2 'face))))
 
-      ; The inverse of a move is the same face with the opposite turn: cw and ccw
-      ; swap, and half is its own inverse.
-      (inverse-move
-       (lambda (m)
-         (move
-           (struct-get m 'face)
-           (match (struct-get m 'turn)
-             ((: turn 'cw) (turn 'ccw))
-             ((: turn 'ccw) (turn 'cw))
-             ((: turn 'half) (turn 'half))))))
-
+      ; Whether a move may follow `last-move` in the path.
+      ;
+      ; Turning the same face twice in a row is redundant, so a move on the
+      ; last move's face is pruned.  That test alone also covers the inverse
+      ; move, which is on the same face by definition, so testing for it as well
+      ; would decide nothing new — it is written as one comparison so that the
+      ; pruning costs a face lookup rather than constructing the inverse move
+      ; for all eighteen candidates at every node.
       (should-prune?
-       (lambda (move last-move)
-         (or (same-face? move last-move)
-             (struct=? move (inverse-move last-move)))))
+       (lambda (m last-move)
+         (same-face? m last-move)))
 
       (get-candidates
        (lambda (last-move)
@@ -515,14 +520,21 @@
                          (struct-get result 'value)
                          (integer-min best-threshold (struct-get result 'value)))))))))
 
+      ; One node of the IDA* search.
+      ;
+      ; The mismatch count answers both questions this node asks — is the cube
+      ; solved, and how far from solved is it — so it is computed once here
+      ; instead of once by cube-solved? and once by the heuristic.  Counting the
+      ; cube is the single most repeated thing the search does.
       (ida-search
        (lambda (cube bound g last-move path)
-         (let ((h (heuristic cube)))
-           (if (cube-solved? cube)
+         (let ((mismatched (mismatches cube)))
+           (if (integer=? mismatched 0)
                (search-result #t path)
-               (if (integer>? (integer+ g h) bound)
-                   (search-result #f (integer+ g h))
-                   (search-moves cube bound g last-move path (get-candidates last-move) #f))))))
+               (let ((h (integer/ mismatched 8)))
+                 (if (integer>? (integer+ g h) bound)
+                     (search-result #f (integer+ g h))
+                     (search-moves cube bound g last-move path (get-candidates last-move) #f)))))))
 
       (ida-star
        (lambda (cube max-depth)
