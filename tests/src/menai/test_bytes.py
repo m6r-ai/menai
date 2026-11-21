@@ -1692,3 +1692,105 @@ class TestBytesFloatingPoint:
         assert menai.evaluate('(function? bytes-read-f32-le)') is True
         assert menai.evaluate('(function? bytes-append-f64-be)') is True
         assert menai.evaluate('(function? bytes-write-f32-le)') is True
+
+
+class TestBytesInPlaceUpdate:
+    """
+    Test that appending to and writing into a bytes value preserves purity.
+
+    The VM updates a uniquely-owned bytes value in place, so these cases pin the
+    conditions under which it must not: a value that is still observable, and a
+    slice view whose storage belongs to another value.
+    """
+
+    def test_append_leaves_the_original_unchanged(self, menai):
+        """An observable bytes value is unchanged by an append to it."""
+        assert menai.evaluate('(let ((b (string->bytes "ab"))) (list b (bytes-append-u8 b 99)))') == [
+            menai.evaluate('(string->bytes "ab")'),
+            menai.evaluate('(string-hex->bytes "616263")'),
+        ]
+
+    def test_append_in_a_loop_builds_every_byte(self, menai):
+        """A loop-carried accumulator appends each byte in order."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 5)'
+            '                 acc'
+            '                 (loop (integer+ i 1) (bytes-append-u8 acc i))))))'
+            '  (loop 0 (bytes-concat)))'
+        )
+        assert menai.evaluate(f'(bytes->string-hex {expression})') == "0001020304"
+
+    def test_append_leaves_a_live_binding_unchanged(self, menai):
+        """Two appends from one value each produce their own result."""
+        expression = (
+            '(let ((keep (string->bytes "x")))'
+            '  (let ((a (bytes-append-u8 keep 1))'
+            '        (c (bytes-append-u8 keep 2)))'
+            '    (list (bytes->string-hex keep) (bytes->string-hex a) (bytes->string-hex c))))'
+        )
+        assert menai.evaluate(expression) == ["78", "7801", "7802"]
+
+    def test_append_through_a_slice_leaves_the_parent_unchanged(self, menai):
+        """Appending to a slice view neither grows it in place nor touches its parent."""
+        expression = (
+            '(let ((parent (string->bytes "abcd")))'
+            '  (let ((view (bytes-slice parent 1 3)))'
+            '    (list (bytes->string-hex (bytes-append-u8 view 7)) (bytes->string-hex parent))))'
+        )
+        assert menai.evaluate(expression) == ["626307", "61626364"]
+
+    def test_write_leaves_the_original_unchanged(self, menai):
+        """An observable bytes value is unchanged by a write into it."""
+        expression = (
+            '(let ((b (string->bytes "abc")))'
+            '  (list (bytes->string-hex b) (bytes->string-hex (bytes-write-u8 b 1 90))))'
+        )
+        assert menai.evaluate(expression) == ["616263", "615a63"]
+
+    def test_write_in_a_loop_writes_every_offset(self, menai):
+        """A loop-carried accumulator writes each offset in turn."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 4)'
+            '                 acc'
+            '                 (loop (integer+ i 1) (bytes-write-u8 acc i 65))))))'
+            '  (loop 0 (string->bytes "abcd")))'
+        )
+        assert menai.evaluate(f'(bytes->string-hex {expression})') == "41414141"
+
+    def test_appended_value_hashes_as_its_new_contents(self, menai):
+        """A value updated in place is found by a lookup keyed on its new contents."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 3) acc (loop (integer+ i 1) (bytes-append-u8 acc 65))))))'
+            '  (set-member? (list->set (list (loop 0 (bytes-concat)))) (string->bytes "AAA")))'
+        )
+        assert menai.evaluate(expression) is True
+
+    def test_written_value_hashes_as_its_new_contents(self, menai):
+        """A value written in place is found by a lookup keyed on its new contents."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 3) acc (loop (integer+ i 1) (bytes-write-u8 acc i 66))))))'
+            '  (set-member? (list->set (list (loop 0 (string->bytes "aaa")))) (string->bytes "BBB")))'
+        )
+        assert menai.evaluate(expression) is True
+
+    def test_multi_byte_append_in_a_loop(self, menai):
+        """Successive multi-byte appends build the value the copies would have built."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 3) acc (loop (integer+ i 1) (bytes-append-u24-le acc 66051))))))'
+            '  (bytes->string-hex (loop 0 (bytes-concat))))'
+        )
+        assert menai.evaluate(expression) == "030201030201030201"
+
+    def test_leb128_append_in_a_loop(self, menai):
+        """Successive LEB128 appends build the value the copies would have built."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 3) acc (loop (integer+ i 1) (bytes-append-uleb128 acc 300))))))'
+            '  (bytes->string-hex (loop 0 (bytes-concat))))'
+        )
+        assert menai.evaluate(expression) == "ac02ac02ac02"

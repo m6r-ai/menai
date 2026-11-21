@@ -5067,6 +5067,30 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
 
+            uint8_t byte = (uint8_t)val;
+
+            /*
+             * Append in place when nothing else can observe the bytes.  The
+             * conditions are OP_VECTOR_WITH's: dest == src0 so the write consumes
+             * the single reference, a count of one, and a value that owns its data
+             * (a slice view's pointer targets its owner's storage).  An append
+             * also changes the length, so unlike vector-with it needs room;
+             * menai_bytes_reserve grows the buffer geometrically when it is full.
+             *
+             * The cached hash must be cleared: bytes are hashable, and a hash is
+             * observed by a dict or set without retaining the value, so a stale
+             * one would survive a mutation.  See ADR-0064.
+             */
+            if ((tag & 1) == 0 && dest == src0 && b->owner == NULL &&
+                    menai_get_pool_header((void *)b)->ob_refcnt == 1) {
+                if (MENAI_UNLIKELY(menai_bytes_append_slot(vs, &frame_regs[dest], &byte, 1) < 0)) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                break;
+            }
+
             MenaiBytes *r = alloc_menai_bytes_from_append_u8(vs, b, (uint8_t)val);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -5865,6 +5889,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                    } \
                 } \
                 unsigned long long uval = (unsigned long long)val; \
+                uint8_t enc[8]; \
+                menai_bytes_encode_u64(enc, uval, (width), le); \
+                if ((tag & 1) == 0 && dest == src0 && b->owner == NULL && \
+                        menai_get_pool_header((void *)b)->ob_refcnt == 1) { \
+                    if (MENAI_UNLIKELY(menai_bytes_append_slot(vs, &frame_regs[dest], enc, (width)) < 0)) { \
+                        vm_err = MENAI_ERR_NOMEM; \
+                        goto error; \
+                    } \
+                    break; \
+                } \
                 MenaiBytes *r = alloc_menai_bytes_from_append_multi(vs, b, uval, (width), le); \
                 if (r == NULL) { \
                     vm_err = MENAI_ERR_NOMEM; \
@@ -5885,6 +5919,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     goto error; \
                 } \
 \
+                uint8_t enc[8]; \
+                menai_bytes_encode_u64(enc, uval_ull, (width), le); \
+                if ((tag & 1) == 0 && dest == src0 && b->owner == NULL && \
+                        menai_get_pool_header((void *)b)->ob_refcnt == 1) { \
+                    if (MENAI_UNLIKELY(menai_bytes_append_slot(vs, &frame_regs[dest], enc, (width)) < 0)) { \
+                        vm_err = MENAI_ERR_NOMEM; \
+                        goto error; \
+                    } \
+                    break; \
+                } \
                 MenaiBytes *r = alloc_menai_bytes_from_append_multi(vs, b, uval_ull, (width), le); \
                 if (r == NULL) { \
                     vm_err = MENAI_ERR_NOMEM; \
@@ -6001,6 +6045,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                     goto error; \
                 } \
             } \
+            if ((tag & 1) == 0 && dest == src0 && b->owner == NULL && \
+                    menai_get_pool_header((void *)b)->ob_refcnt == 1) { \
+                menai_bytes_encode_u64(b->inline_data + offset, uval_ull, (width), le); \
+                b->hash = -1; \
+                break; \
+            } \
             MenaiBytes *r = alloc_menai_bytes_from_write_multi(vs, b, offset, uval_ull, (width), le); \
             if (r == NULL) { \
                 vm_err = MENAI_ERR_NOMEM; \
@@ -6061,6 +6111,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             uint_bits_t bits = 0; \
             memcpy(&bits, &fval, sizeof(ctype)); \
 \
+            if ((tag & 1) == 0 && dest == src0 && b->owner == NULL && \
+                    menai_get_pool_header((void *)b)->ob_refcnt == 1) { \
+                menai_bytes_encode_u64(b->inline_data + offset, (unsigned long long)bits, (width), le); \
+                b->hash = -1; \
+                break; \
+            } \
             MenaiBytes *r = alloc_menai_bytes_from_write_multi(vs, b, offset, (unsigned long long)bits, (width), le); \
             if (r == NULL) { \
                 vm_err = MENAI_ERR_NOMEM; \
@@ -6196,6 +6252,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 buf[i] |= 0x80;
             }
 
+            if ((tag & 1) == 0 && dest == src0 && b->owner == NULL &&
+                    menai_get_pool_header((void *)b)->ob_refcnt == 1) {
+                if (MENAI_UNLIKELY(menai_bytes_append_slot(vs, &frame_regs[dest], buf, nbytes) < 0)) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                break;
+            }
+
             MenaiBytes *result = b;
             menai_value_retain((MenaiValue *)result);
             for (int i = 0; i < nbytes; i++) {
@@ -6323,6 +6389,16 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 }
 
                 buf[nbytes++] = byte;
+            }
+
+            if ((tag & 1) == 0 && dest == src0 && b->owner == NULL &&
+                    menai_get_pool_header((void *)b)->ob_refcnt == 1) {
+                if (MENAI_UNLIKELY(menai_bytes_append_slot(vs, &frame_regs[dest], buf, nbytes) < 0)) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                break;
             }
 
             MenaiBytes *result = b;

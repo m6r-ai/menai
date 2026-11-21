@@ -19,36 +19,33 @@
        (lambda (width bpp)
          (integer- (row-stride width bpp) (integer/ (integer* width bpp) 8))))
 
-      ; The channels of one pixel as a list, or #none if the pixel is malformed.
-      (pixel-channels
-       (lambda (pixel)
-         (if (vector? pixel)
-             (vector->list pixel)
-             #none)))
-
       ; Write one pixel's channels in BMP byte order (blue, green, red, alpha).
+      ;
+      ; The pixel's channels are read with vector-nth rather than converted to a
+      ; list first: the channel count is fixed by the bit depth, so a conversion
+      ; would allocate a cons cell per channel for a value read positionally once
+      ; and then discarded.
       (encode-pixel
        (lambda (b pixel bpp)
-         (let ((channels (pixel-channels pixel)))
-           (if (none? channels)
-               (error "bmp-encode: each pixel must be a vector of channels")
-               (if (integer=? bpp 24)
-                   (if (integer=? (list-length channels) 3)
-                       (bytes-append-u24-le
-                         b
+         (if (vector? pixel)
+             (if (integer=? bpp 24)
+                 (if (integer=? (vector-length pixel) 3)
+                     (bytes-append-u24-le
+                       b
+                       (integer-bit-or
+                         (integer-bit-or (vector-nth pixel 2) (integer-bit-shift-left (vector-nth pixel 1) 8))
+                         (integer-bit-shift-left (vector-nth pixel 0) 16)))
+                     (error "bmp-encode: a 24-bit pixel must have 3 channels"))
+                 (if (integer=? (vector-length pixel) 4)
+                     (bytes-append-u32-le
+                       b
+                       (integer-bit-or
+                         (integer-bit-or (vector-nth pixel 2) (integer-bit-shift-left (vector-nth pixel 1) 8))
                          (integer-bit-or
-                           (integer-bit-or (list-nth channels 2) (integer-bit-shift-left (list-nth channels 1) 8))
-                           (integer-bit-shift-left (list-first channels) 16)))
-                       (error "bmp-encode: a 24-bit pixel must have 3 channels"))
-                   (if (integer=? (list-length channels) 4)
-                       (bytes-append-u32-le
-                         b
-                         (integer-bit-or
-                           (integer-bit-or (list-nth channels 2) (integer-bit-shift-left (list-nth channels 1) 8))
-                           (integer-bit-or
-                             (integer-bit-shift-left (list-first channels) 16)
-                             (integer-bit-shift-left (list-nth channels 3) 24))))
-                       (error "bmp-encode: a 32-bit pixel must have 4 channels")))))))
+                           (integer-bit-shift-left (vector-nth pixel 0) 16)
+                           (integer-bit-shift-left (vector-nth pixel 3) 24))))
+                     (error "bmp-encode: a 32-bit pixel must have 4 channels")))
+             (error "bmp-encode: each pixel must be a vector of channels"))))
 
       ; Write one row's pixels followed by its padding bytes.
       (encode-row

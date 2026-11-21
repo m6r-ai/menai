@@ -2166,10 +2166,19 @@
          ($list->vector lst)))
 
       ; The accumulator starts as a copy of v with the same length, and each
-      ; element is then overwritten in place.  vector-with updates in place only
-      ; when the destination register is also the source, which the allocator
-      ; can do for a loop-carried accumulator but never for a vector received as
-      ; an argument, so this must stay one flat loop.
+      ; element is then overwritten in place.  An update opcode copies its
+      ; collection unless the result is written back into the register it was
+      ; read from and nothing else holds a reference, so the accumulator has to
+      ; be a loop-carried variable of whichever loop performs the write.  Here
+      ; it is, so each write is a store rather than a copy of the whole vector.
+      ;
+      ; Keeping the write in this loop is what matters, not avoiding helpers as
+      ; such: a non-recursive lambda that the inliner collapses at its call site
+      ; still performs the write in this loop's registers.  A write that moves
+      ; somewhere the inliner cannot follow -- into a recursive helper, or one
+      ; large enough or called from enough sites to be left as a real call --
+      ; would arrive with the vector as a parameter, which retains it, and every
+      ; element write would become a full copy.
       ;
       ; There is no vector-make, so the copy is made by concatenating v with an
       ; empty slice of itself: vector-slice yields a view, but vector-concat
@@ -2247,10 +2256,15 @@
       ; k; and mid and hi, the ends of the two runs.
       ;
       ; It must stay a single loop.  vector-with updates in place only when the
-      ; destination register is also the source, which the allocator can do for
-      ; a loop-carried accumulator but never for a helper that receives the
-      ; vector as an argument.  Splitting the merge out into its own function
-      ; would silently turn every element write into a full copy.
+      ; destination register is also the source and nothing else holds a
+      ; reference, so dst has to be a loop-carried variable of the loop that
+      ; writes it, as it is here.
+      ;
+      ; Splitting the merge out into its own function would break that: the
+      ; merge is recursive, so unlike a small non-recursive helper it cannot be
+      ; inlined at its call site, and dst would arrive as a parameter -- which
+      ; retains it -- turning every element write into a full copy of the
+      ; buffer.
       (sort-vector
        (lambda (cmp v)
          (let ((n ($vector-length v)))

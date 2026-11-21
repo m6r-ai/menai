@@ -4,12 +4,19 @@
 
 New features:
 
-- The VM now implements in-place modification of containers (vectors, sets, dicts
-  and structs) where a source goes dead during the operation.
+- The VM now implements in-place modification of containers (vectors, sets, dicts,
+  structs and bytes) where a source goes dead during the operation.
+- Appending to a `bytes` value now updates it in place, carrying spare capacity and
+  growing geometrically, so building a byte sequence in steps is linear.
 - `map-vector`, `map-set` and `filter-set` now build their result in place
   rather than converting it through a list.
 - `sort-vector` is a native bottom-up merge sort, and `sort-list` sorts through
   it.
+- The DEFLATE LZ77 candidate table is now one dictionary updated in place rather
+  than sixteen shards, which existed only because every update copied.  30–50%
+  faster compression on run-heavy inputs.
+- `bmp-encode` reads a pixel's channels directly, and `png-encode` builds each
+  scanline in place.
 - Loop rotation now also rotates a loop whose test loops out of both arms,
   removing a jump per merged element in the sort benchmarks.
 

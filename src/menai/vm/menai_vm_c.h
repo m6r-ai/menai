@@ -702,10 +702,17 @@ typedef struct {
  * buffer at an offset, and retain the owner — exactly the same structural
  * sharing pattern as MenaiList.  Views never form chains: all views point
  * directly at the root owner.
+ *
+ * cap is the number of bytes inline_data can hold and may exceed length, the
+ * same way MenaiDict's cap may exceed its length: an append that can be done in
+ * place uses the spare room and grows geometrically, so a sequence of appends
+ * is linear.  Slack is only ever requested by the in-place path, so shared
+ * bytes are still allocated tight.
  */
 struct MenaiBytes {
     MENAI_MAGIC_FIELD
     ssize_t length;                     /* logical byte count */
+    ssize_t cap;                        /* bytes available in inline_data, >= length */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
     MenaiBytes *owner;                  /* non-NULL when this is a slice view */
     uint8_t *data;                      /* points to inline_data for owners, into owner for views */
@@ -1633,6 +1640,8 @@ menai_boolean_equal(MenaiValue *a, MenaiValue *b)
 }
 
 MenaiBytes *alloc_menai_bytes(MenaiVMState *vs, ssize_t n);
+MenaiBytes *menai_bytes_reserve(MenaiVMState *vs, MenaiBytes *b, ssize_t extra);
+int menai_bytes_append_slot(MenaiVMState *vs, MenaiValue **slot, const uint8_t *src, ssize_t n);
 
 static inline void
 menai_bytes_final(MenaiVMState *vs, MenaiBytes *self)

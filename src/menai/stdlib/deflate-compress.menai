@@ -191,22 +191,25 @@
 
       ; --- LZ77 matching -------------------------------------------------------
       ; The candidate table maps a 3-byte prefix to a most-recent-first list of the
-      ; positions at which it occurs.  A dict update copies the whole dict, so the
-      ; table is sharded into `shard-count` sub-dicts, each holding the keys that
-      ; hash to it.  An update then copies one shard plus the small top-level dict,
-      ; rather than the whole table.
-      (shard-count 16)
-
+      ; positions at which it occurs.  It is one flat dictionary, updated in place
+      ; as the table is threaded through the loops that insert into it: an insert
+      ; is O(1) amortised rather than a copy of the whole table.
+      ;
+      ; It must not be re-sharded.  This table used to be split into sixteen
+      ; sub-dictionaries so that an update copied one shard instead of everything,
+      ; which was the right trade while every update copied.  An update now lands
+      ; in place, so sharding only means copying a shard for no reason, and a
+      ; nested update cannot be in place at all: the inner value is reached through
+      ; dict-get, which retains it.  See ADR-0063.
       ; Return the position list recorded for `key`, or the empty list.
       (table-get
        (lambda (table key)
-         (dict-get (dict-get table (integer% key shard-count) (dict)) key (list))))
+         (dict-get table key (list))))
 
       ; Return the table with `key` mapped to `positions`.
       (table-put
        (lambda (table key positions)
-         (let ((shard (integer% key shard-count)))
-           (dict-with table shard (dict-with (dict-get table shard (dict)) key positions)))))
+         (dict-with table key positions)))
 
       ; Compute a 3-byte key at position `i` of `b`, or #none if fewer than three
       ; bytes remain.  The key is a single integer so it can index a dict.

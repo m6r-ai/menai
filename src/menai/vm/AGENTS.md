@@ -129,6 +129,12 @@ are listed at the `OP_VECTOR_WITH` fast path; the two that are easy to get wrong
   is appended to in place uses the spare slots and is grown geometrically when full, so a
   sequence of appends is O(n) overall rather than O(n²). A *shared* dictionary is still
   allocated tight: slack is only requested by the in-place path.
+- Bytes work the same way, with `cap` replacing the dictionary's, because an append also
+  changes the length (`menai_bytes_reserve`, ADR-0064). They need no self-reference test — a
+  byte sequence holds only octets — but they do carry a `hash` field that a lookup reads
+  without retaining the value, so every in-place bytes write must set `hash = -1`. A missing
+  clear is a silent lookup failure, not a wrong value, so it is the one invariant here that
+  the type system cannot help with.
 
 The fallback is always correct — it is what the opcode did before — so this is an optimisation
 that can only cost time. Never express the prediction as an `assert`: a constant-pool entry, a
@@ -137,10 +143,20 @@ whose only register is the one being overwritten, which is an ordinary legal pro
 than a compiler bug, and `/DNDEBUG` is on in the Windows build.
 
 An accumulating loop only stays in place while its accumulator is a loop-carried variable of
-that loop. A helper called with the collection as an argument receives it through a `MOVE` into
-the outgoing slot, which retains, so every write inside the helper copies — and there is no
-diagnostic when a refactor moves the write across that boundary. The prelude's `sort-vector` is
-one flat loop rather than a merge helper plus a pass helper for exactly this reason.
+the loop that performs the write. A helper that survives inlining is called with the collection
+as an argument, receives it through a `MOVE` into the outgoing slot, which retains, so every
+write inside the helper copies — and there is no diagnostic when a refactor moves the write
+across that boundary.
+
+Which helpers survive inlining is the inliner's decision, not a property of the accumulator.
+A small non-recursive lambda used once or twice is inlined at its call sites, and the write it
+contains then happens in the caller's registers, in place, so a higher-order fold or a named
+helper is not disqualifying on its own. What cannot be inlined is a recursive lambda (the
+merge in `sort-vector`) and one the inliner leaves as a real call. So `sort-vector` must stay
+one flat loop because its merge is recursive, not because helpers are inherently wrong.
+
+Do not generalise from an inlined helper to a hand-written flat loop: the flat loop is no
+faster once the helper is inlined, and it is much harder to read.
 
 Iterate a dictionary or set with `length`, never with `cap`: slots past `length` are
 uninitialised, and `menai_dict_final` and `menai_set_final` depend on that. The hash table

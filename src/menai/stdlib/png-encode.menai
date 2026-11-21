@@ -48,40 +48,44 @@
            (bytes-append-u8 (bytes-concat) 0)
            (bytes-append-u8 (bytes-concat) 0))))
 
-      ; Return one pixel's channel byte values as a list.
-      (encode-pixel
-       (lambda (pixel channels)
+      ; The byte value of one channel of a pixel, validating the pixel.
+      (pixel-channel
+       (lambda (pixel c channels)
          (if (vector? pixel)
              (if (integer=? (vector-length pixel) channels)
-                 (let ((loop
-                        (lambda (c acc)
-                          (if (integer>=? c channels)
-                              acc
-                              (loop (integer+ c 1) (list-prepend acc (vector-nth pixel c)))))))
-                   (list-reverse (loop 0 (list))))
+                 (vector-nth pixel c)
                  (error (string-concat "png-encode: each pixel must have " (integer->string channels) " channels")))
              (error "png-encode: each pixel must be a vector of channels"))))
 
       ; Build the filtered scanline data: each row is a filter byte (0) followed
-      ; by the row's raw channel bytes.  Each row is assembled as a list of byte
-      ; values and converted once with list->bytes; the rows are then concatenated.
-      ; This keeps the cost linear in the byte count, rather than the quadratic
-      ; cost of appending to a growing bytes value or of concatenating one chunk
-      ; per pixel.
+      ; by the row's raw channel bytes.
+      ;
+      ; A row is assembled in one flat loop that appends a channel at a time to a
+      ; bytes value created inside this function, so every append after the first
+      ; updates in place and a row costs one store per byte.  The row and the
+      ; channel index are carried as loop state rather than a per-pixel helper
+      ; being handed the accumulator: a bytes value received as an argument has a
+      ; second reference, so the first append inside that helper would copy the
+      ; row built so far, once per pixel.  See ADR-0064.
+      ;
+      ; The accumulator is per row rather than per image because it is created
+      ; here; the rows are concatenated once at the end.
       (build-scanlines
        (lambda (pixels width height channels)
          (if (vector? pixels)
              (let ((row-bytes
                     (lambda (row)
-                      (list->bytes
-                        (let ((loop
-                               (lambda (x acc)
-                                 (if (integer>=? x width)
-                                     acc
-                                     (loop
-                                       (integer+ x 1)
-                                       (list-concat acc (encode-pixel (vector-nth row x) channels)))))))
-                          (loop 0 (list 0))))))
+                      (let ((loop
+                             (lambda (x c acc)
+                               (if (integer>=? x width)
+                                   acc
+                                   (if (integer>=? c channels)
+                                       (loop (integer+ x 1) 0 acc)
+                                       (loop
+                                         x
+                                         (integer+ c 1)
+                                         (bytes-append-u8 acc (pixel-channel (vector-nth row x) c channels))))))))
+                        (loop 0 0 (bytes-append-u8 (bytes-concat) 0)))))
 
                    (loop
                     (lambda (y acc)
