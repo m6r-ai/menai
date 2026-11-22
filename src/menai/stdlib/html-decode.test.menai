@@ -322,6 +322,44 @@
        (lambda ()
          (assert-equal (decode "<div/ x>") (list (el "div" (dict) (list))))))
 
+      ; A quoted attribute value that is never closed runs to the end of input.
+      (test-unterminated-quoted-attribute
+       (lambda ()
+         (assert-equal (decode "<p x=\"1>") (list (el "p" (dict "x" "1>") (list))))))
+
+      ; A raw-text element whose end tag is never terminated keeps its text.
+      (test-raw-text-end-tag-without-terminator
+       (lambda ()
+         (assert-equal (decode "<script>a</script") (list (el "script" (dict) (list "a"))))))
+
+      ; A raw-text element whose content holds an end tag for another element
+      ; keeps looking, and ends its text at the end of input.
+      (test-raw-text-other-end-tag-at-end
+       (lambda ()
+         (assert-equal (decode "<script>a</b>") (list (el "script" (dict) (list "a</b>"))))))
+
+      ; A declaration inside an element that is never terminated adds no child.
+      (test-unterminated-declaration-inside-element
+       (lambda ()
+         (assert-equal (decode "<p><!x") (list (el "p" (dict) (list))))))
+
+      ; A declaration that is never terminated at the top level adds no node.
+      (test-unterminated-declaration-at-end
+       (lambda ()
+         (assert-equal (decode "<!x") (list))))
+
+      ; A stray end tag that is never terminated at the top level adds no node.
+      (test-unterminated-end-tag-at-end
+       (lambda ()
+         (assert-equal (decode "</x") (list))))
+
+      ; A doctype that is never terminated runs to the end of input.
+      (test-unterminated-doctype-at-end
+       (lambda ()
+         (assert-equal
+           (decode "<!DOCTYPE html")
+           (list (dict "tag" "!doctype" "attrs" (dict) "children" (list "html"))))))
+
       ; An empty document decodes to no nodes.
       (test-empty-document
        (lambda ()
@@ -384,7 +422,14 @@
              (expect-pass "tag name then trailing space" test-tag-name-then-trailing-space)
              (expect-pass "content construct at end adds no child" test-content-construct-at-end)
              (expect-pass "self-closing tag followed by text" test-self-closing-followed-by-text)
-             (expect-pass "slash then space ends the attributes" test-slash-then-space)))
+             (expect-pass "slash then space ends the attributes" test-slash-then-space)
+             (expect-pass "unterminated quoted attribute value" test-unterminated-quoted-attribute)
+             (expect-pass "raw-text end tag without a terminator" test-raw-text-end-tag-without-terminator)
+             (expect-pass "raw-text end tag for another element at end of input" test-raw-text-other-end-tag-at-end)
+             (expect-pass "unterminated declaration inside an element" test-unterminated-declaration-inside-element)
+             (expect-pass "unterminated declaration at the top level" test-unterminated-declaration-at-end)
+             (expect-pass "unterminated end tag at the top level" test-unterminated-end-tag-at-end)
+             (expect-pass "unterminated doctype at the top level" test-unterminated-doctype-at-end)))
 
          (list
            "raw-text"

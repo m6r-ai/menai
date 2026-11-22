@@ -18,6 +18,10 @@
 ; It is the inverse of base64-decode's decode: for every bytes value b and every
 ; variant v, (decode (encode b v) v) reproduces b.
 ;
+; The alphabet is held as bytes, so a character is looked up with `bytes-nth` and
+; arrives as an integer; the encoded characters are accumulated as those integers
+; and converted to text once, so no per-character string is built.
+;
 ; The first argument must be a bytes value and the second, when present, must be
 ; a variant value; anything else raises a runtime error.
 
@@ -28,14 +32,20 @@
       ; padding, or the URL-safe alphabet with or without padding.
       (variant (enum (standard standard-unpadded url url-unpadded)))
 
-      ; The 64-character alphabet for a variant.
+      (standard-bytes (string->bytes standard-alphabet))
+      (url-bytes (string->bytes url-alphabet))
+
+      ; The code of the "=" padding character.
+      (equals-code 61)
+
+      ; The 64-character alphabet for a variant, as byte values.
       (alphabet-for
        (lambda (v)
          (match v
-           ((: variant 'standard) standard-alphabet)
-           ((: variant 'standard-unpadded) standard-alphabet)
-           ((: variant 'url) url-alphabet)
-           ((: variant 'url-unpadded) url-alphabet))))
+           ((: variant 'standard) standard-bytes)
+           ((: variant 'standard-unpadded) standard-bytes)
+           ((: variant 'url) url-bytes)
+           ((: variant 'url-unpadded) url-bytes))))
 
       ; Whether a variant emits "=" padding.
       (padded?
@@ -46,39 +56,52 @@
            ((: variant 'url) #t)
            ((: variant 'url-unpadded) #f))))
 
-      ; Encode one 24-bit group (three input bytes) as four Base64 characters.
-      (encode-group
-       (lambda (alphabet b0 b1 b2)
-         (string-concat
-           (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
-           (string-nth
-             alphabet
-             (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f))
-           (string-nth
-             alphabet
-             (integer-bit-and (integer-bit-or (integer-bit-shift-left b1 2) (integer-bit-shift-right b2 6)) #x3f))
-           (string-nth alphabet (integer-bit-and b2 #x3f)))))
+      ; Prepend one "=" padding character to a reversed accumulator when the
+      ; variant pads; a variant that does not pad gets none.
+      (prepend-equals
+       (lambda (acc pad)
+         (if pad
+             (list-prepend acc equals-code)
+             acc)))
 
-      ; Encode a trailing group of one byte as two Base64 characters, with "=="
-      ; appended when the variant is padded.
-      (encode-final-one
-       (lambda (alphabet pad b0)
-         (string-concat
-           (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
-           (string-nth alphabet (integer-bit-and (integer-bit-shift-left b0 4) #x3f))
-           (if pad "==" ""))))
+      ; Prepend one 24-bit group (three input bytes) as four character codes:
+      ; six bits from each byte, carried across the boundaries.
+      (prepend-group
+       (lambda (acc alphabet b0 b1 b2)
+         (let ((c1 (bytes-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f)))
 
-      ; Encode a trailing group of two bytes as three Base64 characters, with "="
-      ; appended when the variant is padded.
-      (encode-final-two
-       (lambda (alphabet pad b0 b1)
-         (string-concat
-           (string-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f))
-           (string-nth
-             alphabet
-             (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f))
-           (string-nth alphabet (integer-bit-and (integer-bit-shift-left b1 2) #x3f))
-           (if pad "=" ""))))
+               (c2
+                (bytes-nth
+                  alphabet
+                  (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f)))
+
+               (c3
+                (bytes-nth
+                  alphabet
+                  (integer-bit-and (integer-bit-or (integer-bit-shift-left b1 2) (integer-bit-shift-right b2 6)) #x3f)))
+
+               (c4 (bytes-nth alphabet (integer-bit-and b2 #x3f))))
+           (list-prepend (list-prepend (list-prepend (list-prepend acc c1) c2) c3) c4))))
+
+      ; Prepend a trailing group of one byte as two character codes.
+      (prepend-final-one
+       (lambda (acc alphabet b0)
+         (let ((c1 (bytes-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f)))
+               (c2 (bytes-nth alphabet (integer-bit-and (integer-bit-shift-left b0 4) #x3f))))
+           (list-prepend (list-prepend acc c1) c2))))
+
+      ; Prepend a trailing group of two bytes as three character codes.
+      (prepend-final-two
+       (lambda (acc alphabet b0 b1)
+         (let ((c1 (bytes-nth alphabet (integer-bit-and (integer-bit-shift-right b0 2) #x3f)))
+
+               (c2
+                (bytes-nth
+                  alphabet
+                  (integer-bit-and (integer-bit-or (integer-bit-shift-left b0 4) (integer-bit-shift-right b1 4)) #x3f)))
+
+               (c3 (bytes-nth alphabet (integer-bit-and (integer-bit-shift-left b1 2) #x3f))))
+           (list-prepend (list-prepend (list-prepend acc c1) c2) c3))))
 
       ; Encode a bytes value as Base64 text.  It is the inverse of
       ; base64-decode's decode.
@@ -98,27 +121,28 @@
            (let ((loop
                   (lambda (i acc)
                     (if (integer>=? i n)
-                        (list->string (list-reverse acc))
+                        (bytes->string (list->bytes (list-reverse acc)))
                         (let ((remaining (integer- n i)))
                           (if (integer>=? remaining 3)
                               (loop
                                 (integer+ i 3)
-                                (list-prepend
+                                (prepend-group
                                   acc
-                                  (encode-group
-                                    alphabet
-                                    (bytes-nth b i)
-                                    (bytes-nth b (integer+ i 1))
-                                    (bytes-nth b (integer+ i 2)))))
+                                  alphabet
+                                  (bytes-nth b i)
+                                  (bytes-nth b (integer+ i 1))
+                                  (bytes-nth b (integer+ i 2))))
                               (if (integer=? remaining 2)
-                                  (list->string
-                                    (list-reverse
-                                      (list-prepend
-                                        acc
-                                        (encode-final-two alphabet pad (bytes-nth b i) (bytes-nth b (integer+ i 1))))))
-                                  (list->string
-                                    (list-reverse
-                                      (list-prepend acc (encode-final-one alphabet pad (bytes-nth b i))))))))))))
+                                  (loop
+                                    n
+                                    (prepend-equals
+                                      (prepend-final-two acc alphabet (bytes-nth b i) (bytes-nth b (integer+ i 1)))
+                                      pad))
+                                  (loop
+                                    n
+                                    (prepend-equals
+                                      (prepend-equals (prepend-final-one acc alphabet (bytes-nth b i)) pad)
+                                      pad)))))))))
              (loop 0 (list)))))))
 
   (export encode variant))

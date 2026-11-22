@@ -69,45 +69,36 @@
       ; The index of the first non-whitespace character at or after `i`.
       (skip-space
        (lambda (s i)
-         (let ((loop
-                (lambda (j)
-                  (if (and (integer<? j (string-length s))
-                           (is-space? (string-nth s j)))
-                      (loop (integer+ j 1))
-                      j))))
-           (loop i))))
+         (let ((rest (string-slice s i)))
+           (integer+ i (space-run-length rest)))))
+
+      ; The number of leading characters of `rest` that are HTML whitespace.
+      (space-run-length
+       (lambda (rest)
+         (let ((stripped (string-trim-left rest)))
+           (integer- (string-length rest) (string-length stripped)))))
 
       ; #t when `s` starts with `prefix` at index `i`.
       (starts-at?
        (lambda (s i prefix)
-         (let ((end (integer+ i (string-length prefix))))
-           (and (integer<=? end (string-length s))
-                (string=? (string-slice s i end) prefix)))))
-
-      ; The index of the first occurrence of the character `ch` at or after `i`,
-      ; or the end of the string when there is none.
-      (find-char
-       (lambda (s ch i)
-         (let ((loop
-                (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      j
-                      (if (string=? (string-nth s j) ch)
-                          j
-                          (loop (integer+ j 1)))))))
-           (loop i))))
+         (string-prefix? (string-slice s i) prefix)))
 
       ; The index of the first occurrence of `needle` at or after `i`, or #none.
-      (find-string
+      (index-from
+       (lambda (s i needle)
+         (let ((k (string-index (string-slice s i) needle)))
+           (if (none? k)
+               #none
+               (integer+ i k)))))
+
+      ; The index of the first occurrence of `needle` at or after `i`, or the end
+      ; of the string when there is none.
+      (find-or-end
        (lambda (s needle i)
-         (let ((loop
-                (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      #none
-                      (if (starts-at? s j needle)
-                          j
-                          (loop (integer+ j 1)))))))
-           (loop i))))
+         (let ((k (index-from s i needle)))
+           (if (none? k)
+               (string-length s)
+               k))))
 
       ; #t when the character can appear in an element or attribute name.
       (is-name-char?
@@ -121,7 +112,8 @@
               (boolean-not (string=? ch "'")))))
 
       ; The index of the first character at or after `i` that is not a name
-      ; character.
+      ; character.  A name is a handful of characters, so scanning it character by
+      ; character is proportional to the name: there is no long search to remove.
       (name-end
        (lambda (s i)
          (let ((loop
@@ -156,14 +148,10 @@
       (semicolon-within
        (lambda (s i limit)
          (let ((stop (integer-min (string-length s) (integer+ i limit))))
-           (let ((loop
-                  (lambda (j)
-                    (if (integer>=? j stop)
-                        #none
-                        (if (string=? (string-nth s j) ";")
-                            j
-                            (loop (integer+ j 1)))))))
-             (loop i)))))
+           (let ((semi (string-index (string-slice s i stop) ";")))
+             (if (none? semi)
+                 #none
+                 (integer+ i semi))))))
 
       ; Decode the character reference starting at the "&" at `i`.  Returns
       ; (list <text> <index-after-reference>).  When the reference is not one the
@@ -195,14 +183,27 @@
       ; string.  Used for text runs and for attribute values.
       (decode-references
        (lambda (s i end)
+         (if (none? (string-index (string-slice s i end) "&"))
+             (string-slice s i end)
+             (decode-references-escaped s i end))))
+
+      ; The decoded form of s[i, end) when it contains at least one reference.  The
+      ; runs between references are slices of the input, so only the references
+      ; themselves are new values.
+      (decode-references-escaped
+       (lambda (s i end)
          (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j end)
                       (list->string (list-reverse acc))
-                      (if (string=? (string-nth s j) "&")
-                          (let ((decoded (decode-reference s j)))
-                            (loop (integer-min (list-nth decoded 1) end) (list-prepend acc (list-first decoded))))
-                          (loop (integer+ j 1) (list-prepend acc (string-nth s j))))))))
+                      (let ((amp (string-index (string-slice s j end) "&")))
+                        (if (none? amp)
+                            (list->string (list-reverse (list-prepend acc (string-slice s j end))))
+                            (let ((at (integer+ j amp)))
+                              (let ((decoded (decode-reference s at)))
+                                (loop
+                                  (integer-min (list-nth decoded 1) end)
+                                  (list-prepend (list-prepend acc (string-slice s j at)) (list-first decoded)))))))))))
            (loop i (list)))))
 
       ; Append a text run to a reversed node accumulator.  Adjacent text is one
@@ -222,14 +223,11 @@
       ; after `i`.  Returns (list <decoded-text> <index-of-">).
       (decode-text
        (lambda (s i)
-         (let ((loop
-                (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      j
-                      (if (string=? (string-nth s j) "<")
-                          j
-                          (loop (integer+ j 1)))))))
-           (let ((end (loop i)))
+         (let ((lt (index-from s i "<")))
+           (let ((end
+                  (if (none? lt)
+                      (string-length s)
+                      lt)))
              (list (decode-references s i end) end)))))
 
       ; The index at which an unquoted attribute value starting at `i` ends: at
@@ -276,9 +274,12 @@
                                                       (let ((quote-char (string-nth s vstart)))
                                                         (if (or (string=? quote-char "\"")
                                                                 (string=? quote-char "'"))
-                                                            (let ((close (find-char s quote-char (integer+ vstart 1))))
+                                                            (let ((close
+                                                                   (find-or-end s quote-char (integer+ vstart 1))))
                                                               (loop
-                                                                (integer+ close 1)
+                                                                (if (integer>=? close (string-length s))
+                                                                    close
+                                                                    (integer+ close 1))
                                                                 (dict-with
                                                                   attrs
                                                                   name
@@ -303,7 +304,7 @@
                (let ((attrs (list-first parsed))
                      (slash (list-nth parsed 1))
                      (stop (list-nth parsed 2)))
-                 (let ((gt (find-char s ">" stop)))
+                 (let ((gt (find-or-end s ">" stop)))
                    (list name attrs slash (integer+ gt 1)))))))))
 
       ; #t when the end tag at `i` names `tag`.
@@ -320,11 +321,12 @@
        (lambda (s i tag)
          (let ((loop
                 (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      j
-                      (if (end-tag-names? s j tag)
-                          j
-                          (loop (integer+ j 1)))))))
+                  (let ((lt (index-from s j "</")))
+                    (if (none? lt)
+                        (string-length s)
+                        (if (end-tag-names? s lt tag)
+                            lt
+                            (loop (integer+ lt 2))))))))
            (let ((end (loop i)))
              (let ((text (string-slice s i end)))
                (if (integer>=? end (string-length s))
@@ -333,7 +335,7 @@
                          (list)
                          (list text))
                      end)
-                   (let ((gt (find-char s ">" end)))
+                   (let ((gt (find-or-end s ">" end)))
                      (list
                        (if (string=? text "")
                            (list)
@@ -347,7 +349,7 @@
          (let ((body-start (integer+ i 4)))
            (if (starts-at? s body-start ">")
                (list (dict "tag" "!--" "attrs" (dict) "children" (list)) (integer+ body-start 1))
-               (let ((close (find-string s "-->" body-start)))
+               (let ((close (index-from s body-start "-->")))
                  (if (none? close)
                      (list
                        (dict "tag" "!--" "attrs" (dict) "children" (list (string-slice s body-start (string-length s))))
@@ -373,12 +375,12 @@
                               (if (starts-at? s j "<!")
                                   ; A declaration other than a comment is skipped
                                   ; to its ">".
-                                  (let ((close (find-char s ">" j)))
+                                  (let ((close (find-or-end s ">" j)))
                                     (loop (integer+ close 1) acc))
                                   (if (starts-at? s j "</")
                                       (let ((ne (name-end s (integer+ j 2))))
                                         (let ((name (string-downcase (string-slice s (integer+ j 2) ne))))
-                                          (let ((close (find-char s ">" j)))
+                                          (let ((close (find-or-end s ">" j)))
                                             (if (string=? name tag)
                                                 (list (list-reverse acc) (integer+ close 1))
                                                 (if (list-member? open name)
@@ -436,7 +438,7 @@
       ; (list <node> <index-after-declaration>).
       (parse-doctype
        (lambda (s i)
-         (let ((gt (find-char s ">" i)))
+         (let ((gt (find-or-end s ">" i)))
            (list
              (dict "tag" "!doctype" "attrs" (dict) "children" (list (string-trim (string-slice s (integer+ i 9) gt))))
              (integer+ gt 1)))))
@@ -457,12 +459,12 @@
                                   (let ((parsed (parse-doctype s j)))
                                     (loop (list-nth parsed 1) (list-prepend acc (list-first parsed))))
                                   (if (starts-at? s j "<!")
-                                      (let ((close (find-char s ">" j)))
+                                      (let ((close (find-or-end s ">" j)))
                                         (loop (integer+ close 1) acc))
                                       (if (starts-at? s j "</")
                                           ; A stray end tag at top level is
                                           ; ignored.
-                                          (let ((close (find-char s ">" j)))
+                                          (let ((close (find-or-end s ">" j)))
                                             (loop (integer+ close 1) acc))
                                           (if (starts-at? s j "<>")
                                               (loop (integer+ j 2) acc)

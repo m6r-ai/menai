@@ -29,8 +29,12 @@ New features:
   presence check, so text with nothing to escape costs no allocation.
 - `csv-decode` now finds fields with native searches and takes them as slices of
   the input; up to 59% fewer instructions.
+- `html-decode` now finds markup and character references with native searches
+  and takes text runs and attribute values as slices; 13–46% faster.
 - `xml-decode` now finds markup and entities natively and takes text runs and
   attribute values as slices; 37–43% faster, which the OOXML decoders inherit.
+- `base64-encode` and `base64-decode` read the alphabet and the input as bytes and
+  look values up in a table built once, so neither costs a string per character.
 - Loop rotation now also rotates a loop whose test loops out of both arms,
   removing a jump per merged element in the sort benchmarks.
 - `menai-format` now formats files in place by default and accepts several files at
@@ -43,6 +47,9 @@ Bug fixes:
 
 - Loop rotation now sees a terminator's operands when deciding whether the loop
   body consumes a header-test result.
+- An `error` used as an operand rather than in tail position failed to compile with a
+  slot-allocation error, and a later operand could raise in its place.
+- `html-decode` raised a slice error on a quoted attribute value that is never closed.
 
 ## v0.11.0 (2026-11-18)
 

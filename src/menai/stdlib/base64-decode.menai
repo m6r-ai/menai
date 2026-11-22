@@ -27,6 +27,12 @@
 ; skipped or reinterpreted.  A strict contract is what makes the round-trip
 ; guarantee meaningful and keeps a decode failure from silently producing wrong
 ; bytes.
+;
+; Because Base64 is defined over octets, the input is decoded as UTF-8 once and
+; then read as bytes.  Each of the alphabet's 256 possible byte values maps to its
+; six-bit value (or #none) in a table built once per decode, so a character costs
+; a table lookup rather than a search of the alphabet, and the decoded bytes are
+; accumulated as integers.
 
 (let ((standard-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
       (url-alphabet "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
@@ -35,14 +41,20 @@
       ; padding, or the URL-safe alphabet with or without padding.
       (variant (enum (standard standard-unpadded url url-unpadded)))
 
-      ; The 64-character alphabet for a variant.
+      ; The code of the "=" padding character.
+      (equals-code 61)
+
+      (standard-bytes (string->bytes standard-alphabet))
+      (url-bytes (string->bytes url-alphabet))
+
+      ; The 64-character alphabet for a variant, as byte values.
       (alphabet-for
        (lambda (v)
          (match v
-           ((: variant 'standard) standard-alphabet)
-           ((: variant 'standard-unpadded) standard-alphabet)
-           ((: variant 'url) url-alphabet)
-           ((: variant 'url-unpadded) url-alphabet))))
+           ((: variant 'standard) standard-bytes)
+           ((: variant 'standard-unpadded) standard-bytes)
+           ((: variant 'url) url-bytes)
+           ((: variant 'url-unpadded) url-bytes))))
 
       ; Whether a variant requires "=" padding.
       (padded?
@@ -53,102 +65,39 @@
            ((: variant 'url) #t)
            ((: variant 'url-unpadded) #f))))
 
-      ; The 6-bit value of a data character, raising if it is not in the alphabet.
+      ; The offset of the byte `code` in `text` at or after `i`, or #none.
+      (index-of-code
+       (lambda (text code i)
+         (let ((k (bytes-index-int (bytes-slice text i) code)))
+           (if (none? k)
+               #none
+               (integer+ i k)))))
+
+      ; A 256-entry table mapping each byte value to its six-bit value in the
+      ; alphabet, or #none when the byte is not a member.  Built once, so a
+      ; character is classified by position rather than by searching the alphabet.
+      (value-table
+       (lambda (alphabet)
+         (let ((loop
+                (lambda (v table)
+                  (if (integer>=? v 64)
+                      table
+                      (loop (integer+ v 1) (vector-with table (bytes-nth alphabet v) v))))))
+           (loop 0 (vector-fill 256 #none)))))
+
+      ; The six-bit value of a data character, raising if it is not in the alphabet.
       (require-value
-       (lambda (alphabet ch)
-         (let ((v (string-index alphabet ch)))
+       (lambda (text table i)
+         (let ((v (vector-nth table (bytes-nth text i))))
            (if (none? v)
-               (error (string-concat "base64-decode: invalid character \"" ch "\""))
+               (error
+                 (string-concat
+                   "base64-decode: invalid character \""
+                   (integer-codepoint->string (bytes-nth text i))
+                   "\""))
                v))))
 
-      ; Decode a full group of four data characters (no padding) to a list of
-      ; three byte values.
-      (decode-group
-       (lambda (alphabet c0 c1 c2 c3)
-         (let ((v0 (require-value alphabet c0))
-               (v1 (require-value alphabet c1))
-               (v2 (require-value alphabet c2))
-               (v3 (require-value alphabet c3)))
-           (list
-             (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
-             (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))
-             (integer-bit-or (integer-bit-and (integer-bit-shift-left v2 6) #xc0) v3)))))
-
-      ; Decode a final group of two data characters to a list of one byte value.
-      (decode-final-one
-       (lambda (alphabet c0 c1)
-         (list
-           (integer-bit-or
-             (integer-bit-shift-left (require-value alphabet c0) 2)
-             (integer-bit-shift-right (require-value alphabet c1) 4)))))
-
-      ; Decode a final group of three data characters to a list of two byte values.
-      (decode-final-two
-       (lambda (alphabet c0 c1 c2)
-         (let ((v0 (require-value alphabet c0))
-               (v1 (require-value alphabet c1))
-               (v2 (require-value alphabet c2)))
-           (list
-             (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
-             (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))))))
-
-      ; Raise if "=" appears anywhere other than as the final one or two
-      ; characters of the input.  This runs before decoding so that misplaced
-      ; padding is reported as such rather than as an invalid data character.
-      (validate-padding-position
-       (lambda (s n)
-         (let ((loop
-                (lambda (i)
-                  (if (integer>=? i n)
-                      #t
-                      (if (string=? (string-nth s i) "=")
-                          (if (integer>=? i (integer- n 2))
-                              (loop (integer+ i 1))
-                              (error "base64-decode: padding may appear only at the end of the input"))
-                          (loop (integer+ i 1)))))))
-           (loop 0))))
-
-      ; Decode the final group of four characters of a padded input, which may
-      ; carry "=" padding.  The padding shape must be exactly one of: no padding,
-      ; "=" as the fourth character, or "==" as the third and fourth characters.
-      ; The caller has already checked that "=" appears only in the final two
-      ; positions, so c0 and c1 are always data characters here.
-      (decode-final-group
-       (lambda (alphabet s i)
-         (let ((c0 (string-nth s i))
-               (c1 (string-nth s (integer+ i 1)))
-               (c2 (string-nth s (integer+ i 2)))
-               (c3 (string-nth s (integer+ i 3))))
-           (if (string=? c3 "=")
-               (if (string=? c2 "=")
-                   (decode-final-one alphabet c0 c1)
-                   (decode-final-two alphabet c0 c1 c2))
-               (if (string=? c2 "=")
-                   (error "base64-decode: invalid padding")
-                   (decode-group alphabet c0 c1 c2 c3))))))
-
-      ; Decode a padded input: its length must be a multiple of four and its
-      ; padding must be well formed.
-      (decode-padded
-       (lambda (s alphabet)
-         (let ((n (string-length s)))
-           (if (integer=? (integer% n 4) 0)
-               (if (integer=? n 0)
-                   (bytes-concat)
-                   (and (validate-padding-position s n)
-                        (list->bytes (list-reverse (decode-padded-bytes s alphabet n 0 (list))))))
-               (error "base64-decode: input length is not a multiple of four")))))
-
-      ; Decode an unpadded input: it must contain no "=", and its length modulo
-      ; four must be 0, 2, or 3 (a remainder of 1 is impossible in Base64).
-      (decode-unpadded
-       (lambda (s alphabet)
-         (let ((n (string-length s)))
-           (if (integer=? (integer% n 4) 1)
-               (error "base64-decode: input length is invalid for unpadded Base64")
-               (list->bytes (list-reverse (decode-unpadded-bytes s alphabet n 0 (list))))))))
-
-      ; Prepend a group's byte values (in forward order) onto a reversed
+      ; Append a group's byte values (in forward order) onto a reversed
       ; accumulator.  Each byte is a separate O(1) prepend, so a group costs its
       ; own length rather than a copy of the accumulator.
       (prepend-bytes
@@ -159,55 +108,112 @@
            acc
            group)))
 
+      ; Decode a full group of four data characters (no padding) to a list of
+      ; three byte values.
+      (decode-group
+       (lambda (text table i)
+         (let ((v0 (require-value text table i))
+               (v1 (require-value text table (integer+ i 1)))
+               (v2 (require-value text table (integer+ i 2)))
+               (v3 (require-value text table (integer+ i 3))))
+           (list
+             (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
+             (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))
+             (integer-bit-or (integer-bit-and (integer-bit-shift-left v2 6) #xc0) v3)))))
+
+      ; Decode a final group of two data characters to a list of one byte value.
+      (decode-final-one
+       (lambda (text table i)
+         (list
+           (integer-bit-or
+             (integer-bit-shift-left (require-value text table i) 2)
+             (integer-bit-shift-right (require-value text table (integer+ i 1)) 4)))))
+
+      ; Decode a final group of three data characters to a list of two byte values.
+      (decode-final-two
+       (lambda (text table i)
+         (let ((v0 (require-value text table i))
+               (v1 (require-value text table (integer+ i 1)))
+               (v2 (require-value text table (integer+ i 2))))
+           (list
+             (integer-bit-or (integer-bit-shift-left v0 2) (integer-bit-shift-right v1 4))
+             (integer-bit-or (integer-bit-and (integer-bit-shift-left v1 4) #xf0) (integer-bit-shift-right v2 2))))))
+
+      ; Raise if "=" appears anywhere other than as the final one or two
+      ; characters of the input.  This runs before decoding so that misplaced
+      ; padding is reported as such rather than as an invalid data character.
+      (validate-padding-position
+       (lambda (text n)
+         (if (none? (index-of-code text equals-code 0))
+             #t
+             (let ((loop
+                    (lambda (i)
+                      (if (integer>=? i n)
+                          #t
+                          (if (integer=? (bytes-nth text i) equals-code)
+                              (if (integer>=? i (integer- n 2))
+                                  (loop (integer+ i 1))
+                                  (error "base64-decode: padding may appear only at the end of the input"))
+                              (loop (integer+ i 1)))))))
+               (loop 0)))))
+
+      ; Decode the final group of four characters of a padded input, which may
+      ; carry "=" padding.  The padding shape must be exactly one of: no padding,
+      ; "=" as the fourth character, or "==" as the third and fourth characters.
+      ; The caller has already checked that "=" appears only in the final two
+      ; positions, so the first two characters are always data characters here.
+      (decode-final-group
+       (lambda (text table i)
+         (let ((c2 (bytes-nth text (integer+ i 2)))
+               (c3 (bytes-nth text (integer+ i 3))))
+           (if (integer=? c3 equals-code)
+               (if (integer=? c2 equals-code)
+                   (decode-final-one text table i)
+                   (decode-final-two text table i))
+               (if (integer=? c2 equals-code)
+                   (error "base64-decode: invalid padding")
+                   (decode-group text table i))))))
+
       ; The decoded byte values of a padded input, in reverse order.  The final
       ; group carries the padding.
       (decode-padded-bytes
-       (lambda (s alphabet n i acc)
+       (lambda (text table n i acc)
          (if (integer>=? (integer+ i 4) n)
-             (prepend-bytes acc (decode-final-group alphabet s i))
-             (decode-padded-bytes
-               s
-               alphabet
-               n
-               (integer+ i 4)
-               (prepend-bytes
-                 acc
-                 (decode-group
-                   alphabet
-                   (string-nth s i)
-                   (string-nth s (integer+ i 1))
-                   (string-nth s (integer+ i 2))
-                   (string-nth s (integer+ i 3))))))))
+             (prepend-bytes acc (decode-final-group text table i))
+             (decode-padded-bytes text table n (integer+ i 4) (prepend-bytes acc (decode-group text table i))))))
 
       ; The decoded byte values of an unpadded input, in reverse order.
       (decode-unpadded-bytes
-       (lambda (s alphabet n i acc)
+       (lambda (text table n i acc)
          (let ((remaining (integer- n i)))
            (if (integer>=? remaining 4)
-               (decode-unpadded-bytes
-                 s
-                 alphabet
-                 n
-                 (integer+ i 4)
-                 (prepend-bytes
-                   acc
-                   (decode-group
-                     alphabet
-                     (string-nth s i)
-                     (string-nth s (integer+ i 1))
-                     (string-nth s (integer+ i 2))
-                     (string-nth s (integer+ i 3)))))
+               (decode-unpadded-bytes text table n (integer+ i 4) (prepend-bytes acc (decode-group text table i)))
                (if (integer=? remaining 3)
-                   (prepend-bytes
-                     acc
-                     (decode-final-two
-                       alphabet
-                       (string-nth s i)
-                       (string-nth s (integer+ i 1))
-                       (string-nth s (integer+ i 2))))
+                   (prepend-bytes acc (decode-final-two text table i))
                    (if (integer=? remaining 2)
-                       (prepend-bytes acc (decode-final-one alphabet (string-nth s i) (string-nth s (integer+ i 1))))
+                       (prepend-bytes acc (decode-final-one text table i))
                        acc))))))
+
+      ; Decode a padded input: its length must be a multiple of four and its
+      ; padding must be well formed.
+      (decode-padded
+       (lambda (text alphabet)
+         (let ((n (bytes-length text)))
+           (if (integer=? (integer% n 4) 0)
+               (if (integer=? n 0)
+                   (bytes-concat)
+                   (and (validate-padding-position text n)
+                        (list->bytes (list-reverse (decode-padded-bytes text (value-table alphabet) n 0 (list))))))
+               (error "base64-decode: input length is not a multiple of four")))))
+
+      ; Decode an unpadded input: it must contain no "=", and its length modulo
+      ; four must be 0, 2, or 3 (a remainder of 1 is impossible in Base64).
+      (decode-unpadded
+       (lambda (text alphabet)
+         (let ((n (bytes-length text)))
+           (if (integer=? (integer% n 4) 1)
+               (error "base64-decode: input length is invalid for unpadded Base64")
+               (list->bytes (list-reverse (decode-unpadded-bytes text (value-table alphabet) n 0 (list))))))))
 
       ; Decode Base64 text to bytes.  It is the inverse of base64-encode's encode.
       ;
@@ -221,10 +227,11 @@
                     (list-first rest))))
            (if (and (enum? v)
                     (enum-is-instance? v variant))
-               (let ((alphabet (alphabet-for v)))
+               (let ((alphabet (alphabet-for v))
+                     (text (string->bytes s)))
                  (if (padded? v)
-                     (decode-padded s alphabet)
-                     (decode-unpadded s alphabet)))
+                     (decode-padded text alphabet)
+                     (decode-unpadded text alphabet)))
                (error "base64-decode: variant must be a base64 variant"))))))
 
   (export decode variant))

@@ -85,6 +85,11 @@
        (lambda ()
          (assert-equal (dict-get (decode "<a>&amp;&lt;&gt;&quot;&apos;</a>") "children") (list "&<>\"'"))))
 
+      ; An entity followed by text keeps both the decoded entity and the text.
+      (test-entity-then-text
+       (lambda ()
+         (assert-equal (dict-get (decode "<a>x&amp;y</a>") "children") (list "x&y"))))
+
       ; A decimal character reference is decoded.
       (test-decimal-character-reference
        (lambda ()
@@ -202,6 +207,21 @@
        (lambda ()
          (decode "<a>&amp</a>")))
 
+      ; A comment inside an element with no "-->" is rejected.
+      (test-rejects-unterminated-comment-in-content
+       (lambda ()
+         (decode "<a><!--x</a>")))
+
+      ; CDATA inside an element with no "]]>" is rejected.
+      (test-rejects-unterminated-cdata-in-content
+       (lambda ()
+         (decode "<a><![CDATA[x</a>")))
+
+      ; A processing instruction inside an element with no "?>" is rejected.
+      (test-rejects-unterminated-instruction-in-content
+       (lambda ()
+         (decode "<a><?p</a>")))
+
       ; A comment in the prolog with no "-->" is rejected.
       (test-rejects-unterminated-prolog-comment
        (lambda ()
@@ -282,6 +302,7 @@
            "text-decoding"
            (list
              (expect-pass "the five predefined entities" test-predefined-entities)
+             (expect-pass "entity followed by text" test-entity-then-text)
              (expect-pass "decimal character reference" test-decimal-character-reference)
              (expect-pass "hex character reference" test-hex-character-reference)
              (expect-pass "CDATA is decoded to text" test-cdata)))
@@ -323,6 +344,15 @@
                           "expected \"-->\"")
              (expect-fail "prolog instruction with no terminator"
                           test-rejects-unterminated-prolog-instruction
+                          "expected \"?>\"")
+             (expect-fail "comment in content with no terminator"
+                          test-rejects-unterminated-comment-in-content
+                          "expected \"-->\"")
+             (expect-fail "CDATA in content with no terminator"
+                          test-rejects-unterminated-cdata-in-content
+                          "expected \"]]>\"")
+             (expect-fail "instruction in content with no terminator"
+                          test-rejects-unterminated-instruction-in-content
                           "expected \"?>\"")
              (expect-fail "end tag with no terminator" test-rejects-unterminated-end-tag "expected \">\"")
              (expect-fail "text at end of input" test-rejects-text-at-end-of-input "missing end tag")
