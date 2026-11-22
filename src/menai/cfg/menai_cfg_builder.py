@@ -77,15 +77,45 @@ class _DraftBlock:
     instrs: list[MenaiCFGInstr] = field(default_factory=list)
     patch_instrs: list[MenaiCFGPatchClosureInstr] = field(default_factory=list)
     terminator: MenaiCFGTerminator | None = None
+    terminated_instr_count: int | None = None
+    terminated_patch_count: int | None = None
+
+    def terminate(self, terminator: MenaiCFGTerminator) -> None:
+        """
+        Install `terminator`, unless the block is already terminated.
+
+        A terminator is normally the last thing a block's build does, but a
+        sub-expression can terminate the block first: `(if (error \"x\") 1 2)`
+        evaluates its condition before it branches, and `(integer+ 1 (error
+        \"x\"))` evaluates an operand before it adds.  The first terminator is the
+        one that runs, so a later one is discarded, and anything appended after
+        it is unreachable — `_freeze_block` drops those instructions so that the
+        raise is not preceded by work that can no longer be observed and, if it
+        raises too, would report the wrong error.
+        """
+        if self.terminator is not None:
+            return
+
+        self.terminator = terminator
+        self.terminated_instr_count = len(self.instrs)
+        self.terminated_patch_count = len(self.patch_instrs)
 
 
 def _freeze_block(draft: _DraftBlock) -> MenaiCFGBlock:
     """Convert a builder draft block into a frozen MenaiCFGBlock."""
+    instrs = draft.instrs
+    if draft.terminated_instr_count is not None:
+        instrs = instrs[:draft.terminated_instr_count]
+
+    patch_instrs = draft.patch_instrs
+    if draft.terminated_patch_count is not None:
+        patch_instrs = patch_instrs[:draft.terminated_patch_count]
+
     return MenaiCFGBlock(
         id=draft.id,
         label=draft.label,
-        instrs=tuple(draft.instrs),
-        patch_instrs=tuple(draft.patch_instrs),
+        instrs=tuple(instrs),
+        patch_instrs=tuple(patch_instrs),
         terminator=draft.terminator,
     )
 
@@ -214,7 +244,7 @@ class MenaiCFGBuilder:
         # If the expression returned a value rather than terminating the block,
         # wrap it in a return.
         if current_block.terminator is None:
-            current_block.terminator = MenaiCFGReturnTerm(value=result_val)
+            current_block.terminate(MenaiCFGReturnTerm(value=result_val))
 
         return state.freeze()
 
@@ -348,7 +378,7 @@ class MenaiCFGBuilder:
         # Evaluate the message expression, then terminate the block.
         # The returned placeholder value is never used (the block has no successors).
         msg_val, block = self._build_expr(ir.message, block, scope, state, tail=False)
-        block.terminator = MenaiCFGRaiseTerm(message=msg_val)
+        block.terminate(MenaiCFGRaiseTerm(message=msg_val))
         placeholder = state.new_value("error")
         return placeholder, block
 
@@ -380,10 +410,12 @@ class MenaiCFGBuilder:
         then_block = state.new_block("then")
         else_block = state.new_block("else")
 
-        block.terminator = MenaiCFGBranchTerm(
-            cond=cond_val,
-            true_block=(else_block if negate else then_block).id,
-            false_block=(then_block if negate else else_block).id,
+        block.terminate(
+            MenaiCFGBranchTerm(
+                cond=cond_val,
+                true_block=(else_block if negate else then_block).id,
+                false_block=(then_block if negate else else_block).id,
+            )
         )
 
         # Build then branch.
@@ -410,10 +442,10 @@ class MenaiCFGBuilder:
         join_block = state.new_block("join")
 
         if then_falls_through:
-            then_exit.terminator = MenaiCFGJumpTerm(target=join_block.id)
+            then_exit.terminate(MenaiCFGJumpTerm(target=join_block.id))
 
         if else_falls_through:
-            else_exit.terminator = MenaiCFGJumpTerm(target=join_block.id)
+            else_exit.terminate(MenaiCFGJumpTerm(target=join_block.id))
 
         # If only one branch reaches join, the value is unambiguous — no phi.
         # The join block will be empty and SimplifyBlocks will eliminate it.
@@ -776,7 +808,7 @@ class MenaiCFGBuilder:
         # Create the loop entry block.  The block before the loop jumps to it.
         loop_entry = state.new_block("loop_entry")
         pre_loop_block = block
-        block.terminator = MenaiCFGJumpTerm(target=loop_entry.id)
+        block.terminate(MenaiCFGJumpTerm(target=loop_entry.id))
 
         # Create phi nodes for the loop params in the loop entry block.  Each
         # phi merges the init value (from the pre-loop block) with the
@@ -809,7 +841,7 @@ class MenaiCFGBuilder:
         # unterminated block gets a return.  In non-tail position the block
         # must fall through so the enclosing expression can consume the value.
         if current_block.terminator is None and tail:
-            current_block.terminator = MenaiCFGReturnTerm(value=result_val)
+            current_block.terminate(MenaiCFGReturnTerm(value=result_val))
 
         return result_val, current_block
 
@@ -842,10 +874,12 @@ class MenaiCFGBuilder:
                     )
                     break
 
-        block.terminator = MenaiCFGSelfLoopTerm(
-            args=tuple(arg_vals),
-            param_vals=tuple(param_vals),
-            target=loop_entry.id,
+        block.terminate(
+            MenaiCFGSelfLoopTerm(
+                args=tuple(arg_vals),
+                param_vals=tuple(param_vals),
+                target=loop_entry.id,
+            )
         )
         placeholder = state.new_value("recur")
         return placeholder, block
@@ -967,7 +1001,7 @@ class MenaiCFGBuilder:
         )
 
         if current_block.terminator is None:
-            current_block.terminator = MenaiCFGReturnTerm(value=result_val)
+            current_block.terminate(MenaiCFGReturnTerm(value=result_val))
 
         return state.freeze()
 
@@ -993,11 +1027,11 @@ class MenaiCFGBuilder:
                     and ir.func_plan.name == state.binding_name
                     and state.self_value is not None
                     and func_val is state.self_value):
-                block.terminator = MenaiCFGSelfLoopTerm(args=tuple(arg_vals))
+                block.terminate(MenaiCFGSelfLoopTerm(args=tuple(arg_vals)))
                 placeholder = state.new_value("self_loop")
                 return placeholder, block
 
-            block.terminator = MenaiCFGTailCallTerm(func=func_val, args=tuple(arg_vals))
+            block.terminate(MenaiCFGTailCallTerm(func=func_val, args=tuple(arg_vals)))
             placeholder = state.new_value("tail_call")
             return placeholder, block
 
@@ -1176,9 +1210,11 @@ class MenaiCFGBuilder:
             # apply is always (apply func arg-list) — two args.
             assert len(arg_vals) == 2
             if tail:
-                block.terminator = MenaiCFGTailApplyTerm(
-                    func=arg_vals[0],
-                    arg_list=arg_vals[1],
+                block.terminate(
+                    MenaiCFGTailApplyTerm(
+                        func=arg_vals[0],
+                        arg_list=arg_vals[1],
+                    )
                 )
                 placeholder = state.new_value("tail_apply")
                 return placeholder, block
