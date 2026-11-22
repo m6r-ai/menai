@@ -603,6 +603,9 @@ _HELP_TEXT_AFTER_MODULES = """
 - When value is a non-string, its string representation becomes the error message, and the structured value is also available to the caller as error_value on the exception
 - Raises immediately; no value is ever returned
 - Valid in any expression position, including inside lambda bodies, let bindings, and match arms
+- An unused binding is eliminated, so an `error` reached only as that binding's value never
+  raises: `(let ((x (error \"boom\"))) 7)` is `7`. To check a condition that must raise, use the
+  result, or write the `error` where its value is consumed.
 - Used to signal invalid arguments or unrecoverable conditions
 - Example: (if (integer<? n 0) (error "n must be non-negative") (float-sqrt (integer->float n)))
 - Example: (error (string-concat "invalid value: " (integer->string x)))

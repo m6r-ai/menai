@@ -33,6 +33,8 @@ New features:
   and takes text runs and attribute values as slices; 13–46% faster.
 - `xml-decode` now finds markup and entities natively and takes text runs and
   attribute values as slices; 37–43% faster, which the OOXML decoders inherit.
+- `json-encode` examines a string's body as bytes and copies it whole when it holds
+  nothing to escape; the long-string benchmark is 72% faster.
 - `base64-encode` and `base64-decode` read the alphabet and the input as bytes and
   look values up in a table built once, so neither costs a string per character.
 - Loop rotation now also rotates a loop whose test loops out of both arms,

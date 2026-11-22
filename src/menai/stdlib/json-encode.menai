@@ -1,6 +1,6 @@
 ; json-encode — encodes a Menai value as JSON text.
 ;
-; The output is built as a list of string chunks and joined once with
+; A structure's output is built as a list of string chunks and joined once with
 ; list->string, so encoding an n-element structure costs O(n) string copies
 ; rather than the O(n^2) of repeated string-concat.
 ;
@@ -14,41 +14,88 @@
 ; escapes JSON defines for backspace, form feed, newline, carriage return, and
 ; tab.  Every other control character below U+0020 is emitted as a \u escape.
 ; All other characters are emitted literally.
+;
+; A string's body is examined as UTF-8 bytes, so a character that needs no
+; escaping — which is most of them — costs a byte read and a comparison rather
+; than a one-character string; a string with nothing to escape is emitted as it
+; stands, with no copy of its contents.
 
-(let ((hex-digits "0123456789abcdef")
+(let ((quote-code 34)
+      (backslash-code 92)
 
-      ; Emit a control character (0-31) as a four-digit \u escape.
-      (escape-control
-       (lambda (code)
-         (string-concat "\\u00" (string-nth hex-digits (integer/ code 16)) (string-nth hex-digits (integer% code 16)))))
+      ; #t when a byte must be escaped in a string body: the quote, the backslash,
+      ; and every control character below U+0020.
+      (needs-escape?
+       (lambda (b)
+         (or (integer=? b quote-code)
+             (integer=? b backslash-code)
+             (integer<? b 32))))
 
-      ; Escape one character of a string body, returning its JSON source text.
-      (escape-char
-       (lambda (ch)
-         (match ch
-           ("\"" "\\\"")
-           ("\\" "\\\\")
-           ("\u0008" "\\b")
-           ("\u000c" "\\f")
-           ("\n" "\\n")
-           ("\r" "\\r")
-           ("\t" "\\t")
+      ; #t when the body contains no byte that needs escaping.
+      (needs-no-escape?
+       (lambda (body n)
+         (let ((loop
+                (lambda (i)
+                  (if (integer>=? i n)
+                      #t
+                      (if (needs-escape? (bytes-nth body i))
+                          #f
+                          (loop (integer+ i 1)))))))
+           (loop 0))))
+
+      ; The byte value of the hex digit for a value in [0, 16).  Only the low
+      ; nibble of a control character's escape can need a letter, because a byte
+      ; below U+0020 has a high nibble of 0 or 1.
+      (hex-digit
+       (lambda (v)
+         (if (integer<? v 10)
+             (integer+ 48 v)
+             (integer+ 87 v))))
+
+      ; Append the escape for one byte to a reversed output accumulator.
+      (prepend-escape
+       (lambda (out b)
+         (match b
+           (34 (list-prepend (list-prepend out backslash-code) quote-code))
+           (92 (list-prepend (list-prepend out backslash-code) backslash-code))
+           (8 (list-prepend (list-prepend out backslash-code) 98))
+           (12 (list-prepend (list-prepend out backslash-code) 102))
+           (10 (list-prepend (list-prepend out backslash-code) 110))
+           (13 (list-prepend (list-prepend out backslash-code) 114))
+           (9 (list-prepend (list-prepend out backslash-code) 116))
            (_
-            (let ((code (string->integer-codepoint ch)))
-              (if (integer<? code 32)
-                  (escape-control code)
-                  ch))))))
+            (list-prepend
+              (list-prepend
+                (list-prepend (list-prepend (list-prepend (list-prepend out backslash-code) 117) 48) 48)
+                (integer+ 48 (integer/ b 16)))
+              (hex-digit (integer% b 16)))))))
+
+      ; The escaped form of a string body, from its UTF-8 bytes.
+      (escape-body
+       (lambda (body n)
+         (let ((loop
+                (lambda (i out)
+                  (if (integer>=? i n)
+                      (bytes->string (list->bytes (list-reverse out)))
+                      (let ((b (bytes-nth body i)))
+                        (loop
+                          (integer+ i 1)
+                          (if (needs-escape? b)
+                              (prepend-escape out b)
+                              (list-prepend out b))))))))
+           (loop 0 (list)))))
 
       ; Escape a whole string, returning its JSON source text including quotes.
-      ; Builds a chunk list and joins once.
       (encode-string
        (lambda (s)
-         (let ((loop
-                (lambda (i acc)
-                  (if (integer>=? i (string-length s))
-                      (list-prepend acc "\"")
-                      (loop (integer+ i 1) (list-prepend acc (escape-char (string-nth s i))))))))
-           (list->string (list-reverse (loop 0 (list "\"")))))))
+         (let ((body (string->bytes s)))
+           (let ((n (bytes-length body)))
+             (string-concat
+               "\""
+               (if (needs-no-escape? body n)
+                   s
+                   (escape-body body n))
+               "\"")))))
 
       ; Normalise a float's textual form for JSON: drop a "+" immediately after
       ; the exponent marker, which JSON does not allow.
@@ -58,26 +105,18 @@
                (e-pos (find-exponent text)))
            (if (none? e-pos)
                text
-               (if (and (integer<? (integer+ e-pos 1) (string-length text))
-                        (string=? (string-nth text (integer+ e-pos 1)) "+"))
+               (if (string=? (string-slice text (integer+ e-pos 1) (integer+ e-pos 2)) "+")
                    (string-concat
                      (string-slice text 0 (integer+ e-pos 1))
                      (string-slice text (integer+ e-pos 2) (string-length text)))
                    text)))))
 
-      ; Return the index of the exponent marker in a float's textual form, or #none.
+      ; Return the index of the exponent marker in a float's textual form, or
+      ; #none.  float->string writes the marker in lower case, so there is one
+      ; form to look for.
       (find-exponent
        (lambda (text)
-         (let ((loop
-                (lambda (i)
-                  (if (integer>=? i (string-length text))
-                      #none
-                      (let ((ch (string-nth text i)))
-                        (if (or (string=? ch "e")
-                                (string=? ch "E"))
-                            i
-                            (loop (integer+ i 1))))))))
-           (loop 0))))
+         (string-index text "e")))
 
       ; Encode a list as a JSON array, joining elements with commas.
       (encode-list

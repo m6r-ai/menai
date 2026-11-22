@@ -7,6 +7,19 @@ new module is picked up by the `stdlib/*.menai` package-data glob with no regist
 The root [`AGENTS.md`](../../../AGENTS.md) covers how to work in the repository, and
 [`../AGENTS.md`](../AGENTS.md) covers the compiler that compiles these modules.
 
+## A check that must raise cannot be a dead binding
+
+Dead binding elimination removes a `let` binding whose variable is never used, and it takes the
+binding's whole value expression with it. A raise is no exemption: `(let ((x (error "bad"))) 7)`
+evaluates to `7` and nothing is raised. A validation written as a binding that is never read back
+is therefore silently a no-op, and the suite covering it still passes, because the code it
+guards was never reached.
+
+Perform the check where its result is consumed: as an `if` condition, as an operand of `and`, or
+in tail position. `(and (validate ...) (build ...))` is the idiom, which is why `base64-decode`
+writes `(and (validate-padding-position text n) (list->bytes ...))` rather than binding the
+validation's result.
+
 ## Module header comments
 
 A `.menai` module opens with a single comment block, then the code. The block carries what

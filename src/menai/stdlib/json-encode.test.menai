@@ -97,6 +97,16 @@
        (lambda ()
          (assert-equal (encode "\u0001") "\"\\u0001\"")))
 
+      ; A control character whose escape needs a letter hex digit is escaped too.
+      (test-escape-control-letter-digit
+       (lambda ()
+         (assert-equal (encode "\u001f") "\"\\u001f\"")))
+
+      ; Ordinary characters around an escape are emitted as they stand.
+      (test-escape-among-plain-text
+       (lambda ()
+         (assert-equal (encode "a\nb") "\"a\\nb\"")))
+
       ; An empty list encodes to an empty JSON array.
       (test-collection-empty-array
        (lambda ()
@@ -191,7 +201,9 @@
                  (expect-pass "carriage return" test-escape-carriage-return)
                  (expect-pass "form feed" test-escape-form-feed)
                  (expect-pass "backspace" test-escape-backspace)
-                 (expect-pass "other control character" test-escape-other-control)))))
+                 (expect-pass "other control character" test-escape-other-control)
+                 (expect-pass "control character with a letter hex digit" test-escape-control-letter-digit)
+                 (expect-pass "plain text around an escape" test-escape-among-plain-text)))))
 
          (list
            "collections"
