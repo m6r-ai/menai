@@ -506,6 +506,27 @@ class TestErrors:
         with pytest.raises(MenaiEvalError):
             menai.evaluate("(if #t (integer/ 1 0) 42)")
 
+    @pytest.mark.parametrize("expression,message", [
+        ('(list 1 (error "boom"))', "boom"),
+        ('(integer+ 1 (error "boom"))', "boom"),
+        ('(string-concat "a" (error "boom"))', "boom"),
+        ('(if (error "boom") 1 2)', "boom"),
+        ('(let ((f (lambda (x) x))) (f (error "boom")))', "boom"),
+    ])
+    def test_error_in_a_non_tail_position_raises(self, menai, expression, message):
+        """An `error` used as an operand raises rather than failing to compile."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate(expression)
+
+        assert str(exc_info.value.message) == message
+
+    def test_error_raised_before_a_later_operand_that_would_also_raise(self, menai):
+        """The first `error` to be evaluated is the one that surfaces."""
+        with pytest.raises(MenaiEvalError) as exc_info:
+            menai.evaluate('(list 1 (error "first") (integer/ 1 0))')
+
+        assert str(exc_info.value.message) == "first"
+
     def test_error_in_higher_order_functions(self, menai):
         """Test error handling in higher-order function contexts."""
         # Error in map function
