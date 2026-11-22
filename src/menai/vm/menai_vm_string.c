@@ -994,7 +994,9 @@ unicode_upcase_expansion(uint32_t cp)
 
 /*
  * Allocate a MenaiString with room for len codepoints.
- * length is set to len; hash is set to -1; data is uninitialised.
+ * length and cap are both set to len; hash is set to -1; data points at the
+ * object's own inline storage and is uninitialised.  A shared string is therefore
+ * always allocated tight, and only the in-place append path asks for slack.
  * Returns a new reference, or NULL on allocation failure.
  */
 MenaiString *
@@ -1008,9 +1010,133 @@ alloc_menai_string(MenaiVMState *vs, ssize_t len)
 
     MENAI_SET_MAGIC((MenaiValue *)obj);
     obj->length = len;
+    obj->cap = len;
     obj->hash = -1;
+    obj->owner = NULL;
+    obj->data = obj->inline_data;
 
     return obj;
+}
+
+/*
+ * menai_string_reserve — return a MenaiString with room for `extra` more
+ * codepoints appended to it.
+ *
+ * Returns s itself when it already has the room, and otherwise allocates a
+ * replacement with geometric headroom and copies the existing codepoints.  The
+ * caller must store the result into the register that held s: on growth the
+ * result is a new object with a single reference, and the caller releases the
+ * old one, so a sequence of appends copies 2n codepoints in total rather than
+ * rebuilding at every step.  s must be uniquely owned and must own its data —
+ * both are the caller's in-place test, not this function's.  A view cannot be
+ * grown: its cap is its length, and its data lies in another object's buffer.
+ *
+ * Returns NULL on allocation failure, having left s untouched.
+ */
+static MenaiString *
+menai_string_reserve(MenaiVMState *vs, MenaiString *s, ssize_t extra)
+{
+    ssize_t len = s->length;
+    if (extra <= s->cap - len) {
+        return s;
+    }
+
+    ssize_t new_cap = (len + extra) * 2;
+    MenaiString *obj = alloc_menai_string(vs, new_cap);
+    if (obj == NULL) {
+        return NULL;
+    }
+
+    if (len > 0) {
+        memcpy(obj->inline_data, s->data, (size_t)len * sizeof(uint32_t));
+    }
+
+    obj->length = len;
+
+    return obj;
+}
+
+/*
+ * menai_string_append_slot — append n codepoints to the string in *slot, in
+ * place.
+ *
+ * The caller must have established that the value is unobservable — the
+ * conditions at OP_STRING_CONCAT, including that it owns its data — because this
+ * grows or mutates the object the slot holds and leaves the reference in the slot
+ * either way.  When the buffer is full the replacement is installed in the slot
+ * and the old object released, so the instruction that called this simply breaks.
+ *
+ * src must not point into the string being appended to: a growth step replaces
+ * the receiver, and src would then address the retired allocation.
+ *
+ * The cached hash is cleared, because a string is hashable and its hash is
+ * observed by a dict or set without retaining the value.
+ *
+ * Returns 0 on success and -1 on allocation failure, having left *slot alone.
+ */
+int
+menai_string_append_slot(MenaiVMState *vs, MenaiValue **slot, const uint32_t *src, ssize_t n)
+{
+    MenaiString *s = (MenaiString *)*slot;
+    MenaiString *grown = menai_string_reserve(vs, s, n);
+    if (grown == NULL) {
+        return -1;
+    }
+
+    if (grown != s) {
+        menai_value_release(vs, *slot);
+        *slot = (MenaiValue *)grown;
+    }
+
+    memcpy(grown->inline_data + grown->length, src, (size_t)n * sizeof(uint32_t));
+    grown->length += n;
+    grown->hash = -1;
+
+    return 0;
+}
+
+/*
+ * alloc_menai_string_from_slice — return the codepoints of s in [start, end).
+ *
+ * A range that covers all of s returns s itself, retained: a string is immutable,
+ * so there is nothing to distinguish a copy from the original, and this is the
+ * case every trim of an already-trimmed value hits.
+ *
+ * Any other range returns a view: a header-only allocation whose data points into
+ * the root owner's codepoint array and which retains that owner, so a slice costs
+ * O(1) instead of a copy.  Views never chain — a slice of a view points at the
+ * same root owner — so repeated slicing keeps one owner alive and adds a header
+ * each time.  The owner is kept alive for as long as any view of it exists, so
+ * the codepoints cannot move or be freed under a view.
+ *
+ * start and end must satisfy 0 <= start <= end <= s->length; the caller checks.
+ *
+ * Returns a new reference, or NULL on allocation failure.
+ */
+MenaiString *
+alloc_menai_string_from_slice(MenaiVMState *vs, MenaiString *s, ssize_t start, ssize_t end)
+{
+    if (start == 0 && end == s->length) {
+        menai_value_retain((MenaiValue *)s);
+        return s;
+    }
+
+    MenaiString *owner = s->owner != NULL ? s->owner : s;
+
+    MenaiString *view = (MenaiString *)menai_value_alloc(vs, MENAITYPE_STRING, sizeof(MenaiString));
+    if (view == NULL) {
+        return NULL;
+    }
+
+    MENAI_SET_MAGIC((MenaiValue *)view);
+    menai_value_retain((MenaiValue *)owner);
+    view->owner = owner;
+    view->data = s->data + start;
+    view->length = end - start;
+    view->cap = view->length;
+    view->hash = -1;
+
+    return view;
 }
 
 /*
@@ -1270,6 +1396,12 @@ menai_string_downcase(MenaiString *s, MenaiString *r)
     }
 }
 
+/*
+ * alloc_menai_string_from_trim_left — strip leading whitespace from s.
+ *
+ * The result is a slice of s rather than a copy, so trimming costs O(whitespace)
+ * in the scan and no codepoints are moved.
+ */
 MenaiString *
 alloc_menai_string_from_trim_left(MenaiVMState *vs, MenaiString *s)
 {
@@ -1279,16 +1411,15 @@ alloc_menai_string_from_trim_left(MenaiVMState *vs, MenaiString *s)
         start++;
     }
 
-    len -= start;
-    MenaiString *obj = alloc_menai_string(vs, len);
-    if (!obj) {
-        return NULL;
-    }
-
-    memcpy(obj->data, s->data + start, (size_t)len * sizeof(uint32_t));
-    return obj;
+    return alloc_menai_string_from_slice(vs, s, start, len);
 }
 
+/*
+ * alloc_menai_string_from_trim_right — strip trailing whitespace from s.
+ *
+ * The result is a slice of s rather than a copy, so trimming costs O(whitespace)
+ * in the scan and no codepoints are moved.
+ */
 MenaiString *
 alloc_menai_string_from_trim_right(MenaiVMState *vs, MenaiString *s)
 {
@@ -1297,15 +1428,15 @@ alloc_menai_string_from_trim_right(MenaiVMState *vs, MenaiString *s)
         end--;
     }
 
-    MenaiString *obj = alloc_menai_string(vs, end);
-    if (!obj) {
-        return NULL;
-    }
-
-    memcpy(obj->data, s->data, (size_t)end * sizeof(uint32_t));
-    return obj;
+    return alloc_menai_string_from_slice(vs, s, 0, end);
 }
 
+/*
+ * alloc_menai_string_from_trim — strip leading and trailing whitespace from s.
+ *
+ * The result is a slice of s rather than a copy, so trimming costs O(whitespace)
+ * in the scan and no codepoints are moved.
+ */
 MenaiString *
 alloc_menai_string_from_trim(MenaiVMState *vs, MenaiString *s)
 {
@@ -1320,13 +1451,7 @@ alloc_menai_string_from_trim(MenaiVMState *vs, MenaiString *s)
         end--;
     }
 
-    MenaiString *obj = alloc_menai_string(vs, end - start);
-    if (!obj) {
-        return NULL;
-    }
-
-    memcpy(obj->data, s->data + start, (size_t)(end - start) * sizeof(uint32_t));
-    return obj;
+    return alloc_menai_string_from_slice(vs, s, start, end);
 }
 
 ssize_t

@@ -135,6 +135,11 @@ are listed at the `OP_VECTOR_WITH` fast path; the two that are easy to get wrong
   without retaining the value, so every in-place bytes write must set `hash = -1`. A missing
   clear is a silent lookup failure, not a wrong value, so it is the one invariant here that
   the type system cannot help with.
+- Strings work the same way as bytes (`menai_string_reserve`, ADR-0065), with one difference:
+  `string-slice` and the trims produce slice views into their source (ADR-0066), so the
+  ownership test is required here. A view is always allocated exactly tight, so an append to
+  one would copy on growth in any case — the test states the invariant rather than depending
+  on that. A string also caches its hash, under the same obligation as bytes'.
 
 The fallback is always correct — it is what the opcode did before — so this is an optimisation
 that can only cost time. Never express the prediction as an `assert`: a constant-pool entry, a

@@ -141,3 +141,5 @@ What costs, risks, or constraints does this decision impose?
 | [0062](0062-name-resolution-respects-lexical-shadowing.md) | Name-based lowering and validation must respect lexical shadowing | Accepted |
 | [0063](0063-in-place-update-of-uniquely-owned-collections.md) | Uniquely-owned collection values are updated in place | Accepted |
 | [0064](0064-bytes-update-in-place.md) | Byte-string updates are done in place under ADR-0063's conditions | Accepted |
+| [0065](0065-string-append-in-place.md) | A string append is done in place under ADR-0063's conditions | Accepted |
+| [0066](0066-string-slices-and-trims-are-views.md) | String slices and trims are views into their source | Accepted |

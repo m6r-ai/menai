@@ -824,11 +824,29 @@ struct MenaiSetElement {
     hash_t hash;
 };
 
+/*
+ * MenaiString — immutable sequence of Unicode codepoints, stored as UTF-32.
+ *
+ * Owners store codepoints inline via a flexible array member.  Slice views
+ * allocate only the header (sizeof(MenaiString)), point data into the owner's
+ * inline buffer at an offset, and retain the owner — exactly the same structural
+ * sharing pattern as MenaiBytes.  Views never form chains: all views point
+ * directly at the root owner.
+ *
+ * cap is the number of codepoints inline_data can hold and may exceed length, the
+ * same way MenaiDict's cap may exceed its length: an append that can be done in
+ * place uses the spare room and grows geometrically, so a sequence of appends is
+ * linear.  Slack is only ever requested by the in-place path, so a shared string
+ * is still allocated tight, and a view's cap always equals its length.
+ */
 struct MenaiString {
     MENAI_MAGIC_FIELD
-    ssize_t length;                     /* codepoint count */
+    ssize_t length;                     /* logical codepoint count */
+    ssize_t cap;                        /* codepoints available in inline_data, >= length */
     hash_t hash;                        /* cached hash; -1 = not yet computed */
-    uint32_t data[];                    /* UTF-32 codepoints, flexible array */
+    MenaiString *owner;                 /* non-NULL when this is a slice view */
+    uint32_t *data;                     /* points to inline_data for owners, into owner for views */
+    uint32_t inline_data[];             /* FAM — storage for owning strings */
 };
 
 struct MenaiStruct {
@@ -2108,10 +2126,17 @@ menai_set_equal(MenaiSet *a, MenaiSet *b)
 }
 
 MenaiString *alloc_menai_string(MenaiVMState *vs, ssize_t len);
+MenaiString *alloc_menai_string_from_slice(MenaiVMState *vs, MenaiString *s, ssize_t start, ssize_t end);
+int menai_string_append_slot(MenaiVMState *vs, MenaiValue **slot, const uint32_t *src, ssize_t n);
 
 static inline void
 menai_string_final(MenaiVMState *vs, MenaiString *self)
 {
+    if (self->owner) {
+        /* View — release the backing owner; do not touch the data array. */
+        menai_value_release(vs, (MenaiValue *)self->owner);
+        return;
+    }
 }
 
 MenaiString *alloc_menai_string_from_utf8(MenaiVMState *vs, const char *utf8, ssize_t nbytes);

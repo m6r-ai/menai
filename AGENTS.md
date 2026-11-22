@@ -149,8 +149,9 @@ performs the write, so building a collection an element at a time is amortised O
 rather than O(n). The conditions are stated at the update opcodes and in
 [`src/menai/vm/AGENTS.md`](src/menai/vm/AGENTS.md); the reasoning is in
 [ADR-0063](docs/adr/0063-in-place-update-of-uniquely-owned-collections.md) and
-[ADR-0064](docs/adr/0064-bytes-update-in-place.md). What follows from it is a maintenance
-obligation, not a mechanism.
+[ADR-0064](docs/adr/0064-bytes-update-in-place.md), with
+[ADR-0065](docs/adr/0065-string-append-in-place.md) for strings. What follows from it is a
+maintenance obligation, not a mechanism.
 
 **An idiom that exists only to minimise copying is now a suspect.** A sharded dictionary, an
 extra pass whose purpose was to avoid a copy, a loop split into helpers to keep a collection out

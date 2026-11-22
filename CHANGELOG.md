@@ -8,6 +8,12 @@ New features:
   structs and bytes) where a source goes dead during the operation.
 - Appending to a `bytes` value now updates it in place, carrying spare capacity and
   growing geometrically, so building a byte sequence in steps is linear.
+- Appending to a `string` value now updates it in place on the same conditions, so
+  building a string in steps is linear.
+- `string-slice`, `string-trim`, `string-trim-left` and `string-trim-right` now
+  return a view into their source rather than copying the codepoints, so trimming
+  no longer moves the text it keeps and slicing a document into tokens no longer
+  copies each token.
 - `map-vector`, `map-set` and `filter-set` now build their result in place
   rather than converting it through a list.
 - `sort-vector` is a native bottom-up merge sort, and `sort-list` sorts through it.

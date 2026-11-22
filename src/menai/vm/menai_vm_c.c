@@ -4570,6 +4570,35 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiString *b = (MenaiString *)operand(constants_items, frame_regs, src1, tag & 2);
 
+            /*
+             * Append in place when nothing else can observe the receiver.  The
+             * conditions are OP_VECTOR_WITH's: dest == src0 so the write consumes
+             * the single reference, a count of one, and a value that owns its data.
+             * The ownership test keeps the fast path's requirement explicit: a
+             * view borrows its codepoints from its owner, so that storage is not
+             * this value's to extend.  A view is always allocated exactly tight,
+             * so an append to one would copy on growth in any case; the test
+             * states the invariant instead of depending on that coincidence.
+             *
+             * `b != a` completes the source test.  A source that pointed into the
+             * receiver would dangle after a growth step; a view of the receiver
+             * already raises its count above one, but the receiver itself is a
+             * legal source.
+             *
+             * The cached hash must be cleared: a string is hashable, and a hash is
+             * observed by a dict or set without retaining the value, so a stale one
+             * would survive the mutation.  See ADR-0065.
+             */
+            if ((tag & 1) == 0 && dest == src0 && a->owner == NULL && b != a &&
+                    menai_get_pool_header((void *)a)->ob_refcnt == 1) {
+                if (MENAI_UNLIKELY(menai_string_append_slot(vs, &frame_regs[dest], b->data, b->length) < 0)) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                break;
+            }
+
             MenaiString *r = alloc_menai_string(vs, a->length + b->length);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
@@ -4690,14 +4719,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error;
             }
 
-            ssize_t len = end - start;
-            MenaiString *r = alloc_menai_string(vs, len);
+            MenaiString *r = alloc_menai_string_from_slice(vs, a, start, end);
             if (r == NULL) {
                 vm_err = MENAI_ERR_NOMEM;
                 goto error;
             }
 
-            memcpy(r->data, a->data + start, (size_t)len * sizeof(uint32_t));
             menai_value_release(vs, frame_regs[dest]);
             frame_regs[dest] = (MenaiValue *)r;
             break;

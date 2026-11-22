@@ -859,3 +859,214 @@ class TestStrings:
             '(string-concat "Count: " (integer->string 42))',
             '"Count: 42"'
         )
+
+
+class TestStringConcatInPlace:
+    """
+    Test that appending to a string preserves purity.
+
+    The VM appends in place when the receiver is uniquely owned, so these cases
+    pin the conditions under which it must not: a value that is still observable,
+    a value whose hash has already been taken, and growth past the buffer's
+    capacity.
+    """
+
+    def test_append_leaves_an_observable_value_unchanged(self, menai):
+        """A string that is still named is not modified by a concat onto it."""
+        expression = _opaque(
+            's "ab"',
+            "(list s (string-concat s (string-upcase \"c\")))",
+        )
+        assert menai.evaluate_and_format(expression) == '("ab" "abC")'
+
+    def test_append_leaves_a_live_binding_unchanged(self, menai):
+        """Two concats from one value each produce their own result."""
+        expression = (
+            '(let ((keep (string-upcase "x")))'
+            '  (let ((a (string-concat keep (integer->string 1)))'
+            '        (b (string-concat keep (integer->string 2))))'
+            '    (list keep a b)))'
+        )
+        assert menai.evaluate(expression) == ["X", "X1", "X2"]
+
+    def test_append_in_a_loop_builds_every_piece_in_order(self, menai):
+        """A loop-carried accumulator appends each piece in order."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 6)'
+            '                 acc'
+            '                 (loop (integer+ i 1) (string-concat acc (integer->string i)))))))'
+            '  (loop 0 ""))'
+        )
+        assert menai.evaluate(expression) == "012345"
+
+    def test_three_argument_concat_accumulates_in_order(self, menai):
+        """A variadic concat folds through the same opcode, in order."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 4)'
+            '                 acc'
+            '                 (loop (integer+ i 1) (string-concat acc "a" (integer->string i)))))))'
+            '  (loop 0 ""))'
+        )
+        assert menai.evaluate(expression) == "a0a1a2a3"
+
+    def test_append_of_a_string_to_itself(self, menai):
+        """Concatenating a value with itself doubles it and leaves the original."""
+        expression = _opaque('s "ab"', "(list s (string-concat s s))")
+        assert menai.evaluate_and_format(expression) == '("ab" "abab")'
+
+    def test_appended_value_hashes_as_its_new_contents(self, menai):
+        """A value grown in place is found by a lookup keyed on its new contents."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 3) acc (loop (integer+ i 1) (string-concat acc "z"))))))'
+            '  (set-member? (list->set (list (loop 0 ""))) "zzz"))'
+        )
+        assert menai.evaluate(expression) is True
+
+    def test_grown_value_still_works_as_a_dict_key(self, menai):
+        """A value grown past its buffer's capacity is still a usable key."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 40) acc (loop (integer+ i 1) (string-concat acc "q"))))))'
+            '  (dict-get (dict-with (dict) (loop 0 "") 7) (loop 0 "") #none))'
+        )
+        assert menai.evaluate(expression) == 7
+
+    def test_append_of_wide_characters_grows_correctly(self, menai):
+        """Characters outside the Basic Multilingual Plane survive in-place growth."""
+        expression = (
+            '(let ((loop (lambda (i acc)'
+            '             (if (integer=? i 4) acc (loop (integer+ i 1) (string-concat acc "\U0001f600"))))))'
+            '  (string-length (loop 0 "")))'
+        )
+        assert menai.evaluate(expression) == 4
+
+
+class TestStringSliceViews:
+    """
+    Test that a string slice or trim shares the codepoints of the value it came from.
+
+    A slice is a view into its source rather than a copy, so these cases pin the
+    behaviour that representation makes it possible to break: a slice reading only
+    its own range, a source staying unchanged when a slice of it is grown, and a
+    view comparing and hashing as the codepoints it covers.
+    """
+
+    def test_slice_reads_only_its_own_range(self, menai):
+        """A slice of a live value reads its range of that value's codepoints."""
+        expression = _opaque('s "abcdef"', "(list (string-slice s 1 3) s)")
+        assert menai.evaluate(expression) == ["bc", "abcdef"]
+
+    def test_append_to_the_source_leaves_a_slice_unchanged(self, menai):
+        """Appending to a value does not disturb a slice taken from it."""
+        expression = _opaque(
+            's "abcdef"',
+            '(list (string-slice s 1 3) (string-concat s (string-upcase "!")) s)',
+        )
+        assert menai.evaluate(expression) == ["bc", "abcdef!", "abcdef"]
+
+    def test_slice_of_a_slice_yields_the_inner_range(self, menai):
+        """A slice of a slice is indexed from the inner slice's first codepoint."""
+        expression = _opaque('s "abcdef"', "(string-slice (string-slice s 1 5) 1 3)")
+        assert menai.evaluate(expression) == "cd"
+
+    def test_slice_of_a_trimmed_value(self, menai):
+        """Slicing a trimmed value indexes from the first surviving codepoint."""
+        expression = _opaque('s "  padded  "', "(string-slice (string-trim s) 0 3)")
+        assert menai.evaluate(expression) == "pad"
+
+    def test_append_to_a_slice_leaves_the_source_unchanged(self, menai):
+        """Growing a slice in a loop produces its own value and not the source's."""
+        expression = _opaque(
+            's "ABCDEF"',
+            "(list s"
+            " (let ((loop (lambda (i acc)"
+            '              (if (integer=? i 3) acc (loop (integer+ i 1) (string-concat acc "z"))))))'
+            "   (loop 0 (string-slice s 1 3))))",
+        )
+        assert menai.evaluate(expression) == ["ABCDEF", "BCzzz"]
+
+    def test_trim_reads_only_the_untrimmed_range(self, menai):
+        """Each trim removes whitespace from its own end of the value."""
+        expression = _opaque(
+            's "  padded  "',
+            "(list (string-trim s) (string-trim-left s) (string-trim-right s) s)",
+        )
+        assert menai.evaluate(expression) == ["padded", "padded  ", "  padded", "  padded  "]
+
+    def test_trim_of_a_trimmed_value_is_unchanged(self, menai):
+        """Trimming an already-trimmed value yields the same contents."""
+        expression = _opaque('s "  padded  "', "(string-trim (string-trim (string-trim s)))")
+        assert menai.evaluate(expression) == "padded"
+
+    def test_trim_of_whitespace_only_is_empty(self, menai):
+        """A value of only whitespace trims to an empty string at either end."""
+        expression = _opaque(
+            's "   "',
+            "(list (string-trim s)"
+            " (string-length (string-trim s))"
+            " (string-trim-left s)"
+            " (string-trim-right s))",
+        )
+        assert menai.evaluate(expression) == ["", 0, "", ""]
+
+    def test_slice_of_an_empty_range(self, menai):
+        """An empty range at any valid position is an empty string."""
+        expression = _opaque(
+            's "hello"',
+            "(list (string-slice s 5 5) (string-slice s 2 2) (string-slice s 0 0))",
+        )
+        assert menai.evaluate(expression) == ["", "", ""]
+
+    def test_slice_of_the_whole_value(self, menai):
+        """A range covering the whole value yields all of its codepoints."""
+        expression = _opaque(
+            's "hello"',
+            "(list (string-slice s 0 5) (string-slice s 0) (string-trim s))",
+        )
+        assert menai.evaluate(expression) == ["hello", "hello", "hello"]
+
+    def test_slice_of_wide_characters(self, menai):
+        """Codepoints outside the Basic Multilingual Plane are sliced whole."""
+        expression = _opaque(
+            's "😀a😀b"',
+            "(list (string-slice s 1 3) (string-length (string-slice s 1 3)))",
+        )
+        assert menai.evaluate(expression) == ["a\U0001f600", 2]
+
+    def test_slice_compares_as_its_own_codepoints(self, menai):
+        """A slice compares and measures as the codepoints it covers."""
+        expression = _opaque(
+            's "abcdef"',
+            "(list (string=? (string-slice s 1 3) \"bc\")"
+            "      (string<? (string-slice s 1 3) \"bd\")"
+            "      (string-length (string-slice s 1 3)))",
+        )
+        assert menai.evaluate(expression) == [True, True, 2]
+
+    def test_trimmed_value_hashes_as_its_trimmed_contents(self, menai):
+        """A trimmed value is found in a set by its trimmed contents."""
+        expression = _opaque(
+            's "  key  "',
+            '(set-member? (list->set (list (string-trim s))) "key")',
+        )
+        assert menai.evaluate(expression) is True
+
+    def test_sliced_value_works_as_a_dict_key(self, menai):
+        """A slice is a usable key and is found by the codepoints it covers."""
+        expression = _opaque(
+            's "  key  "',
+            '(dict-get (dict-with (dict) (string-slice s 2 5) 7) "key" #none)',
+        )
+        assert menai.evaluate(expression) == 7
+
+    def test_slices_combine_into_one_value(self, menai):
+        """Joining trimmed views yields the codepoints each of them covers."""
+        expression = _opaque(
+            's "  alpha  beta  "',
+            '(list->string (list (string-trim (string-slice s 0 9))'
+            '                     (string-trim (string-slice s 7 14))) "-")',
+        )
+        assert menai.evaluate(expression) == "alpha-beta"
