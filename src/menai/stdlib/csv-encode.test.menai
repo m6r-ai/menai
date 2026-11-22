@@ -112,6 +112,21 @@
        (lambda ()
          (assert-equal (encode (vector (vector "\"\""))) "\"\"\"\"\"\"")))
 
+      ; Every quote in a field is doubled, not just the first.
+      (test-several-quotes-doubled
+       (lambda ()
+         (assert-equal (encode (vector (vector "a\"b\"c"))) "\"a\"\"b\"\"c\"")))
+
+      ; A field containing both a quote and the delimiter is quoted and doubled.
+      (test-quote-and-delimiter
+       (lambda ()
+         (assert-equal (encode (vector (vector "a,\"b"))) "\"a,\"\"b\"")))
+
+      ; A quote is doubled whatever the delimiter is.
+      (test-quote-doubled-with-custom-delimiter
+       (lambda ()
+         (assert-equal (encode (vector (vector "a\"b")) ";") "\"a\"\"b\"")))
+
       ; A semicolon delimiter joins fields.
       (test-semicolon-delimiter
        (lambda ()
@@ -195,7 +210,10 @@
              (expect-pass "field with CRLF is quoted" test-crlf-quoted)
              (expect-pass "only the fields that need it are quoted" test-only-necessary-quoting)
              (expect-pass "quote is doubled at the start and end" test-quote-at-ends)
-             (expect-pass "field of only quotes" test-field-of-only-quotes)))
+             (expect-pass "field of only quotes" test-field-of-only-quotes)
+             (expect-pass "every quote is doubled" test-several-quotes-doubled)
+             (expect-pass "quote and delimiter together" test-quote-and-delimiter)
+             (expect-pass "quote doubled with a custom delimiter" test-quote-doubled-with-custom-delimiter)))
 
          (list
            "delimiter"
