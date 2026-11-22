@@ -505,6 +505,9 @@ class Opcode(IntEnum):
     FLOAT_FREXP = _op(363, 1, _FOLD_SRC0)           # r_dest = (float-frexp r_src0) -> (mantissa exp) pair
     FLOAT_LDEXP = _op(364, 2, _FOLD_SRC01)          # r_dest = (float-ldexp r_src0 r_src1)
 
+    # Character-set search
+    STRING_INDEX_ANY = _op(365, 2, _FOLD_SRC01)     # r_dest = (string-index-any r_src0 r_src1)
+
 
 # Packed instruction encoding
 #

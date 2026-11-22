@@ -355,11 +355,21 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | `(string-prefix? s prefix)` | `→ #t` if s starts with prefix |
 | `(string-suffix? s suffix)` | `→ #t` if s ends with suffix |
 | `(string-index s sub)` | 0-based index of first occurrence, or `#none` |
+| `(string-index-any s ranges)` | 0-based index of the first character in any of the ranges, or `#none` |
 
 ```menai
 (string-index "hello" "l")  → 2
 (string-index "hello" "z")  → #none
+
+(string-index-any "hello world" (vector 32 32))  → 5   ; first space
+(string-index-any "hello" (vector 48 57))        → #none
+(string-index-any "xαβ" (vector 945 969))        → 1   ; Greek range
 ```
+
+`ranges` is a vector of flat, inclusive `(lo hi)` codepoint pairs, in any order.
+Complement the ranges to search for a character *outside* a set, so
+`[^0-9]` becomes `(vector 0 47 58 1114111)`. A set that is empty, odd in length,
+has `lo` greater than `hi`, or names a value outside `0`–`1114111` raises an error.
 
 ### Conversions
 

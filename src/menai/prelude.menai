@@ -1022,6 +1022,10 @@
        (lambda (s sub)
          ($string-index s sub)))
 
+      (string-index-any
+       (lambda (s ranges)
+         ($string-index-any s ranges)))
+
       (string-prefix?
        (lambda (s prefix)
          ($string-prefix? s prefix)))
@@ -2470,6 +2474,7 @@
         "string-trim-right" string-trim-right
         "string-replace" string-replace
         "string-index" string-index
+        "string-index-any" string-index-any
         "string-prefix?" string-prefix?
         "string-suffix?" string-suffix?
         "string-nth" string-nth

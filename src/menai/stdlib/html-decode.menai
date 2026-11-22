@@ -100,29 +100,20 @@
                (string-length s)
                k))))
 
-      ; #t when the character can appear in an element or attribute name.
-      (is-name-char?
-       (lambda (ch)
-         (and (boolean-not (is-space? ch))
-              (boolean-not (string=? ch ">"))
-              (boolean-not (string=? ch "/"))
-              (boolean-not (string=? ch "="))
-              (boolean-not (string=? ch "<"))
-              (boolean-not (string=? ch "\""))
-              (boolean-not (string=? ch "'")))))
+      ; The characters that end an element or attribute name: the whitespace
+      ; is-space? recognises, and the punctuation that separates or closes a tag.
+      ; Every other character is a name character, so the first of these at or
+      ; after a name's start is its end.
+      (name-terminators (vector 9 9 10 10 12 13 32 32 34 34 39 39 47 47 60 62))
 
       ; The index of the first character at or after `i` that is not a name
-      ; character.  A name is a handful of characters, so scanning it character by
-      ; character is proportional to the name: there is no long search to remove.
+      ; character, or the end of the string when the name runs to it.
       (name-end
        (lambda (s i)
-         (let ((loop
-                (lambda (j)
-                  (if (and (integer<? j (string-length s))
-                           (is-name-char? (string-nth s j)))
-                      (loop (integer+ j 1))
-                      j))))
-           (loop i))))
+         (let ((hit (string-index-any (string-slice s i) name-terminators)))
+           (if (none? hit)
+               (string-length s)
+               (integer+ i hit)))))
 
       ; #t when the character is an ASCII digit.
       (is-digit?
@@ -230,20 +221,18 @@
                       lt)))
              (list (decode-references s i end) end)))))
 
+      ; The characters that end an unquoted attribute value: HTML whitespace and
+      ; the ">" that closes the tag.
+      (unquoted-terminators (vector 9 9 10 10 12 13 32 32 62 62))
+
       ; The index at which an unquoted attribute value starting at `i` ends: at
       ; whitespace, ">", or the end of the string.
       (unquoted-end
        (lambda (s i)
-         (let ((loop
-                (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      j
-                      (let ((ch (string-nth s j)))
-                        (if (or (is-space? ch)
-                                (string=? ch ">"))
-                            j
-                            (loop (integer+ j 1))))))))
-           (loop i))))
+         (let ((hit (string-index-any (string-slice s i) unquoted-terminators)))
+           (if (none? hit)
+               (string-length s)
+               (integer+ i hit)))))
 
       ; Parse an attribute list starting at `i` (just after the tag name).
       ; Returns (list <attrs-dict> <self-closing?> <index-of-">).

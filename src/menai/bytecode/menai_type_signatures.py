@@ -177,6 +177,7 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'string->list': (['string', 'string'], 'list'),
     'string-nth': (['string', 'integer'], 'string'),
     'string-index': (['string', 'string'], None),
+    'string-index-any': (['string', 'vector'], None),
     'string-prefix?': (['string', 'string'], 'boolean'),
     'string-suffix?': (['string', 'string'], 'boolean'),
     'string->integer-codepoint': (['string'], 'integer'),

@@ -189,6 +189,7 @@ BUILTINS: dict[str, MenaiBuiltinInfo] = {
     'string->list': MenaiBuiltinInfo(Opcode.STRING_TO_LIST, 1, 2, may_raise=False),
     'string-nth': MenaiBuiltinInfo(Opcode.STRING_NTH, 2, 2, may_raise=True),
     'string-index': MenaiBuiltinInfo(Opcode.STRING_INDEX, 2, 2, may_raise=False),
+    'string-index-any': MenaiBuiltinInfo(Opcode.STRING_INDEX_ANY, 2, 2, may_raise=True),
     'string-prefix?': MenaiBuiltinInfo(Opcode.STRING_PREFIX_P, 2, 2, may_raise=False),
     'string-suffix?': MenaiBuiltinInfo(Opcode.STRING_SUFFIX_P, 2, 2, may_raise=False),
     'string->integer-codepoint': MenaiBuiltinInfo(Opcode.STRING_TO_INTEGER_CODEPOINT, 1, 1, may_raise=True),

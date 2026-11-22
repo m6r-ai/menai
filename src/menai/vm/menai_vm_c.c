@@ -4770,6 +4770,117 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_STRING_INDEX_ANY: {
+            MenaiString *s = (MenaiString *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiVector *ranges = (MenaiVector *)operand(constants_items, frame_regs, src1, tag & 2);
+            ssize_t nranges = ranges->length;
+
+            /*
+             * A caller that builds a character set always has at least one
+             * range, so an empty vector is a bug in the caller rather than
+             * "matches nothing": answering #none would hide it.  The ranges
+             * travel as flat inclusive (lo, hi) pairs, so the count is even.
+             */
+            if (MENAI_UNLIKELY(nranges == 0 || (nranges % 2) != 0)) {
+                vm_err = MENAI_ERR_INVALID_RANGES;
+                goto error;
+            }
+
+            /*
+             * Validate every range and, in the same pass, build the ASCII
+             * membership mask the scan uses when the whole set lies in ASCII.
+             * Only the part of a range below 0x80 sets a bit, so a later
+             * non-ASCII range leaves the mask unused rather than wrong.
+             */
+            uint64_t ascii_mask[2] = {0, 0};
+            bool ascii_only = true;
+            for (ssize_t i = 0; i < nranges; i += 2) {
+                MenaiValue *lo_val = ranges->data[i];
+                MenaiValue *hi_val = ranges->data[i + 1];
+                if (MENAI_UNLIKELY(!IS_MENAI_INTEGER(lo_val) || !IS_MENAI_INTEGER(hi_val))) {
+                    vm_err = MENAI_ERR_INVALID_RANGES;
+                    goto error;
+                }
+
+                int64_t lo = 0;
+                int64_t hi = 0;
+                if (MENAI_UNLIKELY(menai_integer_to_int64(lo_val, &lo) < 0 ||
+                        menai_integer_to_int64(hi_val, &hi) < 0 ||
+                        lo < 0 || lo > hi || hi > 0x10FFFF)) {
+                    vm_err = MENAI_ERR_INVALID_RANGES;
+                    goto error;
+                }
+
+                if (hi >= 0x80) {
+                    ascii_only = false;
+                }
+
+                int64_t ascii_hi = hi < 0x80 ? hi : 0x7F;
+                for (int64_t c = lo; c <= ascii_hi; c++) {
+                    ascii_mask[c >> 6] |= (uint64_t)1 << (c & 63);
+                }
+            }
+
+            ssize_t slen = s->length;
+            ssize_t found = -1;
+
+            if (ascii_only) {
+                for (ssize_t i = 0; i < slen; i++) {
+                    uint32_t c = s->data[i];
+                    if (c < 0x80 && (ascii_mask[c >> 6] & ((uint64_t)1 << (c & 63))) != 0) {
+                        found = i;
+                        break;
+                    }
+                }
+            } else {
+                /*
+                 * A non-ASCII set is rare, so this path compares against the
+                 * ranges directly rather than building a mask over the whole
+                 * codepoint space.  Scanning each range only up to the best
+                 * index found so far keeps the total work near one pass: every
+                 * later scan is bounded by the answer the earlier ones found.
+                 */
+                ssize_t best = slen;
+                for (ssize_t i = 0; i < nranges && best > 0; i += 2) {
+                    int64_t lo = 0;
+                    int64_t hi = 0;
+                    if (MENAI_UNLIKELY(menai_integer_to_int64(ranges->data[i], &lo) < 0 ||
+                            menai_integer_to_int64(ranges->data[i + 1], &hi) < 0)) {
+                        vm_err = MENAI_ERR_INVALID_RANGES;
+                        goto error;
+                    }
+
+                    for (ssize_t j = 0; j < best; j++) {
+                        int64_t c = (int64_t)s->data[j];
+                        if (c >= lo && c <= hi) {
+                            best = j;
+                            break;
+                        }
+                    }
+                }
+
+                found = (best == slen) ? -1 : best;
+            }
+
+            if (found < 0) {
+                MenaiValue *val = menai_none();
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = val;
+                break;
+            }
+
+            MenaiValue *r = alloc_menai_integer_from_ssize_t(vs, found);
+            if (r == NULL) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
         case OP_STRING_TO_INTEGER_CODEPOINT: {
             MenaiString *a = (MenaiString *)operand(constants_items, frame_regs, src0, tag & 1);
             ssize_t slen = a->length;

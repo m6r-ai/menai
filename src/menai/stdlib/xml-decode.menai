@@ -26,11 +26,11 @@
 ; characters.  CDATA sections are decoded to text.  The XML declaration,
 ; comments, and processing instructions are discarded.
 ;
-; Scanning is native: `string-index` finds the next markup character or entity
-; rather than the parser visiting each character, and a run of text or an
-; attribute value that needs no decoding is taken as a slice of the input rather
-; than assembled from its characters.  A slice shares the input's storage, so
-; taking one costs the same whatever the document's length.
+; Scanning is native: `string-index-any` finds a tag name's end and `string-index`
+; finds the next markup character or entity, and a run of text or an attribute
+; value that needs no decoding is taken as a slice of the input rather than
+; assembled from its characters.  A slice shares the input's storage, so taking
+; one costs the same whatever the document's length.
 ;
 ; The dialect is deliberately small.  Document type definitions, custom entity
 ; definitions, and encoding declarations other than UTF-8 are not supported and
@@ -167,20 +167,21 @@
                                     (error "xml-decode: attribute value must be quoted")))))))))))
            (loop i (dict)))))
 
+      ; The characters that end a tag name: XML whitespace, the ">" that closes the
+      ; tag, and the "/" of a self-closing tag.  Every other character is a name
+      ; character, so the first of these at or after a name's start is its end.
+      (tag-name-terminators (vector 9 9 10 10 13 13 32 32 47 47 62 62))
+
       ; Parse a start tag at `i` (the position of "<").  Returns
       ; (list <tag-name> <attrs-dict> <self-closing?> <index-after-tag>).
       (parse-start-tag
        (lambda (s i)
          (let ((name-end
                 (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      (error "xml-decode: unterminated start tag")
-                      (let ((ch (string-nth s j)))
-                        (if (or (is-space? ch)
-                                (string=? ch ">")
-                                (string=? ch "/"))
-                            j
-                            (name-end (integer+ j 1))))))))
+                  (let ((hit (string-index-any (string-slice s j) tag-name-terminators)))
+                    (if (none? hit)
+                        (error "xml-decode: unterminated start tag")
+                        (integer+ j hit))))))
            (let ((ne (name-end (integer+ i 1))))
              (let ((name (string-slice s (integer+ i 1) ne)))
                (if (string=? name "")

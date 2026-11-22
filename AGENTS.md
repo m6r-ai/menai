@@ -287,6 +287,10 @@ carries the alternatives that were rejected.
   integer-heavy, performance-critical kernels.
   See [ADR-0024](docs/adr/0024-hash-primitives-in-c-vm.md) and
   [ADR-0025](docs/adr/0025-crc32-primitive-in-c-vm.md).
+- **Character-set search is an opcode** (`string-index-any`), not a library helper: the
+  per-character interpretation it replaces dominates its callers, and it is defined by a
+  fixed specification rather than by a dialect.
+  See [ADR-0067](docs/adr/0067-string-index-any-character-set-search.md).
 - **`regexp` is a standard library capability module**, not an opcode: the pattern dialect is a
   Menai design decision rather than a fixed specification, and its operations share one
   compiled-regexp type and dialect.

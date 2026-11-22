@@ -126,6 +126,7 @@ class VMErrorCode(IntEnum):
     UNIMPLEMENTED_OPCODE = -59
     USER_ERROR = -60
     ENUM_VARIANT_NOT_FOUND = -61
+    INVALID_RANGES = -62
 
 
 class _MenaiVMRuntimeError(Exception):
@@ -262,6 +263,9 @@ _ERROR_TABLE: dict[VMErrorCode, _ErrorTableEntry] = {
     VMErrorCode.UNIMPLEMENTED_OPCODE: _eval_error_entry("unimplemented opcode"),
     VMErrorCode.ENUM_VARIANT_NOT_FOUND: _eval_error_entry(
         "enum has no such variant"
+    ),
+    VMErrorCode.INVALID_RANGES: _eval_error_entry(
+        "character set must be a non-empty even-length vector of ascending codepoint range pairs"
     ),
 }
 

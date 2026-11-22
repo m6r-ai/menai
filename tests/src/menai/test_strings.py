@@ -340,6 +340,50 @@ class TestStrings:
         assert menai.evaluate_and_format(expression) == expected
 
     @pytest.mark.parametrize("expression,expected", [
+        # First character inside the set
+        ('(string-index-any "hello world" (vector 32 32))', '5'),
+
+        # No character inside the set
+        ('(string-index-any "hello" (vector 48 57))', '#none'),
+
+        # The earliest position wins across several ranges
+        ('(string-index-any "abcdef" (vector 101 101 99 99))', '2'),
+
+        # Adjacent ranges behave as one range
+        ('(string-index-any "abcd" (vector 97 97 98 98))', '0'),
+        ('(string-index-any "xyz" (vector 97 97 98 98))', '#none'),
+
+        # Overlapping ranges do not change the answer
+        ('(string-index-any "abcdef" (vector 97 101 99 102))', '0'),
+        ('(string-index-any "zeb" (vector 97 101 99 102))', '1'),
+
+        # Empty subject
+        ('(string-index-any "" (vector 0 1114111))', '#none'),
+
+        # A range reaching the last codepoint
+        ('(string-index-any "abc" (vector 1114111 1114111))', '#none'),
+        ('(string-index-any (string-concat "ab" (integer-codepoint->string 1114111)) (vector 1114111 1114111))', '2'),
+
+        # Non-ASCII ranges
+        ('(string-index-any "x\u03b1\u03b2" (vector 945 969))', '1'),
+        ('(string-index-any "hello" (vector 945 969))', '#none'),
+
+        # Indices are codepoints, not bytes: an astral character is one position
+        ('(string-index-any (string-concat "a" (integer-codepoint->string 128512) "b") (vector 98 98))', '2'),
+        ('(string-index-any (string-concat "a" (integer-codepoint->string 128512) "b") (vector 128512 128512))', '1'),
+    ])
+    def test_string_index_any(self, menai, expression, expected):
+        """Test string-index-any character-set search."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    def test_string_index_any_is_an_opcode(self, menai):
+        """Test that string-index-any compiles to its own opcode rather than a helper."""
+        code = menai.compile('(string-index-any "hello world" (vector 32 32))')
+        ops = [unpack_instruction(w).opcode for w in code.instructions]
+        assert Opcode.STRING_INDEX_ANY in ops, \
+            "Expected STRING_INDEX_ANY in bytecode for the character-set search"
+
+    @pytest.mark.parametrize("expression,expected", [
         # String prefix predicate
         ('(string-prefix? "hello world" "hello")', '#t'),
         ('(string-prefix? "hello world" "he")', '#t'),
@@ -734,6 +778,39 @@ class TestStrings:
 
         with pytest.raises(MenaiEvalError):
             menai.evaluate('(string=? "hello" 42)')
+
+    def test_string_index_any_invalid_sets(self, menai):
+        """Test that string-index-any rejects a malformed character set."""
+        # An empty set is a caller bug, not "matches nothing"
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any "hello" (vector))')
+
+        # Ranges are flat (lo hi) pairs, so the count must be even
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any "hello" (vector 97 97 98))')
+
+        # lo must not exceed hi
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any "hello" (vector 98 97))')
+
+        # Every bound must be a codepoint
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any "hello" (vector -1 5))')
+
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any "hello" (vector 0 1114112))')
+
+        # Every element must be an integer
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any "hello" (vector "a" "z"))')
+
+    def test_string_index_any_type_validation(self, menai):
+        """Test that string-index-any requires a string subject and a vector set."""
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any 42 (vector 97 97))')
+
+        with pytest.raises(MenaiEvalError):
+            menai.evaluate('(string-index-any "hello" (list 97 97))')
 
     def test_string_prefix_suffix_type_validation_runtime(self, menai):
         """Test that string-prefix? and string-suffix? opcodes reject non-string arguments."""

@@ -44,6 +44,16 @@ New features:
   option is gone because it is now the default.
 - The Sudoku benchmarks were improved to avoid doing unnecessary work, and thus making
   them more interesting as comparisons with other languages.
+- `string-index-any` is a new builtin: it returns the index of the first character in a
+  set of inclusive codepoint ranges, or `#none`, so finding any of several terminators is
+  one native scan rather than one scan per character or one test per position.
+- `regexp` compiles a pattern's first-character set and jumps to it with
+  `string-index-any`, including the union of an alternation's branches and the complement
+  of a negated class.  Class-first patterns execute 44–81% fewer instructions; replacing
+  `\s+` is 11% faster because allocation in the matcher now dominates it.
+- `csv-decode`, `html-decode` and `xml-decode` find the end of a field, a name and an
+  unquoted attribute value with that one set search, replacing three searches or a
+  per-character loop.
 
 Bug fixes:
 

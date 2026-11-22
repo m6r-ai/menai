@@ -19,11 +19,12 @@
 ; deliberately not part of this module: it is a policy decision (duplicate
 ; header names, ragged rows) that belongs to the caller.
 ;
-; Scanning is native: `string-index` finds the next delimiter, quote or line
-; terminator rather than the decoder visiting each character, and a field is
-; taken as a slice of the input rather than assembled from its characters.  Only
-; a quoted field that actually contains a doubled quote is built up, because
-; that is the one case where the field is not a contiguous run of the input.
+; Scanning is native: `string-index-any` finds the end of an unquoted field as
+; the first delimiter or line terminator, `string-index` finds the next quote,
+; and a field is taken as a slice of the input rather than assembled from its
+; characters.  Only a quoted field that actually contains a doubled quote is
+; built up, because that is the one case where the field is not a contiguous
+; run of the input.
 ;
 ; Malformed input raises a runtime error: an unterminated quoted field, or a
 ; character following a closing quote other than the delimiter or a line
@@ -46,33 +47,17 @@
                #none
                (integer+ i pos)))))
 
-      ; The smaller of two optional indices, where #none is "not present".
-      (min-or
-       (lambda (a b)
-         (if (none? a)
-             b
-             (if (none? b)
-                 a
-                 (if (integer<? a b)
-                     a
-                     b)))))
-
       ; The number of characters from `i` to the end of the unquoted field that
-      ; starts there: the first delimiter or line terminator, whichever comes
-      ; first.  Each search is bounded by the one that found a nearer candidate,
-      ; so a field costs its own length rather than the rest of the document.
+      ; starts there: the first delimiter or line terminator.  `stop` is that set
+      ; of characters, as the flat ranges `string-index-any` takes, so a field
+      ; costs one native scan of its own length.
       (unquoted-length
-       (lambda (s i delim)
+       (lambda (s i stop)
          (let ((rest (string-slice s i)))
-           (let ((d (string-index rest delim)))
-             (if (none? d)
-                 (let ((lf (string-index rest "\n")))
-                   (if (none? lf)
-                       (min-or (string-index rest "\r") (string-length rest))
-                       (min-or (string-index (string-slice rest 0 lf) "\r") lf)))
-                 (min-or
-                   (min-or (string-index (string-slice rest 0 d) "\r") (string-index (string-slice rest 0 d) "\n"))
-                   d))))))
+           (let ((hit (string-index-any rest stop)))
+             (if (none? hit)
+                 (string-length rest)
+                 hit)))))
 
       ; The number of characters consumed by the line terminator at `i`: 2 for a
       ; CRLF pair, 1 for a bare CR or LF.  `i` must be at a line terminator.
@@ -87,8 +72,8 @@
       ; Scan an unquoted field starting at `i`, stopping at the delimiter, a line
       ; terminator, or end of input.  Returns (list <field-string> <next-pos>).
       (scan-unquoted
-       (lambda (s i delim)
-         (let ((end (integer+ i (unquoted-length s i delim))))
+       (lambda (s i stop)
+         (let ((end (integer+ i (unquoted-length s i stop))))
            (list (string-slice s i end) end))))
 
       ; Whether the quote at `q` is the first of a doubled quote.
@@ -132,11 +117,11 @@
 
       ; Parse one field at `i`.  Returns (list <field-string> <next-pos>).
       (parse-field
-       (lambda (s i delim)
+       (lambda (s i delim stop)
          (if (and (integer<? i (string-length s))
                   (string=? (string-nth s i) "\""))
              (scan-quoted s i)
-             (scan-unquoted s i delim))))
+             (scan-unquoted s i stop))))
 
       ; After a field ends at `pos`, consume the separator that follows and decide
       ; whether the row continues, ends, or the input ends.  Returns a dispatch tag
@@ -167,14 +152,18 @@
                         (list-first rest))))
                (if (and (string? delim)
                         (integer=? (string-length delim) 1))
-                   (let ((finish
+                   (let ((stop
+                          (let ((cp (string->integer-codepoint delim)))
+                            (vector cp cp 13 13 10 10)))
+
+                         (finish
                           (lambda (rows-acc row)
                             (list->vector
                               (map-list list->vector (list-reverse (list-prepend rows-acc (list-reverse row)))))))
 
                          (loop
                           (lambda (i row-acc rows-acc)
-                            (let ((field-result (parse-field csv-string i delim))
+                            (let ((field-result (parse-field csv-string i delim stop))
                                   (field (list-first field-result))
                                   (pos (list-nth field-result 1))
                                   (row (list-prepend row-acc field))
