@@ -19,6 +19,12 @@
 ; deliberately not part of this module: it is a policy decision (duplicate
 ; header names, ragged rows) that belongs to the caller.
 ;
+; Scanning is native: `string-index` finds the next delimiter, quote or line
+; terminator rather than the decoder visiting each character, and a field is
+; taken as a slice of the input rather than assembled from its characters.  Only
+; a quoted field that actually contains a doubled quote is built up, because
+; that is the one case where the field is not a contiguous run of the input.
+;
 ; Malformed input raises a runtime error: an unterminated quoted field, or a
 ; character following a closing quote other than the delimiter or a line
 ; terminator.
@@ -31,6 +37,42 @@
        (lambda (ch)
          (or (string=? ch "\n")
              (string=? ch "\r"))))
+
+      ; The index of `needle` in the text from `pos` onwards, or #none.
+      (index-from
+       (lambda (s pos needle)
+         (let ((i (string-index (string-slice s pos) needle)))
+           (if (none? i)
+               #none
+               (integer+ i pos)))))
+
+      ; The smaller of two optional indices, where #none is "not present".
+      (min-or
+       (lambda (a b)
+         (if (none? a)
+             b
+             (if (none? b)
+                 a
+                 (if (integer<? a b)
+                     a
+                     b)))))
+
+      ; The number of characters from `i` to the end of the unquoted field that
+      ; starts there: the first delimiter or line terminator, whichever comes
+      ; first.  Each search is bounded by the one that found a nearer candidate,
+      ; so a field costs its own length rather than the rest of the document.
+      (unquoted-length
+       (lambda (s i delim)
+         (let ((rest (string-slice s i)))
+           (let ((d (string-index rest delim)))
+             (if (none? d)
+                 (let ((lf (string-index rest "\n")))
+                   (if (none? lf)
+                       (min-or (string-index rest "\r") (string-length rest))
+                       (min-or (string-index (string-slice rest 0 lf) "\r") lf)))
+                 (min-or
+                   (min-or (string-index (string-slice rest 0 d) "\r") (string-index (string-slice rest 0 d) "\n"))
+                   d))))))
 
       ; The number of characters consumed by the line terminator at `i`: 2 for a
       ; CRLF pair, 1 for a bare CR or LF.  `i` must be at a line terminator.
@@ -46,17 +88,32 @@
       ; terminator, or end of input.  Returns (list <field-string> <next-pos>).
       (scan-unquoted
        (lambda (s i delim)
+         (let ((end (integer+ i (unquoted-length s i delim))))
+           (list (string-slice s i end) end))))
+
+      ; Whether the quote at `q` is the first of a doubled quote.
+      (doubled-quote-at?
+       (lambda (s q)
+         (and (integer<? (integer+ q 1) (string-length s))
+              (string=? (string-nth s (integer+ q 1)) "\""))))
+
+      ; The value of a quoted field that contains a doubled quote, from the run
+      ; ending at the first one.  The caller has already found the closing quote
+      ; of every later run, so this is the only case that assembles a value from
+      ; more than one run of the input.
+      (scan-quoted-escaped
+       (lambda (s start q)
          (let ((loop
-                (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      j
-                      (let ((ch (string-nth s j)))
-                        (if (or (string=? ch delim)
-                                (is-line-terminator? ch))
-                            j
-                            (loop (integer+ j 1))))))))
-           (let ((end (loop i)))
-             (list (string-slice s i end) end)))))
+                (lambda (pos acc)
+                  (let ((q2 (index-from s pos "\"")))
+                    (if (none? q2)
+                        (error "Unterminated quoted field in CSV input")
+                        (if (doubled-quote-at? s q2)
+                            (loop (integer+ q2 2) (list-prepend (list-prepend acc (string-slice s pos q2)) "\""))
+                            (list
+                              (list->string (list-reverse (list-prepend acc (string-slice s pos q2))))
+                              (integer+ q2 1))))))))
+           (loop (integer+ q 2) (list-prepend (list-prepend (list) (string-slice s start q)) "\"")))))
 
       ; Scan a quoted field starting at `i`, where `i` is the position of the
       ; opening quote.  A doubled quote inside the field is an escaped quote; the
@@ -65,18 +122,13 @@
       ; after the closing quote.
       (scan-quoted
        (lambda (s i)
-         (let ((loop
-                (lambda (j acc)
-                  (if (integer>=? j (string-length s))
-                      (error "Unterminated quoted field in CSV input")
-                      (let ((ch (string-nth s j)))
-                        (if (string=? ch "\"")
-                            (if (and (integer<? (integer+ j 1) (string-length s))
-                                     (string=? (string-nth s (integer+ j 1)) "\""))
-                                (loop (integer+ j 2) (list-prepend acc "\""))
-                                (list (list->string (list-reverse acc)) (integer+ j 1)))
-                            (loop (integer+ j 1) (list-prepend acc ch))))))))
-           (loop (integer+ i 1) (list)))))
+         (let ((start (integer+ i 1)))
+           (let ((q (index-from s start "\"")))
+             (if (none? q)
+                 (error "Unterminated quoted field in CSV input")
+                 (if (doubled-quote-at? s q)
+                     (scan-quoted-escaped s start q)
+                     (list (string-slice s start q) (integer+ q 1))))))))
 
       ; Parse one field at `i`.  Returns (list <field-string> <next-pos>).
       (parse-field

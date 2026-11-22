@@ -26,6 +26,12 @@
 ; characters.  CDATA sections are decoded to text.  The XML declaration,
 ; comments, and processing instructions are discarded.
 ;
+; Scanning is native: `string-index` finds the next markup character or entity
+; rather than the parser visiting each character, and a run of text or an
+; attribute value that needs no decoding is taken as a slice of the input rather
+; than assembled from its characters.  A slice shares the input's storage, so
+; taking one costs the same whatever the document's length.
+;
 ; The dialect is deliberately small.  Document type definitions, custom entity
 ; definitions, and encoding declarations other than UTF-8 are not supported and
 ; raise a runtime error.  The parser is strict: a malformed document, a
@@ -53,32 +59,28 @@
                       j))))
            (loop i))))
 
+      ; The index of the first occurrence of `needle` at or after `i`, or #none.
+      (index-from
+       (lambda (s i needle)
+         (let ((k (string-index (string-slice s i) needle)))
+           (if (none? k)
+               #none
+               (integer+ i k)))))
+
       ; The index of the first occurrence of `needle` at or after `i`, raising if
       ; it does not occur.
-      ;
-      ; The scan advances one character at a time and tests the needle in place,
-      ; rather than slicing the remainder of the string and searching that.  A
-      ; slice would copy the whole tail on every call, making the parser quadratic
-      ; in the input length; scanning in place costs only the distance to the
-      ; needle.
       (require-index
        (lambda (s needle i)
-         (let ((loop
-                (lambda (j)
-                  (if (integer>=? j (string-length s))
-                      (error (string-concat "xml-decode: expected \"" needle "\""))
-                      (if (starts-at? s j needle)
-                          j
-                          (loop (integer+ j 1)))))))
-           (loop i))))
+         (let ((k (index-from s i needle)))
+           (if (none? k)
+               (error (string-concat "xml-decode: expected \"" needle "\""))
+               k))))
 
-      ; #t when `s` starts with `prefix` at index `i`.  Unlike slicing to a fixed
-      ; end, this is safe when fewer than (string-length prefix) characters remain.
+      ; #t when `s` starts with `prefix` at index `i`.  A slice shares storage
+      ; rather than copying the tail, so this is O(1) in the input's length.
       (starts-at?
        (lambda (s i prefix)
-         (let ((end (integer+ i (string-length prefix))))
-           (and (integer<=? end (string-length s))
-                (string=? (string-slice s i end) prefix)))))
+         (string-prefix? (string-slice s i) prefix)))
 
       ; Decode the entity starting at the "&" at `i`.  Returns
       ; (list <decoded-string> <index-after-semicolon>).
@@ -101,37 +103,46 @@
                           (error (string-concat "xml-decode: unsupported entity \"&" body ";\""))))))
                (integer+ semi 1))))))
 
-      ; Decode the entities in s[i, end), returning the decoded string.  This is
-      ; used for attribute values, which may contain the same entities as text.
-      (decode-entities
+      ; The decoded form of s[i, end) when it contains at least one entity: the
+      ; runs between entities are slices of the input, and only the entity
+      ; replacements are new values.
+      (decode-entities-escaped
        (lambda (s i end)
          (let ((loop
                 (lambda (j acc)
                   (if (integer>=? j end)
                       (list->string (list-reverse acc))
-                      (let ((ch (string-nth s j)))
-                        (if (string=? ch "&")
-                            (let ((decoded (decode-entity s j)))
-                              (loop (list-nth decoded 1) (list-prepend acc (list-first decoded))))
-                            (loop (integer+ j 1) (list-prepend acc ch))))))))
+                      (let ((amp (string-index (string-slice s j end) "&")))
+                        (if (none? amp)
+                            (list->string (list-reverse (list-prepend acc (string-slice s j end))))
+                            (let ((at (integer+ j amp)))
+                              (let ((decoded (decode-entity s at)))
+                                (loop
+                                  (list-nth decoded 1)
+                                  (list-prepend (list-prepend acc (string-slice s j at)) (list-first decoded)))))))))))
            (loop i (list)))))
+
+      ; Decode the entities in s[i, end), returning the decoded string.  This is
+      ; used for attribute values, which may contain the same entities as text.
+      (decode-entities
+       (lambda (s i end)
+         (let ((amp (string-index (string-slice s i end) "&")))
+           (if (none? amp)
+               (string-slice s i end)
+               (decode-entities-escaped s i end)))))
 
       ; Decode a run of text, resolving entities, up to the next "<" at or after
       ; `i`.  Returns (list <decoded-text> <index-of-">).
       (decode-text
        (lambda (s i)
-         (let ((loop
-                (lambda (j acc)
-                  (if (integer>=? j (string-length s))
-                      (list (list->string (list-reverse acc)) j)
-                      (let ((ch (string-nth s j)))
-                        (if (string=? ch "<")
-                            (list (list->string (list-reverse acc)) j)
-                            (if (string=? ch "&")
-                                (let ((decoded (decode-entity s j)))
-                                  (loop (list-nth decoded 1) (list-prepend acc (list-first decoded))))
-                                (loop (integer+ j 1) (list-prepend acc ch)))))))))
-           (loop i (list)))))
+         (let ((lt (index-from s i "<")))
+           (let ((end
+                  (if (none? lt)
+                      (string-length s)
+                      lt)))
+             (if (none? (string-index (string-slice s i end) "&"))
+                 (list (string-slice s i end) end)
+                 (list (decode-entities-escaped s i end) end))))))
 
       ; Parse an attribute list starting at `i` (just after the tag name).  Returns
       ; (list <attrs-dict> <index-of-"> or "/">).

@@ -23,6 +23,14 @@ New features:
 - `bmp-encode` appends to its output in the pixel loop rather than through a
   helper, which had made it quadratic in the image size.
 - `png-encode` now builds each scanline in place.
+- `csv-encode` now decides quoting and doubles quotes with native scans and
+  replacement; 87% fewer instructions on the quoted-table benchmark.
+- `xml-encode` and `html-encode` escape with native replacement behind a native
+  presence check, so text with nothing to escape costs no allocation.
+- `csv-decode` now finds fields with native searches and takes them as slices of
+  the input; up to 59% fewer instructions.
+- `xml-decode` now finds markup and entities natively and takes text runs and
+  attribute values as slices; 37–43% faster, which the OOXML decoders inherit.
 - Loop rotation now also rotates a loop whose test loops out of both arms,
   removing a jump per merged element in the sort benchmarks.
 - `menai-format` now formats files in place by default and accepts several files at
