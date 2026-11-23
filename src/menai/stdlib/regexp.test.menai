@@ -305,6 +305,36 @@
        (lambda ()
          (assert-equal (search (compile "a*aaab") "aaaaaab") (list 0 7))))
 
+      ; A star over a class gives back characters as a star over a literal does.
+      (test-quantifier-class-star-backtracks
+       (lambda ()
+         (assert-equal (search (compile "[a]*ab") "aaab") (list 0 4))))
+
+      ; A class star that matches nothing still lets the rest of the pattern match.
+      (test-quantifier-class-star-empty
+       (lambda ()
+         (assert-equal (search (compile "[a]*ab") "ab") (list 0 2))))
+
+      ; A plus is a star behind one leading character, and gives back the same way.
+      (test-quantifier-class-plus-backtracks
+       (lambda ()
+         (assert-equal (search (compile "[a]+ab") "aaab") (list 0 4))))
+
+      ; A negated class runs up to the first character it rejects.
+      (test-quantifier-negated-class-star
+       (lambda ()
+         (assert-equal (search (compile "[^a]*ab") "bbab") (list 0 4))))
+
+      ; A class star that ends the pattern keeps its whole run.
+      (test-quantifier-class-star-greedy
+       (lambda ()
+         (assert-equal (search (compile "x[a]*") "xaaa") (list 0 4))))
+
+      ; A class repetition gives back a digit so the next digit class can match.
+      (test-quantifier-class-run-backtracks
+       (lambda ()
+         (assert-equal (search (compile "[0-9]+[0-9]") "1234") (list 0 4))))
+
       ; A bounded repeat gives back characters to its lower bound.
       (test-quantifier-bounded-backtracks
        (lambda ()
@@ -666,6 +696,12 @@
              (expect-pass "a brace that is not a quantifier is literal" test-quantifier-literal-brace)
              (expect-pass "a star gives back characters" test-quantifier-star-backtracks)
              (expect-pass "a star gives back many characters" test-quantifier-star-backtracks-many)
+             (expect-pass "a class star gives back characters" test-quantifier-class-star-backtracks)
+             (expect-pass "a class star can match nothing" test-quantifier-class-star-empty)
+             (expect-pass "a class plus gives back characters" test-quantifier-class-plus-backtracks)
+             (expect-pass "a negated class star stops at a rejected character" test-quantifier-negated-class-star)
+             (expect-pass "a class star at the end keeps its run" test-quantifier-class-star-greedy)
+             (expect-pass "a class run gives back a digit" test-quantifier-class-run-backtracks)
              (expect-pass "a bounded repeat gives back characters" test-quantifier-bounded-backtracks)
              (expect-pass "a repetition over a long run" test-quantifier-long-run)
              (expect-pass "a star over a long run" test-quantifier-long-run-star)
