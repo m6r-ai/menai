@@ -301,6 +301,11 @@
            (list (decode "<p><") (decode "<p><>") (decode "<p><!ENTITY x>"))
            (list (list (el "p" (dict) (list "<"))) (list (el "p" (dict) (list))) (list (el "p" (dict) (list)))))))
 
+      ; An attribute name that runs to the end of input gets "" and ends the tag.
+      (test-attribute-name-at-end
+       (lambda ()
+         (assert-equal (decode "<p x") (list (el "p" (dict "x" "") (list))))))
+
       ; An attribute name with a "=" and no value at the end of input gets "".
       (test-attribute-value-missing-at-end
        (lambda ()
@@ -394,6 +399,7 @@
              (expect-pass "unquoted value" test-unquoted-attribute)
              (expect-pass "valueless attribute" test-valueless-attribute)
              (expect-pass "attribute value missing at end" test-attribute-value-missing-at-end)
+             (expect-pass "attribute name at end of input" test-attribute-name-at-end)
              (expect-pass "stray name character is skipped" test-name-less-character-skipped)
              (expect-pass "reference in a value" test-attribute-reference)))
 
