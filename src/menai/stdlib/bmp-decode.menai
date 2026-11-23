@@ -53,35 +53,45 @@
 
       ; Decode one row of pixels starting at byte offset `start`.
       ; Returns a vector of pixels; each pixel is (vector r g b) or (vector r g b a).
+      ;
+      ; The byte offset is carried as loop state rather than recomputed from the
+      ; pixel index, so a pixel costs an addition instead of a multiply, and the
+      ; loop runs backwards over the row so the list is built in display order and
+      ; needs no reversal pass before the conversion.  The bit depth selects the
+      ; loop rather than being tested inside it, so each loop steps by a literal.
       (decode-row
        (lambda (b start width bpp)
-         (let ((bytes-per-pixel (integer/ bpp 8)))
-           (let ((loop
-                  (lambda (x acc)
-                    (if (integer>=? x width)
-                        (list->vector (list-reverse acc))
-                        (let ((p (integer+ start (integer* x bytes-per-pixel))))
-                          (if (integer=? bpp 24)
-                              (let ((v (bytes-read-u24-le b p)))
-                                (loop
-                                  (integer+ x 1)
-                                  (list-prepend
-                                    acc
-                                    (vector
-                                      (integer-bit-shift-right v 16)
-                                      (integer-bit-and (integer-bit-shift-right v 8) 255)
-                                      (integer-bit-and v 255)))))
-                              (let ((v (bytes-read-u32-le b p)))
-                                (loop
-                                  (integer+ x 1)
-                                  (list-prepend
-                                    acc
-                                    (vector
-                                      (integer-bit-and (integer-bit-shift-right v 16) 255)
-                                      (integer-bit-and (integer-bit-shift-right v 8) 255)
-                                      (integer-bit-and v 255)
-                                      (integer-bit-shift-right v 24)))))))))))
-             (loop 0 (list))))))
+         (let ((last (integer+ start (integer* (integer- width 1) (integer/ bpp 8)))))
+           (if (integer=? bpp 24)
+               (let ((pixels
+                      (lambda (p acc)
+                        (if (integer<? p start)
+                            (list->vector acc)
+                            (let ((v (bytes-read-u24-le b p)))
+                              (pixels
+                                (integer- p 3)
+                                (list-prepend
+                                  acc
+                                  (vector
+                                    (integer-bit-shift-right v 16)
+                                    (integer-bit-and (integer-bit-shift-right v 8) 255)
+                                    (integer-bit-and v 255)))))))))
+                 (pixels last (list)))
+               (let ((pixels
+                      (lambda (p acc)
+                        (if (integer<? p start)
+                            (list->vector acc)
+                            (let ((v (bytes-read-u32-le b p)))
+                              (pixels
+                                (integer- p 4)
+                                (list-prepend
+                                  acc
+                                  (vector
+                                    (integer-bit-and (integer-bit-shift-right v 16) 255)
+                                    (integer-bit-and (integer-bit-shift-right v 8) 255)
+                                    (integer-bit-and v 255)
+                                    (integer-bit-shift-right v 24)))))))))
+                 (pixels last (list)))))))
 
       ; Decode all rows into a vector ordered top-down.
       ; BMP rows are stored bottom-up when height is positive; a negative height

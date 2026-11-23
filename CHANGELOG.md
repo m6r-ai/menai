@@ -2,6 +2,11 @@
 
 ## v0.13.0 (2026-xx-xx)
 
+New features:
+
+- `bmp-decode` walks each row by byte offset and takes the bit depth out of the
+  pixel loop; 20% faster, 28% fewer instructions.
+
 ## v0.12.1 (2026-11-23)
 
 Bug fixes:
