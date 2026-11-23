@@ -85,8 +85,20 @@ a missing entry lets a function that does escape appear not to. A function that 
 unresolvable call site has its parameters left unconstrained, including one returned to the
 host. Callee resolution tracks a parameter as the union of the functions passed into it, and
 that union is a *may*-set carrying an "unknown" flag: a phi of a known closure and an unnamed
-value denotes the closure *and possibly something else*. The flag propagates through phis and
-containers exactly as the known set does, and a call through an unknown value returns ANY.
+value denotes the closure *and possibly something else*. A direct self tail call is a call site
+like any other for that union: omitting its arguments leaves the parameter's known set a strict
+subset of the functions that arrive, and nothing flags it.
+
+The flag propagates through phis, containers, free variables and call results exactly as the
+known set does, and it follows an argument into the callee's parameter, so a parameter passed on
+to another function stays flagged however many hops away it is used. A call through an unknown
+value returns ANY.
+
+A parameter flag and the value-level flag of the argument that sets it are mutually dependent,
+so the two are iterated to a joint fixed point before any fact is consumed. Propagating each
+once, in either order, leaves a function-valued parameter two hops from the unnamed value
+unflagged; a call through it is then resolved to its known subset alone and its result type is
+over-reported, which lets predicate folding delete a branch that must be taken.
 See [ADR-0035](../../docs/adr/0035-function-provenance-must-follow-containers.md) and
 [ADR-0058](../../docs/adr/0058-parameter-callee-sets.md).
 

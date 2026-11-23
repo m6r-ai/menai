@@ -44,6 +44,14 @@ Covers:
  15. An apply's result carries the return fact of the functions it may call, in
      tail and non-tail position alike, and is of any type when the callee cannot
      be named.
+ 16. A closure passed only by a direct self tail call reaches the same function's
+     parameter, so a call through that parameter is not narrowed to the closures
+     passed from outside.  A retry branch that tests the call's result with
+     none?  is retained and the retry happens.
+ 17. A parameter that may receive a function the analysis cannot name keeps that
+     flag when it is passed on to another function's parameter, however many
+     call hops away.  A continuation fetched from a container may return #none,
+     so a call through it is not resolved to its known subset alone.
 """
 
 import pytest
@@ -972,10 +980,18 @@ def _none_predicate_count(cfg) -> int:
     """Count none? builtin instructions across all functions in the module."""
     n = 0
     for func in collect_functions(cfg):
-        for block in func.blocks:
-            for instr in block.instrs:
-                if isinstance(instr, MenaiCFGBuiltinInstr) and instr.op == 'none?':
-                    n += 1
+        n += _none_predicate_count_in(func)
+
+    return n
+
+
+def _none_predicate_count_in(func) -> int:
+    """Count none? builtin instructions in one function."""
+    n = 0
+    for block in func.blocks:
+        for instr in block.instrs:
+            if isinstance(instr, MenaiCFGBuiltinInstr) and instr.op == 'none?':
+                n += 1
 
     return n
 
@@ -1353,3 +1369,111 @@ class TestApplyReturnFact:
 
     def test_unknown_callee_apply_result_correct(self, menai):
         assert menai.evaluate_and_format(APPLY_RETURN_UNKNOWN_SRC) == "1"
+
+
+RETRY_SELF_CALL_CONTINUATION_SRC = """
+(let ((retry
+       (lambda (k pos end)
+         (if (integer<? end pos)
+             #none
+             (let ((r (k end)))
+               (if (none? r)
+                   (retry k pos (integer- end 1))
+                   r)))))
+
+      (walk
+       (lambda (pos k)
+         (if (integer>=? pos 3)
+             (retry k 0 3)
+             (walk (integer+ pos 1)
+                   (lambda (r) (if (integer>=? r 3) #none (k r)))))))
+
+      (keep (lambda (v) (list v)))
+
+      (start (lambda (g) (walk 0 g))))
+
+  (start keep))
+"""
+
+
+class TestContinuationPassedBySelfCall:
+    """
+    A closure handed to a function's own parameter by a direct self tail call is
+    a function that reaches that parameter.
+
+    `walk` passes a continuation to itself and finally gives the last one to
+    `retry`, which asks it for an extent and retries with a shorter one when the
+    answer is #none.  The continuation the last `walk` step builds returns #none
+    for the longest extent and a list for a shorter one, so the retry is what
+    makes `start` succeed.
+
+    If the self call's arguments do not reach `walk`'s parameter, the parameter
+    is resolved to the closures passed from outside `walk` alone, and the only
+    one there returns a list.  The call through it is then reported as returning
+    a list, `(none? r)` folds to #f, and the retry branch is deleted: `start`
+    returns the continuation's first answer, #none, instead of the match.
+    """
+
+    def test_retry_branch_retained(self):
+        cfg = _build_cfg(RETRY_SELF_CALL_CONTINUATION_SRC)
+        retry = [f for f in collect_functions(cfg) if f.binding_name == "retry"]
+        assert retry, "retry was not compiled as a function"
+        assert _none_predicate_count_in(retry[0]) > 0
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(RETRY_SELF_CALL_CONTINUATION_SRC) == "(2)"
+
+
+RETRY_THROUGH_PARAMETER_SRC = """
+(let ((retry
+       (lambda (k pos end)
+         (if (integer<? end pos)
+             #none
+             (let ((r (k end)))
+               (if (none? r)
+                   (retry k pos (integer- end 1))
+                   r)))))
+
+      (walk
+       (lambda (pos k)
+         (if (integer>=? pos 3)
+             (retry k 0 3)
+             (walk (integer+ pos 1) k))))
+
+      (keep (lambda (v) (list v)))
+
+      (box (struct (fn)))
+
+      (cell (box (lambda (v) (if (integer>=? v 3) #none (list v)))))
+
+      (start (lambda (g) (walk 0 g))))
+
+  (list (start keep) (start (struct-get cell 'fn))))
+"""
+
+
+class TestUnknownCalleeFlowsThroughParameters:
+    """
+    A parameter that may receive a function the analysis cannot name keeps that
+    flag when it is passed on to another function's parameter.
+
+    `start` hands its parameter to `walk`, which hands it to `retry`; `retry`
+    calls it and retries with a shorter extent when the answer is #none.  One of
+    the two values `start` receives is fetched out of a struct field, which the
+    analysis cannot name, and that one returns #none for the longest extent.
+
+    The flag set on `walk`'s parameter by the unnamed argument must therefore
+    reach `retry`'s parameter, two call hops away.  If it stops at the parameter
+    it was set on, `retry`'s call is resolved to the only known callee -- a
+    function returning a list -- so `(none? r)` folds to #f, the retry branch is
+    deleted, and the second call returns #none instead of the match.
+    """
+
+    def test_retry_branch_retained(self):
+        cfg = _build_cfg(RETRY_THROUGH_PARAMETER_SRC)
+        retry = [f for f in collect_functions(cfg) if f.binding_name == "retry"]
+        assert retry, "retry was not compiled as a function"
+        assert _none_predicate_count_in(retry[0]) > 0
+
+    def test_result_correct(self, menai):
+        assert menai.evaluate_and_format(RETRY_THROUGH_PARAMETER_SRC) == "((3) (2))"

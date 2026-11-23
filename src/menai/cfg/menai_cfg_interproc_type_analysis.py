@@ -63,6 +63,19 @@ unknown, and a call through it returns ANY rather than only the known subset.
 This is what lets a higher-order function's call result carry a proven type
 when every function that reaches it returns that type.
 
+A direct self-recursive tail call is a call site for this purpose too: it hands
+its arguments to the same function's parameters, so a closure passed only that
+way still reaches them.  Omitting it would leave the parameter's known set a
+strict subset of the functions that really arrive, with no unknown flag to say
+so, and a call through it would be reported with a type it does not have.
+
+The unknown flag follows an argument into the callee's parameter, and so on
+through every function that parameter is passed to; within a function it
+propagates through phis, containers, free variables and call results exactly as
+the known set does.  A parameter flag and the value-level flag of the argument
+that sets it are mutually dependent, so the two are iterated to a joint fixed
+point before any fact is computed.
+
 Rewriting
 ---------
 After the fixed point, for every function the pass rewrites struct field access
@@ -314,7 +327,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         infos = list(info_of.values())
 
         self._resolve_all_callees(root, functions, info_of)
-        self._saturate_unknown_callees(infos, info_of)
+        self._propagate_unknown_flags(infos, info_of)
 
         for info in infos:
             info.callee_ids = _all_callee_ids(info)
@@ -323,9 +336,17 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self._grounded_sccs = self._externally_grounded_sccs(infos)
 
         self._propagate_to_fixed_point(infos, info_of)
-        self._saturate_unknown_externals(infos, info_of)
-        self._saturate_escaped(infos, info_of)
-        self._propagate_unknown_values(infos)
+        while True:
+            changed_flags = self._saturate_unknown_externals(infos, info_of)
+            changed_flags = self._saturate_escaped(infos, info_of) or changed_flags
+            changed_flags = self._propagate_unknown_flags(infos, info_of) or changed_flags
+            if not changed_flags:
+                break
+
+            # A new parameter flag turns a call through that parameter from the
+            # join of its known callees' return facts into ANY, which can only
+            # degrade facts.  Degrade them before the next round reads them.
+            self._propagate_to_fixed_point(infos, info_of)
 
         changed = False
         rewritten: dict[int, MenaiCFGFunction] = {}
@@ -356,7 +377,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self,
         infos: list[_FunctionInfo],
         info_of: dict[int, _FunctionInfo],
-    ) -> None:
+    ) -> bool:
         """
         Make parameters reached by an unknown external argument unconstrained.
 
@@ -371,7 +392,10 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         not-yet-computed argument is also BOTTOM while the fixed point is
         running; treating that as unknown would latch ANY onto a parameter whose
         argument later resolves to a concrete type.
+
+        Returns True if any parameter was degraded or newly flagged.
         """
+        changed_overall = False
         while True:
             saturated = False
             for info in infos:
@@ -394,15 +418,16 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                         saturated = True
 
             if not saturated:
-                return
+                return changed_overall
 
             self._propagate_to_fixed_point(infos, info_of)
+            changed_overall = True
 
     def _saturate_escaped(
         self,
         infos: list[_FunctionInfo],
         info_of: dict[int, _FunctionInfo],
-    ) -> None:
+    ) -> bool:
         """
         Make the parameters of every escaping function unconstrained.
 
@@ -424,10 +449,12 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         be called from a site the analysis cannot see, which may pass a function
         the analysis cannot name into any parameter.  A call through such a
         parameter must therefore return ANY rather than only the known subset.
+
+        Returns True if any parameter was degraded or newly flagged.
         """
         escaping = self._escaping_functions(infos)
         if not escaping:
-            return
+            return False
 
         changed = False
         for info in infos:
@@ -451,6 +478,8 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
 
         if changed:
             self._propagate_to_fixed_point(infos, info_of)
+
+        return changed
 
     def _escaping_functions(self, infos: list[_FunctionInfo]) -> set[int]:
         """
@@ -703,7 +732,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                     changed = True
 
                 if (
-                    self._instr_callees_unknown(instr, unknown_of_value)
+                    self._instr_callees_unknown(instr, unknown_of_value, info)
                     and instr.result.id not in unknown_of_value
                 ):
                     unknown_of_value.add(instr.result.id)
@@ -725,6 +754,12 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         nothing here, and the parameter it feeds is flagged unknown by
         `_saturate_unknown_callees` once the fixed point has converged.
 
+        A direct self tail call is a call site too: it hands its arguments to the
+        same function's parameters on the next iteration, so a closure passed
+        only that way still reaches the parameter.  Omitting it leaves the
+        parameter's known set an under-approximation of the functions that
+        really arrive, with no unknown flag to say so.
+
         This uses the current (possibly partial) `callee_of_value`, so it is
         called inside the global fixed point rather than once.  Returns True if
         any parameter set changed.
@@ -745,6 +780,12 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                 callees = callee_of_value.get(term.func.id, set())
                 if callees and self._join_arg_callees(
                     info_of, callees, term.args, callee_of_value,
+                ):
+                    changed = True
+
+            elif isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is None:
+                if self._join_arg_callees(
+                    info_of, {id(info.func)}, term.args, callee_of_value,
                 ):
                     changed = True
 
@@ -793,12 +834,18 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         Propagate the value-level unknown flag to a fixed point.
 
         The callee-resolution fixed point seeds `unknown_of_value` from the
-        parameter flags known at that time, but `_saturate_unknown_callees` and
-        `_saturate_escaped` set further parameter flags afterwards.  A phi or
-        container that holds such a parameter must itself be flagged unknown, so
-        a call through it is treated as returning ANY.  This re-runs only the
-        unknown propagation, which is monotone and independent of the known
-        sets, so it terminates and cannot change any known callee-set.
+        parameter flags known at that time, but `_saturate_unknown_callees`,
+        `_saturate_unknown_externals` and `_saturate_escaped` set further
+        parameter flags afterwards.  Every value that reads such a parameter —
+        the parameter instruction itself, a phi, a container holding it, a free
+        variable capturing it, a call made through it — must itself be flagged
+        unknown, so a call through it is treated as returning ANY.
+
+        This re-runs only the unknown propagation, which is monotone and
+        independent of the known sets, so it terminates and cannot change any
+        known callee-set.  It is not a complete answer on its own: a newly
+        flagged value can flag a parameter in turn, which is why
+        `_propagate_unknown_flags` alternates it with `_saturate_unknown_callees`.
         """
         changed = True
         while changed:
@@ -820,7 +867,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
                             )
 
                         else:
-                            is_unknown = self._instr_callees_unknown(instr, unknown_of_value)
+                            is_unknown = self._instr_callees_unknown(instr, unknown_of_value, info)
 
                         if is_unknown:
                             unknown_of_value.add(instr.result.id)
@@ -830,7 +877,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         self,
         infos: list[_FunctionInfo],
         info_of: dict[int, _FunctionInfo],
-    ) -> None:
+    ) -> bool:
         """
         Flag parameters that may receive a function the analysis cannot name.
 
@@ -843,27 +890,82 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         running; flagging it then would latch unknown onto a parameter whose
         argument later resolves to a concrete function.
 
-        Flagging unknown does not change any value's known callee-set, so a
-        single pass suffices; the known subset stays valid and the flag only
-        widens the result of a call through the parameter to ANY.
+        Flagging unknown does not change any value's known callee-set, so the
+        known subset stays valid and the flag only widens the result of a call
+        through the parameter to ANY.  A flag set here is not visible to the
+        value-level unknown set until `_propagate_unknown_values` re-derives it,
+        so this and that must be alternated to a joint fixed point; see
+        `_propagate_unknown_flags`.
+
+        Returns True if any parameter was newly flagged.
         """
+        changed = False
         for info in infos:
             callee_of_value = info.callee_of_value
             unknown_of_value = info.unknown_of_value
             for block in info.func.blocks:
                 for instr in block.instrs:
                     if isinstance(instr, MenaiCFGCallInstr):
-                        self._flag_unknown_args(
+                        if self._flag_unknown_args(
                             info_of, callee_of_value, unknown_of_value,
                             instr.func.id, instr.args,
-                        )
+                        ):
+                            changed = True
 
                 term = block.terminator
                 if isinstance(term, MenaiCFGTailCallTerm):
-                    self._flag_unknown_args(
+                    if self._flag_unknown_args(
                         info_of, callee_of_value, unknown_of_value,
                         term.func.id, term.args,
-                    )
+                    ):
+                        changed = True
+
+                elif isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is None:
+                    if _flag_unknown_params(
+                        info, term.args, callee_of_value, unknown_of_value,
+                    ):
+                        changed = True
+
+        return changed
+
+    def _propagate_unknown_flags(
+        self,
+        infos: list[_FunctionInfo],
+        info_of: dict[int, _FunctionInfo],
+    ) -> bool:
+        """
+        Carry the callee-unknown flag across function boundaries to a fixed point.
+
+        A parameter flag and the value-level flag of the argument that set it
+        are mutually dependent: a call argument that may denote an unnamed
+        function flags the callee's parameter, and a parameter flagged by *any*
+        route makes every value that reads it — including the parameter
+        instruction of a function that receives it — unknown in turn.  A
+        parameter passed on to another function is both: the argument at the
+        inner call site is unknown only because the outer parameter was flagged,
+        so flagging and value propagation must be alternated until neither
+        changes.
+
+        Running each once, in either order, leaves a function-valued parameter
+        two call hops from the unnamed value unflagged, and a call through it is
+        then resolved to its known subset alone.  That misreports the call's
+        result type: a continuation parameter whose only known callee returns a
+        list would be held to return a list, and a `none?` test on the result
+        would be folded away, deleting the caller's retry branch.
+
+        Both directions are monotone — a flag is never cleared — and there are
+        finitely many (function, parameter index) pairs, so the loop terminates.
+
+        Returns True if any parameter was newly flagged.
+        """
+        changed_overall = False
+        while True:
+            changed = self._saturate_unknown_callees(infos, info_of)
+            self._propagate_unknown_values(infos)
+            if not changed:
+                return changed_overall
+
+            changed_overall = True
 
     @staticmethod
     def _flag_unknown_args(
@@ -872,7 +974,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         unknown_of_value: set[int],
         callee_value_id: int,
         args: tuple[MenaiCFGValue, ...],
-    ) -> None:
+    ) -> bool:
         """
         Flag each callee parameter that receives an unnamed argument.
 
@@ -880,18 +982,17 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         flagged unknown (a phi or container that may hold a function the
         analysis cannot name, in addition to any known functions).  In both
         cases the parameter may denote a function outside the known subset.
-        """
-        for callee_id in callee_of_value.get(callee_value_id, set()):
-            callee = info_of[callee_id]
-            param_count = callee.func.param_count()
-            if param_count == 0:
-                continue
 
-            fixed = param_count - 1 if callee.func.is_variadic else param_count
-            for index in range(min(fixed, len(args))):
-                arg_id = args[index].id
-                if not callee_of_value.get(arg_id, set()) or arg_id in unknown_of_value:
-                    callee.param_callee_unknown[index] = True
+        Returns True if any parameter was newly flagged.
+        """
+        changed = False
+        for callee_id in callee_of_value.get(callee_value_id, set()):
+            if _flag_unknown_params(
+                info_of[callee_id], args, callee_of_value, unknown_of_value,
+            ):
+                changed = True
+
+        return changed
 
     def _instr_callees(
         self,
@@ -942,6 +1043,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
     def _instr_callees_unknown(
         instr: object,
         unknown_of_value: set[int],
+        info: _FunctionInfo,
     ) -> bool:
         """
         Return True if an instruction's result may denote an unnamed function.
@@ -949,12 +1051,18 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         The unknown flag propagates exactly as the known callee-set does: a phi
         may be unknown if any incoming value is; a container may hold an unknown
         function if any contributing operand does; a value fetched from a
-        container is unknown if the container is.  A make_closure result is
-        always a known function, so it is never unknown.
+        container is unknown if the container is; a free variable captured from
+        an enclosing function is unknown if the value it captures is.  A
+        make_closure result is always a known function, so it is never unknown,
+        and neither is a free variable that denotes a $letrec sibling: it names
+        exactly one closure, whatever the analysis could not name elsewhere.
 
         A call result is unknown when the callee is unknown: a call the analysis
         cannot resolve may return a function the analysis cannot name.
         """
+        if isinstance(instr, MenaiCFGFreeVarInstr):
+            return _free_var_unknown(instr, info)
+
         if isinstance(instr, MenaiCFGPhiInstr):
             return any(val.id in unknown_of_value for val, _ in instr.incoming)
 
@@ -1296,8 +1404,14 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         parent is re-processed (and so its dict replaced) only when it is
         enqueued, and a child is enqueued only when the parent's facts actually
         changed, so identity is a sufficient proxy for the parent's contents.
+        The parent's value-level unknown set is part of the child's inputs too —
+        a free variable that captures an unknown-flagged value is itself
+        unknown — so it is included directly.
         """
         parent_facts = id(info.parent.value_facts) if info.parent is not None else None
+        parent_unknown = (
+            frozenset(info.parent.unknown_of_value) if info.parent is not None else frozenset()
+        )
         callee_returns = frozenset(
             (callee_id,) + _fact_key(info_of[callee_id].return_fact)
             for callee_id in info.callee_ids
@@ -1305,7 +1419,7 @@ class MenaiCFGInterprocTypeAnalysis(MenaiCFGWholeProgramPass):
         params = tuple(_fact_key(fact) for fact in info.param_facts)
         unknown_params = tuple(info.param_callee_unknown)
         unknown_values = frozenset(info.unknown_of_value)
-        return (params, callee_returns, parent_facts, unknown_params, unknown_values)
+        return (params, callee_returns, parent_facts, parent_unknown, unknown_params, unknown_values)
 
     def _intra_propagate(
         self,
@@ -2127,6 +2241,35 @@ def _free_var_callee(
     return result
 
 
+def _free_var_unknown(instr: MenaiCFGFreeVarInstr, info: _FunctionInfo) -> bool:
+    """
+    Return True if a free variable may denote an unnamed function.
+
+    An outer capture mirrors the parent value that fills its capture slot: the
+    free variable denotes whatever that value denotes, so it is unknown exactly
+    when that value is.  `_free_var_callee` resolves the slot the same way, and
+    the two must agree or the flag would describe a different value from the one
+    the known set was taken from.
+
+    A sibling free variable names a $letrec sibling by name, and a sibling
+    binding is a closure created in the parent: exactly one known function, so it
+    is never unknown.  If its capture could not be resolved at all, its known set
+    is empty and the parameter it is passed to is flagged unknown by
+    `_flag_unknown_args`, which covers that case without a flag here.
+    """
+    if info.parent is None or info.parent_closure is None:
+        return False
+
+    parent_closure = info.parent_closure
+    free_vars = parent_closure.function.free_vars
+    outer_start = len(free_vars) - len(parent_closure.captures)
+    if instr.index < outer_start:
+        return False
+
+    captured = parent_closure.captures[instr.index - outer_start]
+    return captured.id in info.parent.unknown_of_value
+
+
 def _union_of_args(
     args: tuple[MenaiCFGValue, ...],
     callee_of_value: dict[int, set[int]],
@@ -2212,6 +2355,45 @@ def _join_param(target: list[TypeFact], index: int, fact: TypeFact) -> bool:
         return True
 
     return False
+
+
+def _flag_unknown_params(
+    callee: _FunctionInfo,
+    args: tuple[MenaiCFGValue, ...],
+    callee_of_value: dict[int, set[int]],
+    unknown_of_value: set[int],
+) -> bool:
+    """
+    Flag each of `callee`'s parameters that receives an unnamed argument.
+
+    An argument is unnamed when its known callee-set is empty, or when its value
+    is flagged unknown, which means it may denote a function the analysis cannot
+    name in addition to the functions it resolved.  Either way the parameter may
+    denote a function outside the known subset, so a call through it must return
+    ANY rather than the join of the known callees' return facts.
+
+    A variadic callee's rest parameter receives a packed list, not the argument
+    values, so it is not flagged here; a function in that list reaches a call
+    through the container-flow rules.
+
+    Returns True if any parameter was newly flagged.
+    """
+    param_count = callee.func.param_count()
+    if param_count == 0:
+        return False
+
+    changed = False
+    fixed = param_count - 1 if callee.func.is_variadic else param_count
+    for index in range(min(fixed, len(args))):
+        arg_id = args[index].id
+        if (
+            not callee.param_callee_unknown[index]
+            and (not callee_of_value.get(arg_id, set()) or arg_id in unknown_of_value)
+        ):
+            callee.param_callee_unknown[index] = True
+            changed = True
+
+    return changed
 
 
 def _value_defs(func: MenaiCFGFunction) -> dict[int, object]:
