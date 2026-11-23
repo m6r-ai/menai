@@ -1,6 +1,6 @@
 # Change log for Menai
 
-## v0.12.0 (2026-xx-xx)
+## v0.12.0 (2026-11-23)
 
 New features:
 
