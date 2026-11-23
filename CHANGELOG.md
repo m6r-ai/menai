@@ -1,5 +1,12 @@
 # Change log for Menai
 
+## v0.12.1 (2026-11-23)
+
+Bug fixes:
+
+- The `base64-encode` library has suffered a performance regression.  Fixed so it's
+  now faster than v0.11.
+
 ## v0.12.0 (2026-11-23)
 
 New features:

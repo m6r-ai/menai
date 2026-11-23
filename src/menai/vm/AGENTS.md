@@ -160,6 +160,15 @@ helper is not disqualifying on its own. What cannot be inlined is a recursive la
 merge in `sort-vector`) and one the inliner leaves as a real call. So `sort-vector` must stay
 one flat loop because its merge is recursive, not because helpers are inherently wrong.
 
+`dest == src0` also means **one update per iteration**. Two updates chained in one iteration
+consume each other's results, so each needs a register distinct from the accumulator and at
+most the outermost one can write into it. `(bytes-append-u8 (bytes-append-u8 acc a) b)`
+therefore copies the whole accumulator twice per iteration and is quadratic: four nested
+appends per iteration building 87 KB took 55.7 ms against 1.14 ms for the same output written
+by one append per iteration. Append a single piece per iteration and carry the rest of the
+decision as loop state; do not nest updates to save iterations or to avoid recomputing an
+operand.
+
 Do not generalise from an inlined helper to a hand-written flat loop: the flat loop is no
 faster once the helper is inlined, and it is much harder to read.
 
