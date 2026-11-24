@@ -61,6 +61,12 @@ class Suite(BenchmarkSuite):
         faster: the mirror's per-move cost is one tuple construction of nine loads,
         which beats walking a cycle with bytecode-level index writes. So immutability
         costs Python nothing here, and there is no second column to report.
+
+        That result says nothing about Menai, which pays for its own representation
+        rather than Python's. Nothing here should be read as "Menai cannot mutate":
+        the VM updates a collection in place when the update cannot be observed, and
+        whether this module's struct-of-six-vectors shape qualifies is a separate
+        question from which Python spelling is faster.
         """
         return [
             ReferenceImplementation(

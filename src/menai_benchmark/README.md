@@ -118,9 +118,27 @@ timing-only.
 ## Reference implementations
 
 A suite may additionally report a non-Menai implementation of the same work, in
-adjacent columns and with a final `ref/menai` ratio.  The reference must
-reimplement the Menai algorithm step for step, so that the ratio is the other
-language's cost for identical work.
+adjacent columns and with a final `ref/menai` ratio.
+
+The reference must perform the same work — the same algorithm and, where it can be
+counted, the same count — but it must be the **fastest** implementation we know how
+to write in the host language, not a transcription of Menai's data structures.  A
+reference that is slower than it needs to be understates the host language and
+flatters Menai.  Which representation wins is measured, never assumed: an in-place
+Rubik's cube solver was written and measured 1.7x slower than the immutable one, so
+it was discarded, while an in-place sudoku solver measured 2x faster and was kept.
+Each suite records the variant it chose and the measurement that chose it.
+
+Because the representation is free, the ratio compares *implementations*, not
+virtual machines.  A gap can mean the VM is slower, or that the Menai module is
+written in a shape that forfeits something the VM can do — and the number alone does
+not say which.
+
+Purity does not make the second impossible.  Menai has no mutation a program can
+express, but the VM updates a collection in place whenever the update cannot be
+observed (ADR-0063, extended by ADR-0064 and ADR-0065), so a module's data shape
+decides whether it gets that path.  When a Python reference wins by mutating, check
+the Menai module's shape before attributing the gap to the language.
 
 Three suites carry one, all in pure Python:
 

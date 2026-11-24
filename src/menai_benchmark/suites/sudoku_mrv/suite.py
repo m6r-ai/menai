@@ -61,6 +61,12 @@ class Suite(BenchmarkSuite):
         nodes as the Menai solver, so the two columns compare equal work rather
         than two different searches.
 
+        It mutates the grid and the candidate masks in place and undoes on backtrack,
+        rather than copying at every level, because that is the faster Python
+        spelling of this search: measured against an immutable mirror of the same
+        algorithm it ran at 9.47 ms against 19.98 ms on the Hard puzzle, so the
+        in-place form is the one the ratio should be measured against.
+
         One asymmetry survives that assertion and is not corrected for: the Menai
         module has no import-time state, so it rebuilds its 512-entry popcount
         table and its board literal on every execution, inside the timed section.
