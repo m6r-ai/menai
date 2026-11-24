@@ -125,32 +125,18 @@ mc_logn(mc_t a, mc_t b)
  * Computing in long would narrow the operands, so a value the payload already
  * holds would be reported as overflowing.
  *
- * _menai_add_overflow(a, b, &result) returns 1 if a+b overflows int64_t, 0 otherwise.
- * _menai_sub_overflow and _menai_mul_overflow follow the same convention.
+ * _menai_mul_overflow(a, b, &result) returns 1 if a*b overflows int64_t, 0 otherwise.
  * _menai_shl_overflow(a, shift, &result) returns 1 if a<<shift overflows int64_t.
  * The caller must ensure 0 <= shift < (int64_t)(sizeof(int64_t) * 8).
+ *
+ * Addition and subtraction of two fixnums need no equivalent.  Each operand is
+ * within +/-2^60, so the result is within +/-2^61 and cannot overflow an
+ * int64_t: those opcodes compute in the int64_t scratch and let
+ * alloc_menai_integer_from_long choose the representation from the value.
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define _menai_add_overflow(a, b, rp) __builtin_add_overflow((a), (b), (rp))
-#define _menai_sub_overflow(a, b, rp) __builtin_sub_overflow((a), (b), (rp))
 #define _menai_mul_overflow(a, b, rp) __builtin_mul_overflow((a), (b), (rp))
 #else
-static inline int
-_menai_add_overflow(int64_t a, int64_t b, int64_t *r) {
-    uint64_t ua = (uint64_t)a, ub = (uint64_t)b;
-    uint64_t ur = ua + ub;
-    *r = (int64_t)ur;
-    return (a > 0 && b > 0 && *r < 0) || (a < 0 && b < 0 && *r > 0);
-}
-
-static inline int
-_menai_sub_overflow(int64_t a, int64_t b, int64_t *r) {
-    uint64_t ua = (uint64_t)a, ub = (uint64_t)b;
-    uint64_t ur = ua - ub;
-    *r = (int64_t)ur;
-    return (b < 0 && a > 0 && *r < 0) || (b > 0 && a < 0 && *r > 0);
-}
-
 static inline int
 _menai_mul_overflow(int64_t a, int64_t b, int64_t *r) {
     /*
@@ -359,7 +345,7 @@ static inline int
 menai_integer_to_menai_bigint(MenaiVMState *vs, MenaiValue *val, MenaiBigInt *out)
 {
     if (menai_is_fixnum(val)) {
-        return menai_bigint_from_long_long(vs, menai_fixnum_value(val), out);
+        return menai_bigint_from_int64(vs, menai_fixnum_value(val), out);
     }
 
     return menai_bigint_copy(vs, &menai_integer_boxed(val)->big, out);
@@ -370,8 +356,17 @@ menai_integer_to_menai_bigint(MenaiVMState *vs, MenaiValue *val, MenaiBigInt *ou
  *
  * Returns 0 on success and MENAI_ERR_OVERFLOW if the value is a bignum too wide
  * for an int64_t.  The fixnum payload is exactly the width of an int64_t, so a
- * fixnum always succeeds: a failure never means "fixnum too wide", which is what
- * lets the fast paths treat this as the extraction of the whole integer.
+ * fixnum always succeeds.
+ *
+ * This is for an operand that carries a value, where a bignum is a legitimate
+ * argument and must be decoded: SWITCH_INTEGER compares the scrutinee against a
+ * jump table, RANGE counts between its bounds, FLOAT_LDEXP scales by its
+ * exponent, and FUNCTION_ACCEPTS_P compares an arity.
+ *
+ * An operand that carries a size — an index, an offset, a slice bound, a radix,
+ * a codepoint or a shift count — can never be satisfied by a bignum.  Those
+ * opcodes use menai_integer_to_fixnum instead, which refuses one without
+ * decoding it.
  */
 static inline int
 menai_integer_to_int64(MenaiValue *val, int64_t *out)
@@ -381,13 +376,7 @@ menai_integer_to_int64(MenaiValue *val, int64_t *out)
         return 0;
     }
 
-    long long wide;
-    if (menai_bigint_to_long_long(&menai_integer_boxed(val)->big, &wide) < 0) {
-        return MENAI_ERR_OVERFLOW;
-    }
-
-    *out = (int64_t)wide;
-    return 0;
+    return menai_bigint_to_int64(&menai_integer_boxed(val)->big, out);
 }
 
 /*
@@ -427,11 +416,11 @@ menai_integer_to_long_long(MenaiValue *val, long long *out)
 }
 
 /*
- * menai_integer_to_unsigned_long_long — extract an unsigned long long.
+ * menai_integer_to_uint64 — extract a uint64_t.
  * Returns 0 on success, -1 on error (negative, or too large).
  */
 static inline int
-menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
+menai_integer_to_uint64(MenaiValue *val, uint64_t *out)
 {
     /*
      * A bignum is used here rather than menai_integer_to_int64 because the
@@ -444,11 +433,11 @@ menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
             return -1;
         }
 
-        *out = (unsigned long long)wide;
+        *out = (uint64_t)wide;
         return 0;
     }
 
-    return menai_bigint_to_unsigned_long_long(&menai_integer_boxed(val)->big, out);
+    return menai_bigint_to_uint64(&menai_integer_boxed(val)->big, out);
 }
 
 /*
@@ -456,12 +445,16 @@ menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
  * fixnum, treating a bignum as a failure.
  *
  * Returns 0 on success and MENAI_ERR_OVERFLOW for a bignum.  Every opcode that
- * takes an index, an offset, a slice bound or a field index uses this: a bignum
- * is never a valid operand there, because it exceeds every length the machine
- * can hold, and each of those opcodes already reports a failed extraction with
- * the same error code as an in-range failure.  Refusing a bignum outright
- * therefore loses no diagnosis and keeps the bignum decoding path out of the
- * opcode body entirely.
+ * takes a size uses this: an index, an offset, a slice bound, a field index, a
+ * radix, a codepoint or a shift count.  A bignum can never satisfy one of those,
+ * so refusing it outright loses no diagnosis that matters, and it keeps the
+ * bignum decoding path out of the opcode body entirely.
+ *
+ * The one thing it can change is which out-of-range error a bigint operand is
+ * named with: an opcode that distinguishes a negative size from an over-large
+ * one reports its over-large error here, because the value never had a size to
+ * be negative.  A caller for which that distinction is the whole point needs
+ * menai_integer_to_int64 and its own range check instead.
  *
  * A value that is not an integer at all must never reach this: the guard
  * opcodes prove the operand's type first, so for the caller "not a fixnum" is
@@ -2077,36 +2070,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
 
             if (menai_is_fixnum(a)) {
+                /*
+                 * A fixnum is within +/-2^60, so negating the magnitude cannot
+                 * overflow the int64_t scratch.  The constructor promotes the
+                 * result when it exceeds the payload, which is the only way |x|
+                 * leaves the fixnum range.
+                 */
                 int64_t sv = menai_fixnum_value(a);
-                /* INT64_MIN has no positive counterpart — promote to bigint. */
-                if (sv == INT64_MIN) {
-                    MenaiBigInt tmp;
-                    menai_bigint_init(&tmp);
-                    vm_err = menai_bigint_from_long_long(vs, sv, &tmp);
-                    if (MENAI_UNLIKELY(vm_err < 0)) {
-                        goto error;
-                    }
-
-                    MenaiBigInt res;
-                    menai_bigint_init(&res);
-                    vm_err = menai_bigint_abs(vs, &tmp, &res);
-                    if (MENAI_UNLIKELY(vm_err < 0)) {
-                        menai_bigint_final(vs, &tmp);
-                        goto error;
-                    }
-
-                    menai_bigint_final(vs, &tmp);
-                    MenaiValue *r = alloc_menai_integer_from_bigint(vs, res);
-                    if (!r) {
-                        vm_err = MENAI_ERR_NOMEM;
-                        goto error;
-                    }
-
-                    menai_value_release(vs, frame_regs[dest]);
-                    frame_regs[dest] = (MenaiValue *)r;
-                    break;
-                }
-
                 MenaiValue *r = alloc_menai_integer_from_long(vs, sv < 0 ? -sv : sv);
                 if (!r) {
                     vm_err = MENAI_ERR_NOMEM;
@@ -2140,36 +2110,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
 
             if (menai_is_fixnum(a)) {
+                /*
+                 * A fixnum is within +/-2^60, so negating it cannot overflow the
+                 * int64_t scratch.  The constructor promotes the result when it
+                 * exceeds the payload, which is the only way negation leaves the
+                 * fixnum range.
+                 */
                 int64_t sv = menai_fixnum_value(a);
-                /* INT64_MIN negation overflows — promote to bigint. */
-                if (sv == INT64_MIN) {
-                    MenaiBigInt tmp;
-                    menai_bigint_init(&tmp);
-                    vm_err = menai_bigint_from_long_long(vs, sv, &tmp);
-                    if (MENAI_UNLIKELY(vm_err < 0)) {
-                        goto error;
-                    }
-
-                    MenaiBigInt res;
-                    menai_bigint_init(&res);
-                    vm_err = menai_bigint_neg(vs, &tmp, &res);
-                    if (MENAI_UNLIKELY(vm_err < 0)) {
-                        menai_bigint_final(vs, &tmp);
-                        goto error;
-                    }
-
-                    menai_bigint_final(vs, &tmp);
-                    MenaiValue *r = alloc_menai_integer_from_bigint(vs, res);
-                    if (!r) {
-                        vm_err = MENAI_ERR_NOMEM;
-                        goto error;
-                    }
-
-                    menai_value_release(vs, frame_regs[dest]);
-                    frame_regs[dest] = (MenaiValue *)r;
-                    break;
-                }
-
                 MenaiValue *r = alloc_menai_integer_from_long(vs, -sv);
                 if (!r) {
                     vm_err = MENAI_ERR_NOMEM;
@@ -2247,20 +2194,22 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             if (menai_is_fixnum(a) && menai_is_fixnum(b)) {
-                int64_t la = menai_fixnum_value(a);
-                int64_t lb = menai_fixnum_value(b);
-                int64_t lr;
-                if (!_menai_add_overflow(la, lb, &lr)) {
-                    MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
-                    if (!r) {
-                        vm_err = MENAI_ERR_NOMEM;
-                        goto error;
-                    }
-
-                    menai_value_release(vs, frame_regs[dest]);
-                    frame_regs[dest] = (MenaiValue *)r;
-                    break;
+                /*
+                 * Two fixnums are within +/-2^60, so their sum is within +/-2^61
+                 * and the int64_t scratch cannot overflow.  The constructor
+                 * decides the representation from the value, so a sum that
+                 * leaves the fixnum range becomes a bignum here.
+                 */
+                int64_t lr = menai_fixnum_value(a) + menai_fixnum_value(b);
+                MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
                 }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
             }
 
             MenaiBigInt av;
@@ -2306,20 +2255,21 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             if (menai_is_fixnum(a) && menai_is_fixnum(b)) {
-                int64_t la = menai_fixnum_value(a);
-                int64_t lb = menai_fixnum_value(b);
-                int64_t lr;
-                if (!_menai_sub_overflow(la, lb, &lr)) {
-                    MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
-                    if (!r) {
-                        vm_err = MENAI_ERR_NOMEM;
-                        goto error;
-                    }
-
-                    menai_value_release(vs, frame_regs[dest]);
-                    frame_regs[dest] = (MenaiValue *)r;
-                    break;
+                /*
+                 * The difference of two fixnums is bounded by the same +/-2^61,
+                 * so the int64_t scratch cannot overflow and the constructor
+                 * chooses the representation from the value.
+                 */
+                int64_t lr = menai_fixnum_value(a) - menai_fixnum_value(b);
+                MenaiValue *r = alloc_menai_integer_from_long(vs, lr);
+                if (!r) {
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
                 }
+
+                menai_value_release(vs, frame_regs[dest]);
+                frame_regs[dest] = (MenaiValue *)r;
+                break;
             }
 
             MenaiBigInt av;
@@ -2770,8 +2720,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            int64_t shift;
-            if (MENAI_UNLIKELY(menai_integer_to_int64(b, &shift) < 0)) {
+            ssize_t shift;
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &shift) < 0)) {
                 vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
                 goto error;
             }
@@ -2829,8 +2779,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            int64_t shift;
-            if (MENAI_UNLIKELY(menai_integer_to_int64(b, &shift) < 0)) {
+            ssize_t shift;
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &shift) < 0)) {
                 vm_err = MENAI_ERR_SHIFT_TOO_LARGE;
                 goto error;
             }
@@ -3195,9 +3145,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            int64_t radix;
-            vm_err = menai_integer_to_int64(b, &radix);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
+            ssize_t radix;
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &radix) < 0)) {
+                vm_err = MENAI_ERR_INVALID_RADIX;
                 goto error;
             }
 
@@ -3228,9 +3178,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         case OP_INTEGER_CODEPOINT_TO_STRING: {
             MenaiValue *a = (MenaiValue *)operand(constants_items, frame_regs, src0, tag & 1);
 
-            int64_t cp;
-            vm_err = menai_integer_to_int64(a, &cp);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
+            ssize_t cp;
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(a, &cp) < 0)) {
+                vm_err = MENAI_ERR_INVALID_CODEPOINT;
                 goto error;
             }
 
@@ -4917,9 +4867,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
-            int64_t radix;
-            vm_err = menai_integer_to_int64(b, &radix);
-            if (MENAI_UNLIKELY(vm_err < 0)) {
+            ssize_t radix;
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &radix) < 0)) {
+                vm_err = MENAI_ERR_INVALID_RADIX;
                 goto error;
             }
 
@@ -5921,7 +5871,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                      * negative (or wrap) if narrowed to long. */ \
                     MenaiBigInt big; \
                     menai_bigint_init(&big); \
-                    vm_err = menai_bigint_from_unsigned_long_long(vs, (unsigned long long)uval, &big); \
+                    vm_err = menai_bigint_from_uint64(vs, (unsigned long long)uval, &big); \
                     if (MENAI_UNLIKELY(vm_err < 0)) { \
                         goto error; \
                     } \
@@ -6058,13 +6008,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 menai_value_release(vs, frame_regs[dest]); \
                 frame_regs[dest] = (MenaiValue *)r; \
             } else { \
-                unsigned long long uval_ull; \
-                if (menai_integer_to_unsigned_long_long(v, &uval_ull) < 0) { \
+                uint64_t uval_ull; \
+                if (menai_integer_to_uint64(v, &uval_ull) < 0) { \
                     vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE; \
                     goto error; \
                 } \
 \
-                if ((width) < (int)sizeof(unsigned long long) && uval_ull > (~0ULL >> (64 - (width) * 8))) { \
+                if ((width) < (int)sizeof(uint64_t) && uval_ull > (~0ULL >> (64 - (width) * 8))) { \
                     vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE; \
                     goto error; \
                 } \
@@ -6167,7 +6117,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 goto error; \
             } \
 \
-            unsigned long long uval_ull; \
+            uint64_t uval_ull; \
             if (is_signed) { \
                 long long val; \
                 if (menai_integer_to_long_long(v, &val) < 0) { \
@@ -6182,9 +6132,9 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                         goto error; \
                     } \
                 } \
-                uval_ull = (unsigned long long)val; \
+                uval_ull = (uint64_t)val; \
             } else { \
-                if (menai_integer_to_unsigned_long_long(v, &uval_ull) < 0) { \
+                if (menai_integer_to_uint64(v, &uval_ull) < 0) { \
                     vm_err = MENAI_ERR_VALUE_OUT_OF_RANGE; \
                     goto error; \
                 } \
@@ -6326,7 +6276,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 /* Value exceeds LONG_MAX — use bigint path */
                 MenaiBigInt big;
                 menai_bigint_init(&big);
-                vm_err = menai_bigint_from_unsigned_long_long(vs, result, &big);
+                vm_err = menai_bigint_from_uint64(vs, result, &big);
                 if (MENAI_UNLIKELY(vm_err < 0)) {
                     goto error;
                 }
@@ -6386,8 +6336,8 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *v = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
-            unsigned long long uval;
-            if (MENAI_UNLIKELY(menai_integer_to_unsigned_long_long(v, &uval) < 0)) {
+            uint64_t uval;
+            if (MENAI_UNLIKELY(menai_integer_to_uint64(v, &uval) < 0)) {
                 vm_err = MENAI_ERR_NEGATIVE_ARGUMENT;
                 goto error;
             }

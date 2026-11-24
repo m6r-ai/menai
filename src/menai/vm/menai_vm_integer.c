@@ -21,7 +21,7 @@ alloc_menai_integer_from_long(MenaiVMState *vs, int64_t n)
 
     MenaiBigInt big;
     menai_bigint_init(&big);
-    if (menai_bigint_from_long_long(vs, n, &big) < 0) {
+    if (menai_bigint_from_int64(vs, n, &big) < 0) {
         return NULL;
     }
 
@@ -49,7 +49,7 @@ alloc_menai_integer_from_bigint(MenaiVMState *vs, MenaiBigInt src)
      */
     if (src.length <= 2) {
         long long v;
-        if (menai_bigint_to_long_long(&src, &v) == 0 && menai_fixnum_in_range((int64_t)v)) {
+        if (menai_bigint_to_int64(&src, &v) == 0 && menai_fixnum_in_range((int64_t)v)) {
             menai_bigint_final(vs, &src);
             return menai_make_fixnum((int64_t)v);
         }

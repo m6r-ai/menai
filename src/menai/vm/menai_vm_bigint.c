@@ -445,11 +445,9 @@ menai_bigint_from_long(MenaiVMState *vs, long v, MenaiBigInt *a)
 
 /*
  * Set a to the signed 64-bit value v.
- * On platforms where long is 32-bit (e.g. MSVC/Windows), this handles
- * values that exceed the range of long.
  */
 int
-menai_bigint_from_long_long(MenaiVMState *vs, long long v, MenaiBigInt *a)
+menai_bigint_from_int64(MenaiVMState *vs, int64_t v, MenaiBigInt *a)
 {
     menai_bigint_final(vs, a);
     if (v == 0) {
@@ -457,14 +455,14 @@ menai_bigint_from_long_long(MenaiVMState *vs, long long v, MenaiBigInt *a)
     }
 
     int sign;
-    unsigned long long mag;
+    uint64_t mag;
     if (v < 0) {
         sign = -1;
-        /* Avoid UB for LLONG_MIN: cast to unsigned before negating. */
-        mag = (unsigned long long)(-(v + 1)) + 1ULL;
+        /* Avoid UB for INT64_MIN: cast to unsigned before negating. */
+        mag = (uint64_t)(-(v + 1)) + 1ULL;
     } else {
         sign = 1;
-        mag = (unsigned long long)v;
+        mag = (uint64_t)v;
     }
 
     ssize_t len;
@@ -493,14 +491,14 @@ menai_bigint_from_long_long(MenaiVMState *vs, long long v, MenaiBigInt *a)
 
 /* Set a to the unsigned value of v. */
 int
-menai_bigint_from_unsigned_long_long(MenaiVMState *vs, unsigned long long v, MenaiBigInt *a)
+menai_bigint_from_uint64(MenaiVMState *vs, uint64_t v, MenaiBigInt *a)
 {
     menai_bigint_final(vs, a);
     if (v == 0) {
         return 0;
     }
 
-    uint64_t mag = (uint64_t)v;
+    uint64_t mag = v;
 
     ssize_t len;
     if (mag <= 0xFFFFFFFFUL) {
@@ -693,8 +691,8 @@ menai_bigint_from_double(MenaiVMState *vs, double v, MenaiBigInt *a)
 }
 
 /* Return 1 if the value of a fits in an int64_t, 0 otherwise. */
-int
-menai_bigint_fits_long_long(const MenaiBigInt *a)
+static int
+menai_bigint_fits_int64(const MenaiBigInt *a)
 {
     if (a->length == 0) {
         return 1;
@@ -720,11 +718,11 @@ menai_bigint_fits_long_long(const MenaiBigInt *a)
     return 1;
 }
 
-/* Store the value of a in *out as a C long long. */
+/* Store the value of a in *out as an int64_t. */
 int
-menai_bigint_to_long_long(const MenaiBigInt *a, long long *out)
+menai_bigint_to_int64(const MenaiBigInt *a, int64_t *out)
 {
-    if (!menai_bigint_fits_long_long(a)) {
+    if (!menai_bigint_fits_int64(a)) {
         return MENAI_ERR_OVERFLOW;
     }
 
@@ -739,17 +737,17 @@ menai_bigint_to_long_long(const MenaiBigInt *a, long long *out)
     }
 
     if (a->sign == -1) {
-        *out = (long long)(0ULL - mag);
+        *out = (int64_t)(0ULL - mag);
     } else {
-        *out = (long long)mag;
+        *out = (int64_t)mag;
     }
 
     return 0;
 }
 
-/* Return 1 if the value of a fits in an unsigned long long, 0 otherwise. */
-int
-menai_bigint_fits_unsigned_long_long(const MenaiBigInt *a)
+/* Return 1 if the value of a fits in a uint64_t, 0 otherwise. */
+static int
+menai_bigint_fits_uint64(const MenaiBigInt *a)
 {
     if (a->sign == -1) {
         return 0;
@@ -762,11 +760,11 @@ menai_bigint_fits_unsigned_long_long(const MenaiBigInt *a)
     return 0;
 }
 
-/* Store the value of a in *out as an unsigned long long. */
+/* Store the value of a in *out as a uint64_t. */
 int
-menai_bigint_to_unsigned_long_long(const MenaiBigInt *a, unsigned long long *out)
+menai_bigint_to_uint64(const MenaiBigInt *a, uint64_t *out)
 {
-    if (!menai_bigint_fits_unsigned_long_long(a)) {
+    if (!menai_bigint_fits_uint64(a)) {
         return MENAI_ERR_OVERFLOW;
     }
 
@@ -780,7 +778,7 @@ menai_bigint_to_unsigned_long_long(const MenaiBigInt *a, unsigned long long *out
         mag |= ((uint64_t)a->digits[1] << 32);
     }
 
-    *out = (unsigned long long)mag;
+    *out = mag;
     return 0;
 }
 

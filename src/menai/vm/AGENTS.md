@@ -57,19 +57,29 @@ are mutually exclusive. Do not dereference a value you have only proven to be an
   `!menai_is_fixnum`. Narrow with `menai_integer_boxed(v)` and use `->big` rather than
   repeating a cast at every use.
 - `menai_integer_to_int64(v, &out)` — either form as an `int64_t`, returning
-  `MENAI_ERR_OVERFLOW` when a bignum does not fit. A fixnum always fits, so this is the
-  extraction the opcode fast paths use: it settles the representation question without
-  narrowing the value. Callers keep their own error code, because "too large" is a
-  different diagnosis for a shift count, an index and a radix.
-  `menai_integer_to_long` and `menai_integer_to_long_long` narrow on purpose, and so report
-  an out-of-range value themselves rather than leaving it to the caller.
+  `MENAI_ERR_OVERFLOW` when a bignum does not fit. A fixnum always fits. Callers keep
+  their own error code, because "too large" is a different diagnosis for a shift count,
+  an index and a radix. `menai_integer_to_long` and `menai_integer_to_long_long` narrow on
+  purpose, and so report an out-of-range value themselves rather than leaving it to the
+  caller.
 - `menai_integer_to_fixnum(v, &out)` — a fixnum's value, and `MENAI_ERR_OVERFLOW` for a
-  bignum. This is what an opcode taking an index, offset, slice bound or field index uses:
-  a bignum can never be a valid one, so refusing it loses no diagnosis beyond which
-  out-of-range error gets named, and it keeps the bignum path out of the opcode body. Use it
-  only where the operand cannot be legitimate: `SWITCH_INTEGER`, `FUNCTION_ACCEPTS_P`,
-  `RANGE` and `FLOAT_LDEXP` are the counterexamples, where a bignum operand is a real value
-  and the opcode must keep using `menai_integer_to_int64`.
+  bignum, without decoding it.
+
+Which of the two an opcode uses follows from what its operand means, and the distinction is
+the thing to get right when adding or changing one:
+
+- A **value-carrying** operand accepts either representation, because a bignum is a real
+  argument. `SWITCH_INTEGER` compares the scrutinee against its jump table, `RANGE` counts
+  between its bounds, `FLOAT_LDEXP` scales by its exponent and `FUNCTION_ACCEPTS_P` compares
+  an arity. These use `menai_integer_to_int64` and must keep doing so.
+- A **size-carrying** operand is an index, an offset, a slice bound, a field index, a radix,
+  a codepoint or a shift count. A bignum can never satisfy one, since it exceeds every
+  length the machine can hold, so these use `menai_integer_to_fixnum` and the diagnostic does
+  not depend on the representation the value arrived in.
+
+`menai_integer_to_fixnum` does change which out-of-range error a bigint operand is named
+with when an opcode distinguishes a negative size from an over-large one, so an opcode for
+which that distinction is the point needs the `int64_t` extraction and its own check.
 
 An intermediate that holds an integer's value is `int64_t`, never `long`. The fixnum
 payload is 61 bits on every target while a C long is 32 bits on Windows, so a fast path
