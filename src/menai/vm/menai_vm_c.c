@@ -452,23 +452,35 @@ menai_integer_to_unsigned_long_long(MenaiValue *val, unsigned long long *out)
 }
 
 /*
- * menai_integer_to_ssize_t — extract a ssize_t.
- * Returns 0 on success, -1 on error (value too large for a ssize_t).
+ * menai_integer_to_fixnum — extract the value of an integer that must be a
+ * fixnum, treating a bignum as a failure.
+ *
+ * Returns 0 on success and MENAI_ERR_OVERFLOW for a bignum.  Every opcode that
+ * takes an index, an offset, a slice bound or a field index uses this: a bignum
+ * is never a valid operand there, because it exceeds every length the machine
+ * can hold, and each of those opcodes already reports a failed extraction with
+ * the same error code as an in-range failure.  Refusing a bignum outright
+ * therefore loses no diagnosis and keeps the bignum decoding path out of the
+ * opcode body entirely.
+ *
+ * A value that is not an integer at all must never reach this: the guard
+ * opcodes prove the operand's type first, so for the caller "not a fixnum" is
+ * exactly "bignum".
+ *
+ * The destination is a ssize_t because that is what the surrounding length,
+ * capability and offset arithmetic uses.  A fixnum payload is 61 bits and a
+ * ssize_t is pointer-width; the two agree in width on every supported platform,
+ * which menai_vm_c.h asserts at compile time.
  */
 static inline int
-menai_integer_to_ssize_t(MenaiValue *val, ssize_t *out)
+menai_integer_to_fixnum(MenaiValue *val, ssize_t *out)
 {
-    int64_t wide;
-    if (menai_integer_to_int64(val, &wide) < 0) {
-        return -1;
+    if (MENAI_LIKELY(menai_is_fixnum(val))) {
+        *out = (ssize_t)menai_fixnum_value(val);
+        return 0;
     }
 
-    if (wide < -(int64_t)SSIZE_MAX - 1 || wide > (int64_t)SSIZE_MAX) {
-        return -1;
-    }
-
-    *out = (ssize_t)wide;
-    return 0;
+    return MENAI_ERR_OVERFLOW;
 }
 
 /*
@@ -4651,7 +4663,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             ssize_t idx;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &idx) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &idx) < 0)) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
@@ -4682,13 +4694,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *c = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4);
 
             ssize_t start;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &start) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &start) < 0)) {
                 vm_err = MENAI_ERR_SLICE_START_OUT_OF_RANGE;
                 goto error;
             }
 
             ssize_t end;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(c, &end) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(c, &end) < 0)) {
                 vm_err = MENAI_ERR_SLICE_END_OUT_OF_RANGE;
                 goto error;
             }
@@ -5168,7 +5180,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *idx_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t offset;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(idx_val, &offset) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(idx_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
@@ -5291,13 +5303,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             ssize_t blen = b->length;
 
             ssize_t start;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(start_val, &start) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(start_val, &start) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
 
             ssize_t end;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(end_val, &end) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(end_val, &end) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
@@ -5806,7 +5818,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t offset;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
@@ -5833,7 +5845,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t offset;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
@@ -5865,7 +5877,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2); \
             ssize_t offset; \
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
                 goto error; \
             } \
@@ -5967,7 +5979,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2); \
             ssize_t offset; \
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
                 goto error; \
             } \
@@ -6144,7 +6156,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src2 = (int)(word & FIELD_MASK); \
             MenaiValue *v = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4); \
             ssize_t offset; \
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
                 goto error; \
             } \
@@ -6234,7 +6246,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src2 = (int)(word & FIELD_MASK); \
             MenaiValue *v = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4); \
             ssize_t offset; \
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) { \
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) { \
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS; \
                 goto error; \
             } \
@@ -6281,7 +6293,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t offset;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
@@ -6426,7 +6438,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t offset;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(off_val, &offset) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
@@ -6629,7 +6641,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *idx_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t idx;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(idx_val, &idx) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(idx_val, &idx) < 0)) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
@@ -6654,7 +6666,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src2 = (int)(word & FIELD_MASK);
             MenaiValue *val = operand(constants_items, frame_regs, src2, tag & 4);
             ssize_t idx;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(idx_val, &idx) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(idx_val, &idx) < 0)) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
@@ -6743,13 +6755,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             ssize_t vlen = v->length;
 
             ssize_t start;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(start_val, &start) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(start_val, &start) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
 
             ssize_t end;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(end_val, &end) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(end_val, &end) < 0)) {
                 vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
                 goto error;
             }
@@ -7011,7 +7023,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *b = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
 
             ssize_t idx;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &idx) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &idx) < 0)) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
@@ -7252,13 +7264,13 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiValue *c = (MenaiValue *)operand(constants_items, frame_regs, src2, tag & 4);
 
             ssize_t start;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(b, &start) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(b, &start) < 0)) {
                 vm_err = MENAI_ERR_SLICE_START_OUT_OF_RANGE;
                 goto error;
             }
 
             ssize_t end;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(c, &end) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(c, &end) < 0)) {
                 vm_err = MENAI_ERR_SLICE_END_OUT_OF_RANGE;
                 goto error;
             }
@@ -8846,7 +8858,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *fidx = operand(constants_items, frame_regs, src1, tag & 2);
             ssize_t fi;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(fidx, &fi) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(fidx, &fi) < 0)) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }
@@ -8907,7 +8919,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             MenaiStruct *sval = (MenaiStruct *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             ssize_t fi;
-            if (MENAI_UNLIKELY(menai_integer_to_ssize_t(operand(constants_items, frame_regs, src1, tag & 2), &fi) < 0)) {
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(operand(constants_items, frame_regs, src1, tag & 2), &fi) < 0)) {
                 vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
                 goto error;
             }

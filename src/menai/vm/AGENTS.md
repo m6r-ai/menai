@@ -61,8 +61,15 @@ are mutually exclusive. Do not dereference a value you have only proven to be an
   extraction the opcode fast paths use: it settles the representation question without
   narrowing the value. Callers keep their own error code, because "too large" is a
   different diagnosis for a shift count, an index and a radix.
-  `menai_integer_to_long` and `menai_integer_to_ssize_t` narrow on purpose, and so report
+  `menai_integer_to_long` and `menai_integer_to_long_long` narrow on purpose, and so report
   an out-of-range value themselves rather than leaving it to the caller.
+- `menai_integer_to_fixnum(v, &out)` — a fixnum's value, and `MENAI_ERR_OVERFLOW` for a
+  bignum. This is what an opcode taking an index, offset, slice bound or field index uses:
+  a bignum can never be a valid one, so refusing it loses no diagnosis beyond which
+  out-of-range error gets named, and it keeps the bignum path out of the opcode body. Use it
+  only where the operand cannot be legitimate: `SWITCH_INTEGER`, `FUNCTION_ACCEPTS_P`,
+  `RANGE` and `FLOAT_LDEXP` are the counterexamples, where a bignum operand is a real value
+  and the opcode must keep using `menai_integer_to_int64`.
 
 An intermediate that holds an integer's value is `int64_t`, never `long`. The fixnum
 payload is 61 bits on every target while a C long is 32 bits on Windows, so a fast path

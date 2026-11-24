@@ -27,6 +27,16 @@ typedef ptrdiff_t ssize_t;
 
 #endif
 
+/*
+ * Every target the VM supports has 64-bit pointers.  A MenaiValue is a tagged
+ * word whose 61-bit fixnum payload fills the whole space above the tag, so a
+ * 32-bit build would truncate every fixnum rather than fail; ssize_t is assumed
+ * to be as wide as int64_t wherever the two are used together.  Both assumptions
+ * are checked here instead of being left to the build matrix.
+ */
+_Static_assert(sizeof(void *) == 8, "the C VM requires 64-bit pointers for tagged fixnums");
+_Static_assert(sizeof(ssize_t) == sizeof(int64_t), "ssize_t and int64_t must be the same width");
+
 #if defined(__GNUC__) || defined(__clang__)
 #define MENAI_LIKELY(x) __builtin_expect(!!(x), 1)
 #define MENAI_UNLIKELY(x) __builtin_expect(!!(x), 0)

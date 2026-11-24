@@ -10,6 +10,8 @@ New features:
 
 Internal structure changes:
 
+- The 58 opcodes taking an index, offset or slice bound reject a bignum outright
+  instead of decoding it first; a bignum operand now reports a range error.
 - Benchmark suite names are hyphenated throughout.  Eight suites used an
   underscore, so `menai-benchmark --suite sort-list` now selects what was
   `--suite sort_list`.
