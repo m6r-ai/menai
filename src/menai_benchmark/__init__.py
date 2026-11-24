@@ -9,6 +9,7 @@ from .benchmark import (
     Implementation,
     MenaiProgram,
     ProfileResult,
+    ReferenceImplementation,
     TraceResult,
     build_menai_implementation,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "Implementation",
     "MenaiProgram",
     "ProfileResult",
+    "ReferenceImplementation",
     "TraceResult",
     "build_menai_implementation",
 ]

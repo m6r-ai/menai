@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
+import time
 from typing import Any
 
 from menai import Menai, MenaiBytes, MenaiDict, MenaiString
@@ -11,6 +12,9 @@ from menai_trace.menai_trace_coverage import CoverageAccumulator, CoverageResult
 from menai_trace.menai_trace_data import TraceResult as ResolvedTrace
 from menai_trace.menai_trace_data import resolve_trace
 from menai_trace.menai_trace_render import render_annotated, render_coverage, render_function_summary
+
+
+_MENAI = "menai"
 
 
 @dataclass
@@ -36,6 +40,43 @@ class Implementation:
     input directly.
     """
 
+    run: Callable
+    prepare: Callable | None = None
+
+
+@dataclass
+class ReferenceImplementation:
+    """
+    A non-Menai implementation of the same task, timed for contrast.
+
+    A reference implementation exists to answer "what would this cost in another
+    language".  It must produce the same result from the same input as the Menai
+    implementation.  Whether it may do so by a different method depends on what
+    the comparison is for, and a suite is responsible for making the choice
+    explicit:
+
+    - Same work.  The reference reimplements the Menai algorithm step for step, so
+      the timing difference is the language's cost for identical work.  Where the
+      work can be counted (a search node count, say) the suite must assert the
+      counts agree: a timing comparison between two searches of different sizes
+      means nothing.
+    - Same task.  The reference hands the whole job to a host function, typically
+      C code behind a Python builtin, which is the case where a bytecode VM is
+      expected to lose.  The ratio then measures the algorithm as well as the
+      language, and cannot be attributed to the language alone.
+
+    Unlike the Menai implementation, a reference implementation is timed with
+    `time.perf_counter` around *run*, so its figure includes the host language's
+    call overhead while the Menai figure is the VM's internal `execute_ns` and
+    excludes the Python bridge.  At the durations these benchmarks use the
+    difference is negligible, but the two columns are not measuring identically
+    scoped intervals and should not be compared to sub-percent precision.
+
+    *prepare* is called once outside the timed loop and its result is passed to
+    *run* on each timed iteration, exactly as for `Implementation`.
+    """
+
+    name: str
     run: Callable
     prepare: Callable | None = None
 
@@ -95,6 +136,7 @@ class CaseResult:
     mean_s: float
     min_s: float
     error: str | None
+    implementation: str = "menai"
 
 
 @dataclass
@@ -143,6 +185,16 @@ class BenchmarkSuite(ABC):
     @abstractmethod
     def menai_program(self) -> MenaiProgram:
         """Return the Menai program that will be timed against the cases."""
+
+    def reference_implementations(self) -> list[ReferenceImplementation]:
+        """
+        Return non-Menai implementations of the same work, timed for contrast.
+
+        The default is no references.  A reference is timed on the same cases as
+        the Menai implementation and reported in adjacent columns; see
+        `ReferenceImplementation` for what a reference must guarantee.
+        """
+        return []
 
 
 class BenchmarkRunner:
@@ -197,6 +249,7 @@ class BenchmarkRunner:
         """Execute the selected cases and return timing, profile, trace, and coverage results."""
         suite = self._suite
         impl = build_menai_implementation(self._menai, suite.menai_program())
+        references = suite.reference_implementations()
         results: list[CaseResult] = []
         profile_results: list[ProfileResult] = []
         trace_results: list[TraceResult] = []
@@ -262,6 +315,9 @@ class BenchmarkRunner:
                 )
             )
 
+            for reference in references:
+                results.append(self._time_reference(reference, case))
+
             if self._opcodes:
                 total = opcode_data.pop("__total__", 0) if opcode_data else 0
                 profile_results.append(
@@ -297,6 +353,43 @@ class BenchmarkRunner:
 
         return results, profile_results, trace_results, coverage_results
 
+    def _time_reference(self, reference: ReferenceImplementation, case: BenchmarkCase) -> CaseResult:
+        """
+        Time one reference implementation against one case, with `perf_counter`.
+
+        Preparation happens outside the timed loop.  An exception is recorded on
+        the result rather than raised, so one broken reference does not lose the
+        Menai timings for the case.
+        """
+        times: list[float] = []
+        error: str | None = None
+
+        try:
+            prepared = reference.prepare(case.input) if reference.prepare is not None else case.input
+            for _ in range(case.iterations):
+                start = time.perf_counter()
+                reference.run(prepared)
+                times.append(time.perf_counter() - start)
+
+        except Exception as exc:
+            error = str(exc)
+
+        if error is not None or not times:
+            mean_s = 0.0
+            min_s = 0.0
+
+        else:
+            mean_s = sum(times) / len(times)
+            min_s = min(times)
+
+        return CaseResult(
+            case=case,
+            mean_s=mean_s,
+            min_s=min_s,
+            error=error,
+            implementation=reference.name,
+        )
+
 
 def _resolve_case_trace(
     prepared: Any,
@@ -323,6 +416,7 @@ class BenchmarkReporter:
     _MIN_COL_CASE = 24
     _COL_MEAN = 12
     _COL_MIN = 12
+    _COL_RATIO = 12
     _MIN_COL_OPCODE = 40
     _COL_COUNT = 15
     _COL_PCT = 12
@@ -345,35 +439,66 @@ class BenchmarkReporter:
 
     def report(self, suite_name: str, results: list[CaseResult]) -> None:
         """Print a formatted timing table to stdout."""
+        implementations = self._implementations(results)
+        references = [name for name in implementations if name != _MENAI]
         col_case = max(self._MIN_COL_CASE, max((len(r.case.name) for r in results), default=0))
-        separator = "─" * (col_case + 3 + self._COL_MEAN + 3 + self._COL_MIN)
+        header = f"{'Case':<{col_case}}   "
+        if references:
+            for name in implementations:
+                header += f"{'mean ' + name:>{self._COL_MEAN}}   {'min ' + name:>{self._COL_MIN}}   "
+
+            header += f"{'ref/menai':>{self._COL_RATIO}}"
+
+        else:
+            header += f"{'mean (ms)':>{self._COL_MEAN}}   {'min (ms)':>{self._COL_MIN}}"
+
+        # The separator is the header's width, so the two cannot drift apart as
+        # columns are added, removed or retitled.
+        separator = "─" * len(header)
         self._emit()
         self._emit(suite_name.upper())
         self._emit(separator)
-        self._emit(
-            f"{'Case':<{col_case}}   "
-            f"{'mean (ms)':>{self._COL_MEAN}}   "
-            f"{'min (ms)':>{self._COL_MIN}}"
-        )
+        self._emit(header)
         self._emit(separator)
 
-        for result in results:
-            if result.error is not None:
-                mean_str = "ERROR"
-                min_str = ""
+        for case_name in dict.fromkeys(r.case.name for r in results):
+            by_implementation = {r.implementation: r for r in results if r.case.name == case_name}
+            menai_result = by_implementation[_MENAI]
+            line = f"{case_name:<{col_case}}   "
+            for name in implementations:
+                result = by_implementation[name]
+                if result.error is not None:
+                    line += f"{'ERROR':>{self._COL_MEAN}}   {'':>{self._COL_MIN}}   "
 
-            else:
-                mean_str = f"{result.mean_s * self._MS:.3f}"
-                min_str = f"{result.min_s * self._MS:.3f}"
+                else:
+                    line += (
+                        f"{result.mean_s * self._MS:>{self._COL_MEAN}.3f}   "
+                        f"{result.min_s * self._MS:>{self._COL_MIN}.3f}   "
+                    )
 
-            self._emit(
-                f"{result.case.name:<{col_case}}   "
-                f"{mean_str:>{self._COL_MEAN}}   "
-                f"{min_str:>{self._COL_MIN}}"
-            )
+            if references:
+                # The whole ratio, suffix included, is padded to the column width so
+                # the row cannot grow past the separator.
+                ratio = "-"
+                reference_result = next(
+                    (by_implementation[name] for name in references if by_implementation[name].error is None),
+                    None,
+                )
+                if menai_result.error is None and reference_result is not None and reference_result.min_s != 0.0:
+                    ratio = f"{reference_result.min_s / menai_result.min_s:.2f}x"
+
+                line += f"{ratio:>{self._COL_RATIO}}"
+
+            self._emit(line)
 
         self._emit(separator)
         self._emit()
+
+    def _implementations(self, results: list[CaseResult]) -> list[str]:
+        """Return the implementation names present in the results, Menai first."""
+        seen = list(dict.fromkeys(r.implementation for r in results))
+        return [_MENAI] + [name for name in seen if name != _MENAI]
+
 
     def report_profile(
         self,

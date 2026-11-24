@@ -3,7 +3,8 @@ from __future__ import annotations
 import zlib
 from collections.abc import Callable
 
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram, ReferenceImplementation
+from menai_benchmark.suites.deflate_decompress import reference
 
 _ITERATIONS = 5
 
@@ -89,3 +90,21 @@ class Suite(BenchmarkSuite):
             expression=_EXPR,
             fixture=_fixture_bytes,
         )
+
+    def reference_implementations(self) -> list[ReferenceImplementation]:
+        """
+        Return a pure-Python reimplementation of the same decompressor.
+
+        It mirrors deflate-decompress.menai step for step -- same bit-at-a-time
+        Huffman probe over a table keyed by (1 << length) + code, same block-by-block
+        walk, same back-reference replication -- and is checked by the compressor
+        suite's fixtures decoding to the original bytes.  No compiled library is
+        involved: the comparison is Python against Menai, not C against Menai.
+        """
+        return [
+            ReferenceImplementation(
+                name="python",
+                prepare=_fixture_bytes,
+                run=reference.decompress,
+            ),
+        ]

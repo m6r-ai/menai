@@ -6,6 +6,7 @@ New features:
 
 - `bmp-decode` walks each row by byte offset and takes the bit depth out of the
   pixel loop; 20% faster, 28% fewer instructions.
+- Reintroduce some Python reference examples in the benchmark suite.
 
 ## v0.12.1 (2026-11-23)
 

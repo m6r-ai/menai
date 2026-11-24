@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram, ReferenceImplementation
 from menai_benchmark.suites.rubiks_list.suite import _SCRAMBLES, move_to_menai
+from menai_benchmark.suites.rubiks_vector import reference
 
 _SUITE_DIR = Path(__file__).resolve().parent
 
@@ -42,3 +43,29 @@ class Suite(BenchmarkSuite):
     def menai_program(self) -> MenaiProgram:
         """Return the solver expression, built from the scramble sequence."""
         return MenaiProgram(expression=_expr)
+
+    def reference_implementations(self) -> list[ReferenceImplementation]:
+        """
+        Return a pure-Python reimplementation of the same solver.
+
+        It mirrors rubiks-cube-vector.menai step for step -- the same face order and
+        move permutations, the same repeat-the-clockwise-turn handling, the same
+        heuristic and solved test sharing one mismatch count, the same IDA* loop and
+        the same move pruning and ordering -- so the ratio is the language's cost for
+        identical work.  Its preparation step asserts that it visits the same number
+        of search nodes as the Menai solver for each scramble, and the structural check
+        it also runs rejects a move table that is not a genuine quarter turn.
+
+        An in-place variant (flat bytearray, mutated and undone, with precomputed cycle
+        rotations) was written and measured, and it was 1.7x slower than this one, not
+        faster: the mirror's per-move cost is one tuple construction of nine loads,
+        which beats walking a cycle with bytecode-level index writes. So immutability
+        costs Python nothing here, and there is no second column to report.
+        """
+        return [
+            ReferenceImplementation(
+                name="python",
+                prepare=reference.prepare,
+                run=reference.solve,
+            ),
+        ]

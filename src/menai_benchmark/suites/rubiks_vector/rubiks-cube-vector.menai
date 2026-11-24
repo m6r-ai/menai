@@ -214,9 +214,9 @@
                (r (struct-get cube 'R)))
            (cube-repr
              (vector
-               (get-sticker r 8)
-               (get-sticker r 5)
                (get-sticker r 2)
+               (get-sticker r 5)
+               (get-sticker r 8)
                (get-sticker u 3)
                (get-sticker u 4)
                (get-sticker u 5)

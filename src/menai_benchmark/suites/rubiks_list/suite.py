@@ -10,6 +10,9 @@ _SCRAMBLES: list[tuple[str, list[str]]] = [
     ("5-move", ["R", "U", "R'", "D", "F"]),
     ("6-move", ["R", "U", "R'", "D", "F", "R"]),
     ("7-move", ["R", "U", "R'", "D", "F", "R", "U"]),
+    # The only case with a B turn.  Without it the suite never exercises move-B,
+    # which is how a broken B permutation went unnoticed.
+    ("7-move with B", ["R", "U", "B", "D", "F", "R", "U"]),
 ]
 
 _TURN_SUFFIXES: dict[str, str] = {"": "cw", "'": "ccw", "2": "half"}

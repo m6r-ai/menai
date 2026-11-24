@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram
+from menai_benchmark import BenchmarkCase, BenchmarkSuite, MenaiProgram, ReferenceImplementation
+from menai_benchmark.suites.deflate_compress import reference
 
 _ITERATIONS = 5
 
@@ -79,3 +80,22 @@ class Suite(BenchmarkSuite):
             expression=_EXPR,
             fixture=_fixture_bytes,
         )
+
+    def reference_implementations(self) -> list[ReferenceImplementation]:
+        """
+        Return a pure-Python reimplementation of the same compressor.
+
+        It mirrors deflate-compress.menai step for step -- same greedy LZ77 search,
+        same chain and nice-match bounds, same Huffman construction and code-length
+        chunking -- and emits byte-identical output for every fixture and block
+        mode, so the ratio is the language's cost for identical work.  No compiled
+        library is involved: the comparison is Python against Menai, not C against
+        Menai.
+        """
+        return [
+            ReferenceImplementation(
+                name="python",
+                prepare=_fixture_bytes,
+                run=reference.compress,
+            ),
+        ]

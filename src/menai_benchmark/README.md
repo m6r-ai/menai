@@ -60,9 +60,11 @@ benchmark/
     │   ├── suite.py          # Calendar arithmetic benchmark suite
     │   └── calendar.menai
     ├── deflate_compress/
-    │   └── suite.py          # DEFLATE compressor benchmark suite
+    │   ├── suite.py          # DEFLATE compressor benchmark suite
+    │   └── reference.py      # pure-Python reference compressor
     ├── deflate_decompress/
-    │   └── suite.py          # DEFLATE decompressor benchmark suite
+    │   ├── suite.py          # DEFLATE decompressor benchmark suite
+    │   └── reference.py      # pure-Python reference decompressor
     ├── json_decode/
     │   └── suite.py          # JSON decoder benchmark suite
     ├── json_encode/
@@ -88,6 +90,10 @@ benchmark/
     ├── sudoku_list/
     │   ├── suite.py          # Sudoku solver benchmark suite
     │   └── sudoku-solver.menai
+    ├── sudoku_mrv/
+    │   ├── suite.py          # Sudoku solver benchmark suite (most constrained cell first)
+    │   ├── reference_solver.py  # Python reference solver for the sudoku_mrv suite
+    │   └── sudoku-mrv.menai
     ├── sudoku_vector/
     │   ├── suite.py          # Sudoku solver benchmark suite (vector board)
     │   └── sudoku-vector-solver.menai
@@ -108,6 +114,42 @@ benchmark/
 Each suite benchmarks a single Menai implementation.  Correctness is covered by
 the `*.test.menai` files (run via `menai-test`), so the benchmark suites are
 timing-only.
+
+## Reference implementations
+
+A suite may additionally report a non-Menai implementation of the same work, in
+adjacent columns and with a final `ref/menai` ratio.  The reference must
+reimplement the Menai algorithm step for step, so that the ratio is the other
+language's cost for identical work.
+
+Three suites carry one, all in pure Python:
+
+| Suite | Reference | Equivalence check |
+|-------|-----------|-------------------|
+| `sudoku_mrv` | `reference_solver.py` in the suite directory | asserts its search node count equals the Menai figure from the opcode profile |
+| `deflate-compress` | `suite directory/reference.py` | emits byte-identical output to the Menai module for every fixture and block mode |
+| `deflate-decompress` | `suite directory/reference.py` | decodes every fixture to the same bytes as the Menai module |
+
+A reference lives in the suite directory that uses it, beside that suite's
+`suite.py`, since it describes the same benchmark and nothing else consumes it.
+
+The deflate references were checked against the Menai modules when written; they
+are not asserted on every run, because recompressing every fixture with Menai
+outside the timed section would cost more than the benchmark.
+
+A reference must not hand the work to a compiled library behind the host language's
+builtin — that would measure the library, not the language.
+
+Two asymmetries remain and neither is corrected for:
+
+- The Menai figure is the VM's internal execution time, while a reference is timed
+  with `time.perf_counter` and so includes host-language call overhead.  Do not
+  read differences below a percent or so as meaningful.
+- A host-language module builds its tables at import, outside the timed section.  A
+  Menai module has no import-time state, so its equivalent is rebuilt on every
+  execution and lands inside the timed section.  Where a suite's workload has such
+  setup, the Menai time carries a fixed per-execution cost that the reference does
+  not; `sudoku_mrv`'s docstring quotes it.
 
 ## Fixtures
 
