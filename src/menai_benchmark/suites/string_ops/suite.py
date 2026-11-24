@@ -107,7 +107,7 @@ def _hash_expr(case_input: dict) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for string search and string hashing."""
 
-    name = "string_ops"
+    name = "string-ops"
     description = (
         "Substring search via string-index and string hashing via list->set."
     )

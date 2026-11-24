@@ -14,8 +14,8 @@ Run from this directory with the virtual environment active:
 
 ```
 python run.py                        # run all suites
-python run.py --suite sort_list      # run only the sort_list suite
-python run.py --suite sort_list --case n=1000  # run one case in a suite
+python run.py --suite sort-list      # run only the sort-list suite
+python run.py --suite sort-list --case n=1000  # run one case in a suite
 python run.py --iterations 3         # override iteration count on every case
 python run.py --opcodes              # opcode profiling (Menai only)
 python run.py --opcodes --opcodes-top 20  # limit opcode output
@@ -92,7 +92,7 @@ benchmark/
     │   └── sudoku-solver.menai
     ├── sudoku_mrv/
     │   ├── suite.py          # Sudoku solver benchmark suite (most constrained cell first)
-    │   ├── reference_solver.py  # Python reference solver for the sudoku_mrv suite
+    │   ├── reference_solver.py  # Python reference solver for the sudoku-mrv suite
     │   └── sudoku-mrv.menai
     ├── sudoku_vector/
     │   ├── suite.py          # Sudoku solver benchmark suite (vector board)
@@ -144,7 +144,7 @@ Three suites carry one, all in pure Python:
 
 | Suite | Reference | Equivalence check |
 |-------|-----------|-------------------|
-| `sudoku_mrv` | `reference_solver.py` in the suite directory | asserts its search node count equals the Menai figure from the opcode profile |
+| `sudoku-mrv` | `reference_solver.py` in the suite directory | asserts its search node count equals the Menai figure from the opcode profile |
 | `deflate-compress` | `suite directory/reference.py` | emits byte-identical output to the Menai module for every fixture and block mode |
 | `deflate-decompress` | `suite directory/reference.py` | decodes every fixture to the same bytes as the Menai module |
 
@@ -167,7 +167,7 @@ Two asymmetries remain and neither is corrected for:
   Menai module has no import-time state, so its equivalent is rebuilt on every
   execution and lands inside the timed section.  Where a suite's workload has such
   setup, the Menai time carries a fixed per-execution cost that the reference does
-  not; `sudoku_mrv`'s docstring quotes it.
+  not; `sudoku-mrv`'s docstring quotes it.
 
 ## Fixtures
 
@@ -358,7 +358,7 @@ lines and searches each.  Inputs are generated fixtures (see
 ### Rubik's Cube (list)
 Solves scrambled Rubik's cubes using IDA* with a misplaced-stickers heuristic.
 Seven scramble depths from 1 to 7 moves.
-The `rubiks_vector` suite solves the same scrambles with the cube faces stored
+The `rubiks-vector` suite solves the same scrambles with the cube faces stored
 as vectors instead of lists.
 
 ### Sort (list)
@@ -374,10 +374,10 @@ Solves sudoku puzzles using a backtracking solver. Four difficulty levels:
 easy (36 givens), medium (30), hard (25), expert (23).
 
 ### Sudoku (vector)
-Solves the same four sudoku puzzles as the sudoku_list suite, but the board is a
+Solves the same four sudoku puzzles as the sudoku-list suite, but the board is a
 vector of 9 row-vectors instead of a list of lists, so cell access is
 `vector-nth` and a cell update is a `vector-with` copy. The puzzles and iteration
-counts are shared with the sudoku_list suite, which makes the Menai timings directly
+counts are shared with the sudoku-list suite, which makes the Menai timings directly
 comparable across the two suites.
 
 ### ZIP Entries
@@ -414,6 +414,9 @@ incompressible data, and long runs.  Inputs are generated fixtures
 
 1. Create `suites/<name>/suite.py` containing a class named `Suite` that
    subclasses `BenchmarkSuite` from `benchmark`.
+   The directory name is a Python package, so it uses underscores; set
+   `Suite.name` to the hyphenated form (`sort-list`), which is the name
+   `--suite` matches.
 2. Implement `cases()` and `menai_program()`.
 3. `menai_program()` returns a `MenaiProgram` describing the expression to
    benchmark.  Its `expression` is either a constant string or a callable that

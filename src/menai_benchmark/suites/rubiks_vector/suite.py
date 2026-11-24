@@ -6,7 +6,7 @@ from menai_benchmark.suites.rubiks_vector import reference
 
 _SUITE_DIR = Path(__file__).resolve().parent
 
-# The scramble sequences are shared with the list-based rubiks_list suite so the
+# The scramble sequences are shared with the list-based rubiks-list suite so the
 # two suites measure exactly the same work: only the face representation
 # differs.
 
@@ -30,7 +30,7 @@ def _expr(scramble_moves: list[str]) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for a Rubik's cube IDA* solver whose faces are vectors."""
 
-    name = "rubiks_vector"
+    name = "rubiks-vector"
     description = "Solve scrambled Rubik's cubes of increasing depth using IDA* on a vector cube."
 
     def cases(self) -> list[BenchmarkCase]:

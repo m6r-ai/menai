@@ -8,6 +8,12 @@ New features:
   pixel loop; 20% faster, 28% fewer instructions.
 - Reintroduce some Python reference examples in the benchmark suite.
 
+Internal structure changes:
+
+- Benchmark suite names are hyphenated throughout.  Eight suites used an
+  underscore, so `menai-benchmark --suite sort-list` now selects what was
+  `--suite sort_list`.
+
 ## v0.12.1 (2026-11-23)
 
 Bug fixes:

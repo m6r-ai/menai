@@ -7,8 +7,8 @@ from menai_benchmark.suites.sudoku_list.suite import (
 )
 from menai_benchmark.suites.sudoku_mrv import reference_solver
 
-# The puzzles and iteration counts are shared with the sudoku_list and
-# sudoku_vector suites so all three measure exactly the same work: only the
+# The puzzles and iteration counts are shared with the sudoku-list and
+# sudoku-vector suites so all three measure exactly the same work: only the
 # search strategy differs.
 
 
@@ -35,7 +35,7 @@ def _expr(flat: list[int]) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for a sudoku solver that fills the most constrained cell first."""
 
-    name = "sudoku_mrv"
+    name = "sudoku-mrv"
     description = "Solve sudoku puzzles of varying difficulty, filling the most constrained cell first."
 
     def cases(self) -> list[BenchmarkCase]:

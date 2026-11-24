@@ -1,5 +1,5 @@
 """
-Python reference solver for the sudoku_mrv benchmark suite.
+Python reference solver for the sudoku-mrv benchmark suite.
 
 This reimplements sudoku-mrv.menai's search as an idiomatic Python solver: the
 same most-constrained-cell ordering and nine-bit candidate masks, but mutating

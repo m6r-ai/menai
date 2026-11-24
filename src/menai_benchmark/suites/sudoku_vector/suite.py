@@ -10,7 +10,7 @@ from menai_benchmark.suites.sudoku_list.suite import (
 
 _SUITE_DIR = Path(__file__).resolve().parent
 
-# The puzzles and iteration counts are shared with the list-based sudoku_list suite
+# The puzzles and iteration counts are shared with the list-based sudoku-list suite
 # so the two suites measure exactly the same work: only the board
 # representation differs.
 
@@ -38,7 +38,7 @@ def _expr(flat: list[int]) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for a sudoku solver whose board is a vector of row vectors."""
 
-    name = "sudoku_vector"
+    name = "sudoku-vector"
     description = "Solve sudoku puzzles of varying difficulty using a vector board."
 
     def cases(self) -> list[BenchmarkCase]:

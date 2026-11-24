@@ -26,7 +26,7 @@ def _expr(lst: list[int]) -> str:
 class Suite(BenchmarkSuite):
     """Benchmark suite for sorting a vector of random integers."""
 
-    name = "sort_vector"
+    name = "sort-vector"
     description = "Sort a vector of random integers at various sizes."
 
     def cases(self) -> list[BenchmarkCase]:
