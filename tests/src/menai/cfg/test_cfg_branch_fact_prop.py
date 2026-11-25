@@ -279,9 +279,10 @@ class TestPipeline:
 
     def test_shared_inlined_guard_is_folded(self):
         """
-        CSE unifies the caller's vector-empty? test with the copies inlined
-        from min-of and max-of.  The pass folds the two later branches, leaving
-        one branch on the shared value.
+        The caller's own vector-empty? test and the copies inlined from min-of
+        and max-of are the same condition, so CSE shares one value for all of
+        them and the pass folds every branch that value decides.  Exactly one
+        branch on that value survives; the rest are gone.
         """
         source = """
 (let ((min-of (lambda (v)
@@ -303,9 +304,7 @@ class TestPipeline:
         cfg = MenaiCompiler().compile_to_cfg(source)
         target = next(
             func_ for func_ in collect_functions(cfg)
-            if func_.binding_name is None
-            and len(func_.params) == 2
-            and set(func_.free_vars) == {"float-max", "float-min"}
+            if func_.binding_name is None and len(func_.params) == 2
         )
 
         empty_results = {

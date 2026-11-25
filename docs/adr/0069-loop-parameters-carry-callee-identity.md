@@ -93,6 +93,12 @@ so an init plan that can raise must be evaluated even when nothing reads the
 parameter it seeds (ADR-0049). The elimination is therefore restricted to init
 plans that carry no computation.
 
+That restriction is narrower than ADR-0007 requires, and is kept deliberately.
+Dead-binding elimination in the same pass does discard a binding whose value
+would raise, so the two do not agree; where they disagree the inliner takes the
+conservative side, because suppressing a raise is a behaviour change that no
+test in the corpus would notice.
+
 ## Alternatives considered
 
 ### Add the invariance flow to the CFG instead

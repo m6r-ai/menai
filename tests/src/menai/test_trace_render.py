@@ -172,18 +172,25 @@ class TestRenderAnnotated:
 # `g` is deliberately padded past MAX_INLINE_NODES so that it survives as a
 # closure.  A small `g` is inlined into the module, and the Inputs and Captured
 # sections these tests look for disappear with it.  The padding is two nested
-# list literals, since a shorter expression folds to a constant and a single
-# list is one IR node however many elements it holds.  `f` is left small: its
-# match survives in the module, which keeps the Jump Tables section populated.
+# dict literals, since a shorter expression folds to a constant and a single
+# container literal is one IR node however many entries it holds.  A list
+# literal would pad just as well, but its accessors now fold, and `f` is left
+# small: its match survives in the module, which keeps the Jump Tables section
+# populated.
 _METADATA_SOURCE = """
 (let ((offset 10))
   (let ((f (lambda (n) (match n (0 "zero") (1 "one") (_ "many")))))
     (let ((g (lambda (x)
-               (let ((a (list-length (list x offset 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20))))
-                 (let ((b (list-length (list a x offset 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35))))
-                   (integer+ x (integer+ offset (integer+ a b))))))))
+               (let ((a (dict "p" (dict "p1" x "p2" (integer+ x offset) "p3" (integer* x offset))
+                              "q" (dict "q1" offset "q2" (integer+ x offset) "q3" (integer- x offset))
+                              "r" (integer+ x offset))))
+                 (let ((b (dict "s" (dict "s1" x "s2" (integer* x offset) "s3" (integer+ x offset))
+                                "t" (dict "t1" a "t2" (dict-length a) "t3" (integer+ (dict-length a) offset))
+                                "u" (integer* offset offset))))
+                   (integer+ x (integer+ offset (integer+ (dict-length a) (dict-length b)))))))))
       (let ((data (list 5 1 2)))
-        (integer+ (g (list-first data)) (list-length (list (f 0) (f 1) (f 2))))))))
+        (let ((n (g (list-first data))))
+          (integer+ n (string-length (f n))))))))
 """
 
 
@@ -204,20 +211,20 @@ class TestAnnotatedMetadata:
         """A function with a constant pool gets a Constants section."""
         _, result = _traced_metadata()
         text = "\n".join(render_annotated(result, color=False))
-        assert "Constants: 8" in text
+        assert "Constants: 5" in text
 
     def test_constant_entries_are_labelled(self):
         """Constants are listed with their k-index and formatted value."""
         _, result = _traced_metadata()
         text = "\n".join(render_annotated(result, color=False))
         assert "k0: integer 10" in text
-        assert 'k3: string "many"' in text
+        assert 'k2: string "many"' in text
 
     def test_jump_tables_section_present(self):
         """A function with a SWITCH_INTEGER gets a Jump Tables section."""
         _, result = _traced_metadata()
         text = "\n".join(render_annotated(result, color=False))
-        assert "Jump Tables: 3" in text
+        assert "Jump Tables: 1" in text
         # The default target index depends on the emitted instruction layout,
         # which the fold_constants pass can shift, so assert the table's shape
         # rather than a fixed target.

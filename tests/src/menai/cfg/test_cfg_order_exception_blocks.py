@@ -137,6 +137,17 @@ def _compile(src: str):
     return MenaiCompiler().compile(src)
 
 
+def _runtime_int(value: int) -> str:
+    """
+    Return Menai source for an integer the compiler cannot decide at compile time.
+
+    A literal argument lets the comparisons in an inlined function fold, which deletes
+    the arms behind them — including the raise these tests are about.  A dict read of
+    a literal key is not folded by any pass.
+    """
+    return f'(dict-get (dict "k" {value}) "k")'
+
+
 def _last_raise_index(code) -> int:
     """Return the index of the last RAISE_ERROR instruction in code."""
     last = -1
@@ -160,12 +171,12 @@ class TestEmittedLayout:
 
     def test_raise_emitted_after_normal_path(self):
         """RAISE_ERROR is emitted after the normal-path RETURN."""
-        code = _compile("""
+        code = _compile(f"""
         (let ((classify (lambda (x)
           (if (integer=? x 1) 'one
           (if (integer=? x 2) 'two
           (error "unsupported"))))))
-          (classify 1))
+          (list (classify {_runtime_int(1)})))
         """)
         raise_idx = _last_raise_index(code)
         return_idx = _first_return_index(code)
@@ -175,11 +186,11 @@ class TestEmittedLayout:
 
     def test_raise_emitted_last(self):
         """RAISE_ERROR is the last instruction in the code object."""
-        code = _compile("""
+        code = _compile(f"""
         (let ((f (lambda (x)
           (if (integer=? x 1) 10
           (error "bad")))))
-          (f 1))
+          (f {_runtime_int(1)}))
         """)
         raise_idx = _last_raise_index(code)
         assert raise_idx != -1

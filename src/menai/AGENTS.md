@@ -71,6 +71,20 @@ init plan and the argument in that position from every back-edge. Only an init p
 cannot raise may be dropped, because a raise is observable.
 See [ADR-0069](../../docs/adr/0069-loop-parameters-carry-callee-identity.md).
 
+### An accessor on a container literal folds, and the literal goes with it
+
+The IR optimizer folds `list-length`, `list-first`, `list-last`, `list-rest`, `list-nth`,
+`vector-length` and `vector-nth` applied to a container literal, because a variadic prelude
+wrapper dispatches on a literal rest list. It runs at IR level rather than in the CFG so the
+dispatch arm is dead before branch constant propagation, which is early in the CFG pass list.
+
+Two rules are not negotiable. An accessor that would raise for the literal's shape is not
+folded, so `(list-first ())` stays a call. And a folded element must still be evaluated once,
+so where the literal is a binding each element is bound to its own variable and the literal
+becomes unreferenced. Folding `list-length` deletes the literal and every element nothing else
+reads — safe because Menai is pure, and consistent with dead-binding elimination.
+See [ADR-0070](../../docs/adr/0070-accessor-on-a-container-literal-folds.md).
+
 ### A phi a terminator names is never rewritten away
 
 A back edge names its loop-carried variables in a list on the terminator, and VCode lowering

@@ -48,10 +48,13 @@ A lambda is only inlined when:
   parameters via outer_free_vars.  Captures of sibling names or other
   internal bindings are safe because those bindings travel with the inlined
   body.
-- No name bound inside its body (other than its own parameters) is free in an
-  argument expression.  Substituting such an argument would let the body's
-  binding capture the argument's variable, silently rebinding it to the
-  callee's local instead of the caller's.
+- Substituting an argument expression for its parameter cannot capture a variable
+  the argument references.  The check is positional: it follows the same binder
+  rules as the substitution, so it asks the question only where the argument is
+  actually placed, and a name bound elsewhere in the callee body is not a
+  conflict.  A body that binds a name the argument references *between its top and
+  the substitution point* would rebind that reference to the callee's local
+  instead of the caller's, and that is what is rejected.
 - The call supplies an acceptable number of arguments: exactly the parameter
   count for a fixed-arity lambda, and at least one fewer than the parameter
   count for a variadic one.  A variadic lambda's trailing parameter receives the
@@ -539,19 +542,13 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         if _has_captures_of_params(target.body_plan, set(target.params)):
             return False
 
-        # Substituting an argument into the body must not let a binding in the
-        # body capture a variable that is free in the argument.  If the body
-        # binds a name that the argument references, the substituted argument
-        # would resolve that name to the body's binding rather than the
-        # caller's, silently changing its meaning.
-        #
-        # The callee's own parameters are excluded: an argument that references
-        # a name which is also a parameter is being substituted for that
-        # parameter, which is the intended substitution rather than a capture.
-        body_bound = _bound_names(target.body_plan) - set(target.params)
-
-        for arg_plan in arg_plans:
-            if _free_vars(arg_plan) & body_bound:
+        # Substituting an argument into the body must not let a binding in the body
+        # capture a variable that is free in the argument.  The check is positional:
+        # it follows the same binder rules as the substitution, so a name bound
+        # somewhere the argument is never placed is not a conflict.  See
+        # _argument_is_captured.
+        for param, arg_plan in zip(target.params, arg_plans):
+            if _argument_is_captured(target.body_plan, param, _free_vars(arg_plan), set()):
                 return False
 
         return True
@@ -1101,100 +1098,97 @@ def _is_self_recursive(target: MenaiIRLambda) -> bool:
     return target.binding_name is not None and target.binding_name in target.sibling_free_vars
 
 
-def _bound_names(ir: MenaiIRExpr) -> set[str]:
+def _argument_is_captured(
+    ir: MenaiIRExpr,
+    param: str,
+    free_vars: set[str],
+    shadowed: set[str],
+) -> bool:
     """
-    Collect every name bound by a binding form or lambda within the tree.
+    Return True if substituting into *param* would capture one of *free_vars*.
 
-    These are the names that could capture a substituted argument expression:
-    if an argument has a free variable with one of these names, substituting
-    the argument into the body would rebind that variable to the body's
-    binding instead of the caller's.
+    A substitution replaces every reference to *param* in the body with the argument
+    expression, and the argument must mean the same thing there as it does at the
+    call site.  It stops doing so if a name it references is bound between the top
+    of the body and the point of substitution, because that binder rebinds the
+    reference to itself.
+
+    The walk therefore mirrors _substitute's binder rules exactly and asks the
+    question only where a substitution happens.  A name bound elsewhere in the body
+    is irrelevant: the argument is never placed there.  Testing every binder in the
+    body instead — a set union with no notion of position — rejects a callee whose
+    own inner loop happens to name its accumulators the same as the caller's
+    variables, which is a false positive on the most idiomatic shape there is.
+
+    *shadowed* is the set of names bound by the binders on the path down to this
+    node, mirroring _substitute.  A binding form's value plans are walked in the
+    binder context _substitute uses for them: a $letrec value sees the group's own
+    names, a $let value does not.
     """
-    names: set[str] = set()
+    if isinstance(ir, MenaiIRVariable):
+        # A reference to the parameter under a binder of the same name refers to
+        # that binder, so the substitution leaves it alone and the argument is never
+        # placed here.
+        if ir.name != param or ir.name in shadowed:
+            return False
 
-    if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList)):
-        return names
+        return bool(free_vars & shadowed)
+
+    if isinstance(ir, (MenaiIRConstant, MenaiIRQuote, MenaiIREmptyList, MenaiIRBuildEnum)):
+        return False
 
     if isinstance(ir, MenaiIRError):
-        return _bound_names(ir.message)
+        return _argument_is_captured(ir.message, param, free_vars, shadowed)
 
     if isinstance(ir, MenaiIRIf):
-        return (_bound_names(ir.condition_plan)
-                | _bound_names(ir.then_plan)
-                | _bound_names(ir.else_plan))
+        return (_argument_is_captured(ir.condition_plan, param, free_vars, shadowed)
+                or _argument_is_captured(ir.then_plan, param, free_vars, shadowed)
+                or _argument_is_captured(ir.else_plan, param, free_vars, shadowed))
 
     if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
-        for name, value in ir.bindings:
-            names.add(name)
-            names |= _bound_names(value)
+        binding_names = {name for name, _ in ir.bindings}
+        value_shadowed = shadowed | binding_names if isinstance(ir, MenaiIRLetrec) else shadowed
 
-        return names | _bound_names(ir.body_plan)
+        if any(_argument_is_captured(value, param, free_vars, value_shadowed)
+               for _, value in ir.bindings):
+            return True
+
+        return _argument_is_captured(ir.body_plan, param, free_vars, shadowed | binding_names)
 
     if isinstance(ir, MenaiIRLambda):
-        names |= set(ir.params)
-
-        return names | _bound_names(ir.body_plan)
+        inner = shadowed | set(ir.params) | set(ir.sibling_free_vars) | set(ir.outer_free_vars)
+        return _argument_is_captured(ir.body_plan, param, free_vars, inner)
 
     if isinstance(ir, MenaiIRCall):
-        names |= _bound_names(ir.func_plan)
-
-        for arg in ir.arg_plans:
-            names |= _bound_names(arg)
-
-        return names
+        return any(_argument_is_captured(plan, param, free_vars, shadowed)
+                   for plan in (ir.func_plan, *ir.arg_plans))
 
     if isinstance(ir, MenaiIRReturn):
-        return _bound_names(ir.value_plan)
+        return _argument_is_captured(ir.value_plan, param, free_vars, shadowed)
 
-    if isinstance(ir, MenaiIRBuildList):
-        for element in ir.element_plans:
-            names |= _bound_names(element)
-
-        return names
+    if isinstance(ir, (MenaiIRBuildList, MenaiIRBuildSet, MenaiIRBuildVector)):
+        return any(_argument_is_captured(element, param, free_vars, shadowed)
+                   for element in ir.element_plans)
 
     if isinstance(ir, MenaiIRBuildDict):
-        for key, value in ir.pair_plans:
-            names |= _bound_names(key)
-            names |= _bound_names(value)
-
-        return names
-
-    if isinstance(ir, MenaiIRBuildSet):
-        for element in ir.element_plans:
-            names |= _bound_names(element)
-
-        return names
-
-    if isinstance(ir, MenaiIRBuildVector):
-        for element in ir.element_plans:
-            names |= _bound_names(element)
-
-        return names
+        return any(_argument_is_captured(key, param, free_vars, shadowed)
+                   or _argument_is_captured(value, param, free_vars, shadowed)
+                   for key, value in ir.pair_plans)
 
     if isinstance(ir, MenaiIRBuildStruct):
-        for field in ir.field_plans:
-            names |= _bound_names(field)
-
-        return names
-
-    if isinstance(ir, MenaiIRBuildEnum):
-        return names
+        return any(_argument_is_captured(field, param, free_vars, shadowed)
+                   for field in ir.field_plans)
 
     if isinstance(ir, MenaiIRLoop):
-        names |= set(ir.params)
+        if any(_argument_is_captured(init, param, free_vars, shadowed) for init in ir.init_plans):
+            return True
 
-        for init in ir.init_plans:
-            names |= _bound_names(init)
-
-        return names | _bound_names(ir.body_plan)
+        return _argument_is_captured(ir.body_plan, param, free_vars, shadowed | set(ir.params))
 
     if isinstance(ir, MenaiIRRecur):
-        for arg in ir.arg_plans:
-            names |= _bound_names(arg)
+        return any(_argument_is_captured(arg, param, free_vars, shadowed) for arg in ir.arg_plans)
 
-        return names
-
-    raise TypeError(f"_bound_names: unhandled IR node type {type(ir).__name__}")
+    raise TypeError(f"_argument_is_captured: unhandled IR node type {type(ir).__name__}")
 
 
 def _free_vars(ir: MenaiIRExpr) -> set[str]:

@@ -77,14 +77,28 @@ class TestFoldsOnListLiteral:
         new_ir, _ = _run(call)
         assert isinstance(new_ir, MenaiIRCall)
 
-    def test_other_builtin_is_not_folded(self):
-        """Only the list test is folded, so unrelated predicates are untouched."""
+    def test_length_of_an_empty_list_folds_to_zero(self):
+        """(list-length ()) is known to be 0."""
         call = MenaiIRCall(
             func_plan=MenaiIRVariable(name='list-length'),
             arg_plans=[MenaiIREmptyList()],
             is_tail_call=False,
             is_builtin=True,
             builtin_name='list-length',
+        )
+        new_ir, _ = _run(call)
+        assert isinstance(new_ir, MenaiIRConstant)
+        assert new_ir.value.value == 0
+
+    def test_accessor_that_would_raise_is_not_folded(self):
+        """An accessor with no element to return is left alone, because folding it
+        would suppress the raise the call performs."""
+        call = MenaiIRCall(
+            func_plan=MenaiIRVariable(name='list-first'),
+            arg_plans=[MenaiIREmptyList()],
+            is_tail_call=False,
+            is_builtin=True,
+            builtin_name='list-first',
         )
         new_ir, _ = _run(call)
         assert isinstance(new_ir, MenaiIRCall)

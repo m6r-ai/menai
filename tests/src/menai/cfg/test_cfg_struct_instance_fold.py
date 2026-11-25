@@ -406,7 +406,8 @@ UNKNOWN_RECEIVER_SRC = """
                            ((: point a b) (integer+ a b))
                            (_ 0))))
         (items (list (point 1 2) (dict "x" 1))))
-    (list (get-x (list-first items)) (get-x (list-last items)))))
+    (list (fold-list (lambda (acc item) (integer+ acc (get-x item))) 0 items)
+          (get-x (list-first items)))))
 """
 
 JOINED_STRUCT_SRC = """
@@ -483,7 +484,7 @@ class TestEndToEnd:
         assert menai.evaluate_and_format(POLY_SRC) == "(3 0)"
 
     def test_unknown_receiver_result_correct(self, menai):
-        assert menai.evaluate_and_format(UNKNOWN_RECEIVER_SRC) == "(3 0)"
+        assert menai.evaluate_and_format(UNKNOWN_RECEIVER_SRC) == "(3 3)"
 
     def test_joined_struct_result_correct(self, menai):
         assert menai.evaluate_and_format(JOINED_STRUCT_SRC) == "0"

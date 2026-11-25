@@ -12,6 +12,10 @@ New features:
   A loop parameter the loop cannot rebind now resolves to the lambda it was
   seeded with, so `(fold-list integer+ 0 lst)` and `(map-list (lambda (x) ...) lst)`
   no longer pay an indirect call, a frame and an argument move per element.
+- An accessor applied to a container literal folds, so a call to a variadic
+  prelude function no longer allocates its rest list and its dispatch collapses
+  to the arm the call's arity selects.  `(list-length (list a b))` folds too,
+  which is the shape every hand-rolled variadic builtin emits.
 - The loop parameter and closure that inlining makes dead are dropped, so
   inlining a callback no longer leaves an uncalled function in the module.
 

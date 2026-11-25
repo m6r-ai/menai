@@ -744,7 +744,18 @@ class TestRecursiveParameterGrounding:
         assert menai.evaluate_and_format(DEGRADED_RECURSIVE_SRC) == "(1)"
 
 
-AMBIGUOUS_INNER_PARAM_SRC = """
+def _runtime_int(value: int) -> str:
+    """
+    Return Menai source for an integer the compiler cannot decide at compile time.
+
+    A literal discriminator lets an inlined recursion unroll and the whole call fold
+    to a constant, which removes the functions and the field reads under test.  A
+    dict read of a literal key is not folded by any pass.
+    """
+    return f'(dict-get (dict "k" {value}) "k")'
+
+
+AMBIGUOUS_INNER_PARAM_SRC = f"""
 (let
   ((Point (struct (x y)))
    (Other (struct (y x)))
@@ -765,7 +776,7 @@ AMBIGUOUS_INNER_PARAM_SRC = """
       (if (integer=? n 0)
           (struct-get p 'x)
           (b p 0)))))
-  (a (Point 1 2) 2))
+  (a (Point 1 2) {_runtime_int(2)}))
 """
 
 

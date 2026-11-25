@@ -88,31 +88,42 @@ def _block_count(cfg: MenaiCFGFunction) -> int:
     return sum(len(func.blocks) for func in _functions(cfg))
 
 
-MATCH_WITH_DEFAULT = """
+def _runtime_int(value: int) -> str:
+    """
+    Return Menai source for an integer the compiler cannot decide at compile time.
+
+    A literal scrutinee lets the comparisons in an inlined function fold, which
+    deletes the arms behind them and takes the blocks these fixtures are about with
+    it.  A dict read of a literal key is not folded by any pass.
+    """
+    return f'(dict-get (dict "k" {value}) "k")'
+
+
+MATCH_WITH_DEFAULT = f"""
 (let ((classify (lambda (n)
                   (match n
                     (0 'zero)
                     (2 'two)
                     (3 'three)
                     (_ 'other)))))
-  (classify 0))
+  (classify {_runtime_int(0)}))
 """
 
-MATCH_WITH_RAISE_DEFAULT = """
+MATCH_WITH_RAISE_DEFAULT = f"""
 (let ((classify (lambda (n)
                   (match n
                     (0 'zero)
                     (2 'two)
                     (_ (error "no arm matched"))))))
-  (classify 0))
+  (classify {_runtime_int(0)}))
 """
 
-MATCH_WITHOUT_DUPLICATION = """
+MATCH_WITHOUT_DUPLICATION = f"""
 (let ((classify (lambda (x)
                   (match x
                     ((? integer? n) 'int)
                     ((? string? s) 'str)))))
-  (classify 0))
+  (classify {_runtime_int(0)}))
 """
 MATCH_WITH_GUARDED_RAISE_DEFAULT = """
 (let ((classify (lambda (lst)

@@ -7,6 +7,9 @@ optimizations that are safe because Menai is a pure functional language — ever
 binding is immutable and every expression is side-effect-free.
 """
 
+import operator
+
+from collections.abc import Callable
 from typing import cast
 
 from menai.ir.menai_ir import (
@@ -32,6 +35,7 @@ from menai.ir.menai_ir import (
     MenaiIRVariable,
 )
 from menai.menai_value import MenaiBoolean
+from menai.menai_value import MenaiInteger
 from menai.ir.menai_ir_reachability import MenaiIRReachability, IRReachability
 from menai.ir.menai_ir_use_counter import MenaiIRUseCounter, IRUseCounts
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
@@ -75,6 +79,365 @@ def _fold_literal_test(
     return None
 
 
+_INTEGER_COMPARISONS: dict[str, Callable[[int, int], bool]] = {
+    'integer=?': operator.eq,
+    'integer!=?': operator.ne,
+    'integer<?': operator.lt,
+    'integer<=?': operator.le,
+    'integer>?': operator.gt,
+    'integer>=?': operator.ge,
+}
+
+
+def _fold_constant_comparison(
+    ir: MenaiIRCall,
+    arg_plans: tuple[MenaiIRExpr, ...],
+) -> MenaiIRExpr | None:
+    """
+    Fold an integer comparison whose operands are both literals, or return None.
+
+    The AST constant folder already folds a comparison written out in the source, so
+    this exists for the one that only becomes foldable later: a variadic prelude
+    wrapper dispatches on `($integer=? ($list-length args) 2)`, and both operands are
+    literals only once the accessor on the rest list has folded.  Deciding the test
+    is what lets the branch collapse and take the arms the call's arity cannot select
+    with it, which is the difference between a dispatcher and one comparison.
+
+    Only two integer literals are folded.  A comparison whose operands are not both
+    integers raises, so folding it would suppress the raise.
+    """
+    if not ir.is_builtin or ir.builtin_name is None or len(arg_plans) != 2:
+        return None
+
+    compare = _INTEGER_COMPARISONS.get(ir.builtin_name)
+    if compare is None:
+        return None
+
+    left, right = arg_plans
+    if not (isinstance(left, MenaiIRConstant) and isinstance(left.value, MenaiInteger)):
+        return None
+
+    if not (isinstance(right, MenaiIRConstant) and isinstance(right.value, MenaiInteger)):
+        return None
+
+    return MenaiIRConstant(value=MenaiBoolean(value=compare(left.value.value, right.value.value)))
+
+
+def _literal_container(plan: MenaiIRExpr) -> tuple[str, tuple[MenaiIRExpr, ...]] | None:
+    """
+    Return the kind and elements of a container literal, or None for any other plan.
+
+    A MenaiIREmptyList is a list literal with no elements.  Nothing else has a shape
+    that is known at compile time.
+    """
+    if isinstance(plan, MenaiIRBuildList):
+        return 'list', plan.element_plans
+
+    if isinstance(plan, MenaiIRBuildVector):
+        return 'vector', plan.element_plans
+
+    if isinstance(plan, MenaiIREmptyList):
+        return 'list', ()
+
+    return None
+
+
+def _constant_index(plan: MenaiIRExpr | None) -> int | None:
+    """Return the integer an index plan is a literal for, or None."""
+    if isinstance(plan, MenaiIRConstant) and isinstance(plan.value, MenaiInteger):
+        return plan.value.value
+
+    return None
+
+
+def _fold_literal_accessor(
+    builtin_name: str,
+    kind: str,
+    elements: tuple[MenaiIRExpr, ...],
+    index_plan: MenaiIRExpr | None,
+) -> MenaiIRExpr | None:
+    """
+    Fold an accessor applied to a container literal, or return None.
+
+    This is the fold the variadic prelude wrappers need.  Each wrapper dispatches on
+    `($list-length args)` and then reads `($list-first args)` and `($list-last args)`,
+    where `args` is a list literal once the call has been inlined.  Neither the AST
+    constant folder nor branch constant propagation can decide those, because the
+    elements are runtime values rather than constants, so the dispatcher survives and
+    with it an allocation per call.
+
+    Every fold agrees with the VM.  An accessor that would raise for the literal's
+    shape is left alone: replacing it with a value would suppress the raise.
+    """
+    length = len(elements)
+
+    if kind == 'list':
+        if builtin_name == 'list-length':
+            return MenaiIRConstant(value=MenaiInteger(value=length))
+
+        if builtin_name == 'list-null?':
+            return MenaiIRConstant(value=MenaiBoolean(value=length == 0))
+
+        if builtin_name == 'list-first' and length >= 1:
+            return elements[0]
+
+        if builtin_name == 'list-last' and length >= 1:
+            return elements[-1]
+
+        if builtin_name == 'list-rest' and length >= 1:
+            rest = elements[1:]
+            return MenaiIRBuildList(element_plans=rest) if rest else MenaiIREmptyList()
+
+        if builtin_name == 'list-nth':
+            index = _constant_index(index_plan)
+            if index is not None and 0 <= index < length:
+                return elements[index]
+
+        return None
+
+    if builtin_name == 'vector-length':
+        return MenaiIRConstant(value=MenaiInteger(value=length))
+
+    if builtin_name == 'vector-nth':
+        index = _constant_index(index_plan)
+        if index is not None and 0 <= index < length:
+            return elements[index]
+
+    return None
+
+
+def _fold_container_argument(ir: MenaiIRCall, arg_plans: tuple[MenaiIRExpr, ...]) -> MenaiIRExpr | None:
+    """
+    Fold an accessor whose argument is written inline as a container literal.
+
+    The literal has no other reader, so the fold removes it along with the accessor
+    and each element is still evaluated exactly once.
+    """
+    if not ir.is_builtin or ir.builtin_name is None or not arg_plans:
+        return None
+
+    container = _literal_container(arg_plans[0])
+    if container is None:
+        return None
+
+    return _fold_literal_accessor(
+        ir.builtin_name, container[0], container[1], arg_plans[1] if len(arg_plans) > 1 else None
+    )
+
+
+def _fold_literal_uses(
+    ir: MenaiIRExpr,
+    name: str,
+    kind: str,
+    elements: tuple[MenaiIRExpr, ...],
+) -> MenaiIRExpr | None:
+    """
+    Replace every use of *name* with the value a container literal gives it.
+
+    Returns None unless every use of the name is an accessor this fold decides, which
+    is what makes dropping the binding safe.  A name rebound by an inner binding form,
+    lambda or loop is left alone and its subtree is not entered.
+
+    *elements* are plans to substitute, so the caller passes a variable for each
+    element rather than the element's own expression: an element read at several
+    sites must still be evaluated once.
+    """
+    if isinstance(ir, MenaiIRVariable):
+        return None if ir.name == name else ir
+
+    if isinstance(ir, MenaiIRCall):
+        if ir.is_builtin and ir.builtin_name is not None and ir.arg_plans:
+            head = ir.arg_plans[0]
+            if isinstance(head, MenaiIRVariable) and head.name == name:
+                folded = _fold_literal_accessor(
+                    ir.builtin_name, kind, elements, ir.arg_plans[1] if len(ir.arg_plans) > 1 else None
+                )
+                return folded
+
+        func_plan = _fold_literal_uses(ir.func_plan, name, kind, elements)
+        if func_plan is None:
+            return None
+
+        arg_plans = _fold_literal_uses_in_sequence(ir.arg_plans, name, kind, elements)
+        if arg_plans is None:
+            return None
+
+        if func_plan is ir.func_plan and arg_plans is ir.arg_plans:
+            return ir
+
+        return MenaiIRCall(
+            func_plan=func_plan,
+            arg_plans=arg_plans,
+            is_tail_call=ir.is_tail_call,
+            is_builtin=ir.is_builtin,
+            builtin_name=ir.builtin_name,
+        )
+
+    if isinstance(ir, (MenaiIRConstant, MenaiIRQuote, MenaiIREmptyList, MenaiIRBuildEnum)):
+        return ir
+
+    if isinstance(ir, MenaiIRError):
+        message = _fold_literal_uses(ir.message, name, kind, elements)
+        return MenaiIRError(message=message) if message is not None else None
+
+    if isinstance(ir, MenaiIRIf):
+        condition = _fold_literal_uses(ir.condition_plan, name, kind, elements)
+        then_plan = _fold_literal_uses(ir.then_plan, name, kind, elements)
+        else_plan = _fold_literal_uses(ir.else_plan, name, kind, elements)
+        if condition is None or then_plan is None or else_plan is None:
+            return None
+
+        if (condition is ir.condition_plan and then_plan is ir.then_plan
+                and else_plan is ir.else_plan):
+            return ir
+
+        return MenaiIRIf(
+            condition_plan=condition,
+            then_plan=then_plan,
+            else_plan=else_plan,
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        if name in {bound for bound, _ in ir.bindings}:
+            return ir
+
+        bindings = []
+        for bound, value in ir.bindings:
+            new_value = _fold_literal_uses(value, name, kind, elements)
+            if new_value is None:
+                return None
+
+            bindings.append((bound, new_value))
+
+        body_plan = _fold_literal_uses(ir.body_plan, name, kind, elements)
+        if body_plan is None:
+            return None
+
+        return type(ir)(
+            bindings=tuple(bindings),
+            body_plan=body_plan,
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, MenaiIRLambda):
+        if name in ir.params:
+            return ir
+
+        body_plan = _fold_literal_uses(ir.body_plan, name, kind, elements)
+        if body_plan is None:
+            return None
+
+        return MenaiIRLambda(
+            params=ir.params,
+            body_plan=body_plan,
+            sibling_free_vars=ir.sibling_free_vars,
+            sibling_free_var_plans=ir.sibling_free_var_plans,
+            outer_free_vars=ir.outer_free_vars,
+            outer_free_var_plans=ir.outer_free_var_plans,
+            param_count=ir.param_count,
+            is_variadic=ir.is_variadic,
+            binding_name=ir.binding_name,
+            source_line=ir.source_line,
+            source_file=ir.source_file,
+        )
+
+    if isinstance(ir, MenaiIRLoop):
+        if name in ir.params:
+            return ir
+
+        init_plans = _fold_literal_uses_in_sequence(ir.init_plans, name, kind, elements)
+        if init_plans is None:
+            return None
+
+        body_plan = _fold_literal_uses(ir.body_plan, name, kind, elements)
+        if body_plan is None:
+            return None
+
+        return MenaiIRLoop(
+            params=ir.params,
+            init_plans=init_plans,
+            body_plan=body_plan,
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, MenaiIRRecur):
+        arg_plans = _fold_literal_uses_in_sequence(ir.arg_plans, name, kind, elements)
+        if arg_plans is None:
+            return None
+
+        if arg_plans is ir.arg_plans:
+            return ir
+
+        return MenaiIRRecur(arg_plans=arg_plans, is_tail_call=ir.is_tail_call)
+
+    if isinstance(ir, MenaiIRReturn):
+        value_plan = _fold_literal_uses(ir.value_plan, name, kind, elements)
+        if value_plan is None:
+            return None
+
+        return ir if value_plan is ir.value_plan else MenaiIRReturn(value_plan=value_plan)
+
+    if isinstance(ir, MenaiIRBuildStruct):
+        field_plans = _fold_literal_uses_in_sequence(ir.field_plans, name, kind, elements)
+        if field_plans is None:
+            return None
+
+        if field_plans is ir.field_plans:
+            return ir
+
+        return MenaiIRBuildStruct(struct_type=ir.struct_type, field_plans=field_plans)
+
+    if isinstance(ir, (MenaiIRBuildList, MenaiIRBuildSet, MenaiIRBuildVector)):
+        element_plans = _fold_literal_uses_in_sequence(ir.element_plans, name, kind, elements)
+        if element_plans is None:
+            return None
+
+        if element_plans is ir.element_plans:
+            return ir
+
+        return type(ir)(element_plans=element_plans)
+
+    if isinstance(ir, MenaiIRBuildDict):
+        pair_plans = []
+        for key, value in ir.pair_plans:
+            new_key = _fold_literal_uses(key, name, kind, elements)
+            new_value = _fold_literal_uses(value, name, kind, elements)
+            if new_key is None or new_value is None:
+                return None
+
+            pair_plans.append((new_key, new_value))
+
+        return MenaiIRBuildDict(pair_plans=tuple(pair_plans))
+
+    raise TypeError(f"_fold_literal_uses: unhandled IR node type {type(ir).__name__}")
+
+
+def _fold_literal_uses_in_sequence(
+    plans: tuple[MenaiIRExpr, ...],
+    name: str,
+    kind: str,
+    elements: tuple[MenaiIRExpr, ...],
+) -> tuple[MenaiIRExpr, ...] | None:
+    """
+    Fold a sequence of plans, returning the original tuple when nothing changed.
+
+    Returning the same object lets the caller's identity test distinguish an
+    unchanged sequence from a rewritten one.
+    """
+    folded = []
+    changed = False
+    for plan in plans:
+        new_plan = _fold_literal_uses(plan, name, kind, elements)
+        if new_plan is None:
+            return None
+
+        changed = changed or new_plan is not plan
+        folded.append(new_plan)
+
+    return tuple(folded) if changed else plans
+
+
 class MenaiIROptimizer(MenaiIROptimizationPass):
     """
     IR-level optimization pass.
@@ -93,6 +456,18 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         self._eliminations = 0
         self._counts: IRUseCounts | None = None
         self._reach: IRReachability | None = None
+        self._temp_counter = 0
+
+    def _gen_temp(self) -> str:
+        """
+        Generate a unique temporary variable name.
+
+        Uses the compiler-generated `#:` prefix so the name cannot collide with a
+        user identifier.  The counter is per-instance and monotonically increasing,
+        so repeated folding never reuses a name.
+        """
+        self._temp_counter += 1
+        return f"#:fold-tmp-{self._temp_counter}"
 
     def eliminations(self) -> int:
         """Return the number of eliminations performed by the last optimize() call."""
@@ -198,6 +573,13 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         Reachability, not a use count, decides liveness: a binding referenced
         only by other unreachable bindings is itself dead, and a use count
         cannot see that.
+
+        A binding whose value is a container literal is also folded away when every
+        use of its name is an accessor the literal's shape decides, so the literal
+        and the accessor both disappear.  That is the shape a variadic prelude
+        wrapper takes once a call to it has been inlined: its rest argument is bound
+        to a literal and then read only by `$list-length`, `$list-first` and
+        `$list-last`.
         """
         current_frame = frame_stack[-1]
         reach = cast(IRReachability, self._reach)
@@ -221,6 +603,9 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         if opt_body is not ir.body_plan:
             changed = True
 
+        live, opt_body, folded = self._fold_literal_bindings(live, opt_body)
+        changed = changed or folded
+
         if not live:
             return opt_body
 
@@ -232,6 +617,54 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
             body_plan=opt_body,
             in_tail_position=ir.in_tail_position,
         )
+
+    def _fold_literal_bindings(
+        self,
+        bindings: list[tuple[str, MenaiIRExpr]],
+        body_plan: MenaiIRExpr,
+    ) -> tuple[list[tuple[str, MenaiIRExpr]], MenaiIRExpr, bool]:
+        """
+        Fold the uses of any binding whose value is a container literal.
+
+        A binding is folded only when every use of its name in the body is an
+        accessor the literal's shape decides, and no other binding's value reads the
+        name.  Each element is then bound to its own variable, so an element that
+        several accessors read is still evaluated once, and the literal's binding is
+        dropped because nothing can read it any more.
+        """
+        folded = False
+
+        index = 0
+        while index < len(bindings):
+            name, value_plan = bindings[index]
+            index += 1
+
+            container = _literal_container(value_plan)
+            if container is None:
+                continue
+
+            if any(name in MenaiIROptimizer._collect_used_names(other, set())
+                   for bound, other in bindings if bound != name):
+                continue
+
+            elements: list[MenaiIRExpr] = []
+            element_bindings: list[tuple[str, MenaiIRExpr]] = []
+            for element in container[1]:
+                element_name = self._gen_temp()
+                element_bindings.append((element_name, element))
+                elements.append(MenaiIRVariable(name=element_name))
+
+            opt_body = _fold_literal_uses(body_plan, name, container[0], tuple(elements))
+            if opt_body is None:
+                continue
+
+            body_plan = opt_body
+            bindings = bindings[:index - 1] + element_bindings + bindings[index:]
+            index += len(element_bindings)
+            self._eliminations += 1
+            folded = True
+
+        return bindings, body_plan, folded
 
     def _opt_letrec(self, ir: MenaiIRLetrec, frame_stack: list[int]) -> MenaiIRExpr:
         """
@@ -514,10 +947,17 @@ class MenaiIROptimizer(MenaiIROptimizationPass):
         return refs
 
     def _opt_call(self, ir: MenaiIRCall, frame_stack: list[int]) -> MenaiIRExpr:
-        """Optimize the function and argument plans of a call, folding a literal test."""
+        """Optimize a call, folding a literal test, an accessor, or a constant comparison."""
         func_plan = self._opt(ir.func_plan, frame_stack)
         arg_plans = tuple(self._opt(a, frame_stack) for a in ir.arg_plans)
         folded = _fold_literal_test(ir, arg_plans)
+
+        if folded is None:
+            folded = _fold_container_argument(ir, arg_plans)
+
+        if folded is None:
+            folded = _fold_constant_comparison(ir, arg_plans)
+
         if folded is not None:
             self._eliminations += 1
             return folded
