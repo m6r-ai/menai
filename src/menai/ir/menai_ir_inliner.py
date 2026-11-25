@@ -113,7 +113,7 @@ from menai.ir.menai_ir import (
 from menai.ir.menai_ir_optimization_pass import MenaiIROptimizationPass
 
 
-MAX_INLINE_NODES = 50
+MAX_INLINE_NODES = 60
 
 # The recursive tree walks in this pass can go deep on large IR trees.
 # Ensure the recursion limit is high enough to handle them.

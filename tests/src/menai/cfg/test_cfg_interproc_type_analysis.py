@@ -106,6 +106,29 @@ def _ops(cfg) -> list[str]:
     return [op for op, _ in _field_ops(cfg)]
 
 
+def _nested_ops(cfg, root) -> list[str]:
+    """
+    Collect the field-access op names of every function except *root*.
+
+    A function that escapes keeps its own code object, and that copy is the one the
+    analysis must leave symbol-based.  A call site in *root* that inlines the same
+    function with a known receiver is a separate, substituted copy and may resolve
+    the access to an index, so the two are asserted separately.
+    """
+    result: list[str] = []
+    for func in collect_functions(cfg):
+        if func is root:
+            continue
+
+        for block in func.blocks:
+            for instr in block.instrs:
+                if isinstance(instr, MenaiCFGStructGetIndexedInstr):
+                    result.append('struct-indexed-get')
+
+                elif isinstance(instr, MenaiCFGBuiltinInstr) and instr.op in {'struct-get', 'struct-with'}:
+                    result.append(instr.op)
+
+    return result
 def _indexed_gets(cfg) -> list:
     """Return every index-based struct-get instruction in the module."""
     result = []
@@ -958,9 +981,17 @@ class TestEscapingFunction:
     """
 
     def test_container_fetched_function_stays_symbol_based(self):
+        """
+        The escaping copy of the function keeps its symbol-based read.
+
+        The escaping function is fetched from a list and called with a string, which
+        the analysis cannot see, so its own copy must not be rewritten to an index.
+        The direct call site in the module inlines the function with a known Point
+        and is a separate copy, so it may resolve.
+        """
         cfg = _build_cfg(ESCAPE_VIA_CONTAINER_SRC)
-        assert "struct-get" in _ops(cfg)
-        assert "struct-indexed-get" not in _ops(cfg)
+        assert "struct-get" in _nested_ops(cfg, cfg)
+        assert "struct-indexed-get" not in _nested_ops(cfg, cfg)
 
     def test_container_fetched_function_type_error_not_miscompile(self, menai):
         with pytest.raises(MenaiError, match="type mismatch"):
@@ -972,14 +1003,16 @@ class TestEscapingFunction:
         assert "struct-indexed-get" not in _ops(cfg)
 
     def test_vector_stored_function_stays_symbol_based(self):
+        """The copy stored in a vector keeps its symbol-based read."""
         cfg = _build_cfg(ESCAPE_VIA_VECTOR_SRC)
-        assert "struct-get" in _ops(cfg)
-        assert "struct-indexed-get" not in _ops(cfg)
+        assert "struct-get" in _nested_ops(cfg, cfg)
+        assert "struct-indexed-get" not in _nested_ops(cfg, cfg)
 
     def test_returned_function_stays_symbol_based(self):
+        """The copy returned to the host keeps its symbol-based read."""
         cfg = _build_cfg(ESCAPE_VIA_RETURN_SRC)
-        assert "struct-get" in _ops(cfg)
-        assert "struct-indexed-get" not in _ops(cfg)
+        assert "struct-get" in _nested_ops(cfg, cfg)
+        assert "struct-indexed-get" not in _nested_ops(cfg, cfg)
 
     def test_non_escaping_function_is_still_rewritten(self):
         cfg = _build_cfg(MONOMORPHIC_SRC)
