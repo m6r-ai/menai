@@ -5,7 +5,7 @@ Walks the IR tree and substitutes lambda bodies at call sites where the
 call target can be resolved to a known lambda.  Inlining is always safe in
 Menai because the language is pure — there are no side effects to reorder.
 
-The pass resolves two kinds of call target:
+The pass resolves three kinds of call target:
 
 - A lambda bound in an enclosing binding form whose value is a MenaiIRLambda.
   The scope stack maps binding names to lambda nodes as the tree is walked.
@@ -20,6 +20,15 @@ The pass resolves two kinds of call target:
   (e.g. ((lambda (x) ...) arg)).  The lambda is written at the call site, so
   inlining it there removes a closure allocation and an indirect call without
   changing any scope.
+
+- A loop parameter that is invariant and whose initial plan resolves to a known
+  lambda.  A higher-order prelude function binds its function argument to the
+  parameter of its own helper loop, so `(fold-list integer+ 0 lst)` offers
+  `integer+` only as a loop parameter's initial value.  The parameter is entered
+  into the scope with that lambda when every back-edge of the loop passes the
+  parameter's own name in its position, which is what makes the parameter hold
+  the initial value on every iteration.  A parameter that a back-edge rebinds is
+  entered with None, like any other loop parameter.
 
 A lambda is only inlined when:
 
@@ -43,7 +52,12 @@ A lambda is only inlined when:
   argument expression.  Substituting such an argument would let the body's
   binding capture the argument's variable, silently rebinding it to the
   callee's local instead of the caller's.
-- The argument count matches the parameter count (arity must be exact).
+- The call supplies an acceptable number of arguments: exactly the parameter
+  count for a fixed-arity lambda, and at least one fewer than the parameter
+  count for a variadic one.  A variadic lambda's trailing parameter receives the
+  surplus arguments as a list, so a call at exactly the minimum arity binds it to
+  the literal empty list and a call above it binds it to a MenaiIRBuildList of
+  the surplus arguments, a construction the passes downstream may fold.
 - A lambda bound elsewhere has no sibling captures.  A sibling capture names a
   binding in the lambda's own $letrec group, which does not exist at the call
   site, so it cannot be reproduced there.  Outer captures are permitted: the
@@ -116,6 +130,7 @@ class MenaiIRInliner(MenaiIROptimizationPass):
 
     def __init__(self) -> None:
         self._inlined = 0
+        self._pruned = 0
         self._temp_counter = 0
         self._single_use_names: frozenset[str] = frozenset()
 
@@ -133,10 +148,11 @@ class MenaiIRInliner(MenaiIROptimizationPass):
     def optimize(self, ir: MenaiIRExpr) -> tuple[MenaiIRExpr, bool]:
         """Return an inlined IR tree and a boolean indicating whether any changes were made."""
         self._inlined = 0
+        self._pruned = 0
         self._temp_counter = 0
         new_ir = ir
         while True:
-            prev = self._inlined
+            prev = (self._inlined, self._pruned)
             # Recomputed each round: inlining removes the reference it replaced, so
             # a binding that was single-use can disappear, and a binding inside a
             # newly inlined body has to be counted before it is considered.
@@ -145,10 +161,10 @@ class MenaiIRInliner(MenaiIROptimizationPass):
             )
 
             new_ir = self._opt(new_ir, scope_stack=[{}])
-            if self._inlined == prev:
+            if (self._inlined, self._pruned) == prev:
                 break
 
-        return new_ir, self._inlined > 0
+        return new_ir, self._inlined > 0 or self._pruned > 0
 
     def _opt(
         self,
@@ -400,19 +416,38 @@ class MenaiIRInliner(MenaiIROptimizationPass):
         """
         Walk a loop, optimising its init plans and body.
 
-        The loop params are bound inside the body but are not statically-known
-        lambdas, so they do not enter the scope stack: a call whose function
-        position is a loop param must not resolve to an inlinable target.  A
-        call to a lambda bound outside the loop still resolves normally.
+        The init plans are walked in the enclosing scope, because a loop param is
+        not in scope in its own initial value.
+
+        Every loop param is entered into the scope for the body, so that a call
+        whose function position is a loop param never resolves to an outer
+        binding of the same name: the param shadows it just as a lambda parameter
+        does.  A param is a statically-known lambda only when it cannot change
+        across iterations, which is what `_invariant_loop_params` decides; its
+        entry is then the lambda its initial plan resolves to, and otherwise
+        None.  A call to a lambda bound outside the loop still resolves normally.
         """
         opt_init = tuple(self._opt(init, scope_stack, enclosing_group_names) for init in ir.init_plans)
-        opt_body = self._opt(ir.body_plan, scope_stack, enclosing_group_names)
-        return MenaiIRLoop(
+        invariant = _invariant_loop_params(ir)
+        loop_scope: dict[str, MenaiIRLambda | None] = {
+            name: _resolve_loop_param_target(
+                self._resolve_target(init, scope_stack), ir.params
+            ) if name in invariant else None
+            for name, init in zip(ir.params, opt_init)
+        }
+        opt_body = self._opt(ir.body_plan, scope_stack + [loop_scope], enclosing_group_names)
+
+        new_loop = MenaiIRLoop(
             params=ir.params,
             init_plans=opt_init,
             body_plan=opt_body,
             in_tail_position=ir.in_tail_position,
         )
+        pruned, pruned_any = _prune_dead_loop_params(new_loop)
+        if pruned_any:
+            self._pruned += 1
+
+        return pruned
 
     def _resolve_target(
         self,
@@ -752,6 +787,292 @@ def _recompute_captures(
     sibling_free_vars = tuple(sorted(free & enclosing_group_names))
     outer_free_vars = tuple(sorted(free - enclosing_group_names))
     return sibling_free_vars, outer_free_vars
+
+
+def _passes_param(args: tuple[MenaiIRExpr, ...], index: int, param: str) -> bool:
+    """Return True when *args* passes *param*'s own name in *param*'s position."""
+    if index >= len(args):
+        return False
+
+    arg = args[index]
+
+    return isinstance(arg, MenaiIRVariable) and arg.name == param
+
+
+def _loop_back_edges(ir: MenaiIRExpr) -> list[tuple[MenaiIRExpr, ...]]:
+    """
+    Collect the argument plans of every back-edge belonging to the enclosing loop.
+
+    A nested MenaiIRLoop owns its own back-edges, so the walk stops at its body and
+    looks only at its init plans, which are evaluated in this loop's scope.  A nested
+    lambda is a new function whose back-edges belong to a loop inside it, so the walk
+    stops there entirely.  A Recur reached from outside those boundaries is this
+    loop's.
+    """
+    if isinstance(ir, MenaiIRRecur):
+        edges = [ir.arg_plans]
+        for arg in ir.arg_plans:
+            edges.extend(_loop_back_edges(arg))
+
+        return edges
+
+    if isinstance(ir, MenaiIRLoop):
+        edges = []
+        for init in ir.init_plans:
+            edges.extend(_loop_back_edges(init))
+
+        return edges
+
+    if isinstance(ir, MenaiIRLambda):
+        return []
+
+    if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList, MenaiIRBuildEnum)):
+        return []
+
+    if isinstance(ir, MenaiIRError):
+        return _loop_back_edges(ir.message)
+
+    if isinstance(ir, MenaiIRIf):
+        return (_loop_back_edges(ir.condition_plan)
+                + _loop_back_edges(ir.then_plan)
+                + _loop_back_edges(ir.else_plan))
+
+    if isinstance(ir, (MenaiIRLet, MenaiIRLetrec)):
+        edges = []
+        for _, value in ir.bindings:
+            edges.extend(_loop_back_edges(value))
+
+        return edges + _loop_back_edges(ir.body_plan)
+
+    if isinstance(ir, MenaiIRCall):
+        edges = _loop_back_edges(ir.func_plan)
+        for arg in ir.arg_plans:
+            edges.extend(_loop_back_edges(arg))
+
+        return edges
+
+    if isinstance(ir, MenaiIRReturn):
+        return _loop_back_edges(ir.value_plan)
+
+    if isinstance(ir, (MenaiIRBuildList, MenaiIRBuildSet, MenaiIRBuildVector)):
+        edges = []
+        for element in ir.element_plans:
+            edges.extend(_loop_back_edges(element))
+
+        return edges
+
+    if isinstance(ir, MenaiIRBuildDict):
+        edges = []
+        for key, value in ir.pair_plans:
+            edges.extend(_loop_back_edges(key))
+            edges.extend(_loop_back_edges(value))
+
+        return edges
+
+    if isinstance(ir, MenaiIRBuildStruct):
+        edges = []
+        for field in ir.field_plans:
+            edges.extend(_loop_back_edges(field))
+
+        return edges
+
+    raise TypeError(f"_loop_back_edges: unhandled IR node type {type(ir).__name__}")
+
+
+def _invariant_loop_params(ir: MenaiIRLoop) -> frozenset[str]:
+    """
+    Return the loop params that can be relied on to hold their initial value.
+
+    A param is invariant when no back-edge of the loop rebinds it, so the value its
+    init plan produces is the value it holds on every iteration.  That is what makes
+    it safe to resolve a call through the param to the lambda the init plan names: a
+    rebinding back-edge would let the call reach a different function from the one
+    the init plan suggested.
+    """
+    back_edges = _loop_back_edges(ir.body_plan)
+    return frozenset(
+        param
+        for index, param in enumerate(ir.params)
+        if all(_passes_param(args, index, param) for args in back_edges)
+    )
+
+
+def _resolve_loop_param_target(
+    target: MenaiIRLambda | None,
+    loop_params: tuple[str, ...],
+) -> MenaiIRLambda | None:
+    """
+    Return *target* when it can be inlined inside this loop, or None when it cannot.
+
+    A lambda reached through a loop param is inlined at a call site in the loop
+    body, which is a scope the lambda was not written in.  A name the lambda
+    captures from outside the loop can be shadowed by a loop param of that name, and
+    the inlined body would then resolve it to the loop's value instead of the
+    caller's.  Nothing in the substitution can repair that, so such a lambda is not
+    resolved here and the call is left alone.
+
+    The lambda's own params are not captures, so they are not a collision however
+    the loop happens to name its params.
+    """
+    if target is not None and not (_free_vars(target.body_plan) - set(target.params)) & set(loop_params):
+        return target
+
+    return None
+
+
+def _init_cannot_raise(init: MenaiIRExpr) -> bool:
+    """
+    Return True when evaluating *init* cannot raise.
+
+    Only the forms that carry no computation qualify.  A raise is observable and there
+    are no handlers, so an init plan that can raise must be evaluated even when the
+    param it seeds is never read; see ADR-0049.
+    """
+    return isinstance(init, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList, MenaiIRLambda))
+
+
+def _dead_loop_param_indices(ir: MenaiIRLoop) -> frozenset[int]:
+    """
+    Return the positions of the loop params whose value nothing can read.
+
+    A param is dead when every mention of it in the body is a back-edge passing the
+    param to itself, which leaves the value it was seeded with unread forever.  Such a
+    param is what inlining a higher-order function leaves behind: the callback is
+    substituted into the loop's init plan and every call through the param is then
+    inlined, so the closure the init plan builds is never called.
+
+    The init plan must also be a form that cannot raise, because dropping it would
+    suppress a raise.
+
+    The use count must be an upper bound, so it counts every variable node naming
+    the param and resolves no shadowing.  A nested lambda that captures the param
+    uses it through its capture list rather than by naming it in the enclosing
+    scope, so a shadow-aware count such as _count_param_uses would miss the use and
+    drop a param that is still read.
+    """
+    back_edges = _loop_back_edges(ir.body_plan)
+    use_counts = _variable_use_counts(ir.body_plan)
+    dead: set[int] = set()
+
+    for index, (param, init) in enumerate(zip(ir.params, ir.init_plans)):
+        if not _init_cannot_raise(init):
+            continue
+
+        self_passes = sum(1 for args in back_edges if _passes_param(args, index, param))
+        if use_counts.get(param, 0) == self_passes:
+            dead.add(index)
+
+    return frozenset(dead)
+
+
+def _drop_loop_param_args(ir: MenaiIRExpr, drop: frozenset[int]) -> MenaiIRExpr:
+    """
+    Remove the argument plans at *drop* from every back-edge of the enclosing loop.
+
+    The walk has the same boundaries as _loop_back_edges: a nested MenaiIRLoop's body
+    and a nested lambda's body are left alone, because the back-edges inside them
+    belong to a different loop.
+    """
+    if isinstance(ir, MenaiIRRecur):
+        arg_plans = tuple(
+            _drop_loop_param_args(arg, drop)
+            for index, arg in enumerate(ir.arg_plans)
+            if index not in drop
+        )
+        return MenaiIRRecur(arg_plans=arg_plans, is_tail_call=ir.is_tail_call)
+
+    if isinstance(ir, MenaiIRLambda):
+        return ir
+
+    if isinstance(ir, MenaiIRLoop):
+        return MenaiIRLoop(
+            params=ir.params,
+            init_plans=tuple(_drop_loop_param_args(init, drop) for init in ir.init_plans),
+            body_plan=ir.body_plan,
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, (MenaiIRConstant, MenaiIRVariable, MenaiIRQuote, MenaiIREmptyList, MenaiIRBuildEnum)):
+        return ir
+
+    if isinstance(ir, MenaiIRError):
+        return MenaiIRError(message=_drop_loop_param_args(ir.message, drop))
+
+    if isinstance(ir, MenaiIRIf):
+        return MenaiIRIf(
+            condition_plan=_drop_loop_param_args(ir.condition_plan, drop),
+            then_plan=_drop_loop_param_args(ir.then_plan, drop),
+            else_plan=_drop_loop_param_args(ir.else_plan, drop),
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, MenaiIRLet):
+        return MenaiIRLet(
+            bindings=tuple((name, _drop_loop_param_args(value, drop)) for name, value in ir.bindings),
+            body_plan=_drop_loop_param_args(ir.body_plan, drop),
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, MenaiIRLetrec):
+        return MenaiIRLetrec(
+            bindings=tuple((name, _drop_loop_param_args(value, drop)) for name, value in ir.bindings),
+            body_plan=_drop_loop_param_args(ir.body_plan, drop),
+            in_tail_position=ir.in_tail_position,
+        )
+
+    if isinstance(ir, MenaiIRCall):
+        return MenaiIRCall(
+            func_plan=_drop_loop_param_args(ir.func_plan, drop),
+            arg_plans=tuple(_drop_loop_param_args(arg, drop) for arg in ir.arg_plans),
+            is_tail_call=ir.is_tail_call,
+            is_builtin=ir.is_builtin,
+            builtin_name=ir.builtin_name,
+        )
+
+    if isinstance(ir, MenaiIRReturn):
+        return MenaiIRReturn(value_plan=_drop_loop_param_args(ir.value_plan, drop))
+
+    if isinstance(ir, MenaiIRBuildList):
+        return MenaiIRBuildList(element_plans=tuple(_drop_loop_param_args(e, drop) for e in ir.element_plans))
+
+    if isinstance(ir, MenaiIRBuildSet):
+        return MenaiIRBuildSet(element_plans=tuple(_drop_loop_param_args(e, drop) for e in ir.element_plans))
+
+    if isinstance(ir, MenaiIRBuildVector):
+        return MenaiIRBuildVector(element_plans=tuple(_drop_loop_param_args(e, drop) for e in ir.element_plans))
+
+    if isinstance(ir, MenaiIRBuildDict):
+        return MenaiIRBuildDict(
+            pair_plans=tuple((_drop_loop_param_args(k, drop), _drop_loop_param_args(v, drop))
+                             for k, v in ir.pair_plans),
+        )
+
+    if isinstance(ir, MenaiIRBuildStruct):
+        return MenaiIRBuildStruct(
+            struct_type=ir.struct_type,
+            field_plans=tuple(_drop_loop_param_args(f, drop) for f in ir.field_plans),
+        )
+
+    raise TypeError(f"_drop_loop_param_args: unhandled IR node type {type(ir).__name__}")
+
+
+def _prune_dead_loop_params(ir: MenaiIRLoop) -> tuple[MenaiIRLoop, bool]:
+    """
+    Remove the loop params that nothing can read, and report whether any went.
+
+    A dropped param takes its init plan with it, and every back-edge loses the
+    argument in that position, so the loop's arity shrinks consistently.
+    """
+    drop = _dead_loop_param_indices(ir)
+    if not drop:
+        return ir, False
+
+    return MenaiIRLoop(
+        params=tuple(param for index, param in enumerate(ir.params) if index not in drop),
+        init_plans=tuple(init for index, init in enumerate(ir.init_plans) if index not in drop),
+        body_plan=_drop_loop_param_args(ir.body_plan, drop),
+        in_tail_position=ir.in_tail_position,
+    ), True
 
 
 def _is_self_recursive(target: MenaiIRLambda) -> bool:

@@ -45,14 +45,14 @@ def _compile(src: str):
 
 def _find_inlined_loop(code):
     """
-    Return the code object that contains an inlined fold-list loop.
+    Return the code object that an inlined fold-list loop was lowered into.
 
-    A capture-less wrapper that calls fold-list is inlined into the module, and
-    the loop body itself is inlined into that same code object.  The loop is
-    therefore found in the outermost code object that contains a CALL, which is
-    the module for these programs.
+    A capture-less wrapper that calls fold-list is inlined into the module, and the
+    loop body itself is inlined into that same code object.  The loop is recognised
+    by the null test that opens its body, read depth-first from the root so the
+    outermost code object to hold a loop is the one the caller was inlined into.
     """
-    if _count_op(code, Opcode.CALL) > 0:
+    if _count_op(code, Opcode.LIST_NULL_P) > 0:
         return code
 
     for co in code.code_objects:
@@ -61,6 +61,18 @@ def _find_inlined_loop(code):
             return r
 
     return None
+
+
+def _over_budget_step() -> str:
+    """
+    Return a fold callback whose body is above the inliner's size budget.
+
+    The pass under test folds the constant that describes a call's callee into the
+    call's callee operand.  A callback small enough to inline leaves no call for it
+    to fold into, so this callback is deliberately too large to inline and stays a
+    call through the loop parameter that carries it.
+    """
+    return "(lambda (acc len) " + "(integer+ len " * 25 + "0" + ")" * 25 + ")"
 
 
 def _find_lambda(code, name: str):
@@ -149,9 +161,9 @@ class TestConstantMoveFolding:
         the loop).  The constant must be folded into the CALL's callee operand,
         so no LOAD_CONST or MAKE_CLOSURE remains for it.
         """
-        src = """
+        src = f"""
         (let ((max-length (lambda (lst)
-                            (fold-list (lambda (acc len) (integer-max acc len)) 0 lst))))
+                            (fold-list {_over_budget_step()} 0 lst))))
           (max-length (list 3 1 4 1 5)))
         """
         code = _find_inlined_loop(_compile(src))
@@ -164,9 +176,9 @@ class TestConstantMoveFolding:
         # before the loop and once per back-edge, so its load must be retained.
         # Removing it would drop one arm of the phi and corrupt the loop.
         #
-        # The list being folded is a third constant: it used to live in the
-        # wrapper lambda, which is now inlined into the module alongside the
-        # loop.  It is not part of the loop, so it is excluded here.
+        # The function holds two constant loads: the lambda, and the accumulator
+        # seed.  The list being folded is a constant too, and is excluded here
+        # because it is not part of the loop.
         assert _count_non_list_load_consts(code) == 2
 
     def test_lambda_arg_to_inlined_hof_correct_result(self, menai):
@@ -188,9 +200,9 @@ class TestConstantMoveFolding:
         the value passes through a chain of moves before reaching the CALL
         inside the inlined loop.
         """
-        src = """
+        src = f"""
         (let ((max-length (lambda (lst)
-                            (let ((combine (lambda (acc len) (integer-max acc len))))
+                            (let ((combine {_over_budget_step()}))
                               (fold-list combine 0 lst)))))
           (max-length (list 3 1 4 1 5)))
         """
@@ -277,11 +289,11 @@ class TestConstantMoveBecomesLoadConst:
         """
         code = _find_inlined_loop(_compile(src))
         assert code is not None
-        # The function holds two constant loads: the lambda, and the
-        # accumulator seed.  The seed is a loop-carried variable, so its load
-        # is retained rather than folded into the loop body.  The list being
-        # folded is a third constant and is not part of the loop.
-        assert _count_non_list_load_consts(code) == 2
+        # The function holds one constant load: the accumulator seed.  It is a
+        # loop-carried variable, so its load is retained rather than folded into
+        # the loop body.  The list being folded is a second constant and is not
+        # part of the loop.
+        assert _count_non_list_load_consts(code) == 1
         # The function opens by loading the constant straight into the
         # accumulator slot.  Before the rewrite this was a LOAD_CONST into a
         # scratch register followed by a MOVE into the accumulator.
@@ -289,7 +301,7 @@ class TestConstantMoveBecomesLoadConst:
         assert first.opcode == Opcode.LOAD_CONST
         # The scratch register is gone, so the function needs one slot fewer
         # than a load-then-copy would.
-        assert code.local_count == 5
+        assert code.local_count == 4
 
     def test_seed_of_loop_carried_variable_correct_result(self, menai):
         """A loop-carried accumulator seeded by a LOAD_CONST sums correctly."""
@@ -310,9 +322,9 @@ class TestConstantMoveBecomesLoadConst:
         link per round.  The rounds continue until the constant reaches the
         use, so a duplicate load of the same value does not survive.
         """
-        src = """
+        src = f"""
         (let ((total (lambda (lst)
-                       (let ((step (lambda (acc x) (integer+ acc x))))
+                       (let ((step {_over_budget_step()}))
                          (fold-list step 0 lst)))))
           (total (list 1 2 3)))
         """

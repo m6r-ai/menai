@@ -52,6 +52,25 @@ single-binding groups are converted: a self-recursive function sharing a group w
 bindings is not, and moving it into its own group makes it eligible.
 See [ADR-0032](../../docs/adr/0032-single-binding-tail-recursive-letrecs-become-loops.md).
 
+### A loop parameter shadows, and carries callee identity only when invariant
+
+`MenaiIRLetrecToLoop` runs before the inliner, so a helper loop's parameters are `MenaiIRLoop`
+params by the time the inliner walks the loop body. They must be entered into its scope stack:
+a call whose function position is a loop param otherwise resolves to an outer binding of the
+same name and is inlined as that binding's body, ignoring the value the param holds.
+
+A param resolves to a lambda only when it cannot change, which every back-edge passing the
+param's own name in its position establishes. A param that any back-edge rebinds resolves to
+nothing. A resolved lambda is not inlined when a name it captures from outside the loop
+collides with a loop param, because the inlined body would resolve that name to the loop's
+value.
+
+Inlining every call through such a param leaves the param dead, and its init plan — the
+callback's closure — is then never read but still built, so the inliner drops the param, its
+init plan and the argument in that position from every back-edge. Only an init plan that
+cannot raise may be dropped, because a raise is observable.
+See [ADR-0069](../../docs/adr/0069-loop-parameters-carry-callee-identity.md).
+
 ### CFG passes declare their scope via their base class
 
 A pass is handed the root `MenaiCFGFunction`; there is no module object. The module is the

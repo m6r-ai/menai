@@ -37,10 +37,16 @@ _MODULE_SUFFIX = ".menai"
 # is also missing `write-bits`' zero-count arm and the arm of `encode-auto`'s
 # shortest comparison where the stored encoding wins.  None can be closed by a
 # test of the calling module.
+#
+# `pptx-decode` is absent for the same reason.  Inlining `decode-part` into
+# `decode-parts-under`'s loop leaves that function carrying the arm for a part
+# with no byte content, which it cannot take: `parts-under` filters to names whose
+# content is bytes before the loop sees them, and the two loops are separate once
+# inlined, so no fact connects the filter to the test.
 _FULLY_COVERED = frozenset({
     "bmp-decode", "bmp-encode", "csv-encode", "docx-decode", "docx-encode",
     "gzip-compress", "html-decode", "html-encode", "json-encode", "json-decode",
-    "pptx-decode", "pptx-encode", "tar-create", "tar-entries", "tar-extract",
+    "pptx-encode", "tar-create", "tar-entries", "tar-extract",
     "xlsx-decode", "xlsx-encode", "xml-decode", "xml-encode", "zip-entries",
     "zip-extract", "zlib-compress",
 })

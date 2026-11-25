@@ -145,3 +145,4 @@ What costs, risks, or constraints does this decision impose?
 | [0066](0066-string-slices-and-trims-are-views.md) | String slices and trims are views into their source | Accepted |
 | [0067](0067-string-index-any-character-set-search.md) | Character-set search is a native VM operation | Accepted |
 | [0068](0068-benchmark-reference-implementations.md) | Benchmark suites may time a non-Menai reference implementation | Accepted |
+| [0069](0069-loop-parameters-carry-callee-identity.md) | A loop parameter carries callee identity when it cannot be rebound | Accepted |

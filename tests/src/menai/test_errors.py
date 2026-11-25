@@ -785,12 +785,17 @@ class TestBacktrace:
             assert "check-all" in name
 
     def test_backtrace_shows_anonymous_lambda(self, menai):
-        """An anonymous lambda in the backtrace is identified by its source location."""
+        """
+        An anonymous lambda in the backtrace is identified by its source location.
+
+        The lambda is reached through `apply` so that it is not inlined and remains
+        a distinct frame.
+        """
         with pytest.raises(MenaiEvalError) as exc_info:
             menai.evaluate("""
             (let ((wrapper (lambda (f x)
                                 (if (integer<=? x 0)
-                                    (f (list 1 2 3))
+                                    (apply f (list (list 1 2 3)))
                                     (wrapper f (integer- x 1))))))
               (wrapper (lambda (lst) (list-nth lst 10)) 2))
             """)

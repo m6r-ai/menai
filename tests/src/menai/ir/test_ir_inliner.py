@@ -11,6 +11,8 @@ from menai.ir.menai_ir import (
     MenaiIRLambda,
     MenaiIRLet,
     MenaiIRLetrec,
+    MenaiIRLoop,
+    MenaiIRRecur,
     MenaiIRReturn,
     MenaiIRVariable,
 )
@@ -22,6 +24,7 @@ from menai.ast.menai_ast_semantic_analyzer import MenaiASTSemanticAnalyzer
 from menai.ast.menai_lexer import MenaiLexer
 from menai.ast.menai_ast_prelude_injector import MenaiASTPreludeInjector
 from menai.ir.menai_ir_inliner import MenaiIRInliner
+from menai.menai_compiler import MenaiCompiler
 from menai.menai_value import MenaiInteger
 
 
@@ -60,6 +63,24 @@ def _inline(ir):
     return inliner.optimize(ir)
 
 
+def _run_ir_pipeline(ir):
+    """Run the compiler's IR pass list, each to its own fixed point.
+
+    The inliner does not work alone: the letrec-to-loop conversion creates the
+    loops it resolves call targets inside, and dead-binding elimination prunes an
+    injected prelude to the bindings the program reaches.  Running the whole list
+    puts the tree in the state the CFG backend would see, and reads the list from
+    the compiler so the two cannot drift apart.
+    """
+    for pass_ in MenaiCompiler().ir_passes:
+        while True:
+            ir, changed = pass_.optimize(ir)
+            if not changed:
+                break
+
+    return ir
+
+
 def _count_calls_to(ir, name: str) -> int:
     """Count direct calls to a named variable in the IR tree."""
     if isinstance(ir, MenaiIRCall):
@@ -83,6 +104,13 @@ def _count_calls_to(ir, name: str) -> int:
 
     if isinstance(ir, MenaiIRLambda):
         return _count_calls_to(ir.body_plan, name)
+
+    if isinstance(ir, MenaiIRLoop):
+        return (sum(_count_calls_to(init, name) for init in ir.init_plans)
+                + _count_calls_to(ir.body_plan, name))
+
+    if isinstance(ir, MenaiIRRecur):
+        return sum(_count_calls_to(a, name) for a in ir.arg_plans)
 
     if isinstance(ir, (MenaiIRConstant, MenaiIRVariable)):
         return 0
@@ -111,6 +139,13 @@ def _count_direct_lambda_calls(ir) -> int:
     if isinstance(ir, MenaiIRLambda):
         return _count_direct_lambda_calls(ir.body_plan)
 
+    if isinstance(ir, MenaiIRLoop):
+        return (sum(_count_direct_lambda_calls(init) for init in ir.init_plans)
+                + _count_direct_lambda_calls(ir.body_plan))
+
+    if isinstance(ir, MenaiIRRecur):
+        return sum(_count_direct_lambda_calls(a) for a in ir.arg_plans)
+
     return 0
 
 
@@ -135,6 +170,13 @@ def _count_builtin_calls(ir, name: str) -> int:
     if isinstance(ir, MenaiIRLambda):
         return _count_builtin_calls(ir.body_plan, name)
 
+    if isinstance(ir, MenaiIRLoop):
+        return (sum(_count_builtin_calls(init, name) for init in ir.init_plans)
+                + _count_builtin_calls(ir.body_plan, name))
+
+    if isinstance(ir, MenaiIRRecur):
+        return sum(_count_builtin_calls(a, name) for a in ir.arg_plans)
+
     return 0
 
 
@@ -158,6 +200,13 @@ def _count_calls_to_constant(ir) -> int:
 
     if isinstance(ir, MenaiIRLambda):
         return _count_calls_to_constant(ir.body_plan)
+
+    if isinstance(ir, MenaiIRLoop):
+        return (sum(_count_calls_to_constant(init) for init in ir.init_plans)
+                + _count_calls_to_constant(ir.body_plan))
+
+    if isinstance(ir, MenaiIRRecur):
+        return sum(_count_calls_to_constant(a) for a in ir.arg_plans)
 
     return 0
 
@@ -540,6 +589,31 @@ class TestPreludeInlining:
 
         assert _count_calls_to(new_ir, 'sort-list') == before
 
+    def test_hof_callback_inlined_whether_literal_or_let_bound(self):
+        """A callback reaching a higher-order function's helper loop is inlined into
+        the loop body, whether it is written as a literal argument or bound first.
+
+        The two shapes then leave the same work to do per element, so neither a call
+        through the loop parameter nor a difference between them in inlined
+        arithmetic remains."""
+        literal = _build_ir(
+            "(map-list (lambda (x) (integer* x 2)) (list 1 2 3))",
+            inject_prelude=True,
+        )
+        bound = _build_ir(
+            "(let ((f (lambda (x) (integer* x 2)))) (map-list f (list 1 2 3)))",
+            inject_prelude=True,
+        )
+
+        literal_ir = _run_ir_pipeline(literal)
+        bound_ir = _run_ir_pipeline(bound)
+
+        assert _count_calls_to(literal_ir, 'f') == 0
+        assert _count_calls_to(bound_ir, 'f') == 0
+        assert _count_builtin_calls(literal_ir, 'integer*') >= 1
+        assert (_count_builtin_calls(literal_ir, 'integer*')
+                == _count_builtin_calls(bound_ir, 'integer*'))
+
 
 class TestInliningCorrectness:
     """Tests that inlining preserves semantics."""
@@ -612,6 +686,41 @@ class TestBoundNameShadowsOuterLambda:
             m.evaluate("(let ((f (lambda (x) (integer+ x 1)))) (let ((f 99)) (f 5)))")
 
         assert exc_info.value.error_code == VMErrorCode.NOT_CALLABLE
+
+    def test_loop_parameter_call_not_inlined_as_outer_lambda(self):
+        """A call through a loop parameter is not replaced by the outer lambda the
+        parameter was initialised with when a back-edge rebinds the parameter."""
+        ir = _build_ir("""
+            ((lambda (unused)
+               (let ((f (lambda (a b) (integer+ a b))))
+                 (let ((loop (lambda (f n)
+                               (if (integer=? n 0)
+                                   (f 1 2)
+                                   (loop (lambda (a b) (integer* a b)) (integer- n 1))))))
+                   (loop f 3))))
+             0)
+        """)
+        new_ir = _run_ir_pipeline(ir)
+
+        assert _count_calls_to(new_ir, 'f') == 1
+
+    def test_loop_parameter_rebinding_result_correct(self):
+        """A call through a loop parameter reaches the function the parameter holds
+        at that iteration, not the one it was initialised with."""
+        from menai.menai import Menai
+
+        m = Menai()
+        result = m.evaluate("""
+            ((lambda (unused)
+               (let ((f (lambda (a b) (integer+ a b))))
+                 (let ((loop (lambda (f n)
+                               (if (integer=? n 0)
+                                   (f 1 2)
+                                   (loop (lambda (a b) (integer* a b)) (integer- n 1))))))
+                   (loop f 3))))
+             0)
+        """)
+        assert result == 2
 
 
 class TestArgumentCapturePreventingInlining:

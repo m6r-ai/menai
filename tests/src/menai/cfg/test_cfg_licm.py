@@ -102,6 +102,25 @@ def _self_loop_target(code) -> int | None:
     return None
 
 
+def _loop_spans(code) -> list[tuple[int, int]]:
+    """
+    Return the (entry, back-edge) instruction indices of every loop in `code`.
+
+    Both loop shapes are covered: an unrotated loop ends with an unconditional
+    backward JUMP, a rotated one with a conditional backward jump.
+    """
+    spans: list[tuple[int, int]] = []
+    for i, instr in enumerate(code.instructions):
+        op = unpack_instruction(instr)
+        if op.opcode == int(Opcode.JUMP) and op.src0 < i:
+            spans.append((op.src0, i))
+
+        elif op.opcode in (int(Opcode.JUMP_IF_FALSE), int(Opcode.JUMP_IF_TRUE)) and op.src1 < i:
+            spans.append((op.src1, i))
+
+    return spans
+
+
 class TestLoopInvariantComputationHoisting:
     """Loop-invariant computations used by the loop should be hoisted."""
 
@@ -896,6 +915,10 @@ class TestInvarianceThroughIndexedStructGet:
         because the rewrite to an indexed read only fires when the analysis can
         prove the struct's type at the call site, which a synthetic program
         does not reproduce reliably.
+
+        `cube-solved?` is reached through `apply` so that it is not inlined into
+        its caller: the guard is a property of that function's own loop, which has
+        to exist as a code object for the assertion to be about it.
         """
         from pathlib import Path
 
@@ -909,24 +932,30 @@ class TestInvarianceThroughIndexedStructGet:
         code = menai.compile(
             '(let ((rubiks (import "rubiks-cube-vector")))'
             '  (let ((solved-cube-fn (:: rubiks solved-cube))'
-            '        (ida-star-fn (:: rubiks ida-star)))'
-            '    (ida-star-fn (solved-cube-fn) 3)))'
+            '        (cube-solved-fn (:: rubiks cube-solved?)))'
+            '    (apply cube-solved-fn (list (solved-cube-fn)))))'
         )
 
         solved = _loop_function(code, "cube-solved?")
-        target = _self_loop_target(solved)
-        assert target is not None
+        spans = _loop_spans(solved)
+        assert spans
 
         guard_indices = [
             i for i, instr in enumerate(solved.instructions)
             if unpack_instruction(instr).opcode == int(Opcode.ASSERT_INTEGER)
         ]
         # A guard on a loop-invariant struct field must not re-execute on every
-        # iteration, so no guard may sit at or after the loop entry.  The guard may
-        # also be absent: when inlining makes the struct's type known, guard
-        # insertion suppresses it, which satisfies the property more cheaply than
-        # hoisting it.
-        assert all(gi < target for gi in guard_indices), (
+        # iteration, so the guard on a face's centre sticker must sit above the
+        # entry of the loop that reads that face.
+        #
+        # The face check is inlined once per face, so the function holds one loop
+        # per face.  Each loop's preamble is the region between the previous loop's
+        # back-edge and its own entry, and every one of them must carry the guard.
+        preambles = list(zip([0] + [back for _, back in spans], [entry for entry, _ in spans]))
+        assert all(
+            any(lo <= gi < hi for gi in guard_indices)
+            for lo, hi in preambles
+        ), (
             "a guard on a value derived from a loop-invariant struct field "
             "must be hoisted into the preamble, or not needed at all"
         )

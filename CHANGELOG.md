@@ -7,6 +7,13 @@ New features:
 - `bmp-decode` walks each row by byte offset and takes the bit depth out of the
   pixel loop; 20% faster, 28% fewer instructions.
 - Reintroduce some Python reference examples in the benchmark suite.
+- A callback passed to a higher-order prelude function is inlined into that
+  function's loop, whether it is written as a literal argument or bound first.
+  A loop parameter the loop cannot rebind now resolves to the lambda it was
+  seeded with, so `(fold-list integer+ 0 lst)` and `(map-list (lambda (x) ...) lst)`
+  no longer pay an indirect call, a frame and an argument move per element.
+- The loop parameter and closure that inlining makes dead are dropped, so
+  inlining a callback no longer leaves an uncalled function in the module.
 
 Internal structure changes:
 
@@ -15,6 +22,12 @@ Internal structure changes:
 - Benchmark suite names are hyphenated throughout.  Eight suites used an
   underscore, so `menai-benchmark --suite sort-list` now selects what was
   `--suite sort_list`.
+
+Bug fixes:
+
+- A call whose function position was a loop parameter could be inlined as an
+  outer binding of the same name, ignoring the value the parameter held, so a
+  loop that rebound its function argument computed the wrong answer.
 
 ## v0.12.1 (2026-11-23)
 
