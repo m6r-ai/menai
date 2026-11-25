@@ -14,6 +14,9 @@ Covers:
  10. End-to-end: compile nested-if Menai source and verify MOVE reduction
  11. Trivial-phi elimination (all incoming values identical)
  12. Loop-carried phis are never eliminated
+ 13. Integration: trivial-phi collapse removes the redundant VCode MOVE
+ 14. A block that keeps a live phi is never collapsed through
+ 15. A loop-carried phi is never a chain-collapse candidate
 """
 
 from menai.cfg.menai_cfg import (
@@ -1087,6 +1090,127 @@ class TestTrivialPhiVCodeIntegration:
             (skip-ws "  " 0)))
         """)
         assert result == [3, 4, 0, 2]
+
+
+# ---------------------------------------------------------------------------
+# 14/15. Chain collapses that would bypass a block that is still on the path
+# ---------------------------------------------------------------------------
+
+class TestChainCollapseSafety:
+
+    def test_block_with_live_phi_is_not_bypassed(self):
+        """
+        Replacing a consuming phi's entry with the intermediate phi's
+        predecessors is valid only when the intermediate block is removed, so
+        every phi in that block must be removed in the same round.
+
+            A: jump -> join1
+            B: jump -> join1
+            join1: %v1   = phi [(%a, A), (%b, B)]
+                   %keep = phi [(%ka, A), (%kb, B)]
+                   jump -> join2
+            C: jump -> join2
+            join2: %v2 = phi [(%v1, join1), (%c, C)]
+                   %r  = not %keep
+                   return %v2
+
+        `%keep` is read by a builtin, so it is not a candidate and stays in
+        join1.  join1 therefore remains on the path from A and B to join2, and
+        A and B are not join2's predecessors: absorbing %v1's entries into
+        join2's phi would describe a graph that does not exist.
+        """
+        va = v("a"); vb = v("b"); vc = v("c")
+        vka = v("ka"); vkb = v("kb")
+        v1 = v("v1"); v2 = v("v2"); vkeep = v("keep"); vr = v("r")
+
+        block_a = block(1, terminator=MenaiCFGJumpTerm(target=4), label="A")
+        block_b = block(2, terminator=MenaiCFGJumpTerm(target=4), label="B")
+        block_c = block(3, terminator=MenaiCFGJumpTerm(target=5), label="C")
+
+        join1 = block(
+            4,
+            MenaiCFGPhiInstr(result=v1, incoming=[(va, 1), (vb, 2)]),
+            MenaiCFGPhiInstr(result=vkeep, incoming=[(vka, 1), (vkb, 2)]),
+            terminator=MenaiCFGJumpTerm(target=5),
+            label="join1",
+        )
+        join2 = block(
+            5,
+            MenaiCFGPhiInstr(result=v2, incoming=[(v1, 4), (vc, 3)]),
+            MenaiCFGBuiltinInstr(result=vr, op="not", args=[vkeep]),
+            terminator=MenaiCFGReturnTerm(value=v2),
+            label="join2",
+        )
+
+        f = func(block_a, block_b, block_c, join1, join2)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert not changed, "a block that keeps a live phi must not be collapsed through"
+        assert v1.id in phi_result_ids(new_f)
+
+        join2_new = next(b for b in new_f.blocks if b.id == 5)
+        phi2 = next(i for i in join2_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        assert {pred for _, pred in phi2.incoming} == {4, 3}
+
+    def test_loop_carried_phi_not_collapsed_into_inner_phi(self):
+        """
+        A phi named by a SelfLoopTerm.param_vals is a loop-carried variable.
+        A back edge carries its updates in that list rather than deriving them
+        from the target block's phis, so the phi is named by identity, and the
+        enclosing loop's parameter is used only as the inner loop's initial
+        value:
+
+            pre: jump -> outer_entry
+            outer_entry: %j = phi [(%j0, pre), (%j1, outer_back)]
+                         jump -> inner_entry
+            inner_entry: %k = phi [(%j, outer_entry), (%k1, inner_back)]
+                         branch cond -> inner_back / exit
+            inner_back: self_loop[%k1] -> inner_entry
+            outer_back: self_loop[%j1] -> outer_entry
+            exit: return %k
+
+        Inlining an inner loop whose initial value is the enclosing loop's
+        parameter produces exactly this shape.  The outer block holds only the
+        loop-carried phi, so it would be bypassed; the collapse must still be
+        refused, because the outer back edge has no other way to define %j.
+        """
+        vj0 = v("j0"); vj1 = v("j1"); vk1 = v("k1")
+        vj = v("j"); vk = v("k"); vcond = v("cond")
+
+        pre = block(0, terminator=MenaiCFGJumpTerm(target=2), label="pre")
+        outer_back = block(
+            1,
+            terminator=MenaiCFGSelfLoopTerm(args=(vj1,), param_vals=(vj,), target=2),
+            label="outer_back",
+        )
+        outer_entry = block(
+            2,
+            MenaiCFGPhiInstr(result=vj, incoming=[(vj0, 0), (vj1, 1)]),
+            terminator=MenaiCFGJumpTerm(target=3),
+            label="outer_entry",
+        )
+        inner_entry = block(
+            3,
+            MenaiCFGPhiInstr(result=vk, incoming=[(vj, 2), (vk1, 4)]),
+            terminator=MenaiCFGBranchTerm(cond=vcond, true_block=4, false_block=5),
+            label="inner_entry",
+        )
+        inner_back = block(
+            4,
+            terminator=MenaiCFGSelfLoopTerm(args=(vk1,), param_vals=(vk,), target=3),
+            label="inner_back",
+        )
+        exit_block = block(5, terminator=MenaiCFGReturnTerm(value=vk), label="exit")
+
+        f = func(pre, outer_back, outer_entry, inner_entry, inner_back, exit_block)
+
+        new_f, changed = MenaiCFGCollapsePhiChains()._optimize_function(f, MenaiCFGContext())
+        assert not changed, "a loop-carried phi must not be collapsed into another phi"
+        assert vj.id in phi_result_ids(new_f)
+
+        outer_new = next(b for b in new_f.blocks if b.id == 2)
+        phi = next(i for i in outer_new.instrs if isinstance(i, MenaiCFGPhiInstr))
+        assert {pred for _, pred in phi.incoming} == {0, 1}
 
 
 def _count_phis(func) -> int:

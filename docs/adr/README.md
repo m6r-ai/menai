@@ -146,3 +146,4 @@ What costs, risks, or constraints does this decision impose?
 | [0067](0067-string-index-any-character-set-search.md) | Character-set search is a native VM operation | Accepted |
 | [0068](0068-benchmark-reference-implementations.md) | Benchmark suites may time a non-Menai reference implementation | Accepted |
 | [0069](0069-loop-parameters-carry-callee-identity.md) | A loop parameter carries callee identity when it cannot be rebound | Accepted |
+| [0071](0071-phi-chain-collapse-must-bypass-its-block.md) | A phi chain is collapsed only through a bypassed block, never through a loop-carried phi | Accepted |

@@ -71,6 +71,26 @@ init plan and the argument in that position from every back-edge. Only an init p
 cannot raise may be dropped, because a raise is observable.
 See [ADR-0069](../../docs/adr/0069-loop-parameters-carry-callee-identity.md).
 
+### A phi a terminator names is never rewritten away
+
+A back edge names its loop-carried variables in a list on the terminator, and VCode lowering
+derives the back edge's copies from that list rather than from the target block's phis; the
+slot allocator gives each of those values a fixed slot. Such a phi is therefore part of the
+terminator's representation and must survive every pass unchanged, whatever else could be
+proved about it. Merging it into a phi in another block does not work either: two nested loops
+each own their carried variables, and one slot cannot be updated by both back edges.
+
+Rewriting a phi's incoming list is sound only while every entry still names a predecessor of
+the block holding the phi. Flattening a chain of phis rewrites a consuming phi's entries to
+the intermediate block's predecessors, which is valid only when that block is bypassed — so
+every phi in it must be removed in the same round. A block that keeps a phi is still on every
+path, and the entries would describe a graph that does not execute.
+
+Inlining a nested loop whose initial value is the enclosing loop's parameter produces exactly
+this shape: a loop header holding the enclosing loop's parameter phi alongside the loop's
+accumulator phi.
+See [ADR-0071](../../docs/adr/0071-phi-chain-collapse-must-bypass-its-block.md).
+
 ### CFG passes declare their scope via their base class
 
 A pass is handed the root `MenaiCFGFunction`; there is no module object. The module is the

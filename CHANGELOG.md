@@ -28,6 +28,10 @@ Bug fixes:
 - A call whose function position was a loop parameter could be inlined as an
   outer binding of the same name, ignoring the value the parameter held, so a
   loop that rebound its function argument computed the wrong answer.
+- A nested loop whose initial value is the enclosing loop's parameter — the
+  shape inlining an inner loop into an outer loop's body leaves behind — could
+  lose the definition of the enclosing loop's variable, so modules that
+  inlined such a function failed bytecode validation instead of running.
 
 ## v0.12.1 (2026-11-23)
 

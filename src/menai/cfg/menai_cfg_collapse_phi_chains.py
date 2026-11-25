@@ -48,10 +48,24 @@ The chain-collapse transformation is valid when:
   2. No consuming phi already has an entry from one of the intermediate
      phi's predecessor blocks (which would create a duplicate predecessor,
      violating the one-entry-per-predecessor invariant for phi nodes).
+  3. The intermediate block is actually bypassed, which needs every phi in
+     it to be removed by the same round.  A block that keeps a live phi is
+     still on every path, so the expanded entries would name predecessor
+     blocks that do not jump to the consuming block.
+  4. The intermediate phi is not a loop-carried variable (named by a
+     MenaiCFGSelfLoopTerm.param_vals).  A back edge carries its updates in
+     that list rather than in the target block's phis, so the phi is named
+     by identity: removing it loses the back edge's definition of the
+     variable, and bypassing its block skips the move that supplies it.
 
 Condition 2 can arise when a consuming phi has multiple entries that would
 expand to the same predecessor block.  The pass skips any collapse that
 would produce such a conflict.
+
+Conditions 3 and 4 are independent: a block may keep a survivor that is not
+loop-carried, and a loop-carried phi may be the only phi in its block.  Both
+are ordinary in real code — an enclosing loop's accumulator is a live sibling,
+and its other parameter is used only as the inner loop's initial value.
 
 The trivial-phi transformation is unconditionally valid: a phi whose every
 incoming value is the same SSA value denotes that value on every path that
@@ -91,10 +105,12 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
     Replace phi-of-phi chains with a single flat phi, and remove phi nodes
     that are redundant.
 
-    For each phi P1 whose result is used *only* as an incoming value in
-    other phi nodes (or not at all), expand each consuming phi by
-    substituting P1's incoming entries for the P1 reference, then remove
-    P1.
+    For each phi P1 whose result is used *only* as an incoming value in other
+    phi nodes (or not at all), and which is not a loop-carried variable,
+    expand each consuming phi by substituting P1's incoming entries for the
+    P1 reference, then remove P1.  A consuming phi is expanded only when P1's
+    block loses every phi it holds, so that the block is bypassed and P1's
+    predecessors really do become predecessors of the consuming block.
 
     A phi whose incoming values are all the same SSA value is also redundant:
     it always yields that value, so every use of its result is replaced by
@@ -148,6 +164,22 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
 
         return all(isinstance(instr, MenaiCFGPhiInstr) for instr in block.instrs)
 
+    def _can_bypass(self, block: MenaiCFGBlock, candidates: set[int]) -> bool:
+        """
+        Return True if *block* is removed from the graph once this round's
+        collapses are applied.
+
+        The expanded entries name the intermediate phi's predecessor blocks as
+        predecessors of the consuming block, which they only become when the
+        intermediate block is bypassed.  A pass-through block is bypassed only
+        when every phi in it is removed, so a block that keeps a live phi — an
+        enclosing loop's accumulator, say — must not be collapsed through.
+        """
+        return self._is_pass_through(block) and all(
+            isinstance(instr, MenaiCFGPhiInstr) and instr.result.id in candidates
+            for instr in block.instrs
+        )
+
     def _eliminate_trivial_phis(
         self,
         func: MenaiCFGFunction,
@@ -167,12 +199,7 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
 
         Returns the (possibly new) function and whether any change was made.
         """
-        loop_carried_ids: set[int] = set()
-        for block in func.blocks:
-            term = block.terminator
-            if isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is not None:
-                for param_val in term.param_vals:
-                    loop_carried_ids.add(param_val.id)
+        loop_carried_ids = _loop_carried_value_ids(func)
 
         # Map phi result id -> the single incoming value it always yields.
         replacements: dict[int, MenaiCFGValue] = {}
@@ -266,11 +293,15 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
                         total_uses[vid] += 1
 
         # Candidates: phi results whose every use is as a phi incoming value
-        # (including zero uses — those are simply dead).
+        # (including zero uses — those are simply dead).  A loop-carried phi is
+        # never a candidate: a back edge names it in param_vals rather than
+        # deriving the update from the target block's phis, so it is referenced
+        # by identity and cannot be removed or bypassed.
+        loop_carried_ids = _loop_carried_value_ids(func)
         candidates: set[int] = {
             vid
             for vid in phi_defs
-            if total_uses[vid] == phi_uses[vid]
+            if total_uses[vid] == phi_uses[vid] and vid not in loop_carried_ids
         }
 
         if not candidates:
@@ -307,17 +338,16 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
 
                     src_phi = phi_defs[incoming_val.id]
 
-                    # The collapse is only valid when the intermediate phi's
-                    # block is a pass-through: it contains nothing but phi
-                    # instructions and an unconditional jump.  Only then is the
-                    # intermediate block bypassed on every path, so the
-                    # consuming phi's incoming entries can be replaced by the
-                    # intermediate phi's entries.  If the intermediate block
-                    # does real work (e.g. a loop pre-header that computes the
-                    # loop's initial values), control still flows through it and
+                    # The collapse is only valid when the intermediate block is
+                    # bypassed on every path, so the consuming phi's incoming
+                    # entries can be replaced by the intermediate phi's entries.
+                    # That needs a block that does nothing but forward its phis
+                    # *and* that loses all of them this round: a block that keeps
+                    # a live phi (e.g. a loop pre-header that also carries the
+                    # enclosing loop's accumulator) still sits on the path, so
                     # the expanded predecessor blocks would not be predecessors
                     # of the consuming block.
-                    if not self._is_pass_through(phi_blocks[incoming_val.id]):
+                    if not self._can_bypass(phi_blocks[incoming_val.id], candidates):
                         expanded_incoming.append((incoming_val, pred_block))
                         continue
 
@@ -397,3 +427,24 @@ class MenaiCFGCollapsePhiChains(MenaiCFGPerFunctionPass):
             ]
 
         return replace_blocks(func, tuple(new_blocks)), True
+
+
+def _loop_carried_value_ids(func: MenaiCFGFunction) -> set[int]:
+    """
+    Return the value ids that a back edge names as loop-carried variables.
+
+    A MenaiCFGSelfLoopTerm carries its updates directly in `param_vals` rather
+    than deriving them from the target block's phis, so the phi at the loop
+    header is named by identity: the VCode builder emits one move per
+    (param_val, arg) pair, and the slot allocator gives each param_val a fixed
+    slot.  Removing such a phi, or bypassing its block, leaves the back edge
+    writing a value that nothing defines for the next iteration.
+    """
+    loop_carried: set[int] = set()
+    for block in func.blocks:
+        term = block.terminator
+        if isinstance(term, MenaiCFGSelfLoopTerm) and term.param_vals is not None:
+            for param_val in term.param_vals:
+                loop_carried.add(param_val.id)
+
+    return loop_carried
