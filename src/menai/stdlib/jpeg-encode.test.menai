@@ -5,6 +5,12 @@
 ; within one level.  A flat block is the only case where the exact result is
 ; predictable, because the sole loss is the rounding of the colour transform; a
 ; block with detail loses more, which the round-trip suite bounds instead.
+;
+; The blocks that carry detail are chosen for the coefficients they produce: the
+; two checkerboards put their energy at the highest frequency in one and in both
+; directions, and the highest-frequency fixture puts its only coefficient at the end
+; of zigzag order.  Between them the run-length coding, including ZRL, is specified.
+; A colour outside 0..255 specifies the clamp at each end of each transform.
 
 (let ((jpeg-decode (import "jpeg-decode"))
       (jpeg-encode (import "jpeg-encode"))
@@ -27,18 +33,89 @@
        (lambda (colour)
          (decode (encode (solid colour)))))
 
+      ; Assert that two colours differ by at most `tolerance` in every channel.  It
+      ; raises so that a leaf whose only assertion is a comparison fails when the
+      ; comparison does not hold, which a returned #f would not do.
+      (within
+       (lambda (tolerance actual expected)
+         (if
+           (all-list?
+             (lambda (pair)
+               (integer<=?
+                 (integer-abs (integer- (list-nth pair 0) (list-nth pair 1)))
+                 tolerance))
+             (list-zip (vector->list actual) (vector->list expected)))
+           #t
+           (error "the colour is further from the expected one than the tolerance allows"))))
+
       ; Assert that every channel of the first pixel is within `tolerance` of the
       ; colour the image was built from.
       (assert-colour
        (lambda (tolerance image colour)
          (and
            (assert-equal (vector-length (vector-nth (vector-nth (dict-get image "pixels") 0) 0)) 3)
-           (all-list?
-             (lambda (pair)
-               (integer<=? (integer-abs (integer- (list-nth pair 0) (list-nth pair 1))) tolerance))
-             (list-zip
-               (vector->list (vector-nth (vector-nth (dict-get image "pixels") 0) 0))
-               (vector->list colour))))))
+           (within tolerance (vector-nth (vector-nth (dict-get image "pixels") 0) 0) colour))))
+
+      ; The pixel at (x, y) of a decoded image.
+      (pixel
+       (lambda (image x y)
+         (vector-nth (vector-nth (dict-get image "pixels") y) x)))
+
+      ; A description of eight identical rows of alternating light and dark pixels,
+      ; the highest horizontal frequency an 8-wide block can carry.
+      (checkerboard
+       (dict "header" (dict "width" 8 "height" 8)
+             "pixels"
+             (vector-fill
+               8
+               (vector
+                 (vector 235 235 235) (vector 20 20 20) (vector 235 235 235) (vector 20 20 20)
+                 (vector 235 235 235) (vector 20 20 20) (vector 235 235 235) (vector 20 20 20)))
+             "meta" (dict "format" "jpeg" "channels" 3)))
+
+      ; The same pattern in both directions: the highest two-dimensional frequency,
+      ; whose coefficient is the last in zigzag order, so the run before it is coded
+      ; as ZRL three times over.
+      (chequered
+       (let ((light (vector 235 235 235))
+             (dark (vector 20 20 20)))
+         (let ((even (vector light dark light dark light dark light dark))
+               (odd (vector dark light dark light dark light dark light)))
+           (dict "header" (dict "width" 8 "height" 8)
+                 "pixels" (vector even odd even odd even odd even odd)
+                 "meta" (dict "format" "jpeg" "channels" 3)))))
+
+      ; The highest two-dimensional frequency: a block whose only significant
+      ; coefficient is the last in zigzag order, so coding it must emit a run of 62
+      ; zeros as three ZRL symbols.  Each sample is 128 minus 100 times the product of
+      ; the two highest-frequency basis functions, cos((2i + 1) * 7 * pi / 16).
+      (highest-frequency
+       (let ((omega (float* 7.0 pi (float/ 1.0 16.0)))
+             (cosines
+              (map-vector
+                (lambda (index)
+                  (float-cos
+                    (float* (integer->float (integer+ (integer* 2 index) 1)) omega)))
+                (list->vector (range 0 8))))
+             (level
+              (lambda (across down)
+                (integer-max
+                  0
+                  (integer-min
+                    255
+                    (float->integer
+                      (float-round (float+ 128.0 (float* -100.0 across down)))))))))
+         (dict "header" (dict "width" 8 "height" 8)
+               "pixels"
+               (map-vector
+                 (lambda (down)
+                   (map-vector
+                     (lambda (across)
+                       (let ((sample (level across down)))
+                         (vector sample sample sample)))
+                     cosines))
+                 cosines)
+               "meta" (dict "format" "jpeg" "channels" 3))))
 
       (test-headers
        (lambda ()
@@ -92,6 +169,56 @@
                  "pixels" (vector (vector 7))
                  "meta" (dict "format" "jpeg" "channels" 3)))))
 
+      ; A pixel whose channels are outside 0..255 is clamped before the colour
+      ; transform and its result is clamped again on the way back through the
+      ; decoder, so both ends of both clamps are exercised by these three colours.
+      (test-clamps-high-red
+       (lambda () (assert-colour 1 (round-trips (vector 800 0 0)) (vector 255 192 12))))
+
+      (test-clamps-high-green
+       (lambda () (assert-colour 1 (round-trips (vector 0 800 800)) (vector 76 255 255))))
+
+      (test-clamps-negative
+       (lambda () (assert-colour 1 (round-trips (vector -800 -800 -800)) (vector 0 0 0))))
+
+      ; A one-pixel checkerboard puts all of its energy at the highest horizontal
+      ; frequency, so every AC coefficient but the last is zero, the run before it
+      ; is coded as ZRL, and the detail survives to within a level or two.
+      (test-detail
+       (lambda ()
+         (let ((image (decode (encode checkerboard))))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 8)
+             (assert-equal (dict-get (dict-get image "header") "height") 8)
+             (within 25 (pixel image 0 0) (vector 235 235 235))
+             (within 25 (pixel image 1 0) (vector 20 20 20))
+             (within 35 (pixel image 7 7) (vector 20 20 20))))))
+
+      ; The two-dimensional pattern keeps its corners: the coefficients it produces
+      ; are the block's last in zigzag order, and the ringing around them is bounded.
+      (test-chequered
+       (lambda ()
+         (let ((image (decode (encode chequered))))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 8)
+             (assert-equal (dict-get (dict-get image "header") "height") 8)
+             (within 30 (pixel image 0 0) (vector 235 235 235))
+             (within 30 (pixel image 0 1) (vector 20 20 20))
+             (within 30 (pixel image 1 0) (vector 20 20 20))
+             (within 30 (pixel image 7 7) (vector 235 235 235))))))
+
+      ; The last coefficient in zigzag order survives, so the block is reproduced
+      ; rather than flattened out: each corner keeps its own value.
+      (test-highest-frequency
+       (lambda ()
+         (let ((image (decode (encode highest-frequency))))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 8)
+             (within 2 (pixel image 0 0) (vector 124 124 124))
+             (within 2 (pixel image 0 7) (vector 132 132 132))
+             (within 2 (pixel image 3 4) (vector 224 224 224))
+             (within 2 (pixel image 7 7) (vector 124 124 124))))))
+
       (tests
        (list
          (list "structure"
@@ -104,7 +231,15 @@
                  (expect-pass "keeps black" test-black)
                  (expect-pass "keeps white" test-white)
                  (expect-pass "keeps mid grey" test-grey)
-                 (expect-pass "keeps a saturated colour" test-saturated)))
+                 (expect-pass "keeps a saturated colour" test-saturated)
+                 (expect-pass "clamps a colour above white" test-clamps-high-red)
+                 (expect-pass "clamps a colour below black" test-clamps-negative)))
+         (list "detail"
+               (list
+                 (expect-pass "clamps the green channel at both ends" test-clamps-high-green)
+                 (expect-pass "keeps a one-pixel checkerboard" test-detail)
+                 (expect-pass "keeps a two-dimensional checkerboard" test-chequered)
+                 (expect-pass "keeps the highest frequency" test-highest-frequency)))
          (list "rejects"
                (list
                  (expect-fail

@@ -1,9 +1,18 @@
 ; Tests for jpeg-decode.menai
 ;
-; Each image fixture is a baseline sequential file whose every block has only a DC
-; coefficient, so a correct decode is a flat 8x8 block of sample value
-; round(DC / (8 * quantisation)) + 128.  The expected pixels were taken from libjpeg
-; (via Pillow) so that the suite is an independent specification.
+; The image fixtures are baseline sequential files whose expected pixels were taken
+; from libjpeg (via Pillow) and cross-checked against the mathematical inverse
+; transform, so the suite is an independent specification.  Where every block has
+; only a DC coefficient a correct decode is a flat 8x8 block of sample value
+; round(DC / (8 * quantisation)) + 128; the fixtures that carry AC coefficients, a
+; restart interval, a 16-bit quantisation table or out-of-range chroma exist so that
+; the paths those features take are specified too.
+;
+; What remains uncovered is only what no input can reach.  Three kinds of
+; instruction survive in the report: the arm of a comparison that the module's own
+; constants rule out, and the duplicated loop exit this compiler emits for a loop
+; written as a self-recursive call (its second copy re-tests an invariant the first
+; has already established).
 
 (let ((jpeg (import "jpeg-decode"))
       (t (import "menai-test"))
@@ -217,6 +226,101 @@
                 (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
                 (string-hex->bytes "ffda0008010100003f002bffd9")))
 
+
+      ; A block whose only coefficient after the DC term sits at zigzag position 18,
+      ; so the zero run before it is 16 coefficients long: the run coded as ZRL.
+      (fixture-block-zrl
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080008000801011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f003fcbd7ffd9")))
+
+      ; A 4:4:4 file carrying a restart interval of one MCU, so every MCU after the
+      ; first follows a restart marker.  The DC values are not monotonic, which is
+      ; what makes the reset of the predictors observable in the decoded output.
+      (fixture-restart-444
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc00011080010001003011100")
+                (string-hex->bytes "021100031100ffc401a20000010501010101010100000000000000000102030405060708090a0b100002")
+                (string-hex->bytes "010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c1")
+                (string-hex->bytes "1552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a5354555657")
+                (string-hex->bytes "58595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2")
+                (string-hex->bytes "f3f4f5f6f7f8f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102")
+                (string-hex->bytes "040403040705040400010277000102031104052131061241510761711322328108144291a1b1c1092333")
+                (string-hex->bytes "52f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758")
+                (string-hex->bytes "595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4")
+                (string-hex->bytes "f5f6f7f8f9faffdd00040001ffda000c03010002110311003f002803ffd0ea2be80f3cffd1b15f3e7d81")
+                (string-hex->bytes "ffd2ee2bf403f3f3ffd9")))
+
+      ; An 8-bit sample quantised by 2, with the table written as 16-bit entries: a
+      ; correct decode is a flat 130.
+      (fixture-quant-16bit
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0083100002000200020002000200020002000200020002000200020002000200020002000200")
+                (string-hex->bytes "020002000200020002000200020002000200020002000200020002000200020002000200020002000200")
+                (string-hex->bytes "020002000200020002000200020002000200020002000200020002000200020002000200020002000200")
+                (string-hex->bytes "020002000200020002ffc0000b080008000801011100ffc401a200000105010101010101000000000000")
+                (string-hex->bytes "00000102030405060708090a0b100002010303020403050504040000017d010203000411051221314106")
+                (string-hex->bytes "13516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a34353637")
+                (string-hex->bytes "38393a434445464748494a535455565758595a636465666768696a737475767778797a83848586878889")
+                (string-hex->bytes "8a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6")
+                (string-hex->bytes "d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9fa010003010101010101010101000000000000")
+                (string-hex->bytes "0102030405060708090a0b11000201020404030407050404000102770001020311040521310612415107")
+                (string-hex->bytes "61711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a262728292a35363738")
+                (string-hex->bytes "393a434445464748494a535455565758595a636465666768696a737475767778797a8283848586878889")
+                (string-hex->bytes "8a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6")
+                (string-hex->bytes "d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9faffda0008010100003f00b15fffd9")))
+
+      ; Three MCUs whose YCbCr values sit outside the range the colour transform can
+      ; represent, so converting them to RGB has to clamp: the first is bright with
+      ; the chroma at both extremes, the second is bright with neutral chroma, and
+      ; the third is dark with neutral chroma.
+      (fixture-colour-saturated
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000202020202020202020202020202020202020202020202020202020202020202020202")
+                (string-hex->bytes "0202020202020202020202020202020202020202020202020202020202ffc00011080008001803011100")
+                (string-hex->bytes "021100031100ffc401a20000010501010101010100000000000000000102030405060708090a0b100002")
+                (string-hex->bytes "010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c1")
+                (string-hex->bytes "1552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a5354555657")
+                (string-hex->bytes "58595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2")
+                (string-hex->bytes "f3f4f5f6f7f8f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102")
+                (string-hex->bytes "040403040705040400010277000102031104052131061241510761711322328108144291a1b1c1092333")
+                (string-hex->bytes "52f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758")
+                (string-hex->bytes "595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4")
+                (string-hex->bytes "f5f6f7f8f9faffda000c03010002110311003f00fe822bfe820ffa080aff00cfbcff00cfbcff003efa00")
+                (string-hex->bytes "ffd9")))
+
+      ; The pixel at (x, y) of a decoded image.
+      (pixel
+       (lambda (image x y)
+         (vector-nth (vector-nth (dict-get image "pixels") y) x)))
+
+      ; `fixture-grey-quant-4` with its frame marker byte replaced.  The tests for
+      ; each unsupported frame type rewrite this one byte rather than repeat a whole
+      ; file: what distinguishes them is the marker and the name it is reported as.
+      (with-frame-marker
+       (lambda (marker)
+         (bytes-write-u8
+           fixture-grey-quant-4
+           (integer+
+             (bytes-index fixture-grey-quant-4 (string-hex->bytes "ffc0000b080008000801011100"))
+             1)
+           marker)))
 
       (test-fixture-grey-24x16
        (lambda ()
@@ -451,6 +555,213 @@
                 (vector (vector 9 219 118) (vector 17 221 122) (vector 33 224 131) (vector 48 224 139) (vector 66 223 146) (vector 83 222 154) (vector 99 223 163) (vector 114 222 170) (vector 129 224 180) (vector 143 223 186) (vector 160 224 197) (vector 176 223 203) (vector 195 223 211) (vector 210 223 216) (vector 225 225 225) (vector 233 227 229))
                 (vector (vector 15 232 127) (vector 24 235 132) (vector 38 236 141) (vector 54 237 147) (vector 72 235 156) (vector 89 235 164) (vector 106 236 172) (vector 121 236 181) (vector 135 237 189) (vector 150 236 197) (vector 166 237 205) (vector 183 237 213) (vector 201 235 221) (vector 216 236 227) (vector 231 237 235) (vector 240 240 240)))))))))
 
+      ; The 16-zero run is coded as ZRL and the coefficient that follows it lands at
+      ; zigzag position 18, so the block carries a faint vertical ripple.
+      (test-fixture-block-zrl
+       (lambda ()
+         (let ((image (decode fixture-block-zrl)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 8)
+             (assert-equal (dict-get (dict-get image "header") "height") 8)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector
+                (vector (vector 129 129 129) (vector 128 128 128) (vector 127 127 127) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 128 128 128) (vector 127 127 127))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 127 127 127) (vector 128 128 128) (vector 129 129 129) (vector 128 128 128) (vector 128 128 128) (vector 127 127 127) (vector 128 128 128) (vector 129 129 129))
+                (vector (vector 127 127 127) (vector 128 128 128) (vector 129 129 129) (vector 128 128 128) (vector 128 128 128) (vector 127 127 127) (vector 128 128 128) (vector 129 129 129))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 129 129 129) (vector 128 128 128) (vector 127 127 127) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 128 128 128) (vector 127 127 127))))))))
+
+      ; Each MCU follows a restart marker, so the predictors are reset three times
+      ; and the quadrants decode to their blocks' absolute DC values rather than to
+      ; a running sum.  Each quadrant is a flat colour.
+      (test-fixture-restart-444
+       (lambda ()
+         (let ((image (decode fixture-restart-444)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 16)
+             (assert-equal (dict-get (dict-get image "header") "height") 16)
+             (assert-equal (dict-get (dict-get image "header") "restart-interval") 1)
+             (assert-equal (pixel image 0 0) (vector 128 128 128))
+             (assert-equal (pixel image 7 7) (vector 128 128 128))
+             (assert-equal (pixel image 8 0) (vector 130 133 140))
+             (assert-equal (pixel image 15 7) (vector 130 133 140))
+             (assert-equal (pixel image 0 8) (vector 137 126 122))
+             (assert-equal (pixel image 7 15) (vector 137 126 122))
+             (assert-equal (pixel image 8 8) (vector 124 138 149))
+             (assert-equal (pixel image 15 15) (vector 124 138 149))))))
+
+      ; A 16-bit quantisation table is read as pairs of bytes, so the decode is the
+      ; flat image the equivalent 8-bit table gives.
+      (test-fixture-quant-16bit
+       (lambda ()
+         (let ((image (decode fixture-quant-16bit)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 8)
+             (assert-equal (dict-get (dict-get image "header") "height") 8)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector-fill 8 (vector-fill 8 (vector 130 130 130))))))))
+
+      ; The YCbCr values are outside the range the colour transform can represent, so
+      ; each channel is clamped at whichever end it overshoots.
+      (test-fixture-colour-saturated
+       (lambda ()
+         (let ((image (decode fixture-colour-saturated)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 24)
+             (assert-equal (dict-get (dict-get image "header") "height") 8)
+             (assert-equal (pixel image 0 0) (vector 255 121 255))
+             (assert-equal (pixel image 7 7) (vector 255 121 255))
+             (assert-equal (pixel image 8 0) (vector 76 255 28))
+             (assert-equal (pixel image 15 7) (vector 76 255 28))
+             (assert-equal (pixel image 16 0) (vector 0 135 0))
+             (assert-equal (pixel image 23 7) (vector 0 135 0))))))
+
+      ; The marker of a file whose frame type this module does not implement, and the
+      ; name the error message must give it.
+      (frame-marker-leaf
+       (lambda (marker name)
+         (expect-fail
+           (string-concat "frame type " name)
+           (lambda () (decode (with-frame-marker marker)))
+           name)))
+
+      ; A block whose AC run reaches the end of the block is complete without an
+      ; end-of-block symbol, so the DC it started with is the whole block.
+      (test-fixture-zrl-fills-block
+       (lambda ()
+         (let ((image (decode fixture-zrl-fills-block)))
+           (assert-equal
+             (dict-get image "pixels")
+             (vector-fill 8 (vector-fill 8 (vector 128 128 128)))))))
+
+      ; Files that must be rejected while the marker segments are read.  They are
+      ; kept as bindings rather than inlined in the leaves because several are too
+      ; long to read within a test name.
+      (fixture-no-frame
+       (string-hex->bytes "ffd8ffda0008010100003f00"))
+
+      (fixture-no-scan
+       (string-hex->bytes "ffd8ffe000100000000000000000000000000000"))
+
+      (fixture-dht-past-segment
+       (string-hex->bytes "ffd8ffc40017000000000000000000000000000000000000000000"))
+
+      (fixture-sos-too-short
+       (string-hex->bytes "ffd8ffc0000b080008000801011100ffda000301"))
+
+      (fixture-two-components
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000e080008000802011100")
+                (string-hex->bytes "021100ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303")
+                (string-hex->bytes "020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1")
+                (string-hex->bytes "f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a")
+                (string-hex->bytes "636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aa")
+                (string-hex->bytes "b2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5")
+                (string-hex->bytes "f6f7f8f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403")
+                (string-hex->bytes "040705040400010277000102031104052131061241510761711322328108144291a1b1c109233352f015")
+                (string-hex->bytes "6272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63")
+                (string-hex->bytes "6465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aa")
+                (string-hex->bytes "b2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7")
+                (string-hex->bytes "f8f9faffda000a0201000211003f00283fffd9")))
+
+      (fixture-zero-size
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080000000001011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f002bffd9")))
+
+      ; A scan whose component id is not the one the frame defines.
+      (fixture-undefined-component
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080008000801011100")
+                (string-hex->bytes "ffc400d20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9faffda0008010900003f003fffd9")))
+
+      ; A block whose AC run is 15 long at the 49th coefficient, so the coefficient it
+      ; introduces would land at index 64.
+      (fixture-ac-past-block
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080008000801011100")
+                (string-hex->bytes "ffc400d20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9faffda0008010100003f003fcff9ff003ffebfffd9")))
+
+      ; Sixteen one bits: longer than the longest AC code, so no entry matches.
+      (fixture-no-huffman-match
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080008000801011100")
+                (string-hex->bytes "ffc400d20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9faffda0008010100003f003fff00ff00ffd9")))
+
+      ; The scan data ends at a byte boundary after the DC code, so the next Huffman
+      ; symbol has no data to read.
+      (fixture-scan-ended-early
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080008000801011100")
+                (string-hex->bytes "ffc400d20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9faffda0008010100003f00a3ffd9")))
+
+      ; The scan data ends after four bits of a ten-bit DC magnitude, so the value
+      ; cannot be completed.
+      (fixture-scan-ended-early-bits
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080008000801011100")
+                (string-hex->bytes "ffc400d20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9faffda0008010100003f00feff00ffd9")))
+
+      ; Four ZRL runs push the coefficient index to 65, which ends the block without
+      ; an end-of-block symbol: the DC is the only non-zero coefficient.
+      (fixture-zrl-fills-block
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080008000801011100")
+                (string-hex->bytes "ffc400d20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9faffda0008010100003f003fcff9ff003fe7ffd9")))
+
       (tests
          (list
            (list "decode"
@@ -462,8 +773,13 @@
                    (expect-pass "fixture-colour-444" test-fixture-colour-444)
                    (expect-pass "fixture-colour-420" test-fixture-colour-420)
                    (expect-pass "fixture-gradient-444" test-fixture-gradient-444)
-                   (expect-pass "fixture-gradient-420" test-fixture-gradient-420)))
-           (list "rejects"
+                   (expect-pass "fixture-gradient-420" test-fixture-gradient-420)
+                   (expect-pass "fixture-block-zrl" test-fixture-block-zrl)
+                   (expect-pass "fixture-zrl-fills-block" test-fixture-zrl-fills-block)
+                   (expect-pass "fixture-restart-444" test-fixture-restart-444)
+                   (expect-pass "fixture-quant-16bit" test-fixture-quant-16bit)
+                   (expect-pass "fixture-colour-saturated" test-fixture-colour-saturated)))
+           (list "unsupported"
                  (list
                    (expect-fail
                      "fixture-progressive"
@@ -476,6 +792,114 @@
                    (expect-fail
                      "fixture-twelve-bit"
                      (lambda () (decode fixture-twelve-bit))
-                     "bits per sample is not supported"))))))
+                     "bits per sample is not supported")
+                   (expect-fail
+                     "a frame with two components"
+                     (lambda () (decode fixture-two-components))
+                     "2 components is not supported")))
+           (list "frame types"
+                 (map-list
+                   (lambda (entry) (frame-marker-leaf (list-nth entry 0) (list-nth entry 1)))
+                   (list
+                     (list #xc1 "extended sequential")
+                     (list #xc3 "lossless")
+                     (list #xc5 "differential sequential")
+                     (list #xc6 "differential progressive")
+                     (list #xc7 "differential lossless")
+                     (list #xca "arithmetic-coded progressive")
+                     (list #xcb "arithmetic-coded lossless")
+                     (list #xcd "differential arithmetic-coded sequential")
+                     (list #xce "differential arithmetic-coded progressive")
+                     (list #xcf "differential arithmetic-coded lossless"))))
+           (list "malformed"
+                 (list
+                   (expect-fail
+                     "a file too short for a start-of-image marker"
+                     (lambda () (decode (string-hex->bytes "ff")))
+                     "too short")
+                   (expect-fail
+                     "a file with no start-of-image marker"
+                     (lambda () (decode (string-hex->bytes "0000")))
+                     "missing start-of-image marker")
+                   (expect-fail
+                     "a file with a scan but no frame header"
+                     (lambda () (decode fixture-no-frame))
+                     "no frame header before the scan")
+                   (expect-fail
+                     "a frame that declares no pixels"
+                     (lambda () (decode fixture-zero-size))
+                     "declares no pixels")
+                   (expect-fail
+                     "a truncated marker segment length"
+                     (lambda () (decode (string-hex->bytes "ffd8ffdb00")))
+                     "truncated marker segment length")
+                   (expect-fail
+                     "a marker segment shorter than its length field"
+                     (lambda () (decode (string-hex->bytes "ffd8ffdb0001")))
+                     "shorter than its length field")
+                   (expect-fail
+                     "a marker segment that runs past the file"
+                     (lambda () (decode (string-hex->bytes "ffd8ffdb004000")))
+                     "runs past the file")
+                   (expect-fail
+                     "a byte that is not a marker"
+                     (lambda () (decode (string-hex->bytes "ffd81234")))
+                     "expected a marker at byte 2")
+                   (expect-fail
+                     "a file that ends before the scan"
+                     (lambda () (decode fixture-no-scan))
+                     "no start-of-scan marker")
+                   (expect-fail
+                     "a file that ends at an end-of-image marker"
+                     (lambda () (decode (string-hex->bytes "ffd8ffd9")))
+                     "end of image before the scan data")
+                   (expect-fail
+                     "a restart interval segment that is too short"
+                     (lambda () (decode (string-hex->bytes "ffd8ffdd000300")))
+                     "restart interval segment is too short")
+                   (expect-fail
+                     "a quantisation table that runs past its segment"
+                     (lambda () (decode (string-hex->bytes "ffd8ffdb00040001")))
+                     "quantisation table runs past its segment")
+                   (expect-fail
+                     "a Huffman table definition that is too short"
+                     (lambda () (decode (string-hex->bytes "ffd8ffc400040001")))
+                     "Huffman table runs past its segment")
+                   (expect-fail
+                     "a Huffman table that runs past its segment"
+                     (lambda () (decode fixture-dht-past-segment))
+                     "Huffman table runs past its segment")
+                   (expect-fail
+                     "a frame header that is too short"
+                     (lambda () (decode (string-hex->bytes "ffd8ffc000040800")))
+                     "frame header is too short")
+                   (expect-fail
+                     "a frame header that runs past its segment"
+                     (lambda () (decode (string-hex->bytes "ffd8ffc00008080008000803")))
+                     "frame header runs past its segment")
+                   (expect-fail
+                     "a start-of-scan header that is too short"
+                     (lambda () (decode fixture-sos-too-short))
+                     "start-of-scan header is too short")
+                   (expect-fail
+                     "a scan naming a component the frame does not define"
+                     (lambda () (decode fixture-undefined-component))
+                     "names a component the frame does not define")
+                   (expect-fail
+                     "an AC run that passes the end of its block"
+                     (lambda () (decode fixture-ac-past-block))
+                     "AC coefficient runs past the end of its block")
+                   (expect-fail
+                     "a Huffman code that matches no entry"
+                     (lambda () (decode fixture-no-huffman-match))
+                     "no Huffman code matches")
+                   (expect-fail
+                     "a scan that ends at a symbol boundary"
+                     (lambda () (decode fixture-scan-ended-early))
+                     "scan data ended early")
+                   (expect-fail
+                     "a scan that ends inside a magnitude"
+                     (lambda () (decode fixture-scan-ended-early-bits))
+                     "scan data ended early"))))))
 
   (export tests))

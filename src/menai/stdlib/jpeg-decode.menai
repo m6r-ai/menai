@@ -53,7 +53,10 @@
          0.097545161008064166 -0.27778511650980109 0.41573480615127273 -0.49039264020161533
          0.49039264020161522 -0.41573480615127251 0.27778511650980076 -0.097545161008064291))
 
-      ; The frame type named as it appears in an error message.
+      ; The frame type named as it appears in an error message.  Its domain is the
+      ; markers `is-frame-marker` admits, less the baseline one this module decodes,
+      ; so the two must stay in step: a marker added to the gate and not named here
+      ; has no case and reaches no error message.
       (frame-type-name
        (lambda (marker)
          (match marker
@@ -68,8 +71,7 @@
            (#xcb "arithmetic-coded lossless")
            (#xcd "differential arithmetic-coded sequential")
            (#xce "differential arithmetic-coded progressive")
-           (#xcf "differential arithmetic-coded lossless")
-           (_ (string-concat "frame type 0x" (integer->string marker 16))))))
+           (#xcf "differential arithmetic-coded lossless"))))
 
       ; Read a 16-bit big-endian length field, rejecting a truncated file rather
       ; than letting the byte read raise its own message.
@@ -560,6 +562,10 @@
 
       ; Walk the marker segments up to the start of the scan, returning the
       ; tables, the frame header, the restart interval and the scan.
+      ;
+      ; The returned state always carries "scan": the loop runs until it is
+      ; present, and every other way out of the walk raises.  Callers may
+      ; therefore read the scan without checking for it.
       (read-segments
        (lambda (b)
          (let ((loop
@@ -921,9 +927,7 @@
                  (let ((segments (read-segments b)))
                    (if (none? (dict-get segments "frame"))
                        (error "Malformed JPEG: no frame header before the scan")
-                       (if (none? (dict-get segments "scan"))
-                           (error "Malformed JPEG: no start-of-scan segment")
-                           (build-image b segments (dict-get segments "frame") (dict-get segments "scan")))))
+                       (build-image b segments (dict-get segments "frame") (dict-get segments "scan"))))
                  (error "Not a JPEG file: missing start-of-image marker"))))))
 
   (export decode read-segments read-symbol read-bits))
