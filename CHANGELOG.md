@@ -40,6 +40,8 @@ Bug fixes:
   shape inlining an inner loop into an outer loop's body leaves behind — could
   lose the definition of the enclosing loop's variable, so modules that
   inlined such a function failed bytecode validation instead of running.
+- `menai-format` dropped a binding's value and its closing parenthesis when a
+  comment sat between the binding's name and its value.
 
 ## v0.12.1 (2026-11-23)
 

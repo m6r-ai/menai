@@ -254,7 +254,27 @@ class Renderer:
 
         return result
 
-    def _append_close(self, lines: list[str]) -> None:
+    @staticmethod
+    def _contains_comment(line: str) -> bool:
+        """Return whether a rendered line contains a comment."""
+        in_string = False
+        escaped = False
+        for char in line:
+            if escaped:
+                escaped = False
+
+            elif char == '\\' and in_string:
+                escaped = True
+
+            elif char == '"':
+                in_string = not in_string
+
+            elif char == ';' and not in_string:
+                return True
+
+        return False
+
+    def _append_close(self, lines: list[str], column: int) -> None:
         """
         Append the closing paren to the last line.
 
@@ -262,17 +282,25 @@ class Renderer:
         element of the list is an element in its own right.  A comment runs to
         the end of its line, so the closing paren cannot share that line without
         being swallowed into the comment text.  It is placed on its own line,
-        aligned with the last line of code, instead.
-        """
-        if lines and lines[-1].lstrip().startswith(';'):
-            indent = next(
-                (len(line) - len(line.lstrip()) for line in reversed(lines) if line.strip() and not line.lstrip().startswith(';')),
-                0,
-            )
-            lines.append(' ' * indent + ')')
+        aligned with the last line of code, instead.  A list whose every element
+        is a comment has no line of code to align with, so the paren goes one
+        column inside the list's opening parenthesis, where its elements sit.
 
-        else:
+        The first line carries no indentation of its own, because the caller
+        places it at the list's column, so it is never aligned further left than
+        the list itself.
+        """
+        if not lines:
+            return
+
+        rendered = '\n'.join(lines).split('\n')
+        if not self._contains_comment(rendered[-1]):
             lines[-1] += ')'
+            return
+
+        code_lines = [line for line in rendered if line.strip() and not self._contains_comment(line)]
+        indent = max(column, len(code_lines[-1]) - len(code_lines[-1].lstrip())) if code_lines else column + 1
+        lines.append(' ' * indent + ')')
 
     def _render_node(self, node: ASTNode, column: int, trailing: int = 0) -> str:
         """Render a single node starting at the given column, with trailing columns reserved after it."""
@@ -407,13 +435,15 @@ class Renderer:
         head_str = self._render_node(head, column + 1)
 
         if not body:
-            return f'({head_str})'
+            lines = [f'({head_str}']
+            self._append_close(lines, column)
+            return '\n'.join(lines)
 
         if self._break_after_head(head, body):
             inner_col = column + self.options.indent_size
             lines = [f'({head_str}']
             lines.extend(self._render_tail(body, inner_col, trailing + 1))
-            self._append_close(lines)
+            self._append_close(lines, column)
             return '\n'.join(lines)
 
         if len(body) == 1 and not isinstance(body[0], ASTComment):
@@ -436,7 +466,7 @@ class Renderer:
             lines = [f'({head_str} {first_str}']
             lines.extend(self._render_tail(body[1:], first_col, trailing + 1))
 
-        self._append_close(lines)
+        self._append_close(lines, column)
         return '\n'.join(lines)
 
     def _render_dict(self, head: ASTNode, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
@@ -478,7 +508,7 @@ class Renderer:
         lines = [f'({head_str} {entries[0]}']
         lines.extend(' ' * key_col + entry if entry else '' for entry in entries[1:])
 
-        self._append_close(lines)
+        self._append_close(lines, column)
         return '\n'.join(lines)
 
     def _last_pair_end(self, body: list[ASTNode | ASTComment]) -> ASTNode | None:
@@ -574,7 +604,7 @@ class Renderer:
         if tail:
             lines.extend(self._render_tail(tail, inner_col, trailing + 1))
 
-        self._append_close(lines)
+        self._append_close(lines, column)
         return '\n'.join(lines)
 
     def _render_bindings(self, bindings: ASTList, column: int, trailing: int = 0) -> list[str]:
@@ -601,6 +631,10 @@ class Renderer:
             blank = False
 
         lines: list[str] = []
+        if not groups:
+            lines.append('(' + comments[0])
+            lines.extend(' ' * binding_col + comment for comment in comments[1:])
+
         prev_multiline = False
         for index, (group_comments, rendered, blank) in enumerate(groups):
             multiline = '\n' in rendered
@@ -622,14 +656,24 @@ class Renderer:
 
             prev_multiline = multiline
 
-        for comment in comments:
-            lines.append(' ' * binding_col + comment)
+        if groups:
+            for comment in comments:
+                lines.append(' ' * binding_col + comment)
 
-        self._append_close(lines)
+        self._append_close(lines, column)
         return lines
 
     def _render_binding(self, binding: ASTNode, column: int, trailing: int = 0) -> str:
-        """Render a single binding: (name value), value on the next line if long."""
+        """
+        Render a single binding: (name value), value on the next line if long.
+
+        A comment may sit between the name and the value, or after the value.  A
+        binding that carries one is laid out multi-line with each element on its
+        own line at the value's column, so that a comment never displaces the
+        element it describes.  Anything that is not a name followed by one value
+        is rendered as an ordinary list rather than partly rendered, so no token
+        of a binding the compiler will reject is silently dropped.
+        """
         if not isinstance(binding, ASTList) or not binding.elements:
             return self._render_node(binding, column, trailing)
 
@@ -639,16 +683,22 @@ class Renderer:
         if not isinstance(name, ASTAtom):
             return self._render_node(binding, column, trailing)
 
-        name_col = column + 1
-        value_col = name_col
+        values = [element for element in rest if not isinstance(element, ASTComment)]
+        if len(values) > 1:
+            return self._render_node(binding, column, trailing)
+
+        value_col = column + 1
 
         if not rest:
             return f'({name.value})'
 
-        value = rest[0]
-        if isinstance(value, ASTComment):
-            return f'({name.value} {value.text})'
+        if any(isinstance(element, ASTComment) for element in rest):
+            lines = [f'({name.value}']
+            lines.extend(self._render_tail(rest, value_col, trailing + 1))
+            self._append_close(lines, column)
+            return '\n'.join(lines)
 
+        value = rest[0]
         inline_col = column + 1 + len(name.value) + 1
         compact = self._try_compact(value)
         lambda_value = self._is_lambda(value)
@@ -689,7 +739,7 @@ class Renderer:
             lines = [f'(lambda {params_str}']
             lines.extend(self._render_tail(body[1:], inner_col, trailing + 1))
 
-        self._append_close(lines)
+        self._append_close(lines, column)
         return '\n'.join(lines)
 
     def _render_match(self, body: list[ASTNode | ASTComment], column: int, trailing: int = 0) -> str:
@@ -709,22 +759,37 @@ class Renderer:
             lines = [f'(match {scrutinee_str}']
             lines.extend(self._render_tail(body[1:], inner_col, trailing + 1, self._render_arm))
 
-        self._append_close(lines)
+        self._append_close(lines, column)
         return '\n'.join(lines)
 
     def _render_arm(self, arm: ASTNode, column: int, trailing: int = 0) -> str:
-        """Render a match arm: (pattern body), body on the next line if long."""
+        """
+        Render a match arm: (pattern body), body on the next line if long.
+
+        As for a binding, a comment among the arm's elements lays the arm out
+        with each element on its own line at the body's column, and an arm that
+        is not a pattern followed by one body is rendered as an ordinary list
+        rather than partly rendered.
+        """
         if not isinstance(arm, ASTList) or len(arm.elements) < 2:
             return self._render_node(arm, column, trailing)
 
         pattern = arm.elements[0]
-        body = arm.elements[1]
-        if isinstance(body, ASTComment):
+        rest = arm.elements[1:]
+        values = [element for element in rest if not isinstance(element, ASTComment)]
+        if len(values) > 1:
             return self._render_node(arm, column, trailing)
 
         pattern_str = self._render_node(pattern, column + 1)
         body_col = column + 1
 
+        if not values or len(rest) > 1:
+            lines = [f'({pattern_str}']
+            lines.extend(self._render_tail(rest, body_col, trailing + 1))
+            self._append_close(lines, column)
+            return '\n'.join(lines)
+
+        body = rest[0]
         inline_col = column + 1 + len(pattern_str) + 1
         body_inline = self._render_node(body, inline_col, 1 + trailing)
         if '\n' not in body_inline:

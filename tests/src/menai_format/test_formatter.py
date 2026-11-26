@@ -226,6 +226,29 @@ class TestMatch:
         result = format_code('(match x (a-long-pattern (foo a b c d e f g h)) (_ "z"))', max_width=30)
         assert '  (a-long-pattern\n' in result
 
+    def test_comment_before_body_puts_each_element_on_its_own_line(self):
+        """A comment between an arm's pattern and body lays the arm out element by element."""
+        result = format_code('(match x (1 ; note\n "one") (_ "other"))')
+        assert result == (
+            '(match x\n'
+            '  (1\n'
+            '   ; note\n'
+            '   "one")\n'
+            '  (_ "other"))\n'
+        )
+
+    def test_comment_after_body_puts_each_element_on_its_own_line(self):
+        """A comment after an arm's body lays the arm out element by element."""
+        result = format_code('(match x (1 "one" ; note\n) (_ "other"))')
+        assert result == (
+            '(match x\n'
+            '  (1\n'
+            '   "one"\n'
+            '   ; note\n'
+            '   )\n'
+            '  (_ "other"))\n'
+        )
+
 
 class TestLambda:
     """A lambda indents its body by two from the opening parenthesis."""
@@ -302,6 +325,38 @@ class TestBindings:
     def test_if_value_of_atoms_is_compact(self):
         """A binding whose value is an if of atoms stays compact."""
         assert format_code('(let ((a (if p q r))) a)') == '(let ((a (if p q r))) a)\n'
+
+    def test_comment_before_value_puts_each_element_on_its_own_line(self):
+        """A comment between a binding's name and value lays the binding out element by element."""
+        result = format_code('(let ((a ; note\n 1)) a)')
+        assert result == '(let ((a\n       ; note\n       1))\n  a)\n'
+
+    def test_comment_after_value_puts_each_element_on_its_own_line(self):
+        """A comment after a binding's value lays the binding out element by element."""
+        result = format_code('(let ((a 1 ; note\n)) a)')
+        assert result == '(let ((a\n       1\n       ; note\n       ))\n  a)\n'
+
+    def test_comment_before_value_keeps_the_value(self):
+        """The value of a binding is kept when a comment precedes it."""
+        source = '(let ((a ; note\n (vector 0 1 2))) a)'
+        assert token_texts(format_code(source)) == token_texts(source)
+
+    def test_comment_after_value_keeps_the_value(self):
+        """The value of a binding is kept when a comment follows it."""
+        source = '(let ((a (vector 0 1 2) ; note\n)) a)'
+        assert token_texts(format_code(source)) == token_texts(source)
+
+    def test_several_comments_between_name_and_value(self):
+        """Every comment between a binding's name and value is placed on its own line."""
+        result = format_code('(let ((a ; one\n ; two\n 1)) a)')
+        assert result == '(let ((a\n       ; one\n       ; two\n       1))\n  a)\n'
+
+    def test_more_than_one_value_is_an_ordinary_list(self):
+        """A binding of more than one value is laid out as an ordinary list."""
+        source = '(let ((a 1 2)) a)'
+        result = format_code(source, max_width=10)
+        assert result == '(let ((a 1\n         2))\n  a)\n'
+        assert token_texts(result) == token_texts(source)
 
 
 class TestBindingList:
@@ -397,6 +452,34 @@ class TestComments:
         source = '(foo aaaa bbbb cccc ; note\n)'
         once = format_code(source, max_width=10)
         assert format_code(once, max_width=10) == once
+
+    def test_comment_only_list_keeps_its_closing_paren(self):
+        """A list holding nothing but a comment keeps its closing paren on its own line."""
+        source = '(; note\n)'
+        result = format_code(source)
+        assert result == '(; note\n )\n'
+        assert token_texts(result) == token_texts(source)
+
+    def test_comment_only_binding_list_keeps_its_parens(self):
+        """A binding list holding nothing but comments keeps both of its parens."""
+        source = '(let (; one\n ; two\n) a)'
+        result = format_code(source)
+        assert result == '(let (; one\n      ; two\n      )\n  a)\n'
+        assert token_texts(result) == token_texts(source)
+
+    def test_comment_only_dict_keeps_its_parens(self):
+        """A dict holding nothing but a comment keeps its closing paren on its own line."""
+        source = '(dict ; note\n)'
+        result = format_code(source)
+        assert result == '(dict ; note\n )\n'
+        assert token_texts(result) == token_texts(source)
+
+    def test_comment_between_key_and_value(self):
+        """Each element of a dict that carries a comment goes on its own line."""
+        source = '(dict "a" ; note\n 1)'
+        result = format_code(source)
+        assert result == '(dict "a"\n      ; note\n      1)\n'
+        assert token_texts(result) == token_texts(source)
 
 
 class TestBlankLines:
