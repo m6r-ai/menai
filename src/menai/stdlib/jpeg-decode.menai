@@ -22,11 +22,70 @@
 (let ((zigzag
 
        ; The natural (row-major) coefficient index of each zigzag position.
-       (vector
-         0 1 8 16 9 2 3 10 17 24 32 25 18 11 4 5
-         12 19 26 33 40 48 41 34 27 20 13 6 7 14 21 28
-         35 42 49 56 57 50 43 36 29 22 15 23 30 37 44 51
-         58 59 52 45 38 31 39 46 53 60 61 54 47 55 62 63))
+       (vector 0
+               1
+               8
+               16
+               9
+               2
+               3
+               10
+               17
+               24
+               32
+               25
+               18
+               11
+               4
+               5
+               12
+               19
+               26
+               33
+               40
+               48
+               41
+               34
+               27
+               20
+               13
+               6
+               7
+               14
+               21
+               28
+               35
+               42
+               49
+               56
+               57
+               50
+               43
+               36
+               29
+               22
+               15
+               23
+               30
+               37
+               44
+               51
+               58
+               59
+               52
+               45
+               38
+               31
+               39
+               46
+               53
+               60
+               61
+               54
+               47
+               55
+               62
+               63))
 
       (basis
 
@@ -35,23 +94,70 @@
        ; in.  Written out rather than computed, because a module has no
        ; import-time state and rebuilding it on every call would land inside the
        ; measured section for no benefit.
-       (vector
-         0.35355339059327373 0.35355339059327373 0.35355339059327373 0.35355339059327373
-         0.35355339059327373 0.35355339059327373 0.35355339059327373 0.35355339059327373
-         0.49039264020161522 0.41573480615127262 0.27778511650980114 0.097545161008064166
-         -0.097545161008064096 -0.27778511650980098 -0.41573480615127267 -0.49039264020161522
-         0.46193976625564337 0.19134171618254492 -0.19134171618254486 -0.46193976625564337
-         -0.46193976625564342 -0.19134171618254517 0.1913417161825445 0.46193976625564326
-         0.41573480615127262 -0.097545161008064096 -0.49039264020161522 -0.27778511650980109
-         0.27778511650980092 0.49039264020161522 0.097545161008064388 -0.41573480615127256
-         0.35355339059327379 -0.35355339059327373 -0.35355339059327384 0.35355339059327368
-         0.35355339059327384 -0.35355339059327334 -0.35355339059327362 0.35355339059327329
-         0.27778511650980114 -0.49039264020161522 0.097545161008064152 0.41573480615127273
-         -0.41573480615127256 -0.097545161008064013 0.49039264020161533 -0.27778511650980076
-         0.19134171618254492 -0.46193976625564342 0.46193976625564326 -0.19134171618254495
-         -0.19134171618254528 0.46193976625564337 -0.46193976625564342 0.19134171618254478
-         0.097545161008064166 -0.27778511650980109 0.41573480615127273 -0.49039264020161533
-         0.49039264020161522 -0.41573480615127251 0.27778511650980076 -0.097545161008064291))
+       (vector 0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.49039264020161522
+               0.41573480615127262
+               0.27778511650980114
+               0.097545161008064166
+               -0.097545161008064096
+               -0.27778511650980098
+               -0.41573480615127267
+               -0.49039264020161522
+               0.46193976625564337
+               0.19134171618254492
+               -0.19134171618254486
+               -0.46193976625564337
+               -0.46193976625564342
+               -0.19134171618254517
+               0.1913417161825445
+               0.46193976625564326
+               0.41573480615127262
+               -0.097545161008064096
+               -0.49039264020161522
+               -0.27778511650980109
+               0.27778511650980092
+               0.49039264020161522
+               0.097545161008064388
+               -0.41573480615127256
+               0.35355339059327379
+               -0.35355339059327373
+               -0.35355339059327384
+               0.35355339059327368
+               0.35355339059327384
+               -0.35355339059327334
+               -0.35355339059327362
+               0.35355339059327329
+               0.27778511650980114
+               -0.49039264020161522
+               0.097545161008064152
+               0.41573480615127273
+               -0.41573480615127256
+               -0.097545161008064013
+               0.49039264020161533
+               -0.27778511650980076
+               0.19134171618254492
+               -0.46193976625564342
+               0.46193976625564326
+               -0.19134171618254495
+               -0.19134171618254528
+               0.46193976625564337
+               -0.46193976625564342
+               0.19134171618254478
+               0.097545161008064166
+               -0.27778511650980109
+               0.41573480615127273
+               -0.49039264020161533
+               0.49039264020161522
+               -0.41573480615127251
+               0.27778511650980076
+               -0.097545161008064291))
 
       ; The frame type named as it appears in an error message.  Its domain is the
       ; markers `is-frame-marker` admits, less the baseline one this module decodes,
@@ -122,13 +228,7 @@
                       (dict "mincode" mincode "maxcode" maxcode "valptr" valptr "values" values)
                       (let ((count (vector-nth counts (integer- length 1))))
                         (if (integer=? count 0)
-                            (loop
-                              (integer+ length 1)
-                              (integer* code 2)
-                              index
-                              mincode
-                              maxcode
-                              valptr)
+                            (loop (integer+ length 1) (integer* code 2) index mincode maxcode valptr)
                             (loop
                               (integer+ length 1)
                               (integer* (integer+ code count) 2)
@@ -166,9 +266,7 @@
                           (let ((next-code
                                  (integer-bit-or
                                    (integer-bit-shift-left code 1)
-                                   (integer-bit-and
-                                     (integer-bit-shift-right acc (integer- count 1))
-                                     1))))
+                                   (integer-bit-and (integer-bit-shift-right acc (integer- count 1)) 1))))
                             (if (integer<=? next-code (vector-nth maxcode length))
                                 (vector
                                   pos
@@ -176,8 +274,9 @@
                                   (integer- count 1)
                                   (vector-nth
                                     values
-                                    (integer+ (vector-nth valptr length)
-                                              (integer- next-code (vector-nth mincode length)))))
+                                    (integer+
+                                      (vector-nth valptr length)
+                                      (integer- next-code (vector-nth mincode length)))))
                                 (loop
                                   pos
                                   acc
@@ -213,12 +312,7 @@
                               (let ((next (scan-byte b pos)))
                                 (if (none? next)
                                     (error "Malformed JPEG: scan data ended early")
-                                    (loop
-                                      (vector-nth next 1)
-                                      (vector-nth next 0)
-                                      8
-                                      remaining
-                                      value))))
+                                    (loop (vector-nth next 1) (vector-nth next 0) 8 remaining value))))
                           (loop
                             pos
                             acc
@@ -226,9 +320,7 @@
                             (integer- remaining 1)
                             (integer-bit-or
                               (integer-bit-shift-left value 1)
-                              (integer-bit-and
-                                (integer-bit-shift-right acc (integer- count 1))
-                                1))))))))
+                              (integer-bit-and (integer-bit-shift-right acc (integer- count 1)) 1))))))))
            (loop (vector-nth state 0) (vector-nth state 1) (vector-nth state 2) n 0))))
 
       ; Sign-extend a value's magnitude to a signed coefficient (spec F.2.2.1).
@@ -294,15 +386,7 @@
                    (vector-with
                      temp
                      (integer+ (integer* v 8) x)
-                     (dot8
-                       coefficients
-                       (integer* v 8)
-                       1
-                       basis
-                       x
-                       8
-                       0
-                       0.0)))))))
+                     (dot8 coefficients (integer* v 8) 1 basis x 8 0 0.0)))))))
 
       ; The column pass: out[y][x] = sample(sum over v of temp[v][x] * basis[v][y]).
       (transform-columns
@@ -315,22 +399,14 @@
                    temp
                    y
                    (integer+ x 1)
-                   (vector-with
-                     out
-                     (integer+ (integer* y 8) x)
-                     (to-sample
-                       (dot8 temp x 8 basis y 8 0 0.0))))))))
+                   (vector-with out (integer+ (integer* y 8) x) (to-sample (dot8 temp x 8 basis y 8 0 0.0))))))))
 
       ; Inverse transform one block of dequantised coefficients (natural order)
       ; into 64 level-shifted samples.
       (inverse-transform
        (lambda (coefficients)
          (transform-columns
-           (transform-rows
-             (map-vector integer->float coefficients)
-             0
-             0
-             (vector-fill 64 0.0))
+           (transform-rows (map-vector integer->float coefficients) 0 0 (vector-fill 64 0.0))
            0
            0
            (vector-fill 64 0))))
@@ -361,16 +437,10 @@
              (let ((symbol-result (read-symbol b state ac-table)))
                (let ((symbol (vector-nth symbol-result 3)))
                  (if (integer=? symbol 0)
-                     (dict "state" (vector-slice symbol-result 0 3)
-                           "coefficients" coefficients)
-                     (if (and (integer=? (integer/ symbol 16) 15) (integer=? (integer% symbol 16) 0))
-                         (decode-ac
-                           b
-                           (vector-slice symbol-result 0 3)
-                           (integer+ k 16)
-                           coefficients
-                           quant
-                           ac-table)
+                     (dict "state" (vector-slice symbol-result 0 3) "coefficients" coefficients)
+                     (if (and (integer=? (integer/ symbol 16) 15)
+                              (integer=? (integer% symbol 16) 0))
+                         (decode-ac b (vector-slice symbol-result 0 3) (integer+ k 16) coefficients quant ac-table)
                          (if (integer>=? (integer+ k (integer/ symbol 16)) 64)
                              (error "Malformed JPEG: AC coefficient runs past the end of its block")
                              (decode-ac-value
@@ -393,17 +463,13 @@
          (let ((header (read-symbol b state dc-table)))
            (let ((dc-size (vector-nth header 3)))
              (let ((magnitude (read-bits b (vector-slice header 0 3) dc-size)))
-               (let ((next-predictor
-                      (integer+ predictor (extend (vector-nth magnitude 3) dc-size))))
+               (let ((next-predictor (integer+ predictor (extend (vector-nth magnitude 3) dc-size))))
                  (let ((result
                         (decode-ac
                           b
                           (vector-slice magnitude 0 3)
                           1
-                          (vector-with
-                            (vector-fill 64 0)
-                            0
-                            (integer* next-predictor (vector-nth quant 0)))
+                          (vector-with (vector-fill 64 0) 0 (integer* next-predictor (vector-nth quant 0)))
                           quant
                           ac-table)))
                    (dict "state" (dict-get result "state")
@@ -421,8 +487,15 @@
                       (let ((table-id (integer% (bytes-nth payload index) 16))
                             (two-byte (integer!=? (integer/ (bytes-nth payload index) 16) 0))
                             (start (integer+ index 1))
-                            (finish (integer+ (integer+ index 1)
-                                              (integer* 64 (if (integer!=? (integer/ (bytes-nth payload index) 16) 0) 2 1)))))
+
+                            (finish
+                             (integer+
+                               (integer+ index 1)
+                               (integer*
+                                 64
+                                 (if (integer!=? (integer/ (bytes-nth payload index) 16) 0)
+                                     2
+                                     1)))))
                         (if (integer>? finish (bytes-length payload))
                             (error "Malformed JPEG: quantisation table runs past its segment")
                             (loop
@@ -451,7 +524,8 @@
                             (error "Malformed JPEG: Huffman table runs past its segment")
                             (let ((counts
                                    (map-vector
-                                     (lambda (i) (bytes-nth payload (integer+ (integer+ index 1) i)))
+                                     (lambda (i)
+                                       (bytes-nth payload (integer+ (integer+ index 1) i)))
                                      (list->vector (range 0 16)))))
                               (let ((total (fold-vector integer+ 0 counts)))
                                 (if (integer>? (integer+ (integer+ index 17) total) (bytes-length payload))
@@ -467,8 +541,12 @@
                                                    (integer+ (integer+ index 17) total)))))))
                                       (loop
                                         (integer+ (integer+ index 17) total)
-                                        (if (integer=? table-class 0) (dict-with dc table-id table) dc)
-                                        (if (integer=? table-class 0) ac (dict-with ac table-id table)))))))))))))
+                                        (if (integer=? table-class 0)
+                                            (dict-with dc table-id table)
+                                            dc)
+                                        (if (integer=? table-class 0)
+                                            ac
+                                            (dict-with ac table-id table)))))))))))))
            (loop 0 (dict) (dict)))))
 
       ; Parse a frame header segment (SOF0 or one of the other SOF markers).
@@ -479,20 +557,17 @@
              (let ((count (bytes-nth payload 5)))
                (if (integer>? (integer+ 6 (integer* count 3)) (bytes-length payload))
                    (error "Malformed JPEG: frame header runs past its segment")
-                   (dict
-                     "marker" marker
-                     "precision" (bytes-nth payload 0)
-                     "height" (bytes-read-u16-be payload 1)
-                     "width" (bytes-read-u16-be payload 3)
-                     "components"
-                     (map-vector
-                       (lambda (i)
-                         (dict
-                           "id" (bytes-nth payload (integer+ 6 (integer* i 3)))
-                           "h" (integer/ (bytes-nth payload (integer+ 7 (integer* i 3))) 16)
-                           "v" (integer% (bytes-nth payload (integer+ 7 (integer* i 3))) 16)
-                           "quant" (bytes-nth payload (integer+ 8 (integer* i 3)))))
-                       (list->vector (range 0 count)))))))))
+                   (dict "marker" marker
+                         "precision" (bytes-nth payload 0)
+                         "height" (bytes-read-u16-be payload 1)
+                         "width" (bytes-read-u16-be payload 3)
+                         "components" (map-vector
+                                        (lambda (i)
+                                          (dict "id" (bytes-nth payload (integer+ 6 (integer* i 3)))
+                                                "h" (integer/ (bytes-nth payload (integer+ 7 (integer* i 3))) 16)
+                                                "v" (integer% (bytes-nth payload (integer+ 7 (integer* i 3))) 16)
+                                                "quant" (bytes-nth payload (integer+ 8 (integer* i 3)))))
+                                        (list->vector (range 0 count)))))))))
 
       ; Apply one segment payload to the walker state.  A state carrying a "scan"
       ; key is the finished description rather than a state to continue from.
@@ -508,17 +583,11 @@
                    "scan" (bytes-slice b (integer+ pos 4) (integer+ (integer+ pos 2) length)))
              (let ((next (dict-with state "pos" (integer+ (integer+ pos 2) length))))
                (if (integer=? marker #xdb)
-                   (dict-with
-                     next
-                     "quant"
-                     (dict-merge (dict-get next "quant") (read-quant-tables payload)))
+                   (dict-with next "quant" (dict-merge (dict-get next "quant") (read-quant-tables payload)))
                    (if (integer=? marker #xc4)
                        (let ((tables (read-huffman-tables payload)))
                          (dict-with
-                           (dict-with
-                             next
-                             "dc"
-                             (dict-merge (dict-get next "dc") (dict-get tables "dc")))
+                           (dict-with next "dc" (dict-merge (dict-get next "dc") (dict-get tables "dc")))
                            "ac"
                            (dict-merge (dict-get next "ac") (dict-get tables "ac"))))
                        (if (integer=? marker #xdd)
@@ -536,13 +605,13 @@
            (if (integer>=? (integer+ pos 1) (bytes-length b))
                (error "Malformed JPEG: no start-of-scan marker")
                (if (integer!=? (bytes-nth b pos) #xff)
-                   (error
-                     (string-concat "Malformed JPEG: expected a marker at byte " (integer->string pos)))
+                   (error (string-concat "Malformed JPEG: expected a marker at byte " (integer->string pos)))
                    (let ((marker (bytes-nth b (integer+ pos 1))))
                      (if (or (integer=? marker #xff)
                              (integer=? marker #x01)
                              (integer=? marker #xd8)
-                             (and (integer>=? marker #xd0) (integer<=? marker #xd7)))
+                             (and (integer>=? marker #xd0)
+                                  (integer<=? marker #xd7)))
                          (dict-with state "pos" (integer+ pos 2))
                          (if (integer=? marker #xd9)
                              (error "Malformed JPEG: end of image before the scan data")
@@ -573,13 +642,7 @@
                   (if (dict-has? state "scan")
                       state
                       (loop (segment-step b state))))))
-           (loop
-             (dict "pos" 2
-                   "quant" (dict)
-                   "dc" (dict)
-                   "ac" (dict)
-                   "restart" 0
-                   "frame" #none)))))
+           (loop (dict "pos" 2 "quant" (dict) "dc" (dict) "ac" (dict) "restart" 0 "frame" #none)))))
 
       ; Decode `remaining` blocks of the component at `index` of the scan header,
       ; prepending each block's samples to `blocks`.
@@ -605,9 +668,7 @@
                    (dict-with
                      blocks
                      (dict-get component "id")
-                     (list-prepend
-                       (dict-get blocks (dict-get component "id") (list))
-                       (dict-get result "samples")))
+                     (list-prepend (dict-get blocks (dict-get component "id") (list)) (dict-get result "samples")))
                    index
                    (integer- remaining 1)))))))
 
@@ -650,8 +711,12 @@
                         b
                         segments
                         scan-components
-                        (if restart-now (vector (integer+ (vector-nth state 0) 2) 0 0) state)
-                        (if restart-now (vector-fill (vector-length predictors) 0) predictors)
+                        (if restart-now
+                            (vector (integer+ (vector-nth state 0) 2) 0 0)
+                            state)
+                        (if restart-now
+                            (vector-fill (vector-length predictors) 0)
+                            predictors)
                         blocks
                         0)))
                  (scan-loop
@@ -727,12 +792,14 @@
                      (vector-with
                        plane
                        (integer+
-                         (integer* (integer+ (integer+ (integer* (integer/ mcu mcus-x) (integer* v 8))
-                                                        (integer* (integer/ within h) 8))
-                                              (integer/ i 8))
-                                   plane-width)
-                         (integer+ (integer* (integer% mcu mcus-x) (integer* h 8))
-                                   (integer+ (integer* (integer% within h) 8) (integer% i 8))))
+                         (integer*
+                           (integer+
+                             (integer+ (integer* (integer/ mcu mcus-x) (integer* v 8)) (integer* (integer/ within h) 8))
+                             (integer/ i 8))
+                           plane-width)
+                         (integer+
+                           (integer* (integer% mcu mcus-x) (integer* h 8))
+                           (integer+ (integer* (integer% within h) 8) (integer% i 8))))
                        (vector-nth (vector-nth blocks index) i))))))))
 
       (assemble-plane
@@ -758,8 +825,9 @@
            (vector-nth
              (vector-nth planes index)
              (integer+
-               (integer* (integer/ (integer* y (dict-get component "v")) base-v)
-                         (integer* (integer* mcus-x (dict-get component "h")) 8))
+               (integer*
+                 (integer/ (integer* y (dict-get component "v")) base-v)
+                 (integer* (integer* mcus-x (dict-get component "h")) 8))
                (integer/ (integer* x (dict-get component "h")) base-h))))))
 
       ; A pixel from the three plane values at a position, applying the JFIF
@@ -773,10 +841,7 @@
                    (luma (integer->float y)))
                (vector
                  (clamp-byte (float+ luma (float* 1.402 scaled-cr)))
-                 (clamp-byte
-                   (float-
-                     (float- luma (float* 0.344136 scaled-cb))
-                     (float* 0.714136 scaled-cr)))
+                 (clamp-byte (float- (float- luma (float* 0.344136 scaled-cb)) (float* 0.714136 scaled-cr)))
                  (clamp-byte (float+ luma (float* 1.772 scaled-cb))))))))
 
       (pixel-at
@@ -794,7 +859,13 @@
          (if (integer>=? x width)
              row
              (row-pixels
-               planes components base-h base-v mcus-x width y
+               planes
+               components
+               base-h
+               base-v
+               mcus-x
+               width
+               y
                (integer+ x 1)
                (list-prepend row (pixel-at planes components base-h base-v mcus-x x y))))))
 
@@ -810,9 +881,7 @@
                         (list-prepend
                           acc
                           (list->vector
-                            (list-reverse
-                              (row-pixels
-                                planes components base-h base-v mcus-x width y 0 (list))))))))))
+                            (list-reverse (row-pixels planes components base-h base-v mcus-x width y 0 (list))))))))))
            (rows 0 (list)))))
 
       ; The scan header's components: the sampling and quantisation table ids the
@@ -824,7 +893,10 @@
              (let ((id (bytes-nth scan (integer+ 1 (integer* index 2))))
                    (tables (bytes-nth scan (integer+ 2 (integer* index 2)))))
                (let ((component
-                      (find-vector (lambda (c) (integer=? (dict-get c "id") id)) components)))
+                      (find-vector
+                        (lambda (c)
+                          (integer=? (dict-get c "id") id))
+                        components)))
                  (if (none? component)
                      (error "Malformed JPEG: the scan names a component the frame does not define")
                      (read-scan-components
@@ -846,34 +918,48 @@
        (lambda (b segments frame components scan-components)
          (let ((width (dict-get frame "width"))
                (height (dict-get frame "height")))
-           (let ((max-h (fold-vector integer-max 0 (map-vector (lambda (c) (dict-get c "h")) components))))
-             (let ((max-v (fold-vector integer-max 0 (map-vector (lambda (c) (dict-get c "v")) components))))
+           (let ((max-h
+                  (fold-vector
+                    integer-max
+                    0
+                    (map-vector
+                      (lambda (c)
+                        (dict-get c "h"))
+                      components))))
+             (let ((max-v
+                    (fold-vector
+                      integer-max
+                      0
+                      (map-vector
+                        (lambda (c)
+                          (dict-get c "v"))
+                        components))))
                (let ((mcus-x (ceil-div width (integer* 8 max-h))))
                  (let ((mcus-y (ceil-div height (integer* 8 max-v))))
-                   (if (or (integer<? width 1) (integer<? height 1))
+                   (if (or (integer<? width 1)
+                           (integer<? height 1))
                        (error "Malformed JPEG: the frame declares no pixels")
                        (let ((decoded (decode-scan b segments scan-components mcus-x mcus-y)))
                          (let ((planes
-                              (map-vector
-                                (lambda (i)
-                                  (let ((component (vector-nth components i)))
-                                    (assemble-plane
-                                      (dict-get decoded (dict-get component "id"))
-                                      (dict-get component "h")
-                                      (dict-get component "v")
-                                      mcus-x
-                                      mcus-y)))
-                                (list->vector (range 0 (vector-length components))))))
-                         (let ((base-h (dict-get (vector-nth components 0) "h"))
-                               (base-v (dict-get (vector-nth components 0) "v")))
-                           (dict
-                             "header" (dict "width" width
-                                            "height" height
-                                            "precision" (dict-get frame "precision")
-                                            "components" components
-                                            "restart-interval" (dict-get segments "restart"))
-                             "pixels" (to-pixels planes components base-h base-v mcus-x width height)
-                             "meta" (dict "format" "jpeg" "channels" 3)))))))))))))
+                                (map-vector
+                                  (lambda (i)
+                                    (let ((component (vector-nth components i)))
+                                      (assemble-plane
+                                        (dict-get decoded (dict-get component "id"))
+                                        (dict-get component "h")
+                                        (dict-get component "v")
+                                        mcus-x
+                                        mcus-y)))
+                                  (list->vector (range 0 (vector-length components))))))
+                           (let ((base-h (dict-get (vector-nth components 0) "h"))
+                                 (base-v (dict-get (vector-nth components 0) "v")))
+                             (dict "header" (dict "width" width
+                                                  "height" height
+                                                  "precision" (dict-get frame "precision")
+                                                  "components" components
+                                                  "restart-interval" (dict-get segments "restart"))
+                                   "pixels" (to-pixels planes components base-h base-v mcus-x width height)
+                                   "meta" (dict "format" "jpeg" "channels" 3)))))))))))))
 
       ; Check what the file asks for against what this module implements, then
       ; decode it.
@@ -923,7 +1009,8 @@
        (lambda (b)
          (if (integer<? (bytes-length b) 2)
              (error "Not a JPEG file: too short")
-             (if (and (integer=? (bytes-nth b 0) #xff) (integer=? (bytes-nth b 1) #xd8))
+             (if (and (integer=? (bytes-nth b 0) #xff)
+                      (integer=? (bytes-nth b 1) #xd8))
                  (let ((segments (read-segments b)))
                    (if (none? (dict-get segments "frame"))
                        (error "Malformed JPEG: no frame header before the scan")

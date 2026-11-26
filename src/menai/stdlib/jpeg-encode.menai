@@ -22,122 +22,618 @@
 (let ((zigzag
 
        ; The natural (row-major) coefficient index of each zigzag position.
-       (vector
-         0 1 8 16 9 2 3 10 17 24 32 25 18 11 4 5
-         12 19 26 33 40 48 41 34 27 20 13 6 7 14 21 28
-         35 42 49 56 57 50 43 36 29 22 15 23 30 37 44 51
-         58 59 52 45 38 31 39 46 53 60 61 54 47 55 62 63))
+       (vector 0
+               1
+               8
+               16
+               9
+               2
+               3
+               10
+               17
+               24
+               32
+               25
+               18
+               11
+               4
+               5
+               12
+               19
+               26
+               33
+               40
+               48
+               41
+               34
+               27
+               20
+               13
+               6
+               7
+               14
+               21
+               28
+               35
+               42
+               49
+               56
+               57
+               50
+               43
+               36
+               29
+               22
+               15
+               23
+               30
+               37
+               44
+               51
+               58
+               59
+               52
+               45
+               38
+               31
+               39
+               46
+               53
+               60
+               61
+               54
+               47
+               55
+               62
+               63))
 
       (basis
 
        ; The DCT basis, m[u][x] = C(u) * cos((2x + 1) * u * pi / 16) / 2.  The
        ; transform is orthonormal, so the same constants serve the forward and
        ; inverse directions.
-       (vector
-         0.35355339059327373 0.35355339059327373 0.35355339059327373 0.35355339059327373
-         0.35355339059327373 0.35355339059327373 0.35355339059327373 0.35355339059327373
-         0.49039264020161522 0.41573480615127262 0.27778511650980114 0.097545161008064166
-         -0.097545161008064096 -0.27778511650980098 -0.41573480615127267 -0.49039264020161522
-         0.46193976625564337 0.19134171618254492 -0.19134171618254486 -0.46193976625564337
-         -0.46193976625564342 -0.19134171618254517 0.1913417161825445 0.46193976625564326
-         0.41573480615127262 -0.097545161008064096 -0.49039264020161522 -0.27778511650980109
-         0.27778511650980092 0.49039264020161522 0.097545161008064388 -0.41573480615127256
-         0.35355339059327379 -0.35355339059327373 -0.35355339059327384 0.35355339059327368
-         0.35355339059327384 -0.35355339059327334 -0.35355339059327362 0.35355339059327329
-         0.27778511650980114 -0.49039264020161522 0.097545161008064152 0.41573480615127273
-         -0.41573480615127256 -0.097545161008064013 0.49039264020161533 -0.27778511650980076
-         0.19134171618254492 -0.46193976625564342 0.46193976625564326 -0.19134171618254495
-         -0.19134171618254528 0.46193976625564337 -0.46193976625564342 0.19134171618254478
-         0.097545161008064166 -0.27778511650980109 0.41573480615127273 -0.49039264020161533
-         0.49039264020161522 -0.41573480615127251 0.27778511650980076 -0.097545161008064291))
+       (vector 0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.35355339059327373
+               0.49039264020161522
+               0.41573480615127262
+               0.27778511650980114
+               0.097545161008064166
+               -0.097545161008064096
+               -0.27778511650980098
+               -0.41573480615127267
+               -0.49039264020161522
+               0.46193976625564337
+               0.19134171618254492
+               -0.19134171618254486
+               -0.46193976625564337
+               -0.46193976625564342
+               -0.19134171618254517
+               0.1913417161825445
+               0.46193976625564326
+               0.41573480615127262
+               -0.097545161008064096
+               -0.49039264020161522
+               -0.27778511650980109
+               0.27778511650980092
+               0.49039264020161522
+               0.097545161008064388
+               -0.41573480615127256
+               0.35355339059327379
+               -0.35355339059327373
+               -0.35355339059327384
+               0.35355339059327368
+               0.35355339059327384
+               -0.35355339059327334
+               -0.35355339059327362
+               0.35355339059327329
+               0.27778511650980114
+               -0.49039264020161522
+               0.097545161008064152
+               0.41573480615127273
+               -0.41573480615127256
+               -0.097545161008064013
+               0.49039264020161533
+               -0.27778511650980076
+               0.19134171618254492
+               -0.46193976625564342
+               0.46193976625564326
+               -0.19134171618254495
+               -0.19134171618254528
+               0.46193976625564337
+               -0.46193976625564342
+               0.19134171618254478
+               0.097545161008064166
+               -0.27778511650980109
+               0.41573480615127273
+               -0.49039264020161533
+               0.49039264020161522
+               -0.41573480615127251
+               0.27778511650980076
+               -0.097545161008064291))
 
       (quant-luminance-base
 
        ; The luminance quantisation table of ITU T.81 Annex K, in natural order.
-       (vector
-         16 11 10 16 24 40 51 61
-         12 12 14 19 26 58 60 55
-         14 13 16 24 40 57 69 56
-         14 17 22 29 51 87 80 62
-         18 22 37 56 68 109 103 77
-         24 35 55 64 81 104 113 92
-         49 64 78 87 103 121 120 101
-         72 92 95 98 112 100 103 99))
+       (vector 16
+               11
+               10
+               16
+               24
+               40
+               51
+               61
+               12
+               12
+               14
+               19
+               26
+               58
+               60
+               55
+               14
+               13
+               16
+               24
+               40
+               57
+               69
+               56
+               14
+               17
+               22
+               29
+               51
+               87
+               80
+               62
+               18
+               22
+               37
+               56
+               68
+               109
+               103
+               77
+               24
+               35
+               55
+               64
+               81
+               104
+               113
+               92
+               49
+               64
+               78
+               87
+               103
+               121
+               120
+               101
+               72
+               92
+               95
+               98
+               112
+               100
+               103
+               99))
 
       (quant-chrominance-base
 
        ; The chrominance quantisation table of ITU T.81 Annex K, in natural order.
-       (vector
-         17 18 24 47 99 99 99 99
-         18 21 26 66 99 99 99 99
-         24 26 56 99 99 99 99 99
-         47 66 99 99 99 99 99 99
-         99 99 99 99 99 99 99 99
-         99 99 99 99 99 99 99 99
-         99 99 99 99 99 99 99 99
-         99 99 99 99 99 99 99 99))
+       (vector 17
+               18
+               24
+               47
+               99
+               99
+               99
+               99
+               18
+               21
+               26
+               66
+               99
+               99
+               99
+               99
+               24
+               26
+               56
+               99
+               99
+               99
+               99
+               99
+               47
+               66
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99
+               99))
 
       ; The quality the quantisation tables are scaled for.  The round-trip suite
       ; asserts a per-channel tolerance that depends on it, so raising this tightens
       ; the tolerance and enlarges the file.
       (quality 95)
 
-      (dc-luminance-bits
-       (vector
-         0 1 5 1 1 1 1 1 1 0 0 0
-         0 0 0 0))
-      (dc-luminance-values
-       (vector
-         0 1 2 3 4 5 6 7 8 9 10 11))
-      (dc-chrominance-bits
-       (vector
-         0 3 1 1 1 1 1 1 1 1 1 0
-         0 0 0 0))
-      (dc-chrominance-values
-       (vector
-         0 1 2 3 4 5 6 7 8 9 10 11))
+      (dc-luminance-bits (vector 0 1 5 1 1 1 1 1 1 0 0 0 0 0 0 0))
+      (dc-luminance-values (vector 0 1 2 3 4 5 6 7 8 9 10 11))
+      (dc-chrominance-bits (vector 0 3 1 1 1 1 1 1 1 1 1 0 0 0 0 0))
+      (dc-chrominance-values (vector 0 1 2 3 4 5 6 7 8 9 10 11))
 
-      (ac-luminance-bits
-       (vector
-         0 2 1 3 3 2 4 3 5 5 4 4
-         0 0 1 125))
+      (ac-luminance-bits (vector 0 2 1 3 3 2 4 3 5 5 4 4 0 0 1 125))
+
       (ac-luminance-values
-       (vector
-         1 2 3 0 4 17 5 18 33 49 65 6
-         19 81 97 7 34 113 20 50 129 145 161 8
-         35 66 177 193 21 82 209 240 36 51 98 114
-         130 9 10 22 23 24 25 26 37 38 39 40
-         41 42 52 53 54 55 56 57 58 67 68 69
-         70 71 72 73 74 83 84 85 86 87 88 89
-         90 99 100 101 102 103 104 105 106 115 116 117
-         118 119 120 121 122 131 132 133 134 135 136 137
-         138 146 147 148 149 150 151 152 153 154 162 163
-         164 165 166 167 168 169 170 178 179 180 181 182
-         183 184 185 186 194 195 196 197 198 199 200 201
-         202 210 211 212 213 214 215 216 217 218 225 226
-         227 228 229 230 231 232 233 234 241 242 243 244
-         245 246 247 248 249 250))
+       (vector 1
+               2
+               3
+               0
+               4
+               17
+               5
+               18
+               33
+               49
+               65
+               6
+               19
+               81
+               97
+               7
+               34
+               113
+               20
+               50
+               129
+               145
+               161
+               8
+               35
+               66
+               177
+               193
+               21
+               82
+               209
+               240
+               36
+               51
+               98
+               114
+               130
+               9
+               10
+               22
+               23
+               24
+               25
+               26
+               37
+               38
+               39
+               40
+               41
+               42
+               52
+               53
+               54
+               55
+               56
+               57
+               58
+               67
+               68
+               69
+               70
+               71
+               72
+               73
+               74
+               83
+               84
+               85
+               86
+               87
+               88
+               89
+               90
+               99
+               100
+               101
+               102
+               103
+               104
+               105
+               106
+               115
+               116
+               117
+               118
+               119
+               120
+               121
+               122
+               131
+               132
+               133
+               134
+               135
+               136
+               137
+               138
+               146
+               147
+               148
+               149
+               150
+               151
+               152
+               153
+               154
+               162
+               163
+               164
+               165
+               166
+               167
+               168
+               169
+               170
+               178
+               179
+               180
+               181
+               182
+               183
+               184
+               185
+               186
+               194
+               195
+               196
+               197
+               198
+               199
+               200
+               201
+               202
+               210
+               211
+               212
+               213
+               214
+               215
+               216
+               217
+               218
+               225
+               226
+               227
+               228
+               229
+               230
+               231
+               232
+               233
+               234
+               241
+               242
+               243
+               244
+               245
+               246
+               247
+               248
+               249
+               250))
 
-      (ac-chrominance-bits
-       (vector
-         0 2 1 2 4 4 3 4 7 5 4 4
-         0 1 2 119))
+      (ac-chrominance-bits (vector 0 2 1 2 4 4 3 4 7 5 4 4 0 1 2 119))
+
       (ac-chrominance-values
-       (vector
-         0 1 2 3 17 4 5 33 49 6 18 65
-         81 7 97 113 19 34 50 129 8 20 66 145
-         161 177 193 9 35 51 82 240 21 98 114 209
-         10 22 36 52 225 37 241 23 24 25 26 38
-         39 40 41 42 53 54 55 56 57 58 67 68
-         69 70 71 72 73 74 83 84 85 86 87 88
-         89 90 99 100 101 102 103 104 105 106 115 116
-         117 118 119 120 121 122 130 131 132 133 134 135
-         136 137 138 146 147 148 149 150 151 152 153 154
-         162 163 164 165 166 167 168 169 170 178 179 180
-         181 182 183 184 185 186 194 195 196 197 198 199
-         200 201 202 210 211 212 213 214 215 216 217 218
-         226 227 228 229 230 231 232 233 234 242 243 244
-         245 246 247 248 249 250))
+       (vector 0
+               1
+               2
+               3
+               17
+               4
+               5
+               33
+               49
+               6
+               18
+               65
+               81
+               7
+               97
+               113
+               19
+               34
+               50
+               129
+               8
+               20
+               66
+               145
+               161
+               177
+               193
+               9
+               35
+               51
+               82
+               240
+               21
+               98
+               114
+               209
+               10
+               22
+               36
+               52
+               225
+               37
+               241
+               23
+               24
+               25
+               26
+               38
+               39
+               40
+               41
+               42
+               53
+               54
+               55
+               56
+               57
+               58
+               67
+               68
+               69
+               70
+               71
+               72
+               73
+               74
+               83
+               84
+               85
+               86
+               87
+               88
+               89
+               90
+               99
+               100
+               101
+               102
+               103
+               104
+               105
+               106
+               115
+               116
+               117
+               118
+               119
+               120
+               121
+               122
+               130
+               131
+               132
+               133
+               134
+               135
+               136
+               137
+               138
+               146
+               147
+               148
+               149
+               150
+               151
+               152
+               153
+               154
+               162
+               163
+               164
+               165
+               166
+               167
+               168
+               169
+               170
+               178
+               179
+               180
+               181
+               182
+               183
+               184
+               185
+               186
+               194
+               195
+               196
+               197
+               198
+               199
+               200
+               201
+               202
+               210
+               211
+               212
+               213
+               214
+               215
+               216
+               217
+               218
+               226
+               227
+               228
+               229
+               230
+               231
+               232
+               233
+               234
+               242
+               243
+               244
+               245
+               246
+               247
+               248
+               249
+               250))
 
       ; Scale a base quantisation table for `quality` with the IJG rule, clamping
       ; each entry to 1..255.
@@ -168,30 +664,19 @@
          (let ((fill
                 (lambda (length code index n table)
                   (if (integer>=? n (vector-nth bits (integer- length 1)))
-                      (next-length
-                        length
-                        code
-                        (integer+ index (vector-nth bits (integer- length 1)))
-                        table)
+                      (next-length length code (integer+ index (vector-nth bits (integer- length 1))) table)
                       (fill
                         length
                         (integer+ code 1)
                         index
                         (integer+ n 1)
-                        (vector-with
-                          table
-                          (vector-nth values (integer+ index n))
-                          (vector code length))))))
+                        (vector-with table (vector-nth values (integer+ index n)) (vector code length))))))
+
                (next-length
                 (lambda (length code index table)
                   (if (integer>=? length 16)
                       table
-                      (fill
-                        (integer+ length 1)
-                        (integer-bit-shift-left code 1)
-                        index
-                        0
-                        table)))))
+                      (fill (integer+ length 1) (integer-bit-shift-left code 1) index 0 table)))))
            (next-length 0 0 0 (vector-fill 256 (vector 0 0))))))
 
       ; The number of bits a coefficient needs (spec F.1.2.1).
@@ -260,10 +745,7 @@
                    temp
                    v
                    (integer+ u 1)
-                   (vector-with
-                     out
-                     (integer+ (integer* v 8) u)
-                     (dot8 temp u 8 basis (integer* v 8) 1 0 0.0)))))))
+                   (vector-with out (integer+ (integer* v 8) u) (dot8 temp u 8 basis (integer* v 8) 1 0 0.0)))))))
 
       ; The quantised coefficients of one block of 8-bit samples, in zigzag
       ; order, which is the order `encode-block` walks.  The samples are level
@@ -275,10 +757,14 @@
        (lambda (samples quant)
          (let ((transformed
                 (forward-columns
-                  (forward-rows (map-vector (lambda (s) (float- (integer->float s) 128.0)) samples)
-                                0
-                                0
-                                (vector-fill 64 0.0))
+                  (forward-rows
+                    (map-vector
+                      (lambda (s)
+                        (float- (integer->float s) 128.0))
+                      samples)
+                    0
+                    0
+                    (vector-fill 64 0.0))
                   0
                   0
                   (vector-fill 64 0.0))))
@@ -287,9 +773,7 @@
                (float->integer
                  (float-floor
                    (float+
-                     (float/
-                       (vector-nth transformed (vector-nth zigzag p))
-                       (integer->float (vector-nth quant p)))
+                     (float/ (vector-nth transformed (vector-nth zigzag p)) (integer->float (vector-nth quant p)))
                      0.5))))
              (list->vector (range 0 64))))))
 
@@ -312,9 +796,7 @@
                       (let ((next
                              (integer-bit-or
                                (integer-bit-shift-left acc 1)
-                               (integer-bit-and
-                                 (integer-bit-shift-right value (integer- remaining 1))
-                                 1))))
+                               (integer-bit-and (integer-bit-shift-right value (integer- remaining 1)) 1))))
                         (if (integer<? bits 7)
                             (loop out next (integer+ bits 1) (integer- remaining 1))
                             (loop (emit-byte out next) 0 0 (integer- remaining 1))))))))
@@ -327,28 +809,21 @@
            (if (integer=? bits 0)
                (vector-nth state 0)
                (vector-nth
-                 (put-bits
-                   state
-                   (integer- (integer-bit-shift-left 1 (integer- 8 bits)) 1)
-                   (integer- 8 bits))
+                 (put-bits state (integer- (integer-bit-shift-left 1 (integer- 8 bits)) 1) (integer- 8 bits))
                  0)))))
 
       ; Write one Huffman symbol: its code, then its magnitude bits.
       (put-symbol
        (lambda (state table symbol size value)
          (let ((entry (vector-nth table symbol)))
-           (put-bits
-             (put-bits state (vector-nth entry 0) (vector-nth entry 1))
-             (magnitude-bits value size)
-             size))))
+           (put-bits (put-bits state (vector-nth entry 0) (vector-nth entry 1)) (magnitude-bits value size) size))))
 
       ; Entropy-encode the quantised coefficients of one block (zigzag order),
       ; returning the new state and DC predictor.
       (encode-block
        (lambda (state block dc-table ac-table predictor)
          (let ((difference (integer- (vector-nth block 0) predictor)))
-           (let ((after-dc
-                  (put-symbol state dc-table (category difference) (category difference) difference)))
+           (let ((after-dc (put-symbol state dc-table (category difference) (category difference) difference)))
              (let ((loop
                     (lambda (state k run)
                       (if (integer>=? k 64)
@@ -359,21 +834,17 @@
                             (if (integer=? coefficient 0)
                                 (loop state (integer+ k 1) (integer+ run 1))
                                 (if (integer>? run 15)
-                                    (loop (put-symbol state ac-table 240 0 0)
-                                          k
-                                          (integer- run 16))
+                                    (loop (put-symbol state ac-table 240 0 0) k (integer- run 16))
                                     (loop
                                       (put-symbol
                                         state
                                         ac-table
-                                        (integer-bit-or
-                                          (integer-bit-shift-left run 4)
-                                          (category coefficient))
+                                        (integer-bit-or (integer-bit-shift-left run 4) (category coefficient))
                                         (category coefficient)
                                         coefficient)
                                       (integer+ k 1)
                                       0))))))))
-                 (dict "state" (loop after-dc 1 0) "predictor" (vector-nth block 0)))))))
+               (dict "state" (loop after-dc 1 0) "predictor" (vector-nth block 0)))))))
 
       ; A marker segment: the marker, its length, and its payload.
       (segment
@@ -395,16 +866,15 @@
              (apply
                bytes-concat
                (map-list
-                 (lambda (k) (bytes-append-u8 (bytes-concat) (vector-nth table (vector-nth zigzag k))))
+                 (lambda (k)
+                   (bytes-append-u8 (bytes-concat) (vector-nth table (vector-nth zigzag k))))
                  (range 0 64)))))))
 
       ; Three bytes: a component's id, its sampling factors, and its
       ; quantisation table id, in the order a frame header lists them.
       (component-entry
        (lambda (id sampling quant)
-         (bytes-append-u8
-           (bytes-append-u8 (bytes-append-u8 (bytes-concat) id) sampling)
-           quant)))
+         (bytes-append-u8 (bytes-append-u8 (bytes-append-u8 (bytes-concat) id) sampling) quant)))
 
       ; The SOF0 segment: 8-bit precision, the frame size, then one entry per
       ; component.  All three components are 1x1 sampled; luminance uses
@@ -415,11 +885,7 @@
            192
            (bytes-concat
              (bytes-append-u8
-               (bytes-append-u16-be
-                 (bytes-append-u16-be
-                   (bytes-append-u8 (bytes-concat) 8)
-                   height)
-                 width)
+               (bytes-append-u16-be (bytes-append-u16-be (bytes-append-u8 (bytes-concat) 8) height) width)
                3)
              (component-entry 1 17 0)
              (component-entry 2 17 1)
@@ -446,8 +912,18 @@
                 (lambda (table-class table-id bits values)
                   (bytes-concat
                     (bytes-append-u8 (bytes-concat) (integer-bit-or (integer-bit-shift-left table-class 4) table-id))
-                    (apply bytes-concat (map-list (lambda (n) (bytes-append-u8 (bytes-concat) n)) (vector->list bits)))
-                    (apply bytes-concat (map-list (lambda (n) (bytes-append-u8 (bytes-concat) n)) (vector->list values)))))))
+                    (apply
+                      bytes-concat
+                      (map-list
+                        (lambda (n)
+                          (bytes-append-u8 (bytes-concat) n))
+                        (vector->list bits)))
+                    (apply
+                      bytes-concat
+                      (map-list
+                        (lambda (n)
+                          (bytes-append-u8 (bytes-concat) n))
+                        (vector->list values)))))))
            (segment
              196
              (bytes-concat
@@ -462,9 +938,7 @@
        (lambda (samples width height x y)
          (bytes-nth
            samples
-           (integer+
-             (integer* (integer-min (integer- height 1) y) width)
-             (integer-min (integer- width 1) x)))))
+           (integer+ (integer* (integer-min (integer- height 1) y) width) (integer-min (integer- width 1) x)))))
 
       ; The 64 samples of one block of a plane, in natural order.
       (block-samples
@@ -531,19 +1005,18 @@
          (if (integer>=? index (integer* blocks-x blocks-y))
              state
              (let ((result
-                    (encode-mcu
-                      state
-                      planes
-                      width
-                      height
-                      blocks-x
-                      blocks-y
-                      quants
-                      dc-tables
-                      ac-tables
-                      index
-                      0
-                      predictors)))
+                    (encode-mcu state
+                                planes
+                                width
+                                height
+                                blocks-x
+                                blocks-y
+                                quants
+                                dc-tables
+                                ac-tables
+                                index
+                                0
+                                predictors)))
                (encode-scan
                  (dict-get result "state")
                  planes
@@ -576,22 +1049,11 @@
                (green (integer->float (pixel-channel pixel 1)))
                (blue (integer->float (pixel-channel pixel 2))))
            (vector
+             (to-sample (float+ (float+ (float* 0.299 red) (float* 0.587 green)) (float* 0.114 blue)))
              (to-sample
-               (float+
-                 (float+ (float* 0.299 red) (float* 0.587 green))
-                 (float* 0.114 blue)))
+               (float+ (float+ (float+ (float* -0.168736 red) (float* -0.331264 green)) (float* 0.5 blue)) 128.0))
              (to-sample
-               (float+
-                 (float+
-                   (float+ (float* -0.168736 red) (float* -0.331264 green))
-                   (float* 0.5 blue))
-                 128.0))
-             (to-sample
-               (float+
-                 (float+
-                   (float+ (float* 0.5 red) (float* -0.418688 green))
-                   (float* -0.081312 blue))
-                 128.0))))))
+               (float+ (float+ (float+ (float* 0.5 red) (float* -0.418688 green)) (float* -0.081312 blue)) 128.0))))))
 
       ; A value rounded to the nearest integer and clamped to 8 bits.
       (to-sample
@@ -618,9 +1080,7 @@
                    channel
                    (integer+ x 1)
                    y
-                   (bytes-append-u8
-                     plane
-                     (vector-nth (to-ycbcr (vector-nth (vector-nth pixels y) x)) channel)))))))
+                   (bytes-append-u8 plane (vector-nth (to-ycbcr (vector-nth (vector-nth pixels y) x)) channel)))))))
 
       ; Encode the value into a baseline sequential JPEG file.
       (encode

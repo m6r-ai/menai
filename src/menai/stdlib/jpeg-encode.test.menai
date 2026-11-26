@@ -38,23 +38,19 @@
       ; comparison does not hold, which a returned #f would not do.
       (within
        (lambda (tolerance actual expected)
-         (if
-           (all-list?
-             (lambda (pair)
-               (integer<=?
-                 (integer-abs (integer- (list-nth pair 0) (list-nth pair 1)))
-                 tolerance))
-             (list-zip (vector->list actual) (vector->list expected)))
-           #t
-           (error "the colour is further from the expected one than the tolerance allows"))))
+         (if (all-list?
+               (lambda (pair)
+                 (integer<=? (integer-abs (integer- (list-nth pair 0) (list-nth pair 1))) tolerance))
+               (list-zip (vector->list actual) (vector->list expected)))
+             #t
+             (error "the colour is further from the expected one than the tolerance allows"))))
 
       ; Assert that every channel of the first pixel is within `tolerance` of the
       ; colour the image was built from.
       (assert-colour
        (lambda (tolerance image colour)
-         (and
-           (assert-equal (vector-length (vector-nth (vector-nth (dict-get image "pixels") 0) 0)) 3)
-           (within tolerance (vector-nth (vector-nth (dict-get image "pixels") 0) 0) colour))))
+         (and (assert-equal (vector-length (vector-nth (vector-nth (dict-get image "pixels") 0) 0)) 3)
+              (within tolerance (vector-nth (vector-nth (dict-get image "pixels") 0) 0) colour))))
 
       ; The pixel at (x, y) of a decoded image.
       (pixel
@@ -65,12 +61,17 @@
       ; the highest horizontal frequency an 8-wide block can carry.
       (checkerboard
        (dict "header" (dict "width" 8 "height" 8)
-             "pixels"
-             (vector-fill
-               8
-               (vector
-                 (vector 235 235 235) (vector 20 20 20) (vector 235 235 235) (vector 20 20 20)
-                 (vector 235 235 235) (vector 20 20 20) (vector 235 235 235) (vector 20 20 20)))
+             "pixels" (vector-fill
+                        8
+                        (vector
+                          (vector 235 235 235)
+                          (vector 20 20 20)
+                          (vector 235 235 235)
+                          (vector 20 20 20)
+                          (vector 235 235 235)
+                          (vector 20 20 20)
+                          (vector 235 235 235)
+                          (vector 20 20 20)))
              "meta" (dict "format" "jpeg" "channels" 3)))
 
       ; The same pattern in both directions: the highest two-dimensional frequency,
@@ -91,61 +92,68 @@
       ; the two highest-frequency basis functions, cos((2i + 1) * 7 * pi / 16).
       (highest-frequency
        (let ((omega (float* 7.0 pi (float/ 1.0 16.0)))
+
              (cosines
               (map-vector
                 (lambda (index)
-                  (float-cos
-                    (float* (integer->float (integer+ (integer* 2 index) 1)) omega)))
+                  (float-cos (float* (integer->float (integer+ (integer* 2 index) 1)) omega)))
                 (list->vector (range 0 8))))
+
              (level
               (lambda (across down)
                 (integer-max
                   0
-                  (integer-min
-                    255
-                    (float->integer
-                      (float-round (float+ 128.0 (float* -100.0 across down)))))))))
+                  (integer-min 255 (float->integer (float-round (float+ 128.0 (float* -100.0 across down)))))))))
          (dict "header" (dict "width" 8 "height" 8)
-               "pixels"
-               (map-vector
-                 (lambda (down)
-                   (map-vector
-                     (lambda (across)
-                       (let ((sample (level across down)))
-                         (vector sample sample sample)))
-                     cosines))
-                 cosines)
+               "pixels" (map-vector
+                          (lambda (down)
+                            (map-vector
+                              (lambda (across)
+                                (let ((sample (level across down)))
+                                  (vector sample sample sample)))
+                              cosines))
+                          cosines)
                "meta" (dict "format" "jpeg" "channels" 3))))
 
       (test-headers
        (lambda ()
          (let ((image (decode (encode (solid (vector 200 100 50))))))
-           (and
-             (assert-equal (dict-get (dict-get image "header") "width") 8)
-             (assert-equal (dict-get (dict-get image "header") "height") 8)
-             (assert-equal (dict-get (dict-get image "header") "precision") 8)
-             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
-             (assert-equal (dict-get (dict-get image "meta") "channels") 3)))))
+           (and (assert-equal (dict-get (dict-get image "header") "width") 8)
+                (assert-equal (dict-get (dict-get image "header") "height") 8)
+                (assert-equal (dict-get (dict-get image "header") "precision") 8)
+                (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+                (assert-equal (dict-get (dict-get image "meta") "channels") 3)))))
 
       ; The product is examined directly, not only through the decoder: a baseline
       ; file begins with SOI and ends with EOI.
       (test-markers
        (lambda ()
          (let ((data (encode (solid (vector 1 2 3)))))
-           (and
-             (assert-equal (bytes-slice data 0 2) (string-hex->bytes "ffd8"))
-             (assert-equal
-               (bytes-slice data (integer- (bytes-length data) 2))
-               (string-hex->bytes "ffd9"))
-             (assert-equal (bytes-nth data 2) #xff)
-             (assert-equal (bytes-nth data 3) #xdb)))))
+           (and (assert-equal (bytes-slice data 0 2) (string-hex->bytes "ffd8"))
+                (assert-equal (bytes-slice data (integer- (bytes-length data) 2)) (string-hex->bytes "ffd9"))
+                (assert-equal (bytes-nth data 2) #xff)
+                (assert-equal (bytes-nth data 3) #xdb)))))
 
       ; A flat colour is recovered exactly to within the transform's rounding.
-      (test-mid-colour (lambda () (assert-colour 1 (round-trips (vector 200 100 50)) (vector 200 100 50))))
-      (test-black (lambda () (assert-colour 1 (round-trips (vector 0 0 0)) (vector 0 0 0))))
-      (test-white (lambda () (assert-colour 1 (round-trips (vector 255 255 255)) (vector 255 255 255))))
-      (test-grey (lambda () (assert-colour 1 (round-trips (vector 128 128 128)) (vector 128 128 128))))
-      (test-saturated (lambda () (assert-colour 1 (round-trips (vector 17 200 3)) (vector 17 200 3))))
+      (test-mid-colour
+       (lambda ()
+         (assert-colour 1 (round-trips (vector 200 100 50)) (vector 200 100 50))))
+
+      (test-black
+       (lambda ()
+         (assert-colour 1 (round-trips (vector 0 0 0)) (vector 0 0 0))))
+
+      (test-white
+       (lambda ()
+         (assert-colour 1 (round-trips (vector 255 255 255)) (vector 255 255 255))))
+
+      (test-grey
+       (lambda ()
+         (assert-colour 1 (round-trips (vector 128 128 128)) (vector 128 128 128))))
+
+      (test-saturated
+       (lambda ()
+         (assert-colour 1 (round-trips (vector 17 200 3)) (vector 17 200 3))))
 
       ; A description whose header reports no size is still sized by its header
       ; dict; the encoder reads "width" and "height" from it and refuses a header
@@ -173,13 +181,16 @@
       ; transform and its result is clamped again on the way back through the
       ; decoder, so both ends of both clamps are exercised by these three colours.
       (test-clamps-high-red
-       (lambda () (assert-colour 1 (round-trips (vector 800 0 0)) (vector 255 192 12))))
+       (lambda ()
+         (assert-colour 1 (round-trips (vector 800 0 0)) (vector 255 192 12))))
 
       (test-clamps-high-green
-       (lambda () (assert-colour 1 (round-trips (vector 0 800 800)) (vector 76 255 255))))
+       (lambda ()
+         (assert-colour 1 (round-trips (vector 0 800 800)) (vector 76 255 255))))
 
       (test-clamps-negative
-       (lambda () (assert-colour 1 (round-trips (vector -800 -800 -800)) (vector 0 0 0))))
+       (lambda ()
+         (assert-colour 1 (round-trips (vector -800 -800 -800)) (vector 0 0 0))))
 
       ; A one-pixel checkerboard puts all of its energy at the highest horizontal
       ; frequency, so every AC coefficient but the last is zero, the run before it
@@ -187,72 +198,66 @@
       (test-detail
        (lambda ()
          (let ((image (decode (encode checkerboard))))
-           (and
-             (assert-equal (dict-get (dict-get image "header") "width") 8)
-             (assert-equal (dict-get (dict-get image "header") "height") 8)
-             (within 25 (pixel image 0 0) (vector 235 235 235))
-             (within 25 (pixel image 1 0) (vector 20 20 20))
-             (within 35 (pixel image 7 7) (vector 20 20 20))))))
+           (and (assert-equal (dict-get (dict-get image "header") "width") 8)
+                (assert-equal (dict-get (dict-get image "header") "height") 8)
+                (within 25 (pixel image 0 0) (vector 235 235 235))
+                (within 25 (pixel image 1 0) (vector 20 20 20))
+                (within 35 (pixel image 7 7) (vector 20 20 20))))))
 
       ; The two-dimensional pattern keeps its corners: the coefficients it produces
       ; are the block's last in zigzag order, and the ringing around them is bounded.
       (test-chequered
        (lambda ()
          (let ((image (decode (encode chequered))))
-           (and
-             (assert-equal (dict-get (dict-get image "header") "width") 8)
-             (assert-equal (dict-get (dict-get image "header") "height") 8)
-             (within 30 (pixel image 0 0) (vector 235 235 235))
-             (within 30 (pixel image 0 1) (vector 20 20 20))
-             (within 30 (pixel image 1 0) (vector 20 20 20))
-             (within 30 (pixel image 7 7) (vector 235 235 235))))))
+           (and (assert-equal (dict-get (dict-get image "header") "width") 8)
+                (assert-equal (dict-get (dict-get image "header") "height") 8)
+                (within 30 (pixel image 0 0) (vector 235 235 235))
+                (within 30 (pixel image 0 1) (vector 20 20 20))
+                (within 30 (pixel image 1 0) (vector 20 20 20))
+                (within 30 (pixel image 7 7) (vector 235 235 235))))))
 
       ; The last coefficient in zigzag order survives, so the block is reproduced
       ; rather than flattened out: each corner keeps its own value.
       (test-highest-frequency
        (lambda ()
          (let ((image (decode (encode highest-frequency))))
-           (and
-             (assert-equal (dict-get (dict-get image "header") "width") 8)
-             (within 2 (pixel image 0 0) (vector 124 124 124))
-             (within 2 (pixel image 0 7) (vector 132 132 132))
-             (within 2 (pixel image 3 4) (vector 224 224 224))
-             (within 2 (pixel image 7 7) (vector 124 124 124))))))
+           (and (assert-equal (dict-get (dict-get image "header") "width") 8)
+                (within 2 (pixel image 0 0) (vector 124 124 124))
+                (within 2 (pixel image 0 7) (vector 132 132 132))
+                (within 2 (pixel image 3 4) (vector 224 224 224))
+                (within 2 (pixel image 7 7) (vector 124 124 124))))))
 
       (tests
        (list
-         (list "structure"
-               (list
-                 (expect-pass "writes a frame of the requested size" test-headers)
-                 (expect-pass "writes SOI, a quantisation table and EOI" test-markers)))
-         (list "colour"
-               (list
-                 (expect-pass "keeps a mid colour" test-mid-colour)
-                 (expect-pass "keeps black" test-black)
-                 (expect-pass "keeps white" test-white)
-                 (expect-pass "keeps mid grey" test-grey)
-                 (expect-pass "keeps a saturated colour" test-saturated)
-                 (expect-pass "clamps a colour above white" test-clamps-high-red)
-                 (expect-pass "clamps a colour below black" test-clamps-negative)))
-         (list "detail"
-               (list
-                 (expect-pass "clamps the green channel at both ends" test-clamps-high-green)
-                 (expect-pass "keeps a one-pixel checkerboard" test-detail)
-                 (expect-pass "keeps a two-dimensional checkerboard" test-chequered)
-                 (expect-pass "keeps the highest frequency" test-highest-frequency)))
-         (list "rejects"
-               (list
-                 (expect-fail
-                   "a header that is not a dict"
-                   test-rejects-non-dict-header
-                   "must be a dict")
-                 (expect-fail
-                   "a pixel with two channels"
-                   test-rejects-two-channel-pixel
-                   "must have 3 channels")
-                 (expect-fail
-                   "a pixel that is not a vector"
-                   test-rejects-non-vector-pixel
-                   "must be a vector of channels"))))))
+         (list
+           "structure"
+           (list
+             (expect-pass "writes a frame of the requested size" test-headers)
+             (expect-pass "writes SOI, a quantisation table and EOI" test-markers)))
+         (list
+           "colour"
+           (list
+             (expect-pass "keeps a mid colour" test-mid-colour)
+             (expect-pass "keeps black" test-black)
+             (expect-pass "keeps white" test-white)
+             (expect-pass "keeps mid grey" test-grey)
+             (expect-pass "keeps a saturated colour" test-saturated)
+             (expect-pass "clamps a colour above white" test-clamps-high-red)
+             (expect-pass "clamps a colour below black" test-clamps-negative)))
+         (list
+           "detail"
+           (list
+             (expect-pass "clamps the green channel at both ends" test-clamps-high-green)
+             (expect-pass "keeps a one-pixel checkerboard" test-detail)
+             (expect-pass "keeps a two-dimensional checkerboard" test-chequered)
+             (expect-pass "keeps the highest frequency" test-highest-frequency)))
+         (list
+           "rejects"
+           (list
+             (expect-fail "a header that is not a dict" test-rejects-non-dict-header "must be a dict")
+             (expect-fail "a pixel with two channels" test-rejects-two-channel-pixel "must have 3 channels")
+             (expect-fail "a pixel that is not a vector"
+                          test-rejects-non-vector-pixel
+                          "must be a vector of channels"))))))
 
   (export tests))
