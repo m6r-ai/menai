@@ -22,6 +22,7 @@ New features:
   which is the shape every hand-rolled variadic builtin emits.
 - The loop parameter and closure that inlining makes dead are dropped, so
   inlining a callback no longer leaves an uncalled function in the module.
+- Added an `--annotate` command line argument to `menai-test`.
 
 Internal structure changes:
 

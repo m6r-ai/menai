@@ -122,3 +122,78 @@ def resolve_trace(
         )
 
     return TraceResult(functions=tuple(functions))
+
+
+class TraceAccumulator:
+    """
+    Sum of the raw ordinal arrays from every execution of one program.
+
+    The VM reports counts for one execute() call, so a caller that runs the same
+    program repeatedly — a test suite running one leaf after another — has to sum
+    the arrays itself to answer "did this instruction ever execute, and how
+    often".  Resolution is deferred until every execution has been added, because
+    the arrays are ordinal-indexed and only the finished sums are meaningful.
+
+    Counts collected against different code trees are not comparable: their
+    ordinals number different instructions.  Adding an array of a different
+    length is therefore an error rather than a tolerated mismatch, since a silent
+    partial sum would misattribute every count.
+
+    This is the annotated-trace counterpart of CoverageAccumulator, and it is used
+    the same way: `begin` with the compiled program, `add` per execution, `result`
+    once at the end.
+    """
+
+    def __init__(self) -> None:
+        self._root: CodeObject | None = None
+        self._instr_counts: list[int] | None = None
+        self._call_counts: list[int] | None = None
+
+    def begin(self, root: CodeObject) -> None:
+        """Bind the accumulator to a compiled program and clear any prior counts."""
+        self._root = root
+        self._instr_counts = None
+        self._call_counts = None
+
+    def add(self, instr_counts: list[int], call_counts: list[int]) -> None:
+        """
+        Add the counts of one execution to the running totals.
+
+        Args:
+            instr_counts: Executions of each instruction, in walk order.
+            call_counts:  Calls to each code object, in walk order.
+
+        Raises:
+            ValueError: If no program has been bound, or if the arrays do not
+                match the shape of the previously accumulated arrays.  A shape
+                change means the execution used a different code tree, whose
+                ordinals cannot be combined with the existing ones.
+        """
+        if self._root is None:
+            raise ValueError("trace accumulator has no program; call begin() first")
+
+        if self._instr_counts is None or self._call_counts is None:
+            self._instr_counts = list(instr_counts)
+            self._call_counts = list(call_counts)
+            return
+
+        if len(instr_counts) != len(self._instr_counts) or len(call_counts) != len(self._call_counts):
+            raise ValueError("trace array shape changed during trace accumulation")
+
+        for index, count in enumerate(instr_counts):
+            self._instr_counts[index] += count
+
+        for index, count in enumerate(call_counts):
+            self._call_counts[index] += count
+
+    def result(self) -> TraceResult:
+        """
+        Return the accumulated trace.
+
+        Raises:
+            ValueError: If no execution has been added since `begin`.
+        """
+        if self._root is None or self._instr_counts is None or self._call_counts is None:
+            raise ValueError("trace accumulator has no trace data")
+
+        return resolve_trace(self._root, self._instr_counts, self._call_counts)

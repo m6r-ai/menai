@@ -12,6 +12,8 @@ Two views are provided:
     the disassembler output.
 """
 
+from collections.abc import Callable
+
 from menai_render.menai_render_colour import grey, yellow
 from menai_render.menai_render_instruction import (
     clean_name,
@@ -110,7 +112,11 @@ def render_function_summary(result: TraceResult, color: bool = False, top_n: int
     return lines
 
 
-def render_annotated(result: TraceResult, color: bool = False) -> list[str]:
+def render_annotated(
+    result: TraceResult,
+    color: bool = False,
+    include: Callable[[FunctionTrace], bool] | None = None,
+) -> list[str]:
     """
     Render every function in disassembly order, annotated with execution share.
 
@@ -127,6 +133,11 @@ def render_annotated(result: TraceResult, color: bool = False) -> list[str]:
     Args:
         result: The resolved trace to render.
         color:  Whether to emit ANSI colour codes.
+        include: When given, only functions for which it returns True are listed.
+               The totals and the percentages still cover every function, so a
+               listed function's share is its share of the whole program rather
+               than of the selection.  This is what makes the report usable on a
+               program whose full listing would run to thousands of lines.
 
     Returns:
         The rendered lines.
@@ -140,8 +151,16 @@ def render_annotated(result: TraceResult, color: bool = False) -> list[str]:
     lines.append(f"{'Total instructions executed:':<32} {total_instr:>12,}")
     lines.append("")
 
+    listed = 0
     for function in result.functions:
+        if include is not None and not include(function):
+            continue
+
         lines.extend(_render_annotated_function(function, total_instr, color))
+        listed += 1
+
+    if include is not None and listed == 0:
+        lines.append("No function matched.")
 
     return lines
 

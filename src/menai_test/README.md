@@ -25,6 +25,9 @@ menai-test src/menai/stdlib/ --coverage
 # Report each module's function coverage
 menai-test src/menai/stdlib/ --function-coverage
 
+# Annotated instruction listing of the run, with execution counts
+menai-test src/menai/stdlib/json-decode.test.menai --annotate decode
+
 # Clip output lines to 120 columns (default: no clipping)
 menai-test src/menai/stdlib/ --width 120
 ```
@@ -34,6 +37,23 @@ The runner exits with code 0 if all tests pass, non-zero if any fail.
 Output lines are not clipped by default, so long test names, errors, and
 coverage function labels are shown in full.  `--width N` clips every output line
 to N columns.
+
+## Coverage and traced reports
+
+`--function-coverage` answers "which functions are not fully exercised" and
+`--coverage` the same question at instruction granularity, both for the module
+each file tests.  `--annotate` answers the follow-up question a gap raises: what
+does the instruction that never ran actually do.  It prints the disassembly of
+the run with each instruction's execution count, so a function's hot path and its
+unexecuted arms can be read side by side.
+
+The trace is summed across every leaf in the file, exactly as coverage is, so a
+count is for the whole run rather than for one test.  Pass a function name (a
+case-insensitive substring of the label, which carries the source file) to list
+only the functions of interest, since the full listing of a test run is long.
+Nothing that consumes the instruction and call counts can be combined with
+`--isolate`, because isolated leaves compile independent code trees whose
+ordinals would not be comparable.
 
 ## Writing tests
 

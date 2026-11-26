@@ -15,7 +15,12 @@ from menai.menai_value import (
 from menai.bytecode.menai_bytecode import CodeObject
 from menai_render.menai_render_width import clip
 from menai_trace.menai_trace_coverage import CoverageAccumulator, CumulativeCoverage
-from menai_trace.menai_trace_render import render_cumulative_coverage
+from menai_trace.menai_trace_data import TraceAccumulator
+from menai_trace.menai_trace_render import (
+    function_label,
+    render_annotated,
+    render_cumulative_coverage,
+)
 from menai_trace.menai_trace_render_source import (
     render_cumulative_source_coverage,
     render_source_coverage,
@@ -286,6 +291,7 @@ def _run_leaf(
     compiled: CodeObject | None,
     path_index: int,
     coverage: CoverageAccumulator | None,
+    trace: TraceAccumulator | None,
 ) -> TestResult:
     """
     Execute a single leaf thunk.
@@ -309,6 +315,9 @@ def _run_leaf(
     When coverage is given, the leaf's instruction and call counts are added to
     it.  The counts are read in a finally block so that a failing leaf still
     contributes the instructions it executed before the failure.
+
+    When trace is given, the same counts are added to it, so that the annotated
+    view covers the whole run rather than a single leaf.
     """
     if menai is None:
         menai = _make_menai(test_file_dir, explicit)
@@ -344,10 +353,14 @@ def _run_leaf(
         return TestResult(path=path, passed=True)
 
     finally:
-        if coverage is not None and menai is not None:
+        if (coverage is not None or trace is not None) and menai is not None:
             instr_counts, call_counts = menai.vm.get_trace_data()
             if instr_counts:
-                coverage.add(instr_counts, call_counts)
+                if coverage is not None:
+                    coverage.add(instr_counts, call_counts)
+
+                if trace is not None:
+                    trace.add(instr_counts, call_counts)
 
     if expect_error:
         return TestResult(
@@ -370,6 +383,7 @@ def _run_tree(
     compiled: CodeObject | None,
     path_index: int,
     coverage: CoverageAccumulator | None,
+    trace: TraceAccumulator | None,
 ) -> None:
     """Recursively walk the node tree, executing all matching leaves."""
     for node in nodes:
@@ -389,13 +403,14 @@ def _run_tree(
                 compiled,
                 path_index,
                 coverage,
+                trace,
             )
             results.append(result)
 
         else:
             _run_tree(
                 node.children, module_name, test_file_dir, name_filter,
-                results, explicit, menai, compiled, path_index, coverage,
+                results, explicit, menai, compiled, path_index, coverage, trace,
             )
 
 
@@ -431,6 +446,7 @@ def run_file(
     explicit: list[str] | None = None,
     isolate: bool = False,
     coverage: CoverageAccumulator | None = None,
+    trace: TraceAccumulator | None = None,
 ) -> list[TestResult]:
     """
     Execute all tests in a single *.test.menai file and return their results.
@@ -457,19 +473,23 @@ def run_file(
             counts summed across every leaf in the file.  Cannot be combined with
             isolate, because isolated leaves compile independent code trees whose
             instruction ordinals are not comparable.
+        trace: Optional accumulator that receives the same counts summed across
+            every leaf, for callers that want the annotated view rather than
+            coverage.  It carries the same restriction as coverage and for the
+            same reason.
 
     Returns:
         A list of TestResult, one per leaf test executed.
 
     Raises:
         MenaiError: If the test module fails to load.
-        ValueError: If the test module structure is invalid, or if coverage is
-            requested together with isolate.
+        ValueError: If the test module structure is invalid, or if coverage or
+            trace is requested together with isolate.
     """
     module_name = test_file.stem
     test_file_dir = str(test_file.parent.resolve())
 
-    if coverage is not None and isolate:
+    if (coverage is not None or trace is not None) and isolate:
         raise ValueError("coverage cannot be collected in isolate mode")
 
     menai = _make_menai(test_file_dir, explicit or [])
@@ -484,14 +504,19 @@ def run_file(
     else:
         compiled, path_index = _compile_leaf_program(menai, module_name)
 
-    if coverage is not None:
+    if coverage is not None or trace is not None:
         menai.vm.enable_profiling()
         assert compiled is not None
-        coverage.begin(compiled)
+
+        if coverage is not None:
+            coverage.begin(compiled)
+
+        if trace is not None:
+            trace.begin(compiled)
 
     _run_tree(
         nodes, module_name, test_file_dir, name_filter,
-        results, explicit or [], shared, compiled, path_index, coverage,
+        results, explicit or [], shared, compiled, path_index, coverage, trace,
     )
     return results
 
@@ -542,6 +567,38 @@ def _print_function_coverage(
     return report
 
 
+def _print_annotated(
+    accumulator: TraceAccumulator,
+    name: str | None,
+    width: int | None,
+) -> None:
+    """
+    Print the annotated instruction listing of a file's accumulated trace.
+
+    The listing is per file rather than cumulative across files because the
+    counts are ordinal-indexed against the file's own compiled tree: another
+    file's leaves number different instructions, so the two cannot share a trace.
+
+    Args:
+        accumulator: The counts summed across the file's leaves.
+        name:        Only list functions whose label contains this text, or None
+                     to list every function.
+        width:       Clip output lines to this many columns, or None.
+    """
+    result = accumulator.result()
+    if not name:
+        for line in render_annotated(result):
+            print(clip(line, width))
+
+        return
+
+    wanted = name.lower()
+    for line in render_annotated(
+        result, include=lambda function: wanted in function_label(function).lower()
+    ):
+        print(clip(line, width))
+
+
 def _run_file(
     test_file: Path,
     name_filter: str | None,
@@ -550,6 +607,7 @@ def _run_file(
     isolate: bool,
     coverage: bool,
     function_coverage: bool,
+    annotate: str | None,
     cumulative: CumulativeCoverage | None,
     sources: CumulativeSourceCoverage | None,
     width: int | None,
@@ -558,9 +616,12 @@ def _run_file(
     print(clip(f"\n{test_file}", width))
 
     accumulator = CoverageAccumulator() if coverage or function_coverage else None
+    trace = TraceAccumulator() if annotate is not None else None
 
     try:
-        results = run_file(test_file, name_filter, explicit, isolate, accumulator)
+        results = run_file(
+            test_file, name_filter, explicit, isolate, accumulator, trace,
+        )
 
     except (MenaiError, ValueError) as exc:
         print(clip(f"  ERROR loading module: {exc}", width))
@@ -573,6 +634,13 @@ def _run_file(
     stats = _print_results(results, verbose, width)
     status = "passed" if stats.failed == 0 else "FAILED"
     print(clip(f"  {stats.passed}/{stats.total()} {status}", width))
+
+    if trace is not None:
+        print()
+        if name_filter:
+            print(clip("  Annotated trace reflects only the tests matching the filter.", width))
+
+        _print_annotated(trace, annotate or None, width)
 
     if accumulator is not None:
         if function_coverage:
@@ -624,6 +692,7 @@ Examples:
   %(prog)s src/menai/stdlib/ --isolate  # run each leaf on a fresh instance
   %(prog)s src/menai/stdlib/ --coverage  # report bytecode instruction coverage
   %(prog)s src/menai/stdlib/ --function-coverage  # report per-module function coverage
+  %(prog)s src/menai/stdlib/json-decode.test.menai --annotate decode  # annotated listing
 """,
     )
     parser.add_argument(
@@ -670,6 +739,18 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--annotate",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="FUNCTION",
+        help=(
+            "Report an annotated instruction listing of each file's run, with "
+            "each instruction's execution count.  Give FUNCTION to list only the "
+            "functions whose label contains it"
+        ),
+    )
+    parser.add_argument(
         "--module-path",
         action="append",
         default=[],
@@ -690,6 +771,9 @@ Examples:
     if args.isolate and (args.coverage or args.function_coverage):
         parser.error("coverage cannot be collected in isolate mode")
 
+    if args.isolate and args.annotate is not None:
+        parser.error("an annotated trace cannot be collected in isolate mode")
+
     test_files = _discover_test_files([Path(p) for p in args.paths])
 
     if not test_files:
@@ -703,6 +787,7 @@ Examples:
         stats = _run_file(
             test_file, args.name_filter, args.verbose,
             args.module_path, args.isolate, args.coverage, args.function_coverage,
+            args.annotate,
             cumulative, sources, args.width,
         )
         total_stats.add(stats)
