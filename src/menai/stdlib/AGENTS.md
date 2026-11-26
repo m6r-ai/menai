@@ -108,5 +108,14 @@ Run them with `menai-test src/menai/stdlib/` for the whole set, or name a single
 are slow — each parametrised case compiles and runs a full Menai suite — so `make test-fast`
 skips them while iterating, and `make test` and CI run everything.
 
+To see what a suite does not reach, measure it through the suite rather than through a
+program of your own: `menai-test <suite> --function-coverage` names the functions with a gap
+and the instructions that never ran, and `menai-test <suite> --annotate <function>` prints
+that run's disassembly with a count against every instruction, so the unexecuted arm can be
+read in context. Not every reported gap is a missing test — an arm a module's own constants
+rule out, and the duplicated loop exit the compiler emits for a loop written as a
+self-recursive call, are unreachable by construction and are documented as such in the
+suite that owns them.
+
 `menai-format` is the canonical formatter for these files; formatting is a fixed style rather
 than a description of the existing corpus, so do not adjust the formatter to match a file.

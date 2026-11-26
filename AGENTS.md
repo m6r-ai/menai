@@ -93,6 +93,10 @@ full flag list rather than assuming what a flag is called.
   menai-test src/menai/stdlib/                          # all module tests
   menai-test src/menai/stdlib/json-decode.test.menai    # a single suite
   ```
+  It is also the only way to measure a module through the suite that specifies it:
+  `--function-coverage` and `--coverage` report what those tests do not reach, and
+  `--annotate [FUNCTION]` prints the disassembly of that very run with each
+  instruction's execution count.
 - `menai-eval <file>` — compiles and evaluates a `.menai` file (or an expression from
   stdin) and prints the result.
 - `menai-format <file>...` — formats Menai source in place. It takes several files and
@@ -103,10 +107,17 @@ full flag list rather than assuming what a flag is called.
 - `menai-benchmark` — runs the performance benchmark suites.
 - `menai-pipeline` — runs a JSON-defined pipeline of tool and Menai steps.
 
-`menai-eval`, `menai-benchmark` and `menai-pipeline` share profiling and coverage flags:
+`menai-eval`, `menai-benchmark`, `menai-pipeline` and `menai-test` share profiling and
+coverage flags:
 `--profile`, `--opcodes` and `--annotate` profile VM execution per function, per opcode and
 as annotated disassembly, and `--coverage` reports bytecode instruction coverage. Most
 report-producing tools accept `--width N` to clip lines to N columns.
+
+To answer "why is this instruction not covered", do not reach for `menai-disassemble` plus
+`menai-eval` on a program of your own: the suite and a driver compile the tree differently,
+so their instruction indices do not agree and the comparison silently misleads.
+`menai-test --annotate <function>` reports the trace of the suite's own compilation, and
+`--isolate` cannot be combined with any of these reports.
 
 ## Measuring an optimisation change
 
