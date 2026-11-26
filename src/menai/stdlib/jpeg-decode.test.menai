@@ -1,0 +1,481 @@
+; Tests for jpeg-decode.menai
+;
+; Each image fixture is a baseline sequential file whose every block has only a DC
+; coefficient, so a correct decode is a flat 8x8 block of sample value
+; round(DC / (8 * quantisation)) + 128.  The expected pixels were taken from libjpeg
+; (via Pillow) so that the suite is an independent specification.
+
+(let ((jpeg (import "jpeg-decode"))
+      (t (import "menai-test"))
+      (decode (:: jpeg decode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
+      (channels
+       (lambda (pixels)
+         (fold-vector
+           list-concat
+           (list)
+           (map-vector
+             (lambda (row) (fold-vector list-concat (list) (map-vector vector->list row)))
+             pixels))))
+      (assert-within
+       (lambda (tolerance actual expected)
+         (if (all-list?
+               (lambda (pair)
+                 (integer<=?
+                   (integer-abs (integer- (list-nth pair 0) (list-nth pair 1)))
+                   tolerance))
+               (list-zip actual expected))
+             #t
+             (error "assert-within failed: a channel differs by more than the tolerance"))))
+
+
+      (fixture-grey-24x16
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080010001801011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f002ac558ac7ae82bd82bffd9")))
+
+      (fixture-grey-11x9
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b080009000b01011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f002b42b9faee2bffd9")))
+
+      (fixture-grey-quant-4
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000404040404040404040404040404040404040404040404040404040404040404040404")
+                (string-hex->bytes "0404040404040404040404040404040404040404040404040404040404ffc0000b080008000801011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f0092bfffd9")))
+
+      (fixture-colour-444-neutral
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc00011080010001003011100")
+                (string-hex->bytes "021100031100ffc401a20000010501010101010100000000000000000102030405060708090a0b100002")
+                (string-hex->bytes "010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c1")
+                (string-hex->bytes "1552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a5354555657")
+                (string-hex->bytes "58595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2")
+                (string-hex->bytes "f3f4f5f6f7f8f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102")
+                (string-hex->bytes "040403040705040400010277000102031104052131061241510761711322328108144291a1b1c1092333")
+                (string-hex->bytes "52f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758")
+                (string-hex->bytes "595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4")
+                (string-hex->bytes "f5f6f7f8f9faffda000c03010002110311003f002800a002800a00ffd9")))
+
+      (fixture-colour-444
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc00011080010001003011100")
+                (string-hex->bytes "021100031100ffc401a20000010501010101010100000000000000000102030405060708090a0b100002")
+                (string-hex->bytes "010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c1")
+                (string-hex->bytes "1552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a5354555657")
+                (string-hex->bytes "58595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2")
+                (string-hex->bytes "f3f4f5f6f7f8f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102")
+                (string-hex->bytes "040403040705040400010277000102031104052131061241510761711322328108144291a1b1c1092333")
+                (string-hex->bytes "52f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758")
+                (string-hex->bytes "595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4")
+                (string-hex->bytes "f5f6f7f8f9faffda000c03010002110311003f00e8283f603a0afb03f9bce82bf1f3ec0e82bfa40fb03f")
+                (string-hex->bytes "ffd9")))
+
+      (fixture-colour-420
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc00011080020002003012200")
+                (string-hex->bytes "021100031100ffc401a20000010501010101010100000000000000000102030405060708090a0b100002")
+                (string-hex->bytes "010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c1")
+                (string-hex->bytes "1552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a5354555657")
+                (string-hex->bytes "58595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2")
+                (string-hex->bytes "f3f4f5f6f7f8f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102")
+                (string-hex->bytes "040403040705040400010277000102031104052131061241510761711322328108144291a1b1c1092333")
+                (string-hex->bytes "52f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758")
+                (string-hex->bytes "595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7")
+                (string-hex->bytes "a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4")
+                (string-hex->bytes "f5f6f7f8f9faffda000c03010002110311003f00d8ad8ad8ad8a00d8ad8ad8ad8a00f95eb62b62b62803")
+                (string-hex->bytes "62b62b62b62803ffd9")))
+
+      (fixture-gradient-444
+       (bytes-concat
+                (string-hex->bytes "ffd8ffe000104a46494600010100000100010000ffdb0043000201010101010201010102020202020403")
+                (string-hex->bytes "020202020504040304060506060605060606070908060709070606080b08090a0a0a0a0a06080b0c0b0a")
+                (string-hex->bytes "0c090a0a0affdb004301020202020202050303050a0706070a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a")
+                (string-hex->bytes "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0affc00011080010001003")
+                (string-hex->bytes "011100021101031101ffc4001f0000010501010101010100000000000000000102030405060708090a0b")
+                (string-hex->bytes "ffc400b5100002010303020403050504040000017d010203000411051221314106135161072271143281")
+                (string-hex->bytes "91a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748")
+                (string-hex->bytes "494a535455565758595a636465666768696a737475767778797a838485868788898a9293949596979899")
+                (string-hex->bytes "9aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5")
+                (string-hex->bytes "e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffc4001f0100030101010101010101010000000000000102030405")
+                (string-hex->bytes "060708090a0bffc400b51100020102040403040705040400010277000102031104052131061241510761")
+                (string-hex->bytes "711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a262728292a3536373839")
+                (string-hex->bytes "3a434445464748494a535455565758595a636465666768696a737475767778797a82838485868788898a")
+                (string-hex->bytes "92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7")
+                (string-hex->bytes "d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9faffda000c03010002110311003f00fcdff831fb21ff")
+                (string-hex->bytes "00aaff00895fa7f05183c67987879e21fc1ef9f5b7c17fd90f3e57fc4afd3f82beab078cdb53fbafc3cf")
+                (string-hex->bytes "10fe0f7cfa53e0bfec878f2bfe257e9fc15f95e0f19b6a7f853e1e7887f07be7d6df063f643ff55ff12b")
+                (string-hex->bytes "f4fe0afaac1e33ccfeebf0f3c43f83df3fffd9")))
+
+      (fixture-gradient-420
+       (bytes-concat
+                (string-hex->bytes "ffd8ffe000104a46494600010100000100010000ffdb0043000503040404030504040405050506070c08")
+                (string-hex->bytes "070707070f0b0b090c110f1212110f111113161c1713141a1511111821181a1d1d1f1f1f13172224221e")
+                (string-hex->bytes "241c1e1f1effdb0043010505050706070e08080e1e1411141e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e")
+                (string-hex->bytes "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1effc00011080010001003")
+                (string-hex->bytes "012200021101031101ffc4001f0000010501010101010100000000000000000102030405060708090a0b")
+                (string-hex->bytes "ffc400b5100002010303020403050504040000017d010203000411051221314106135161072271143281")
+                (string-hex->bytes "91a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748")
+                (string-hex->bytes "494a535455565758595a636465666768696a737475767778797a838485868788898a9293949596979899")
+                (string-hex->bytes "9aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5")
+                (string-hex->bytes "e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffc4001f0100030101010101010101010000000000000102030405")
+                (string-hex->bytes "060708090a0bffc400b51100020102040403040705040400010277000102031104052131061241510761")
+                (string-hex->bytes "711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a262728292a3536373839")
+                (string-hex->bytes "3a434445464748494a535455565758595a636465666768696a737475767778797a82838485868788898a")
+                (string-hex->bytes "92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7")
+                (string-hex->bytes "d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9faffda000c03010002110311003f00f0cf0ef843eefe")
+                (string-hex->bytes "ebf4af49f0e7843eefeebf4aeefc39e10fbbfbafd2bd27c3be10fbbfbafd28c3624382b8d7e1f78fffd9")))
+
+      (fixture-progressive
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc2000b080008000801011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f002bffd9")))
+
+      (fixture-arithmetic
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc9000b080008000801011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f002bffd9")))
+
+      (fixture-twelve-bit
+       (bytes-concat
+                (string-hex->bytes "ffd8ffdb0043000101010101010101010101010101010101010101010101010101010101010101010101")
+                (string-hex->bytes "0101010101010101010101010101010101010101010101010101010101ffc0000b0c0008000801011100")
+                (string-hex->bytes "ffc401a20000010501010101010100000000000000000102030405060708090a0b100002010303020403")
+                (string-hex->bytes "050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433")
+                (string-hex->bytes "627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465")
+                (string-hex->bytes "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8")
+                (string-hex->bytes "f9fa0100030101010101010101010000000000000102030405060708090a0b1100020102040403040705")
+                (string-hex->bytes "040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d1")
+                (string-hex->bytes "0a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566")
+                (string-hex->bytes "6768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4")
+                (string-hex->bytes "b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa")
+                (string-hex->bytes "ffda0008010100003f002bffd9")))
+
+
+      (test-fixture-grey-24x16
+       (lambda ()
+         (let ((image (decode fixture-grey-24x16)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 16)
+             (assert-equal (dict-get (dict-get image "header") "width") 24)
+             (assert-equal (dict-get (dict-get image "header") "precision") 8)
+             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 129 129 129) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))
+                (vector (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 127 127 127) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143))))))))
+
+      (test-fixture-grey-11x9
+       (lambda ()
+         (let ((image (decode fixture-grey-11x9)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 9)
+             (assert-equal (dict-get (dict-get image "header") "width") 11)
+             (assert-equal (dict-get (dict-get image "header") "precision") 8)
+             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 126 126 126) (vector 126 126 126) (vector 126 126 126) (vector 126 126 126) (vector 126 126 126) (vector 126 126 126) (vector 126 126 126) (vector 126 126 126) (vector 133 133 133) (vector 133 133 133) (vector 133 133 133))))))))
+
+      (test-fixture-grey-quant-4
+       (lambda ()
+         (let ((image (decode fixture-grey-quant-4)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 8)
+             (assert-equal (dict-get (dict-get image "header") "width") 8)
+             (assert-equal (dict-get (dict-get image "header") "precision") 8)
+             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))
+                (vector (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130) (vector 130 130 130))))))))
+
+      (test-fixture-colour-444-neutral
+       (lambda ()
+         (let ((image (decode fixture-colour-444-neutral)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 16)
+             (assert-equal (dict-get (dict-get image "header") "width") 16)
+             (assert-equal (dict-get (dict-get image "header") "precision") 8)
+             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))
+                (vector (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128) (vector 128 128 128))))))))
+
+      (test-fixture-colour-444
+       (lambda ()
+         (let ((image (decode fixture-colour-444)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 16)
+             (assert-equal (dict-get (dict-get image "header") "width") 16)
+             (assert-equal (dict-get (dict-get image "header") "precision") 8)
+             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 149 123 132) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147) (vector 128 138 147))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))
+                (vector (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 140 142 129) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165) (vector 152 136 165))))))))
+
+      (test-fixture-colour-420
+       (lambda ()
+         (let ((image (decode fixture-colour-420)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 32)
+             (assert-equal (dict-get (dict-get image "header") "width") 32)
+             (assert-equal (dict-get (dict-get image "header") "precision") 8)
+             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-equal
+               (dict-get image "pixels")
+               (vector
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 131 131 131) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 134 134 134) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 143 143 143) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146) (vector 146 146 146))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))
+                (vector (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 137 137 137) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 140 140 140) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 149 149 149) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152) (vector 152 152 152))))))))
+
+      (test-fixture-gradient-444
+       (lambda ()
+         (let ((image (decode fixture-gradient-444)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 16)
+             (assert-equal (dict-get (dict-get image "header") "width") 16)
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-within
+               2
+               (channels (dict-get image "pixels"))
+               (channels
+                 (vector
+                (vector (vector 0 0 2) (vector 14 1 8) (vector 32 0 16) (vector 48 0 24) (vector 64 0 34) (vector 78 0 40) (vector 97 0 48) (vector 112 0 56) (vector 129 0 65) (vector 142 0 72) (vector 161 0 82) (vector 176 0 89) (vector 191 1 97) (vector 207 0 104) (vector 223 0 113) (vector 239 0 120))
+                (vector (vector 2 15 8) (vector 16 16 16) (vector 35 15 24) (vector 49 15 32) (vector 64 16 40) (vector 81 16 50) (vector 97 14 56) (vector 113 15 64) (vector 129 16 72) (vector 145 16 80) (vector 161 15 88) (vector 177 14 97) (vector 193 16 104) (vector 207 16 111) (vector 226 15 120) (vector 239 15 129))
+                (vector (vector 0 33 16) (vector 14 34 23) (vector 32 32 30) (vector 48 33 40) (vector 64 33 48) (vector 78 33 56) (vector 97 32 64) (vector 111 33 72) (vector 129 33 79) (vector 142 33 88) (vector 161 32 97) (vector 176 32 104) (vector 190 33 110) (vector 207 33 118) (vector 223 32 127) (vector 239 32 136))
+                (vector (vector 0 48 24) (vector 14 48 31) (vector 32 48 38) (vector 47 47 47) (vector 62 49 56) (vector 79 48 64) (vector 96 48 72) (vector 111 48 79) (vector 126 48 87) (vector 142 49 94) (vector 159 47 103) (vector 176 47 112) (vector 190 49 118) (vector 206 49 126) (vector 224 47 135) (vector 238 48 144))
+                (vector (vector 1 64 33) (vector 16 64 40) (vector 33 64 48) (vector 50 63 56) (vector 65 65 65) (vector 80 64 74) (vector 98 64 81) (vector 112 64 88) (vector 129 64 96) (vector 143 65 105) (vector 161 63 114) (vector 177 63 122) (vector 193 64 128) (vector 209 65 137) (vector 226 63 146) (vector 241 64 154))
+                (vector (vector 1 79 40) (vector 15 80 48) (vector 34 79 56) (vector 48 79 64) (vector 64 79 72) (vector 80 80 82) (vector 98 78 89) (vector 112 79 96) (vector 129 79 104) (vector 143 79 113) (vector 161 78 122) (vector 177 79 130) (vector 192 80 136) (vector 208 79 143) (vector 225 79 152) (vector 241 79 162))
+                (vector (vector 0 97 48) (vector 15 98 56) (vector 31 96 62) (vector 48 96 72) (vector 63 97 80) (vector 77 97 88) (vector 96 96 96) (vector 110 97 104) (vector 127 96 111) (vector 141 97 120) (vector 160 96 130) (vector 174 96 136) (vector 191 98 143) (vector 206 97 152) (vector 225 96 161) (vector 239 97 169))
+                (vector (vector 0 112 56) (vector 15 113 64) (vector 34 112 72) (vector 48 112 78) (vector 64 112 88) (vector 80 113 96) (vector 98 111 104) (vector 112 112 110) (vector 128 111 119) (vector 143 112 127) (vector 161 111 136) (vector 176 111 143) (vector 191 113 152) (vector 208 112 158) (vector 225 112 168) (vector 241 112 176))
+                (vector (vector 0 128 64) (vector 15 128 72) (vector 32 128 82) (vector 49 127 88) (vector 64 129 97) (vector 79 129 104) (vector 97 128 113) (vector 112 129 121) (vector 128 128 130) (vector 142 129 136) (vector 160 127 144) (vector 176 128 152) (vector 192 128 162) (vector 206 128 168) (vector 225 127 176) (vector 240 128 184))
+                (vector (vector 1 143 71) (vector 15 144 79) (vector 34 143 88) (vector 49 142 97) (vector 66 144 104) (vector 80 144 110) (vector 99 143 120) (vector 113 144 129) (vector 130 143 136) (vector 144 144 144) (vector 163 143 152) (vector 177 143 160) (vector 192 144 168) (vector 209 144 178) (vector 225 142 184) (vector 241 143 192))
+                (vector (vector 0 161 78) (vector 15 161 88) (vector 32 161 97) (vector 48 160 104) (vector 63 161 110) (vector 79 162 118) (vector 97 161 127) (vector 111 161 136) (vector 128 161 144) (vector 142 162 151) (vector 160 160 158) (vector 176 161 168) (vector 192 161 176) (vector 206 161 184) (vector 225 160 192) (vector 239 161 200))
+                (vector (vector 0 176 86) (vector 14 177 94) (vector 31 175 103) (vector 47 176 112) (vector 63 177 118) (vector 79 177 126) (vector 97 175 135) (vector 111 176 144) (vector 128 176 152) (vector 142 176 159) (vector 160 176 166) (vector 175 175 175) (vector 190 177 184) (vector 207 176 192) (vector 224 176 200) (vector 239 176 207))
+                (vector (vector 2 192 96) (vector 16 193 105) (vector 34 191 114) (vector 50 191 122) (vector 64 193 128) (vector 81 193 137) (vector 98 191 146) (vector 114 192 153) (vector 129 192 161) (vector 144 192 168) (vector 161 192 176) (vector 178 191 184) (vector 193 193 193) (vector 208 192 202) (vector 226 192 209) (vector 240 192 216))
+                (vector (vector 1 208 104) (vector 17 208 113) (vector 33 207 122) (vector 50 207 130) (vector 64 208 136) (vector 79 208 143) (vector 98 207 152) (vector 111 207 161) (vector 129 207 168) (vector 143 208 176) (vector 162 207 184) (vector 176 207 192) (vector 192 207 200) (vector 208 208 210) (vector 226 206 217) (vector 240 207 224))
+                (vector (vector 1 225 111) (vector 14 225 120) (vector 33 224 129) (vector 47 224 136) (vector 63 226 143) (vector 79 225 152) (vector 95 224 160) (vector 111 224 168) (vector 127 225 176) (vector 143 226 184) (vector 159 224 190) (vector 176 224 200) (vector 191 225 208) (vector 205 225 216) (vector 224 224 224) (vector 238 225 232))
+                (vector (vector 1 240 120) (vector 17 241 127) (vector 33 240 136) (vector 49 239 143) (vector 64 241 151) (vector 79 241 158) (vector 98 240 168) (vector 111 240 175) (vector 128 240 184) (vector 143 241 192) (vector 162 240 200) (vector 176 240 206) (vector 192 240 216) (vector 208 241 224) (vector 226 239 232) (vector 240 240 238)))))))))
+
+      (test-fixture-gradient-420
+       (lambda ()
+         (let ((image (decode fixture-gradient-420)))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "height") 16)
+             (assert-equal (dict-get (dict-get image "header") "width") 16)
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)
+             (assert-within
+               16
+               (channels (dict-get image "pixels"))
+               (channels
+                 (vector
+                (vector (vector 1 1 1) (vector 9 3 5) (vector 25 5 14) (vector 39 5 19) (vector 57 3 27) (vector 74 3 35) (vector 91 5 44) (vector 105 3 51) (vector 120 5 60) (vector 134 4 68) (vector 151 5 76) (vector 168 5 84) (vector 186 3 93) (vector 202 4 99) (vector 217 6 109) (vector 225 8 113))
+                (vector (vector 7 13 11) (vector 16 16 16) (vector 30 17 24) (vector 46 18 30) (vector 64 17 37) (vector 81 17 44) (vector 97 17 54) (vector 112 17 61) (vector 126 18 70) (vector 141 17 77) (vector 157 18 86) (vector 174 17 94) (vector 193 17 102) (vector 208 17 110) (vector 223 19 118) (vector 232 22 123))
+                (vector (vector 9 29 20) (vector 18 31 24) (vector 33 33 33) (vector 48 33 40) (vector 65 31 47) (vector 83 31 54) (vector 99 32 65) (vector 113 31 71) (vector 129 33 81) (vector 143 31 87) (vector 159 33 97) (vector 177 33 105) (vector 194 31 112) (vector 210 32 120) (vector 225 34 127) (vector 234 36 131))
+                (vector (vector 9 43 29) (vector 18 46 34) (vector 32 47 40) (vector 48 48 48) (vector 66 46 55) (vector 81 47 63) (vector 99 46 72) (vector 113 46 79) (vector 129 48 89) (vector 143 47 95) (vector 160 48 106) (vector 177 48 113) (vector 194 46 120) (vector 210 47 128) (vector 225 49 134) (vector 234 52 139))
+                (vector (vector 8 62 39) (vector 16 63 43) (vector 31 65 49) (vector 46 66 57) (vector 64 64 64) (vector 81 64 72) (vector 98 64 81) (vector 112 64 88) (vector 129 65 99) (vector 142 64 104) (vector 159 65 115) (vector 175 66 123) (vector 193 64 129) (vector 209 65 137) (vector 223 66 143) (vector 232 69 148))
+                (vector (vector 6 77 45) (vector 15 80 50) (vector 29 81 58) (vector 45 82 65) (vector 63 80 72) (vector 80 80 80) (vector 97 80 90) (vector 111 80 96) (vector 126 80 106) (vector 141 80 113) (vector 157 80 122) (vector 174 80 130) (vector 192 80 138) (vector 207 81 144) (vector 222 83 151) (vector 231 85 156))
+                (vector (vector 7 93 54) (vector 15 95 58) (vector 31 98 67) (vector 45 98 72) (vector 63 96 79) (vector 79 96 86) (vector 96 96 96) (vector 111 96 103) (vector 128 97 113) (vector 140 96 119) (vector 158 97 130) (vector 175 97 137) (vector 192 96 144) (vector 208 96 152) (vector 223 99 161) (vector 231 101 165))
+                (vector (vector 7 109 61) (vector 16 112 66) (vector 31 113 73) (vector 47 114 81) (vector 64 112 88) (vector 80 113 96) (vector 97 112 105) (vector 111 111 111) (vector 128 112 122) (vector 141 113 128) (vector 158 112 138) (vector 176 112 146) (vector 193 112 153) (vector 209 113 159) (vector 223 115 167) (vector 232 117 172))
+                (vector (vector 9 124 69) (vector 17 125 73) (vector 32 128 82) (vector 48 129 88) (vector 64 128 94) (vector 82 128 102) (vector 99 127 112) (vector 112 128 118) (vector 129 129 129) (vector 143 128 135) (vector 161 128 145) (vector 176 128 152) (vector 194 127 160) (vector 209 127 167) (vector 225 129 175) (vector 233 131 179))
+                (vector (vector 9 139 75) (vector 18 142 80) (vector 32 144 88) (vector 48 144 96) (vector 66 144 104) (vector 82 143 110) (vector 100 144 121) (vector 113 144 128) (vector 129 144 137) (vector 144 144 144) (vector 161 144 154) (vector 177 144 161) (vector 195 142 168) (vector 210 143 174) (vector 225 145 182) (vector 234 148 187))
+                (vector (vector 10 156 85) (vector 18 157 89) (vector 34 160 97) (vector 49 161 103) (vector 66 160 110) (vector 83 160 118) (vector 99 160 127) (vector 114 160 134) (vector 130 161 145) (vector 143 160 150) (vector 161 161 161) (vector 177 160 168) (vector 196 159 176) (vector 211 159 182) (vector 226 161 191) (vector 234 163 195))
+                (vector (vector 8 171 92) (vector 17 174 97) (vector 31 175 103) (vector 47 176 111) (vector 66 175 118) (vector 82 176 126) (vector 98 176 136) (vector 112 176 142) (vector 129 177 153) (vector 142 176 159) (vector 159 176 168) (vector 176 176 176) (vector 194 174 183) (vector 209 175 191) (vector 224 177 197) (vector 233 179 202))
+                (vector (vector 7 189 102) (vector 15 191 106) (vector 31 194 113) (vector 47 195 121) (vector 64 193 128) (vector 81 193 135) (vector 97 193 145) (vector 112 193 152) (vector 128 195 162) (vector 141 194 168) (vector 160 194 178) (vector 174 194 185) (vector 192 192 192) (vector 208 193 200) (vector 222 194 206) (vector 231 197 211))
+                (vector (vector 6 204 109) (vector 16 207 114) (vector 30 208 120) (vector 46 209 128) (vector 64 208 136) (vector 81 207 143) (vector 97 209 153) (vector 112 208 160) (vector 127 209 169) (vector 142 209 176) (vector 157 209 186) (vector 175 209 193) (vector 192 207 200) (vector 208 208 208) (vector 222 209 216) (vector 232 212 221))
+                (vector (vector 9 219 118) (vector 17 221 122) (vector 33 224 131) (vector 48 224 139) (vector 66 223 146) (vector 83 222 154) (vector 99 223 163) (vector 114 222 170) (vector 129 224 180) (vector 143 223 186) (vector 160 224 197) (vector 176 223 203) (vector 195 223 211) (vector 210 223 216) (vector 225 225 225) (vector 233 227 229))
+                (vector (vector 15 232 127) (vector 24 235 132) (vector 38 236 141) (vector 54 237 147) (vector 72 235 156) (vector 89 235 164) (vector 106 236 172) (vector 121 236 181) (vector 135 237 189) (vector 150 236 197) (vector 166 237 205) (vector 183 237 213) (vector 201 235 221) (vector 216 236 227) (vector 231 237 235) (vector 240 240 240)))))))))
+
+      (tests
+         (list
+           (list "decode"
+                 (list
+                   (expect-pass "fixture-grey-24x16" test-fixture-grey-24x16)
+                   (expect-pass "fixture-grey-11x9" test-fixture-grey-11x9)
+                   (expect-pass "fixture-grey-quant-4" test-fixture-grey-quant-4)
+                   (expect-pass "fixture-colour-444-neutral" test-fixture-colour-444-neutral)
+                   (expect-pass "fixture-colour-444" test-fixture-colour-444)
+                   (expect-pass "fixture-colour-420" test-fixture-colour-420)
+                   (expect-pass "fixture-gradient-444" test-fixture-gradient-444)
+                   (expect-pass "fixture-gradient-420" test-fixture-gradient-420)))
+           (list "rejects"
+                 (list
+                   (expect-fail
+                     "fixture-progressive"
+                     (lambda () (decode fixture-progressive))
+                     "progressive")
+                   (expect-fail
+                     "fixture-arithmetic"
+                     (lambda () (decode fixture-arithmetic))
+                     "arithmetic-coded sequential")
+                   (expect-fail
+                     "fixture-twelve-bit"
+                     (lambda () (decode fixture-twelve-bit))
+                     "bits per sample is not supported"))))))
+
+  (export tests))

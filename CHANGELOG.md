@@ -4,6 +4,10 @@
 
 New features:
 
+- `jpeg-encode` writes a pixel dict as a baseline sequential JPEG file, so
+- `jpeg-decode` decodes baseline sequential JPEG files to the pixel-dict shape
+  the other image codecs use.  `jpeg-decode` and `jpeg-encode` form a codec pair.
+  JPEG is lossy, so the round-trip suite asserts a tolerance rather than equality.
 - `bmp-decode` walks each row by byte offset and takes the bit depth out of the
   pixel loop; 20% faster, 28% fewer instructions.
 - Reintroduce some Python reference examples in the benchmark suite.

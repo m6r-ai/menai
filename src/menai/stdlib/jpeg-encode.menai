@@ -1,0 +1,671 @@
+; jpeg-encode — encodes a decoded JPEG description as a baseline sequential JPEG file.
+;
+; The value is the shape jpeg-decode produces: a dict with "header" (width, height,
+; precision and components), "pixels" (a vector of rows, each a vector of
+; (vector r g b) pixels) and "meta" (format and channel count).
+;
+; Pixels are converted to YCbCr with the JFIF transform and encoded as three
+; components with no chrominance subsampling (4:4:4), so the encoder cannot recover
+; a file's original sampling factors: what it emits is always 4:4:4.  Block edges
+; are padded by repeating the last row and column.
+;
+; The quantisation and Huffman tables are the standard Annex K ones, the
+; quantisation tables scaled for quality 95 (the IJG scaling rule), which keeps the
+; re-encoding loss small enough for the round-trip suite to assert a tight
+; tolerance.  There is no quality input because the value shape has nowhere to
+; carry one.
+;
+; JPEG is lossy, so unlike the other codec pairs in this library
+; (decode (encode v)) is not exactly v: it is the same size, with the same channel
+; count, and within the tolerance the round-trip suite asserts.
+
+(let ((zigzag
+
+       ; The natural (row-major) coefficient index of each zigzag position.
+       (vector
+         0 1 8 16 9 2 3 10 17 24 32 25 18 11 4 5
+         12 19 26 33 40 48 41 34 27 20 13 6 7 14 21 28
+         35 42 49 56 57 50 43 36 29 22 15 23 30 37 44 51
+         58 59 52 45 38 31 39 46 53 60 61 54 47 55 62 63))
+
+      (basis
+
+       ; The DCT basis, m[u][x] = C(u) * cos((2x + 1) * u * pi / 16) / 2.  The
+       ; transform is orthonormal, so the same constants serve the forward and
+       ; inverse directions.
+       (vector
+         0.35355339059327373 0.35355339059327373 0.35355339059327373 0.35355339059327373
+         0.35355339059327373 0.35355339059327373 0.35355339059327373 0.35355339059327373
+         0.49039264020161522 0.41573480615127262 0.27778511650980114 0.097545161008064166
+         -0.097545161008064096 -0.27778511650980098 -0.41573480615127267 -0.49039264020161522
+         0.46193976625564337 0.19134171618254492 -0.19134171618254486 -0.46193976625564337
+         -0.46193976625564342 -0.19134171618254517 0.1913417161825445 0.46193976625564326
+         0.41573480615127262 -0.097545161008064096 -0.49039264020161522 -0.27778511650980109
+         0.27778511650980092 0.49039264020161522 0.097545161008064388 -0.41573480615127256
+         0.35355339059327379 -0.35355339059327373 -0.35355339059327384 0.35355339059327368
+         0.35355339059327384 -0.35355339059327334 -0.35355339059327362 0.35355339059327329
+         0.27778511650980114 -0.49039264020161522 0.097545161008064152 0.41573480615127273
+         -0.41573480615127256 -0.097545161008064013 0.49039264020161533 -0.27778511650980076
+         0.19134171618254492 -0.46193976625564342 0.46193976625564326 -0.19134171618254495
+         -0.19134171618254528 0.46193976625564337 -0.46193976625564342 0.19134171618254478
+         0.097545161008064166 -0.27778511650980109 0.41573480615127273 -0.49039264020161533
+         0.49039264020161522 -0.41573480615127251 0.27778511650980076 -0.097545161008064291))
+
+      (quant-luminance-base
+
+       ; The luminance quantisation table of ITU T.81 Annex K, in natural order.
+       (vector
+         16 11 10 16 24 40 51 61
+         12 12 14 19 26 58 60 55
+         14 13 16 24 40 57 69 56
+         14 17 22 29 51 87 80 62
+         18 22 37 56 68 109 103 77
+         24 35 55 64 81 104 113 92
+         49 64 78 87 103 121 120 101
+         72 92 95 98 112 100 103 99))
+
+      (quant-chrominance-base
+
+       ; The chrominance quantisation table of ITU T.81 Annex K, in natural order.
+       (vector
+         17 18 24 47 99 99 99 99
+         18 21 26 66 99 99 99 99
+         24 26 56 99 99 99 99 99
+         47 66 99 99 99 99 99 99
+         99 99 99 99 99 99 99 99
+         99 99 99 99 99 99 99 99
+         99 99 99 99 99 99 99 99
+         99 99 99 99 99 99 99 99))
+
+      ; The quality the quantisation tables are scaled for.  The round-trip suite
+      ; asserts a per-channel tolerance that depends on it, so raising this tightens
+      ; the tolerance and enlarges the file.
+      (quality 95)
+
+      (dc-luminance-bits
+       (vector
+         0 1 5 1 1 1 1 1 1 0 0 0
+         0 0 0 0))
+      (dc-luminance-values
+       (vector
+         0 1 2 3 4 5 6 7 8 9 10 11))
+      (dc-chrominance-bits
+       (vector
+         0 3 1 1 1 1 1 1 1 1 1 0
+         0 0 0 0))
+      (dc-chrominance-values
+       (vector
+         0 1 2 3 4 5 6 7 8 9 10 11))
+
+      (ac-luminance-bits
+       (vector
+         0 2 1 3 3 2 4 3 5 5 4 4
+         0 0 1 125))
+      (ac-luminance-values
+       (vector
+         1 2 3 0 4 17 5 18 33 49 65 6
+         19 81 97 7 34 113 20 50 129 145 161 8
+         35 66 177 193 21 82 209 240 36 51 98 114
+         130 9 10 22 23 24 25 26 37 38 39 40
+         41 42 52 53 54 55 56 57 58 67 68 69
+         70 71 72 73 74 83 84 85 86 87 88 89
+         90 99 100 101 102 103 104 105 106 115 116 117
+         118 119 120 121 122 131 132 133 134 135 136 137
+         138 146 147 148 149 150 151 152 153 154 162 163
+         164 165 166 167 168 169 170 178 179 180 181 182
+         183 184 185 186 194 195 196 197 198 199 200 201
+         202 210 211 212 213 214 215 216 217 218 225 226
+         227 228 229 230 231 232 233 234 241 242 243 244
+         245 246 247 248 249 250))
+
+      (ac-chrominance-bits
+       (vector
+         0 2 1 2 4 4 3 4 7 5 4 4
+         0 1 2 119))
+      (ac-chrominance-values
+       (vector
+         0 1 2 3 17 4 5 33 49 6 18 65
+         81 7 97 113 19 34 50 129 8 20 66 145
+         161 177 193 9 35 51 82 240 21 98 114 209
+         10 22 36 52 225 37 241 23 24 25 26 38
+         39 40 41 42 53 54 55 56 57 58 67 68
+         69 70 71 72 73 74 83 84 85 86 87 88
+         89 90 99 100 101 102 103 104 105 106 115 116
+         117 118 119 120 121 122 130 131 132 133 134 135
+         136 137 138 146 147 148 149 150 151 152 153 154
+         162 163 164 165 166 167 168 169 170 178 179 180
+         181 182 183 184 185 186 194 195 196 197 198 199
+         200 201 202 210 211 212 213 214 215 216 217 218
+         226 227 228 229 230 231 232 233 234 242 243 244
+         245 246 247 248 249 250))
+
+      ; Scale a base quantisation table for `quality` with the IJG rule, clamping
+      ; each entry to 1..255.
+      (scale-table
+       (lambda (base scale)
+         (map-vector
+           (lambda (value)
+             (let ((scaled (integer/ (integer+ (integer* value scale) 50) 100)))
+               (if (integer<? scaled 1)
+                   1
+                   (if (integer>? scaled 255)
+                       255
+                       scaled))))
+           base)))
+
+      ; The IJG scale factor for a quality: below 50 it is 5000/quality, at or
+      ; above it 200 - 2*quality.
+      (scale-for
+       (lambda (q)
+         (if (integer<? q 50)
+             (integer/ 5000 q)
+             (integer- 200 (integer* 2 q)))))
+
+      ; The canonical code and length of each symbol in a Huffman table, as a
+      ; vector indexed by symbol holding (vector code length).
+      (huffman-codes
+       (lambda (bits values)
+         (let ((fill
+                (lambda (length code index n table)
+                  (if (integer>=? n (vector-nth bits (integer- length 1)))
+                      (next-length
+                        length
+                        code
+                        (integer+ index (vector-nth bits (integer- length 1)))
+                        table)
+                      (fill
+                        length
+                        (integer+ code 1)
+                        index
+                        (integer+ n 1)
+                        (vector-with
+                          table
+                          (vector-nth values (integer+ index n))
+                          (vector code length))))))
+               (next-length
+                (lambda (length code index table)
+                  (if (integer>=? length 16)
+                      table
+                      (fill
+                        (integer+ length 1)
+                        (integer-bit-shift-left code 1)
+                        index
+                        0
+                        table)))))
+           (next-length 0 0 0 (vector-fill 256 (vector 0 0))))))
+
+      ; The number of bits a coefficient needs (spec F.1.2.1).
+      (category
+       (lambda (value)
+         (if (integer=? value 0)
+             0
+             (let ((loop
+                    (lambda (magnitude bits)
+                      (if (integer=? magnitude 0)
+                          bits
+                          (loop (integer-bit-shift-right magnitude 1) (integer+ bits 1))))))
+               (loop (integer-abs value) 0)))))
+
+      ; The `size`-bit magnitude encoding of a coefficient (spec F.1.2.1).
+      (magnitude-bits
+       (lambda (value size)
+         (if (integer<? value 0)
+             (integer- (integer+ value (integer-bit-shift-left 1 size)) 1)
+             value)))
+
+      ; The sum over i of a[a-base + i * a-step] * b[b-base + i * b-step], i < 8.
+      (dot8
+       (lambda (a a-base a-step b b-base b-step i acc)
+         (if (integer>=? i 8)
+             acc
+             (dot8
+               a
+               a-base
+               a-step
+               b
+               b-base
+               b-step
+               (integer+ i 1)
+               (float+
+                 acc
+                 (float*
+                   (vector-nth a (integer+ a-base (integer* i a-step)))
+                   (vector-nth b (integer+ b-base (integer* i b-step)))))))))
+
+      ; The row pass of the forward transform:
+      ; temp[y][u] = sum over x of samples[y][x] * basis[u][x].
+      (forward-rows
+       (lambda (samples y u temp)
+         (if (integer>=? y 8)
+             temp
+             (if (integer>=? u 8)
+                 (forward-rows samples (integer+ y 1) 0 temp)
+                 (forward-rows
+                   samples
+                   y
+                   (integer+ u 1)
+                   (vector-with
+                     temp
+                     (integer+ (integer* y 8) u)
+                     (dot8 samples (integer* y 8) 1 basis (integer* u 8) 1 0 0.0)))))))
+
+      ; The column pass: out[v][u] = sum over y of temp[y][u] * basis[v][y].
+      (forward-columns
+       (lambda (temp v u out)
+         (if (integer>=? v 8)
+             out
+             (if (integer>=? u 8)
+                 (forward-columns temp (integer+ v 1) 0 out)
+                 (forward-columns
+                   temp
+                   v
+                   (integer+ u 1)
+                   (vector-with
+                     out
+                     (integer+ (integer* v 8) u)
+                     (dot8 temp u 8 basis (integer* v 8) 1 0 0.0)))))))
+
+      ; The quantised coefficients of one block of 8-bit samples, in zigzag
+      ; order, which is the order `encode-block` walks.  The samples are level
+      ; shifted by 128 and transformed into natural order, then each coefficient
+      ; is divided by its quantisation step and rounded.  The table is in zigzag
+      ; order too, so position `p` reads `quant[p]` and writes the coefficient
+      ; whose natural index is `zigzag[p]`.
+      (quantise-block
+       (lambda (samples quant)
+         (let ((transformed
+                (forward-columns
+                  (forward-rows (map-vector (lambda (s) (float- (integer->float s) 128.0)) samples)
+                                0
+                                0
+                                (vector-fill 64 0.0))
+                  0
+                  0
+                  (vector-fill 64 0.0))))
+           (map-vector
+             (lambda (p)
+               (float->integer
+                 (float-floor
+                   (float+
+                     (float/
+                       (vector-nth transformed (vector-nth zigzag p))
+                       (integer->float (vector-nth quant p)))
+                     0.5))))
+             (list->vector (range 0 64))))))
+
+      ; Append one byte to the output, stuffing a zero after an 0xFF.
+      (emit-byte
+       (lambda (out byte)
+         (if (integer=? byte 255)
+             (bytes-append-u8 (bytes-append-u8 out 255) 0)
+             (bytes-append-u8 out byte))))
+
+      ; Write `count` bits of `value`, most significant first.  `state` is
+      ; (vector out acc bits), where `acc` holds `bits` pending bits.
+      ; Returns the new state.
+      (put-bits
+       (lambda (state value count)
+         (let ((loop
+                (lambda (out acc bits remaining)
+                  (if (integer<=? remaining 0)
+                      (vector out acc bits)
+                      (let ((next
+                             (integer-bit-or
+                               (integer-bit-shift-left acc 1)
+                               (integer-bit-and
+                                 (integer-bit-shift-right value (integer- remaining 1))
+                                 1))))
+                        (if (integer<? bits 7)
+                            (loop out next (integer+ bits 1) (integer- remaining 1))
+                            (loop (emit-byte out next) 0 0 (integer- remaining 1))))))))
+           (loop (vector-nth state 0) (vector-nth state 1) (vector-nth state 2) count))))
+
+      ; Pad the accumulator with one bits and return the written bytes.
+      (flush-bits
+       (lambda (state)
+         (let ((bits (vector-nth state 2)))
+           (if (integer=? bits 0)
+               (vector-nth state 0)
+               (vector-nth
+                 (put-bits
+                   state
+                   (integer- (integer-bit-shift-left 1 (integer- 8 bits)) 1)
+                   (integer- 8 bits))
+                 0)))))
+
+      ; Write one Huffman symbol: its code, then its magnitude bits.
+      (put-symbol
+       (lambda (state table symbol size value)
+         (let ((entry (vector-nth table symbol)))
+           (put-bits
+             (put-bits state (vector-nth entry 0) (vector-nth entry 1))
+             (magnitude-bits value size)
+             size))))
+
+      ; Entropy-encode the quantised coefficients of one block (zigzag order),
+      ; returning the new state and DC predictor.
+      (encode-block
+       (lambda (state block dc-table ac-table predictor)
+         (let ((difference (integer- (vector-nth block 0) predictor)))
+           (let ((after-dc
+                  (put-symbol state dc-table (category difference) (category difference) difference)))
+             (let ((loop
+                    (lambda (state k run)
+                      (if (integer>=? k 64)
+                          (if (integer=? run 0)
+                              state
+                              (put-symbol state ac-table 0 0 0))
+                          (let ((coefficient (vector-nth block k)))
+                            (if (integer=? coefficient 0)
+                                (loop state (integer+ k 1) (integer+ run 1))
+                                (if (integer>? run 15)
+                                    (loop (put-symbol state ac-table 240 0 0)
+                                          k
+                                          (integer- run 16))
+                                    (loop
+                                      (put-symbol
+                                        state
+                                        ac-table
+                                        (integer-bit-or
+                                          (integer-bit-shift-left run 4)
+                                          (category coefficient))
+                                        (category coefficient)
+                                        coefficient)
+                                      (integer+ k 1)
+                                      0))))))))
+                 (dict "state" (loop after-dc 1 0) "predictor" (vector-nth block 0)))))))
+
+      ; A marker segment: the marker, its length, and its payload.
+      (segment
+       (lambda (marker payload)
+         (bytes-concat
+           (bytes-append-u8 (bytes-concat) 255)
+           (bytes-append-u8 (bytes-concat) marker)
+           (bytes-append-u16-be (bytes-concat) (integer+ (bytes-length payload) 2))
+           payload)))
+
+      ; A DQT segment holding one table, given in natural order and written in
+      ; zigzag order with zero precision.
+      (quant-segment
+       (lambda (table-id table)
+         (segment
+           219
+           (bytes-concat
+             (bytes-append-u8 (bytes-concat) table-id)
+             (apply
+               bytes-concat
+               (map-list
+                 (lambda (k) (bytes-append-u8 (bytes-concat) (vector-nth table (vector-nth zigzag k))))
+                 (range 0 64)))))))
+
+      ; Three bytes: a component's id, its sampling factors, and its
+      ; quantisation table id, in the order a frame header lists them.
+      (component-entry
+       (lambda (id sampling quant)
+         (bytes-append-u8
+           (bytes-append-u8 (bytes-append-u8 (bytes-concat) id) sampling)
+           quant)))
+
+      ; The SOF0 segment: 8-bit precision, the frame size, then one entry per
+      ; component.  All three components are 1x1 sampled; luminance uses
+      ; quantisation table 0 and both chrominance components table 1.
+      (frame-segment
+       (lambda (width height)
+         (segment
+           192
+           (bytes-concat
+             (bytes-append-u8
+               (bytes-append-u16-be
+                 (bytes-append-u16-be
+                   (bytes-append-u8 (bytes-concat) 8)
+                   height)
+                 width)
+               3)
+             (component-entry 1 17 0)
+             (component-entry 2 17 1)
+             (component-entry 3 17 1)))))
+
+      ; The SOS segment: three components, each with its DC and AC Huffman table
+      ; (both table 0 for luminance, both table 1 for chrominance), then the
+      ; spectral selection 0..63 and approximation 0 of a sequential scan.
+      (scan-segment
+       (lambda ()
+         (segment
+           218
+           (bytes-concat
+             (bytes-append-u8 (bytes-concat) 3)
+             (bytes-append-u8 (bytes-append-u8 (bytes-concat) 1) 0)
+             (bytes-append-u8 (bytes-append-u8 (bytes-concat) 2) 17)
+             (bytes-append-u8 (bytes-append-u8 (bytes-concat) 3) 17)
+             (bytes-append-u8 (bytes-append-u8 (bytes-append-u8 (bytes-concat) 0) 63) 0)))))
+
+      ; A DHT segment holding all four standard tables.
+      (huffman-segment
+       (lambda ()
+         (let ((one
+                (lambda (table-class table-id bits values)
+                  (bytes-concat
+                    (bytes-append-u8 (bytes-concat) (integer-bit-or (integer-bit-shift-left table-class 4) table-id))
+                    (apply bytes-concat (map-list (lambda (n) (bytes-append-u8 (bytes-concat) n)) (vector->list bits)))
+                    (apply bytes-concat (map-list (lambda (n) (bytes-append-u8 (bytes-concat) n)) (vector->list values)))))))
+           (segment
+             196
+             (bytes-concat
+               (one 0 0 dc-luminance-bits dc-luminance-values)
+               (one 1 0 ac-luminance-bits ac-luminance-values)
+               (one 0 1 dc-chrominance-bits dc-chrominance-values)
+               (one 1 1 ac-chrominance-bits ac-chrominance-values))))))
+
+      ; The one sample of a plane at (x, y), repeating the last row and column so
+      ; that a partial block at the right or bottom edge is padded by replication.
+      (plane-at
+       (lambda (samples width height x y)
+         (bytes-nth
+           samples
+           (integer+
+             (integer* (integer-min (integer- height 1) y) width)
+             (integer-min (integer- width 1) x)))))
+
+      ; The 64 samples of one block of a plane, in natural order.
+      (block-samples
+       (lambda (samples width height block-x block-y i block)
+         (if (integer>=? i 64)
+             block
+             (block-samples
+               samples
+               width
+               height
+               block-x
+               block-y
+               (integer+ i 1)
+               (vector-with
+                 block
+                 i
+                 (plane-at
+                   samples
+                   width
+                   height
+                   (integer+ (integer* block-x 8) (integer% i 8))
+                   (integer+ (integer* block-y 8) (integer/ i 8))))))))
+
+      ; Encode one block of each component for MCU `index`: a scan interleaves
+      ; the components per MCU, so all three blocks for an MCU are written before
+      ; the next MCU's, not one component's blocks in a run.
+      (encode-mcu
+       (lambda (state planes width height blocks-x blocks-y quants dc-tables ac-tables index component predictors)
+         (if (integer>=? component 3)
+             (dict "state" state "predictors" predictors)
+             (let ((result
+                    (encode-block
+                      state
+                      (quantise-block
+                        (block-samples
+                          (vector-nth planes component)
+                          width
+                          height
+                          (integer% index blocks-x)
+                          (integer/ index blocks-x)
+                          0
+                          (vector-fill 64 0))
+                        (vector-nth quants component))
+                      (vector-nth dc-tables component)
+                      (vector-nth ac-tables component)
+                      (vector-nth predictors component))))
+               (encode-mcu
+                 (dict-get result "state")
+                 planes
+                 width
+                 height
+                 blocks-x
+                 blocks-y
+                 quants
+                 dc-tables
+                 ac-tables
+                 index
+                 (integer+ component 1)
+                 (vector-with predictors component (dict-get result "predictor")))))))
+
+      ; Entropy-encode every MCU of the scan, returning the final bit-writer state.
+      (encode-scan
+       (lambda (state planes width height blocks-x blocks-y quants dc-tables ac-tables index predictors)
+         (if (integer>=? index (integer* blocks-x blocks-y))
+             state
+             (let ((result
+                    (encode-mcu
+                      state
+                      planes
+                      width
+                      height
+                      blocks-x
+                      blocks-y
+                      quants
+                      dc-tables
+                      ac-tables
+                      index
+                      0
+                      predictors)))
+               (encode-scan
+                 (dict-get result "state")
+                 planes
+                 width
+                 height
+                 blocks-x
+                 blocks-y
+                 quants
+                 dc-tables
+                 ac-tables
+                 (integer+ index 1)
+                 (dict-get result "predictors"))))))
+
+      ; Validate the channel count a pixel carries and return the value.
+      (pixel-channel
+       (lambda (pixel channel)
+         (if (vector? pixel)
+             (if (integer=? (vector-length pixel) 3)
+                 (vector-nth pixel channel)
+                 (error
+                   (string-concat
+                     "jpeg-encode: each pixel must have 3 channels, found "
+                     (integer->string (vector-length pixel)))))
+             (error "jpeg-encode: each pixel must be a vector of channels"))))
+
+      ; YCbCr sample of a pixel: the JFIF transform, rounded and clamped.
+      (to-ycbcr
+       (lambda (pixel)
+         (let ((red (integer->float (pixel-channel pixel 0)))
+               (green (integer->float (pixel-channel pixel 1)))
+               (blue (integer->float (pixel-channel pixel 2))))
+           (vector
+             (to-sample
+               (float+
+                 (float+ (float* 0.299 red) (float* 0.587 green))
+                 (float* 0.114 blue)))
+             (to-sample
+               (float+
+                 (float+
+                   (float+ (float* -0.168736 red) (float* -0.331264 green))
+                   (float* 0.5 blue))
+                 128.0))
+             (to-sample
+               (float+
+                 (float+
+                   (float+ (float* 0.5 red) (float* -0.418688 green))
+                   (float* -0.081312 blue))
+                 128.0))))))
+
+      ; A value rounded to the nearest integer and clamped to 8 bits.
+      (to-sample
+       (lambda (value)
+         (let ((rounded (float->integer (float-floor (float+ value 0.5)))))
+           (if (integer<? rounded 0)
+               0
+               (if (integer>? rounded 255)
+                   255
+                   rounded)))))
+
+      ; One plane of a component from the pixel grid, applying the YCbCr
+      ; transform and taking one channel of the result.
+      (colour-plane
+       (lambda (pixels width height channel x y plane)
+         (if (integer>=? y height)
+             plane
+             (if (integer>=? x width)
+                 (colour-plane pixels width height channel 0 (integer+ y 1) plane)
+                 (colour-plane
+                   pixels
+                   width
+                   height
+                   channel
+                   (integer+ x 1)
+                   y
+                   (bytes-append-u8
+                     plane
+                     (vector-nth (to-ycbcr (vector-nth (vector-nth pixels y) x)) channel)))))))
+
+      ; Encode the value into a baseline sequential JPEG file.
+      (encode
+       (lambda (container)
+         (let ((header (dict-get container "header")))
+           (if (dict? header)
+               (let ((width (dict-get header "width"))
+                     (height (dict-get header "height"))
+                     (pixels (dict-get container "pixels")))
+                 (let ((scale (scale-for quality)))
+                   (let ((quant-luminance (scale-table quant-luminance-base scale))
+                         (quant-chrominance (scale-table quant-chrominance-base scale)))
+                     (let ((dc-luminance (huffman-codes dc-luminance-bits dc-luminance-values))
+                           (ac-luminance (huffman-codes ac-luminance-bits ac-luminance-values))
+                           (dc-chrominance (huffman-codes dc-chrominance-bits dc-chrominance-values))
+                           (ac-chrominance (huffman-codes ac-chrominance-bits ac-chrominance-values)))
+                       (let ((blocks-x (integer/ (integer+ width 7) 8))
+                             (blocks-y (integer/ (integer+ height 7) 8)))
+                         (let ((planes
+                                (map-vector
+                                  (lambda (channel)
+                                    (colour-plane pixels width height channel 0 0 (bytes-concat)))
+                                  (list->vector (list 0 1 2)))))
+                           (let ((state
+                                  (encode-scan
+                                    (vector (bytes-concat) 0 0)
+                                    planes
+                                    width
+                                    height
+                                    blocks-x
+                                    blocks-y
+                                    (vector quant-luminance quant-chrominance quant-chrominance)
+                                    (vector dc-luminance dc-chrominance dc-chrominance)
+                                    (vector ac-luminance ac-chrominance ac-chrominance)
+                                    0
+                                    (vector 0 0 0))))
+                             (bytes-concat
+                               (string-hex->bytes "ffd8")
+                               (quant-segment 0 quant-luminance)
+                               (quant-segment 1 quant-chrominance)
+                               (frame-segment width height)
+                               (huffman-segment)
+                               (scan-segment)
+                               (flush-bits state)
+                               (string-hex->bytes "ffd9")))))))))
+               (error "jpeg-encode: \"header\" must be a dict"))))))
+
+  (export encode))

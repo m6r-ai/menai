@@ -299,6 +299,18 @@ menai`. Currently it includes:
 - `html-entities.menai` — the named character references HTML documents use, as a
   dict mapping each reference's name to its character.  Not an operation module;
   it exports specification data
+- `jpeg-decode.menai` — decodes baseline sequential JPEG files (as bytes) to a dict
+  containing the frame header, a top-down pixel grid, and metadata.  Greyscale and
+  three-component YCbCr files are supported, with any sampling factor, normalised to
+  RGB pixels; chrominance is upsampled by sample replication and the colour transform
+  is the JFIF one.  Progressive, extended sequential, arithmetic-coded and lossless
+  files, and precisions other than 8 bits, raise rather than decode (`decode`)
+- `jpeg-encode.menai` — encodes a pixel dict (the shape `jpeg-decode` produces) as a
+  baseline sequential JPEG file, at a fixed high quality and with the standard Annex K
+  tables.  It always emits three components with no chrominance subsampling, so a
+  file's original sampling factors are not recovered.  JPEG is lossy, so
+  `(decode (encode v))` is not `v`: it has the same dimensions and channel count and
+  is within a small tolerance, which the round-trip suite asserts (`encode`)
 - `json-decode.menai` — decodes a JSON string to the equivalent Menai value
   (`decode`)
 - `json-encode.menai` — encodes a Menai value as a JSON string; the inverse of

@@ -1,0 +1,123 @@
+; Tests for jpeg-encode.menai
+;
+; The encoder is specified through the decoder: what it produces must decode to
+; an image of the same size and channel count, and the colours must survive to
+; within one level.  A flat block is the only case where the exact result is
+; predictable, because the sole loss is the rounding of the colour transform; a
+; block with detail loses more, which the round-trip suite bounds instead.
+
+(let ((jpeg-decode (import "jpeg-decode"))
+      (jpeg-encode (import "jpeg-encode"))
+      (t (import "menai-test"))
+      (decode (:: jpeg-decode decode))
+      (encode (:: jpeg-encode encode))
+      (assert-equal (:: t assert-equal))
+      (expect-pass (:: t expect-pass))
+      (expect-fail (:: t expect-fail))
+
+      ; A description holding one flat colour, 8 by 8.
+      (solid
+       (lambda (colour)
+         (dict "header" (dict "width" 8 "height" 8)
+               "pixels" (vector-fill 8 (vector-fill 8 colour))
+               "meta" (dict "format" "jpeg" "channels" 3))))
+
+      ; The image that one flat colour encodes and decodes back to.
+      (round-trips
+       (lambda (colour)
+         (decode (encode (solid colour)))))
+
+      ; Assert that every channel of the first pixel is within `tolerance` of the
+      ; colour the image was built from.
+      (assert-colour
+       (lambda (tolerance image colour)
+         (and
+           (assert-equal (vector-length (vector-nth (vector-nth (dict-get image "pixels") 0) 0)) 3)
+           (all-list?
+             (lambda (pair)
+               (integer<=? (integer-abs (integer- (list-nth pair 0) (list-nth pair 1))) tolerance))
+             (list-zip
+               (vector->list (vector-nth (vector-nth (dict-get image "pixels") 0) 0))
+               (vector->list colour))))))
+
+      (test-headers
+       (lambda ()
+         (let ((image (decode (encode (solid (vector 200 100 50))))))
+           (and
+             (assert-equal (dict-get (dict-get image "header") "width") 8)
+             (assert-equal (dict-get (dict-get image "header") "height") 8)
+             (assert-equal (dict-get (dict-get image "header") "precision") 8)
+             (assert-equal (dict-get (dict-get image "meta") "format") "jpeg")
+             (assert-equal (dict-get (dict-get image "meta") "channels") 3)))))
+
+      ; The product is examined directly, not only through the decoder: a baseline
+      ; file begins with SOI and ends with EOI.
+      (test-markers
+       (lambda ()
+         (let ((data (encode (solid (vector 1 2 3)))))
+           (and
+             (assert-equal (bytes-slice data 0 2) (string-hex->bytes "ffd8"))
+             (assert-equal
+               (bytes-slice data (integer- (bytes-length data) 2))
+               (string-hex->bytes "ffd9"))
+             (assert-equal (bytes-nth data 2) #xff)
+             (assert-equal (bytes-nth data 3) #xdb)))))
+
+      ; A flat colour is recovered exactly to within the transform's rounding.
+      (test-mid-colour (lambda () (assert-colour 1 (round-trips (vector 200 100 50)) (vector 200 100 50))))
+      (test-black (lambda () (assert-colour 1 (round-trips (vector 0 0 0)) (vector 0 0 0))))
+      (test-white (lambda () (assert-colour 1 (round-trips (vector 255 255 255)) (vector 255 255 255))))
+      (test-grey (lambda () (assert-colour 1 (round-trips (vector 128 128 128)) (vector 128 128 128))))
+      (test-saturated (lambda () (assert-colour 1 (round-trips (vector 17 200 3)) (vector 17 200 3))))
+
+      ; A description whose header reports no size is still sized by its header
+      ; dict; the encoder reads "width" and "height" from it and refuses a header
+      ; that is not a dict.
+      (test-rejects-non-dict-header
+       (lambda ()
+         (encode (dict "header" 42 "pixels" (vector) "meta" (dict)))))
+
+      ; Each pixel must be a vector of exactly three channels.
+      (test-rejects-two-channel-pixel
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1)
+                 "pixels" (vector (vector (vector 1 2)))
+                 "meta" (dict "format" "jpeg" "channels" 3)))))
+
+      (test-rejects-non-vector-pixel
+       (lambda ()
+         (encode
+           (dict "header" (dict "width" 1 "height" 1)
+                 "pixels" (vector (vector 7))
+                 "meta" (dict "format" "jpeg" "channels" 3)))))
+
+      (tests
+       (list
+         (list "structure"
+               (list
+                 (expect-pass "writes a frame of the requested size" test-headers)
+                 (expect-pass "writes SOI, a quantisation table and EOI" test-markers)))
+         (list "colour"
+               (list
+                 (expect-pass "keeps a mid colour" test-mid-colour)
+                 (expect-pass "keeps black" test-black)
+                 (expect-pass "keeps white" test-white)
+                 (expect-pass "keeps mid grey" test-grey)
+                 (expect-pass "keeps a saturated colour" test-saturated)))
+         (list "rejects"
+               (list
+                 (expect-fail
+                   "a header that is not a dict"
+                   test-rejects-non-dict-header
+                   "must be a dict")
+                 (expect-fail
+                   "a pixel with two channels"
+                   test-rejects-two-channel-pixel
+                   "must have 3 channels")
+                 (expect-fail
+                   "a pixel that is not a vector"
+                   test-rejects-non-vector-pixel
+                   "must be a vector of channels"))))))
+
+  (export tests))
