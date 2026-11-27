@@ -44,6 +44,9 @@ Bug fixes:
   inlined such a function failed bytecode validation instead of running.
 - `menai-format` dropped a binding's value and its closing parenthesis when a
   comment sat between the binding's name and its value.
+- A program whose code object tree could not be converted to native code objects,
+  because a host-supplied value was of a type the bridge cannot convert, crashed
+  the interpreter instead of raising the conversion error.
 
 ## v0.12.1 (2026-11-23)
 

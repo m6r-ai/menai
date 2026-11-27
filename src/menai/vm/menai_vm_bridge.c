@@ -433,22 +433,29 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         goto fail;
     }
 
-    co->nchildren = PySequence_Fast_GET_SIZE(children_seq);
-    if (co->nchildren > 0) {
+    Py_ssize_t nchildren = PySequence_Fast_GET_SIZE(children_seq);
+    if (nchildren > 0) {
         co->children = (MenaiCodeObject **)calloc(
-            (size_t)co->nchildren, sizeof(MenaiCodeObject *));
+            (size_t)nchildren, sizeof(MenaiCodeObject *));
         if (!co->children) {
             Py_DECREF(children_seq);
             PyErr_NoMemory();
             goto fail;
         }
 
-        for (ssize_t i = 0; i < co->nchildren; i++) {
+        /*
+         * Publish each child only once it has been converted: the fail path
+         * finalises this partially built code object, and the finaliser
+         * releases exactly co->nchildren of them.
+         */
+        for (ssize_t i = 0; i < nchildren; i++) {
             co->children[i] = menai_code_object_from_python_rec(vs, PySequence_Fast_GET_ITEM(children_seq, i), next_code, next_instr, ctx);
             if (!co->children[i]) {
                 Py_DECREF(children_seq);
                 goto fail;
             }
+
+            co->nchildren = i + 1;
         }
     }
 
@@ -468,17 +475,22 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
         goto fail;
     }
 
-    co->nconst = PySequence_Fast_GET_SIZE(constants_seq);
-    if (co->nconst > 0) {
+    Py_ssize_t nconst = PySequence_Fast_GET_SIZE(constants_seq);
+    if (nconst > 0) {
         co->constants = (MenaiValue **)calloc(
-            (size_t)co->nconst, sizeof(MenaiValue *));
+            (size_t)nconst, sizeof(MenaiValue *));
         if (!co->constants) {
             Py_DECREF(constants_seq);
             PyErr_NoMemory();
             goto fail;
         }
 
-        for (ssize_t i = 0; i < co->nconst; i++) {
+        /*
+         * As for children: a constant is published only once it has been
+         * converted, so a failure part way through leaves a code object the
+         * finaliser can release safely.
+         */
+        for (ssize_t i = 0; i < nconst; i++) {
             PyObject *orig = PySequence_Fast_GET_ITEM(constants_seq, i);
             MenaiValue *fast = slow_value_to_menai_value(vs, orig, ctx);
             if (!fast) {
@@ -487,6 +499,7 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
             }
 
             co->constants[i] = fast;
+            co->nconst = i + 1;
         }
     }
 
@@ -580,6 +593,10 @@ menai_code_object_from_python_rec(MenaiVMState *vs, PyObject *py_code, int *next
     return co;
 
 fail:
+    /*
+     * co may be only partly built, so every count it carries must describe the
+     * entries that were actually published: the finaliser releases all of them.
+     */
     menai_code_object_release(vs, co);
     return NULL;
 }
@@ -828,6 +845,12 @@ slow_vector_to_fast(MenaiVMState *vs, PyObject *src, ConversionContext *ctx)
     for (Py_ssize_t i = 0; i < n; i++) {
         MenaiValue *item = slow_value_to_menai_value(vs, PyTuple_GET_ITEM(elems, i), ctx);
         if (!item) {
+            /*
+             * Only the slots below i were written; a vector is allocated with
+             * its final length and uninitialised data, so the finaliser must
+             * see the populated prefix and nothing more.
+             */
+            r->length = i;
             menai_value_release(vs, (MenaiValue *)r);
             Py_DECREF(elems);
             return NULL;
@@ -979,6 +1002,13 @@ fail:
     for (Py_ssize_t j = 0; j < populated; j++) {
         menai_value_release(vs, (MenaiValue *)elems[j]);
     }
+
+    /*
+     * The elements were released above, so r->length is still 0 and its
+     * finaliser reclaims only the element array and the (uninitialised) hash
+     * table.
+     */
+    menai_value_free(vs, (MenaiValue *)r);
     return NULL;
 }
 
