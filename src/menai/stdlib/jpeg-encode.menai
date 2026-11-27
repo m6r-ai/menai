@@ -635,6 +635,76 @@
                249
                250))
 
+      ; The factor that undoes the AAN scale the butterfly's two passes leave on each
+      ; coefficient: the row pass multiplies frequency u by m(u) = 4 * aanscale(u),
+      ; the column pass frequency v, so dividing by m(u) * m(v) restores the
+      ; coefficient the DCT defines.  aanscale(u) is C(u) * cos(u * pi / 16).
+      (forward-scale
+       (vector 0.12500000000000003
+               0.0901199777508685
+               0.09567085809127246
+               0.10630376184590706
+               0.125
+               0.15909482257160423
+               0.23096988312782168
+               0.45306372317644383
+               0.0901199777508685
+               0.06497288311853626
+               0.06897484482073576
+               0.07664074121909413
+               0.09011997775086848
+               0.11470097496345075
+               0.16652000582879986
+               0.32664074121909403
+               0.09567085809127246
+               0.06897484482073576
+               0.07322330470336312
+               0.08136137691302557
+               0.09567085809127245
+               0.12176590554643293
+               0.17677669529663684
+               0.34675996133053677
+               0.10630376184590706
+               0.07664074121909413
+               0.08136137691302557
+               0.09040391826073059
+               0.10630376184590705
+               0.13529902503654923
+               0.19642373959677553
+               0.3852990250365491
+               0.125
+               0.09011997775086848
+               0.09567085809127245
+               0.10630376184590705
+               0.12499999999999997
+               0.1590948225716042
+               0.23096988312782163
+               0.4530637231764438
+               0.15909482257160423
+               0.11470097496345075
+               0.12176590554643293
+               0.13529902503654923
+               0.1590948225716042
+               0.20248930055272182
+               0.2939689006048396
+               0.5766407412190938
+               0.23096988312782168
+               0.16652000582879986
+               0.17677669529663684
+               0.19642373959677553
+               0.23096988312782163
+               0.2939689006048396
+               0.4267766952966367
+               0.8371526015321518
+               0.45306372317644383
+               0.32664074121909403
+               0.34675996133053677
+               0.3852990250365491
+               0.4530637231764438
+               0.5766407412190938
+               0.8371526015321518
+               1.6421338980680102))
+
       ; Scale a base quantisation table for `quality` with the IJG rule, clamping
       ; each entry to 1..255.
       (scale-table
@@ -698,62 +768,120 @@
              (integer- (integer+ value (integer-bit-shift-left 1 size)) 1)
              value)))
 
-      ; The row pass of the forward transform:
-      ; temp[y][u] = sum over x of samples[y][x] * basis[u][x].
-      ;
-      ; Each output is an eight-term inner product written out against the two
-      ; rows' bases, so every index is a base plus a constant and the arithmetic
-      ; folds at compile time.
+      ; The eight-point transform is the AAN butterfly: twelve multiplications
+      ; where an eight-term inner product needs sixty-four.  Each output carries the
+      ; scale recorded in `forward-scale`, which the quantisation step undoes, so
+      ; these passes write coefficients the DCT would give divided by that scale.
+      (butterfly
+       (lambda (s0 s1 s2 s3 s4 s5 s6 s7)
+         (let ((t0 (float+ s0 s7))
+               (t7 (float- s0 s7))
+               (t1 (float+ s1 s6))
+               (t6 (float- s1 s6))
+               (t2 (float+ s2 s5))
+               (t5 (float- s2 s5))
+               (t3 (float+ s3 s4))
+               (t4 (float- s3 s4)))
+           (let ((t10 (float+ t0 t3))
+                 (t13 (float- t0 t3))
+                 (t11 (float+ t1 t2))
+                 (t12 (float- t1 t2)))
+             (let ((z1 (float* (float+ t12 t13) 0.7071067811865476))
+                   (u10 (float+ t4 t5))
+                   (u11 (float+ t5 t6))
+                   (u12 (float+ t6 t7)))
+               (let ((z5 (float* (float- u10 u12) 0.38268343236508984))
+                     (z2 (float+ (float* 0.5411961001461969 u10) z5))
+                     (z4 (float+ (float* 1.3065629648763766 u12) z5))
+                     (z3 (float* u11 0.7071067811865476)))
+                 (vector
+                   (float+ t10 t11)
+                   (float+ (float+ t7 z3) z4)
+                   (float+ t13 z1)
+                   (float- (float- t7 z3) z2)
+                   (float- t10 t11)
+                   (float+ (float- t7 z3) z2)
+                   (float- t13 z1)
+                   (float- (float+ t7 z3) z4))))))))
+
+      ; The row pass: butterfly each row of samples into `temp`.
       (forward-rows
-       (lambda (samples y u temp)
+       (lambda (samples y temp)
          (if (integer>=? y 8)
              temp
-             (if (integer>=? u 8)
-                 (forward-rows samples (integer+ y 1) 0 temp)
-                 (let ((a-base (integer* y 8))
-                       (b-base (integer* u 8))
-                       (t0 (float* (vector-nth samples a-base) (vector-nth basis b-base)))
-                       (t1 (float* (vector-nth samples (integer+ a-base 1)) (vector-nth basis (integer+ b-base 1))))
-                       (t2 (float* (vector-nth samples (integer+ a-base 2)) (vector-nth basis (integer+ b-base 2))))
-                       (t3 (float* (vector-nth samples (integer+ a-base 3)) (vector-nth basis (integer+ b-base 3))))
-                       (t4 (float* (vector-nth samples (integer+ a-base 4)) (vector-nth basis (integer+ b-base 4))))
-                       (t5 (float* (vector-nth samples (integer+ a-base 5)) (vector-nth basis (integer+ b-base 5))))
-                       (t6 (float* (vector-nth samples (integer+ a-base 6)) (vector-nth basis (integer+ b-base 6))))
-                       (t7 (float* (vector-nth samples (integer+ a-base 7)) (vector-nth basis (integer+ b-base 7)))))
-                   (forward-rows
-                     samples
-                     y
-                     (integer+ u 1)
+             (let ((b (integer* y 8)))
+               (let ((out
+                      (butterfly
+                        (vector-nth samples b)
+                        (vector-nth samples (integer+ b 1))
+                        (vector-nth samples (integer+ b 2))
+                        (vector-nth samples (integer+ b 3))
+                        (vector-nth samples (integer+ b 4))
+                        (vector-nth samples (integer+ b 5))
+                        (vector-nth samples (integer+ b 6))
+                        (vector-nth samples (integer+ b 7)))))
+                 (forward-rows
+                   samples
+                   (integer+ y 1)
+                   (vector-with
                      (vector-with
-                       temp
-                       (integer+ a-base u)
-                       (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7))))))))))
+                       (vector-with
+                         (vector-with
+                           (vector-with
+                             (vector-with
+                               (vector-with (vector-with temp b (vector-nth out 0)) (integer+ b 1) (vector-nth out 1))
+                               (integer+ b 2)
+                               (vector-nth out 2))
+                             (integer+ b 3)
+                             (vector-nth out 3))
+                           (integer+ b 4)
+                           (vector-nth out 4))
+                         (integer+ b 5)
+                         (vector-nth out 5))
+                       (integer+ b 6)
+                       (vector-nth out 6))
+                     (integer+ b 7)
+                     (vector-nth out 7))))))))
 
-      ; The column pass: out[v][u] = sum over y of temp[y][u] * basis[v][y];
-      ; the y-th term reads temp at u + 8 * y and the basis at 8 * v + y.
+      ; The column pass: butterfly each column of `temp`, the outputs laid down as
+      ; row v of the result.
       (forward-columns
-       (lambda (temp v u out)
+       (lambda (temp v out)
          (if (integer>=? v 8)
              out
-             (if (integer>=? u 8)
-                 (forward-columns temp (integer+ v 1) 0 out)
-                 (let ((b-base (integer* v 8))
-                       (t0 (float* (vector-nth temp u) (vector-nth basis b-base)))
-                       (t1 (float* (vector-nth temp (integer+ u 8)) (vector-nth basis (integer+ b-base 1))))
-                       (t2 (float* (vector-nth temp (integer+ u 16)) (vector-nth basis (integer+ b-base 2))))
-                       (t3 (float* (vector-nth temp (integer+ u 24)) (vector-nth basis (integer+ b-base 3))))
-                       (t4 (float* (vector-nth temp (integer+ u 32)) (vector-nth basis (integer+ b-base 4))))
-                       (t5 (float* (vector-nth temp (integer+ u 40)) (vector-nth basis (integer+ b-base 5))))
-                       (t6 (float* (vector-nth temp (integer+ u 48)) (vector-nth basis (integer+ b-base 6))))
-                       (t7 (float* (vector-nth temp (integer+ u 56)) (vector-nth basis (integer+ b-base 7)))))
-                   (forward-columns
-                     temp
-                     v
-                     (integer+ u 1)
+             (let ((b (integer* v 8)))
+               (let ((col
+                      (butterfly
+                        (vector-nth temp v)
+                        (vector-nth temp (integer+ v 8))
+                        (vector-nth temp (integer+ v 16))
+                        (vector-nth temp (integer+ v 24))
+                        (vector-nth temp (integer+ v 32))
+                        (vector-nth temp (integer+ v 40))
+                        (vector-nth temp (integer+ v 48))
+                        (vector-nth temp (integer+ v 56)))))
+                 (forward-columns
+                   temp
+                   (integer+ v 1)
+                   (vector-with
                      (vector-with
-                       out
-                       (integer+ b-base u)
-                       (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7))))))))))
+                       (vector-with
+                         (vector-with
+                           (vector-with
+                             (vector-with
+                               (vector-with (vector-with out v (vector-nth col 0)) (integer+ 8 v) (vector-nth col 1))
+                               (integer+ 16 v)
+                               (vector-nth col 2))
+                             (integer+ 24 v)
+                             (vector-nth col 3))
+                           (integer+ 32 v)
+                           (vector-nth col 4))
+                         (integer+ 40 v)
+                         (vector-nth col 5))
+                       (integer+ 48 v)
+                       (vector-nth col 6))
+                     (integer+ 56 v)
+                     (vector-nth col 7))))))))
 
       ; The quantised coefficients of one block of 8-bit samples, in zigzag
       ; order, which is the order `encode-block` walks.  The samples are level
@@ -771,9 +899,7 @@
                         (float- (integer->float s) 128.0))
                       samples)
                     0
-                    0
                     (vector-fill 64 0.0))
-                  0
                   0
                   (vector-fill 64 0.0))))
            (map-vector
@@ -781,7 +907,11 @@
                (float->integer
                  (float-floor
                    (float+
-                     (float/ (vector-nth transformed (vector-nth zigzag p)) (integer->float (vector-nth quant p)))
+                     (float/
+                       (float*
+                         (vector-nth transformed (vector-nth zigzag p))
+                         (vector-nth forward-scale (vector-nth zigzag p)))
+                       (integer->float (vector-nth quant p)))
                      0.5))))
              (list->vector (range 0 64))))))
 
