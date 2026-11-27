@@ -87,78 +87,6 @@
                62
                63))
 
-      (basis
-
-       ; The inverse DCT basis, m[u][x] = C(u) * cos((2x + 1) * u * pi / 16) / 2,
-       ; so that the 2-D transform is f = m' * F * m with the 1/4 already folded
-       ; in.  Written out rather than computed, because a module has no
-       ; import-time state and rebuilding it on every call would land inside the
-       ; measured section for no benefit.
-       (vector 0.35355339059327373
-               0.35355339059327373
-               0.35355339059327373
-               0.35355339059327373
-               0.35355339059327373
-               0.35355339059327373
-               0.35355339059327373
-               0.35355339059327373
-               0.49039264020161522
-               0.41573480615127262
-               0.27778511650980114
-               0.097545161008064166
-               -0.097545161008064096
-               -0.27778511650980098
-               -0.41573480615127267
-               -0.49039264020161522
-               0.46193976625564337
-               0.19134171618254492
-               -0.19134171618254486
-               -0.46193976625564337
-               -0.46193976625564342
-               -0.19134171618254517
-               0.1913417161825445
-               0.46193976625564326
-               0.41573480615127262
-               -0.097545161008064096
-               -0.49039264020161522
-               -0.27778511650980109
-               0.27778511650980092
-               0.49039264020161522
-               0.097545161008064388
-               -0.41573480615127256
-               0.35355339059327379
-               -0.35355339059327373
-               -0.35355339059327384
-               0.35355339059327368
-               0.35355339059327384
-               -0.35355339059327334
-               -0.35355339059327362
-               0.35355339059327329
-               0.27778511650980114
-               -0.49039264020161522
-               0.097545161008064152
-               0.41573480615127273
-               -0.41573480615127256
-               -0.097545161008064013
-               0.49039264020161533
-               -0.27778511650980076
-               0.19134171618254492
-               -0.46193976625564342
-               0.46193976625564326
-               -0.19134171618254495
-               -0.19134171618254528
-               0.46193976625564337
-               -0.46193976625564342
-               0.19134171618254478
-               0.097545161008064166
-               -0.27778511650980109
-               0.41573480615127273
-               -0.49039264020161533
-               0.49039264020161522
-               -0.41573480615127251
-               0.27778511650980076
-               -0.097545161008064291))
-
       ; The frame type named as it appears in an error message.  Its domain is the
       ; markers `is-frame-marker` admits, less the baseline one this module decodes,
       ; so the two must stay in step: a marker added to the gate and not named here
@@ -371,70 +299,171 @@
                    (vector-nth a (integer+ a-base (integer* i a-step)))
                    (vector-nth b (integer+ b-base (integer* i b-step)))))))))
 
-      ; The row pass of the inverse transform:
-      ; temp[v][x] = sum over u of coefficients[v][u] * basis[u][x].
-      ;
-      ; Each output is an eight-term inner product written out against a literal
-      ; basis offset, so every coefficient index is `base` plus a constant and the
-      ; arithmetic folds at compile time.
+      ; The per-frequency fold.  `inverse-step` leaves a scale of
+      ; [2.828427, 1, 2.164784, 1, 2.828427, 1, 5.226252, 1] on its eight outputs, so
+      ; each coefficient is multiplied by 1/scale for its row frequency and again for
+      ; its column frequency before the transform runs.  Folding it here rather than
+      ; into the quantisation table keeps the dequantised coefficients integral.
+      (inverse-fold
+       (vector 0.35355339135354626 1.0 0.46193976244860946 1.0 0.35355339135354626 1.0 0.19134171618254492 1.0))
+
+      ; The inverse transform's eight-point network: eight frequencies in, eight
+      ; samples out.  The even outputs are sums and differences of y0, y2, y4 and y6;
+      ; the odd outputs are four dot products over y1, y3, y5 and y7 whose rows are
+      ; the low half of the transform's odd columns, solved against the exact basis
+      ; rather than transcribed.
+      (inverse-step
+       (lambda (y0 y1 y2 y3 y4 y5 y6 y7)
+         (let ((t10 (float+ y0 y4))
+               (t11 (float- y0 y4))
+               (t13 (float+ y2 y6))
+               (t12 (float- (float* (float- y2 y6) 1.4142135623730951) t13)))
+           (let ((e0 (float+ t10 t13))
+                 (e1 (float+ t11 t12))
+                 (e2 (float- t11 t12))
+                 (e3 (float- t10 t13))
+
+                 (o7
+                  (float*
+                    (float+
+                      (float+ (float* y1 0.49039264020161522) (float* y3 0.41573480615127262))
+                      (float+ (float* y5 0.27778511650980114) (float* y7 0.097545161008064166)))
+                    1.0))
+
+                 (o6
+                  (float*
+                    (float+
+                      (float+ (float* y1 0.41573480615127262) (float* y3 -0.097545161008064166))
+                      (float+ (float* y5 -0.49039264020161522) (float* y7 -0.27778511650980114)))
+                    1.0))
+
+                 (o5
+                  (float*
+                    (float+
+                      (float+ (float* y1 0.27778511650980114) (float* y3 -0.49039264020161522))
+                      (float+ (float* y5 0.097545161008064166) (float* y7 0.41573480615127262)))
+                    1.0))
+
+                 (o4
+                  (float*
+                    (float+
+                      (float+ (float* y1 0.097545161008064166) (float* y3 -0.27778511650980114))
+                      (float+ (float* y5 0.41573480615127262) (float* y7 -0.49039264020161522)))
+                    1.0)))
+             (vector
+               (float+ e0 o7)
+               (float+ e1 o6)
+               (float+ e2 o5)
+               (float+ e3 o4)
+               (float- e3 o4)
+               (float- e2 o5)
+               (float- e1 o6)
+               (float- e0 o7))))))
+
+      ; The block with the fold applied, in the float vector the transform consumes.
+      (scale-block
+       (lambda (coefficients p scaled)
+         (if (integer>=? p 64)
+             scaled
+             (scale-block
+               coefficients
+               (integer+ p 1)
+               (vector-with
+                 scaled
+                 p
+                 (float*
+                   (integer->float (vector-nth coefficients p))
+                   (float* (vector-nth inverse-fold (integer% p 8)) (vector-nth inverse-fold (integer/ p 8)))))))))
+
+      ; The row pass: apply the network to each row of the scaled coefficients.
       (transform-rows
-       (lambda (coefficients v x temp)
+       (lambda (coefficients v temp)
          (if (integer>=? v 8)
              temp
-             (if (integer>=? x 8)
-                 (transform-rows coefficients (integer+ v 1) 0 temp)
-                 (let ((base (integer* v 8))
-                       (t0 (float* (vector-nth coefficients base) (vector-nth basis x)))
-                       (t1 (float* (vector-nth coefficients (integer+ base 1)) (vector-nth basis (integer+ x 8))))
-                       (t2 (float* (vector-nth coefficients (integer+ base 2)) (vector-nth basis (integer+ x 16))))
-                       (t3 (float* (vector-nth coefficients (integer+ base 3)) (vector-nth basis (integer+ x 24))))
-                       (t4 (float* (vector-nth coefficients (integer+ base 4)) (vector-nth basis (integer+ x 32))))
-                       (t5 (float* (vector-nth coefficients (integer+ base 5)) (vector-nth basis (integer+ x 40))))
-                       (t6 (float* (vector-nth coefficients (integer+ base 6)) (vector-nth basis (integer+ x 48))))
-                       (t7 (float* (vector-nth coefficients (integer+ base 7)) (vector-nth basis (integer+ x 56)))))
-                   (transform-rows
-                     coefficients
-                     v
-                     (integer+ x 1)
-                     (vector-with
-                       temp
-                       (integer+ base x)
-                       (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7))))))))))
+             (let ((b (integer* v 8))
 
-      ; The column pass: out[y][x] = sample(sum over v of temp[v][x] * basis[v][y]);
-      ; the v-th term reads temp at x + 8 * v and the basis at y + 8 * v.
+                   (out
+                    (inverse-step
+                      (vector-nth coefficients b)
+                      (vector-nth coefficients (integer+ b 1))
+                      (vector-nth coefficients (integer+ b 2))
+                      (vector-nth coefficients (integer+ b 3))
+                      (vector-nth coefficients (integer+ b 4))
+                      (vector-nth coefficients (integer+ b 5))
+                      (vector-nth coefficients (integer+ b 6))
+                      (vector-nth coefficients (integer+ b 7)))))
+               (transform-rows
+                 coefficients
+                 (integer+ v 1)
+                 (vector-with
+                   (vector-with
+                     (vector-with
+                       (vector-with
+                         (vector-with
+                           (vector-with
+                             (vector-with (vector-with temp b (vector-nth out 0)) (integer+ b 1) (vector-nth out 1))
+                             (integer+ b 2)
+                             (vector-nth out 2))
+                           (integer+ b 3)
+                           (vector-nth out 3))
+                         (integer+ b 4)
+                         (vector-nth out 4))
+                       (integer+ b 5)
+                       (vector-nth out 5))
+                     (integer+ b 6)
+                     (vector-nth out 6))
+                   (integer+ b 7)
+                   (vector-nth out 7)))))))
+
+      ; The column pass: apply the network down each column of `temp`, levelling and
+      ; clamping each sample.  The odd outputs sit below the even ones in the result,
+      ; so they are written at 7 - k.
       (transform-columns
-       (lambda (temp y x out)
-         (if (integer>=? y 8)
+       (lambda (temp x out)
+         (if (integer>=? x 8)
              out
-             (if (integer>=? x 8)
-                 (transform-columns temp (integer+ y 1) 0 out)
-                 (let ((base (integer* y 8))
-                       (t0 (float* (vector-nth temp x) (vector-nth basis y)))
-                       (t1 (float* (vector-nth temp (integer+ x 8)) (vector-nth basis (integer+ y 8))))
-                       (t2 (float* (vector-nth temp (integer+ x 16)) (vector-nth basis (integer+ y 16))))
-                       (t3 (float* (vector-nth temp (integer+ x 24)) (vector-nth basis (integer+ y 24))))
-                       (t4 (float* (vector-nth temp (integer+ x 32)) (vector-nth basis (integer+ y 32))))
-                       (t5 (float* (vector-nth temp (integer+ x 40)) (vector-nth basis (integer+ y 40))))
-                       (t6 (float* (vector-nth temp (integer+ x 48)) (vector-nth basis (integer+ y 48))))
-                       (t7 (float* (vector-nth temp (integer+ x 56)) (vector-nth basis (integer+ y 56)))))
-                   (transform-columns
-                     temp
-                     y
-                     (integer+ x 1)
+             (let ((column
+                    (inverse-step
+                      (vector-nth temp x)
+                      (vector-nth temp (integer+ x 8))
+                      (vector-nth temp (integer+ x 16))
+                      (vector-nth temp (integer+ x 24))
+                      (vector-nth temp (integer+ x 32))
+                      (vector-nth temp (integer+ x 40))
+                      (vector-nth temp (integer+ x 48))
+                      (vector-nth temp (integer+ x 56)))))
+               (transform-columns
+                 temp
+                 (integer+ x 1)
+                 (vector-with
+                   (vector-with
                      (vector-with
-                       out
-                       (integer+ base x)
-                       (to-sample
-                         (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7)))))))))))
+                       (vector-with
+                         (vector-with
+                           (vector-with
+                             (vector-with
+                               (vector-with out x (to-sample (vector-nth column 0)))
+                               (integer+ x 8)
+                               (to-sample (vector-nth column 1)))
+                             (integer+ x 16)
+                             (to-sample (vector-nth column 2)))
+                           (integer+ x 24)
+                           (to-sample (vector-nth column 3)))
+                         (integer+ x 32)
+                         (to-sample (vector-nth column 4)))
+                       (integer+ x 40)
+                       (to-sample (vector-nth column 5)))
+                     (integer+ x 48)
+                     (to-sample (vector-nth column 6)))
+                   (integer+ x 56)
+                   (to-sample (vector-nth column 7))))))))
 
-      ; Inverse transform one block of dequantised coefficients (natural order)
-      ; into 64 level-shifted samples.
+      ; Inverse transform one block of dequantised coefficients (natural order) into
+      ; 64 level-shifted samples: fold the scale in, transform rows, transform columns.
       (inverse-transform
        (lambda (coefficients)
          (transform-columns
-           (transform-rows (map-vector integer->float coefficients) 0 0 (vector-fill 64 0.0))
-           0
+           (transform-rows (scale-block coefficients 0 (vector-fill 64 0.0)) 0 (vector-fill 64 0.0))
            0
            (vector-fill 64 0))))
 
