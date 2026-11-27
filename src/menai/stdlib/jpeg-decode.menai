@@ -308,8 +308,74 @@
       ; each coefficient is multiplied by 1/scale for its row frequency and again for
       ; its column frequency before the transform runs.  Folding it here rather than
       ; into the quantisation table keeps the dequantised coefficients integral.
+      ; Indexed by the coefficient's natural position, holding the product for its row
+      ; and column frequency, so `scale-block` needs neither a division nor a second
+      ; multiplication.
       (inverse-fold
-       (vector 0.35355339135354626 1.0 0.46193976244860946 1.0 0.35355339135354626 1.0 0.19134171618254492 1.0))
+       (vector 0.12500000053759383
+               0.35355339135354624
+               0.1633203696147574
+               0.35355339135354624
+               0.12500000053759383
+               0.35355339135354624
+               0.06764951266374647
+               0.35355339135354624
+               0.35355339135354624
+               1.0
+               0.46193976244860946
+               1.0
+               0.35355339135354624
+               1.0
+               0.19134171618254492
+               1.0
+               0.1633203696147574
+               0.46193976244860946
+               0.21338834413107774
+               0.46193976244860946
+               0.1633203696147574
+               0.46193976244860946
+               0.08838834691987406
+               0.46193976244860946
+               0.35355339135354624
+               1.0
+               0.46193976244860946
+               1.0
+               0.35355339135354624
+               1.0
+               0.19134171618254492
+               1.0
+               0.12500000053759383
+               0.35355339135354624
+               0.1633203696147574
+               0.35355339135354624
+               0.12500000053759383
+               0.35355339135354624
+               0.06764951266374647
+               0.35355339135354624
+               0.35355339135354624
+               1.0
+               0.46193976244860946
+               1.0
+               0.35355339135354624
+               1.0
+               0.19134171618254492
+               1.0
+               0.06764951266374647
+               0.19134171618254492
+               0.08838834691987406
+               0.19134171618254492
+               0.06764951266374647
+               0.19134171618254492
+               0.036611652351681574
+               0.19134171618254492
+               0.35355339135354624
+               1.0
+               0.46193976244860946
+               1.0
+               0.35355339135354624
+               1.0
+               0.19134171618254492
+               1.0))
 
       ; The inverse transform's eight-point network: eight frequencies in, eight
       ; samples out.  The even outputs are sums and differences of y0, y2, y4 and y6;
@@ -328,32 +394,24 @@
                  (e3 (float- t10 t13))
 
                  (o7
-                  (float*
-                    (float+
-                      (float+ (float* y1 0.49039264020161522) (float* y3 0.41573480615127262))
-                      (float+ (float* y5 0.27778511650980114) (float* y7 0.097545161008064166)))
-                    1.0))
+                  (float+
+                    (float+ (float* y1 0.49039264020161522) (float* y3 0.41573480615127262))
+                    (float+ (float* y5 0.27778511650980114) (float* y7 0.097545161008064166))))
 
                  (o6
-                  (float*
-                    (float+
-                      (float+ (float* y1 0.41573480615127262) (float* y3 -0.097545161008064166))
-                      (float+ (float* y5 -0.49039264020161522) (float* y7 -0.27778511650980114)))
-                    1.0))
+                  (float+
+                    (float+ (float* y1 0.41573480615127262) (float* y3 -0.097545161008064166))
+                    (float+ (float* y5 -0.49039264020161522) (float* y7 -0.27778511650980114))))
 
                  (o5
-                  (float*
-                    (float+
-                      (float+ (float* y1 0.27778511650980114) (float* y3 -0.49039264020161522))
-                      (float+ (float* y5 0.097545161008064166) (float* y7 0.41573480615127262)))
-                    1.0))
+                  (float+
+                    (float+ (float* y1 0.27778511650980114) (float* y3 -0.49039264020161522))
+                    (float+ (float* y5 0.097545161008064166) (float* y7 0.41573480615127262))))
 
                  (o4
-                  (float*
-                    (float+
-                      (float+ (float* y1 0.097545161008064166) (float* y3 -0.27778511650980114))
-                      (float+ (float* y5 0.41573480615127262) (float* y7 -0.49039264020161522)))
-                    1.0)))
+                  (float+
+                    (float+ (float* y1 0.097545161008064166) (float* y3 -0.27778511650980114))
+                    (float+ (float* y5 0.41573480615127262) (float* y7 -0.49039264020161522)))))
              (vector
                (float+ e0 o7)
                (float+ e1 o6)
@@ -375,9 +433,7 @@
                (vector-with
                  scaled
                  p
-                 (float*
-                   (integer->float (vector-nth coefficients p))
-                   (float* (vector-nth inverse-fold (integer% p 8)) (vector-nth inverse-fold (integer/ p 8)))))))))
+                 (float* (integer->float (vector-nth coefficients p)) (vector-nth inverse-fold p)))))))
 
       ; The row pass: apply the network to each row of the scaled coefficients.
       (transform-rows

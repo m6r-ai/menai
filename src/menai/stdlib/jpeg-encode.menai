@@ -902,18 +902,32 @@
                     (vector-fill 64 0.0))
                   0
                   (vector-fill 64 0.0))))
-           (map-vector
-             (lambda (p)
-               (float->integer
-                 (float-floor
-                   (float+
-                     (float/
-                       (float*
-                         (vector-nth transformed (vector-nth zigzag p))
-                         (vector-nth forward-scale (vector-nth zigzag p)))
-                       (integer->float (vector-nth quant p)))
-                     0.5))))
-             (list->vector (range 0 64))))))
+           (quantise transformed quant 0 (vector-fill 64 0)))))
+
+      ; Fill `coefficients` with the quantised coefficient at each zigzag position.
+      ;
+      ; The result is the loop-carried accumulator, so each write lands in place
+      ; rather than building a list to be converted afterwards.
+      (quantise
+       (lambda (transformed quant p coefficients)
+         (if (integer>=? p 64)
+             coefficients
+             (quantise
+               transformed
+               quant
+               (integer+ p 1)
+               (vector-with
+                 coefficients
+                 p
+                 (float->integer
+                   (float-floor
+                     (float+
+                       (float/
+                         (float*
+                           (vector-nth transformed (vector-nth zigzag p))
+                           (vector-nth forward-scale (vector-nth zigzag p)))
+                         (integer->float (vector-nth quant p)))
+                       0.5))))))))
 
       ; Append one byte to the output, stuffing a zero after an 0xFF.
       (emit-byte
@@ -925,19 +939,36 @@
       ; Write `count` bits of `value`, most significant first.  `state` is
       ; (vector out acc bits), where `acc` holds `bits` pending bits.
       ; Returns the new state.
+      ;
+      ; The bits go out a whole byte at a time where the accumulator has room for
+      ; them, so a symbol costs one step per byte it spans rather than one per bit.
+      ; `remaining` counts the bits of `value` still to write and those are the low
+      ; ones, so each step takes the top `space` of them and masks off what it has
+      ; written; the accumulator is masked to its pending bits for the same reason.
       (put-bits
        (lambda (state value count)
          (let ((loop
                 (lambda (out acc bits remaining)
                   (if (integer<=? remaining 0)
                       (vector out acc bits)
-                      (let ((next
-                             (integer-bit-or
-                               (integer-bit-shift-left acc 1)
-                               (integer-bit-and (integer-bit-shift-right value (integer- remaining 1)) 1))))
-                        (if (integer<? bits 7)
-                            (loop out next (integer+ bits 1) (integer- remaining 1))
-                            (loop (emit-byte out next) 0 0 (integer- remaining 1))))))))
+                      (if (integer<? remaining (integer- 8 bits))
+                          (vector
+                            out
+                            (integer-bit-or
+                              (integer-bit-shift-left
+                                (integer-bit-and acc (integer- (integer-bit-shift-left 1 bits) 1))
+                                remaining)
+                              (integer-bit-and value (integer- (integer-bit-shift-left 1 remaining) 1)))
+                            (integer+ bits remaining))
+                          (let ((rest
+                                 (integer-bit-and
+                                   (integer-bit-shift-right value (integer- remaining (integer- 8 bits)))
+                                   (integer- (integer-bit-shift-left 1 (integer- 8 bits)) 1))))
+                            (loop
+                              (emit-byte out (integer-bit-or (integer-bit-shift-left acc (integer- 8 bits)) rest))
+                              0
+                              0
+                              (integer- remaining (integer- 8 bits)))))))))
            (loop (vector-nth state 0) (vector-nth state 1) (vector-nth state 2) count))))
 
       ; Pad the accumulator with one bits and return the written bytes.
@@ -961,28 +992,30 @@
       (encode-block
        (lambda (state block dc-table ac-table predictor)
          (let ((difference (integer- (vector-nth block 0) predictor)))
-           (let ((after-dc (put-symbol state dc-table (category difference) (category difference) difference)))
-             (let ((loop
-                    (lambda (state k run)
-                      (if (integer>=? k 64)
-                          (if (integer=? run 0)
-                              state
-                              (put-symbol state ac-table 0 0 0))
-                          (let ((coefficient (vector-nth block k)))
-                            (if (integer=? coefficient 0)
-                                (loop state (integer+ k 1) (integer+ run 1))
-                                (if (integer>? run 15)
-                                    (loop (put-symbol state ac-table 240 0 0) k (integer- run 16))
-                                    (loop
-                                      (put-symbol
-                                        state
-                                        ac-table
-                                        (integer-bit-or (integer-bit-shift-left run 4) (category coefficient))
-                                        (category coefficient)
-                                        coefficient)
-                                      (integer+ k 1)
-                                      0))))))))
-               (dict "state" (loop after-dc 1 0) "predictor" (vector-nth block 0)))))))
+           (let ((dc-size (category difference)))
+             (let ((after-dc (put-symbol state dc-table dc-size dc-size difference)))
+               (let ((loop
+                      (lambda (state k run)
+                        (if (integer>=? k 64)
+                            (if (integer=? run 0)
+                                state
+                                (put-symbol state ac-table 0 0 0))
+                            (let ((coefficient (vector-nth block k)))
+                              (if (integer=? coefficient 0)
+                                  (loop state (integer+ k 1) (integer+ run 1))
+                                  (if (integer>? run 15)
+                                      (loop (put-symbol state ac-table 240 0 0) k (integer- run 16))
+                                      (let ((size (category coefficient)))
+                                        (loop
+                                          (put-symbol
+                                            state
+                                            ac-table
+                                            (integer-bit-or (integer-bit-shift-left run 4) size)
+                                            size
+                                            coefficient)
+                                          (integer+ k 1)
+                                          0)))))))))
+                 (dict "state" (loop after-dc 1 0) "predictor" (vector-nth block 0))))))))
 
       ; A marker segment: the marker, its length, and its payload.
       (segment

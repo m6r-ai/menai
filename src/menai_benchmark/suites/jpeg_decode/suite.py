@@ -74,12 +74,15 @@ _SPARSE_AC = ((1, 3), (2, -2), (8, 1))
 # Fixture geometry: (name, width, height, components, detail).  A component is
 # (id, horizontal sampling, vertical sampling); a 2x2 luminance component with 1x1
 # chrominance components is 4:2:0, whose chroma planes are upsampled by sample
-# replication when the file is decoded.
+# replication when the file is decoded.  4:2:2 and 4:4:0 sample horizontally and
+# vertically respectively, which the upsampling reads as separate factors.
 _FIXTURES: list[tuple[str, int, int, list[tuple[int, int, int]], bool]] = [
     ("greyscale-64x64", 64, 64, [(1, 1, 1)], False),
     ("greyscale-detail-64x64", 64, 64, [(1, 1, 1)], True),
     ("colour-444-64x64", 64, 64, [(1, 1, 1), (2, 1, 1), (3, 1, 1)], False),
     ("colour-420-64x64", 64, 64, [(1, 2, 2), (2, 1, 1), (3, 1, 1)], False),
+    ("colour-422-64x64", 64, 64, [(1, 2, 1), (2, 1, 1), (3, 1, 1)], False),
+    ("colour-440-64x64", 64, 64, [(1, 1, 2), (2, 1, 1), (3, 1, 1)], False),
     ("colour-444-128x128", 128, 128, [(1, 1, 1), (2, 1, 1), (3, 1, 1)], False),
     ("colour-420-128x128", 128, 128, [(1, 2, 2), (2, 1, 1), (3, 1, 1)], False),
     ("colour-444-97x61", 97, 61, [(1, 1, 1), (2, 1, 1), (3, 1, 1)], False),
@@ -310,7 +313,7 @@ class Suite(BenchmarkSuite):
     """Benchmark suite for the Menai JPEG decoder."""
 
     name = "jpeg-decode"
-    description = "Decode baseline sequential JPEG files, greyscale and 4:4:4 and 4:2:0 colour."
+    description = "Decode baseline sequential JPEG files, greyscale and every chroma sampling factor."
 
     def cases(self) -> list[BenchmarkCase]:
         """Return one case per fixture file."""
