@@ -1104,7 +1104,7 @@
       ; the components per MCU, so all three blocks for an MCU are written before
       ; the next MCU's, not one component's blocks in a run.
       (encode-mcu
-       (lambda (state planes width height blocks-x blocks-y quants dc-tables ac-tables index component predictors)
+       (lambda (state planes width height blocks-x quants dc-tables ac-tables index component predictors)
          (if (integer>=? component 3)
              (dict "state" state "predictors" predictors)
              (let ((result
@@ -1129,7 +1129,6 @@
                  width
                  height
                  blocks-x
-                 blocks-y
                  quants
                  dc-tables
                  ac-tables
@@ -1143,18 +1142,7 @@
          (if (integer>=? index (integer* blocks-x blocks-y))
              state
              (let ((result
-                    (encode-mcu state
-                                planes
-                                width
-                                height
-                                blocks-x
-                                blocks-y
-                                quants
-                                dc-tables
-                                ac-tables
-                                index
-                                0
-                                predictors)))
+                    (encode-mcu state planes width height blocks-x quants dc-tables ac-tables index 0 predictors)))
                (encode-scan
                  (dict-get result "state")
                  planes

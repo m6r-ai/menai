@@ -9,6 +9,10 @@
 ; run-length-coded AC coefficients; the blocks are dequantised, inverse
 ; transformed, levelled and clamped to give 8-bit samples.
 ;
+; Any number of 0xFF fill bytes may precede a marker, and the standalone markers that
+; carry no payload -- a second SOI, TEM, or a restart marker outside a scan -- are
+; skipped wherever they appear between segments.
+;
 ; Only baseline sequential Huffman-coded files (SOF0) with 8-bit precision and one
 ; or three components are supported.  Progressive, extended sequential,
 ; arithmetic-coded and lossless files, and other precisions, raise a runtime
