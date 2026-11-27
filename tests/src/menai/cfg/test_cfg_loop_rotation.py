@@ -19,6 +19,14 @@ verify that:
 """
 
 from menai.bytecode.menai_bytecode import Opcode, unpack_instruction
+from menai.cfg.menai_cfg import (
+    MenaiCFGBranchTerm,
+    MenaiCFGJumpTerm,
+    MenaiCFGParamInstr,
+    MenaiCFGSelfLoopTerm,
+    value_ids_in_instr,
+)
+from menai.cfg.menai_cfg_optimization_pass import collect_functions
 from menai.menai_compiler import MenaiCompiler
 
 
@@ -586,10 +594,14 @@ class TestMultipleBackEdgesRotated:
 
     def test_merge_shaped_loop_rotated(self):
         """
-        A merge helper that consumes one element from whichever of two lists
-        comes first tail-calls itself from both arms, so the loop has one
-        back-edge per arm.  After rotation each back-edge is a conditional
-        branch back into the body, so none of them is an unconditional jump.
+        A merge helper tail-calls itself from both arms, so the loop has one
+        back-edge per arm.
+
+        The arm that advances `a` rebinds the list-null? test's operand and is
+        rotated into a conditional branch.  The arm that advances `b` passes
+        `a` through unchanged, so the test cannot change value on it: that
+        arm keeps its unconditional jump rather than gaining a branch whose
+        false arm is dead.  Rotation is therefore per back-edge.
         """
         src = """
         (let ((merge
@@ -605,11 +617,12 @@ class TestMultipleBackEdgesRotated:
         """
         code = _compile(src)
         fn = _loop_function(code, "merge")
-        assert _has_backward_conditional_jump(fn), (
-            "a loop with multiple back-edges must be rotated"
+        assert _count_backward_conditional_jumps(fn) == 1, (
+            "only the back-edge that rebinds an operand of the test is rotated"
         )
-        assert not _has_backward_unconditional_jump(fn), (
-            "every back-edge must be a conditional branch back into the body"
+        assert _has_backward_unconditional_jump(fn), (
+            "the back-edge that passes every test operand through keeps its "
+            "unconditional jump"
         )
 
 
@@ -687,3 +700,125 @@ class TestMultipleLoopsInOneFunction:
         menai = Menai()
 
         assert menai.evaluate(self.NESTED_LOOPS) == 10
+
+
+def _function_with_self_loops(cfg):
+    """Return the first function in `cfg` that contains a self-loop."""
+    return next(
+        (
+            func for func in collect_functions(cfg)
+            if any(
+                isinstance(block.terminator, MenaiCFGSelfLoopTerm)
+                for block in func.blocks
+            )
+        ),
+        None,
+    )
+
+
+def _self_loop_blocks(func) -> list:
+    """Return the blocks whose terminator is a self-loop."""
+    return [
+        block for block in func.blocks
+        if isinstance(block.terminator, MenaiCFGSelfLoopTerm)
+    ]
+
+
+def _rotated_back_edges(func) -> list:
+    """Return the back-edge blocks retargeted to a rotated test."""
+    by_id = {block.id: block for block in func.blocks}
+    return [
+        block for block in _self_loop_blocks(func)
+        if block.terminator.target is not None
+        and by_id[block.terminator.target].label == "loop_continue"
+    ]
+
+
+class TestBackEdgeRotationIsPerEdge:
+    """A back-edge is rotated only when the header test can change on it."""
+
+    FLAT_NESTED_LOOP = """
+        (let ((go (lambda (y x acc)
+                    (if (integer>=? y 8)
+                        acc
+                        (if (integer>=? x 8)
+                            (go (integer+ y 1) 0 acc)
+                            (go y (integer+ x 1) (integer+ acc 1)))))))
+          (go 0 0 0))
+        """
+
+    def test_inner_back_edge_is_not_closed_by_the_outer_test(self):
+        """
+        A loop written as one flat nested loop has two back-edges under one
+        header, whose test is the outer counter's.  The back-edge that advances
+        the inner counter passes the outer counter through unchanged, so the
+        header test cannot change value on it.
+
+        That back-edge's continue block must therefore jump straight at the arm
+        the header took rather than re-branching on the outer test.  A branch
+        there would have an arm that can never be taken, which is dead
+        instruction and a comparison repeated once per inner iteration.
+        """
+        func = _function_with_self_loops(
+            MenaiCompiler().compile_to_cfg(self.FLAT_NESTED_LOOP)
+        )
+        by_id = {block.id: block for block in func.blocks}
+
+        rotated = _rotated_back_edges(func)
+        assert len(rotated) == 2, (
+            "both back-edges must fall through into a continue block"
+        )
+
+        decided = [
+            by_id[block.terminator.target] for block in rotated
+            if isinstance(by_id[block.terminator.target].terminator, MenaiCFGJumpTerm)
+        ]
+        assert len(decided) == 1, (
+            "the back-edge whose test cannot change must not branch again"
+        )
+
+    def test_back_edge_that_cannot_exit_keeps_its_jump_to_the_header(self):
+        """A decided back-edge reaches the inner test, so both its arms run."""
+        func = _function_with_self_loops(
+            MenaiCompiler().compile_to_cfg(self.FLAT_NESTED_LOOP)
+        )
+        by_id = {block.id: block for block in func.blocks}
+
+        decided = [
+            by_id[block.terminator.target] for block in _rotated_back_edges(func)
+            if isinstance(by_id[block.terminator.target].terminator, MenaiCFGJumpTerm)
+        ]
+        assert len(decided) == 1
+        inner_test = by_id[decided[0].terminator.target]
+        assert isinstance(inner_test.terminator, MenaiCFGBranchTerm), (
+            "the decided edge must reach a test that can take either arm"
+        )
+
+    def test_both_back_edges_rotated_when_both_vary(self):
+        """
+        When every back-edge rebinds an operand of the header test, both are
+        rotated and neither is left with an unconditional jump.  A phase test
+        that advances the same counter on either arm is that shape.
+        """
+        src = """
+        (let ((scan (lambda (i)
+                      (if (integer>=? i 10)
+                          i
+                          (if (integer=? i 5)
+                              (scan (integer+ i 1))
+                              (scan (integer+ i 1)))))))
+          (scan 0))
+        """
+        func = _function_with_self_loops(MenaiCompiler().compile_to_cfg(src))
+        back_edges = _self_loop_blocks(func)
+        assert len(back_edges) == 2
+        assert len(_rotated_back_edges(func)) == 2, (
+            "every back-edge whose test varies must be rotated"
+        )
+
+    def test_flat_nested_loop_correct_results(self):
+        """End-to-end: a partly rotated flat nested loop must be correct."""
+        from menai import Menai
+        menai = Menai()
+
+        assert menai.evaluate(self.FLAT_NESTED_LOOP) == 64

@@ -42,6 +42,27 @@ duplicated test blocks are the reason the backend identifies self-loop
 back-edges by a flag on the jump rather than by a single shared
 `__entry__` label.
 
+Each back-edge is rotated only if the header test can actually change value
+on it.  When the test's operands are all passed through unchanged by a
+back-edge, the rotated test it would receive is a branch on a condition the
+header has already evaluated and the body has not touched, so one of its two
+arms can never be taken.  Such a back-edge's continue block is therefore a
+plain jump to the arm the header took, rather than a copy of the test.
+
+The decision is per back-edge, not per loop, because a loop's operands need
+not all vary on every back-edge.  The inner counter of a loop written as one
+flat nested loop advances on one back-edge while the outer counter is passed
+through unchanged on it: the outer counter's edge gets the rotated test, and
+the inner counter's edge jumps to the inner test, so control reaches a test
+that can take either arm and each iteration pays one instruction for the
+back-edge rather than two.
+
+The continue block is created for a decided back-edge too, even though it
+holds only a jump.  A back-edge is recognised as already rotated by targeting
+a block the entry path cannot reach, and pointing one at an existing body
+block instead would make it look unrotated on every round, rotating it without
+end.
+
 A function may contain more than one loop — whether sequential (a loop after
 another) or nested (a loop inside another loop's body).  Each loop is rotated
 independently, innermost first: rotating an inner loop only adds a block
@@ -80,8 +101,10 @@ rest left alone:
   - no header test result is consumed anywhere in the body region.
 
 Anything else is left unrotated.  The pass is idempotent: an already-rotated
-loop (whose self-loop target blocks are copies of the header test) is
-detected and skipped.
+back-edge (one whose self-loop target block is the pass's own continue block,
+which the entry path cannot reach) is detected and skipped.  The same
+detection covers a decided back-edge, whose continue block holds only a jump,
+so no round of the fixed-point driver retargets the same edge twice.
 """
 
 from dataclasses import replace
@@ -119,7 +142,9 @@ from menai.cfg.menai_cfg import (
 from menai.cfg.menai_cfg_optimization_pass import (
     MenaiCFGContext,
     MenaiCFGPerFunctionPass,
+    compute_dominators,
 )
+from menai.menai_error import MenaiInternalError
 
 
 class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
@@ -189,9 +214,6 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
             if self_loop_block is None or self_loop_block.id not in body_region:
                 return func, False
 
-        if self._is_rotated(func, self_loops):
-            return func, False
-
         test_instrs = self._header_test_instrs(header)
         if not test_instrs:
             return func, False
@@ -204,18 +226,64 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
         ):
             return func, False
 
-        # Build one rotated test block per self-loop: a copy of the header
-        # test with fresh SSA result ids, terminated by a branch with the
-        # header's targets.  Each self-loop is retargeted to its own copy so
-        # that every back-edge falls through into a test rather than jumping
-        # to a shared one.  A single shared test block could only be the
-        # fall-through successor of one back-edge, leaving the others with an
-        # unconditional jump, which is exactly what rotation removes.
+        # Decide what each back-edge does once its loop-carried moves have run,
+        # per back-edge rather than per loop.  A loop written as one flat
+        # nested loop advances its inner counter on one back-edge while passing
+        # its outer counter through unchanged on the same edge, so the header
+        # test can be undecided on one back-edge and decided on another.
+        #
+        # An undecided test gets a rotated copy, as before.  A decided test is
+        # not re-executed and not copied: its operands are unchanged, so its
+        # outcome is the one the header already took, and the back-edge's
+        # successor jumps straight at that arm.  Rotating would instead emit a
+        # branch whose other arm can never be taken.
+        #
+        # The continue block is created either way.  A back-edge is recognised
+        # as already rotated by targeting a block the entry path cannot reach,
+        # and pointing a back-edge at an existing body block would make it look
+        # unrotated on every round, rotating it without end.
+        rotatable: list[tuple[MenaiCFGSelfLoopTerm, MenaiCFGBlock, bool]] = []
+        for self_loop in self_loops:
+            if self._is_back_edge_rotated(func, self_loop):
+                continue
+
+            self_loop_block = self._self_loop_block(func, self_loop)
+            assert self_loop_block is not None
+            decided = self._is_test_constant_on_back_edge(
+                func, test_instrs, self_loop,
+            )
+            rotatable.append((self_loop, self_loop_block, decided))
+
+        if not rotatable:
+            return func, False
+
+        # Build one continue block per self-loop and retarget that self-loop to
+        # it.  For an undecided test the block is a copy of the header test
+        # with fresh SSA result ids, so every back-edge falls through into a
+        # test rather than jumping to a shared one.  For a decided test the
+        # block is a jump to the arm the header took, so the test is neither
+        # re-executed nor branched on twice.
         next_id = self._max_value_id(func) + 1
         next_block_id = self._next_block_id(func)
         new_blocks: list[MenaiCFGBlock] = list(func.blocks)
         retarget: dict[int, int] = {}
-        for self_loop in self_loops:
+        for self_loop, self_loop_block, decided in rotatable:
+            if decided:
+                new_blocks.append(
+                    MenaiCFGBlock(
+                        id=next_block_id,
+                        label="loop_continue",
+                        terminator=MenaiCFGJumpTerm(
+                            target=self._decided_successor(
+                                func, header, self_loop_block,
+                            ),
+                        ),
+                    ),
+                )
+                next_block_id += 1
+                retarget[self_loop_block.id] = next_block_id - 1
+                continue
+
             remap: dict[int, MenaiCFGValue] = {}
             for instr in test_instrs:
                 result = getattr(instr, 'result', None)
@@ -241,8 +309,6 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
             next_block_id += 1
 
             new_blocks.append(continue_block)
-            self_loop_block = self._self_loop_block(func, self_loop)
-            assert self_loop_block is not None
             retarget[self_loop_block.id] = continue_block.id
 
         # Retarget each self-loop to its rotated test block.
@@ -407,33 +473,123 @@ class MenaiCFGLoopRotation(MenaiCFGPerFunctionPass):
 
         return region
 
-    def _is_rotated(
+    def _is_back_edge_rotated(
         self,
         func: MenaiCFGFunction,
-        self_loops: list[MenaiCFGSelfLoopTerm],
+        self_loop: MenaiCFGSelfLoopTerm,
     ) -> bool:
         """
-        Return True if the loop is already rotated.
+        Return True if this back-edge already falls through into a rotated test.
 
-        Rotation retargets each self-loop to a fresh block holding a copy of
-        the header test.  That block is entered only by the back-edge, whereas
-        the unrotated header is also entered by the loop's entry path.  A
-        loop is therefore already rotated when its self-loop target cannot be
+        Rotation retargets a back-edge to a fresh block holding a copy of the
+        header test.  That block is entered only by the back-edge, whereas the
+        unrotated header is also entered by the loop's entry path.  A
+        back-edge is therefore already rotated when its target cannot be
         reached from the function entry without traversing the back-edge
-        itself.  A partially rotated loop cannot occur (the pass retargets
-        all self-loops or none), so every self-loop is checked and any
-        unrotated one means the whole loop is unrotated.
+        itself.
+
+        The decision is per back-edge because a loop may rotate some of its
+        back-edges and not others: one whose test cannot change value gets a
+        continue block that holds only a jump.  Either kind of continue block
+        is unreachable from the entry, so a rotated back-edge is skipped on
+        every later round rather than retargeted again.
         """
-        for self_loop in self_loops:
-            if self_loop.target is None:
-                return False
+        if self_loop.target is None:
+            return False
 
-            self_loop_block = self._self_loop_block(func, self_loop)
-            reachable = self._reachable_without(func, self_loop_block)
-            if self_loop.target in reachable:
-                return False
+        self_loop_block = self._self_loop_block(func, self_loop)
+        reachable = self._reachable_without(func, self_loop_block)
+        return self_loop.target not in reachable
 
-        return True
+    def _is_test_constant_on_back_edge(
+        self,
+        func: MenaiCFGFunction,
+        test_instrs: list[MenaiCFGInstr],
+        self_loop: MenaiCFGSelfLoopTerm,
+    ) -> bool:
+        """
+        Return True if the header test cannot change value across `self_loop`.
+
+        A rotated test re-executes at the back-edge and must be able to take
+        either arm.  Its operands are evaluated there against whatever the
+        back-edge leaves in their slots, so the test can only vary when at
+        least one operand is rebound by the back-edge itself.  An operand the
+        back-edge passes through unchanged is the value the header just read
+        and the body cannot have changed, so the test on it is decided: one
+        arm is dead and the comparison is repeated work every iteration.
+
+        An operand is considered to vary when the back-edge rebinds it.  A
+        function-level self-loop binds its args positionally onto the loop's
+        params, so the slot for an arg is the param at that position.  Reading
+        the args rather than the target block's phis is deliberate: a
+        back-edge that changes a parameter's slot from the second iteration
+        onwards passes the parameter itself in that position, and reading the
+        phi would report that parameter as rebound when its slot is in fact
+        untouched.  A `MenaiIRLoop` back-edge binds `param_vals` instead, so
+        the slot for an arg is the loop-carried phi at that position.
+        """
+        if self_loop.param_vals is not None:
+            slots = list(self_loop.param_vals)
+
+        else:
+            slots = self._param_slots(func)[:len(self_loop.args)]
+
+        rebound = {
+            slot.id
+            for slot, arg in zip(slots, self_loop.args)
+            if arg.id != slot.id
+        }
+
+        return not any(
+            operand_id in rebound
+            for instr in test_instrs
+            for operand_id in value_ids_in_instr(instr)
+        )
+
+    def _param_slots(self, func: MenaiCFGFunction) -> list[MenaiCFGValue]:
+        """
+        Return the function's parameter SSA values, in parameter order.
+
+        A function-level self-loop writes its args positionally into these
+        slots, so they are the destinations a rotated test would read.
+        """
+        param_ids = {
+            instr.index: instr.result
+            for instr in func.entry().instrs
+            if isinstance(instr, MenaiCFGParamInstr)
+        }
+
+        return [param_ids[index] for index in sorted(param_ids)]
+
+    def _decided_successor(
+        self,
+        func: MenaiCFGFunction,
+        header: MenaiCFGBlock,
+        self_loop_block: MenaiCFGBlock,
+    ) -> int:
+        """
+        Return the block a decided back-edge transfers to.
+
+        The test is decided on this back-edge because none of its operands is
+        rebound by it, and the header has already branched on the same
+        condition.  Every successor of a branch is dominated by that branch,
+        so the back-edge runs on a path that took exactly one of the
+        successors, and which one is fixed for as long as control is on that
+        path.  The successor that dominates the back-edge is therefore the one
+        its taken arm reached.
+
+        Exactly one successor can dominate it: on a path through one arm the
+        other arm's successor is not on the path.
+        """
+        dominators = compute_dominators(func)[self_loop_block.id]
+        for successor in self._successors(header):
+            if successor in dominators:
+                return successor
+
+        raise MenaiInternalError(
+            f"loop rotation: no successor of block {header.id} dominates the "
+            f"back-edge in block {self_loop_block.id}",
+        )
 
     def _reachable_without(
         self,
