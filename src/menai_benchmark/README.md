@@ -65,6 +65,10 @@ benchmark/
     ├── deflate_decompress/
     │   ├── suite.py          # DEFLATE decompressor benchmark suite
     │   └── reference.py      # pure-Python reference decompressor
+    ├── jpeg_decode/
+    │   └── suite.py          # JPEG decoder benchmark suite
+    ├── jpeg_encode/
+    │   └── suite.py          # JPEG encoder benchmark suite
     ├── json_decode/
     │   └── suite.py          # JSON decoder benchmark suite
     ├── json_encode/
@@ -315,6 +319,24 @@ escaping text and attribute values.  Seven cases mirror the HTML Decode shapes
 (wide, deep, attributes, mixed, void elements, escaping, and declarations) so the
 write and read directions can be compared.  The trees are constructed as Menai
 expressions rather than parsed from bytes, so the timing measures encoding alone.
+
+### JPEG Decode
+Decodes baseline sequential JPEG files.  Seven cases cover greyscale, 4:4:4 colour,
+and 4:2:0 chroma subsampling at 64x64 and 128x128, a size whose blocks are partial
+at the right and bottom edges (`97x61`), and a greyscale image whose blocks carry an
+AC coefficient at every zigzag position, so a sparse and a dense entropy-coded scan
+are both timed.  The Python standard library has no JPEG writer, so the suite writes
+its own fixtures: each block is entropy-coded straight from the coefficient pattern
+the case declares, against a flat quantisation table.  That needs no forward
+transform, and keeps the fixtures a pure function of fixed constants as
+[Fixtures](#fixtures) requires.  Inputs are generated fixtures.
+
+### JPEG Encode
+Encodes decoded JPEG descriptions.  Three cases use the sizes of the JPEG Decode
+suite (`64x64`, `128x128` and `97x61`), so the two directions can be compared.  The
+containers are constructed as Menai expressions rather than parsed from bytes, so
+the timing measures encoding alone.  The encoder always emits 4:4:4, so the cases
+are colour only.
 
 ### JSON Decode
 Decodes JSON strings of varying structure and size using a hand-written decoder

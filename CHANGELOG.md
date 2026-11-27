@@ -26,6 +26,7 @@ New features:
 
 Internal structure changes:
 
+- Added `jpeg-decode` and `jpeg-encode` benchmark suites.
 - The 58 opcodes taking an index, offset or slice bound reject a bignum outright
   instead of decoding it first; a bignum operand now reports a range error.
 - Benchmark suite names are hyphenated throughout.  Eight suites used an
