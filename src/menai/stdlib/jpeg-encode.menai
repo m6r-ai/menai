@@ -698,54 +698,62 @@
              (integer- (integer+ value (integer-bit-shift-left 1 size)) 1)
              value)))
 
-      ; The sum over i of a[a-base + i * a-step] * b[b-base + i * b-step], i < 8.
-      (dot8
-       (lambda (a a-base a-step b b-base b-step i acc)
-         (if (integer>=? i 8)
-             acc
-             (dot8
-               a
-               a-base
-               a-step
-               b
-               b-base
-               b-step
-               (integer+ i 1)
-               (float+
-                 acc
-                 (float*
-                   (vector-nth a (integer+ a-base (integer* i a-step)))
-                   (vector-nth b (integer+ b-base (integer* i b-step)))))))))
-
       ; The row pass of the forward transform:
       ; temp[y][u] = sum over x of samples[y][x] * basis[u][x].
+      ;
+      ; Each output is an eight-term inner product written out against the two
+      ; rows' bases, so every index is a base plus a constant and the arithmetic
+      ; folds at compile time.
       (forward-rows
        (lambda (samples y u temp)
          (if (integer>=? y 8)
              temp
              (if (integer>=? u 8)
                  (forward-rows samples (integer+ y 1) 0 temp)
-                 (forward-rows
-                   samples
-                   y
-                   (integer+ u 1)
-                   (vector-with
-                     temp
-                     (integer+ (integer* y 8) u)
-                     (dot8 samples (integer* y 8) 1 basis (integer* u 8) 1 0 0.0)))))))
+                 (let ((a-base (integer* y 8))
+                       (b-base (integer* u 8))
+                       (t0 (float* (vector-nth samples a-base) (vector-nth basis b-base)))
+                       (t1 (float* (vector-nth samples (integer+ a-base 1)) (vector-nth basis (integer+ b-base 1))))
+                       (t2 (float* (vector-nth samples (integer+ a-base 2)) (vector-nth basis (integer+ b-base 2))))
+                       (t3 (float* (vector-nth samples (integer+ a-base 3)) (vector-nth basis (integer+ b-base 3))))
+                       (t4 (float* (vector-nth samples (integer+ a-base 4)) (vector-nth basis (integer+ b-base 4))))
+                       (t5 (float* (vector-nth samples (integer+ a-base 5)) (vector-nth basis (integer+ b-base 5))))
+                       (t6 (float* (vector-nth samples (integer+ a-base 6)) (vector-nth basis (integer+ b-base 6))))
+                       (t7 (float* (vector-nth samples (integer+ a-base 7)) (vector-nth basis (integer+ b-base 7)))))
+                   (forward-rows
+                     samples
+                     y
+                     (integer+ u 1)
+                     (vector-with
+                       temp
+                       (integer+ a-base u)
+                       (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7))))))))))
 
-      ; The column pass: out[v][u] = sum over y of temp[y][u] * basis[v][y].
+      ; The column pass: out[v][u] = sum over y of temp[y][u] * basis[v][y];
+      ; the y-th term reads temp at u + 8 * y and the basis at 8 * v + y.
       (forward-columns
        (lambda (temp v u out)
          (if (integer>=? v 8)
              out
              (if (integer>=? u 8)
                  (forward-columns temp (integer+ v 1) 0 out)
-                 (forward-columns
-                   temp
-                   v
-                   (integer+ u 1)
-                   (vector-with out (integer+ (integer* v 8) u) (dot8 temp u 8 basis (integer* v 8) 1 0 0.0)))))))
+                 (let ((b-base (integer* v 8))
+                       (t0 (float* (vector-nth temp u) (vector-nth basis b-base)))
+                       (t1 (float* (vector-nth temp (integer+ u 8)) (vector-nth basis (integer+ b-base 1))))
+                       (t2 (float* (vector-nth temp (integer+ u 16)) (vector-nth basis (integer+ b-base 2))))
+                       (t3 (float* (vector-nth temp (integer+ u 24)) (vector-nth basis (integer+ b-base 3))))
+                       (t4 (float* (vector-nth temp (integer+ u 32)) (vector-nth basis (integer+ b-base 4))))
+                       (t5 (float* (vector-nth temp (integer+ u 40)) (vector-nth basis (integer+ b-base 5))))
+                       (t6 (float* (vector-nth temp (integer+ u 48)) (vector-nth basis (integer+ b-base 6))))
+                       (t7 (float* (vector-nth temp (integer+ u 56)) (vector-nth basis (integer+ b-base 7)))))
+                   (forward-columns
+                     temp
+                     v
+                     (integer+ u 1)
+                     (vector-with
+                       out
+                       (integer+ b-base u)
+                       (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7))))))))))
 
       ; The quantised coefficients of one block of 8-bit samples, in zigzag
       ; order, which is the order `encode-block` walks.  The samples are level
@@ -1065,22 +1073,39 @@
                    255
                    rounded)))))
 
-      ; One plane of a component from the pixel grid, applying the YCbCr
-      ; transform and taking one channel of the result.
-      (colour-plane
-       (lambda (pixels width height channel x y plane)
+      ; Append the three channels of one row's pixels to the three planes.
+      (scan-row
+       (lambda (pixels width y x luma cb cr)
+         (if (integer>=? x width)
+             (vector luma cb cr)
+             (let ((pixel (to-ycbcr (vector-nth (vector-nth pixels y) x))))
+               (scan-row
+                 pixels
+                 width
+                 y
+                 (integer+ x 1)
+                 (bytes-append-u8 luma (vector-nth pixel 0))
+                 (bytes-append-u8 cb (vector-nth pixel 1))
+                 (bytes-append-u8 cr (vector-nth pixel 2)))))))
+
+      ; The three component planes of the pixel grid, converting each pixel once.
+      ;
+      ; Each plane is the loop-carried accumulator and the column index is part of
+      ; the loop state rather than a nested loop, so the appends land in place
+      ; (ADR-0065).
+      (colour-planes
+       (lambda (pixels width height y luma cb cr)
          (if (integer>=? y height)
-             plane
-             (if (integer>=? x width)
-                 (colour-plane pixels width height channel 0 (integer+ y 1) plane)
-                 (colour-plane
-                   pixels
-                   width
-                   height
-                   channel
-                   (integer+ x 1)
-                   y
-                   (bytes-append-u8 plane (vector-nth (to-ycbcr (vector-nth (vector-nth pixels y) x)) channel)))))))
+             (vector luma cb cr)
+             (let ((row (scan-row pixels width y 0 luma cb cr)))
+               (colour-planes
+                 pixels
+                 width
+                 height
+                 (integer+ y 1)
+                 (vector-nth row 0)
+                 (vector-nth row 1)
+                 (vector-nth row 2))))))
 
       ; Encode the value into a baseline sequential JPEG file.
       (encode
@@ -1100,10 +1125,7 @@
                        (let ((blocks-x (integer/ (integer+ width 7) 8))
                              (blocks-y (integer/ (integer+ height 7) 8)))
                          (let ((planes
-                                (map-vector
-                                  (lambda (channel)
-                                    (colour-plane pixels width height channel 0 0 (bytes-concat)))
-                                  (list->vector (list 0 1 2)))))
+                                (colour-planes pixels width height 0 (bytes-concat) (bytes-concat) (bytes-concat))))
                            (let ((state
                                   (encode-scan
                                     (vector (bytes-concat) 0 0)

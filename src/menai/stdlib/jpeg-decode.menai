@@ -373,33 +373,60 @@
 
       ; The row pass of the inverse transform:
       ; temp[v][x] = sum over u of coefficients[v][u] * basis[u][x].
+      ;
+      ; Each output is an eight-term inner product written out against a literal
+      ; basis offset, so every coefficient index is `base` plus a constant and the
+      ; arithmetic folds at compile time.
       (transform-rows
        (lambda (coefficients v x temp)
          (if (integer>=? v 8)
              temp
              (if (integer>=? x 8)
                  (transform-rows coefficients (integer+ v 1) 0 temp)
-                 (transform-rows
-                   coefficients
-                   v
-                   (integer+ x 1)
-                   (vector-with
-                     temp
-                     (integer+ (integer* v 8) x)
-                     (dot8 coefficients (integer* v 8) 1 basis x 8 0 0.0)))))))
+                 (let ((base (integer* v 8))
+                       (t0 (float* (vector-nth coefficients base) (vector-nth basis x)))
+                       (t1 (float* (vector-nth coefficients (integer+ base 1)) (vector-nth basis (integer+ x 8))))
+                       (t2 (float* (vector-nth coefficients (integer+ base 2)) (vector-nth basis (integer+ x 16))))
+                       (t3 (float* (vector-nth coefficients (integer+ base 3)) (vector-nth basis (integer+ x 24))))
+                       (t4 (float* (vector-nth coefficients (integer+ base 4)) (vector-nth basis (integer+ x 32))))
+                       (t5 (float* (vector-nth coefficients (integer+ base 5)) (vector-nth basis (integer+ x 40))))
+                       (t6 (float* (vector-nth coefficients (integer+ base 6)) (vector-nth basis (integer+ x 48))))
+                       (t7 (float* (vector-nth coefficients (integer+ base 7)) (vector-nth basis (integer+ x 56)))))
+                   (transform-rows
+                     coefficients
+                     v
+                     (integer+ x 1)
+                     (vector-with
+                       temp
+                       (integer+ base x)
+                       (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7))))))))))
 
-      ; The column pass: out[y][x] = sample(sum over v of temp[v][x] * basis[v][y]).
+      ; The column pass: out[y][x] = sample(sum over v of temp[v][x] * basis[v][y]);
+      ; the v-th term reads temp at x + 8 * v and the basis at y + 8 * v.
       (transform-columns
        (lambda (temp y x out)
          (if (integer>=? y 8)
              out
              (if (integer>=? x 8)
                  (transform-columns temp (integer+ y 1) 0 out)
-                 (transform-columns
-                   temp
-                   y
-                   (integer+ x 1)
-                   (vector-with out (integer+ (integer* y 8) x) (to-sample (dot8 temp x 8 basis y 8 0 0.0))))))))
+                 (let ((base (integer* y 8))
+                       (t0 (float* (vector-nth temp x) (vector-nth basis y)))
+                       (t1 (float* (vector-nth temp (integer+ x 8)) (vector-nth basis (integer+ y 8))))
+                       (t2 (float* (vector-nth temp (integer+ x 16)) (vector-nth basis (integer+ y 16))))
+                       (t3 (float* (vector-nth temp (integer+ x 24)) (vector-nth basis (integer+ y 24))))
+                       (t4 (float* (vector-nth temp (integer+ x 32)) (vector-nth basis (integer+ y 32))))
+                       (t5 (float* (vector-nth temp (integer+ x 40)) (vector-nth basis (integer+ y 40))))
+                       (t6 (float* (vector-nth temp (integer+ x 48)) (vector-nth basis (integer+ y 48))))
+                       (t7 (float* (vector-nth temp (integer+ x 56)) (vector-nth basis (integer+ y 56)))))
+                   (transform-columns
+                     temp
+                     y
+                     (integer+ x 1)
+                     (vector-with
+                       out
+                       (integer+ base x)
+                       (to-sample
+                         (float+ (float+ (float+ t0 t1) (float+ t2 t3)) (float+ (float+ t4 t5) (float+ t6 t7)))))))))))
 
       ; Inverse transform one block of dequantised coefficients (natural order)
       ; into 64 level-shifted samples.
