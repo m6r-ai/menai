@@ -217,7 +217,7 @@
        (lambda (b i)
          (if (integer>? (integer+ i 3) (bytes-length b))
              #none
-             (bytes-read-u24-be b i))))
+             (bytes-nth-u24-be b i))))
 
       ; Return the number of leading bytes that match between the span at `c` and
       ; the span at `i` of `b`, up to a maximum of `limit`.  The whole span is

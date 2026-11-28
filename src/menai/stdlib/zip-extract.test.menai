@@ -41,7 +41,7 @@
       ; An archive whose entry declares an unsupported compression method.  The
       ; method is the central directory entry's field at offset 10.
       (unsupported-method-archive
-       (bytes-write-u16-le stored-archive (integer+ (bytes-index stored-archive (string-hex->bytes "504b0102")) 10) 12))
+       (bytes-with-u16-le stored-archive (integer+ (bytes-index stored-archive (string-hex->bytes "504b0102")) 10) 12))
 
       ; An entry using an unsupported compression method is rejected.
       (test-rejects-unsupported-method

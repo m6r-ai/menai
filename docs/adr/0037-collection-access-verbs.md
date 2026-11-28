@@ -1,7 +1,7 @@
 # ADR-0037: Element access verbs — `-nth`, `-get`, `-with`, and `-without`
 
 Date: 2026-09-30  
-Status: Accepted
+Status: Superseded by ADR-0072 (2026-11-28)
 
 ## Context
 

@@ -128,22 +128,22 @@
       ; A DIB header smaller than BITMAPINFOHEADER is rejected.
       (test-rejects-short-dib-header
        (lambda ()
-         (decode (bytes-write-u32-le bottom-up-24 14 39))))
+         (decode (bytes-with-u32-le bottom-up-24 14 39))))
 
       ; A width of zero is rejected.
       (test-rejects-zero-width
        (lambda ()
-         (decode (bytes-write-i32-le bottom-up-24 18 0))))
+         (decode (bytes-with-i32-le bottom-up-24 18 0))))
 
       ; A negative width is rejected.
       (test-rejects-negative-width
        (lambda ()
-         (decode (bytes-write-i32-le bottom-up-24 18 -2))))
+         (decode (bytes-with-i32-le bottom-up-24 18 -2))))
 
       ; A height of zero is rejected.
       (test-rejects-zero-height
        (lambda ()
-         (decode (bytes-write-i32-le bottom-up-24 22 0))))
+         (decode (bytes-with-i32-le bottom-up-24 22 0))))
 
       ; A non-bytes argument is rejected.
       (test-rejects-non-bytes

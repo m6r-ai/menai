@@ -117,7 +117,7 @@
        (lambda (b pos)
          (if (integer>? (integer+ pos 2) (bytes-length b))
              (error "Malformed JPEG: truncated marker segment length")
-             (bytes-read-u16-be b pos))))
+             (bytes-nth-u16-be b pos))))
 
       ; The smallest integer not less than pos / divisor.
       (ceil-div
@@ -622,7 +622,7 @@
                                 (map-vector
                                   (lambda (k)
                                     (if two-byte
-                                        (bytes-read-u16-be payload (integer+ start (integer* k 2)))
+                                        (bytes-nth-u16-be payload (integer+ start (integer* k 2)))
                                         (bytes-nth payload (integer+ start k))))
                                   (list->vector (range 0 64)))))))))))
            (loop 0 (dict)))))
@@ -675,8 +675,8 @@
                    (error "Malformed JPEG: frame header runs past its segment")
                    (dict "marker" marker
                          "precision" (bytes-nth payload 0)
-                         "height" (bytes-read-u16-be payload 1)
-                         "width" (bytes-read-u16-be payload 3)
+                         "height" (bytes-nth-u16-be payload 1)
+                         "width" (bytes-nth-u16-be payload 3)
                          "components" (map-vector
                                         (lambda (i)
                                           (dict "id" (bytes-nth payload (integer+ 6 (integer* i 3)))
@@ -709,7 +709,7 @@
                        (if (integer=? marker #xdd)
                            (if (integer<? (bytes-length payload) 2)
                                (error "Malformed JPEG: restart interval segment is too short")
-                               (dict-with next "restart" (bytes-read-u16-be payload 0)))
+                               (dict-with next "restart" (bytes-nth-u16-be payload 0)))
                            (if (is-frame-marker marker)
                                (dict-with next "frame" (read-frame payload marker))
                                next))))))))

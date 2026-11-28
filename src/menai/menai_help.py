@@ -367,31 +367,32 @@ Syntax: (operator arg1 arg2 ...)
 - Append single byte: (bytes-append-u8 b 255) → new bytes with byte appended (value must be 0–255)
 - Search: (bytes-index haystack needle) → integer offset or #none, (bytes-index-int b 75) → offset of first matching byte value or #none
 - Bytes are hashable (usable as set members or dict keys)
-- Multi-byte integer reads — all take (bytes offset) and return an integer:
-  - Unsigned: bytes-read-u8, bytes-read-u16-le, bytes-read-u16-be, bytes-read-u24-le, bytes-read-u24-be, bytes-read-u32-le, bytes-read-u32-be, bytes-read-u64-le, bytes-read-u64-be
-  - Signed: bytes-read-i8, bytes-read-i16-le, bytes-read-i16-be, bytes-read-i24-le, bytes-read-i24-be, bytes-read-i32-le, bytes-read-i32-be, bytes-read-i64-le, bytes-read-i64-be
+- Element and field reads use -nth: (bytes-nth b 0) reads the single byte at an index, the -nth-{width}-{endian} forms read a fixed-width field at an offset, and -nth-{uleb128,sleb128} read a variable-width field
+- Multi-byte integer field reads — all take (bytes offset) and return an integer:
+  - Unsigned: bytes-nth-u16-le, bytes-nth-u16-be, bytes-nth-u24-le, bytes-nth-u24-be, bytes-nth-u32-le, bytes-nth-u32-be, bytes-nth-u64-le, bytes-nth-u64-be
+  - Signed: bytes-nth-i8, bytes-nth-i16-le, bytes-nth-i16-be, bytes-nth-i24-le, bytes-nth-i24-be, bytes-nth-i32-le, bytes-nth-i32-be, bytes-nth-i64-le, bytes-nth-i64-be
   - Raises error if not enough bytes from offset
 - Multi-byte integer appends — all take (bytes integer) and return new bytes; value must fit in the specified width:
   - Unsigned: bytes-append-u16-le, bytes-append-u16-be, bytes-append-u24-le, bytes-append-u24-be, bytes-append-u32-le, bytes-append-u32-be, bytes-append-u64-le, bytes-append-u64-be
   - Signed: bytes-append-i8, bytes-append-i16-le, bytes-append-i16-be, bytes-append-i24-le, bytes-append-i24-be, bytes-append-i32-le, bytes-append-i32-be, bytes-append-i64-le, bytes-append-i64-be
-- Multi-byte integer writes — all take (bytes offset integer) and return new bytes (original unchanged); value must fit in the specified width:
-  - Unsigned: bytes-write-u8, bytes-write-u16-le, bytes-write-u16-be, bytes-write-u24-le, bytes-write-u24-be, bytes-write-u32-le, bytes-write-u32-be, bytes-write-u64-le, bytes-write-u64-be
-  - Signed: bytes-write-i8, bytes-write-i16-le, bytes-write-i16-be, bytes-write-i24-le, bytes-write-i24-be, bytes-write-i32-le, bytes-write-i32-be, bytes-write-i64-le, bytes-write-i64-be
-  - Raises error if not enough bytes from offset
+- Field replacement uses -with: all take (bytes offset value) and return new bytes (original unchanged); value must fit in the specified width; raises error if not enough bytes from offset
+- Multi-byte integer field replacements:
+  - Unsigned: bytes-with-u8, bytes-with-u16-le, bytes-with-u16-be, bytes-with-u24-le, bytes-with-u24-be, bytes-with-u32-le, bytes-with-u32-be, bytes-with-u64-le, bytes-with-u64-be
+  - Signed: bytes-with-i8, bytes-with-i16-le, bytes-with-i16-be, bytes-with-i24-le, bytes-with-i24-be, bytes-with-i32-le, bytes-with-i32-be, bytes-with-i64-le, bytes-with-i64-be
 - LEB128 variable-length integers:
-  - (bytes-read-uleb128 b offset) → (value next-offset) as a 2-element list; raises error if truncated
+  - (bytes-nth-uleb128 b offset) → (value next-offset) as a 2-element list; raises error if truncated
   - (bytes-append-uleb128 b value) → new bytes with unsigned LEB128 encoding; value must be non-negative
-  - (bytes-read-sleb128 b offset) → (value next-offset) as a 2-element list; raises error if truncated
+  - (bytes-nth-sleb128 b offset) → (value next-offset) as a 2-element list; raises error if truncated
   - (bytes-append-sleb128 b value) → new bytes with signed LEB128 encoding
-- Floating-point reads — all take (bytes offset) and return a float; raises error if not enough bytes from offset:
-  - bytes-read-f32-le, bytes-read-f32-be (IEEE-754 single precision)
-  - bytes-read-f64-le, bytes-read-f64-be (IEEE-754 double precision)
+- Floating-point field reads — all take (bytes offset) and return a float; raises error if not enough bytes from offset:
+  - bytes-nth-f32-le, bytes-nth-f32-be (IEEE-754 single precision)
+  - bytes-nth-f64-le, bytes-nth-f64-be (IEEE-754 double precision)
 - Floating-point appends — all take (bytes float) and return new bytes:
   - bytes-append-f32-le, bytes-append-f32-be (IEEE-754 single precision)
   - bytes-append-f64-le, bytes-append-f64-be (IEEE-754 double precision)
-- Floating-point writes — all take (bytes offset float) and return new bytes (original unchanged); raises error if not enough bytes from offset:
-  - bytes-write-f32-le, bytes-write-f32-be (IEEE-754 single precision)
-  - bytes-write-f64-le, bytes-write-f64-be (IEEE-754 double precision)
+- Floating-point field replacements — all take (bytes offset float) and return new bytes (original unchanged); raises error if not enough bytes from offset:
+  - bytes-with-f32-le, bytes-with-f32-be (IEEE-754 single precision)
+  - bytes-with-f64-le, bytes-with-f64-be (IEEE-754 double precision)
 - Cryptographic hashing — all take (bytes) and return the raw digest as bytes:
   - (bytes-hash-sha2-256 b) → 32-byte SHA-256 digest
   - (bytes-hash-sha2-512 b) → 64-byte SHA-512 digest

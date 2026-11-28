@@ -220,7 +220,7 @@
       ; A header with a bad checksum is rejected.
       (test-rejects-bad-checksum
        (lambda ()
-         (entries (bytes-write-u8 hello-archive 0 88))))
+         (entries (bytes-with-u8 hello-archive 0 88))))
 
       ; An unsupported typeflag is rejected.
       (test-rejects-unsupported-typeflag

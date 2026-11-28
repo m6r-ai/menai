@@ -28,13 +28,13 @@
       (test-adler32-empty
        (lambda ()
          (let ((stream (compress (string->bytes ""))))
-           (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4)) 1))))
+           (assert-equal (bytes-nth-u32-be stream (integer- (bytes-length stream) 4)) 1))))
 
       ; The trailer's Adler-32 of a known payload is correct.
       (test-adler32-known-payload
        (lambda ()
          (let ((stream (compress (string->bytes "hello world hello world hello world"))))
-           (assert-equal (bytes-read-u32-be stream (integer- (bytes-length stream) 4)) #xef930d55))))
+           (assert-equal (bytes-nth-u32-be stream (integer- (bytes-length stream) 4)) #xef930d55))))
 
       ; A stream produced by another zlib implementation decompresses correctly.
       (test-interoperability

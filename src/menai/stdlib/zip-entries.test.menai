@@ -26,7 +26,7 @@
       ; after the EOCD record and its length recorded in the EOCD's last field.
       (commented-archive
        (bytes-concat
-         (bytes-write-u16-le two-entry-archive (integer- (bytes-length two-entry-archive) 2) 5)
+         (bytes-with-u16-le two-entry-archive (integer- (bytes-length two-entry-archive) 2) 5)
          (string->bytes "hello")))
 
       ; A deflate archive reports a single entry.
@@ -121,13 +121,13 @@
       ; rejected.  The local header of the first entry starts at offset 0.
       (test-rejects-bad-local-signature
        (lambda ()
-         (entries (bytes-write-u8 stored-archive 0 0))))
+         (entries (bytes-with-u8 stored-archive 0 0))))
 
       ; An archive whose first central directory entry has a corrupt signature is
       ; rejected.
       (test-rejects-bad-central-signature
        (lambda ()
-         (entries (bytes-write-u8 stored-archive (bytes-index stored-archive (string-hex->bytes "504b0102")) 0))))
+         (entries (bytes-with-u8 stored-archive (bytes-index stored-archive (string-hex->bytes "504b0102")) 0))))
 
       ; An archive with encrypted entries is rejected.
       (test-rejects-encrypted

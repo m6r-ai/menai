@@ -107,7 +107,7 @@ class TestSizeOperandsRejectBigints:
         (f"(list-nth (list 1 2 3) {runtime_bignum(BIG)})", "index out of range"),
         ('(string-nth "abc" ' + runtime_bignum(BIG) + ")", "index out of range"),
         ("(bytes-nth (string->bytes \"abc\") " + runtime_bignum(BIG) + ")", "offset out of bounds"),
-        ('(bytes-read-u64-be (string->bytes "abcdefgh") ' + runtime_bignum(BIG) + ")", "offset out of bounds"),
+        ('(bytes-nth-u64-be (string->bytes "abcdefgh") ' + runtime_bignum(BIG) + ")", "offset out of bounds"),
         ('(string-slice "abcdef" ' + runtime_bignum(BIG) + " 2)", "slice start index out of range"),
         ('(string-slice "abcdef" 1 ' + runtime_bignum(BIG) + ")", "slice end index out of range"),
         ("(vector-slice (vector 1 2 3) " + runtime_bignum(BIG) + ")", "offset out of bounds"),

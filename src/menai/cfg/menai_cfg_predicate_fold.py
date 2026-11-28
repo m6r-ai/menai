@@ -17,11 +17,11 @@ the predicate and branch are left untouched, so behaviour is never changed.
 
 Example — the deflate prefix-key pattern:
 
-    (let ((key (if (i+3 > len) #none (bytes-read-u24-be b i))))
+    (let ((key (if (i+3 > len) #none (bytes-nth-u24-be b i))))
       (if (none? key) table ...))
 
 After inlining and MenaiCFGBranchConstProp the #none arm is folded, leaving a
-single-arm phi whose value is the bytes-read-u24-be result.  The type analysis
+single-arm phi whose value is the bytes-nth-u24-be result.  The type analysis
 proves that result is an integer, so (none? <integer>) is #f and the branch is
 re-wired to the false edge; the none? check disappears.
 

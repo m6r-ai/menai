@@ -5763,34 +5763,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
-        case OP_BYTES_READ_U8: {
-            MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1);
-            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
-            MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
-            ssize_t offset;
-            if (MENAI_UNLIKELY(menai_integer_to_fixnum(off_val, &offset) < 0)) {
-                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
-                goto error;
-            }
-
-            ssize_t blen = b->length;
-            if (offset < 0 || offset >= blen) {
-                vm_err = MENAI_ERR_OFFSET_OUT_OF_BOUNDS;
-                goto error;
-            }
-
-            MenaiValue *r = alloc_menai_integer_from_long(vs, (long)b->data[offset]);
-            if (r == NULL) {
-                vm_err = MENAI_ERR_NOMEM;
-                goto error;
-            }
-
-            menai_value_release(vs, frame_regs[dest]);
-            frame_regs[dest] = (MenaiValue *)r;
-            break;
-        }
-
-        case OP_BYTES_READ_I8: {
+        case OP_BYTES_NTH_I8: {
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
@@ -5821,7 +5794,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         /* Multi-byte read helpers using a shared pattern.  Each reads N bytes
          * at the given offset, assembles them in the specified endianness,
          * and returns an integer.  */
-#define BYTES_READ_MULTI(opcode_name, width, is_signed, le) \
+#define BYTES_NTH_MULTI(opcode_name, width, is_signed, le) \
         case opcode_name: { \
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1); \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
@@ -5898,24 +5871,24 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break; \
         }
 
-        BYTES_READ_MULTI(OP_BYTES_READ_U16_LE, 2, 0, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_U24_LE, 3, 0, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_U32_LE, 4, 0, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_U64_LE, 8, 0, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_U16_BE, 2, 0, 0)
-        BYTES_READ_MULTI(OP_BYTES_READ_U24_BE, 3, 0, 0)
-        BYTES_READ_MULTI(OP_BYTES_READ_U32_BE, 4, 0, 0)
-        BYTES_READ_MULTI(OP_BYTES_READ_U64_BE, 8, 0, 0)
-        BYTES_READ_MULTI(OP_BYTES_READ_I16_LE, 2, 1, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_I24_LE, 3, 1, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_I32_LE, 4, 1, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_I64_LE, 8, 1, 1)
-        BYTES_READ_MULTI(OP_BYTES_READ_I16_BE, 2, 1, 0)
-        BYTES_READ_MULTI(OP_BYTES_READ_I24_BE, 3, 1, 0)
-        BYTES_READ_MULTI(OP_BYTES_READ_I32_BE, 4, 1, 0)
-        BYTES_READ_MULTI(OP_BYTES_READ_I64_BE, 8, 1, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U16_LE, 2, 0, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U24_LE, 3, 0, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U32_LE, 4, 0, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U64_LE, 8, 0, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U16_BE, 2, 0, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U24_BE, 3, 0, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U32_BE, 4, 0, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_U64_BE, 8, 0, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I16_LE, 2, 1, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I24_LE, 3, 1, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I32_LE, 4, 1, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I64_LE, 8, 1, 1)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I16_BE, 2, 1, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I24_BE, 3, 1, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I32_BE, 4, 1, 0)
+        BYTES_NTH_MULTI(OP_BYTES_NTH_I64_BE, 8, 1, 0)
 
-#undef BYTES_READ_MULTI
+#undef BYTES_NTH_MULTI
 
         /*
          * Floating-point read helpers.  Each reads N bytes at the given offset,
@@ -5923,7 +5896,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
          * and bit-casts to a MenaiFloat.  memcpy is used for the bit-cast to
          * avoid strict-aliasing undefined behaviour.
          */
-#define BYTES_READ_FLOAT(opcode_name, width, ctype, uint_bits_t, le) \
+#define BYTES_NTH_FLOAT(opcode_name, width, ctype, uint_bits_t, le) \
         case opcode_name: { \
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1); \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
@@ -5956,12 +5929,12 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break; \
         }
 
-        BYTES_READ_FLOAT(OP_BYTES_READ_F32_LE, 4, float, uint32_t, 1)
-        BYTES_READ_FLOAT(OP_BYTES_READ_F32_BE, 4, float, uint32_t, 0)
-        BYTES_READ_FLOAT(OP_BYTES_READ_F64_LE, 8, double, uint64_t, 1)
-        BYTES_READ_FLOAT(OP_BYTES_READ_F64_BE, 8, double, uint64_t, 0)
+        BYTES_NTH_FLOAT(OP_BYTES_NTH_F32_LE, 4, float, uint32_t, 1)
+        BYTES_NTH_FLOAT(OP_BYTES_NTH_F32_BE, 4, float, uint32_t, 0)
+        BYTES_NTH_FLOAT(OP_BYTES_NTH_F64_LE, 8, double, uint64_t, 1)
+        BYTES_NTH_FLOAT(OP_BYTES_NTH_F64_BE, 8, double, uint64_t, 0)
 
-#undef BYTES_READ_FLOAT
+#undef BYTES_NTH_FLOAT
 
         /*
          * Multi-byte append helpers using a shared pattern.  Each takes bytes
@@ -6098,7 +6071,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
          * writes the encoded value at the offset, and returns the new bytes.
          * For signed variants the value range check uses the signed range.
          */
-#define BYTES_WRITE_MULTI(opcode_name, width, is_signed, le) \
+#define BYTES_WITH_MULTI(opcode_name, width, is_signed, le) \
         case opcode_name: { \
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1); \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
@@ -6162,33 +6135,33 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break; \
         }
 
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U8, 1, 0, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U16_LE, 2, 0, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U16_BE, 2, 0, 0)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U24_LE, 3, 0, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U24_BE, 3, 0, 0)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U32_LE, 4, 0, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U32_BE, 4, 0, 0)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U64_LE, 8, 0, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_U64_BE, 8, 0, 0)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I8, 1, 1, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I16_LE, 2, 1, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I16_BE, 2, 1, 0)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I24_LE, 3, 1, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I24_BE, 3, 1, 0)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I32_LE, 4, 1, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I32_BE, 4, 1, 0)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I64_LE, 8, 1, 1)
-        BYTES_WRITE_MULTI(OP_BYTES_WRITE_I64_BE, 8, 1, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U8, 1, 0, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U16_LE, 2, 0, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U16_BE, 2, 0, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U24_LE, 3, 0, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U24_BE, 3, 0, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U32_LE, 4, 0, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U32_BE, 4, 0, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U64_LE, 8, 0, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_U64_BE, 8, 0, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I8, 1, 1, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I16_LE, 2, 1, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I16_BE, 2, 1, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I24_LE, 3, 1, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I24_BE, 3, 1, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I32_LE, 4, 1, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I32_BE, 4, 1, 0)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I64_LE, 8, 1, 1)
+        BYTES_WITH_MULTI(OP_BYTES_WITH_I64_BE, 8, 1, 0)
 
-#undef BYTES_WRITE_MULTI
+#undef BYTES_WITH_MULTI
 
         /*
          * Floating-point write helpers.  Each takes bytes, offset, and a float
          * value, writes the encoded IEEE-754 bit pattern at the offset, and
          * returns the new bytes.
          */
-#define BYTES_WRITE_FLOAT(opcode_name, width, ctype, uint_bits_t, le) \
+#define BYTES_WITH_FLOAT(opcode_name, width, ctype, uint_bits_t, le) \
         case opcode_name: { \
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1); \
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK); \
@@ -6228,17 +6201,17 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break; \
         }
 
-        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F32_LE, 4, float, uint32_t, 1)
-        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F32_BE, 4, float, uint32_t, 0)
-        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F64_LE, 8, double, uint64_t, 1)
-        BYTES_WRITE_FLOAT(OP_BYTES_WRITE_F64_BE, 8, double, uint64_t, 0)
+        BYTES_WITH_FLOAT(OP_BYTES_WITH_F32_LE, 4, float, uint32_t, 1)
+        BYTES_WITH_FLOAT(OP_BYTES_WITH_F32_BE, 4, float, uint32_t, 0)
+        BYTES_WITH_FLOAT(OP_BYTES_WITH_F64_LE, 8, double, uint64_t, 1)
+        BYTES_WITH_FLOAT(OP_BYTES_WITH_F64_BE, 8, double, uint64_t, 0)
 
-#undef BYTES_WRITE_FLOAT
+#undef BYTES_WITH_FLOAT
 
         /*
          * LEB128 read (unsigned).  Returns a two-element list (value next-offset).
          */
-        case OP_BYTES_READ_ULEB128: {
+        case OP_BYTES_NTH_ULEB128: {
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
@@ -6383,7 +6356,7 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
         /*
          * LEB128 read (signed).  Returns a two-element list (value next-offset).
          */
-        case OP_BYTES_READ_SLEB128: {
+        case OP_BYTES_NTH_SLEB128: {
             MenaiBytes *b = (MenaiBytes *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
             MenaiValue *off_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);

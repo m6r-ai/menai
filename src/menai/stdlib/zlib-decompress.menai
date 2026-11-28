@@ -54,7 +54,7 @@
              (if (check-header b)
                  (let ((decompress (:: deflate-lib decompress)))
                    (let ((data (decompress (bytes-slice b 2 (integer- (bytes-length b) 4)))))
-                     (let ((expected (bytes-read-u32-be b (integer- (bytes-length b) 4)))
+                     (let ((expected (bytes-nth-u32-be b (integer- (bytes-length b) 4)))
                            (actual (adler32 data)))
                        (if (integer=? expected actual)
                            data

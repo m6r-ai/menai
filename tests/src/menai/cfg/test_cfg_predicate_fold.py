@@ -382,7 +382,7 @@ class TestEndToEnd:
             (lambda (b i)
               (if (integer>? (integer+ i 3) (bytes-length b))
                   #none
-                  (bytes-read-u24-be b i))))
+                  (bytes-nth-u24-be b i))))
            (f
             (lambda (b i table)
               (let ((key (prefix-key b i)))

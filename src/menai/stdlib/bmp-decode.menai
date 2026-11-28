@@ -9,17 +9,17 @@
              (error "Not a BMP file: too short to contain a header")
              (if (bytes!=? (bytes-slice b 0 2) (string->bytes "BM"))
                  (error "Not a BMP file: missing BM signature")
-                 (let ((dib-size (bytes-read-u32-le b 14)))
+                 (let ((dib-size (bytes-nth-u32-le b 14)))
                    (if (integer<? dib-size 40)
                        (error
                          (string-concat
                            "Unsupported BMP: DIB header size "
                            (integer->string dib-size)
                            " is smaller than BITMAPINFOHEADER (40)"))
-                       (let ((width (bytes-read-i32-le b 18))
-                             (height (bytes-read-i32-le b 22))
-                             (bpp (bytes-read-u16-le b 28))
-                             (comp (bytes-read-u32-le b 30)))
+                       (let ((width (bytes-nth-i32-le b 18))
+                             (height (bytes-nth-i32-le b 22))
+                             (bpp (bytes-nth-u16-le b 28))
+                             (comp (bytes-nth-u32-le b 30)))
                          (if (integer<? width 1)
                              (error "Unsupported BMP: width must be positive")
                              (if (integer=? height 0)
@@ -37,19 +37,19 @@
                                              "Unsupported BMP: "
                                              (integer->string bpp)
                                              " bits per pixel is not supported (only 24 or 32)"))
-                                         (dict "file-size" (bytes-read-u32-le b 2)
-                                               "data-offset" (bytes-read-u32-le b 10)
+                                         (dict "file-size" (bytes-nth-u32-le b 2)
+                                               "data-offset" (bytes-nth-u32-le b 10)
                                                "dib-size" dib-size
                                                "width" width
                                                "height" height
-                                               "planes" (bytes-read-u16-le b 26)
+                                               "planes" (bytes-nth-u16-le b 26)
                                                "bpp" bpp
                                                "compression" comp
-                                               "image-size" (bytes-read-u32-le b 34)
-                                               "x-ppm" (bytes-read-i32-le b 38)
-                                               "y-ppm" (bytes-read-i32-le b 42)
-                                               "colours-used" (bytes-read-u32-le b 46)
-                                               "colours-important" (bytes-read-u32-le b 50)))))))))))))
+                                               "image-size" (bytes-nth-u32-le b 34)
+                                               "x-ppm" (bytes-nth-i32-le b 38)
+                                               "y-ppm" (bytes-nth-i32-le b 42)
+                                               "colours-used" (bytes-nth-u32-le b 46)
+                                               "colours-important" (bytes-nth-u32-le b 50)))))))))))))
 
       ; Decode one row of pixels starting at byte offset `start`.
       ; Returns a vector of pixels; each pixel is (vector r g b) or (vector r g b a).
@@ -67,7 +67,7 @@
                       (lambda (p acc)
                         (if (integer<? p start)
                             (list->vector acc)
-                            (let ((v (bytes-read-u24-le b p)))
+                            (let ((v (bytes-nth-u24-le b p)))
                               (pixels
                                 (integer- p 3)
                                 (list-prepend
@@ -81,7 +81,7 @@
                       (lambda (p acc)
                         (if (integer<? p start)
                             (list->vector acc)
-                            (let ((v (bytes-read-u32-le b p)))
+                            (let ((v (bytes-nth-u32-le b p)))
                               (pixels
                                 (integer- p 4)
                                 (list-prepend

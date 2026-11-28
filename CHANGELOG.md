@@ -23,6 +23,11 @@ New features:
 - The loop parameter and closure that inlining makes dead are dropped, so
   inlining a callback no longer leaves an uncalled function in the module.
 - Added an `--annotate` command line argument to `menai-test`.
+- Renamed the `bytes` element-access operations to the `-nth`/`-with` verbs, so
+  `bytes` matches every other type.  `bytes-read-{width}-{endian}` reads a field
+  and becomes `bytes-nth-{width}-{endian}`.  `bytes-write-{width}-{endian}`
+  replaces a field and becomes `bytes-with-{width}-{endian}`.  `bytes-read-u8`
+  is removed, since `bytes-nth` already reads a single byte.
 
 Internal structure changes:
 

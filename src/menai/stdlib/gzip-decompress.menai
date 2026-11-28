@@ -69,7 +69,7 @@
                     header-size
                     (if (integer>? (integer+ header-size 2) (bytes-length b))
                         (error "Malformed gzip stream: truncated FEXTRA length")
-                        (let ((len (bytes-read-u16-le b header-size)))
+                        (let ((len (bytes-nth-u16-le b header-size)))
                           (if (integer>? (integer+ header-size 2 len) (bytes-length b))
                               (error "Malformed gzip stream: truncated FEXTRA data")
                               (integer+ header-size 2 len))))))
@@ -87,7 +87,7 @@
                after-comment
                (if (integer>? (integer+ after-comment 2) (bytes-length b))
                    (error "Malformed gzip stream: truncated FHCRC")
-                   (let ((stored (bytes-read-u16-le b after-comment))
+                   (let ((stored (bytes-nth-u16-le b after-comment))
 
                          (computed (integer-bit-and (bytes-crc32 (bytes-slice b 0 after-comment)) #xffff)))
                      (if (integer!=? stored computed)
@@ -109,9 +109,9 @@
                    (data-start (skip-optional-fields b flg))
                    (decompress (:: deflate-lib decompress))
                    (data (decompress (bytes-slice b data-start (integer- (bytes-length b) 8))))
-                   (expected-crc (bytes-read-u32-le b (integer- (bytes-length b) 8)))
+                   (expected-crc (bytes-nth-u32-le b (integer- (bytes-length b) 8)))
                    (actual-crc (bytes-crc32 data))
-                   (expected-size (bytes-read-u32-le b (integer- (bytes-length b) 4)))
+                   (expected-size (bytes-nth-u32-le b (integer- (bytes-length b) 4)))
                    (actual-size (integer-bit-and (bytes-length data) #xffffffff)))
                (if (integer!=? expected-crc actual-crc)
                    (error

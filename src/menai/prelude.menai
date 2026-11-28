@@ -1242,77 +1242,73 @@
        (lambda (b byte)
          ($bytes-index-int b byte)))
 
-      (bytes-read-u8
+      (bytes-nth-u16-le
        (lambda (b off)
-         ($bytes-read-u8 b off)))
+         ($bytes-nth-u16-le b off)))
 
-      (bytes-read-u16-le
+      (bytes-nth-u24-le
        (lambda (b off)
-         ($bytes-read-u16-le b off)))
+         ($bytes-nth-u24-le b off)))
 
-      (bytes-read-u24-le
+      (bytes-nth-u32-le
        (lambda (b off)
-         ($bytes-read-u24-le b off)))
+         ($bytes-nth-u32-le b off)))
 
-      (bytes-read-u32-le
+      (bytes-nth-u64-le
        (lambda (b off)
-         ($bytes-read-u32-le b off)))
+         ($bytes-nth-u64-le b off)))
 
-      (bytes-read-u64-le
+      (bytes-nth-u16-be
        (lambda (b off)
-         ($bytes-read-u64-le b off)))
+         ($bytes-nth-u16-be b off)))
 
-      (bytes-read-u16-be
+      (bytes-nth-u24-be
        (lambda (b off)
-         ($bytes-read-u16-be b off)))
+         ($bytes-nth-u24-be b off)))
 
-      (bytes-read-u24-be
+      (bytes-nth-u32-be
        (lambda (b off)
-         ($bytes-read-u24-be b off)))
+         ($bytes-nth-u32-be b off)))
 
-      (bytes-read-u32-be
+      (bytes-nth-u64-be
        (lambda (b off)
-         ($bytes-read-u32-be b off)))
+         ($bytes-nth-u64-be b off)))
 
-      (bytes-read-u64-be
+      (bytes-nth-i8
        (lambda (b off)
-         ($bytes-read-u64-be b off)))
+         ($bytes-nth-i8 b off)))
 
-      (bytes-read-i8
+      (bytes-nth-i16-le
        (lambda (b off)
-         ($bytes-read-i8 b off)))
+         ($bytes-nth-i16-le b off)))
 
-      (bytes-read-i16-le
+      (bytes-nth-i24-le
        (lambda (b off)
-         ($bytes-read-i16-le b off)))
+         ($bytes-nth-i24-le b off)))
 
-      (bytes-read-i24-le
+      (bytes-nth-i32-le
        (lambda (b off)
-         ($bytes-read-i24-le b off)))
+         ($bytes-nth-i32-le b off)))
 
-      (bytes-read-i32-le
+      (bytes-nth-i64-le
        (lambda (b off)
-         ($bytes-read-i32-le b off)))
+         ($bytes-nth-i64-le b off)))
 
-      (bytes-read-i64-le
+      (bytes-nth-i16-be
        (lambda (b off)
-         ($bytes-read-i64-le b off)))
+         ($bytes-nth-i16-be b off)))
 
-      (bytes-read-i16-be
+      (bytes-nth-i24-be
        (lambda (b off)
-         ($bytes-read-i16-be b off)))
+         ($bytes-nth-i24-be b off)))
 
-      (bytes-read-i24-be
+      (bytes-nth-i32-be
        (lambda (b off)
-         ($bytes-read-i24-be b off)))
+         ($bytes-nth-i32-be b off)))
 
-      (bytes-read-i32-be
+      (bytes-nth-i64-be
        (lambda (b off)
-         ($bytes-read-i32-be b off)))
-
-      (bytes-read-i64-be
-       (lambda (b off)
-         ($bytes-read-i64-be b off)))
+         ($bytes-nth-i64-be b off)))
 
       (bytes-append-u16-le
        (lambda (b v)
@@ -1382,109 +1378,109 @@
        (lambda (b v)
          ($bytes-append-i64-be b v)))
 
-      (bytes-write-u8
+      (bytes-with-u8
        (lambda (b off v)
-         ($bytes-write-u8 b off v)))
+         ($bytes-with-u8 b off v)))
 
-      (bytes-write-u16-le
+      (bytes-with-u16-le
        (lambda (b off v)
-         ($bytes-write-u16-le b off v)))
+         ($bytes-with-u16-le b off v)))
 
-      (bytes-write-u16-be
+      (bytes-with-u16-be
        (lambda (b off v)
-         ($bytes-write-u16-be b off v)))
+         ($bytes-with-u16-be b off v)))
 
-      (bytes-write-u24-le
+      (bytes-with-u24-le
        (lambda (b off v)
-         ($bytes-write-u24-le b off v)))
+         ($bytes-with-u24-le b off v)))
 
-      (bytes-write-u24-be
+      (bytes-with-u24-be
        (lambda (b off v)
-         ($bytes-write-u24-be b off v)))
+         ($bytes-with-u24-be b off v)))
 
-      (bytes-write-u32-le
+      (bytes-with-u32-le
        (lambda (b off v)
-         ($bytes-write-u32-le b off v)))
+         ($bytes-with-u32-le b off v)))
 
-      (bytes-write-u32-be
+      (bytes-with-u32-be
        (lambda (b off v)
-         ($bytes-write-u32-be b off v)))
+         ($bytes-with-u32-be b off v)))
 
-      (bytes-write-u64-le
+      (bytes-with-u64-le
        (lambda (b off v)
-         ($bytes-write-u64-le b off v)))
+         ($bytes-with-u64-le b off v)))
 
-      (bytes-write-u64-be
+      (bytes-with-u64-be
        (lambda (b off v)
-         ($bytes-write-u64-be b off v)))
+         ($bytes-with-u64-be b off v)))
 
-      (bytes-write-i8
+      (bytes-with-i8
        (lambda (b off v)
-         ($bytes-write-i8 b off v)))
+         ($bytes-with-i8 b off v)))
 
-      (bytes-write-i16-le
+      (bytes-with-i16-le
        (lambda (b off v)
-         ($bytes-write-i16-le b off v)))
+         ($bytes-with-i16-le b off v)))
 
-      (bytes-write-i16-be
+      (bytes-with-i16-be
        (lambda (b off v)
-         ($bytes-write-i16-be b off v)))
+         ($bytes-with-i16-be b off v)))
 
-      (bytes-write-i24-le
+      (bytes-with-i24-le
        (lambda (b off v)
-         ($bytes-write-i24-le b off v)))
+         ($bytes-with-i24-le b off v)))
 
-      (bytes-write-i24-be
+      (bytes-with-i24-be
        (lambda (b off v)
-         ($bytes-write-i24-be b off v)))
+         ($bytes-with-i24-be b off v)))
 
-      (bytes-write-i32-le
+      (bytes-with-i32-le
        (lambda (b off v)
-         ($bytes-write-i32-le b off v)))
+         ($bytes-with-i32-le b off v)))
 
-      (bytes-write-i32-be
+      (bytes-with-i32-be
        (lambda (b off v)
-         ($bytes-write-i32-be b off v)))
+         ($bytes-with-i32-be b off v)))
 
-      (bytes-write-i64-le
+      (bytes-with-i64-le
        (lambda (b off v)
-         ($bytes-write-i64-le b off v)))
+         ($bytes-with-i64-le b off v)))
 
-      (bytes-write-i64-be
+      (bytes-with-i64-be
        (lambda (b off v)
-         ($bytes-write-i64-be b off v)))
+         ($bytes-with-i64-be b off v)))
 
-      (bytes-read-uleb128
+      (bytes-nth-uleb128
        (lambda (b off)
-         ($bytes-read-uleb128 b off)))
+         ($bytes-nth-uleb128 b off)))
 
       (bytes-append-uleb128
        (lambda (b v)
          ($bytes-append-uleb128 b v)))
 
-      (bytes-read-sleb128
+      (bytes-nth-sleb128
        (lambda (b off)
-         ($bytes-read-sleb128 b off)))
+         ($bytes-nth-sleb128 b off)))
 
       (bytes-append-sleb128
        (lambda (b v)
          ($bytes-append-sleb128 b v)))
 
-      (bytes-read-f32-le
+      (bytes-nth-f32-le
        (lambda (b off)
-         ($bytes-read-f32-le b off)))
+         ($bytes-nth-f32-le b off)))
 
-      (bytes-read-f32-be
+      (bytes-nth-f32-be
        (lambda (b off)
-         ($bytes-read-f32-be b off)))
+         ($bytes-nth-f32-be b off)))
 
-      (bytes-read-f64-le
+      (bytes-nth-f64-le
        (lambda (b off)
-         ($bytes-read-f64-le b off)))
+         ($bytes-nth-f64-le b off)))
 
-      (bytes-read-f64-be
+      (bytes-nth-f64-be
        (lambda (b off)
-         ($bytes-read-f64-be b off)))
+         ($bytes-nth-f64-be b off)))
 
       (bytes-append-f32-le
        (lambda (b v)
@@ -1502,21 +1498,21 @@
        (lambda (b v)
          ($bytes-append-f64-be b v)))
 
-      (bytes-write-f32-le
+      (bytes-with-f32-le
        (lambda (b off v)
-         ($bytes-write-f32-le b off v)))
+         ($bytes-with-f32-le b off v)))
 
-      (bytes-write-f32-be
+      (bytes-with-f32-be
        (lambda (b off v)
-         ($bytes-write-f32-be b off v)))
+         ($bytes-with-f32-be b off v)))
 
-      (bytes-write-f64-le
+      (bytes-with-f64-le
        (lambda (b off v)
-         ($bytes-write-f64-le b off v)))
+         ($bytes-with-f64-le b off v)))
 
-      (bytes-write-f64-be
+      (bytes-with-f64-be
        (lambda (b off v)
-         ($bytes-write-f64-be b off v)))
+         ($bytes-with-f64-be b off v)))
 
       (bytes-crc32
        (lambda (b)
@@ -2579,24 +2575,23 @@
         "list->bytes" list->bytes
         "bytes-index" bytes-index
         "bytes-index-int" bytes-index-int
-        "bytes-read-u8" bytes-read-u8
-        "bytes-read-u16-le" bytes-read-u16-le
-        "bytes-read-u24-le" bytes-read-u24-le
-        "bytes-read-u32-le" bytes-read-u32-le
-        "bytes-read-u64-le" bytes-read-u64-le
-        "bytes-read-u16-be" bytes-read-u16-be
-        "bytes-read-u24-be" bytes-read-u24-be
-        "bytes-read-u32-be" bytes-read-u32-be
-        "bytes-read-u64-be" bytes-read-u64-be
-        "bytes-read-i8" bytes-read-i8
-        "bytes-read-i16-le" bytes-read-i16-le
-        "bytes-read-i24-le" bytes-read-i24-le
-        "bytes-read-i32-le" bytes-read-i32-le
-        "bytes-read-i64-le" bytes-read-i64-le
-        "bytes-read-i16-be" bytes-read-i16-be
-        "bytes-read-i24-be" bytes-read-i24-be
-        "bytes-read-i32-be" bytes-read-i32-be
-        "bytes-read-i64-be" bytes-read-i64-be
+        "bytes-nth-u16-le" bytes-nth-u16-le
+        "bytes-nth-u24-le" bytes-nth-u24-le
+        "bytes-nth-u32-le" bytes-nth-u32-le
+        "bytes-nth-u64-le" bytes-nth-u64-le
+        "bytes-nth-u16-be" bytes-nth-u16-be
+        "bytes-nth-u24-be" bytes-nth-u24-be
+        "bytes-nth-u32-be" bytes-nth-u32-be
+        "bytes-nth-u64-be" bytes-nth-u64-be
+        "bytes-nth-i8" bytes-nth-i8
+        "bytes-nth-i16-le" bytes-nth-i16-le
+        "bytes-nth-i24-le" bytes-nth-i24-le
+        "bytes-nth-i32-le" bytes-nth-i32-le
+        "bytes-nth-i64-le" bytes-nth-i64-le
+        "bytes-nth-i16-be" bytes-nth-i16-be
+        "bytes-nth-i24-be" bytes-nth-i24-be
+        "bytes-nth-i32-be" bytes-nth-i32-be
+        "bytes-nth-i64-be" bytes-nth-i64-be
         "bytes-append-u16-le" bytes-append-u16-le
         "bytes-append-u16-be" bytes-append-u16-be
         "bytes-append-u24-le" bytes-append-u24-le
@@ -2614,40 +2609,40 @@
         "bytes-append-i32-be" bytes-append-i32-be
         "bytes-append-i64-le" bytes-append-i64-le
         "bytes-append-i64-be" bytes-append-i64-be
-        "bytes-write-u8" bytes-write-u8
-        "bytes-write-u16-le" bytes-write-u16-le
-        "bytes-write-u16-be" bytes-write-u16-be
-        "bytes-write-u24-le" bytes-write-u24-le
-        "bytes-write-u24-be" bytes-write-u24-be
-        "bytes-write-u32-le" bytes-write-u32-le
-        "bytes-write-u32-be" bytes-write-u32-be
-        "bytes-write-u64-le" bytes-write-u64-le
-        "bytes-write-u64-be" bytes-write-u64-be
-        "bytes-write-i8" bytes-write-i8
-        "bytes-write-i16-le" bytes-write-i16-le
-        "bytes-write-i16-be" bytes-write-i16-be
-        "bytes-write-i24-le" bytes-write-i24-le
-        "bytes-write-i24-be" bytes-write-i24-be
-        "bytes-write-i32-le" bytes-write-i32-le
-        "bytes-write-i32-be" bytes-write-i32-be
-        "bytes-write-i64-le" bytes-write-i64-le
-        "bytes-write-i64-be" bytes-write-i64-be
-        "bytes-read-uleb128" bytes-read-uleb128
+        "bytes-with-u8" bytes-with-u8
+        "bytes-with-u16-le" bytes-with-u16-le
+        "bytes-with-u16-be" bytes-with-u16-be
+        "bytes-with-u24-le" bytes-with-u24-le
+        "bytes-with-u24-be" bytes-with-u24-be
+        "bytes-with-u32-le" bytes-with-u32-le
+        "bytes-with-u32-be" bytes-with-u32-be
+        "bytes-with-u64-le" bytes-with-u64-le
+        "bytes-with-u64-be" bytes-with-u64-be
+        "bytes-with-i8" bytes-with-i8
+        "bytes-with-i16-le" bytes-with-i16-le
+        "bytes-with-i16-be" bytes-with-i16-be
+        "bytes-with-i24-le" bytes-with-i24-le
+        "bytes-with-i24-be" bytes-with-i24-be
+        "bytes-with-i32-le" bytes-with-i32-le
+        "bytes-with-i32-be" bytes-with-i32-be
+        "bytes-with-i64-le" bytes-with-i64-le
+        "bytes-with-i64-be" bytes-with-i64-be
+        "bytes-nth-uleb128" bytes-nth-uleb128
         "bytes-append-uleb128" bytes-append-uleb128
-        "bytes-read-sleb128" bytes-read-sleb128
+        "bytes-nth-sleb128" bytes-nth-sleb128
         "bytes-append-sleb128" bytes-append-sleb128
-        "bytes-read-f32-le" bytes-read-f32-le
-        "bytes-read-f32-be" bytes-read-f32-be
-        "bytes-read-f64-le" bytes-read-f64-le
-        "bytes-read-f64-be" bytes-read-f64-be
+        "bytes-nth-f32-le" bytes-nth-f32-le
+        "bytes-nth-f32-be" bytes-nth-f32-be
+        "bytes-nth-f64-le" bytes-nth-f64-le
+        "bytes-nth-f64-be" bytes-nth-f64-be
         "bytes-append-f32-le" bytes-append-f32-le
         "bytes-append-f32-be" bytes-append-f32-be
         "bytes-append-f64-le" bytes-append-f64-le
         "bytes-append-f64-be" bytes-append-f64-be
-        "bytes-write-f32-le" bytes-write-f32-le
-        "bytes-write-f32-be" bytes-write-f32-be
-        "bytes-write-f64-le" bytes-write-f64-le
-        "bytes-write-f64-be" bytes-write-f64-be
+        "bytes-with-f32-le" bytes-with-f32-le
+        "bytes-with-f32-be" bytes-with-f32-be
+        "bytes-with-f64-le" bytes-with-f64-le
+        "bytes-with-f64-be" bytes-with-f64-be
         "bytes-crc32" bytes-crc32
         "bytes-hash-sha2-256" bytes-hash-sha2-256
         "bytes-hash-sha2-512" bytes-hash-sha2-512

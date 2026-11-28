@@ -113,7 +113,7 @@ What costs, risks, or constraints does this decision impose?
 | [0034](0034-the-compiler-is-expressible-in-menai.md) | The compiler is expressible in Menai | Accepted |
 | [0035](0035-function-provenance-must-follow-containers.md) | Function provenance must follow containers | Accepted |
 | [0036](0036-predicate-fold-may-consume-interprocedural-facts.md) | Type-predicate folding may consume interprocedural facts | Accepted |
-| [0037](0037-collection-access-verbs.md) | Element access verbs — `-nth`, `-get`, `-with`, and `-without` | Accepted |
+| [0037](0037-collection-access-verbs.md) | Element access verbs — `-nth`, `-get`, `-with`, and `-without` | Superseded by ADR-0072 |
 | [0038](0038-standard-library-packaging-and-location.md) | Standard library packaging and location | Accepted |
 | [0039](0039-standard-library-module-naming.md) | Standard library module naming | Superseded by ADR-0041 |
 | [0040](0040-module-search-path-and-application-libraries.md) | Module search path and application libraries | Accepted |
@@ -148,3 +148,4 @@ What costs, risks, or constraints does this decision impose?
 | [0069](0069-loop-parameters-carry-callee-identity.md) | A loop parameter carries callee identity when it cannot be rebound | Accepted |
 | [0070](0070-accessor-on-a-container-literal-folds.md) | An accessor applied to a container literal folds | Accepted |
 | [0071](0071-phi-chain-collapse-must-bypass-its-block.md) | A phi chain is collapsed only through a bypassed block, never through a loop-carried phi | Accepted |
+| [0072](0072-bytes-element-access-verbs.md) | Bytes element access uses `-nth` and `-with` | Accepted |

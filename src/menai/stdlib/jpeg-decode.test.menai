@@ -377,7 +377,7 @@
       ; file: what distinguishes them is the marker and the name it is reported as.
       (with-frame-marker
        (lambda (marker)
-         (bytes-write-u8
+         (bytes-with-u8
            fixture-grey-quant-4
            (integer+ (bytes-index fixture-grey-quant-4 (string-hex->bytes "ffc0000b080008000801011100")) 1)
            marker)))

@@ -286,8 +286,11 @@ carries the alternatives that were rejected.
   [ADR-0057](docs/adr/0057-typed-destructuring-patterns.md).
 - **Element access verbs are `-nth`, `-get`, `-with`, `-without`** — position, key, add or
   replace, remove. `-set`, `-add` and `-remove` connote mutation, which Menai does not have; do
-  not reintroduce them.
-  See [ADR-0037](docs/adr/0037-collection-access-verbs.md).
+  not reintroduce them, and the same applies to `-write` and `-read`, which no builtin uses.
+  bytes reads a field with `bytes-nth-{width}-{endian}` and replaces one with
+  `bytes-with-{width}-{endian}`; there is no `bytes-read-*` or `bytes-write-*`.
+  See [ADR-0037](docs/adr/0037-collection-access-verbs.md), superseded for bytes by
+  [ADR-0072](docs/adr/0072-bytes-element-access-verbs.md).
 - **Strict numeric typing.** No implicit coercion between `integer`, `float` and `complex`;
   every arithmetic operator is type-specific.
   See [ADR-0004](docs/adr/0004-strict-numeric-typing.md).

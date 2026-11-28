@@ -705,14 +705,17 @@ operations for ordered iteration.
 | `(bytes-split b delimiter)` | Split on delimiter bytes (delimiter must be non-empty) |
 | `(bytes-split-int b byte-val)` | Split on single byte value |
 
-### Multi-byte integer reads
+### Element and field reads
 
-All take `(bytes offset)` and return an integer. Raise error if not enough bytes from offset.
+`bytes-nth` reads the single byte at an index. The width-qualified forms read a
+fixed-width field at an offset and all take `(bytes offset)`. Raise error if not
+enough bytes from offset.
 
 | Category | Functions |
 |----------|-----------|
-| Unsigned | `bytes-read-u8`, `bytes-read-u16-le`, `bytes-read-u16-be`, `bytes-read-u24-le`, `bytes-read-u24-be`, `bytes-read-u32-le`, `bytes-read-u32-be`, `bytes-read-u64-le`, `bytes-read-u64-be` |
-| Signed | `bytes-read-i8`, `bytes-read-i16-le`, `bytes-read-i16-be`, `bytes-read-i24-le`, `bytes-read-i24-be`, `bytes-read-i32-le`, `bytes-read-i32-be`, `bytes-read-i64-le`, `bytes-read-i64-be` |
+| Single byte | `bytes-nth` (returns the byte at an index, 0–255) |
+| Unsigned field | `bytes-nth-u16-le`, `bytes-nth-u16-be`, `bytes-nth-u24-le`, `bytes-nth-u24-be`, `bytes-nth-u32-le`, `bytes-nth-u32-be`, `bytes-nth-u64-le`, `bytes-nth-u64-be` |
+| Signed field | `bytes-nth-i8`, `bytes-nth-i16-le`, `bytes-nth-i16-be`, `bytes-nth-i24-le`, `bytes-nth-i24-be`, `bytes-nth-i32-le`, `bytes-nth-i32-be`, `bytes-nth-i64-le`, `bytes-nth-i64-be` |
 
 ### Multi-byte integer appends
 
@@ -723,51 +726,51 @@ All take `(bytes integer)` and return new bytes. Value must fit in the specified
 | Unsigned | `bytes-append-u16-le`, `bytes-append-u16-be`, `bytes-append-u24-le`, `bytes-append-u24-be`, `bytes-append-u32-le`, `bytes-append-u32-be`, `bytes-append-u64-le`, `bytes-append-u64-be` |
 | Signed | `bytes-append-i8`, `bytes-append-i16-le`, `bytes-append-i16-be`, `bytes-append-i24-le`, `bytes-append-i24-be`, `bytes-append-i32-le`, `bytes-append-i32-be`, `bytes-append-i64-le`, `bytes-append-i64-be` |
 
-### Multi-byte integer writes
+### Multi-byte integer field replacements
 
 All take `(bytes offset integer)` and return new bytes (original unchanged). Value must
 fit in the specified width. Raise error if not enough bytes from offset.
 
 | Category | Functions |
 |----------|-----------|
-| Unsigned | `bytes-write-u8`, `bytes-write-u16-le`, `bytes-write-u16-be`, `bytes-write-u24-le`, `bytes-write-u24-be`, `bytes-write-u32-le`, `bytes-write-u32-be`, `bytes-write-u64-le`, `bytes-write-u64-be` |
-| Signed | `bytes-write-i8`, `bytes-write-i16-le`, `bytes-write-i16-be`, `bytes-write-i24-le`, `bytes-write-i24-be`, `bytes-write-i32-le`, `bytes-write-i32-be`, `bytes-write-i64-le`, `bytes-write-i64-be` |
+| Unsigned | `bytes-with-u8`, `bytes-with-u16-le`, `bytes-with-u16-be`, `bytes-with-u24-le`, `bytes-with-u24-be`, `bytes-with-u32-le`, `bytes-with-u32-be`, `bytes-with-u64-le`, `bytes-with-u64-be` |
+| Signed | `bytes-with-i8`, `bytes-with-i16-le`, `bytes-with-i16-be`, `bytes-with-i24-le`, `bytes-with-i24-be`, `bytes-with-i32-le`, `bytes-with-i32-be`, `bytes-with-i64-le`, `bytes-with-i64-be` |
 
 ### LEB128 variable-length integers
 
 | Function | Description |
 |----------|-------------|
-| `(bytes-read-uleb128 b offset)` | `→ (value next-offset)` 2-element list; unsigned; error if truncated |
+| `(bytes-nth-uleb128 b offset)` | `→ (value next-offset)` 2-element list; unsigned; error if truncated |
 | `(bytes-append-uleb128 b value)` | New bytes with unsigned LEB128; value must be non-negative |
-| `(bytes-read-sleb128 b offset)` | `→ (value next-offset)` 2-element list; signed; error if truncated |
+| `(bytes-nth-sleb128 b offset)` | `→ (value next-offset)` 2-element list; signed; error if truncated |
 | `(bytes-append-sleb128 b value)` | New bytes with signed LEB128 |
 
-### Floating-point reads, appends, and writes
+### Floating-point field reads, appends, and replacements
 
 These mirror the multi-byte integer operations but encode IEEE-754 floating-point
 values. All widths are little-endian (`-le`) or big-endian (`-be`).
 
 | Function | Description |
 |----------|-------------|
-| `(bytes-read-f32-le b offset)` | Read 4 bytes as a single-precision float; error if not enough bytes |
-| `(bytes-read-f32-be b offset)` | Read 4 bytes as a big-endian single-precision float |
-| `(bytes-read-f64-le b offset)` | Read 8 bytes as a double-precision float |
-| `(bytes-read-f64-be b offset)` | Read 8 bytes as a big-endian double-precision float |
+| `(bytes-nth-f32-le b offset)` | Read 4 bytes as a single-precision float; error if not enough bytes |
+| `(bytes-nth-f32-be b offset)` | Read 4 bytes as a big-endian single-precision float |
+| `(bytes-nth-f64-le b offset)` | Read 8 bytes as a double-precision float |
+| `(bytes-nth-f64-be b offset)` | Read 8 bytes as a big-endian double-precision float |
 | `(bytes-append-f32-le b x)` | Append `x` as a little-endian single-precision float |
 | `(bytes-append-f32-be b x)` | Append `x` as a big-endian single-precision float |
 | `(bytes-append-f64-le b x)` | Append `x` as a little-endian double-precision float |
 | `(bytes-append-f64-be b x)` | Append `x` as a big-endian double-precision float |
-| `(bytes-write-f32-le b offset x)` | Write `x` as a little-endian single-precision float at `offset` |
-| `(bytes-write-f32-be b offset x)` | Write `x` as a big-endian single-precision float at `offset` |
-| `(bytes-write-f64-le b offset x)` | Write `x` as a little-endian double-precision float at `offset` |
-| `(bytes-write-f64-be b offset x)` | Write `x` as a big-endian double-precision float at `offset` |
+| `(bytes-with-f32-le b offset x)` | Replace with `x` as a little-endian single-precision float at `offset` |
+| `(bytes-with-f32-be b offset x)` | Replace with `x` as a big-endian single-precision float at `offset` |
+| `(bytes-with-f64-le b offset x)` | Replace with `x` as a little-endian double-precision float at `offset` |
+| `(bytes-with-f64-be b offset x)` | Replace with `x` as a big-endian double-precision float at `offset` |
 
-Reads return a `float`; appends and writes return new bytes (the original is
-unchanged). Writing a value to `f32` rounds it to the nearest single-precision
+Field reads return a `float`; appends and replacements return new bytes (the original is
+unchanged). Replacing a value in `f32` rounds it to the nearest single-precision
 value, as IEEE-754 specifies.
 
 ```menai
-(bytes-read-f64-le (string-hex->bytes "000000000000f03f") 0)  → 1.0
+(bytes-nth-f64-le (string-hex->bytes "000000000000f03f") 0)  → 1.0
 (bytes->string-hex (bytes-append-f32-le (string-hex->bytes "") 1.0))  → "0000803f"
 ```
 

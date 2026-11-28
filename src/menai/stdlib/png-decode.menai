@@ -16,11 +16,11 @@
       ; Read one chunk at `pos`.  Returns (list <type-string> <data-bytes> <next-pos>).
       (read-chunk
        (lambda (b pos)
-         (let ((length (bytes-read-u32-be b pos))
+         (let ((length (bytes-nth-u32-be b pos))
                (typ (bytes->string (bytes-slice b (integer+ pos 4) (integer+ pos 8))))
                (data-start (integer+ pos 8))
                (data-end (integer+ pos 8 length))
-               (expected (bytes-read-u32-be b data-end))
+               (expected (bytes-nth-u32-be b data-end))
                (actual (bytes-crc32 (bytes-slice b (integer+ pos 4) data-end))))
            (if (integer=? expected actual)
                (list typ (bytes-slice b data-start data-end) (integer+ data-end 4))
@@ -53,8 +53,8 @@
                           ("IHDR"
                            (loop
                              next
-                             (dict "width" (bytes-read-u32-be data 0)
-                                   "height" (bytes-read-u32-be data 4)
+                             (dict "width" (bytes-nth-u32-be data 0)
+                                   "height" (bytes-nth-u32-be data 4)
                                    "bit-depth" (bytes-nth data 8)
                                    "colour-type" (bytes-nth data 9)
                                    "compression" (bytes-nth data 10)
