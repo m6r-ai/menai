@@ -230,6 +230,47 @@ class TestLists:
             menai.evaluate('(list-nth (list 1 2 3) 1.5)')
 
     @pytest.mark.parametrize("expression,expected", [
+        ('(list-with (list 1 2 3) 0 9)', '(9 2 3)'),
+        ('(list-with (list 1 2 3) 1 9)', '(1 9 3)'),
+        ('(list-with (list 1 2 3) 2 9)', '(1 2 9)'),
+        ('(list-with (list 1) 0 9)', '(9)'),
+
+        # The element type is arbitrary, so a list can hold a list.
+        ('(list-with (list 1 "a" #t) 1 2)', '(1 2 #t)'),
+        ('(list-with (list (list 1 2) (list 3 4)) 0 (list 5 6))', '((5 6) (3 4))'),
+    ])
+    def test_list_with_operation(self, menai, expression, expected):
+        """list-with replaces the element at an index."""
+        assert menai.evaluate_and_format(expression) == expected
+
+    def test_list_with_preserves_length(self, menai):
+        """list-with returns a list of the same length."""
+        assert menai.evaluate('(list-length (list-with (list 1 2 3 4) 2 9))') == 4
+
+    def test_list_with_shares_the_untouched_tail(self, menai):
+        """Replacing an element leaves the elements after it untouched."""
+        assert menai.evaluate(
+            '(list=? (list-slice (list-with (list 1 2 3 4) 1 9) 2) (list 3 4))'
+        ) is True
+
+    def test_list_with_leaves_the_source_unchanged(self, menai):
+        """A list is immutable, so replacing an element does not affect the source."""
+        assert menai.evaluate('(let ((l (list 1 2 3))) (list (list-with l 1 9) l))') == [
+            [1, 9, 3], [1, 2, 3],
+        ]
+
+    def test_list_with_index_errors(self, menai):
+        """An out-of-range index raises, matching list-nth."""
+        with pytest.raises(MenaiEvalError, match="index out of range"):
+            menai.evaluate('(list-with (list 1 2 3) 3 9)')
+
+        with pytest.raises(MenaiEvalError, match="index out of range"):
+            menai.evaluate('(list-with (list 1 2 3) -1 9)')
+
+        with pytest.raises(MenaiEvalError, match="index out of range"):
+            menai.evaluate('(list-with (list) 0 9)')
+
+    @pytest.mark.parametrize("expression,expected", [
         # Length of various lists
         ('(list-length (list))', '0'),
         ('(list-length (list 1))', '1'),

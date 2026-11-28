@@ -148,4 +148,6 @@ What costs, risks, or constraints does this decision impose?
 | [0069](0069-loop-parameters-carry-callee-identity.md) | A loop parameter carries callee identity when it cannot be rebound | Accepted |
 | [0070](0070-accessor-on-a-container-literal-folds.md) | An accessor applied to a container literal folds | Accepted |
 | [0071](0071-phi-chain-collapse-must-bypass-its-block.md) | A phi chain is collapsed only through a bypassed block, never through a loop-carried phi | Accepted |
+| [0072](0072-bytes-element-access-verbs.md) | Bytes element access uses `-nth` and `-with` | Superseded by ADR-0073 |
+| [0073](0073-uniform-element-access-verbs.md) | Uniform element-access verbs across every container | Accepted |
 | [0072](0072-bytes-element-access-verbs.md) | Bytes element access uses `-nth` and `-with` | Accepted |

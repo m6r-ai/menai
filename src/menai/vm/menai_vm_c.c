@@ -4636,6 +4636,76 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
             break;
         }
 
+        case OP_STRING_WITH: {
+            MenaiString *a = (MenaiString *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiValue *idx_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            int src2 = (int)(word & FIELD_MASK);
+            MenaiString *ch = (MenaiString *)operand(constants_items, frame_regs, src2, tag & 4);
+
+            ssize_t idx;
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(idx_val, &idx) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            ssize_t slen = a->length;
+            if (idx < 0 || idx >= slen) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            if (MENAI_UNLIKELY(ch->length != 1)) {
+                vm_err = MENAI_ERR_NOT_SINGLE_CHAR_STRING;
+                goto error;
+            }
+
+            /*
+             * Write in place when nothing else can observe the receiver.  The
+             * conditions are OP_STRING_CONCAT's and OP_VECTOR_WITH's: dest == src0
+             * so the write consumes the single reference, a count of one, and a
+             * value that owns its data rather than being a view.
+             *
+             * Two conditions the neighbours need are absent, and deliberately.
+             * The length does not change, so this never reallocates and cap is
+             * irrelevant: the whole operation is one indexed store.  And the
+             * replacement is a codepoint copied by value out of ch, not a
+             * retained reference, so ch aliasing the receiver is harmless --
+             * unlike OP_VECTOR_WITH, which must exclude val == v because
+             * retaining a reference to the container being written would build a
+             * cycle no reference count can reclaim.
+             *
+             * The cached hash must be cleared: a string is hashable, and a hash is
+             * observed by a dict or set without retaining the value, so a stale
+             * one would survive the mutation.  See ADR-0073.
+             */
+            if ((tag & 1) == 0 && dest == src0 && a->owner == NULL &&
+                    menai_get_pool_header((void *)a)->ob_refcnt == 1) {
+                a->data[idx] = ch->data[0];
+                a->hash = -1;
+
+                /*
+                 * The reference stays in the register: this instruction consumed
+                 * it and produced the same object, so there is no destination to
+                 * release and no new value to store.
+                 */
+                break;
+            }
+
+            MenaiString *r = alloc_menai_string(vs, slen);
+            if (MENAI_UNLIKELY(r == NULL)) {
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            memcpy(r->data, a->data, (size_t)slen * sizeof(uint32_t));
+            r->data[idx] = ch->data[0];
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)r;
+            break;
+        }
+
         case OP_STRING_SLICE: {
             MenaiString *a = (MenaiString *)operand(constants_items, frame_regs, src0, tag & 1);
             int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
@@ -7044,6 +7114,90 @@ execute_loop(MenaiVMState *vs, MenaiCodeObject *code)
                 prev->tail = last;
             } else {
                 first = last;
+            }
+
+            menai_value_release(vs, frame_regs[dest]);
+            frame_regs[dest] = (MenaiValue *)first;
+            break;
+        }
+
+        case OP_LIST_WITH: {
+            MenaiList *a = (MenaiList *)operand(constants_items, frame_regs, src0, tag & 1);
+            int src1 = (int)((word >> SRC1_SHIFT) & FIELD_MASK);
+            MenaiValue *idx_val = (MenaiValue *)operand(constants_items, frame_regs, src1, tag & 2);
+            int src2 = (int)(word & FIELD_MASK);
+            MenaiValue *val = operand(constants_items, frame_regs, src2, tag & 4);
+
+            ssize_t idx;
+            if (MENAI_UNLIKELY(menai_integer_to_fixnum(idx_val, &idx) < 0)) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            ssize_t n = a->length;
+            if (idx < 0 || idx >= n) {
+                vm_err = MENAI_ERR_INDEX_OUT_OF_RANGE;
+                goto error;
+            }
+
+            /*
+             * There is no in-place path: the cells after idx are shared with the
+             * source, so the result's spine is never uniquely owned and writing
+             * through it would be observable via a.  Copy the idx cells before
+             * the target, put val in a fresh cell, and share a's tail from
+             * idx + 1 on.  See ADR-0073.
+             *
+             * a stays reachable for the whole walk: the register that holds it is
+             * released only after the new spine is complete.
+             */
+            MenaiList *cur = a;
+            MenaiList *first = NULL;
+            MenaiList *prev = NULL;
+            ssize_t remaining = n;
+            for (ssize_t i = 0; i < idx; i++) {
+                MenaiList *cell = alloc_menai_list(vs);
+                if (MENAI_UNLIKELY(cell == NULL)) {
+                    if (first) {
+                        menai_value_release(vs, (MenaiValue *)first);
+                    }
+
+                    vm_err = MENAI_ERR_NOMEM;
+                    goto error;
+                }
+
+                menai_value_retain(cur->head);
+                cell->head = cur->head;
+                cell->length = remaining;
+                if (prev) {
+                    prev->tail = cell;
+                } else {
+                    first = cell;
+                }
+
+                prev = cell;
+                cur = cur->tail;
+                remaining--;
+            }
+
+            MenaiList *replaced = alloc_menai_list(vs);
+            if (MENAI_UNLIKELY(replaced == NULL)) {
+                if (first) {
+                    menai_value_release(vs, (MenaiValue *)first);
+                }
+
+                vm_err = MENAI_ERR_NOMEM;
+                goto error;
+            }
+
+            menai_value_retain(val);
+            replaced->head = val;
+            replaced->tail = cur->tail;
+            menai_value_retain((MenaiValue *)cur->tail);
+            replaced->length = remaining;
+            if (prev) {
+                prev->tail = replaced;
+            } else {
+                first = replaced;
             }
 
             menai_value_release(vs, frame_regs[dest]);

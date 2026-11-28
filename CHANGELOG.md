@@ -28,6 +28,9 @@ New features:
   and becomes `bytes-nth-{width}-{endian}`.  `bytes-write-{width}-{endian}`
   replaces a field and becomes `bytes-with-{width}-{endian}`.  `bytes-read-u8`
   is removed, since `bytes-nth` already reads a single byte.
+- Added `string-with` and `list-with`, so that every container with a positional
+  element read has a matching element update: `(string-with s i ch)` replaces the
+  codepoint at an index and `(list-with lst i x)` replaces the element.
 
 Internal structure changes:
 

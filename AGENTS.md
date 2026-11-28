@@ -287,9 +287,14 @@ carries the alternatives that were rejected.
 - **Element access verbs are `-nth`, `-get`, `-with`, `-without`** — position, key, add or
   replace, remove. `-set`, `-add` and `-remove` connote mutation, which Menai does not have; do
   not reintroduce them, and the same applies to `-write` and `-read`, which no builtin uses.
-  bytes reads a field with `bytes-nth-{width}-{endian}` and replaces one with
-  `bytes-with-{width}-{endian}`; there is no `bytes-read-*` or `bytes-write-*`.
-  See [ADR-0037](docs/adr/0037-collection-access-verbs.md), superseded for bytes by
+  Every container that reads an element has a matching update, with no exceptions: `list-nth`
+  pairs with `list-with`, `vector-nth` with `vector-with`, `string-nth` with `string-with`,
+  `bytes-nth` with `bytes-with-u8` and `bytes-nth-{width}-{endian}` with
+  `bytes-with-{width}-{endian}`, `dict-get` with `dict-with`, `struct-get` with `struct-with`.
+  `set-with` has no read because a set has no element address. A new container type must
+  supply the whole pair, not half of it.
+  See [ADR-0073](docs/adr/0073-uniform-element-access-verbs.md), which supersedes
+  [ADR-0037](docs/adr/0037-collection-access-verbs.md) and
   [ADR-0072](docs/adr/0072-bytes-element-access-verbs.md).
 - **Strict numeric typing.** No implicit coercion between `integer`, `float` and `complex`;
   every arithmetic operator is type-specific.

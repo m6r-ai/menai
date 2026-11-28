@@ -17,9 +17,15 @@ Menai follows a consistent naming convention for collection operations:
   `(dict-get d k)`, `(struct-get s 'field)`
 - **Updating a collection** uses `collection-with` to add or replace an element and
   `collection-without` to remove one, since Menai is pure and the operation returns
-  a new collection rather than mutating: `(vector-with v i val)`, `(dict-with d k
-  val)`, `(struct-with s 'field val)`, `(set-with s x)`, `(set-without s x)`,
-  `(dict-without d k)`, `(list-without lst item)`
+  a new collection rather than mutating: `(vector-with v i val)`, `(list-with lst i
+  val)`, `(string-with s i ch)`, `(dict-with d k val)`, `(struct-with s 'field
+  val)`, `(set-with s x)`, `(set-without s x)`, `(dict-without d k)`,
+  `(list-without lst item)`
+
+Every container that reads an element has a matching update: `-nth` reads by
+position and `-with` replaces one, for lists, vectors, strings and bytes; `-get`
+reads by key and `-with` updates, for dicts and structs.  A set is the only type
+with `-with` and no read, because it has no element address.
 
 The same convention applies to bytes (`bytes-X` / `X-bytes`).
 
@@ -340,6 +346,7 @@ Complex numbers have no ordering. Use `complex-abs` to compare magnitudes as flo
 | `(string-concat a b ...)` | Concatenate strings |
 | `(string-length s)` | Length (character count) |
 | `(string-nth s i)` | Character at 0-based index → single-character string |
+| `(string-with s i ch)` | New string with the codepoint at `i` replaced by `ch`; `ch` must be a single codepoint; out-of-range `i` raises |
 | `(string-slice s start [end])` | Substring; end is exclusive; `(string-slice "hello" 2)` → "llo" |
 | `(string-upcase s)` | Uppercase |
 | `(string-downcase s)` | Lowercase |
@@ -450,6 +457,7 @@ has `lo` greater than `hi`, or names a value outside `0`–`1114111` raises an e
 | `(list-rest lst)` | All elements after the first |
 | `(list-last lst)` | Last element |
 | `(list-nth lst i)` | Element at 0-based index |
+| `(list-with lst i x)` | New list with the element at `i` replaced by `x`; out-of-range `i` raises |
 
 ### Properties
 

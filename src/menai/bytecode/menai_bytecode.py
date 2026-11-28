@@ -507,6 +507,10 @@ class Opcode(IntEnum):
     # Character-set search
     STRING_INDEX_ANY = _op(365, 2, _FOLD_SRC01)     # r_dest = (string-index-any r_src0 r_src1)
 
+    # Element updates
+    LIST_WITH = _op(366, 3, _FOLD_SRC012)           # r_dest = (list-with r_src0 r_src1 r_src2)
+    STRING_WITH = _op(367, 3, _FOLD_SRC012)         # r_dest = (string-with r_src0 r_src1 r_src2)
+
 
 # Packed instruction encoding
 #

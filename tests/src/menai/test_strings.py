@@ -322,6 +322,60 @@ class TestStrings:
             menai.evaluate('(string-nth "hello" -1)')  # Negative index
 
     @pytest.mark.parametrize("expression,expected", [
+        ('(string-with "hello" 0 "H")', '"Hello"'),
+        ('(string-with "hello" 4 "O")', '"hellO"'),
+        ('(string-with "hello" 1 "x")', '"hxllo"'),
+        ('(string-with "" 0 "x")', None),
+
+        # The replacement is a codepoint, so a surrogate pair counts as one.
+        ('(string-with "😀a" 0 "z")', '"za"'),
+        ('(string-with "café" 3 "e")', '"cafe"'),
+    ])
+    def test_string_with(self, menai, expression, expected):
+        """string-with replaces the codepoint at an index."""
+        if expected is None:
+            with pytest.raises(MenaiEvalError):
+                menai.evaluate(expression)
+
+            return
+
+        assert menai.evaluate_and_format(expression) == expected
+
+    def test_string_with_preserves_length(self, menai):
+        """string-with returns a string of the same codepoint length."""
+        assert menai.evaluate('(string-length (string-with "😀ab" 1 "z"))') == 3
+
+    def test_string_with_leaves_the_source_unchanged(self, menai):
+        """A string is immutable, so replacing an element does not affect the source."""
+        assert menai.evaluate('(let ((s "hello")) (list (string-with s 1 "x") s))') == [
+            "hxllo", "hello",
+        ]
+
+    def test_string_with_index_errors(self, menai):
+        """An out-of-range index raises, matching string-nth."""
+        with pytest.raises(MenaiEvalError, match="index out of range"):
+            menai.evaluate('(string-with "hello" 5 "x")')
+
+        with pytest.raises(MenaiEvalError, match="index out of range"):
+            menai.evaluate('(string-with "hello" -1 "x")')
+
+    @pytest.mark.parametrize("replacement", ['""', '"xy"'])
+    def test_string_with_requires_a_single_character(self, menai, replacement):
+        """The replacement must be one codepoint, like everything else a string holds."""
+        with pytest.raises(MenaiEvalError, match="single-character"):
+            menai.evaluate(f'(string-with "hello" 1 {replacement})')
+
+    def test_string_with_rewrites_a_string_in_a_loop(self, menai):
+        """A uniquely-owned accumulator is rewritten in place and stays hashable."""
+        expression = (
+            '(let ((fill (lambda (s i n)'
+            '              (if (integer>=? i n) s (fill (string-with s i "b") (integer+ i 1) n)))))'
+            '  (let ((r (fill "aaaa" 0 4)))'
+            '    (list r (string=? r "bbbb") (dict-get (dict r 1) "bbbb") (set-member? (set r) "bbbb"))))'
+        )
+        assert menai.evaluate(expression) == ["bbbb", True, 1, True]
+
+    @pytest.mark.parametrize("expression,expected", [
         # String index search
         ('(string-index "hello world" "world")', '6'),
         ('(string-index "hello world" "hello")', '0'),

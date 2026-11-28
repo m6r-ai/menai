@@ -1,7 +1,7 @@
 # ADR-0072: Bytes element access uses `-nth` and `-with`
 
 Date: 2026-11-28  
-Status: Accepted
+Status: Superseded by ADR-0073 (2026-11-28)
 
 ## Context
 

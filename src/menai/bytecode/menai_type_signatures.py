@@ -184,6 +184,7 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'string-concat': (['string', 'string'], 'string'),
     'string-slice': (['string', 'integer', 'integer'], 'string'),
     'string-replace': (['string', 'string', 'string'], 'string'),
+    'string-with': (['string', 'integer', 'string'], 'string'),
 
     # List operations
     'list?': (['any'], 'boolean'),
@@ -201,6 +202,7 @@ BUILTIN_TYPE_SIGNATURES: dict[str, TypeSignature] = {
     'list-member?': (['list', 'any'], 'boolean'),
     'list-index': (['list', 'any'], None),
     'list-slice': (['list', 'integer', 'integer'], 'list'),
+    'list-with': (['list', 'integer', 'any'], 'list'),
     'list-without': (['list', 'any'], 'list'),
     'list-concat': (['list', 'list'], 'list'),
     'list->string': (['list', 'string'], 'string'),

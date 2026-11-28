@@ -1038,6 +1038,10 @@
        (lambda (s i)
          ($string-nth s i)))
 
+      (string-with
+       (lambda (s i ch)
+         ($string-with s i ch)))
+
       (string-slice
        (lambda (str start . rest)
          (if ($list-null? rest)
@@ -1713,6 +1717,10 @@
       (list-without
        (lambda (lst elem)
          ($list-without lst elem)))
+
+      (list-with
+       (lambda (lst i elem)
+         ($list-with lst i elem)))
 
       (list-nth
        (lambda (lst i)
@@ -2474,6 +2482,7 @@
         "string-prefix?" string-prefix?
         "string-suffix?" string-suffix?
         "string-nth" string-nth
+        "string-with" string-with
         "string-slice" string-slice
         "string->float" string->float
         "string->complex" string->complex
@@ -2498,6 +2507,7 @@
         "list-null?" list-null?
         "list-index" list-index
         "list-slice" list-slice
+        "list-with" list-with
         "list-without" list-without
         "list-nth" list-nth
         "list->string" list->string

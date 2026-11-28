@@ -41,6 +41,7 @@ _CALL_ARGUMENT_OVERRIDES = {
     'list->string': ('(list "a" "b")', '"abc"'),
     'list->bytes': ('(list 1 2)',),
     'struct-with': ('(Point 1 2)', "'a", '1'),
+    'string-with': ('"abc"', '1', '"x"'),
 }
 
 _NOMINAL_ARGUMENT_TYPES = frozenset({'struct', 'structtype', 'enum', 'enumtype'})
